@@ -9,7 +9,6 @@ import type {
   WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
-import { listProjectThreads } from "@/client/api/projects-api";
 import { invalidateProjectChatFeed } from "./project-invalidation";
 import {
   isProjectContextCatalogKey,
@@ -19,11 +18,11 @@ import {
 } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
+import { projectThreadsQueryOptions } from "./useProjectThreads";
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
   refreshWorksSnapshot,
   repairWorksSnapshot,
-  seedWorksSnapshot,
   workFromSnapshot,
 } from "./works-projection-acquisition";
 
@@ -37,8 +36,8 @@ export type ThreadWorkConvergence =
       projectId: string;
       threadId: string;
       previousWorkId: string | null;
-      threads: ThreadListItem[];
-      catalog: ListWorksResponse;
+      /** The thread's `workId` on a list read just made, which also refreshed the list and Works. */
+      workId: string | null;
     };
 
 export type ThreadProjectionInvalidation = {
@@ -170,19 +169,30 @@ export function convergeThreadWorkBinding(
       return;
     }
 
-    client.setQueryData(projectQueryKeys.threads(projectId), transition.threads);
-    seedWorksSnapshot(client, transition.catalog);
-    const row = transition.threads.find(({ id }) => id === threadId);
-    patchSnapshot(client, threadId, row?.workId ?? null);
-    const ids = new Set([transition.previousWorkId, row?.workId].filter(Boolean) as string[]);
+    const workId = transition.workId;
+    // The acknowledgment reads the binding on every chat switch, and nearly always finds it
+    // unchanged. A caller that knows the binding it started from names it; otherwise the snapshot is the
+    // record, and a chat without one yet has nothing cached to correct.
+    const snapshotWorkId = client.getQueryData<ThreadSnapshotResponse>(
+      threadQueryKeys.snapshot(threadId),
+    )?.thread.workId;
+    const before =
+      transition.previousWorkId !== null
+        ? transition.previousWorkId
+        : snapshotWorkId === undefined
+          ? workId
+          : snapshotWorkId;
+    if (before === workId) return;
+    patchSnapshot(client, threadId, workId);
+    const ids = new Set([transition.previousWorkId, workId].filter(Boolean) as string[]);
     invalidateThreadProjectionDependencies(client, {
       threadId,
       projectId,
       refreshLists: false,
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
-      // Runs on every mount: the snapshot already carries the Work (`patchSnapshot`), and its
-      // reads belong to the thread sync alone.
+      // The snapshot already carries the Work (`patchSnapshot`), and its reads belong to the
+      // thread sync alone.
       skipSnapshot: true,
     });
     convergeWorkProjection(client, { kind: "binding", projectId });
@@ -206,26 +216,21 @@ export async function readStableThreadWorkBinding(
     if (accountSignal?.aborted) throw new ThreadWorkOutcomeUnconfirmedError(accountSignal.reason);
     const before = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
     try {
-      await Promise.all([
-        client.cancelQueries({ queryKey: projectQueryKeys.threads(input.projectId), exact: true }),
-      ]);
+      await client.cancelQueries({
+        queryKey: projectQueryKeys.threads(input.projectId),
+        exact: true,
+      });
+      // Both reads land in their caches, so the common unchanged case leaves them fresh.
       const [threads, catalog] = await Promise.all([
-        listProjectThreads(input.projectId, { signal: accountSignal }),
+        client.fetchQuery({ ...projectThreadsQueryOptions(client, input.projectId), staleTime: 0 }),
         refreshWorksSnapshot(client, input.projectId),
       ]);
       if (accountSignal?.aborted) throw accountSignal.reason;
       const after = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       if (before !== after) continue;
-      convergeThreadWorkBinding(
-        client,
-        { source: "reconciled", ...input, threads, catalog },
-        accountSignal,
-      );
-      return {
-        threads,
-        catalog,
-        workId: threads.find(({ id }) => id === input.threadId)?.workId ?? null,
-      };
+      const workId = threads.find(({ id }) => id === input.threadId)?.workId ?? null;
+      convergeThreadWorkBinding(client, { source: "reconciled", ...input, workId }, accountSignal);
+      return { threads, catalog, workId };
     } catch (cause) {
       throw new ThreadWorkOutcomeUnconfirmedError(cause);
     }

@@ -24,7 +24,7 @@ export function SubagentPathRow({
   return (
     <nav
       aria-label={t`Subagent chat path`}
-      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-caption"
+      className="flex min-h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-xs"
     >
       <ol className="flex min-w-0 items-center gap-1 whitespace-nowrap">
         {ancestors.map((ancestor, index) => (
@@ -33,7 +33,7 @@ export function SubagentPathRow({
             <button
               type="button"
               onClick={() => onOpenParent(ancestor.id)}
-              className="focus-ring inline-flex max-w-44 items-center gap-1 rounded px-1 py-1 text-muted-foreground hover:text-foreground"
+              className="focus-ring inline-flex max-w-44 items-center gap-1 rounded-sm px-1 py-1 text-muted-foreground hover:text-foreground"
             >
               {index === 0 ? <ChevronLeft className="size-3.5 shrink-0" aria-hidden /> : null}
               <span className="truncate">

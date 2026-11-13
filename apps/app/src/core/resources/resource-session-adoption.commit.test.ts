@@ -133,7 +133,7 @@ const connectedTransport: DocumentSessionTransportFactory = () => ({
 
 async function seam(
   seed: "owed" | "reserved" | "committed" = "owed",
-  transportFactory?: DocumentSessionTransportFactory,
+  transportFactory: DocumentSessionTransportFactory = connectedTransport,
 ) {
   const accountId = `adoption-commit-${++sequence}`;
   const metadata = new IndexedDbResourceMetadata(accountId, vi.fn());
@@ -477,6 +477,7 @@ async function fixture() {
         },
         persistenceGeneration: input.admission,
         exactDatabaseName: databaseName,
+        setHosted: () => undefined,
         release,
       });
       return {

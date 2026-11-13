@@ -1,162 +1,89 @@
 /**
  * ProjectView — the controlled project workspace shell.
  *
- * Renders the desktop project path (surface layout grid + per-screen pane
- * controller + persistent chat surface) for the active screen. The readable
- * project route owns all navigation state; this shell distributes route-owned
- * props to focused pane controllers and calls route handlers in response to
- * user actions. Chat commands (open, new, index) are not threaded as props —
- * leaves read them from `useChatNavigation()`, the one place that owns them.
- *
- * The persistent left sidebar owns project file navigation. The Context
- * destination keeps the tab strip and editor/viewer body only.
+ * The readable project route owns all navigation state. This view resolves what main shows from
+ * the address (`useMainDocument`, one resolver for both shells), provides it (`useMainItem`), and
+ * chooses the shell: the desktop's three slots (`DesktopProject`) or the phone's one view. Chat
+ * commands are not threaded as props: leaves read them from `useChatNavigation()`.
  */
 
-import { t } from "@lingui/core/macro";
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
+import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
-import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameProject } from "@/client/query/useRenameProject";
-import { type AddressableWork, useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
-  patchAccountRecentsFromTabs,
+  patchAccountRecentsFromDocuments,
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { editorHasReview, useContextTabs, useContextTabsStore } from "@/client/stores";
-import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
+import type { OpenDocument } from "@/client/stores";
 import {
   readRecentRoutes,
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
-import { PaintScope } from "@/components/app/PaintHold";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
-import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
-import {
-  DraftReviewBoundary,
-  type DraftReviewContextValue,
-  PresentedReviewScope,
-  useDraftReviewScopeValue,
-} from "@/features/draft-review/DraftReviewProvider";
-import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import {
-  type DraftReviewStateOwner,
-  useDraftReviewStateOwner,
-} from "@/features/draft-review/useDraftReviewController";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
-  WorkBranchCommandsBoundary,
 } from "@/features/draft-review/useWorkBranchCommands";
 import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { ChatIndexController } from "./ChatIndexController";
-import { ChatPaneController } from "./ChatPaneController";
-import { ContextViewerSurfaceController } from "./ContextPaneController";
-import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
   useContextRemovalCoordinator,
   useDraftCommandOwner,
+  useOptionalDraftOnlyPresentations,
+  useOptionalPresentedDocuments,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
-import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
-import { resolveEditorFrame } from "./context/editor-presentation";
 import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
-import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
-import {
-  DesktopProjectPresentationProvider,
-  useDesktopProjectController,
-} from "./DesktopProjectController";
-import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
-import { useDockDocument, useDockDocumentStore } from "./dock/dock-document-store";
-import {
-  type AiDraftLaunchTarget,
-  EditorReviewHandoffProvider,
-  EditorReviewIntentClaimant,
-  useOpenEditorReview,
-} from "./dock/editor-review-handoff";
-import { useDockDocumentRestoration } from "./dock/restore-dock-document";
-import { EditorWorkRecovery } from "./EditorWorkRecovery";
-import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
-import {
-  type SlotGridSurface,
-  SURFACE_WIDTH_BOUNDS,
-  type SurfaceId,
-  useProjectLayout,
-  useProjectSurfacePrefsActions,
-  useProjectSurfacePrefsStore,
-} from "./layout";
+import { useContextRemovalProject } from "./context/use-context-removal-project";
+import { useFollowOpenDocumentPlacement } from "./context/use-follow-open-document-placement";
+import { DesktopProject } from "./DesktopProject";
+import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentReview";
+import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
-import {
-  addressStateOf,
-  type MobileDocumentRoute,
-  useMobileDocumentRoute,
-} from "./mobile/mobile-document-route";
-import {
-  PresentedDocumentContext,
-  type ReviewAddressAdmission,
-  resolvePresentedDocument,
-} from "./presented-document";
-import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
-import {
-  type ChatDisplay,
-  chatSurfaceThreadId,
-  displayedChatThreadId,
-  useChatNavigation,
-  useDockReveal,
-} from "./routing/chat-navigation";
+import { ReviewLaunchProvider } from "./review-launch";
+import type { ChatDisplay } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import {
-  ProjectRouteBoundary,
-  type ProjectRouteIssue,
-  type ProjectRouteMask,
-} from "./routing/ProjectRouteBoundary";
-import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
-import { routeWorkId } from "./routing/project-route";
-import { ContextSidebar } from "./shell/ContextSidebar";
+import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
+import type { LocalDocument } from "./routing/project-local-selection";
+import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
-import { LeftSidebar } from "./shell/LeftSidebar";
-import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
-import { ProjectShell } from "./shell/ProjectShell";
-import type { ScreenKey } from "./shell/screens";
-import { useContextProjectAuthority } from "./use-context-project-authority";
-import { WorkPaneController } from "./WorkPaneController";
-
-/** Minimum width (px) the main content column may shrink to on desktop. */
-const MAIN_MIN_WIDTH = 360;
-const COMPACT_DESKTOP_QUERY = "(max-width: 899px)";
-const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
+import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
+import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
+import type { MainForSide } from "./side/side-item";
+import { useMainArrival } from "./use-main-arrival";
+import { useReviewAddressSync } from "./use-review-address-sync";
+import type { ReviewAddressAdmission } from "./use-review-admission";
+import { useWorkScopeState, type WorkScope } from "./use-work-scope";
+import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
+import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
 function availabilityWatchRecord(
-  value: Pick<Exclude<ContextTab, { kind: "new" }>, "documentId" | "scheme"> & {
+  value: Pick<Exclude<OpenDocument, { kind: "new" }>, "documentId" | "scheme"> & {
     workId?: string | null;
   },
 ): AvailabilityWatchRecord {
@@ -170,16 +97,11 @@ export type ProjectViewProps = {
   projectId: string;
   /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
-  /** Resolved screen key from the route (defaults to Chat). */
-  activeScreen: ScreenKey;
-  /** What the Chat screen or the dock currently shows for chat. */
-  chatDisplay: ChatDisplay;
-  /** Explicit route Work state; loading/error never collapses into absence. */
-  routeWork: RouteWorkResolution;
-  /** Validated browser-local Work offered as the collection's return destination. */
-  rememberedWork: AddressableWork | null;
-  editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
+  /** The chat main shows; null when main holds no chat. */
+  chatDisplay: ChatDisplay | null;
   activeLocalDocumentId?: string;
+  /** The untitled document the history entry names, as the replica holds it. */
+  activeLocalDocument?: LocalDocument;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
@@ -190,16 +112,15 @@ export type ProjectViewProps = {
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
-  onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
   /** Browser route adapter for atomic removal repairs. */
-  contextRemovalRoute: ContextRemovalRoutePort;
-  /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
+  contextRemovalRoute: Omit<ContextRemovalRoutePort, "goBack">;
+  /** Main's document scheme, when the address names a document. */
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** Active context folder, when `screen=context`. */
-  activeContextFolder: string | null;
-  /** Active context file path, when `screen=context`. */
+  /** A Work's Scratch route: its owning Work. Null for every other document. */
+  activeContextWork: string | null;
+  /** Main's document path, when the address names a document. */
   activeContextPath: string | null;
   /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
@@ -207,30 +128,28 @@ export type ProjectViewProps = {
   reviewItemKey?: string;
   /** Whose draft the address's item reviews (`addressReviewOwner`). */
   reviewOwner?: string | null;
+  /** The owner the address itself names (a Scratch document's or a draft's), if any. */
+  reviewAddressOwner?: string;
   /** The document that item names. */
   reviewDocumentId?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
+  /**
+   * The document the answered address names: from its draft row when live lacks it (a page a
+   * draft created), else the server's answer.
+   */
+  addressedDocument?: AddressedDocument;
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
   reviewAddressAdmission?: ReviewAddressAdmission;
-  onSelectScreen: (screen: ScreenKey) => void;
-  onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
-  onExitContextScheme: () => void;
-  onSelectContextFolder: (folder: string) => void;
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string) => void;
+  onSetEditorReviewItemKey: (review: DraftPin | null) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
-  const syncDockOccupantScope = useDockDocumentStore((state) => state.syncOccupantScope);
-  useLayoutEffect(() => {
-    const workId = props.activeScreen === "work" ? routeWorkId(props.routeWork) : null;
-    syncDockOccupantScope(props.projectId, props.activeScreen, workId);
-  }, [props.projectId, props.activeScreen, props.routeWork, syncDockOccupantScope]);
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
@@ -238,6 +157,7 @@ export function ProjectView(props: ProjectViewProps) {
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
+  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   const repairColdWork = useCallback(
     (workId: string) => {
       void availability.coldScopeHint(props.projectId, workId);
@@ -245,26 +165,25 @@ export function ProjectView(props: ProjectViewProps) {
     [availability, props.projectId],
   );
   useContextCatalogWake(props.projectId, repairColdWork);
-  // Both shells place the Editor's notice only on the Editor (Files) screen.
-  useRemovedNoticeLifetime(props.projectId, "editor", {
+  // The removed-documents notice sits in main's band; a navigation in main ends it.
+  useRemovedNoticeLifetime(props.projectId, {
     key: JSON.stringify([
-      props.activeScreen,
+      props.chatDisplay,
       props.activeContextScheme,
-      props.activeContextFolder,
       props.activeContextPath,
       props.activeLocalDocumentId,
     ]),
-    onScreen: props.activeScreen === "context",
-    showing: { scheme: props.activeContextScheme, path: props.activeContextPath },
+    onScreen: true,
   });
+  const presented = useOptionalPresentedDocuments();
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);
     const reportWatches = () => {
-      const slice = useContextTabsStore.getState().byProject[props.projectId];
+      const shown = presented?.documents(props.projectId) ?? [];
       lease.watch(
-        "server-tabs",
-        (slice?.tabs ?? [])
-          .filter((tab): tab is Exclude<ContextTab, { kind: "new" }> => tab.kind !== "new")
+        "presented",
+        shown
+          .filter((tab): tab is Exclude<OpenDocument, { kind: "new" }> => tab.kind !== "new")
           .map(availabilityWatchRecord),
       );
       const selection = removal.getProjectSnapshot(props.projectId).selection;
@@ -284,12 +203,14 @@ export function ProjectView(props: ProjectViewProps) {
         "recent-routes",
         readRecentRoutes(props.projectId).slice(0, 64).map(availabilityWatchRecord),
       );
-      const tabs = slice?.tabs ?? [];
-      patchAccountRecentsFromTabs(
+      patchAccountRecentsFromDocuments(
         accountId,
         props.projectId,
-        tabs.flatMap((tab) => {
-          const address = recentAddressFromTab(tab);
+        shown.flatMap((tab) => {
+          const address = recentAddressFromTab(
+            tab,
+            draftOnlyDocuments?.isDraftOnly(props.projectId, tab.documentId) ?? false,
+          );
           return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
@@ -308,18 +229,28 @@ export function ProjectView(props: ProjectViewProps) {
       );
     };
     reportWatches();
-    const stopTabs = useContextTabsStore.subscribe(reportWatches);
+    const stopPresented = presented?.subscribe(reportWatches);
     const stopSelection = removal.subscribe(props.projectId, reportWatches);
     const stopRecents = subscribeAccountRecents(reportWatches);
+    const stopDraftOnly = draftOnlyDocuments?.subscribe(reportWatches);
     const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
     return () => {
-      stopTabs();
+      stopPresented?.();
       stopSelection();
       stopRecents();
+      stopDraftOnly?.();
       stopWorksObservation();
       lease.release();
     };
-  }, [accountId, availability, props.projectId, queryClient, removal]);
+  }, [
+    accountId,
+    availability,
+    draftOnlyDocuments,
+    presented,
+    props.projectId,
+    queryClient,
+    removal,
+  ]);
   // A retry answers the entry plan it retried; new route data brings a new one.
   const [retriedHydration, setRetriedHydration] = useState<{
     entry: WorkingSetHydrationPlan;
@@ -327,33 +258,13 @@ export function ProjectView(props: ProjectViewProps) {
   } | null>(null);
   const workingSetHydration =
     retriedHydration?.entry === props.entryHydration ? retriedHydration.plan : props.entryHydration;
-  const { threads: projectThreads } = useProjectThreads(props.projectId);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
-  // The index shows nothing chat-scoped: the rail and the draft review scope
-  // both go to null there, even though the current chat stays warm behind it.
-  const displayedChatThread = displayedChatThreadId(props.chatDisplay);
-  const chatThread = projectThreads?.find((thread) => thread.id === displayedChatThread);
-  const chatWork = chatThread?.workId
-    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
-    : null;
-  const chatWorkId = chatWork?.id ?? null;
-  const chatOwner = chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null);
-  const editorRouteWork = props.editorRouteWork;
-  const editorScope = resolveEditorWorkScope(editorRouteWork);
-  const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
-  const editorWork = editorRouteWork.status === "present" ? editorRouteWork.work : null;
-  useLayoutEffect(() => {
-    props.onDisplayedSelection?.({ editorWorkId });
-  }, [props.onDisplayedSelection, editorWorkId]);
-  const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
-  useDockDocumentRestoration(props.projectId, workspaceHydrated);
-
-  const contextPhase = useContextProjectAuthority({
-    projectId: props.projectId,
-    workspaceHydrated,
-    editorScope,
-  });
+  const editorScope = useWorkScopeState(props.projectId);
+  const editorWorkId = editorScope.workId;
+  const editorWork =
+    (editorWorkId === noWork?.id ? noWork : works?.find((work) => work.id === editorWorkId)) ??
+    null;
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const entry = props.entryHydration;
@@ -370,61 +281,57 @@ export function ProjectView(props: ProjectViewProps) {
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
-  const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
-  const hydrated = prefsHydrated && workspaceHydrated;
+  const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
       if (editorScope.status !== "ready" || !scheme) return;
-      void props.onOpenContextTarget({ path, scheme, workId: editorScope.workId }, options);
+      void props.onOpenContextTarget(contextRouteRequest({ path, scheme }), options);
     },
     [editorWorkId, editorScope.status, props.onOpenContextTarget],
   );
   const resolvedProps = {
     ...props,
     onSelectContextPath: onSelectEditorContextPath,
-    chatWork,
-    chatOwner,
-    chatWorkId,
-    // The review scope's thread: the displayed chat, null on the index.
-    chatThreadId: displayedChatThread,
     availableWorks: works ?? [],
     editorScope,
     editorWorkId,
     editorWork,
-    retryEditorWork: worksQuery.refetch,
-    contextLive: contextPhase.status === "live" && editorScope.status === "ready",
+    contextLive: editorScope.status === "ready",
   };
   return (
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
-      <RefusalToasts projectId={props.projectId} />
-      <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-        <DocumentTrashDialog projectId={props.projectId} />
-        {hydrated ? (
-          <>
-            {resolvedProps.contextLive && editorScope.status === "ready" ? (
-              <ProjectContextRemovalController
-                projectId={props.projectId}
-                activeScreen={props.activeScreen}
-                activeContextScheme={props.activeContextScheme}
-                activeContextPath={props.activeContextPath}
-                activeContextChat={props.activeContextChat}
-                editorWorkId={editorScope.workId}
-                localDocumentId={props.activeLocalDocumentId}
-                reviewDocumentId={props.reviewDocumentId}
-                route={props.contextRemovalRoute}
-              />
+      <ChatDeleteProvider key={props.projectId} projectId={props.projectId}>
+        <ManageWorksProvider>
+          <RefusalToasts projectId={props.projectId} />
+          <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+            {hydrated ? (
+              <>
+                {resolvedProps.contextLive && editorScope.status === "ready" ? (
+                  <ProjectContextRemovalController
+                    projectId={props.projectId}
+                    activeContextScheme={props.activeContextScheme}
+                    activeContextPath={props.activeContextPath}
+                    activeContextChat={props.activeContextChat}
+                    editorWorkId={editorScope.workId}
+                    activeContextWork={props.activeContextWork}
+                    localDocumentId={props.activeLocalDocumentId}
+                    reviewDocumentId={props.reviewDocumentId}
+                    route={props.contextRemovalRoute}
+                  />
+                ) : null}
+                <ImportProvider key={props.projectId} projectId={props.projectId}>
+                  <WindowDropGuard />
+                  <HydratedReviewProject
+                    {...resolvedProps}
+                    projectTitle={projectTitle}
+                    titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+                  />
+                </ImportProvider>
+              </>
             ) : null}
-            <ImportProvider key={props.projectId} projectId={props.projectId}>
-              <WindowDropGuard />
-              <HydratedReviewProject
-                {...resolvedProps}
-                projectTitle={projectTitle}
-                titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-              />
-            </ImportProvider>
-          </>
-        ) : null}
-      </div>
+          </div>
+        </ManageWorksProvider>
+      </ChatDeleteProvider>
     </DocumentTrashRestoreProvider>
   );
 }
@@ -435,18 +342,11 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
-  chatWork: Work | null;
-  /** The draft review scope's Work: the displayed chat's Work, null on the index. */
-  chatOwner: string;
-  chatWorkId: string | null;
-  /** The draft review scope's thread: the displayed chat, null on the index. */
-  chatThreadId: string | null;
   availableWorks: readonly Work[];
-  editorScope: EditorWorkScope;
+  editorScope: WorkScope;
   editorWorkId: string | null;
   /** The Editor's Work, when the route names one the project has. */
   editorWork: Work | null;
-  retryEditorWork: () => void;
   contextLive: boolean;
 };
 
@@ -454,558 +354,223 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
+    /** The chat on screen's Work (main's chat, or the side's beside a document). */
+    chatWork: Work | null;
     chatCommands: WorkBranchCommands;
-    presentedReview: DraftReviewContextValue;
-    mobileDocumentRoute: MobileDocumentRoute;
+    /** Main keeps its previous document painted while the new address loads. */
     retainEditorWhileLoading?: boolean;
   };
 
-type MobileEditorPresentation = Pick<
+function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
+  return (
+    <ReviewLaunchProvider projectId={props.projectId} openContextRoute={props.onOpenContextTarget}>
+      <HydratedReviewScopes {...props} />
+      <ManageWorksDialogHost projectId={props.projectId} />
+      {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+      <DragHint />
+    </ReviewLaunchProvider>
+  );
+}
+
+type MainPresentation = Pick<
   ResolvedProjectViewProps,
   | "activeContextScheme"
   | "activeContextPath"
   | "activeContextChat"
-  | "activeContextFolder"
   | "activeLocalDocumentId"
-> & { mobileDocumentRoute: MobileDocumentRoute };
+  | "activeLocalDocument"
+> & { main: MainView };
 
-function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const { openChat } = useChatNavigation();
-  return (
-    <ChatThreadNavigationProvider onOpenThread={openChat}>
-      <EditorReviewHandoffProvider
-        projectId={props.projectId}
-        openContextRoute={props.onOpenContextTarget}
-      >
-        <HydratedReviewScopes {...props} />
-        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
-        <DragHint />
-      </EditorReviewHandoffProvider>
-    </ChatThreadNavigationProvider>
-  );
-}
-
+/** Resolves main's document from the address, and keeps the last one painted while one loads. */
 function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const presentedReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
-  const requestedMobileDocumentRoute = useMobileDocumentRoute({
-    enabled:
-      usePhone === true &&
-      props.activeScreen === "context" &&
-      props.contextLive &&
-      props.editorScope.status === "ready",
+  const onDocument = props.chatDisplay === null;
+  const document = useMainDocument({
+    enabled: onDocument && props.contextLive,
     projectId: props.projectId,
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
-    workId: props.editorWorkId,
+    workId: props.activeContextWork,
     rootThreadId: props.activeContextChat,
+    local: props.activeLocalDocument ?? null,
+    addressed: props.addressedDocument,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
-  const priorMobile = useRef<{
+  const requestedMain = useMemo<MainView>(
+    () => ({
+      item: props.chatDisplay
+        ? props.chatDisplay.kind === "thread"
+          ? { kind: "chat", chatId: props.chatDisplay.threadId }
+          : null
+        : document.document
+          ? { kind: "document", documentId: document.document.documentId }
+          : null,
+      document,
+    }),
+    [props.chatDisplay, document],
+  );
+  const prior = useRef<{
     projectId: string;
     workId: string | null;
-    presentation: MobileEditorPresentation;
+    presentation: MainPresentation;
   } | null>(null);
   const retainEditorWhileLoading =
-    usePhone === true &&
-    props.activeScreen === "context" &&
+    onDocument &&
     props.editorScope.status === "ready" &&
     props.routeIssues?.editor === "loading" &&
-    priorMobile.current?.projectId === props.projectId &&
-    priorMobile.current.workId === props.editorWorkId;
-  const retainedPresentation = retainEditorWhileLoading ? priorMobile.current?.presentation : null;
-  const displayedProps = retainedPresentation ? { ...props, ...retainedPresentation } : props;
-  const mobileDocumentRoute =
-    retainedPresentation?.mobileDocumentRoute ?? requestedMobileDocumentRoute;
+    prior.current?.projectId === props.projectId &&
+    prior.current.workId === props.activeContextWork;
+  const retained = retainEditorWhileLoading ? prior.current?.presentation : null;
+  const displayedProps = retained ? { ...props, ...retained } : props;
+  const main = retained?.main ?? requestedMain;
   useLayoutEffect(() => {
     if (
-      usePhone === true &&
-      props.activeScreen === "context" &&
+      onDocument &&
       props.editorScope.status === "ready" &&
       !props.routeIssues?.editor &&
-      (props.activeContextPath || props.activeLocalDocumentId)
+      requestedMain.document.document
     ) {
-      priorMobile.current = {
+      prior.current = {
         projectId: props.projectId,
-        workId: props.editorWorkId,
+        workId: props.activeContextWork,
         presentation: {
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
           activeContextChat: props.activeContextChat,
-          activeContextFolder: props.activeContextFolder,
           activeLocalDocumentId: props.activeLocalDocumentId,
-          mobileDocumentRoute: requestedMobileDocumentRoute,
+          activeLocalDocument: props.activeLocalDocument,
+          main: requestedMain,
         },
       };
     } else if (!retainEditorWhileLoading) {
-      priorMobile.current = null;
+      prior.current = null;
     }
+  });
+  const accountId = useAccountId();
+  const arrived =
+    onDocument && props.contextLive && !props.routeIssues?.main && !props.routeIssues?.editor
+      ? requestedMain.document.document
+      : null;
+  const mainForSide: MainForSide = props.chatDisplay
+    ? props.chatDisplay.kind === "thread"
+      ? { kind: "chat", chatId: props.chatDisplay.threadId }
+      : props.chatDisplay.kind === "chat-recents"
+        ? { kind: "chat-recents" }
+        : { kind: "new-chat" }
+    : main.item?.kind === "document"
+      ? { kind: "document", documentId: main.item.documentId }
+      : main.document.requested && (props.routeIssues?.editor === "loading" || !props.contextLive)
+        ? { kind: "opening" }
+        : { kind: "landing" };
+  useMainArrival({
+    accountId,
+    projectId: props.projectId,
+    main: mainForSide,
+    document: arrived,
+    locationKey: props.routeLocationKey,
   });
   if (usePhone === null) return null;
   return (
-    <HydratedReviewControllers
-      {...displayedProps}
-      retainEditorWhileLoading={retainEditorWhileLoading}
-      presentedReviewState={presentedReviewState}
-      mobileDocumentRoute={mobileDocumentRoute}
-      usePhone={usePhone}
-    />
+    <MainViewProvider value={main}>
+      <SideViewProvider projectId={props.projectId} main={mainForSide}>
+        <HydratedReviewControllers
+          {...displayedProps}
+          retainEditorWhileLoading={retainEditorWhileLoading}
+          usePhone={usePhone}
+        />
+      </SideViewProvider>
+    </MainViewProvider>
   );
 }
 
 function HydratedReviewControllers({
-  presentedReviewState,
   usePhone,
-  mobileDocumentRoute,
   ...props
 }: ResolvedProjectViewProps & {
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  presentedReviewState: DraftReviewStateOwner;
   usePhone: boolean;
-  mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
 }) {
+  // Under None the draft scope is the chat on screen: beside a document, the side's chat.
+  const chatThreadId = useChatOnScreen();
+  // Every chat door and reveal opens through the one placement command.
+  const openThread = usePlaceChat();
+  useConversationRevealRouting(openThread);
+  const { threads: projectThreads } = useProjectThreads(props.projectId);
+  const { works, noWork } = useWorks(props.projectId);
+  const chatThread = projectThreads?.find((thread) => thread.id === chatThreadId);
+  const chatWork = chatThread?.workId
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
+    : null;
   const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
-    work: props.chatWork,
-    ownerKey: props.chatOwner,
-    threadId: props.chatThreadId,
+    work: chatWork,
+    ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
+    threadId: chatThreadId,
+    surface: "strip",
   });
-  const dock = useDockDocument(props.activeScreen, props.projectId);
-  const workspace = useContextTabs(props.projectId);
-  const presented = resolvePresentedDocument({
-    phone: usePhone,
-    screen: props.activeScreen,
-    dock,
-    editor: {
-      reviewOwner: props.reviewOwner ?? null,
-      scheme: props.activeContextScheme,
-      path: props.activeContextPath,
-      documentId: props.reviewAddressDocumentId,
+  const accountId = useAccountId();
+  const draftOnly = useOptionalDraftOnlyPresentations();
+  // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
+  const { notices } = useDraftCommandOwner();
+  useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
+  // A Work pick returns every document showing a draft to Live. A draft-only page has no Live
+  // version: it keeps its draft.
+  const scopeWorkId = props.editorWorkId;
+  const priorScope = useRef(scopeWorkId);
+  useEffect(() => {
+    if (priorScope.current === scopeWorkId) return;
+    if (priorScope.current !== null)
+      returnDraftsToLive(
+        accountId,
+        props.projectId,
+        (documentId) => draftOnly?.isDraftOnly(props.projectId, documentId) ?? false,
+      );
+    priorScope.current = scopeWorkId;
+  }, [accountId, draftOnly, props.projectId, scopeWorkId]);
+  const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
+  useReviewAddressSync({
+    projectId: props.projectId,
+    locationKey: props.routeLocationKey,
+    reviewOwner: props.reviewOwner ?? null,
+    address: {
+      owner: props.reviewAddressOwner,
       itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
-      draftOnly: workspace.tabs.some(
-        (tab) =>
-          tab.documentId === props.reviewAddressDocumentId &&
-          editorHasReview(tab, props.editorWorkId),
-      ),
+      documentId: main,
+      admission: props.reviewAddressAdmission,
     },
+    writeItemKey: props.onSetEditorReviewItemKey,
   });
-  const { works, noWork } = useWorks(props.projectId);
-  const reviewOwner =
-    presented?.review?.ownerKey ??
-    workOwnerKey(props.editorWorkId ? { id: props.editorWorkId } : null);
-  // A lineage's drafts carry no Work: its review reads the Editor's own Work for archive state.
-  const reviewWorkId = workIdOfDraftOwnerKey(reviewOwner) ?? props.editorWorkId;
-  const reviewWork =
-    reviewWorkId === props.editorWork?.id
-      ? props.editorWork
-      : reviewWorkId === noWork?.id
-        ? noWork
-        : (works?.find((work) => work.id === reviewWorkId) ?? null);
-  const presentedReview = useDraftReviewScopeValue({
-    projectId: props.projectId,
-    work: reviewWork,
-    ownerKey: reviewOwner,
-    stateOwner: presentedReviewState,
-    threadId: null,
-  });
-  const openEditorReview = useOpenEditorReview();
-  const draftCommands = useDraftCommandOwner();
-  const queryClient = useQueryClient();
-  const addressedItemKey = presented?.review?.itemKey ?? "";
-  const generation = () => draftCommands.generation(addressedItemKey);
-  const hidden = () => draftCommands.state(addressedItemKey).hidden;
-  // A new generation of the addressed item is a new port: the owner retries what it refused.
-  // So is the end of a command that hid it: a refused Discard leaves the draft pending.
-  const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
-  const addressedHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
-  const port = useMemo<ReviewAddressPort>(() => {
-    // A hidden draft (a Discard in flight) or a closed one (Discard, here or on another
-    // device) has already ended its review: the room owner exits it. The address keeps naming
-    // it until settlement closes the presentation, and admitting it again would re-open what
-    // the room owner just closed, every render. The address names an item, not a draft: the
-    // server decides whether a newer draft replaced the closed one.
-    const open =
-      (admit: (target: AiDraftLaunchTarget) => unknown): ReviewAddressPort["admit"] =>
-      async (target) => {
-        if (draftCommands.state(target.itemKey).hidden) return false;
-        if (draftCommands.state(target.itemKey).closed) {
-          const ref = {
-            projectId: props.projectId,
-            ownerKey: target.ownerKey,
-            documentId: target.documentId,
-            itemKey: target.itemKey,
-          };
-          const current = await draftCommands.reconcileClosed(ref, () =>
-            fetchCurrentDraftMetadata(queryClient, ref),
-          );
-          if (!current) return false;
-        }
-        await admit(target);
-        return true;
-      };
-    return props.activeScreen !== "context"
-      ? {
-          write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
-          admit: open((target) =>
-            presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
-          ),
-        }
-      : {
-          write: (review) =>
-            props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
-          admit: open(openEditorReview),
-        };
-  }, [
-    props.activeScreen,
-    props.projectId,
-    presentedReview.controller.enterInlineReview,
-    props.onSetEditorReviewItemKey,
-    openEditorReview,
-    draftCommands,
-    queryClient,
-    addressedGeneration,
-    addressedHidden,
-  ]);
-  const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
-  return (
-    <PresentedDocumentContext.Provider value={presented}>
-      <PresentedReviewScope value={presentedReview}>
-        <DraftOnlySettlement
-          projectId={props.projectId}
-          editorOwnerKey={workOwnerKey(props.editorWorkId ? { id: props.editorWorkId } : null)}
-        />
-        <ReviewAddressOwner
-          review={presentedReview}
-          presented={presented}
-          admission={
-            presented?.container === "dock"
-              ? (dock?.reviewAdmission ?? "admitted")
-              : (props.reviewAddressAdmission ?? "pending")
-          }
-          port={port}
-        />
-        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-      </PresentedReviewScope>
-    </PresentedDocumentContext.Provider>
+  const mainAddress = useMemo<MainReviewAddress>(
+    () => ({
+      documentId: main,
+      itemKey: props.reviewItemKey,
+      admission: props.reviewAddressAdmission,
+    }),
+    [main, props.reviewItemKey, props.reviewAddressAdmission],
   );
-}
-
-/** A PaneHeader expand control derived from a stable surface id. */
-function expandToggle(
-  surfaceId: SurfaceId,
-  open: boolean,
-  onSetCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,
-  label: string,
-): PaneHeaderRailToggle {
-  return { open, onExpand: () => onSetCollapsed(surfaceId, false), label };
-}
-
-/** Desktop layout for every destination. */
-export function DesktopProject(props: ReviewScopedProjectProps) {
-  const screenSwitch = useDesktopProjectController({
+  const { selection } = useContextRemovalProject(props.projectId);
+  useFollowOpenDocumentPlacement({
     projectId: props.projectId,
-    current:
-      props.editorScope.status === "ready"
-        ? {
-            activeContextScheme: props.activeContextScheme,
-            activeContextPath: props.activeContextPath,
-            activeContextChat: props.activeContextChat,
-            activeLocalDocumentId: props.activeLocalDocumentId,
-            editorWorkId: props.editorScope.workId,
-            localDocumentId: props.activeLocalDocumentId,
-          }
-        : null,
-    requestedWorkId: props.editorWorkId,
-    screen: props.activeScreen,
-    contextLive: props.contextLive,
-    issue: props.routeIssues?.editor,
+    editorWorkId: props.editorWorkId,
+    activeContextWork: props.activeContextWork,
+    selection,
+    activeContextScheme: props.activeContextScheme,
+    activeContextPath: props.activeContextPath,
+    activeContextChat: props.activeContextChat,
+    onOpenContextTarget: props.onOpenContextTarget,
   });
-  const { editorPresentation } = screenSwitch;
-  const { active: editorActive, mounted: mountedEditor } = editorPresentation;
-  // The Editor's navigation frame names where the writer is going; only the document body
-  // keeps the previous destination beneath the mask (see `resolveEditorFrame`).
-  const frameEditorRoute = resolveEditorFrame({
-    screen: props.activeScreen,
-    requested: {
-      editorWorkId: props.editorWorkId,
-      activeContextScheme: props.activeContextScheme,
-      activeContextPath: props.activeContextPath,
-      activeContextChat: props.activeContextChat,
-      localDocumentId: props.activeLocalDocumentId,
-    },
-    mounted: mountedEditor
-      ? {
-          editorWorkId: mountedEditor.editorWorkId,
-          activeContextScheme: mountedEditor.activeContextScheme,
-          activeContextPath: mountedEditor.activeContextPath,
-          activeContextChat: mountedEditor.activeContextChat,
-          localDocumentId: mountedEditor.activeLocalDocumentId,
-        }
-      : null,
-  });
-  const editorMask: ProjectRouteMask = {
-    destinationKey: props.routeLocationKey,
-    issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
-    removed: props.routeIssues?.removed,
-    onRetry: props.onRetryEditorRoute,
-    retainWhileLoading: editorPresentation.retainWhileLoading,
-    recovery:
-      props.editorScope.status !== "ready" ? (
-        <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
-      ) : undefined,
-  };
-
-  // Inline review on the Editor screen holds the left rail collapsed to give
-  // the manuscript prose width. The hold is derived from review being open and
-  // never written to prefs, so the writer's saved rail state returns by itself.
-  const proseFocus = useReviewProseFocus(props.activeScreen, props.presentedReview);
-  // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
-  // merged SurfaceLayoutMap; that single subscription drives all layout-driven
-  // re-renders — no separate whole-prefs subscription is needed.
-  const layout = useProjectLayout(props.activeScreen, proseFocus.collapsedSlots);
-
-  const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
-    useProjectSurfacePrefsActions();
-  useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
-  const clearDocumentOn = useDockDocumentStore((state) => state.clearDocumentOn);
-
-  useDockReveal((view) => {
-    setDockCollapsed(false);
-    if (view === "chat") clearDocumentOn(props.activeScreen);
-  });
-
-  const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
-  // The dock's notice sits beside "Recent", on screen only while Chat's rail shows.
-  useRemovedNoticeLifetime(props.projectId, "dock", {
-    key: JSON.stringify([props.activeScreen, screenSwitch.dockDocument?.tab.documentId ?? null]),
-    onScreen: props.activeScreen === "chat" && isOpen("context-rail") && !screenSwitch.dockDocument,
-    showing: screenSwitch.dockDocument?.tab.documentId ?? null,
-  });
-  // The single writer-driven collapse entry. Calls targeting a surface that is
-  // currently the dock occupant drive the shared dock pref instead of the
-  // surface's own pref — the dock reads as one persistent sidebar across
-  // screens. An explicit expand also releases review's hold on the rail, so
-  // the control can never write a pref that changes nothing on screen.
-  const setCollapsedFor = (surfaceId: SurfaceId, collapsed: boolean) => {
-    if (layout[surfaceId].slot === "dock") {
-      setDockCollapsed(collapsed);
-      return;
-    }
-    if (!collapsed) proseFocus.release();
-    setSurfaceCollapsed(surfaceId, collapsed);
-  };
-  const close = (surfaceId: SurfaceId) => () => {
-    setCollapsedFor(surfaceId, true);
-  };
-  const surfaceToggle = (surfaceId: SurfaceId, label: string) =>
-    expandToggle(surfaceId, isOpen(surfaceId), setCollapsedFor, label);
-
-  const screen = props.activeScreen;
-  // The chat is mounted ONCE as a direct child of the project grid, so it
-  // never remounts when the destination changes (no reload of the live
-  // conversation). It moves center↔dock by changing its wrapper grid-area.
-  const chatPlacement: ChatPlacement = screen === "chat" ? "center" : "dock";
-  const chatIndexShowing = chatPlacement === "center" && props.chatDisplay.kind === "index";
-  // Warm behind the index too: the persistent surface always tracks the
-  // display's underlying thread, not just what is on screen right now.
-  const chatSurfaceThread = chatSurfaceThreadId(props.chatDisplay);
-
-  const stableSurfaces: SlotGridSurface[] = [
-    {
-      id: "threads",
-      children: (
-        <LeftSidebar
-          projectId={props.projectId}
-          projectTitle={props.projectTitle}
-          titleEdit={props.titleEdit}
-          activeScreen={props.activeScreen}
-          editorWorkId={props.editorWorkId}
-          chatThreadId={displayedChatThreadId(props.chatDisplay)}
-          contextLive={props.contextLive}
-          activeContextScheme={props.activeContextScheme}
-          activeContextPath={props.activeContextPath}
-          onSelectScreen={screenSwitch.selectScreen}
-          onCollapse={close("threads")}
-        />
-      ),
-    },
-    {
-      id: "context-rail",
-      children: (
-        <WorkBranchCommandsBoundary value={props.chatCommands}>
-          <ContextSidebar
-            threadId={displayedChatThreadId(props.chatDisplay)}
-            projectId={props.projectId}
-            visible={isOpen("context-rail")}
-            onClose={close("context-rail")}
-          />
-        </WorkBranchCommandsBoundary>
-      ),
-    },
-    {
-      id: "context-viewer",
-      children: frameEditorRoute ? (
-        <DraftReviewBoundary value={props.presentedReview}>
-          {editorActive && mountedEditor ? (
-            <EditorReviewIntentClaimant
-              editorWorkId={mountedEditor.editorWorkId}
-              activeScheme={props.activeContextScheme}
-            />
-          ) : null}
-          <PaintScope active={props.activeScreen === "context"}>
-            <ContextViewerSurfaceController
-              projectId={props.projectId}
-              {...frameEditorRoute}
-              mask={editorMask}
-              resolvedEditor={editorPresentation.resolved}
-              routeDisplayed={props.activeScreen === "context"}
-              active={editorActive}
-              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-              dockToggle={surfaceToggle("chat", t`Expand chat`)}
-              onSelectContextPath={props.onSelectContextPath}
-              onOpenContextTarget={props.onOpenContextTarget}
-              onShowEditorRecents={(options) => void props.routeCommands.showEditorRecents(options)}
-            />
-          </PaintScope>
-        </DraftReviewBoundary>
-      ) : null,
-    },
-    {
-      id: "chat",
-      children: (
-        // Centered, the chat surface owns the main column, so it carries the main issue.
-        <ProjectRouteBoundary
-          destinationKey={props.routeLocationKey}
-          issue={chatPlacement === "center" ? props.routeIssues?.main : undefined}
-        >
-          <div
-            className="flex min-h-0 flex-1 flex-col"
-            role={chatIndexShowing ? undefined : chatPlacement === "center" ? "main" : undefined}
-          >
-            {/* Stable keys pin chat-surface identity so toggling this header
-              controller never risks reconciling the live conversation subtree. */}
-            {chatPlacement === "center" && !chatIndexShowing ? (
-              <ChatPaneController
-                key="chat-pane-controller"
-                projectId={props.projectId}
-                threadId={chatSurfaceThread}
-                sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                contextToggle={surfaceToggle("context-rail", t`Expand context`)}
-              />
-            ) : null}
-            {/* This keyed surface remains the same mounted element when its slot
-              moves between center and dock; placement changes only its chrome.
-              Behind the index it keeps the current chat live, and with no
-              current chat there is nothing to keep. */}
-            {chatIndexShowing && chatSurfaceThread === null ? null : (
-              <div
-                className="min-h-0 flex-1 flex-col"
-                style={{ display: chatIndexShowing ? "none" : "flex" }}
-                inert={chatIndexShowing}
-                aria-hidden={chatIndexShowing}
-              >
-                <WorkBranchCommandsBoundary value={props.chatCommands}>
-                  <ChatSurface
-                    key="chat-surface"
-                    projectId={props.projectId}
-                    threadId={chatSurfaceThread}
-                    activeWork={props.chatWork}
-                    availableWorks={props.availableWorks}
-                    activeScreen={screen}
-                    placement={chatPlacement}
-                    // Mounted-but-hidden when the dock is collapsed, so the live
-                    // conversation survives a close/reopen.
-                    visible={!chatIndexShowing && (chatPlacement === "center" || isOpen("chat"))}
-                    onCloseDock={close("chat")}
-                    onOpenContextTarget={props.onOpenContextTarget}
-                  />
-                </WorkBranchCommandsBoundary>
-              </div>
-            )}
-            {chatIndexShowing ? (
-              <ChatIndexController
-                projectId={props.projectId}
-                sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                contextToggle={surfaceToggle("context-rail", t`Expand context`)}
-              />
-            ) : null}
-          </div>
-        </ProjectRouteBoundary>
-      ),
-    },
-  ];
-
+  const scopedProps = { ...props, chatWork, chatCommands };
   return (
-    <DesktopProjectPresentationProvider screen={screen} {...screenSwitch}>
-      <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-        <ChatDocumentsBesideProvider>
-          <ProjectShell
-            layout={layout}
-            surfaces={stableSurfaces}
-            onSetWidth={setSurfaceWidth}
-            onSetCollapsed={setCollapsedFor}
-            onSetDockWidth={setDockWidth}
-            onSetDockCollapsed={setDockCollapsed}
-            bounds={SURFACE_WIDTH_BOUNDS}
-            mainMinWidth={MAIN_MIN_WIDTH}
-          >
-            <ProjectRouteBoundary
-              issue={props.routeIssues?.main}
-              destinationKey={props.routeLocationKey}
-            >
-              {renderDesktopPane(props, surfaceToggle)}
-            </ProjectRouteBoundary>
-          </ProjectShell>
-        </ChatDocumentsBesideProvider>
-      </TreeCreationProvider>
-    </DesktopProjectPresentationProvider>
+    <ChatThreadNavigationProvider onOpenThread={openThread}>
+      <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
+        <DraftOnlySettlement projectId={props.projectId} />
+        <LiveTabsProvider projectId={props.projectId}>
+          {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+        </LiveTabsProvider>
+      </MainReviewAddressContext.Provider>
+    </ChatThreadNavigationProvider>
   );
-}
-
-type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderRailToggle;
-
-function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
-  switch (props.activeScreen) {
-    case "chat":
-      return null;
-    case "work":
-      return (
-        <WorkPaneController
-          projectId={props.projectId}
-          routeWork={props.routeWork}
-          rememberedWork={props.rememberedWork}
-          routeCommands={props.routeCommands}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          chatToggle={surfaceToggle("chat", t`Expand chat`)}
-        />
-      );
-    case "context":
-      // Context owns no destination header — the tab strip absorbs the
-      // sidebar/dock expand toggles. See `ContextViewer`.
-      return null;
-  }
-}
-
-function useCompactDesktopAutoCollapse(
-  setDockCollapsed: (collapsed: boolean) => void,
-  setSurfaceCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,
-) {
-  useEffect(() => {
-    const compact = window.matchMedia(COMPACT_DESKTOP_QUERY);
-    const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
-    const apply = () => {
-      if (compact.matches) setDockCollapsed(true);
-      if (narrow.matches) setSurfaceCollapsed("threads", true);
-    };
-    compact.addEventListener("change", apply);
-    narrow.addEventListener("change", apply);
-    apply();
-    return () => {
-      compact.removeEventListener("change", apply);
-      narrow.removeEventListener("change", apply);
-    };
-  }, [setDockCollapsed, setSurfaceCollapsed]);
 }

@@ -7,7 +7,8 @@ import {
 } from "@/components/app/composer/composer-document";
 import { browserRecord, isRecord, type StorageSource } from "./storage/browser-record";
 
-export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
+/** `side-new-chat`: the side's new chat, kept apart so a chip it attaches never reaches `/chats`. */
+export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 
 export type DeletedChatCard = { threadId: string; title: string | null; count: number };
 
@@ -26,7 +27,14 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   /** A New chat's thread id, minted before its first attach so its uploads and Send share it. */
   chatId?: string;
   parked?: ParkedDraft[];
+  about?: AttachedAbout;
 };
+
+/** A document chip the composer put in a new chat on its own: it may replace it, unlike the writer's. */
+export type AttachedAbout = { documentId: string; label: string };
+
+const isAttachedAbout = (value: unknown): value is AttachedAbout =>
+  isRecord(value) && typeof value.documentId === "string" && typeof value.label === "string";
 
 /** An unsent New-chat draft with its own uploads, set aside while a recovered chat takes the box. */
 type ParkedDraft = { chatId: string; draft: ComposerDraftSnapshot };
@@ -77,9 +85,23 @@ export class ComposerSessionDraft {
   chatId: string;
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
-  private chatField(): { chatId?: string; parked?: ParkedDraft[] } {
-    return this.mintsChat ? { chatId: this.chatId, parked: this.parked } : {};
+  private attached: AttachedAbout | null = null;
+  private chatField(): { chatId?: string; parked?: ParkedDraft[]; about?: AttachedAbout } {
+    if (!this.mintsChat) return {};
+    return {
+      chatId: this.chatId,
+      parked: this.parked,
+      ...(this.attached ? { about: this.attached } : {}),
+    };
   }
+
+  attachedAbout = (): AttachedAbout | null => this.attached;
+
+  /** Saved with the draft's next write, which the chip's own change schedules. */
+  setAttachedAbout = (about: AttachedAbout | null): void => {
+    this.attached = about;
+    this.dirty = true;
+  };
 
   /**
    * Bring a creation that never reached the server back as one unit: its chat id, its words and
@@ -314,6 +336,7 @@ export class ComposerSessionDraft {
               ...(Array.isArray(value.parked)
                 ? { parked: value.parked.filter(isParkedDraft) }
                 : {}),
+              ...(isAttachedAbout(value.about) ? { about: value.about } : {}),
             };
       },
     );
@@ -322,9 +345,10 @@ export class ComposerSessionDraft {
     this.received = new Set(saved?.received);
     this.notices = saved?.notices ?? [];
     this.handBacksPending = saved?.handBacks ?? [];
-    this.mintsChat = scope.kind === "new-chat";
+    this.mintsChat = scope.kind !== "chat";
     this.chatId = saved?.chatId ?? crypto.randomUUID();
     this.parked = saved?.parked ?? [];
+    this.attached = saved?.about ?? null;
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -347,6 +371,7 @@ export class ComposerSessionDraft {
     this.current = next ? next.draft : null;
     this.notices = [];
     this.chatId = next ? next.chatId : crypto.randomUUID();
+    this.attached = null;
     this.dirty = true;
     this.flush();
   };

@@ -1,11 +1,14 @@
 /** Shared anatomy for subagent identity, state, detail, disclosure, and navigation. */
-import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "../OpenSubagentChatButton";
 import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentMark } from "./SubagentMark";
+
+/** Lines under a subagent row start at its name: past the fold's chevron slot, the mark and the gap. */
+export const subagentBodyIndent = "pl-[calc(2.5rem+var(--chat-space-inline))]";
 
 export function SubagentIdentity({
   run,
@@ -27,7 +30,7 @@ export function SubagentIdentity({
       <SubagentMark
         agentName={run.agentName}
         status={run.status}
-        className={size === "card" ? undefined : "size-5 text-[10px]"}
+        className={size === "card" ? undefined : "size-5 text-xs"}
       />
       {agentLabel ?? <SubagentIdentityName run={run} />}
       {showName && run.name ? (
@@ -75,25 +78,6 @@ export function matchesSubagentIdentity(run: SubagentRun, filter: string): boole
     .includes(filter.toLocaleLowerCase());
 }
 
-export function DisclosureChevron({
-  expanded,
-  className,
-}: {
-  expanded: boolean;
-  className?: string;
-}) {
-  return (
-    <ChevronDown
-      className={cn(
-        "size-4 shrink-0 text-muted-foreground transition-transform",
-        expanded && "rotate-180",
-        className,
-      )}
-      aria-hidden
-    />
-  );
-}
-
 export function SubagentToolLine({
   run,
   fallback,
@@ -112,7 +96,7 @@ export function SubagentToolLine({
 }
 
 /**
- * Row owns the identity/control layout; detail content is indented by mark + gap.
+ * Row owns the identity/control layout; detail content is indented to the name.
  * Bare rows pack controls against the text. A card's border binds its controls
  * to the row, so a card row spans its width and ends in them.
  */
@@ -122,9 +106,6 @@ export function SubagentRow({
   size = "row",
   expanded,
   onToggle,
-  onActivate,
-  activateLabel,
-  onOpened,
   expandable = false,
   door = true,
   threadIds,
@@ -139,9 +120,6 @@ export function SubagentRow({
   size?: "row" | "card";
   expanded?: boolean;
   onToggle?: () => void;
-  onActivate?: () => void;
-  activateLabel?: string;
-  onOpened?: () => void;
   expandable?: boolean;
   door?: boolean;
   threadIds?: string;
@@ -151,53 +129,40 @@ export function SubagentRow({
   children?: ReactNode;
   className?: string;
 }) {
-  const gap = "gap-[var(--chat-space-row)]";
+  const gap = "gap-[var(--chat-space-inline)]";
   const fill = size === "card" && "flex-1";
   const identity = identityOverride ?? <SubagentIdentity run={run} size={size} />;
+  const line = <span className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</span>;
+  // Every row keeps the fold's chevron slot, so the mark holds its x whether the row folds or
+  // not, and a card that finishes and becomes foldable doesn't shift.
+  const lead = <span aria-hidden className="w-3 shrink-0" />;
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex min-w-0 items-center gap-1">
         {expandable ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
+          <FoldToggle
+            open={Boolean(expanded)}
+            onToggle={() => onToggle?.()}
             data-subagent-thread-ids={threadIds}
-            onClick={onToggle}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
+            inline
+            className={cn(fill)}
           >
-            {identity}
-            {<DisclosureChevron expanded={Boolean(expanded)} />}
-          </button>
-        ) : onActivate ? (
-          <button
-            type="button"
-            title={activateLabel}
-            onClick={onActivate}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
-          >
-            {identity}
-          </button>
+            {line}
+          </FoldToggle>
         ) : (
-          <div className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</div>
+          <div className={cn("flex min-w-0 items-center gap-1", fill)}>
+            {lead}
+            {line}
+          </div>
         )}
         {trailing}
-        {door ? (
-          <OpenSubagentChatButton
-            threadId={run.threadId}
-            agentName={run.agentName}
-            onOpened={onOpened}
-          />
-        ) : null}
+        {door ? <OpenSubagentChatButton threadId={run.threadId} agentName={run.agentName} /> : null}
       </div>
       {detail ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))]">
-          {detail}
-        </div>
+        <div className={cn("mt-[var(--chat-space-inline)]", subagentBodyIndent)}>{detail}</div>
       ) : null}
       {expanded && children ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))]">
-          {children}
-        </div>
+        <div className={cn("mt-[var(--chat-space-inline)]", subagentBodyIndent)}>{children}</div>
       ) : null}
     </div>
   );

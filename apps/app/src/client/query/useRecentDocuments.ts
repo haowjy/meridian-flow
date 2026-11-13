@@ -16,8 +16,11 @@ import { useAccountResourceProjection } from "@/features/project/context/account
 import { accountQueryKeys } from "./account-query-keys";
 import { recentDeletionRevision, recentDocumentIdentityIndex } from "./recent-document-identity";
 
+/** A recent item with whether the editor can open it: the replica says, or the server list until it loads. */
+export type RecentDocument = AccountRecentItem & { editable: boolean };
+
 export type RecentDocumentsStatus = {
-  documents: AccountRecentItem[];
+  documents: RecentDocument[];
   status: "loading" | "empty" | "ready" | "error";
   isError: boolean;
   isFetching: boolean;
@@ -69,8 +72,9 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
     });
   }, [accountId, deletionRevision, projectId, queryClient]);
 
-  const documents = useMemo(() => {
+  const documents = useMemo((): RecentDocument[] => {
     if (!local.bound) return [];
+    const served = new Map(query.data?.documents.map((row) => [row.documentId, row.editable]));
     // Items are newest first, so the first sighting of a resource is its latest open.
     const seen = new Set<string>();
     return local.items.flatMap((item) => {
@@ -80,11 +84,12 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
       const currentId = identity?.documentId ?? item.documentId;
       if (seen.has(currentId)) return [];
       seen.add(currentId);
-      if (!identity) return [item];
+      if (!identity) return [{ ...item, editable: served.get(item.documentId) ?? false }];
       const parsed = parseContextUri(identity.path);
       return [
         {
           ...item,
+          editable: identity.editable,
           documentId: currentId,
           name: identity.name,
           address:
@@ -98,7 +103,7 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
         },
       ];
     });
-  }, [identities, local, projectId]);
+  }, [identities, local, projectId, query.data]);
   const awaitingServer =
     !local.bound || (documents.length === 0 && (query.isPending || query.isFetching));
   const status =

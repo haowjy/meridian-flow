@@ -68,6 +68,8 @@ export type SuggestionMenuProps = {
    * the caret, so its top edge is where the writer is already looking.
    */
   note?: ReactNode;
+  /** What stands in for the rows when there are none: a `ListLine` or an `InlineErrorRow`. */
+  empty?: ReactNode;
   className?: string;
   /** Composer sits on the phone keyboard; open above it. Manuscript stays below the caret. */
   side?: "top" | "bottom";
@@ -89,6 +91,7 @@ export function SuggestionMenu({
   onChoose,
   onDismiss,
   note,
+  empty,
   className,
   side = "bottom",
 }: SuggestionMenuProps) {
@@ -163,7 +166,7 @@ export function SuggestionMenu({
       className={cn(dropdownPanelClass, "meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
       {note ? (
-        <div className="border-border-subtle border-b px-2 py-1.5 text-ink-subtle text-xs">
+        <div className="border-border-subtle border-b px-2 py-1.5 text-muted-foreground text-xs">
           {note}
         </div>
       ) : null}
@@ -174,7 +177,8 @@ export function SuggestionMenu({
         role="listbox"
         aria-label={label}
         data-overflow={overflow}
-        className="meridian-suggestion-menu p-1"
+        hidden={rows.length === 0 && Boolean(empty)}
+        className="meridian-suggestion-menu p-1.5"
       >
         {rows.map((row, index) => {
           const active = index === activeIndex;
@@ -190,7 +194,9 @@ export function SuggestionMenu({
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
-                  dropdownRowVariants({ interactive: false, selected: active }),
+                  dropdownRowVariants({ interactive: false }),
+                  // The highlighted option is the pointer's or keyboard's place: the hover step.
+                  active && "bg-ink-fill",
                   "cursor-default [&_svg]:text-muted-foreground",
                   row.blocked && "text-muted-foreground",
                 )}
@@ -210,6 +216,7 @@ export function SuggestionMenu({
           );
         })}
       </div>
+      {rows.length === 0 && empty ? <div className="p-1.5">{empty}</div> : null}
     </EditorPopover>
   );
 }

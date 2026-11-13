@@ -1,5 +1,5 @@
 /**
- * thread-title — localized thread-title helpers (default "New chat" fallback,
+ * thread-title — localized thread-title helpers (default "Untitled chat" fallback,
  * display normalization, and deriving a title from the first message). Single
  * source for how a thread's title renders.
  */
@@ -7,10 +7,11 @@ import { msg } from "@lingui/core/macro";
 
 import { i18n } from "./i18n";
 
-/** UI default when a thread has no stored title (DB allows NULL). */
-const DEFAULT_THREAD_TITLE_MSG = msg`New chat`;
+/** UI default when a thread has no stored title (DB allows NULL). Not "New chat":
+ * that names the action that starts one, and both sit in the same sidebar. */
+const DEFAULT_THREAD_TITLE_MSG = msg`Untitled chat`;
 
-/** Localized "New chat" label, looked up from the active Lingui catalog. */
+/** Localized "Untitled chat" label, looked up from the active Lingui catalog. */
 export function defaultThreadTitle(): string {
   return i18n._(DEFAULT_THREAD_TITLE_MSG);
 }

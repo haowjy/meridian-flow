@@ -5,12 +5,12 @@
  */
 import type { ImportScheme } from "@meridian/contracts";
 import { ImportIcon, LoaderCircle } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ImportPanelBody, ImportSheet, importLabel } from "@/features/import/ImportPanel";
 import { type PickKind, useImportPanel } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
-import { PaneHeaderActionButton } from "./RailPaneHeader";
 
 export function ImportHeaderAction({
   scheme,
@@ -28,17 +28,20 @@ export function ImportHeaderAction({
     onPick(kind);
   };
   const button = (
-    <PaneHeaderActionButton
-      data-import-status={status ?? undefined}
-      icon={status === "running" ? LoaderCircle : ImportIcon}
-      iconClassName={status === "running" ? "animate-spin motion-reduce:animate-none" : undefined}
+    <IconButton
       label={label}
       onClick={phone ? () => setOpen(true) : undefined}
+      className="relative"
     >
+      {status === "running" ? (
+        <LoaderCircle aria-hidden className="animate-spin motion-reduce:animate-none" />
+      ) : (
+        <ImportIcon aria-hidden />
+      )}
       {status === "needs-writer" ? (
         <span aria-hidden className="absolute top-0 right-0 size-1.5 rounded-full bg-primary" />
       ) : null}
-    </PaneHeaderActionButton>
+    </IconButton>
   );
   if (phone)
     return (

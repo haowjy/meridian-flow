@@ -52,16 +52,19 @@ export function FailureCard({
       className={cn(
         tone === "error"
           ? "border-destructive-border bg-destructive-tint"
-          : "border-border bg-muted",
-        "rounded-field py-[var(--chat-card-pad-y)] shadow-none",
-        // Inline is tightened so Retry and Edit fit the narrowest dock (280px) on one line.
+          : "border-border bg-ink-fill",
+        "rounded-lg py-[var(--chat-card-pad-y)] shadow-none",
+        // Inline is tightened so Retry and Edit fit the narrowest side panel (280px) on one line.
         inline
           ? "w-fit px-[var(--chat-space-block)] has-[>svg]:gap-x-2"
           : "px-[var(--chat-card-pad-x)]",
       )}
     >
-      <Icon className={tone === "error" ? "text-destructive" : "text-ink-subtle"} aria-hidden />
-      <AlertDescription className="text-compact text-ink-muted">
+      <Icon
+        className={tone === "error" ? "text-destructive" : "text-muted-foreground"}
+        aria-hidden
+      />
+      <AlertDescription className="text-compact text-muted-foreground">
         <div
           className={cn(
             "flex items-center",
@@ -75,11 +78,11 @@ export function FailureCard({
           {onDismiss ? (
             <IconButton
               // At the row's end even when the card is wider than its sentence.
-              className="ml-auto shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:size-11"
-              aria-label={t`Dismiss`}
+              className="ml-auto shrink-0 coarse:-my-2.5"
+              label={t`Dismiss`}
               onClick={onDismiss}
             >
-              <X aria-hidden className="size-3.5" />
+              <X aria-hidden />
             </IconButton>
           ) : null}
         </div>

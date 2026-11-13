@@ -19,8 +19,8 @@ here is a known defect.
   project on the recents row, which is only worth doing if the short list shows
   up in use.
 - Uploads rows would open onto the "Viewing chat resources is not available
-  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). The tab
-  seam produces no such tab, so none is recorded today; omit that scheme from
+  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). Main's
+  host records no such document, so none is recorded today; omit that scheme from
   the list if one ever is.
 - Nothing asserts that every scheme in `CONTEXT_URI_SCHEMES` is resolvable by
   `document-address`, which is the one axis where recents' listability and
@@ -52,10 +52,10 @@ here is a known defect.
   rename cannot change type (for example `data.json` to `data.md`), instead of
   generic retry copy. Verify the message stays on the attempted rename and
   the existing document remains unchanged.
-- Sidebar rows are `role="button"` and report a multi-row selection with
+- Sidebar rows are buttons (`ListRow`) and report a multi-row selection with
   `aria-pressed`. The ARIA tree pattern (`role="tree"`/`treeitem`,
   `aria-selected`, arrow-key navigation) would describe the selection natively;
-  it changes every tree surface (Files, Scratch, Work Files), so it is its own
+  it changes every tree surface (Files, Scratch, Changes), so it is its own
   change.
 
 ## Row-edge drops

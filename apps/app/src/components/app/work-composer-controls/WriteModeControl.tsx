@@ -4,56 +4,47 @@
  *
  * Choosing a mode is the writer's whole action: no dialog. The caller owns what
  * the choice does (queue a switch, or remember it for the first send), so the
- * control shows a value and reports a choice. The draft-mode option carries the number of
- * documents waiting in the Work's drafts, read from the shared draft-list query
- * in either mode, so the menu's draft-mode option shows the count from Auto-apply too.
+ * control shows a value and reports a choice. The chip says the mode and nothing
+ * else; the strip above the composer counts what waits in drafts.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useRef } from "react";
-import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 
 export function useWriteModeToolbarControl({
-  projectId,
-  ownerKey,
   value,
   onChoose,
 }: {
-  projectId: string;
-  /** The draft owner key whose waiting documents the Draft option counts; "" until known. */
-  ownerKey: string;
   value: AiWriteMode;
   onChoose(mode: AiWriteMode): void;
 }): ComposerToolbarControl {
-  const waiting = useOwnerDrafts(projectId, ownerKey).files?.length ?? 0;
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
-  const draftLabel = waiting > 0 ? t`Drafts (${waiting})` : t`Draft`;
-  const localizedValue = value === "draft" ? draftLabel : t`Auto-apply`;
-  const spokenDraft =
-    waiting > 0
-      ? plural(waiting, { one: "Drafts, # document waiting", other: "Drafts, # documents waiting" })
-      : draftLabel;
-  const spokenValue = value === "draft" ? spokenDraft : localizedValue;
+  const localizedValue = value === "draft" ? t`Draft` : t`Auto-apply`;
   return {
     kind: "panel",
     id: "write-mode",
-    priority: 200,
+    // How the AI will write is what the writer must see before sending, so it folds last.
+    priority: 400,
     interaction: "enabled",
     item: {
-      ariaLabel: t`AI write mode: ${spokenValue}`,
+      ariaLabel: t`AI write mode: ${localizedValue}`,
       label: <Trans>Write mode</Trans>,
       value: localizedValue,
     },
     inline: ({ trigger }) => (
-      <ComposerCurrentValueTrigger binding={trigger} ariaLabel={t`AI write mode: ${spokenValue}`}>
+      <ComposerCurrentValueTrigger
+        binding={trigger}
+        ariaLabel={t`AI write mode: ${localizedValue}`}
+      >
         {localizedValue}
       </ComposerCurrentValueTrigger>
     ),
@@ -73,15 +64,16 @@ export function useWriteModeToolbarControl({
         <div
           role="radiogroup"
           aria-label={t`AI write mode`}
-          className="space-y-[var(--chat-space-row)]"
+          className="space-y-[var(--chat-space-inline)]"
+          onKeyDown={handleListKeys}
         >
           {(["draft", "direct"] as const).map((mode) => (
             <Button
               key={mode}
+              data-list-item
               ref={mode === "draft" ? draftRef : directRef}
               role="radio"
               aria-checked={value === mode}
-              aria-label={mode === "draft" ? spokenDraft : undefined}
               variant="ghost"
               className={dropdownRowVariants({ selected: value === mode })}
               onClick={() => {
@@ -89,7 +81,7 @@ export function useWriteModeToolbarControl({
                 terminalClose();
               }}
             >
-              {mode === "draft" ? draftLabel : <Trans>Auto-apply</Trans>}
+              {mode === "draft" ? <Trans>Draft</Trans> : <Trans>Auto-apply</Trans>}
             </Button>
           ))}
         </div>

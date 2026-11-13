@@ -85,13 +85,11 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
-  ActiveDocumentResolver,
   BlockRepository,
   LiveEventWriter,
   ModelResponseRepository,
   ThreadRepositories,
   ThreadRepository,
-  TurnDocumentTouchRepository,
   TurnRepository,
 } from "../../threads/index.js";
 import {
@@ -284,12 +282,9 @@ export interface OrchestratorDeps {
   handoffBriefs: HandoffBriefStopper;
   /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
-  activeDocuments: ActiveDocumentResolver;
   imageAssets: ImageAssetPort;
   /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
-  /** Reference reads' touches, recorded on the turn the commit persists. */
-  documentTouches: Pick<TurnDocumentTouchRepository, "recordTouch">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
   observationFrontiers: ObservationFrontiers;
   responseWrites: {

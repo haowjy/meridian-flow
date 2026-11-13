@@ -79,8 +79,10 @@ ports, not adapter internals:
   the reader prefetches. A query-cache subscription that sets React state
   listens to `updated` and `removed` only: `added` and `observerResultsUpdated`
   fire inside another component's render, and `updated` alone misses
-  `removeQueries` (account close). Any transition that affects Chat index
-  invalidates its feed through the project/work projection seams. Favorite
+  `removeQueries` (account close). Any transition that affects the sidebar's
+  chat lists invalidates their feed through the project/work projection seams;
+  a run, question or status change made by another client arrives as the
+  project channel's `project-chats-hint`, which refetches the project's chat list. Favorite
   commands share one normalized project/thread authority across index and Work
   rows. The project store keeps the account clock and inserts confirmed creations
   into the project-list cache; it owns no second project list.
@@ -186,34 +188,33 @@ last-active-project preference are gone; zero-project onboarding for a new
 account is not decided here.
 
 The project address is `/p/<project-id>`, where the UUID is stable across title
-and slug edits. The first child segment is `chats`, `works`, or `editor`;
-the bare project route canonicalizes to chats. Chat, Work, and project identities
-are UUID-addressed. Work handles belong to context URIs, not browser URLs.
-Editor documents/folders live under `/editor/…`; `?work=` supplies explicit
-Work context, required for Scratch because the Work is the file's identity.
-Uploads belong to a chat and have no Editor route. Recognized query keys are `work`, `settings`, `results`, and `view`;
-omitted, explicit No Work, valid Work, and malformed values remain distinct, and
-duplicate keys or malformed encodings are invalid rather than normalized.
-Slug-shaped project routes and older shapes (`/project/<UUID>`, `screen`/`thread`/
-`scheme`/`folder`/`path` queries) have no alias and render the unavailable state.
-Inside the client, No Work is the locked row's id and Work-scoped tabs always
-carry their Work id; only `workSelectionFor` spells it `none`, for
-project-content addresses. The full grammar is in
-[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
+and slug edits. After it the path names the kind of main's item: `chats` (bare is
+the new-chat composer, `chats/<chat-id>` a chat) or `editor` (bare, or
+`editor/<scheme>/<path>` for a document). The bare project route is the new-chat
+composer. The Work scope is never in the address: it is a stored per-project
+choice (`use-work-scope.ts`). Recognized query keys are `owner`, `item`, `change`,
+`trash` and `settings`. `owner` (`work:<id>` or `lineage:<root-chat-id>`) appears
+only where the path alone does not name the resource: a Scratch document, and a
+draft `item`; a stray one is dropped from the canonical href. Duplicate keys and
+malformed encodings are invalid rather than normalized. Uploads belong to a chat
+and have no Editor route. Every older shape (`/works`, `browse`, `?work=`,
+slug-shaped project routes, `/project/<UUID>`, `screen`/`thread`/`scheme`/
+`folder`/`path` queries) has no alias and renders "This destination is
+unavailable". The grammar lives in `features/project/routing/project-address.ts`.
 
 `ReadableProjectRoute` is the browser address parser and
 `createProjectNavigation` owns history admission; keep route parsing and browser
 history out of `routing/project-route.ts`. Chat UUIDs resolve by snapshot
 identity, including subagents absent from the primary list. Main-destination
-navigation pushes; dock chat selection updates browser-local current chat without
-writing history; canonicalization and repair replace only while their captured
+navigation pushes; the current chat (the side's chat beside a document) is browser-local and
+writes no history; canonicalization and repair replace only while their captured
 entry is still current. An unavailable explicit
 target parks the requested host rather than falling through to a remembered
 default. Desktop retains inactive child surfaces; phone may mount/unmount its
 active leaf. Cross-project pending/error replaces the old project subtree, while
-same-project failure parks the requested host. Chat index and Work each own one
-screen-level `app-scroll`; neither adds a nested scroll owner. The Work screen
-shows one list at a time under Active, Archived, and Deleted tabs.
+same-project failure parks the requested host. Work management is a dialog
+(`ManageWorksDialog`) that shows one list at a time under Active, Archived and
+Deleted.
 
 ## Authenticated shell and settings
 

@@ -37,6 +37,11 @@ export function useLiveTurnAnnouncements(
   const announcedThinkingRef = useRef(false);
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
+  // A reply that ended before this chat loaded is history, not a transition the writer watched.
+  const watchedTurnRef = useRef<string | null>(null);
+  if (liveTurn && (status === "pending" || status === "streaming" || status === "awaiting_answer"))
+    watchedTurnRef.current = liveTurn.id;
+  const watched = liveTurn !== null && watchedTurnRef.current === liveTurn.id;
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
   const names = useOwnerNames();
   const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool, names)) : null;
@@ -58,7 +63,7 @@ export function useLiveTurnAnnouncements(
       announce(toolAnnouncement);
     }
 
-    if (status !== prevStatusRef.current) {
+    if (status !== prevStatusRef.current && watched) {
       if (status === "complete") {
         announce(t`Response complete`);
         const active = document.activeElement;
@@ -71,5 +76,5 @@ export function useLiveTurnAnnouncements(
     }
 
     prevStatusRef.current = status;
-  }, [chatSurfaceRef, composerRef, hasPartialText, status, toolAnnouncement]);
+  }, [chatSurfaceRef, composerRef, hasPartialText, status, toolAnnouncement, watched]);
 }

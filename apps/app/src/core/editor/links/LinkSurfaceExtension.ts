@@ -43,7 +43,6 @@ import {
 } from "./link-commands";
 import {
   followLink,
-  type LinkFollowDisposition,
   type LinkFollowResult,
   linkClickIntent,
   MIDDLE_BUTTON,
@@ -90,12 +89,7 @@ export function openLinkForm(editor: Editor | null): boolean {
  * Every follow in the lane (click, Enter, Alt+Enter, the menu's Open link)
  * comes through here.
  */
-export function followLinkFrom(
-  editor: Editor,
-  key: LinkKey,
-  disposition: LinkFollowDisposition,
-  at: LinkPoint,
-): LinkFollowResult {
+export function followLinkFrom(editor: Editor, key: LinkKey, at: LinkPoint): LinkFollowResult {
   // A chip whose file is still on its way up has nothing to open; a failed one is sent again.
   const pending = parseLinkRef(key.ref);
   if (pending?.kind === "doc") {
@@ -116,10 +110,7 @@ export function followLinkFrom(
     surface.openFolder({ folderId, at });
     return "navigated";
   }
-  return followLink(
-    { target: classifyLinkTarget(key.href), ref: key.ref, disposition },
-    surface.navigator,
-  );
+  return followLink({ target: classifyLinkTarget(key.href), ref: key.ref }, surface.navigator);
 }
 
 /** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
@@ -129,7 +120,7 @@ function followLinkAtSelection(editor: Editor | null): boolean {
   // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
   // place a plain click would.
   return (
-    followLinkFrom(editor, linkKeyOfMark(link.attributes), "current", caretPoint(editor.view)) !==
+    followLinkFrom(editor, linkKeyOfMark(link.attributes), caretPoint(editor.view)) !==
     "unavailable"
   );
 }
@@ -187,12 +178,7 @@ export const LinkSurfaceExtension = Extension.create({
       });
       if (intent.action === "place-caret") return false;
 
-      const followed = followLinkFrom(
-        editor,
-        linkKeyOf(view, anchor),
-        intent.disposition,
-        belowAnchor(anchor),
-      );
+      const followed = followLinkFrom(editor, linkKeyOf(view, anchor), belowAnchor(anchor));
       // Nothing to follow — an unrecognized href, a link known to be gone, or
       // an internal link with no navigator registered yet. A primary click
       // falls through so the caret still lands; a middle click has no caret to
@@ -265,12 +251,8 @@ export const LinkSurfaceExtension = Extension.create({
                 const anchor = anchorIn(view, document.activeElement);
                 if (!anchor) return false;
                 return (
-                  followLinkFrom(
-                    editor,
-                    linkKeyOf(view, anchor),
-                    "current",
-                    belowAnchor(anchor),
-                  ) !== "unavailable"
+                  followLinkFrom(editor, linkKeyOf(view, anchor), belowAnchor(anchor)) !==
+                  "unavailable"
                 );
               },
               ContextMenu: openKeyboardMenu,

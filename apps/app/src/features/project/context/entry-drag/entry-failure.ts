@@ -12,10 +12,8 @@ import {
   projectResourceNeedsRepair,
 } from "@meridian/resource-replica";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
-import { getContextTabs } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { useDockDocumentStore } from "../../dock/dock-document-store";
-import type { RemovedNoticeStore } from "../removed-notice-store";
+import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { copyFailures, copyFailureTitle } from "./copy-refusal";
 import type { EntryRef } from "./entry";
 import { copyRows } from "./execute-copy";
@@ -23,6 +21,7 @@ import { currentView, moveRows, type ReplicaContext } from "./execute-move";
 import {
   entryNameNow,
   type MoveRow,
+  outermost,
   type PlacementView,
   parentName,
   parentOf,
@@ -30,9 +29,10 @@ import {
   sameParent,
   within,
 } from "./move-plan";
+import { leaveSelections } from "./selection";
 
 export type EntryContext = ReplicaContext & {
-  notices?: Pick<RemovedNoticeStore, "markOwnRemoval"> | null;
+  removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
 };
 
 export type EntryFailure = { key: string } & (
@@ -116,7 +116,7 @@ async function retryFailure(
     await runMove(context, rows, failure.destination);
   } else if (failure.kind === "delete") {
     if (entryNameNow(view, failure.entry))
-      await runDelete(context, { ...failure.entry, name: failure.name });
+      await runDelete(context, [{ ...failure.entry, name: failure.name }]);
   } else if (failure.copy) {
     const copies = failure.copy.copies.flatMap((row) => {
       const name = entryNameNow(view, row.entry);
@@ -175,47 +175,69 @@ export async function runCopy(
     });
 }
 
-/** The documents on the writer's own tabs and dock that deleting `entry` takes away. */
-async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
+/** The documents deleting `entry` takes away. */
+export function ownRemovals(view: PlacementView, entry: EntryRef): string[] {
   if (entry.kind === "file") return [entry.id];
-  const { projectId } = context;
-  const view = await currentView(context);
-  const dock = useDockDocumentStore.getState().occupant;
-  const presented = [
-    ...getContextTabs(projectId).tabs,
-    ...(dock?.projectId === projectId ? [dock.tab] : []),
-  ];
-  return presented.flatMap((tab) =>
-    tab.kind !== "new" &&
-    within(view, parentOf(view, { kind: "file", id: tab.documentId }), entry.id)
-      ? [tab.documentId]
-      : [],
-  );
+  return view.records.flatMap(({ resource }) => {
+    const documentId = resource.identity.documentId;
+    return within(view, parentOf(view, { kind: "file", id: documentId }), entry.id)
+      ? [documentId]
+      : [];
+  });
 }
 
+/**
+ * Deletes one gesture's entries: one own removal covers every document they take away, so main's
+ * go-back skips all of them. An entry inside another one's folder goes with that folder, never on
+ * its own. A refused entry toasts and keeps its documents.
+ */
 export async function runDelete(
   context: EntryContext,
-  { name, ...entry }: EntryRef & { name: string },
+  requested: readonly (EntryRef & { name: string })[],
 ): Promise<void> {
-  const { resources, projectId, notices } = context;
-  const settleMark = notices?.markOwnRemoval(projectId, await ownRemovals(context, entry));
-  try {
-    if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
-    else {
-      const key = await resources.keyForDocument(projectId, entry.id);
-      if (!key) throw new Error("Document resource is unavailable");
-      await resources.deleteDocument(projectId, key);
-    }
-    settleMark?.("removed");
-  } catch {
-    settleMark?.("kept");
-    showFailure(context, {
-      key: entryToast(projectId, crypto.randomUUID()),
-      kind: "delete",
-      entry,
-      name,
-    });
-  }
+  const { resources, projectId, removal } = context;
+  const view = await currentView(context);
+  const entries = outermost(
+    view,
+    requested.map((entry) => ({ ref: entry, entry })),
+  ).map(({ entry }) => entry);
+  const covered = entries.map((entry) => ownRemovals(view, entry));
+  leaveSelections([
+    ...requested,
+    ...covered.flat().map((id) => ({ kind: "file" as const, id })),
+    ...(view.folders ?? []).flatMap(({ folderId }) =>
+      entries.some(
+        (entry) =>
+          entry.kind === "folder" &&
+          within(view, view.placement.parentForFolder(folderId), entry.id),
+      )
+        ? [{ kind: "folder" as const, id: folderId }]
+        : [],
+    ),
+  ]);
+  const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
+  const kept = await Promise.all(
+    entries.map(async ({ name, ...entry }, index) => {
+      try {
+        if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
+        else {
+          const key = await resources.keyForDocument(projectId, entry.id);
+          if (!key) throw new Error("Document resource is unavailable");
+          await resources.deleteDocument(projectId, key);
+        }
+        return [];
+      } catch {
+        showFailure(context, {
+          key: entryToast(projectId, crypto.randomUUID()),
+          kind: "delete",
+          entry,
+          name,
+        });
+        return covered[index] ?? [];
+      }
+    }),
+  );
+  settleMark?.(kept.flat());
 }
 
 function rowFailure(

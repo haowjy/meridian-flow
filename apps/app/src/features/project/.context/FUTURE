@@ -3,19 +3,9 @@
 - Dark mode: the night-study ladder is designed in
   `packages/design-tokens/src/ink-jade.css` (header comment). It needs a theme toggle and `.dark`
   overrides for the full token set, not just the shell ladder.
-- PaneHeader chip seating: the centered chat title chip sizes itself `h-9` against the h-10 band
-  because PaneHeader centers its title slot, while ContextTabBar seats chips with `items-stretch`.
-  One adaptive band-chip geometry would mean no consumer knows the band height.
-- Chats as a working-set tab strip: multiple chat tabs and a "+" in the centered chat band. Needs an
+- Several open chats: a list of open chats with a "+" in the chat band. Needs an
   "open chats" model (close ≠ delete, overflow, ordering) and a decision on how chat navigation
   relates to the sidebar.
-- Bounded live sessions for restored desks (#217): the persisted desk restores every open tab, and
-  the session registry keeps a live websocket-subscribed Y.Doc per tab, so a 30-tab desk means 30
-  live sessions on every reload. Editor views are already bounded by `MAX_MOUNTED_EDITORS`. Move:
-  lazy-connect background tabs' sessions on first view, with the same LRU shape. The Yjs FAQ warns
-  against hydrating many Y.Docs.
-- Multi-pane Editor layout: a split-view design first defines focus, history, tab membership and
-  session retention; stretching the single-selection workspace reducer into two implicit selections
-  won't hold.
-- Work page tab search: switching between Chats and Files resets each tab's search. Keeping it means
-  putting the Work chat search in the project address, as the chat index does with `q`.
+- More than main and one side item: a split-view design first defines focus, history and session
+  retention; stretching the one-main, one-side, one-kept hosts into more implicit selections won't
+  hold.

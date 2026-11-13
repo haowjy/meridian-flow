@@ -1,17 +1,18 @@
 /* Draft-review decorations: continuous inline highlights and block rings. Red and green only: text the
    draft wrote is green, text it removed is a struck red widget. Inline emphasis thickens the underline; no
-   padding or rounded span boxes, so adjacent green and struck ranges join without tiled seams. */
+   padding or rounded span boxes, so adjacent green and struck ranges join without tiled seams.
+   Every mark sits on one alpha ladder of its accent: tint 12%, emphasis 22%, line 40%. */
 .meridian-editor .ProseMirror .meridian-review-added {
-  --review-tint: var(--color-review-added-tint);
-  --review-border: var(--color-review-added-border);
-  --review-emphasis: var(--color-review-added-emphasis);
-  --review-ring: var(--color-review-added-ring);
+  --review-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  --review-border: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  --review-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  --review-ring: color-mix(in oklab, var(--color-primary) 40%, transparent);
 }
 
 .meridian-editor .ProseMirror .meridian-review-added {
   background: var(--review-tint);
   box-shadow: inset 0 -1px 0 0 var(--review-border);
-  transition: background-color 120ms ease;
+  transition: background-color var(--default-transition-duration) ease;
 }
 
 .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
@@ -22,20 +23,20 @@
 /* Removed base text: a read-only widget (never document text) struck through where it used to be.
    Unselectable by design: the writer can click it to select the change but cannot select into it. */
 .meridian-editor .ProseMirror .meridian-review-removal {
-  --removal-border: var(--color-review-removed-border);
-  --removal-tint: var(--color-review-removed-tint);
-  color: var(--color-review-removed-foreground);
+  --removal-border: color-mix(in oklab, var(--color-destructive) 40%, transparent);
+  --removal-tint: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  color: var(--color-destructive);
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-text {
-  --removal-emphasis: color-mix(in oklab, var(--color-review-removed-ring) 45%, transparent);
-  --removal-ring: var(--color-review-removed-ring);
-  color: var(--color-review-removed-foreground);
-  background: var(--color-review-removed-tint);
-  border-radius: 2px;
+  --removal-emphasis: color-mix(in oklab, var(--color-destructive) 22%, transparent);
+  --removal-ring: color-mix(in oklab, var(--color-destructive) 40%, transparent);
+  color: var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  border-radius: var(--radius-sm);
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
   text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
@@ -140,7 +141,7 @@
   border-inline-end: 1.5px solid currentColor;
   border-block-end: 1.5px solid currentColor;
   transform: translateY(-0.1em) rotate(-45deg);
-  transition: transform 120ms ease;
+  transition: transform var(--default-transition-duration) ease;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-toggle[aria-expanded="true"]::before {
@@ -152,7 +153,7 @@
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-toggle:focus-visible {
-  outline: 2px solid var(--color-ring);
+  outline: 2px solid var(--color-focus);
   outline-offset: 1px;
 }
 
@@ -176,6 +177,30 @@
     0 0 0 5px var(--review-ring);
 }
 
+/* Forced colours drop the tint and the shadow lines, which are all that mark added text. It is
+   underlined instead, a whole added block framed, and the change in focus drawn heavier. */
+@media (forced-colors: active) {
+  .meridian-editor .ProseMirror .meridian-review-added {
+    text-decoration: underline 1px;
+    text-underline-offset: 0.2em;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
+    text-decoration-thickness: 3px;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {
+    outline: 1px solid CanvasText;
+    outline-offset: 3px;
+  }
+
+  .meridian-editor
+    .ProseMirror
+    .meridian-review-block.meridian-review-added.meridian-review-emphasized {
+    outline-width: 3px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
@@ -187,7 +212,7 @@
    (and its row in the dock) light up and settle. Reduced motion: no pulse. */
 @keyframes meridian-review-arrive {
   from {
-    background-color: var(--color-review-added-ring);
+    background-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
   }
 }
 

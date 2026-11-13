@@ -38,6 +38,7 @@ import {
   linkChip,
   linkChipAttributes,
   linkTargetHref,
+  MIDDLE_BUTTON,
   referenceChip,
 } from "@/core/editor/links";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
@@ -202,7 +203,10 @@ export function TranscriptReference({
       title={chip?.state === "draft" ? missing : undefined}
       {...(chip ? linkChipAttributes(chip) : {})}
       {...drag}
-      onClick={follow}
+      onClick={() => follow?.()}
+      onAuxClick={(event) => {
+        if (event.button === MIDDLE_BUTTON) follow?.();
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -232,11 +236,13 @@ export function TranscriptReference({
       >
         <ContextMenuLabel>{label}</ContextMenuLabel>
         {uri || targetHref ? (
-          <ContextMenuLabel className="max-w-80 break-all font-normal text-muted-foreground">
+          <ContextMenuLabel className="max-w-80 break-all pt-0">
             {uri ?? targetHref}
           </ContextMenuLabel>
         ) : null}
-        {follow ? <ContextMenuItem onSelect={follow}>{t`Open link`}</ContextMenuItem> : null}
+        {follow ? (
+          <ContextMenuItem onSelect={() => follow()}>{t`Open link`}</ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );

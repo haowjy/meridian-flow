@@ -1,5 +1,5 @@
 /**
- * The code block's chip cluster — `[language ▾ | copy | ⋮]` inside the block's
+ * The code block's chip cluster — `[language ▾ | copy | ⋯]` inside the block's
  * top-right bounds.
  *
  * A code block is the partial exception to object physics: its rendering IS its
@@ -26,12 +26,12 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronDown, Copy, MoreVertical } from "lucide-react";
+import { Copy, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { ChooserMark } from "@/components/ui/marks";
 import { editorChromeAttributes } from "@/core/editor/chrome";
 import {
   EditorMenu,
@@ -107,7 +107,7 @@ export function CodeBlockChips({
         trigger={
           <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
             {fenceLanguageLabel(fenceLanguage(target))}
-            <ChevronDown aria-hidden />
+            <ChooserMark />
           </Button>
         }
       >
@@ -120,7 +120,7 @@ export function CodeBlockChips({
         type="button"
         size="xs"
         variant="ghost"
-        aria-label={t`Copy code`}
+        label={t`Copy code`}
         onClick={() => run(copyText(target.node.textContent), t`Code copied`)}
       >
         <Copy aria-hidden />
@@ -133,8 +133,8 @@ export function CodeBlockChips({
         onOpenChange={setOverflowOpen}
         align="end"
         trigger={
-          <IconButton type="button" size="xs" variant="ghost" aria-label={t`More`}>
-            <MoreVertical aria-hidden />
+          <IconButton type="button" size="xs" variant="ghost" label={t`More`}>
+            <Ellipsis aria-hidden />
           </IconButton>
         }
       >

@@ -14,7 +14,6 @@ import {
   type DocumentAnswer as DocumentEntry,
   goneLinkDocumentId,
   type LinkAnswerCache,
-  type LinkFollowDisposition,
   type LinkFollowOutcome,
   type LinkTarget,
   linkTargetHref,
@@ -52,10 +51,7 @@ export type LinkDocumentRef = {
  * editor that asked, and an abort tied to that editor would cancel its own
  * open.
  */
-export type LinkDestination = (
-  document: LinkDocumentRef,
-  gesture: LinkFollowDisposition,
-) => Promise<unknown>;
+export type LinkDestination = (document: LinkDocumentRef) => Promise<unknown>;
 
 /**
  * What one follow does differently from its surface's default: a destination of
@@ -86,7 +82,6 @@ export type FollowReporter = {
 export async function followProjectLink({
   target,
   ref = null,
-  gesture,
   resolution,
   open,
   reporter,
@@ -96,7 +91,6 @@ export async function followProjectLink({
   target: LinkTarget;
   /** The stored link's ref; null for a link with none (chat's syntax links). */
   ref?: string | null;
-  gesture: LinkFollowDisposition;
   resolution: LinkAnswerCache;
   open: LinkDestination;
   reporter: FollowReporter;
@@ -136,15 +130,14 @@ export async function followProjectLink({
     settle();
     reporter.clear();
     const documentId = goneLinkDocumentId(known, link);
-    // Trash is one routed auxiliary surface, not an Editor tab. A modified
-    // follow therefore opens that surface instead of inventing a background tab.
-    if (documentId) await open({ documentId, trashed: true }, "current");
+    // Trash is one routed auxiliary surface, not a document.
+    if (documentId) await open({ documentId, trashed: true });
     return;
   }
   if (known?.state === "document") {
     settle();
     reporter.clear();
-    await open(documentRef(known), gesture);
+    await open(documentRef(known));
     return;
   }
 
@@ -155,12 +148,12 @@ export async function followProjectLink({
   if (entry?.state === "gone") {
     reporter.clear();
     const documentId = goneLinkDocumentId(entry, link);
-    if (documentId) await open({ documentId, trashed: true }, "current");
+    if (documentId) await open({ documentId, trashed: true });
     return;
   }
   if (entry?.state === "document") {
     reporter.clear();
-    await open(documentRef(entry), gesture);
+    await open(documentRef(entry));
     return;
   }
   if (entry?.state === "folder") {

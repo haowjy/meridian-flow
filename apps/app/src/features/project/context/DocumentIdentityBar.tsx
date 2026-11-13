@@ -1,32 +1,32 @@
 /**
- * DocumentIdentityBar — where an open document lives: its path, which navigates,
- * and the chips about it (Choose a home for a document in Unfiled, device-only, a
- * refused move, a review). The Editor shows it as a band above the page; a
- * document beside the chat shows it in the dock header (`variant="header"`).
+ * DocumentIdentityBar — an open document's identity and state: the chips about it
+ * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
+ * move, a review's controls). The state chips portal into the document's state slot; a
+ * review's controls take a line of their own above the toolbar.
  */
 import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
-import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
+import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
+import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { cn } from "@/lib/utils";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
+import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
-import { DocumentPath } from "./DocumentPath";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
-import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { tabLocation } from "./identity-location";
-import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
+import { useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
@@ -38,18 +38,16 @@ import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
-  tab: ContextTab;
+  document: OpenDocument;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
-  /** A band above the page (the Editor), or the content of the dock's header row. */
-  variant?: "band" | "header";
-  /** Header only: commands at the row's left edge (the dock's Close and Open in Editor). */
-  leading?: ReactNode;
-  /** Header only: pinned to the first line's right edge, whether or not the controls wrap (the dock's Collapse). */
-  trailing?: ReactNode;
-  /** Header only: a persistent line under the row (the dock's failed Open in Editor). */
-  notice?: ReactNode;
   onCloseDraftOnly?: () => void;
+  /**
+   * The draft whose review controls take the focus when they show: one opened from
+   * the previous draft's controls. Held above this bar, which remounts per document.
+   */
+  focusReview?: string | null;
+  onFocusReview?: (itemKey: string | null) => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -61,28 +59,24 @@ export type DocumentIdentityBarProps = {
 export function DocumentIdentityBar({
   projectId,
   editorWorkId,
-  tab,
+  document,
   readOnly = false,
-  variant = "band",
-  leading,
-  trailing,
-  notice,
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
+  focusReview,
+  onFocusReview,
 }: DocumentIdentityBarProps) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  useIdentityRowFit(rowRef);
-  const location = tabLocation(tab);
+  const location = tabLocation(document);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {
+  const { remember } = useRenameOperation(projectId, {
     kind: "file",
-    id: tab.documentId,
+    id: document.documentId,
   });
   const commitIdentity = useIdentityCommit({
     projectId,
-    tab,
+    document,
     editorWorkId: editorWorkId,
     onCommitted,
   });
@@ -98,9 +92,9 @@ export function DocumentIdentityBar({
   // Only provisional placement can be repaired here; homed refusals stay in lists.
   const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
-    tab.resourceHandle
-      ? resource.handle === tab.resourceHandle
-      : resource.identity.documentId === tab.documentId,
+    document.resourceHandle
+      ? resource.handle === document.resourceHandle
+      : resource.identity.documentId === document.documentId,
   );
   const failed = resource ? projectResourceNeedsRepair(projectId, resource) : null;
   // A refused delete has no placement to repair here; a refused create and a refused move do.
@@ -131,11 +125,14 @@ export function DocumentIdentityBar({
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
   const reviewItemKey =
-    review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
+    review?.documentId === document.documentId && review.shown ? review.itemKey : null;
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
-  const reviewPending = review?.documentId === tab.documentId && !review.shown;
-  const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey);
+  const reviewPending = review?.documentId === document.documentId && !review.shown;
+  const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
+    if (takeFocus) onFocusReview?.(row.draft.itemKey);
+    openReviewFile(row, controller.ownerKey);
+  };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
@@ -143,138 +140,102 @@ export function DocumentIdentityBar({
   const placementOpen = fieldOpen && showChip;
   // Only a provisional placement can be repaired here.
   const repairable = location.provisional && !readOnly;
-  const manuscriptState = useManuscriptState(projectId, tab);
+  const manuscriptState = useManuscriptState(projectId, document);
+  const notice = useDocumentNotice(projectId, document.documentId);
+  const lineFocus = useRef<HTMLDivElement>(null);
+  useFocusSuccession(lineFocus);
 
-  const renderRow = (version: ReactNode, controls: ReactNode) => (
-    <div
-      className={cn(
-        "min-w-0",
-        variant === "header" ? "flex-1" : "shrink-0",
-        reviewItemKey &&
-          variant === "band" &&
-          "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
-      )}
-    >
-      {/* Navigation chrome like the tab strip above it: it spans edge to edge,
-          NOT the prose column. Geometry contract lives in identity-bar-geometry.ts.
-          One line when the path and the review controls fit together; otherwise
-          the controls wrap to a line of their own (flex-wrap, no breakpoint), so
-          the path keeps its room. The trailing command is pinned to the first
-          line. Crumb text is text-sm to match the suggestion-popover rows. */}
-      <div
-        ref={rowRef}
-        data-document-identity-row
-        className={cn(
-          "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
-          variant === "header"
-            ? "min-h-10 gap-y-0.5 py-1 pl-2"
-            : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
-          trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
-          // The row grows so every control can own a 44px target (document-identity-row.css).
-          "[@media(pointer:coarse)]:min-h-11",
-        )}
-      >
-        {/* One unit for wrapping: the commands never part from the path. */}
-        <div className="flex min-w-0 flex-auto items-center gap-1">
-          {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
-          <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
-            {placementOpen ? (
-              <IdentityPlacementField
-                projectId={projectId}
-                editorWorkId={editorWorkId}
-                tab={tab}
-                location={location}
-                failure={identityFailure}
-                commit={commit}
-                onExit={(reason) => {
-                  // Leaving the field acknowledges any failure receipt — it must
-                  // not reopen the editor it just closed.
-                  setFieldOpen(false);
-                  if (repair) setDismissedRepairId(repair.intentId);
-                  if (reason === "escape") focusEditorProse(tab.documentId);
+  // Reviewing a draft is a mode, not a notice: its controls take a line of their own
+  // above the toolbar, and a Discard's notice takes that line when it ends the review (or
+  // shares it, wrapping, when it does not). The version chip and other state stay on the
+  // toolbar row.
+  const renderState = (version: ReactNode, controls: ReactNode) => (
+    <>
+      {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
+          Undo and an Undo's back to the controls. */}
+      <div ref={lineFocus} className="contents">
+        {controls || notice ? (
+          <div
+            ref={fitReviewLine}
+            data-review-line
+            className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
+          >
+            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
+            {controls}
+          </div>
+        ) : null}
+      </div>
+      <DocumentStatePortal>
+        <div
+          data-document-identity-row
+          className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
+        >
+          {placementOpen ? (
+            <IdentityPlacementField
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              document={document}
+              location={location}
+              failure={identityFailure}
+              commit={commit}
+              onExit={(reason) => {
+                setFieldOpen(false);
+                if (repair) setDismissedRepairId(repair.intentId);
+                if (reason === "escape") focusEditorProse(document.documentId);
+              }}
+              onOpenExisting={onOpenExisting}
+            />
+          ) : null}
+          <ManuscriptStateSlot state={manuscriptState} />
+          {repair && !placementOpen ? (
+            repairable ? (
+              <button
+                type="button"
+                className="focus-ring flex min-w-0 text-left"
+                onClick={() => {
+                  setDismissedRepairId(null);
+                  setFieldOpen(true);
                 }}
-                onOpenExisting={onOpenExisting}
-              />
+              >
+                <NamespaceFailureMark failure={repair.kind} labelled />
+              </button>
             ) : (
-              <DocumentPath
-                projectId={projectId}
-                tab={tab}
-                location={location}
-                trailing={
-                  <LinkUpdateNote
-                    projectId={projectId}
-                    subject={{ kind: "file", id: tab.documentId }}
-                    operationId={noteOperationId}
-                    className="ml-3 font-sans text-ink-muted"
-                  />
-                }
-              />
-            )}
-            {version}
-            {!reviewItemKey && !reviewPending ? (
-              <DraftReviewChip documentId={tab.documentId} />
-            ) : null}
-            <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
-            {/* List failures are passive: an icon whose tooltip says where to act. */}
-            {repair && !placementOpen && !repairable ? (
               <NamespaceFailureMark
                 failure={repair.kind}
                 message={repair.kind === "create" ? undefined : passiveFailure}
               />
-            ) : null}
-            <IdentityChipSlot
-              projectId={projectId}
-              tab={tab}
-              show={showChip && !placementOpen}
-              onChooseHome={() => {
-                setFieldOpen(true);
-              }}
-            />
-          </div>
+            )
+          ) : null}
+          <IdentityChipSlot
+            projectId={projectId}
+            document={document}
+            show={showChip && !placementOpen}
+            onChooseHome={() => setFieldOpen(true)}
+          />
+          {/* The version chip holds one place: Live, or Draft while reviewing. */}
+          {version ??
+            (reviewItemKey || reviewPending ? null : (
+              <DocumentVersionMenu projectId={projectId} document={document} />
+            ))}
         </div>
-        {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
-        {trailing ? (
-          <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
-            {trailing}
-          </div>
-        ) : null}
-        {controls}
-      </div>
-      {/* A provisional placement refusal offers repair here, in words on a line of its own so a
-          narrow bar never cuts the sentence. */}
-      {repair && repairable && !placementOpen ? (
-        <button
-          type="button"
-          className={cn(
-            "focus-ring flex w-full min-w-0 pb-1 text-left",
-            variant === "header" ? "pl-2" : "px-4",
-          )}
-          onClick={() => {
-            setDismissedRepairId(null);
-            setFieldOpen(true);
-          }}
-        >
-          <NamespaceFailureMark failure={repair.kind} labelled />
-        </button>
-      ) : null}
-      {notice}
-      {reviewItemKey ? (
-        <DraftReviewFailureNotices
-          documentId={tab.documentId}
-          itemKey={reviewItemKey}
-          onOpenDraft={openDraft}
-        />
-      ) : null}
-    </div>
+      </DocumentStatePortal>
+    </>
   );
   return (
     <DraftReviewBand
-      documentId={tab.documentId}
+      projectId={projectId}
+      document={document}
+      documentId={document.documentId}
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
+      onFocusDocument={() =>
+        focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)
+      }
+      focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
+      onOpenFocused={() => onFocusReview?.(null)}
     >
-      {({ version, controls }) => renderRow(version, controls)}
+      {({ version, controls }) => renderState(version, controls)}
     </DraftReviewBand>
   );
 }
@@ -282,16 +243,16 @@ export function DocumentIdentityBar({
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
-  tab,
+  document,
   show,
   onChooseHome,
 }: {
   projectId: string;
-  tab: ContextTab;
+  document: OpenDocument;
   show: boolean;
   onChooseHome: () => void;
 }) {
-  const deviceOnly = useDeviceOnly(projectId, tab);
+  const deviceOnly = useDeviceOnly(projectId, document);
   if (!deviceOnly && !show) return null;
   return (
     <>
@@ -304,7 +265,7 @@ function IdentityChipSlot({
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
 /** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
-function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
+function useDeviceOnly(projectId: string, tab: OpenDocument): boolean {
   const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.kind === "new"
@@ -332,48 +293,62 @@ function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
   return sustained;
 }
 
+/** The document's live prose; a warm copy kept out of sight is inert. */
+const editorProse = (documentId: string) =>
+  [
+    ...document.querySelectorAll<HTMLElement>(
+      `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
+    ),
+  ].find((prose) => !prose.closest("[inert]")) ?? null;
+
+const mainProse = (leftDocumentId: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="main"] [contenteditable="true"]')].find(
+    (prose) =>
+      !prose.closest("[inert]") &&
+      !prose.closest(`[data-context-editor-document-id="${escapeCssIdent(leftDocumentId)}"]`),
+  ) ?? null;
+
 /** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
-  document
-    .querySelector<HTMLElement>(
-      `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
-    )
-    ?.focus();
+  editorProse(documentId)?.focus();
 }
 
 /**
- * Content-measured fit, after wrapping has done its work. The review controls
- * wrap to their own line before anything shortens; only a line too narrow for
- * them even alone gives up labels, in order (document-identity-row.css), and
- * the path drops its parent crumbs when the leaf would otherwise be cut.
+ * A closing review swaps the document's editor once the live one has painted, so the
+ * prose may not be there yet: holds the focus for it until the writer takes the focus.
  */
-function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
-  useLayoutEffect(() => {
-    const row = ref.current;
-    if (!row) return;
-    const fit = () => {
-      const controls = row.querySelector<HTMLElement>("[data-draft-review-controls]");
-      const style = getComputedStyle(row);
-      const available =
-        row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      for (let level = 0; level <= COLLAPSE_LEVELS; level++) {
-        row.dataset.collapse = String(level);
-        if (!controls || controls.getBoundingClientRect().width <= available) break;
-      }
-      row.removeAttribute("data-path-short");
-      const leaf = row.querySelector<HTMLElement>("[data-path-leaf]");
-      if (leaf && leaf.scrollWidth > leaf.clientWidth) row.setAttribute("data-path-short", "");
-    };
-    fit();
-    const resize = new ResizeObserver(fit);
-    resize.observe(row);
-    const mutations = new MutationObserver(fit);
-    mutations.observe(row, { childList: true, subtree: true, characterData: true });
-    return () => {
-      resize.disconnect();
-      mutations.disconnect();
-    };
-  }, [ref]);
+function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
+  // A draft-only document's discard sends main back: its prose never returns, main's does.
+  holdFocus(() => editorProse(documentId) ?? (leaving ? mainProse(documentId) : null));
 }
 
-const COLLAPSE_LEVELS = 4;
+/**
+ * The review line's ref: it gives up labels, in order (`ACTIONS_DENSITY` and
+ * document-identity-row.css), only while its controls don't fit the line's width.
+ */
+function fitReviewLine(line: HTMLDivElement) {
+  const fit = () => {
+    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
+    const style = getComputedStyle(line);
+    const available =
+      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
+    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
+      line.dataset.collapse = String(level);
+      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
+      if (!controls || controls.getBoundingClientRect().width <= available) break;
+    }
+  };
+  fit();
+  const resize = new ResizeObserver(fit);
+  resize.observe(line);
+  const mutations = new MutationObserver(fit);
+  mutations.observe(line, { childList: true, subtree: true, characterData: true });
+  return () => {
+    resize.disconnect();
+    mutations.disconnect();
+  };
+}
+
+/** The review actions' form at each collapse level (document-identity-row.css has the rest). */
+const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;

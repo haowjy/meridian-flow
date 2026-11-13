@@ -1,13 +1,6 @@
 /** One history policy for project destinations, secondary choices, and delayed address repair. */
 
-import {
-  type AddressSelection,
-  type ProjectAddress,
-  parseProjectAddress,
-  projectAddressHref,
-  projectAddressState,
-} from "./project-address";
-import { type AddressCatalog, guardProjectQuerySelections } from "./project-address-resolution";
+import { type ProjectAddress, parseProjectAddress, projectAddressHref } from "./project-address";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
 export type ProjectNavigationPort = {
@@ -24,7 +17,6 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  work: AddressSelection;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
 };
@@ -53,13 +45,10 @@ export type ProjectLeaveGuard = {
   cancel(): void;
 };
 
-/** Whether the entry already holds exactly this address, including its no-Work pin. */
+/** Whether the entry already holds exactly this address. */
 function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
-  return (
-    entry.href === projectAddressHref(address) &&
-    JSON.stringify(entry.state.meridianProjectEmptySelection) ===
-      JSON.stringify(projectAddressState(address).meridianProjectEmptySelection)
-  );
+  // An Untitled page shares Recently opened's href; its history pointer is what names it.
+  return entry.href === projectAddressHref(address) && entry.state.meridianProjectSelection == null;
 }
 
 export function createProjectNavigation(
@@ -140,31 +129,18 @@ export function createProjectNavigation(
   function parsedEntry(entry: ProjectHistoryEntry) {
     const href = entry.href.split("#", 1)[0];
     const cut = href.indexOf("?");
-    return parseProjectAddress(
-      cut < 0 ? href : href.slice(0, cut),
-      cut < 0 ? "" : href.slice(cut),
-      entry.state,
-    );
+    return parseProjectAddress(cut < 0 ? href : href.slice(0, cut), cut < 0 ? "" : href.slice(cut));
   }
 
   function freezeDeparture(): void {
     const entry = port.read();
     const parsed = parsedEntry(entry);
     if (parsed.kind !== "valid") return;
-    const current = parsed.address;
     const shown = displayed();
-    const frozen: ProjectAddress = {
-      ...current,
-      work: current.work.kind === "absent" ? shown.work : current.work,
-    };
-    const href = projectAddressHref(frozen);
-    port.replaceEntry(
-      href,
-      projectAddressState(frozen, {
-        ...entry.state,
-        meridianProjectSelection: shown.local ? { version: 2, ...shown.local } : undefined,
-      }),
-    );
+    port.replaceEntry(projectAddressHref(parsed.address), {
+      ...entry.state,
+      meridianProjectSelection: shown.local ? { version: 2, ...shown.local } : undefined,
+    });
   }
 
   function transition(
@@ -237,10 +213,7 @@ export function createProjectNavigation(
           void port
             .navigate(projectAddressHref(next), {
               ...options,
-              state: {
-                ...projectAddressState(next, options.state),
-                meridianNavigationOperation: id,
-              },
+              state: { ...options.state, meridianNavigationOperation: id },
             })
             .catch((error) =>
               operation.finish({
@@ -320,36 +293,32 @@ export function createProjectNavigation(
         afterCommit: options.afterCommit,
       });
     },
-    /** Rewrites the current entry in place: canonical path (bare project → `/chats`) and invalid `?work=`. */
-    repairAddress(
-      ticket: ProjectNavigationTicket,
-      catalogs: {
-        work: AddressCatalog<{ id: string }>;
-      },
-    ): void {
+    /** Rewrites the current entry in place to its canonical address (bare project → `/chats`). */
+    repairAddress(ticket: ProjectNavigationTicket): void {
       if (!isCurrent(ticket)) return;
       const entry = port.read();
       const parsed = parsedEntry(entry);
       if (parsed.kind !== "valid") return;
-      const next = guardProjectQuerySelections(parsed.address, catalogs);
       const pathOf = (href: string) => href.split(/[?#]/, 1)[0];
-      if (next === parsed.address && pathOf(parsed.href) === pathOf(entry.href)) return;
+      if (pathOf(parsed.href) === pathOf(entry.href)) return;
       // The destination does not change. Do not queue a destination blocker
       // that could later compete with the writer's pending navigation.
       revision += 1;
-      port.replaceEntry(projectAddressHref(next), projectAddressState(next, entry.state));
+      port.replaceEntry(parsed.href, entry.state);
     },
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
+      /** Marks the replaced entry, for what reads its history state. */
+      mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
       // Address ownership effects may race a writer's destination command. A
       // delayed repair must never retire that command or ask its leave guard.
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
-      if (sameEntryAddress(entry, address)) return { kind: "replaced" };
+      if (sameEntryAddress(entry, address) && !mark) return { kind: "replaced" };
       try {
-        port.replaceEntry(projectAddressHref(address), projectAddressState(address, entry.state));
+        port.replaceEntry(projectAddressHref(address), { ...entry.state, ...mark });
         return { kind: "replaced" };
       } catch (error) {
         return { kind: "failed", error, ticket: capture() };

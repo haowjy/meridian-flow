@@ -1,27 +1,23 @@
 /** Chronological editor history across native Yjs edits and Apply boundaries. */
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   canRedoEditorHistory,
   canUndoEditorHistory,
+  DocumentHistory,
   editorHistory,
   liveAbsolutePosition,
-  mountEditorHistory,
   redoEditorHistory,
   undoEditorHistory,
-  unmountEditorHistory,
 } from "./editor-history";
 
 it("preserves native history order across Apply boundaries when a remote write makes an entry a no-op", () => {
   const document = new Y.Doc();
   const text = document.getText("prose");
   const manager = new Y.UndoManager(text, { captureTimeout: 0 });
-  const pluginKey = (yUndoPluginKey as unknown as { key: string }).key;
   const editor = {
     state: {
-      [pluginKey]: { undoManager: manager },
       get tr() {
         return {
           setMeta() {
@@ -43,8 +39,9 @@ it("preserves native history order across Apply boundaries when a remote write m
     callbacks: [...callbacks],
   });
 
+  const history = new DocumentHistory(manager);
+  const detach = history.attach(editor);
   try {
-    mountEditorHistory(editor);
     text.insert(0, "A");
     editorHistory(editor)?.captureApply({
       undo: () => callbacks.push("undo first Apply"),
@@ -115,8 +112,8 @@ it("preserves native history order across Apply boundaries when a remote write m
       expect(state()).toEqual(expected);
     }
   } finally {
-    unmountEditorHistory(editor);
-    manager.destroy();
+    detach();
+    history.destroy();
     document.destroy();
   }
 });

@@ -1,0 +1,183 @@
+import { plural, t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
+import type { ThreadListItem } from "@meridian/contracts/protocol";
+import type { Work } from "@meridian/contracts/works";
+import { useMemo } from "react";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
+import { Chip } from "@/components/ui/chip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  useMenuActionDispatch,
+} from "@/components/ui/dropdown-menu";
+import { ChooserMark } from "@/components/ui/marks";
+import { role } from "@/components/ui/roles";
+import { cn } from "@/lib/utils";
+
+/**
+ * The Work scope under the project name: which Work's drafts the documents show
+ * and whose chats the Chat list holds. A lens, not a move: picking a Work never
+ * changes the open chapter or chat, and never rebinds a chat.
+ */
+export function WorkScopePicker({
+  projectId,
+  workId,
+  onPick,
+  onManage,
+}: {
+  projectId: string;
+  /** The scoped Work's id, the No Work row's included. */
+  workId: string | null;
+  onPick: (workId: string) => void;
+  /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
+  onManage: () => void;
+}) {
+  const { works, noWork } = useWorks(projectId);
+  const { threads } = useProjectThreads(projectId);
+  const needsYou = useMemo(() => countNeedsYou(threads), [threads]);
+  const active = works?.filter((work) => work.archivedAt === null) ?? [];
+  const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
+  const scoped = works?.find((work) => work.id === workId) ?? null;
+  const noWorkScoped = workId !== null && workId === noWork?.id;
+  const pending = scoped?.pendingDocumentCount ?? 0;
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {/* The Work in scope is state, not a link: it rests on the selected fill, like the selected tab. */}
+        <button
+          type="button"
+          className={cn(
+            "focus-ring mx-2 flex h-8 coarse:h-11 shrink-0 items-center gap-2 rounded-md px-2 text-left",
+            role.row,
+            role.selected,
+          )}
+        >
+          {scoped || noWorkScoped ? (
+            <WorkIdentity
+              work={scoped ?? noWork}
+              unavailableLabel={t`None`}
+              className={cn("flex-1", role.row)}
+            />
+          ) : (
+            <span className={cn("min-w-0 flex-1 truncate", role.secondary)}>
+              <Trans>Loading Works…</Trans>
+            </span>
+          )}
+          {pending > 0 ? (
+            <Chip kind="count" tone="jade">
+              <span aria-hidden>{pending}</span>
+              <span className="sr-only">
+                {plural(pending, { one: "# document to review", other: "# documents to review" })}
+              </span>
+            </Chip>
+          ) : null}
+          <ChooserMark />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[var(--radix-dropdown-menu-trigger-width)]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        {noWork ? (
+          <PickRow
+            name={t`None`}
+            selected={noWorkScoped}
+            onSelect={() => onPick(noWork.id)}
+            detail={null}
+          />
+        ) : null}
+        {active.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            {active.map((work) => (
+              <PickRow
+                key={work.id}
+                name={work.name}
+                selected={work.id === scoped?.id}
+                onSelect={() => onPick(work.id)}
+                detail={<WorkState work={work} needsYou={needsYou.get(work.id) ?? 0} />}
+              />
+            ))}
+          </>
+        ) : null}
+        <DropdownMenuSeparator />
+        {archived.length > 0 ? (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Trans>Archived</Trans>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {archived.map((work) => (
+                <PickRow
+                  key={work.id}
+                  name={work.name}
+                  selected={work.id === scoped?.id}
+                  onSelect={() => onPick(work.id)}
+                  detail={null}
+                />
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ) : null}
+        <DropdownMenuItem onSelect={() => dispatch(onManage)}>
+          <Trans>Manage Works…</Trans>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PickRow({
+  name,
+  selected,
+  onSelect,
+  detail,
+}: {
+  name: string;
+  selected: boolean;
+  onSelect: () => void;
+  detail: React.ReactNode;
+}) {
+  return (
+    <DropdownMenuItem selected={selected} onSelect={onSelect}>
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {detail}
+    </DropdownMenuItem>
+  );
+}
+
+/** Only state that asks for action: documents to review and chats waiting on the writer. */
+function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
+  const toReview = work.pendingDocumentCount;
+  if (toReview === 0 && needsYou === 0) return null;
+  return (
+    <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">
+      {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
+      {needsYou > 0 ? (
+        <span>
+          <Trans>{needsYou} waiting on you</Trans>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function countNeedsYou(threads: readonly ThreadListItem[] | null) {
+  const counts = new Map<string, number>();
+  for (const thread of threads ?? []) {
+    if (!thread.actionRequired || thread.workId === null) continue;
+    counts.set(thread.workId, (counts.get(thread.workId) ?? 0) + 1);
+  }
+  return counts;
+}

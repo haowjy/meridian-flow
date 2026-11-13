@@ -2,7 +2,7 @@
  * DocumentNotice: the bordered box above a document's page that says something
  * about the document (its Work is archived, its import is still arriving) and
  * offers one small action. The action drops under the message where it does
- * not fit, which is always the case in the dock's narrow column.
+ * not fit, which is always the case in the side's narrow column.
  */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,7 @@ export function DocumentNotice({
   children,
 }: {
   icon: ReactNode;
-  /** One small `outline` button. */
+  /** One small action: an `outline` button, or a Discard · Apply pair. */
   action?: ReactNode;
   className?: string;
   children: ReactNode;

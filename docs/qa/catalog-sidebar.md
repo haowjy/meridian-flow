@@ -73,7 +73,7 @@ Use the owned stack's existing project, plus `./mf thread create --project
 Use a chat whose `./mf api GET /api/threads/$THREAD/recent-documents --json`
 returns documents for the populated case.
 
-1. On the Chat index with no chat selected and no document open, capture the
+1. On a new chat (`/chats`) with no document open, capture the
    right panel: its header reads Recent, with no browse menu and no hint.
 2. Open the untouched chat and capture the same header with an empty list.
 3. Open the chat with recent documents. Capture its file rows (no heading of
@@ -84,10 +84,10 @@ returns documents for the populated case.
    in its parent, the filename in its folder, `…` where the last hidden folder
    sits), and no two crumbs open the same list. Climb with a back row: the folder left behind is
    highlighted, and climbing past the area reaches the area list without a
-   heading. Pick a file: it replaces the document beside the chat.
+   heading. Pick a file: it opens in main.
 5. Use `Manuscript/Book 1/Part Two/Act 2/chapter-2.md` to resize the
    Editor through the full-path boundary (including a 1077px viewport), then
-   drag the Chat dock divider through last-folder, no-folder, and area-icon
+   drag the side panel's divider through last-folder, no-folder, and area-icon
    fits. Folders must collapse before their names or the filename truncate
    whenever a smaller candidate fits. With last-folder fit, `…` opens inside
    Book 1 and highlights Part Two; with no-folder or icon fit, it opens inside
@@ -163,15 +163,15 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    and Scratch. The same note must return in the loaded profile, not just in a
    fresh one. Repeat with Work trash/restore cascading over the lineage's chats.
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
-   Editor tabs and the document dock. Delete the folder from its list: the rows
-   disappear after local admission, without waiting for HTTP. Descendant tabs and
-   dock close through resource projection. Repeat offline, reload, then reconnect:
+   main, the side and kept (open one, then another, with a chat in between). Delete the folder from its list: the rows
+   disappear after local admission, without waiting for HTTP. Their presentations
+   end through resource projection. Repeat offline, reload, then reconnect:
    the same journal attempt settles from its receipt. Switch accounts during
    dispatch and return: only the original account settles. Inject a typed
    nonretryable refusal for one delete: the folder and descendants return, with
    a delete failure mark, no rename field, and a "Couldn't delete zz-probe." toast with Retry.
 5. Delete another open folder through `./mf api` using its catalog folder node
-   ID. Availability reconciliation closes its tabs and dock (wake/focus/poll),
+   ID. Availability reconciliation ends their presentations (wake/focus/poll),
    without a general durable deletion intake (session authority retains its adopted
    local-origin exception). A delayed delete naming the deleted
    folder's ID must answer 404 `not_found` and leave a replacement folder at the same
@@ -180,7 +180,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    and its Work. Availability must still say `deleted`, including while its lineage
    is hidden; the independently deleted note never returns.
 7. Open a folder descendant and confirm it appears in Recently opened. Go
-   offline in the browser and delete the parent. The tree, tab, and dock close
+   offline in the browser and delete the parent. The tree and the presented documents close
    after local persistence; Recently opened loses the link before the server
    deletion runs. Reconnect: the
    accepted deletion refetches `/api/projects/$PROJECT/recent-documents`; its

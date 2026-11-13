@@ -2,15 +2,14 @@
 
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import type { ContextTab, ProjectTabsSlice } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   reconcileSnapshotContextRoutes,
   workingSetRouteIdentityEquals,
 } from "@/client/working-set";
 import {
-  applyContextRepairIfCurrent,
-  type ContextRouteTarget,
+  type ContextRouteRequest,
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
@@ -20,10 +19,8 @@ import type {
   AppliedAvailabilityCommand,
   ContextRemovalProjectSnapshot,
 } from "./context-removal-coordinator";
-import { planContextRemoval, routeTargetForTab, tabForTarget } from "./context-removal-planner";
+import { planContextRemoval, routeTargetForTab } from "./context-removal-planner";
 import {
-  beginSelection,
-  bindSelection,
   type ContextRouteSelection,
   leaveSelection,
   reduceRepresentedRemoval,
@@ -33,10 +30,9 @@ import type { ProjectDocumentAvailabilityCommand } from "./project-context-avail
 export type ContextAvailabilityLocalBatchPlan = Readonly<{
   projectId: string;
   commands: readonly ProjectDocumentAvailabilityCommand[];
-  tabs: readonly ContextTab[];
-  selectedTabIdByWork: Readonly<Record<string, string>>;
+  tabs: readonly OpenDocument[];
   selection: ContextRouteSelection;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
   transitionRevision: number;
   recentRoutes: readonly WorkingSetRoute[];
@@ -58,7 +54,7 @@ function documentId(command: ProjectDocumentAvailabilityCommand): string {
   return command.kind === "available" ? command.document.entryId : command.documentId;
 }
 
-function sameTarget(left: ContextRouteTarget | null, right: ContextRouteTarget): boolean {
+function sameTarget(left: ContextRouteRequest | null, right: ContextRouteRequest): boolean {
   return left !== null && sameContextTarget(left, right);
 }
 
@@ -66,15 +62,19 @@ export function planContextAvailabilityBatch(
   input: Readonly<{
     commands: readonly ProjectDocumentAvailabilityCommand[];
     project: ContextRemovalProjectSnapshot;
-    tabs: ProjectTabsSlice;
+    /** What the views present (`PresentedDocuments`). */
+    tabs: readonly OpenDocument[];
+    /** The document main presents, if any. */
+    mainDocumentId: string | null;
     recentRoutes: readonly WorkingSetRoute[];
     routeSearch: ProjectSearch | null;
     appliedGenerations: ReadonlyMap<string, AppliedAvailabilityCommand>;
+    /** Documents a draft keeps on screen: their views keep them when live loses them. */
+    held?: ReadonlySet<string>;
   }>,
 ): ContextAvailabilityLocalBatchPlan {
   const projectId = input.commands[0]?.projectId ?? "";
-  let tabs = [...input.tabs.tabs];
-  const selectedTabIdByWork = { ...input.tabs.selectedTabIdByWork };
+  let tabs = [...input.tabs];
   let selection = input.project.selection;
   let admitted = input.project.admitted;
   let removalFence = input.project.removalFence;
@@ -104,7 +104,7 @@ export function planContextAvailabilityBatch(
     });
     if (command.kind === "available") {
       const entry = command.document;
-      const scheme = entry.uri.slice(0, entry.uri.indexOf(":")) as ContextTab extends {
+      const scheme = entry.uri.slice(0, entry.uri.indexOf(":")) as OpenDocument extends {
         scheme: infer Scheme;
       }
         ? Scheme
@@ -129,25 +129,17 @@ export function planContextAvailabilityBatch(
               : undefined;
           })()
         : undefined;
-      const targetWorkId = chatId
+      const target: ContextRouteRequest | null = chatId
         ? null
         : lineageId
-          ? input.project.activeWorkId
+          ? { scheme, path, rootThreadId: lineageId }
           : isWorkScopedScheme(scheme)
             ? entry.scope.kind === "work"
-              ? entry.scope.workId
+              ? { scheme, path, workId: entry.scope.workId }
               : null
-            : input.project.activeWorkId;
-      const target: ContextRouteTarget | null = targetWorkId
-        ? { scheme, path, workId: targetWorkId, ...(lineageId ? { rootThreadId: lineageId } : {}) }
-        : null;
+            : { scheme, path };
       const priorTargets = tabs.flatMap((tab) =>
-        tab.kind !== "new" && tab.documentId === id && input.project.activeWorkId
-          ? [routeTargetForTab(tab, input.project.activeWorkId)]
-          : [],
-      );
-      const selectedWorks = Object.entries(selectedTabIdByWork).flatMap(([workId, selected]) =>
-        selected === id ? [workId] : [],
+        tab.kind !== "new" && tab.documentId === id ? [routeTargetForTab(tab)] : [],
       );
       tabs = tabs.map((tab) => {
         if (tab.kind === "new" || tab.documentId !== id) return tab;
@@ -164,21 +156,17 @@ export function planContextAvailabilityBatch(
           rootThreadRef: _oldHandle,
           ...withoutOwner
         } = common;
-        if (chatId) return common as ContextTab;
+        if (chatId) return common as OpenDocument;
         if (lineageId && lineageRef)
           return {
             ...withoutOwner,
             rootThreadId: lineageId,
             rootThreadRef: lineageRef,
-          } as ContextTab;
-        return isWorkScopedScheme(scheme) && targetWorkId
-          ? ({ ...withoutOwner, workId: targetWorkId } as ContextTab)
-          : (withoutOwner as ContextTab);
+          } as OpenDocument;
+        return isWorkScopedScheme(scheme) && target?.workId
+          ? ({ ...withoutOwner, workId: target.workId } as OpenDocument)
+          : (withoutOwner as OpenDocument);
       });
-      if (isWorkScopedScheme(scheme) && targetWorkId && !lineageId) {
-        for (const workId of selectedWorks) delete selectedTabIdByWork[workId];
-        if (selectedWorks.length) selectedTabIdByWork[targetWorkId] = id;
-      }
       if (
         target &&
         selection.status === "bound" &&
@@ -191,10 +179,7 @@ export function planContextAvailabilityBatch(
         if (selection.by !== "review") {
           const previous = selection.locator;
           selection = { ...selection, locator: target };
-          if (
-            routeSearch &&
-            contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
-          ) {
+          if (routeSearch && contextRouteMatchesSearch(routeSearch, previous)) {
             routeSearch = openContextRouteSearch(routeSearch, target);
             relocatedRouteDocumentId = id;
           }
@@ -203,7 +188,7 @@ export function planContextAvailabilityBatch(
         admitted = target;
       }
       const replacement = buildWorkingSetRoute(id, scheme, path, {
-        workId: isWorkScopedScheme(scheme) && !lineageId ? targetWorkId : undefined,
+        workId: isWorkScopedScheme(scheme) && !lineageId ? target?.workId : undefined,
         rootThreadId: lineageId,
         chatId,
       });
@@ -221,6 +206,7 @@ export function planContextAvailabilityBatch(
           ? ("catalog-unavailable" as const)
           : ("authority-unavailable" as const),
       documentIds: [id],
+      held: input.held,
     };
     const transition = reduceRepresentedRemoval(
       selection,
@@ -229,9 +215,7 @@ export function planContextAvailabilityBatch(
       command.kind === "terminal-remove",
     );
     selection = transition.selection;
-    const selectedTabId = input.project.activeWorkId
-      ? (selectedTabIdByWork[input.project.activeWorkId] ?? null)
-      : null;
+    const selectedTabId = input.project.activeWorkId ? input.mainDocumentId : null;
     const removal = planContextRemoval({
       activeWorkId: input.project.activeWorkId,
       tabs,
@@ -244,12 +228,6 @@ export function planContextAvailabilityBatch(
       intent,
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
-    for (const [workId, selected] of Object.entries(selectedTabIdByWork)) {
-      if (selected === id) delete selectedTabIdByWork[workId];
-    }
-    if (removal.nextSelectedTabId && input.project.activeWorkId) {
-      selectedTabIdByWork[input.project.activeWorkId] = removal.nextSelectedTabId;
-    }
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
       ...removal.workingSet,
@@ -275,49 +253,6 @@ export function planContextAvailabilityBatch(
         removedDocumentIds: [...new Set([...(removalFence?.removedDocumentIds ?? []), id])],
       };
     }
-    const repairTarget = removal.routeRepairTarget;
-    if (routeSearch && repairTarget && transition.planning.current.kind === "proven-removed") {
-      const current = transition.planning.current;
-      routeSearch = applyContextRepairIfCurrent(
-        {
-          expectedSearch: {
-            screen: "context",
-            work: routeSearch.work,
-            chat: routeSearch.chat,
-            scheme: current.locator.scheme,
-            path: current.locator.path,
-          },
-          expectedSelection: {
-            kind: "removed-binding",
-            revision: current.revision,
-            documentId: current.identity.documentId,
-          },
-          next: repairTarget,
-        },
-        routeSearch,
-      );
-    }
-    if (repairTarget && transition.planning.current.kind === "proven-removed") {
-      if ("kind" in repairTarget) {
-        selection = leaveSelection(selection).selection;
-      } else {
-        const candidate = beginSelection(selection, repairTarget).selection;
-        const activeWorkId = input.project.activeWorkId;
-        const fallback = activeWorkId ? tabForTarget(tabs, repairTarget, activeWorkId) : null;
-        const bound = fallback
-          ? bindSelection(
-              candidate,
-              candidate.revision,
-              {
-                kind: fallback.kind === "new" ? "local" : "server",
-                documentId: fallback.documentId,
-              },
-              "answer",
-            )
-          : null;
-        selection = bound?.selection ?? candidate;
-      }
-    }
     sessionEffects.push({
       commandId: command.commandId,
       operation: command.kind === "terminal-remove" ? "revoke-document" : "revoke-access",
@@ -329,27 +264,24 @@ export function planContextAvailabilityBatch(
   }
 
   if (unavailableWorkIds.size > 0) {
+    const isUnavailable = (workId: string | null | undefined) =>
+      workId != null && unavailableWorkIds.has(workId);
     recentRoutes = recentRoutes.filter(
       (route) => route.workId == null || !unavailableWorkIds.has(route.workId),
     );
-    for (const workId of unavailableWorkIds) delete selectedTabIdByWork[workId];
-    const activeWorkId = input.project.activeWorkId;
-    if (activeWorkId && unavailableWorkIds.has(activeWorkId)) {
-      if (selection.status !== "none" && selection.locator.workId === activeWorkId) {
-        selection = leaveSelection(selection).selection;
-      }
-      if (admitted?.workId === activeWorkId) admitted = null;
-      if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = {
-          ...routeSearch,
-          screen: "work",
-          work: undefined,
-          chat: undefined,
-          scheme: undefined,
-          folder: undefined,
-          path: undefined,
-        };
-      }
+    // Any Work's Scratch note can be on screen, whatever the scope is.
+    if (selection.status !== "none" && isUnavailable(selection.locator.workId)) {
+      selection = leaveSelection(selection).selection;
+    }
+    if (isUnavailable(admitted?.workId)) admitted = null;
+    if (isUnavailable(input.routeSearch?.work) && routeSearch) {
+      routeSearch = {
+        ...routeSearch,
+        work: undefined,
+        chat: undefined,
+        scheme: undefined,
+        path: undefined,
+      };
     }
   }
 
@@ -357,7 +289,6 @@ export function planContextAvailabilityBatch(
     projectId,
     commands: input.commands,
     tabs,
-    selectedTabIdByWork,
     selection,
     admitted,
     removalFence,

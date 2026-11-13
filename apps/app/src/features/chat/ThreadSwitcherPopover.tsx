@@ -4,31 +4,25 @@
  * Keeps switching primary, with recency visible at a glance; rename stays
  * attached only to the active row and creation sits above the list.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
-
+import { Pencil, Plus } from "lucide-react";
+import { type RefObject, useRef, useState } from "react";
 import { useThreadStore } from "@/client/stores";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
-import {
-  dropdownResultsClass,
-  dropdownRowContainerClass,
-  dropdownRowVariants,
-  dropdownSearchClass,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { ChooserMark } from "@/components/ui/marks";
+import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { titleChipClass } from "@/features/project/shell/title-chip";
+import { titleChipClass } from "@/features/project/shell/tab-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +36,6 @@ export function ThreadSwitcherPopover({
   title,
   onRename,
   triggerRef,
-  variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string | null;
@@ -50,24 +43,18 @@ export function ThreadSwitcherPopover({
   onRename?: () => void;
   /** Where a closed rename field hands focus back. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
-  /**
-   * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
-   *   document tab.
-   * `tab` — the active-tab chip grammar: the chat pane's page material
-   * continues up into the band, same as the document tab strip. Use only
-   * where the pane below the band is `page-sheet`.
-   */
-  variant?: "quiet" | "tab";
 }) {
   const { openChat: onSelectThread, openNewChat } = useChatNavigation();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const focusHandoff = useRef(false);
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const search = query.trim();
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -77,7 +64,7 @@ export function ThreadSwitcherPopover({
     }))
     .filter((work) => work.threadIds.length > 0);
   const visibleUngrouped = ungroupedThreads.filter((thread) => filteredIds.has(thread.id));
-  const showGroupHeaders = workItems.length > 1;
+  const showGroupHeaders = workItems.length + (ungroupedThreads.length > 0 ? 1 : 0) > 1;
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
 
   const changeOpen = (nextOpen: boolean) => {
@@ -98,25 +85,36 @@ export function ThreadSwitcherPopover({
     onRename?.();
   };
 
-  const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    if (event.target instanceof HTMLInputElement && ["Home", "End"].includes(event.key)) return;
-    const focusable = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[data-switcher-focus]"),
-    ).filter((element) => !element.hasAttribute("disabled"));
-    if (focusable.length === 0) return;
-
-    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? focusable.length - 1
-          : event.key === "ArrowDown"
-            ? (currentIndex + 1) % focusable.length
-            : (currentIndex <= 0 ? focusable.length : currentIndex) - 1;
-    event.preventDefault();
-    focusable[nextIndex]?.focus();
+  const threadRow = (thread: ThreadListItem) => {
+    const active = thread.id === activeThreadId;
+    return (
+      <li key={thread.id}>
+        <ListRow
+          density="menu"
+          current={active ? "page" : false}
+          onOpen={() => selectThread(thread.id)}
+          title={displayThreadTitle(thread.title)}
+          meta={
+            <>
+              <span className="font-medium">
+                <span className="sr-only">
+                  <Trans>Agent:</Trans>{" "}
+                </span>
+                {thread.agentName ?? "General"}
+              </span>{" "}
+              {relativeTime(thread.updatedAt, now)}
+            </>
+          }
+          actions={
+            active ? (
+              <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
+                <Pencil aria-hidden />
+              </IconButton>
+            ) : null
+          }
+        />
+      </li>
+    );
   };
 
   return (
@@ -128,34 +126,25 @@ export function ThreadSwitcherPopover({
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className={cn("focus-ring text-left", titleChipClass(variant))}
+          className={cn("focus-ring text-left", titleChipClass("quiet"))}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-          <ChevronDown
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-            aria-hidden
-          />
+          <ChooserMark />
         </button>
       </PopoverTrigger>
       <PopoverContent
         {...densityPopoverCollisionProps}
         ref={contentRef}
         align="start"
-        className={cn(
-          dropdownSurfaceVariants({ measure: "catalog", page: null }),
-          "text-tier-chat p-0",
-        )}
+        className={cn(dropdownSurfaceVariants({ measure: "catalog" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;
           const currentRow = content?.querySelector<HTMLElement>('[aria-current="page"]');
           (
-            content?.querySelector<HTMLElement>("[data-switcher-search]") ??
+            searchRef.current ??
             currentRow ??
-            content?.querySelector<HTMLElement>("[data-switcher-focus]")
+            content?.querySelector<HTMLElement>("[data-list-item]")
           )?.focus();
           currentRow?.scrollIntoView({ block: "nearest" });
         }}
@@ -163,168 +152,52 @@ export function ThreadSwitcherPopover({
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={handleNavigationKeyDown}
       >
-        <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)]">
-          <button
-            data-switcher-focus
-            type="button"
-            className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
-            onClick={() => {
-              focusHandoff.current = true;
-              changeOpen(false);
-              void openNewChat();
-            }}
-          >
-            <Plus aria-hidden />
-            <Trans>New chat</Trans>
-          </button>
-        </div>
-        {showSearch ? (
-          <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
+        <Picker label={t`Switch chat`}>
+          <PickerSection>
+            <li>
+              <ListRow
+                density="menu"
+                leading={<Plus className="text-muted-foreground" aria-hidden />}
+                title={<Trans>New chat</Trans>}
+                onOpen={() => {
+                  focusHandoff.current = true;
+                  changeOpen(false);
+                  void openNewChat();
+                }}
               />
-              <Input
-                data-switcher-focus
-                data-switcher-search
-                type="search"
-                value={query}
-                aria-label={t`Search chats`}
-                placeholder={t`Search chats`}
-                onChange={(event) => setQuery(event.target.value)}
-                className={cn(dropdownSearchClass, "shadow-none")}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <div
-          className={cn(
-            dropdownResultsClass,
-            "max-h-72 px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]",
-          )}
-        >
-          {filteredThreads.length === 0 ? (
-            <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
-              <Trans>No matching chats</Trans>
-            </p>
-          ) : (
-            <div className="flex flex-col gap-[var(--chat-space-inline)]">
-              {visibleWorkItems.map((group) => (
-                <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
-                  {showGroupHeaders ? (
-                    <h3
-                      className={cn(
-                        sectionLabelVariants({ variant: "group" }),
-                        "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
-                      )}
-                    >
-                      {group.name}
-                    </h3>
-                  ) : null}
-                  <ul className="flex flex-col gap-[var(--chat-space-row)]">
-                    {group.threadIds.map((id) => {
-                      const thread = threadById.get(id);
-                      if (!thread) return null;
-                      return (
-                        <ThreadSwitchItem
-                          key={id}
-                          thread={thread}
-                          active={id === activeThreadId}
-                          now={now}
-                          onSelect={selectThread}
-                          onRename={startRename}
-                        />
-                      );
-                    })}
-                  </ul>
-                </section>
-              ))}
-              {visibleUngrouped.length > 0 ? (
-                <ul className="flex flex-col gap-[var(--chat-space-row)]">
-                  {visibleUngrouped.map((thread) => (
-                    <ThreadSwitchItem
-                      key={thread.id}
-                      thread={thread}
-                      active={thread.id === activeThreadId}
-                      now={now}
-                      onSelect={selectThread}
-                      onRename={startRename}
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
+            </li>
+          </PickerSection>
+          {showSearch ? (
+            <PickerSearch
+              ref={searchRef}
+              value={query}
+              onChange={setQuery}
+              label={t`Search chats`}
+            />
+          ) : null}
+          <PickerResults>
+            {filteredThreads.length === 0 ? (
+              <ListLine density="menu">
+                {search ? <Trans>No chats match “{search}”.</Trans> : <Trans>No chats yet.</Trans>}
+              </ListLine>
+            ) : null}
+            {visibleWorkItems.map((group) => (
+              <PickerSection key={group.id} label={showGroupHeaders ? group.name : undefined}>
+                {group.threadIds.map((id) => {
+                  const thread = threadById.get(id);
+                  return thread ? threadRow(thread) : null;
+                })}
+              </PickerSection>
+            ))}
+            {visibleUngrouped.length > 0 ? (
+              <PickerSection label={showGroupHeaders ? t`Chats without a Work` : undefined}>
+                {visibleUngrouped.map(threadRow)}
+              </PickerSection>
+            ) : null}
+          </PickerResults>
+        </Picker>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function ThreadSwitchItem({
-  thread,
-  active,
-  now,
-  onSelect,
-  onRename,
-}: {
-  thread: ThreadListItem;
-  active: boolean;
-  now: number;
-  onSelect: (threadId: string) => void;
-  onRename?: () => void;
-}) {
-  const title = displayThreadTitle(thread.title);
-  const rel = relativeTime(thread.updatedAt, now);
-  const agentName = thread.agentName ?? "General";
-  return (
-    <li
-      className={cn(
-        dropdownRowContainerClass,
-        "group flex min-w-0 items-center transition-colors",
-        "hover:bg-dropdown-hover",
-        active && "text-foreground",
-      )}
-      data-selected={active}
-    >
-      <button
-        data-switcher-focus
-        type="button"
-        aria-current={active ? "page" : undefined}
-        onClick={() => onSelect(thread.id)}
-        className={cn(
-          dropdownRowVariants({ interactive: false }),
-          "flex-1",
-          active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
-        )}
-      >
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        <WorkIdentity
-          className="max-w-24 shrink-0 text-ink-muted"
-          name={thread.agentName}
-          unavailableLabel="General"
-          aria-label={t`Agent: ${agentName}`}
-        />
-        {rel ? (
-          <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
-        ) : null}
-      </button>
-      {active ? (
-        <IconButton
-          data-switcher-focus
-          size="xs"
-          aria-label={t`Rename chat`}
-          title={t`Rename chat`}
-          onClick={onRename}
-          className="mr-1 [@media(pointer:coarse)]:size-11"
-        >
-          <Pencil className="size-3.5" aria-hidden />
-        </IconButton>
-      ) : null}
-    </li>
   );
 }

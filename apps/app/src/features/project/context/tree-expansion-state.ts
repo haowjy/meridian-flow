@@ -1,8 +1,8 @@
 /** Tab-local tree arrangement, scoped to the account, project, and tree owner. */
 import { browserRecord, isRecord } from "@/client/storage/browser-record";
 
-export type TreeExpansion = { expanded: boolean; entries: Record<string, boolean> };
-export const EMPTY_TREE_EXPANSION: TreeExpansion = { expanded: false, entries: {} };
+export type TreeExpansion = { entries: Record<string, boolean> };
+export const EMPTY_TREE_EXPANSION: TreeExpansion = { entries: {} };
 
 export function treeExpansionKey(accountId: string, projectId: string, scope: string): string {
   return `meridian:tree-expansion:v1:${JSON.stringify([accountId, projectId, scope])}`;
@@ -15,12 +15,11 @@ function treeRecord(key: string, accountId: string) {
     (input) => {
       if (!isRecord(input)) return undefined;
       if (
-        typeof input.expanded !== "boolean" ||
         !isRecord(input.entries) ||
         Object.values(input.entries).some((open) => typeof open !== "boolean")
       )
         return undefined;
-      return { expanded: input.expanded, entries: input.entries as Record<string, boolean> };
+      return { entries: input.entries as Record<string, boolean> };
     },
   );
 }

@@ -1,4 +1,5 @@
 /** Sole controller connecting the Work binding reducer to query and announcements. */
+
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useReducer, useRef } from "react";
@@ -8,6 +9,7 @@ import { type NormalizedCommit, useRebindThreadWork } from "@/client/query/useRe
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
 import type { WorkCatalogView, WorkPickerOperation } from "@/components/app/work-composer-controls";
+import { workDisplayName } from "@/lib/work-name";
 import {
   type ComposerWorkBindingState,
   initialComposerWorkBindingState,
@@ -49,7 +51,7 @@ export function useComposerWorkBinding({
     dispatch({
       type: "binding.observed",
       work,
-      message: t`This chat's Work changed to ${work.name}`,
+      message: t`This chat's Work changed to ${workDisplayName(work)}`,
     });
   }, [work]);
 
@@ -73,7 +75,11 @@ export function useComposerWorkBinding({
         target,
         observedProjection: "none",
       };
-      dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
+      dispatch({
+        type: "change.started",
+        request,
+        message: t`Changing work to ${workDisplayName(target)}`,
+      });
       try {
         const outcome = await mutation.mutateAsync({
           workId,
@@ -85,7 +91,7 @@ export function useComposerWorkBinding({
             type: "change.superseded",
             requestId: request.id,
             work: outcome.currentWork,
-            message: t`This chat's Work changed to ${outcome.currentWork.name}`,
+            message: t`This chat's Work changed to ${workDisplayName(outcome.currentWork)}`,
           });
           return "close" as const;
         }
@@ -110,7 +116,7 @@ export function useComposerWorkBinding({
           type: "change.committed",
           requestId: request.id,
           commit,
-          message: t`This chat now uses ${commit.work.name}.`,
+          message: t`This chat now uses ${workDisplayName(commit.work)}.`,
         });
       } catch (cause) {
         let failure: WorkBindingFailure;

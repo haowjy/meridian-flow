@@ -14,7 +14,7 @@
  * frame names. What has been spoken is the slice's, so a remount repeats no announcement.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
- * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
+ * main and the side, so a chat has one mounted `ChatView` and so one view. Two would
  * each announce. A dev-only registry warns when a second mounts for a chat that has one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -29,7 +29,7 @@ import {
 } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, useRunStateSlice, useThreadActions } from "@/client/stores";
-import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -151,10 +151,10 @@ export function useSwitchView(input: {
           const answer = await withdrawThreadControl(threadId, id);
           const { outcome } = answer;
           dispatch(threadId, { type: "withdrawn", id, runState: answer.runState });
-          if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
+          if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
-          // Stop restores the Work default.
+          // Withdrawing restores the Work default.
           void invalidateWriteModeReads(queryClient, latest.current.projectId);
           revalidate();
         } catch (error) {
@@ -170,7 +170,7 @@ export function useSwitchView(input: {
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
         dispatch(threadId, { type: "dropWithdraw", id });
-        if (result === "removed") announce(controlStoppedCopy(row.control));
+        if (result === "removed") announce(controlWithdrawnCopy(row.control));
       });
     },
     [dispatch, revalidate, threadId],

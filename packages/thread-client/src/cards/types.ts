@@ -48,7 +48,7 @@ export type ChatCardCopy =
   | "switch-direct-failed"
   /** "Couldn't stop the compaction." */
   | "compact-withdraw-failed"
-  /** "Couldn't stop the switch." */
+  /** "Couldn't undo the switch." */
   | "switch-withdraw-failed";
 
 export type ChatCardAction =

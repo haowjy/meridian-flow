@@ -18,7 +18,7 @@ import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { documentBasename } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appliedSentence } from "@/features/draft-review/CommandNotice";
@@ -43,7 +43,7 @@ export type ManuscriptState = {
 };
 
 /** The document's manuscript state, or null when live did nothing to it. */
-export function useManuscriptState(projectId: string, tab: ContextTab): ManuscriptState | null {
+export function useManuscriptState(projectId: string, tab: OpenDocument): ManuscriptState | null {
   useLingui();
   const { documentId } = tab;
   const { files } = useDraftReview();
@@ -123,15 +123,15 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
     <div
       role="status"
       data-manuscript-state-notice={state.kind}
-      className="flex min-w-0 max-w-full items-center font-sans text-ink-muted text-xs"
+      className="flex min-w-0 max-w-full items-center font-sans text-muted-foreground text-xs"
     >
       <Popover>
         <PopoverTrigger
           aria-label={state.sentence}
           title={state.sentence}
           className={cn(
-            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-muted hover:text-foreground",
-            touch ? "h-11" : "h-6 [@media(pointer:coarse)]:h-11",
+            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-ink-fill hover:text-foreground",
+            touch ? "h-11" : "h-6 coarse:h-11",
           )}
         >
           <Info aria-hidden className="size-3.5 shrink-0" />
@@ -147,12 +147,8 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
         </PopoverContent>
       </Popover>
       {state.dismiss ? (
-        <IconButton
-          aria-label={t`Dismiss`}
-          className={cn("shrink-0", touch ? "size-11" : "size-6 [@media(pointer:coarse)]:size-11")}
-          onClick={state.dismiss}
-        >
-          <X aria-hidden className="size-3" />
+        <IconButton label={t`Dismiss`} className="shrink-0" onClick={state.dismiss}>
+          <X aria-hidden />
         </IconButton>
       ) : null}
     </div>

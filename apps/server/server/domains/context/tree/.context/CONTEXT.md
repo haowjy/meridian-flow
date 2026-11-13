@@ -212,6 +212,15 @@ through `placeLive` (placement's ancestry and one name-claim rule: a living
 folder at a path is reused, a deleted one restored). A taken leaf counts up to
 the free name; the inverse boundary reports a document blocking an ancestor as
 `ancestor_taken`.
+A writer's drag out of Trash adds `into` (a destination parent and a sibling position): the
+document keeps its own name, placement counts up to the free name as a move does, and the
+superseded guard is unchanged. The service (`context/restore-removed-documents.ts`) reads the
+destination before locking (`restore-destination.ts`, its source joins the scope) and again under
+the locks: a folder deleted or in Trash answers `destination_unavailable`, one moved to another
+source retries the scope. A restore stays in the document's system (project areas, or `user`);
+Work, chat and lineage sources answer `destination_unavailable`. Several documents arrive in
+request order, the first at the position and each next after the one before. A stale anchor falls
+back to the parent's arrival rule.
 It settles arrivals and refreshes the catalog through ports its caller passes,
 and never touches a draft.
 

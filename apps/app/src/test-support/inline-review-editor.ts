@@ -9,6 +9,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import { DocumentHistory } from "@/core/editor/editor-history";
 import { createLocalPresence } from "@/core/editor/local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
@@ -31,7 +32,7 @@ export function destroyReviewEditors(): void {
  */
 export function createReviewEditor(
   paragraphs: string[],
-  /** A room another editor is already bound to: bind to it unseeded, as the dock and the Editor tab do. */
+  /** A room another editor is already bound to: bind to it unseeded, as a second host of the document does. */
   sharedDoc?: Y.Doc,
 ): { editor: Editor; doc: Y.Doc } {
   const doc = sharedDoc ?? new Y.Doc({ gc: false });
@@ -55,6 +56,7 @@ export function createReviewEditor(
     element,
     ...createEditorConfig({
       document: doc,
+      history: DocumentHistory.forDocument(doc),
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
       enableDraftInlineReview: true,
@@ -102,7 +104,7 @@ function syncedRoom(doc: Y.Doc) {
   };
 }
 
-/** The one review runtime of the draft room `doc`; every editor on the room attaches to it, as a tab and the dock do. */
+/** The one review runtime of the draft room `doc`; every editor on the room attaches to it, as main's and the side's do. */
 export function createRoomRuntime(doc: Y.Doc): ReviewRuntime {
   return createReviewRuntime(syncedRoom(doc));
 }

@@ -335,7 +335,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
         ) : null}
       </EditorMenu>
 
-      {/* The table's object controls: one ⋮, and only while the table is
+      {/* The table's object controls: one ⋯, and only while the table is
           selected. §5.4 rules out a hover icon row here — the grips already
           own the top edge, and a second system would crowd them.
 
@@ -390,7 +390,7 @@ function GripButton({
     <button
       {...rest}
       type="button"
-      className="meridian-table-grip"
+      className="meridian-table-grip focus-ring"
       data-table-grip={axis}
       aria-label={label}
       title={label}
@@ -419,7 +419,7 @@ function AddTab({
   return (
     <button
       type="button"
-      className="meridian-table-add-tab"
+      className="meridian-table-add-tab focus-ring"
       data-table-add={axis}
       aria-label={label}
       title={label}

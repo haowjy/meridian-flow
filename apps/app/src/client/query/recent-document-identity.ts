@@ -9,7 +9,12 @@ import {
 import { projectResourceCatalogView } from "@/client/query/useContextCatalog";
 
 /** A resource's current name and path, plus the id it answers to now (an alias resolves to its joined id). */
-export type RecentIdentity = { documentId: string; name: string; path: string };
+export type RecentIdentity = {
+  documentId: string;
+  name: string;
+  path: string;
+  editable: boolean;
+};
 
 /** Undefined means not loaded; null means terminal or optimistically suppressed from Recent. */
 export type RecentIdentities = { get(documentId: string): RecentIdentity | null | undefined };
@@ -46,6 +51,7 @@ export function recentDocumentIdentityIndex(
           documentId: entry.entryId,
           name: entry.name,
           path: entry.uri,
+          editable: entry.editable,
         });
     }
   }

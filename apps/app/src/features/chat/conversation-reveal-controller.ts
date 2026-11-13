@@ -6,10 +6,15 @@
  * test support rather than through production-facing exports.
  */
 
+import type { PanePlace } from "@/features/project/pane-place";
+
 export type SubagentRevealBlock = "latest" | "card";
 
-/** Where a reveal asks the writer to land. Each kind names its whole path. */
-export type ConversationRevealTarget =
+/**
+ * Where a reveal asks the writer to land. Each kind names its whole path. `from` is the pane the
+ * request was made in (absent: not from a pane), which decides where the conversation opens.
+ */
+export type ConversationRevealTarget = { from?: PanePlace } & (
   | { kind: "thread"; threadId: string }
   | {
       kind: "turn";
@@ -20,7 +25,8 @@ export type ConversationRevealTarget =
       subagentBlock?: SubagentRevealBlock;
       /** A tool call inside the turn to bring into view: its row, or the fold that holds it. */
       toolCallId?: string;
-    };
+    }
+);
 
 /** Stage names ARE target kinds, shallowest first. */
 const STAGES = ["thread", "turn"] as const;
@@ -47,7 +53,7 @@ export type TurnRevealRequest = StageOutcome & {
   subagentBlock?: SubagentRevealBlock;
   toolCallId?: string;
 };
-type ThreadRevealRequest = { threadId: string; landed: () => void };
+type ThreadRevealRequest = { threadId: string; from?: PanePlace; landed: () => void };
 
 /**
  * The single in-flight stage, split per owner. At most one field is non-null,
@@ -117,7 +123,14 @@ function createConversationRevealController(): ConversationRevealController {
     // mismatched arm below is unreachable — it keeps union narrowing total.
     switch (stage) {
       case "thread":
-        return { ...IDLE, thread: { threadId: target.threadId, landed } };
+        return {
+          ...IDLE,
+          thread: {
+            threadId: target.threadId,
+            ...(target.from ? { from: target.from } : {}),
+            landed,
+          },
+        };
       case "turn":
         return target.kind === "thread"
           ? IDLE

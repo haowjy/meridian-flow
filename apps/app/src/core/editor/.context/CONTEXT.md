@@ -76,6 +76,12 @@ barrier that drains that open.
   the exact cache when the review owner learns closure through authoritative
   metadata before the socket frame. The pool refuses to reopen that closed id.
 
+Several windows of one browser profile share the authority store. A deleted document's lineage
+is finished by one window (`dispatchTerminalLineage`), which waits for every other window's
+hold on the document; each window therefore drains its own local room on any pending drain,
+including a `terminal-local` one (`DocumentSessionRecovery.reconcile`). Without it the owner
+waits forever, the record stays terminal and a restore cannot revive it until reload.
+
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
 orthogonal. `synced` means the transport handshake completed, not that all
@@ -109,6 +115,14 @@ desired map, nested suspension republished only at the outer boundary. Draft
 review rotates the document client while migrating suspended fields. A second
 presence write path or cached client ID creates ghost carets.
 
+The session is the only writer of local presence. A transport's provider is
+patched never to write local state on an Awareness it did not create: no clear
+on destroy, none on `pagehide`. `detachTransport` holds one suspension
+and the next attach releases it. The session also suspends on `pagehide` and resumes on `pageshow`
+only if it holds that suspension, so a page restored from the back/forward cache
+republishes its caret. Peers drop a closed tab when the server sees its socket
+close: Hocuspocus 4.3.0 relays no explicit null awareness update.
+
 Peer marks, session markers, and review decorations are projections, never
 manuscript content. Peer marks are dormant: no server code sends `change_event`,
 so the marker store stays empty ([peer-marks](../../../features/editor/surfaces/peer-marks/AGENTS.md)). The session marker store is ephemeral and group revisions
@@ -132,9 +146,11 @@ identity in anchors or holds.
 ## Editor policy seams
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
-  behavior supplies the contract. `editor-history.ts` is mounted with each
-  collaborative editor and orders Yjs stack items with editor-originated text
-  Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
+  behavior supplies the contract. `editor-history.ts` is the document's history:
+  its `DocumentHistory` is owned by the `DocumentSession`, with the `Y.UndoManager`
+  the editor's collaboration plugin uses (`yUndoOptions`), and each collaborative
+  editor attaches to it while mounted (range capture, the restore dispatch). It
+  orders Yjs stack items with editor-originated text Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
@@ -144,11 +160,11 @@ identity in anchors or holds.
   that UndoManager generates. It is never read from y-tiptap's copy, which a
   plugin's appended transaction makes wrong; Yjs alone would map the current
   selection, and a moved range has just been removed. Redo and a caret keep
-  y-tiptap's mapped selection. Destroying the editor is terminal and
-  discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
-  Known limit: the dock and Editor views of one document share a collaborative
-  origin, so one view's Undo can take back the other's edits, and two views
-  uploading at once can overwrite each other's upload tokens.
+  y-tiptap's mapped selection. Destroying an editor only detaches it: the
+  history lasts as long as the session, so a tab's undo survives its editor (the patched
+  y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
+  listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
+  the writer's own and leaves peer and model edits alone. Reload resets it. The side, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -354,6 +370,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   the manuscript and discard later keystrokes. Tab uses one ladder: table
   cells, indent in a fence, sink/lift in a list, then `\t` in prose. A leading
   prose tab is written `&#x9;`; the `packages/markup` codec test keeps it safe.
+  The way out is Escape, then Tab or Shift-Tab: an Escape that finds nothing to
+  close arms the next key, and the kernel's capture listener hands that one Tab
+  to the browser before ProseMirror sees it. Any other key, a pointer press or
+  focus leaving the editor disarms it; inside a table cell or a selected object,
+  the first Escapes step out of that before one arms. The editor's accessible
+  description (a hidden element named by `aria-describedby`) says so; there is
+  no visible hint.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
@@ -364,11 +387,45 @@ keyboard, pointer, drop, or draft-recovery answer.
   Eligibility reads document text; do not replace this rule with
   `allowSpaces: false` or a Space key handler.
 
+### Live session teardown
+
+- A session holds the writer's undo (`session.history`), so teardown ends it. The registry's
+  3 s grace therefore applies to documents no open tab keeps (see `useOpenTabSessions`).
+- A retained session's socket is open when some owner wants it (a host is on screen, reported
+  through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still
+  deliver. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, applies that on every
+  retain/release, and the session's own snapshots re-apply it when the edits are acknowledged.
+  Nothing else attaches or detaches a retained live session. `DocumentSession.detachTransport`
+  also cancels an attach still waiting for local persistence.
+- When the last host releases a live document, the registry retires its session after a
+  3 s grace. A session with unacknowledged edits is held instead, so edits made offline
+  reach the server without the writer reopening the document. Reopening takes the
+  same session back and cancels the hold.
+- `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
+  delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
+  (the server drops a read-only room's writes without closing it). The live registry
+  and `DraftRoomPool` both ask it; neither keeps its own list.
+- A held session ends when the server acknowledges its edits, when the predicate turns
+  false, when the room is refused, the document removed or access revoked
+  (`dropRefusedRoom`, `drainDocument`, `drainAccess`), when the account closes
+  (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
+  without an acknowledgement. That cap is for a room that answers but never accepts; the
+  clock runs only while the connection is up and restarts on each drop, so offline time
+  never counts and a writer who types on a train gets delivery on reconnect, however
+  long it takes. (Elapsed connected time, not a refusal count: the transport counts
+  refusals for draft rooms only, and a live-room count would change every live session.)
+  The edits stay in IndexedDB in every case.
+- A removed room (4208) retires at once, before an availability check can prove a
+  restore and restart it; its edits wait in IndexedDB for the next open.
+- Restarting a removed or unavailable room cancels its pending teardown and schedules
+  it again when no host retains the room.
+
 ### Draft room retirement
 
 - `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last
   owner releases through a grace period; a room with unacknowledged edits drains
-  before retirement. Ordinary retirement keeps IndexedDB state. There is no
+  before retirement. The drain ends when the server acknowledges the edits or when
+  `canDeliverUnsentEdits()` turns false, read-only access included. Ordinary retirement keeps IndexedDB state. There is no
   draft-generation replacement or writer-operation handoff to a new draft.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end that identity and clear
   its exact cache. The account command owner also handles authoritative metadata

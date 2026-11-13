@@ -25,7 +25,7 @@ export function OpenSubagentChatButton({
     <IconButton
       type="button"
       size="sm"
-      tooltip={label}
+      label={label}
       onClick={(event) => {
         // Cards toggle on row clicks; opening the chat must not also toggle them.
         event.stopPropagation();

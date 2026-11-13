@@ -1,6 +1,6 @@
 /**
  * ChatScreen — renders the resolved thread in whichever pane hosts the chat
- * (center, dock, phone), or the empty New chat when there is none. It never
+ * (main, side, phone), or the empty New chat when there is none. It never
  * owns thread routing itself; it reads `useChatNavigation()` for the commands
  * a chat surface needs (opening the parent of a subagent, focusing a freshly
  * requested New chat composer). A chat whose Work is archived keeps its live
@@ -14,10 +14,10 @@ import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { QueryErrorRow } from "@/components/app/QueryErrorRow";
+
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatView } from "@/features/chat/ChatView";
-import { CreationComposer } from "@/features/chat/CreationComposer";
+import { CreationComposer, type NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   type DerivationDeps,
   derivationFailureCopy,
@@ -41,6 +41,10 @@ export type ChatScreenProps = {
   projectId: string;
   /** ProjectView's resolved thread. */
   threadId: string | null;
+  /** With no thread: the document the new chat's composer attaches. */
+  about?: string | null;
+  /** The side's composer reports what its new chat is about. */
+  onAboutChange?: (about: NewChatAbout) => void;
   activeWork: Work | null;
   availableWorks: readonly Work[];
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
@@ -52,14 +56,15 @@ export type ChatScreenProps = {
 export function ChatScreen({
   projectId,
   threadId,
+  about = null,
+  onAboutChange,
   activeWork,
   availableWorks,
   onOpenContextTarget,
   visible = true,
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
-  const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
-    useChatNavigation();
+  const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
   const derivationDeps = useDerivationDeps();
   // A fork or handoff reloaded mid-creation re-issues its request first.
   const resumingDerivation = useDerivationResume(threadId, derivationDeps);
@@ -73,8 +78,9 @@ export function ChatScreen({
         footer={
           <CreationComposer
             projectId={projectId}
+            about={about}
+            onAboutChange={onAboutChange}
             newChatFocusRequestId={newChatFocusRequestId}
-            newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}
           />
         }
@@ -165,7 +171,7 @@ function ChatScreenLoaded({
       ) : null}
 
       {derivation?.state === "failed" ? (
-        <div className="border-b border-destructive/30 bg-card px-4 py-2" data-derivation-failed>
+        <div className="border-b border-destructive/40 bg-card px-4 py-2" data-derivation-failed>
           <div className="mx-auto max-w-3xl">
             <InlineErrorRow
               message={derivation.failure?.message ?? derivationFailureCopy(derivation.intent.kind)}
@@ -180,9 +186,9 @@ function ChatScreenLoaded({
       ) : null}
 
       {isError ? (
-        <div className="border-b border-destructive/30 bg-card px-4 py-2">
+        <div className="border-b border-destructive/40 bg-card px-4 py-2">
           <div className="mx-auto max-w-3xl">
-            <QueryErrorRow onRetry={refetch} />
+            <InlineErrorRow message={t`Couldn't load. Check your connection.`} onRetry={refetch} />
           </div>
         </div>
       ) : null}

@@ -68,11 +68,15 @@ are not manuscript content. Desktop review is editable; phone review is
 read-only. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
-`DraftReviewProvider` supplies the presented review. Identity/header chrome and
-change bars read the shared review projection; `EditorView` does not own a second review
-controller. The review controls live in the identity bar's path row (the
-`DraftReviewChip` on a live document with a pending draft, the
-`DraftReviewBand` in review), with no separate header above it. The focused
+Each document host (main, the side, the phone) has its own review
+(`features/project/DocumentReview.tsx`); its chrome and change bars read that
+review's projection, and `EditorView` does not own a second review controller.
+The version chip (`DocumentVersionMenu`, Live with every draft one pick away) sits at the
+toolbar row's end on desktop and phone alike, and gives way to the review's own chip once a
+review of the document is entered. The chip names what the host paints: once a Discard or
+Apply ends the draft, the review stays open ("No changes left", its Undo) but the chip reads
+Live, as the text does. On desktop the review's controls live in the identity
+bar (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
 the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong
@@ -84,7 +88,7 @@ selection or undo manager. An empty review stays in the same draft room.
 
 `useInlineReviewFocus` registers the mounted editor for controller-owned jumps
 and releases only its own claim on unmount. Same-entry URL replacements
-disable router scroll restoration so editor anchor navigation owns scrolling. Dock/Work rows and their notice paint before
+disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
 ## Schema and repair
@@ -104,7 +108,7 @@ collapses when neither has anything to say. The fence bar carries Refresh. The
 repair bar says only that text was removed; its Details popover holds every
 recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
 push the manuscript down. The popover anchors to the whole bar and takes its
-width, so it fits a narrow dock pane. Dismiss hides the bar until the session
+width, so it fits a narrow side pane. Dismiss hides the bar until the session
 reports another repair and sends focus to the editor, or to Refresh while the
 fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
 and reports a refusal on that excerpt; a pending Copied reset never erases it.
@@ -117,7 +121,7 @@ Dormant: no server code sends `change_event`, so no mark renders
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
 The editor feature holds no duplicate mark state. Review drafts without a
 projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
-for AI changes. *Open conversation* routes through `requestConversationReveal`
+for AI changes. *Open conversation* routes through `useRequestConversationReveal`
 with the owning turn, so the chat side lands on that turn. Popover focus
 follows activation: a pointer open leaves the caret in the prose and a
 pointer close restores the held selection; keyboard activation moves focus into

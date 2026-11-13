@@ -11,7 +11,6 @@ import { reserveResourceDocument } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { describe, expect, it } from "vitest";
-import { useContextTabsStore } from "@/client/stores";
 import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
@@ -20,7 +19,7 @@ import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { projectResourceTab } from "./context-tab-from-file";
+import { projectResourceDocument } from "./open-document-from-file";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function TestAccountProvider(props: React.ComponentProps<typeof AccountFeatureTestProvider>) {
@@ -45,7 +44,7 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
-  it("publishes terminal identity after catalog removal so dock and Editor see absence", async () => {
+  it("publishes terminal identity after catalog removal so the side and main see absence", async () => {
     let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
     const replica = {
       observeProjection(
@@ -66,11 +65,11 @@ describe("AccountFeatureTestProvider", () => {
     }).next;
     record.intents = [];
     record.resource.lifecycle = { kind: "terminal", generation: "9", transitionId: "delete" };
-    const projections: ReturnType<typeof projectResourceTab>[] = [];
+    const projections: ReturnType<typeof projectResourceDocument>[] = [];
     function Child() {
       const { records, placement } = useObservedResourceProjection(replica, "project-1");
       projections.push(
-        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, placement),
+        projectResourceDocument(tracked("gone", "/gone.md"), records, placement, false),
       );
       return null;
     }
@@ -123,7 +122,6 @@ describe("AccountFeatureTestProvider", () => {
         coordinator.beginRouteSelection("project-1", {
           scheme: "kb",
           path: "/strict.md",
-          workId: "work-1",
         });
         const selection = coordinator.getProjectSnapshot("project-1").selection;
         if (selection.status === "candidate") selectionRevisions.push(selection.revision);
@@ -143,15 +141,6 @@ describe("AccountFeatureTestProvider", () => {
   });
 
   it("constructs authority before descendants and isolates A to B to A", async () => {
-    useContextTabsStore.setState({
-      byProject: {
-        "project-1": {
-          tabs: [{ ...tracked("a", "/a.md"), tabInstanceId: "instance-a" }],
-          selectedTabIdByWork: { "work-1": "a" },
-        },
-      },
-      _workspaceHydrated: true,
-    });
     const instances: ContextRemovalCoordinator[] = [];
     const entrySnapshots: ReturnType<ContextRemovalCoordinator["getProjectSnapshot"]>[] = [];
     let setAccount: ((accountId: string) => void) | null = null;
@@ -164,15 +153,15 @@ describe("AccountFeatureTestProvider", () => {
           "project-1",
           {
             transition: acceptContextTransition,
-            readSearch: () => ({ screen: "context" }),
+            readSearch: () => ({ scheme: "manuscript", path: "/a.md" }),
             updateSearch: () => undefined,
+            goBack: () => Promise.resolve(null),
           },
           "work-1",
         );
         const revision = coordinator.beginRouteSelection("project-1", {
           scheme: "manuscript",
           path: "/a.md",
-          workId: "work-1",
         });
         coordinator.bindRouteSelection(
           "project-1",
@@ -187,12 +176,8 @@ describe("AccountFeatureTestProvider", () => {
           projectId: "project-1",
           selectionRevision: revision,
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
-          locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
+          locator: { scheme: "manuscript", path: "/a.md" },
           identity: { kind: "server", documentId: "a" },
-          owner: {
-            kind: "workspace",
-            tab: { ...tracked("a", "/a.md"), tabInstanceId: "instance-a" },
-          },
         });
       }, [coordinator]);
       return null;

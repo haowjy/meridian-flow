@@ -1,354 +1,129 @@
 /**
- * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables.
- * This file is the machine source of truth for the shared palette, typography,
- * radii, shadows, and background-image utilities consumed by app and www.
+ * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables for app and www.
  *
- * Surface story: the EARTHEN VALUE LADDER separates warm grey-gold shelf,
- * dock, chrome, and paper page mostly by lightness. The rail is the chrome's
- * own material in shadow, not a second color. Light mode uses one warm ink;
- * color identity lives in accents, never in walls. Canonical values are the
- * roles below, with shipped dark overrides in `themes.css`. Design rationale:
+ * Surfaces: chrome (sidebar, tab band, dock) below a white page; raised surfaces (cards, menus,
+ * popovers) are white too and lift by border and shadow. The review ground sits under draft
+ * chrome. Every interactive state is an ink overlay
+ * over whatever surface it sits on: `ink-fill` (5%) for hover and static wells,
+ * `ink-fill-strong` (10%) for current, selected, open and pressed. Borders are ink
+ * overlays too. Because overlays follow `foreground`, the dark theme re-points only
+ * surfaces, inks and accents (`themes.css`). Design rationale:
  * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md
  *
- * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
- * cinnabar = the scarce seal for favorite/pinned punctuation and the brand
- * mark. Destructive actions use their own crimson role. Neither belongs in
- * routine selection/active rows.
- *
- * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
- * controls stay as plain root variables.
- *
- * The shipped dark palette overrides these semantic roles in `themes.css`,
- * retaining the same surface ordering with light ink on darker materials.
+ * Accents: jade = do/go and "changes waiting on you"; `primary` is for fills and icons,
+ * `jade-text` for jade text. Cinnabar is the brand seal.
+ * Destructive is its own crimson. Selected and current states are ink, never jade.
  */
 
-/* Package-private tone atoms — ONLY for values shared by several role tokens
-   (a value with one role stays literal in that role). Not @theme: atoms must
-   not generate utilities. The dark theme may re-point these atoms along
-   with semantic roles; consumers still use role tokens only. */
-:root {
-  /* Raised cards, bubbles, field fills. */
-  --ink-jade-lift: oklch(0.978 0.012 92);
-  /* The page-side recess / surface-2 step below the canvas. */
-  --ink-jade-recess: oklch(0.92 0.016 87);
-}
-
 @theme {
-  /* One font everywhere: Inter for UI chrome, the editor, and rendered prose
-     alike — differentiated by size + weight, never by family. Loaded via Google
-     Fonts in the app's root. (The apps/www landing page self-hosts its own three
-     typefaces as a deliberate marketing-only exception: see marketing.css.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Surface ladder — tonal (no seam borders): grey-gold shelf < grey-gold
-     chrome < warm lit page. The page is the brightest field; tab band + dock
-     share one chrome; the active tab chip surfaces the page tone below. */
-  /* Parchment ground (user call 2026-07-21): the default committed to the
-     deeper-warmth direction from the theme exploration — richer paper, more
-     tonal depth. Chroma on walls runs .015–.02 here, past the old ~.015
-     cap; that's the point of the direction, not an accident. Ink warms to
-     match (hue ~80) so black-on-cream never reads as blue-black. */
-  --color-background: oklch(0.966 0.015 90);
-  --color-foreground: oklch(0.25 0.012 85);
-  /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
-     bubbles / field fills / floating menus — popover shares it). */
-  --color-card: var(--ink-jade-lift);
-  --color-card-foreground: var(--color-foreground);
-  --color-popover: var(--color-card);
-  --color-popover-foreground: var(--color-foreground);
+  /* Surfaces. Neutrals are one warm grey, hue 60 at chroma 0.006: hues toward yellow-green
+     read olive at low chroma. The page and raised surfaces are white. */
+  --color-background: oklch(1 0 0);
+  --color-card: oklch(1 0 0);
+  --color-chrome: oklch(0.962 0.006 60);
+  /* Draft chrome (the review strip, the reviewing tab): a step below chrome, so it never
+     reads as a hovered chrome row. */
+  --color-review: oklch(0.938 0.008 60);
+  /* Every page (`page-sheet`, and the phone's page): a barely warm white and a warm ink.
+     Body ink holds 7:1 on it and `muted-foreground` 4.5:1. */
+  --color-paper: oklch(0.978 0.005 80);
+  --color-paper-ink: oklch(0.25 0.008 60);
 
-  /* Jade — the calm interactive voice (do/go). Not for text on page, and
-     never as a large surface (pale jade washes read blue). `brand-jade` is
-     the named anchor the brand mark references directly, so a future
-     re-point of `primary` can never recolor the mark. */
+  /* Inks. Secondary text is one ink; a hint differs by size, never by a paler colour.
+     Recheck AA in a current row (10% overlay) on the review ground if either changes. */
+  --color-foreground: oklch(0.21 0.006 60);
+  --color-muted-foreground: oklch(0.46 0.006 60);
+
+  /* State overlays and borders. */
+  --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
+  --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
+  --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
+  --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
+  /* The subtle border resolved onto the page, hence opaque: for an outline whose strokes
+     meet or overlap (the page sheet and its folder tab), where a translucent line darkens. */
+  --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
+  /* Keyboard focus. Must hold 3:1 against every surface in a current row. */
+  --color-focus: oklch(0.52 0.1 165);
+
+  /* Jade. `brand-jade` anchors the mark so a re-point of `primary` never recolours it.
+     The UI jade sits near the sRGB edge for its lightness, so it reads clean, not grey-teal. */
   --color-brand-jade: oklch(0.536 0.082 175);
-  --color-primary: var(--color-brand-jade);
-  --color-primary-foreground: oklch(0.985 0.005 95.1);
-  /* Jade — text variant (links, jade labels), 6:1 on page */
-  --color-jade-text: oklch(0.465 0.07 176);
+  --color-primary: oklch(0.52 0.1 165);
+  --color-primary-foreground: oklch(1 0 0);
+  --color-jade-text: oklch(0.44 0.088 165);
 
-  /* Secondary / muted / accent live inside the same warm recess ladder so
-     badges, muted backgrounds, and primitive hover fills stay on the page's
-     material. Sidebar selection has its own stronger role. */
-  --color-secondary: var(--ink-jade-recess);
-  --color-secondary-foreground: var(--color-foreground);
-  --color-muted: var(--ink-jade-recess);
-  --color-muted-foreground: oklch(0.467 0.008 100);
-  --color-accent: var(--ink-jade-recess);
-  --color-accent-foreground: var(--color-foreground);
+  /* Other accents. Notice tints stay opaque, so they read the same on chrome and on the page. */
+  --color-destructive: oklch(0.475 0.18 25);
+  --color-destructive-tint: oklch(0.955 0.02 22);
+  --color-destructive-border: oklch(0.86 0.07 20);
+  --color-warning: oklch(0.68 0.16 55);
+  --color-warning-ink: oklch(0.46 0.1 55);
+  --color-warning-tint: oklch(0.965 0.025 80);
+  --color-cinnabar: oklch(0.54 0.17 30);
 
-  /* Cinnabar — the scarce seal. Reserve for the brand mark and destructive
-     deletions ONLY; never routine selection (red reads as "error"). */
-  --color-cinnabar: oklch(0.521 0.158 29);
+  /* The login hero: a fixed ground, the same in both themes. */
+  --color-ink-deep: oklch(0.243 0.006 60);
+  --color-cream: oklch(0.961 0.006 60);
+  --color-cream-muted: oklch(0.82 0.012 60);
 
-  /* Gold — favourites, and the review writer-edit tints below; nothing
-     else. */
-  --color-gold: oklch(0.729 0.115 84);
+  /* Syntax: Ink & Jade at low chroma, each >= 4.5:1 on a code well except the comment. */
+  --color-syntax-keyword: oklch(0.42 0.1 175);
+  --color-syntax-string: oklch(0.46 0.11 55);
+  --color-syntax-comment: oklch(0.55 0.006 60);
+  --color-syntax-number: oklch(0.5 0.13 32);
+  --color-syntax-function: oklch(0.48 0.1 80);
+  --color-syntax-attr: oklch(0.44 0.075 155);
+  --color-syntax-builtin: oklch(0.46 0.09 195);
+  --color-syntax-punctuation: oklch(0.48 0.006 60);
 
-  /* Ink-deep + cream — login hero ground and its text. */
-  --color-ink-deep: oklch(0.243 0.008 95.4);
-  --color-cream: oklch(0.961 0.0083 91.5);
-  --color-cream-muted: oklch(0.82 0.0171 91.6);
+  /* Collaboration carets: brighter than syntax ink so tiny marks stay distinguishable. */
+  --color-collab-cursor-1: oklch(0.52 0.13 165);
+  --color-collab-cursor-2: oklch(0.56 0.18 29);
+  --color-collab-cursor-3: oklch(0.58 0.16 45);
+  --color-collab-cursor-4: oklch(0.58 0.13 84);
+  --color-collab-cursor-5: oklch(0.55 0.12 195);
+  --color-collab-cursor-6: oklch(0.55 0.12 120);
+  --color-collab-cursor-7: oklch(0.54 0.09 250);
+  --color-collab-cursor-8: oklch(0.52 0.1 310);
 
-  /* Destructive — kept distinct (cooler, deeper crimson) from cinnabar so
-     "error" never reads as "favorite". */
-  --color-destructive: oklch(0.505 0.158 17);
-  --color-destructive-tint: oklch(0.94 0.028 22);
-  --color-destructive-border: oklch(0.86 0.06 20);
+  /* Three shadows: a control lifted off its track, anything floating, and a modal. */
+  --shadow-*: initial;
+  --shadow-raise: 0 1px 2px rgb(26 26 23 / 0.08);
+  --shadow-float: 0 1px 2px rgb(26 26 23 / 0.04), 0 8px 24px rgb(26 26 23 / 0.08);
+  --shadow-modal: 0 2px 6px rgb(26 26 23 / 0.06), 0 16px 40px -8px rgb(26 26 23 / 0.2);
 
-  /* Hairline borders — the warm ladder leans on these for separation rather
-     than shadows. `border-subtle` sits a half-step softer for in-pane rules. */
-  --color-border: oklch(0.868 0.016 85);
-  --color-input: var(--color-border);
-  --color-ring: var(--color-primary);
-
-  /* Chrome — ONE quiet grey-gold for tab band AND right dock (`--color-sidebar`).
-     Grey base with an audible gold tint (hue 84, c ~0.012) — warm but still
-     shy of yellow; same hue family as the shelf, one step brighter. */
-  --color-sidebar: oklch(0.932 0.018 84);
-  --color-sidebar-accent: oklch(0.882 0.02 84);
-  /* A row in an explicit multi-row selection: the row fill with a breath of
-     jade, so it reads apart from hover (lighter grey-gold) and the open row
-     (full grey-gold). Short runs of rows only, never a pane wash. Literal
-     because @theme compiles references to the light values; the dark theme and
-     surfaces that re-point `sidebar-accent` (the shelf) re-declare it. */
-  --color-sidebar-selected: color-mix(in oklab, oklch(0.882 0.02 84) 88%, oklch(0.536 0.082 175));
-
-  /* Dock surface — draft chrome (DraftDock strip, review banner, reviewing
-     tab). The chrome's own grey-gold family (hue 84, c .012) one step darker
-     than the tab band — same material in shadow, like the shelf. The "AI
-     material" signal lives in the jade accents ON the strip (dot, pills),
-     never in the wall itself (earthen-ladder rule: color identity in
-     accents, not walls). */
-  --color-dock-surface: oklch(0.916 0.018 84);
-
-  /* Pinned composer — surfaces the chat-interactive token so the composer,
-     user bubbles, and turn-edit cards all share one placement-aware lift.
-     The token is set by placement wrappers (page-sheet → card, dock-surface
-     → background) in globals.css; the composer itself stays context-free. */
-  --color-composer-surface: var(--color-chat-interactive, var(--color-background));
-  --color-composer-border: var(--color-border);
-
-  /* Shelf — the left rail, one darker step of the chrome's warm family.
-     Selected and hover rows use separate roles so hover remains quieter than
-     the warm pressed state. Recheck text contrast if the shelf value changes. */
-  --color-shelf: oklch(0.912 0.019 84);
-  --color-shelf-active: oklch(0.858 0.024 84);
-  --color-shelf-ink-subtle: oklch(0.42 0.03 84);
-  --color-shelf-ink-muted: oklch(0.42 0.012 84);
-  --color-shelf-destructive: oklch(0.46 0.15 17);
-  /* Hairlines, pressed-well, hover, and focus ring are ink mixes over the
-     shelf's own ground so they ride any future shelf change. Hover uses
-     5% ink, keeping it between the rest and pressed tones. */
-  --color-shelf-border: color-mix(in oklab, var(--color-foreground) 22%, transparent);
-  --color-shelf-border-strong: color-mix(in oklab, var(--color-foreground) 32%, transparent);
-  --color-shelf-muted: color-mix(in oklab, var(--color-foreground) 8%, var(--color-shelf));
-  --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 5%, var(--color-shelf));
-  --color-shelf-ring: color-mix(in oklab, var(--color-foreground) 65%, transparent);
-
-  --color-border-subtle: oklch(0.9 0.014 86);
-  --color-border-focus: oklch(0.78 0.05 175);
-  /* Inset keyboard indicator for rounded dropdown rows. Unlike the softer
-     ordinary control ring, this role must contrast with every row fill. */
-  --color-dropdown-focus-indicator: oklch(0.45 0.07 176);
-  /* List rows sit on page paper, not the darker shelf. Hover is a half-step
-     toward selection; the night palette lifts both above its popover panel. */
-  --color-dropdown-hover: color-mix(in oklab, var(--color-sidebar-accent) 50%, var(--color-background));
-  --color-dropdown-selected: var(--color-sidebar-accent);
-
-  /* Code surface — fenced code blocks sit on the warm canvas as a recessed
-     "tablet": a notch DEEPER than the card lift (the canvas reads as raised
-     paper above it) and a touch warmer in hue (~85, aged tape) so the block
-     is clearly distinct without going harsh-grey. The border is a half-step
-     firmer than border-subtle to bracket the well. Foreground sits a step
-     deeper than prose-foreground so the monospaced glyphs land at full ink
-     weight on this surface (>=8:1 on --color-code-surface). */
-  --color-code-surface: oklch(0.93 0.016 85);
-  --color-code-foreground: oklch(0.28 0.008 95);
-  --color-code-border: oklch(0.86 0.018 85);
-
-  /* Syntax palette — a low-chroma rephrasing of the Ink & Jade identity
-     (jade / cinnabar / gold) so highlighted code reads as part of the warm
-     page, never an imported VS Code panel. All tones at L<=0.50 and c<=0.13
-     to clear ~4.5:1 on --color-code-surface; comment is intentionally the
-     softest (~3.7:1) — comments are an aside, not the reader's focus. The
-     `.hljs-*` rules in apps/app/src/features/editor/editor.css map highlight.js
-     token classes onto these tokens. */
-  --color-syntax-keyword: oklch(0.42 0.1 175); /* jade-deep — control flow, types */
-  --color-syntax-string: oklch(0.46 0.11 55); /* warm amber — strings, literals */
-  --color-syntax-comment: oklch(0.55 0.012 100); /* muted ink — code asides */
-  --color-syntax-number: oklch(0.5 0.13 32); /* terracotta — numerics, regex */
-  --color-syntax-function: oklch(0.48 0.1 80); /* gold-deep — function / title */
-  --color-syntax-attr: oklch(0.44 0.075 155); /* jade-soft — attrs, properties */
-  --color-syntax-builtin: oklch(0.46 0.09 195); /* cool jade — built-ins, types */
-  --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
-
-  /* Collaboration carets — Ink & Jade hues pushed slightly brighter and
-     more chromatic than syntax ink so tiny marks remain distinguishable.
-     Hues stay clear of the paper/writer gold band (~84–100) except deep
-     gold, which relies on its dark, saturated ink to read as a mark. */
-  --color-collab-cursor-1: oklch(0.52 0.13 165); /* jade */
-  --color-collab-cursor-2: oklch(0.56 0.18 29); /* cinnabar */
-  --color-collab-cursor-3: oklch(0.58 0.16 45); /* terracotta */
-  --color-collab-cursor-4: oklch(0.58 0.13 84); /* deep gold */
-  --color-collab-cursor-5: oklch(0.55 0.12 195); /* cool jade */
-  --color-collab-cursor-6: oklch(0.55 0.12 120); /* moss */
-  --color-collab-cursor-7: oklch(0.54 0.09 250); /* slate blue */
-  --color-collab-cursor-8: oklch(0.52 0.1 310); /* plum ink */
-
-  --color-status-streaming: var(--color-primary);
-  --color-status-streaming-ring: color-mix(in oklab, var(--color-status-streaming) 15%, transparent);
-  --color-status-done-bg: oklch(0.92 0.035 175);
-  --color-status-done-foreground: oklch(0.38 0.06 176);
-  --color-status-live-bg: var(--ink-jade-recess);
-  --color-status-live-foreground: var(--color-muted-foreground);
-  /* Warning / caution — destructive's anatomy at orange: pale field,
-     pigmented hairline, readable ink (>6:1 on the field), vivid mark. The
-     45–84 hue band keeps caution apart from cinnabar (error) and writer-gold.
-     Contract: warning ink never stands naked — `foreground` only ever sits
-     on `bg`, never as bare warning-colored text on paper. */
-  --color-warning-bg: oklch(0.955 0.022 84);
-  --color-warning-border: oklch(0.885 0.03 80);
-  --color-warning-foreground: oklch(0.45 0.11 55);
-  --color-status-warning: oklch(0.66 0.2 48);
-  /* Deep jade — the www CTA hover ground (one step deeper than primary). */
-  --color-mark-to: oklch(0.4 0.07 176);
-  --color-prose-foreground: oklch(0.3 0.012 80);
-  --color-ink-muted: oklch(0.4 0.008 100);
-  --color-ink-subtle: oklch(0.52 0.01 100);
-  /* Compact magnitude labels, distinct from inline review highlighting. */
-  --color-diff-added: oklch(0.45 0.09 160);
-  --color-diff-removed: oklch(0.49 0.13 27);
-  --color-chip-primary-bg: oklch(0.93 0.03 175);
-  --color-chip-muted-bg: var(--ink-jade-recess);
-
-  /* Draft-review inline diff — Track Changes attribution palette. Derived from
-     the existing jade / destructive / gold tokens so authorship reads as part
-     of the Ink & Jade language rather than generic diff-tool green/red.
-     Green (jade) = AI insertion; gold = writer edit; cool crimson = deletion
-     widget. Tints stay soft so prose stays readable behind the highlight;
-     border tones do the delineation. Emphasis variants are for the currently
-     focused (sidebar-linked) operation. */
-  --color-review-added-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
-  --color-review-added-border: color-mix(in oklab, var(--color-primary) 38%, transparent);
-  --color-review-added-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
-  --color-review-added-ring: color-mix(in oklab, var(--color-primary) 45%, transparent);
-
-  /* The ground under a contained result set. A lighter recess than `muted`,
-     because this surface holds its own internal rules and a full recess would
-     make a four-section list read as a slab. Its border is the firmer one, so
-     the container always outranks the rules dividing it. */
-  --color-result-card: color-mix(in oklab, var(--color-muted) 34%, var(--color-background));
-
-  /* Search landing — the flash on the passage a search result promised. Jade,
-     because a search row's door is jade and this is where that door led; it
-     borrows the review family's anatomy without borrowing its meaning, since
-     nothing here changed. Transient by contract: it fades, and the writer's
-     next keystroke or caret move clears it. */
-  --color-passage-mark: color-mix(in oklab, var(--color-primary) 20%, transparent);
-  --color-passage-mark-ring: color-mix(in oklab, var(--color-primary) 40%, transparent);
-
-  --color-review-removed-tint: color-mix(in oklab, var(--color-destructive) 8%, transparent);
-  --color-review-removed-border: color-mix(in oklab, var(--color-destructive) 34%, transparent);
-  --color-review-removed-ring: color-mix(in oklab, var(--color-destructive) 42%, transparent);
-  --color-review-removed-foreground: var(--color-destructive);
-
-  --color-review-writer-tint: color-mix(in oklab, var(--color-gold) 20%, transparent);
-  --color-review-writer-border: color-mix(in oklab, var(--color-gold) 40%, transparent);
-  --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 32%, transparent);
-  --color-review-writer-ring: color-mix(in oklab, var(--color-gold) 48%, transparent);
-  /* The writer's removal of live text: struck in gold, not crimson, so
-     everything the writer did reads as gold. Gold fill is too pale to carry
-     struck text on paper, so the ink is the deep gold (>4.5:1); dark re-points it. */
-  --color-review-writer-removed-foreground: oklch(0.5 0.1 80);
-
-  --color-review-warning-tint: color-mix(in oklab, var(--color-status-warning) 16%, transparent);
-  --color-review-warning-border: color-mix(
-    in oklab,
-    var(--color-status-warning) 52%,
-    transparent
-  );
-  /* Merge-artifact seam — NOT an authorship tint. Neutral, derived from
-     muted-foreground so it reads as a system "combined here, review" mark,
-     never mistaken for jade add / crimson remove / gold writer-edit. Rendered
-     with a DASHED border (the solid/dashed contrast is load-bearing). Derived
-     via color-mix like the families above, so light + dark follow the base
-     muted-foreground token automatically. */
-  --color-review-merged-tint: color-mix(in oklab, var(--color-muted-foreground) 9%, transparent);
-  --color-review-merged-border: color-mix(in oklab, var(--color-muted-foreground) 42%, transparent);
-  --color-review-merged-emphasis: color-mix(in oklab, var(--color-muted-foreground) 16%, transparent);
-  --color-review-merged-ring: color-mix(in oklab, var(--color-muted-foreground) 48%, transparent);
-
-  --shadow-card: 0 1px 2px rgba(26, 26, 23, 0.04), 0 8px 24px rgba(26, 26, 23, 0.06);
-  --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);
-  --shadow-rail-left: 6px 0 18px -6px
-    color-mix(in oklab, var(--color-foreground) 10%, transparent);
-  /* Jade-tinted lifts: derive from the primary token so jade is defined once
-     (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
-  --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-primary) 24%, transparent);
-
-  /* Atmosphere 云雾 — part of the palette, not decoration. Light chrome
-     breathes AIRLIGHT: near-paper white pooling at the dock's floor,
-     dissolving upward. The shelf stays flat so navigation and selection
-     contrast do not change as rows scroll. (Dark mode: airlight thins to
-     moonlight ×0.25; see the dark ladder note in the header.) */
-  --background-image-dock-airlight: linear-gradient(
-    to top,
-    oklch(0.99 0.003 84 / 0.14) 0%,
-    oklch(0.99 0.003 84 / 0.07) 26%,
-    oklch(0.99 0.002 84 / 0.025) 46%,
-    transparent 68%
-  );
+  /* The UI uses two sizes: xs (12px) for labels, counts, chips and meta, and sm (13px) for
+     every control and row. Chat reads at 14px and prose at 16px. `compact` is sm with prose
+     leading for multi-line secondary text, and `body` is the 15px reading step. Register every
+     custom name in apps/app/src/lib/utils.ts. */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-headline-hero: 2.625rem;
-  --text-headline-hero--line-height: 1.08;
-  --text-headline-hero--letter-spacing: -0.02em;
-  --text-headline-hero--font-weight: 600;
-  --text-headline-section: 1rem;
-  --text-headline-section--line-height: 1.5rem;
-  --text-headline-section--font-weight: 600;
-  --text-body: 0.9375rem;
-  --text-body--line-height: 1.625rem;
-  --text-meta: 0.65625rem;
-  --text-meta--line-height: 0.875rem;
-  /* Secondary-prose roles — multi-line reading text that sits below the primary
-     answer/body tier (chat activity, tool output, helper results, captions).
-     They own a relaxed prose line-height so call sites stop re-picking both size
-     AND leading by hand (`text-[13.5px] leading-relaxed`, etc). Distinct from
-     the UI-control sizes `text-sm`/`text-xs` (tighter line-height, for
-     buttons/inputs/menu items). Weight and color stay per-call-site — they
-     legitimately vary (muted body vs. medium title). */
   --text-compact: 0.8125rem;
   --text-compact--line-height: 1.6;
-  --text-caption: 0.78125rem;
-  --text-caption--line-height: 1.45;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.625rem;
 
-  /* Uppercase-label tracking, tight → wide. One step per visual rank: inline
-     labels, status badges, architectural section/column headers. */
-  --tracking-label: 0.06em;
-  --tracking-status: 0.1em;
-  --tracking-section-label: 0.14em;
-  /* Heading tracking: uppercase table heads (positive) + sentence-case prose
-     headings (slightly tight). */
-  --tracking-table-heading: 0.02em;
-  --tracking-prose-heading: -0.01em;
+  /* Uppercase labels. */
+  --tracking-caps: 0.08em;
 
-  /* Corner radius: deliberately sharp. Controls read semi-rectangular, not
-     pill-like — the sm–xl scale is the substrate for every `rounded-*` class,
-     so change roundness here, never per component. field/composer are the
-     sanctioned softer exceptions (writing surfaces), one step above the scale. */
-  --radius-field: 8px;
-  --radius-composer-pinned: 10px;
-  --radius-composer: 12px;
+  /* Four radii plus full. Controls read semi-rectangular, not pill-like. */
+  --radius-*: initial;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+
+  /* Hover, colour and opacity changes. Panels use --motion-duration-panel. */
+  --default-transition-duration: 120ms;
 }
 
 :root {
   --motion-pulse-duration: 2.4s;
+  /* One ease for everything that moves the layout; off under prefers-reduced-motion. */
+  --motion-ease-shell: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --motion-duration-panel: 220ms;
 }

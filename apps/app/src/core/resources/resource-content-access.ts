@@ -517,6 +517,7 @@ export class ResourceContentAccess {
       entry.leases.set(lease, true);
       entry.adoptionBound = true;
     }
+    this.reportHosted(entry);
     let released = false;
     const openedEntry = entry;
     return {
@@ -654,13 +655,28 @@ export class ResourceContentAccess {
 
   private releaseLease(id: string, entry: ContentEntry, lease: symbol): void {
     entry.leases.delete(lease);
-    if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
+    if (entry.leases.size > 0) {
+      this.reportHosted(entry);
+      return;
+    }
+    if (this.entries.get(id) !== entry) return;
     if (entry.ownership.kind === "transferring") return;
     // Server acquisition must survive navigation preflight until the editor binds that session.
     if (entry.ownership.kind === "registry" && !entry.adoptionBound) return;
     this.entries.delete(id);
     if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
     else this.retire(id, entry.session);
+  }
+
+  /**
+   * Tells the registry whether a host holds the document. It alone decides, with the session's
+   * unsent edits, whether the socket stays open: an open tab keeps the session and its undo, not a socket.
+   */
+  private reportHosted(entry: ContentEntry): void {
+    if (entry.ownership.kind !== "registry") return;
+    const hosted = [...entry.leases.values()].some(Boolean);
+    for (const ownership of entry.ownership.ownershipByProject.values())
+      ownership.setHosted(hosted);
   }
 
   private releaseRegistryOwnership(

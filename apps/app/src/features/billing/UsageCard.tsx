@@ -27,7 +27,7 @@ export function UsageCard({ variant }: { variant: UsageCardVariant }) {
 
   const shell =
     variant === "compact"
-      ? "rounded-lg border border-border-subtle bg-muted px-4 py-3"
+      ? "rounded-lg border border-border-subtle bg-ink-fill px-4 py-3"
       : "surface-card p-5";
 
   return (

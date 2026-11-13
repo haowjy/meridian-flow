@@ -4,8 +4,8 @@ The single internal/external link treatment ([link chips][link-chips]). Link
 meaning, classification, resolution and follow policy belong to
 [`core/editor/links`](../../../core/editor/links/AGENTS.md).
 
-- Surfaces spread `linkChipAttributes()` and don't invent or restyle chips. Tone
-  changes only through `--link-chip-fill` and `--link-chip-fill-hover`.
+- Surfaces spread `linkChipAttributes()` and don't invent or restyle chips. The
+  fill is an ink overlay, so no surface sets its own chip tone.
 - Don't make Editor hover depend on a role on the `<a>`.
 - Core names families and doesn't import icons.
 

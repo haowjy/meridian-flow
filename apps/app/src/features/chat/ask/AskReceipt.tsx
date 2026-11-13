@@ -6,9 +6,10 @@
 import { plural, t } from "@lingui/core/macro";
 import type { QuestionAskPayload, ResolvedQuestionAnswer } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
-import { ChevronRight, MessageCircleQuestion, ShieldCheck } from "lucide-react";
+import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useAskReceipt } from "@/client/stores";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
 
@@ -49,7 +50,7 @@ function ReceiptLine({ receipt, children }: { receipt: AskReceiptFacts; children
       data-ask-receipt=""
       data-ask-pending={receipt.pending ? "" : undefined}
     >
-      <Icon className="mt-1 size-3.5 shrink-0 text-ink-subtle" aria-hidden />
+      <Icon className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       {children}
     </div>
   );
@@ -68,7 +69,7 @@ function Sending({ pending }: { pending: boolean }) {
       <span className="sr-only">{t`Sending`}</span>
       <span
         aria-hidden
-        className="ml-[var(--chat-space-inline)] inline-block size-1.5 -translate-y-px rounded-full bg-status-live-foreground align-middle motion-safe:animate-pulse"
+        className="ml-[var(--chat-space-inline)] inline-block size-1.5 -translate-y-px rounded-full bg-muted-foreground align-middle motion-safe:animate-pulse"
       />
     </>
   );
@@ -91,12 +92,13 @@ function QuestionsReceipt({
   return (
     <ReceiptLine receipt={receipt}>
       <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          aria-expanded={open}
+        <FoldToggle
+          open={open}
+          onToggle={() => setOpen((value) => !value)}
           aria-controls={panelId}
-          onClick={() => setOpen((value) => !value)}
-          className="focus-ring -mx-1 flex max-w-full items-start gap-[var(--chat-space-inline)] rounded-md px-1 text-left transition-colors hover:bg-muted"
+          inline
+          multiline
+          className="-mx-1 max-w-full px-1"
         >
           <span className="min-w-0">
             <span className="text-muted-foreground">
@@ -107,18 +109,11 @@ function QuestionsReceipt({
             </Answer>
             <Sending pending={pending} />
           </span>
-          <ChevronRight
-            className={cn(
-              "mt-1 size-3 shrink-0 text-ink-subtle transition-transform duration-200",
-              open && "rotate-90",
-            )}
-            aria-hidden
-          />
-        </button>
+        </FoldToggle>
         <ol
           id={panelId}
           hidden={!open}
-          className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]"
+          className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)] pl-4"
         >
           {questions.map((item, index) => (
             // Questions are fixed for the ask's life; their order is their identity.

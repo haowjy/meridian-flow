@@ -15,21 +15,22 @@
  * entering and leaving review never remounts it.
  */
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
-import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
-import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import {
   type ManuscriptState,
   ManuscriptStateSlot,
   useManuscriptState,
 } from "@/features/editor/ManuscriptStateNotice";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { useFocusSuccession } from "@/lib/focus-follow";
+import { useAiDraftLauncher } from "../review-launch";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
@@ -37,17 +38,17 @@ import { MobileReviewHeader } from "./MobileReviewHeader";
 
 export function MobileDocumentReview({
   projectId,
-  tab,
+  document,
   onCloseDraftOnly,
   children,
 }: {
   projectId: string;
-  tab: ContextTab;
+  document: OpenDocument;
   /** Set for a draft-only document: its review closes the document instead of returning to live. */
   onCloseDraftOnly?: () => void;
   children: ReactNode;
 }) {
-  const { documentId } = tab;
+  const { documentId } = document;
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
@@ -59,7 +60,10 @@ export function MobileDocumentReview({
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey),
   });
   const [listOpen, setListOpen] = useState(false);
-  const manuscriptState = useManuscriptState(projectId, tab);
+  const manuscriptState = useManuscriptState(projectId, document);
+  const notice = useDocumentNotice(projectId, documentId);
+  const topFocus = useRef<HTMLDivElement>(null);
+  useFocusSuccession(topFocus);
   useEffect(() => {
     if (!itemKey) setListOpen(false);
   }, [itemKey]);
@@ -67,16 +71,21 @@ export function MobileDocumentReview({
   return (
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {itemKey ? (
-          <ReviewTop
-            header={header}
-            manuscriptState={manuscriptState}
-            onOpenList={() => setListOpen(true)}
-          />
-        ) : (
-          <LiveDraftEntry documentId={documentId} manuscriptState={manuscriptState} />
-        )}
-        <DocumentDraftHint projectId={projectId} tab={tab} />
+        {/* Holds the focus while a Discard's notice takes the review row's controls, and back. */}
+        <div ref={topFocus} className="contents">
+          {itemKey ? (
+            <ReviewTop
+              projectId={projectId}
+              document={document}
+              header={header}
+              manuscriptState={manuscriptState}
+              notice={notice}
+              onOpenList={() => setListOpen(true)}
+            />
+          ) : (
+            <ManuscriptStateRow state={manuscriptState} notice={notice} />
+          )}
+        </div>
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
@@ -87,44 +96,48 @@ export function MobileDocumentReview({
 }
 
 /**
- * The live document's way into its pending draft: the Draft chip in a row of
- * the review header's own height and inset, so the chip stays where the
- * reviewing one will be. The row also holds what an Apply brought back, so that
- * line takes the review header's place instead of pushing the page. Nothing is
- * drawn for a document with neither.
+ * What an Apply brought back, in a row of the review header's own height and inset, so the
+ * line takes the header's place instead of pushing the page. The version chip is in the
+ * toolbar row, as on a desktop.
  */
-function LiveDraftEntry({
-  documentId,
-  manuscriptState,
+function ManuscriptStateRow({
+  state,
+  notice,
 }: {
-  documentId: string;
-  manuscriptState: ManuscriptState | null;
+  state: ManuscriptState | null;
+  notice: DraftNotice | null;
 }) {
-  const { fileForDocument } = useDraftReview();
-  const group = fileForDocument(documentId);
-  if (!group && !manuscriptState) return null;
+  if (!state && !notice) return null;
   return (
     <div
-      data-phone-draft-entry
-      className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-dock-surface"
+      className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-review"
       style={{
         paddingLeft: "calc(0.25rem + env(safe-area-inset-left))",
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      {group ? <DraftReviewChip documentId={documentId} touch /> : null}
-      <ManuscriptStateSlot state={manuscriptState} touch />
+      {notice ? (
+        <DraftNoticeLine notice={notice} className="flex-1" />
+      ) : (
+        <ManuscriptStateSlot state={state} touch />
+      )}
     </div>
   );
 }
 
 function ReviewTop({
+  projectId,
+  document,
   header,
   manuscriptState,
+  notice,
   onOpenList,
 }: {
+  projectId: string;
+  document: OpenDocument;
   header: ReviewHeaderModel;
   manuscriptState: ManuscriptState | null;
+  notice: DraftNotice | null;
   onOpenList: () => void;
 }) {
   const { status } = header.view;
@@ -132,8 +145,11 @@ function ReviewTop({
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
       <MobileReviewHeader
+        projectId={projectId}
+        document={document}
         header={header}
         manuscriptState={manuscriptState}
+        notice={notice}
         onOpenList={onOpenList}
       />
     </>

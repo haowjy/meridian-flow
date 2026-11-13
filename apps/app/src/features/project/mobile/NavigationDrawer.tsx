@@ -1,20 +1,23 @@
 /**
- * NavigationDrawer — phone project drawer for destinations, the chat's Scratch and account.
+ * NavigationDrawer — the phone project drawer: the Write | Chat switch, the sources, and the account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { focusContentOnOpen, useDismissalFocus } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import type { TreeCreationRequest } from "../context/TreeCreationProvider";
-import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
+import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
-import type { ScreenKey } from "../shell/screens";
+import { SourcesBody } from "../shell/sidebar/SourcesBody";
+import { WorkScopePicker } from "../shell/sidebar/WorkScopePicker";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
+import { useWorkScope } from "../use-work-scope";
+import { useManageWorks } from "../work/ManageWorksDialog";
+
+/** The drawer is the sidebar: there is nothing to expand. */
+const keepOpen = () => {};
 
 export type NavigationDrawerProps = {
   open: boolean;
@@ -22,13 +25,13 @@ export type NavigationDrawerProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  onSelectScreen: (screen: ScreenKey) => void;
-  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  /** Who owns main's document when it is a Work's Scratch note. */
+  activeContextWork: string | null;
+  /** The chat on screen: its row reads as current. */
   chatThreadId: string | null;
 };
 
@@ -38,16 +41,21 @@ export function NavigationDrawer({
   projectId,
   projectTitle,
   titleEdit,
-  activeScreen,
   editorWorkId,
   contextLive,
   activeContextScheme,
   activeContextPath,
-  onSelectScreen,
+  activeContextWork,
   chatThreadId,
 }: NavigationDrawerProps) {
-  const trashNavigation = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
+  const scope = useWorkScope(projectId);
+  const manageWorks = useManageWorks();
+  const dismissal = useDismissalFocus(
+    onOpenChange,
+    // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
+    focusContentOnOpen,
+  );
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -62,31 +70,12 @@ export function NavigationDrawer({
       if (result.kind === "committed") onOpenChange(false);
     });
   };
-  // The drawer owns its own inline-create state: the desktop shell's shared
-  // creation seam (empty state → sidebar) has no phone counterpart — phone
-  // creation starts from the tree's own hover actions inside this drawer.
-  const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) setCreating(null);
-    onOpenChange(nextOpen);
-  };
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <Sheet open={open} onOpenChange={dismissal.onOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}
-        // Radix Dialog auto-focuses the first focusable on open; with the close
-        // button hidden that's a nav item, and iOS Safari paints :focus-visible
-        // on that programmatic focus. Prevent the default, then focus the sheet
-        // container itself (event.target — Radix dispatches this event on the
-        // content element, which has tabIndex=-1 via FocusScope). The explicit
-        // focus matters: Radix's focus trap only engages once focus enters the
-        // scope, so preventDefault alone lets Tab escape to content behind the
-        // overlay. Keyboard tabbing from here still rings nav items as usual.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
+        {...dismissal.content}
         // Width leaves a >=56px scrim tap target on small phones (375px ->
         // 319px drawer); 320px cap matches standard mobile nav-drawer sizing.
         // The animated SheetContent stays visually bare (transparent, no
@@ -102,13 +91,13 @@ export function NavigationDrawer({
         <SheetDescription className="visually-hidden">
           <Trans>Switch screens or manage your account.</Trans>
         </SheetDescription>
-        {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
+        {/* Chrome wrapper — rounded-r-xl + shadow-modal carry the desktop
             rail chrome (desktop-layout.ts) instead of a hairline border. It is
             NOT the animated element (see WebKit note above), so it can safely
             clip; safe-area paddings live here so the drawer background still
             fills under the notch/home-indicator regions. */}
         <div
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-sidebar shadow-rail-left"
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-chrome shadow-modal"
           style={{
             paddingTop: "env(safe-area-inset-top)",
             paddingLeft: "env(safe-area-inset-left)",
@@ -121,59 +110,39 @@ export function NavigationDrawer({
                 title={projectTitle}
                 {...titleEdit}
                 showRenameHint
-                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-ink-fill"
                 inputClassName="min-h-11 px-2 text-sm font-semibold"
               />
             </div>
 
-            {/* Selecting a destination also closes the drawer — a chrome
-                concern the shared body stays unaware of. */}
-            <WorkspaceNavBody
-              activeScreen={activeScreen}
-              onSelectScreen={(screen) => {
-                onSelectScreen(screen);
-                onOpenChange(false);
-              }}
-              presentation="phone"
-              onOpenTrash={() => {
-                void trashNavigation.navigate(true);
-                onOpenChange(false);
-              }}
-              user={
-                contextLive ? (
-                  <UserRailSection
+            {/* The switch moves main and closes the drawer onto it, as a pick in a list does. */}
+            <WorkspaceNavBody projectId={projectId} onSwitched={() => onOpenChange(false)}>
+              {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
+              <TreeCreationProvider expandSidebar={keepOpen}>
+                <div className="flex shrink-0 flex-col py-1">
+                  <WorkScopePicker
                     projectId={projectId}
-                    editorWorkId={editorWorkId}
-                    activeScheme={activeContextScheme}
-                    activePath={activeContextPath}
-                    onSelectFile={handleSelectFile}
-                    creating={creating}
-                    onRequestCreate={setCreating}
-                    onCreateDone={() => setCreating(null)}
+                    workId={scope.workId}
+                    onPick={scope.setWorkId}
+                    onManage={() => {
+                      manageWorks?.open();
+                      onOpenChange(false);
+                    }}
                   />
-                ) : null
-              }
-              scratch={
-                <RailScratchSection
-                  projectId={projectId}
-                  threadId={chatThreadId}
-                  editorWorkId={editorWorkId}
-                  onPicked={() => onOpenChange(false)}
-                />
-              }
-            >
-              {contextLive ? (
-                <ContextTreePanel
+                </div>
+                <SourcesBody
                   projectId={projectId}
                   editorWorkId={editorWorkId}
+                  chatThreadId={chatThreadId}
+                  contextLive={contextLive}
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
+                  activeWorkId={activeContextWork}
                   onSelectFile={handleSelectFile}
-                  creating={creating}
-                  onRequestCreate={setCreating}
-                  onCreateDone={() => setCreating(null)}
+                  scopeWorkId={scope.workId}
+                  onPicked={() => onOpenChange(false)}
                 />
-              ) : null}
+              </TreeCreationProvider>
             </WorkspaceNavBody>
           </nav>
         </div>

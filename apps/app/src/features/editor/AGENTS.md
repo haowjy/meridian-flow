@@ -3,7 +3,7 @@
 The app side of the editor: `SessionEditor` binds a session and scope, `EditorView`
 composes live or review presentation, and `chrome/` and `surfaces/` hold the
 writer-facing controls. Schemas, Yjs sessions and ProseMirror extensions belong to
-`core/editor`; pane and tab composition to `features/project/context`.
+`core/editor`; pane composition to `features/project/context`.
 
 - Mount every control surface through `chrome/chrome-surfaces.tsx` and the single
   `EditorChromeHost` in `SessionEditor`. No ad-hoc portals or surfaces in `EditorView`,
@@ -19,9 +19,9 @@ writer-facing controls. Schemas, Yjs sessions and ProseMirror extensions belong 
 - Clipboard access goes through [`clipboard.ts`](clipboard.ts), which owns capability,
   the rich/plain fallback and what a refusal means. Surfaces never call
   `navigator.clipboard`.
-- `SessionEditor` is the one place that restores reading position for live Editor and
-  dock mounts (`core/editor/use-reading-position.ts`). Review and paint-held mounts
-  stand down and explicit destinations win; don't add a second timer or warm-tab path.
+- `SessionEditor` is the one place that restores reading position for live main and
+  side mounts (`core/editor/use-reading-position.ts`). Review and paint-held mounts
+  stand down and explicit destinations win; don't add a second timer.
 - Review is an editable peer on desktop and read-only on phone; the draft and its review
   base decide changes. See [draft review](../draft-review/AGENTS.md).
 

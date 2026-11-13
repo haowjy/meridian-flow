@@ -14,9 +14,18 @@
 /* Components' `dark:` utilities key off the UI-theme attribute the boot
    script stamps on <html> — one switch for tokens and variants alike. */
 @custom-variant dark (&:is([data-ui-theme="dark"] *));
+/* A focus ring paints only after the writer moves focus with the keyboard
+   (lib/focus-follow.ts sets data-focus-keys); a click, Shift or Escape never rings. */
+@custom-variant focus-visible (:root[data-focus-keys] &:focus-visible);
+/* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
+   a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
+   (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
+/* Under a finger: the phone shell's 44px touch targets key off this. */
+@custom-variant coarse (@media (pointer: coarse));
+@custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
 @theme {
-  --container-chat-column: 48rem;
+  --container-chat-column: 56rem;
   --container-project-screen: 60rem;
   --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
   @keyframes progress-slide {
@@ -45,7 +54,6 @@
   /* Chat layout tokens are global because some chat chrome and portaled menus
      intentionally render outside the text-tier-chat subtree. */
   --chat-space-inline: 4px;
-  --chat-space-row: 4px;
   --chat-space-block: 8px;
   --chat-space-turn: 12px;
   --chat-space-exchange: 6px;
@@ -53,11 +61,7 @@
   --chat-card-pad-y: 8px;
   --chat-row-status-center-offset: 7px;
   --chat-tool-list-indent: 13px;
-  --chat-geometry-hit-area-x: 4px;
-  --chat-geometry-draft-indent: 28px;
-  --chat-geometry-draft-inset: 10px;
   --chat-geometry-receipt-indent: 36px;
-  --chat-geometry-fold-icon-offset: 6px;
   /* Chat rhythm is intentionally an app-only scale: each boundary has one
      owner, and virtual-row spacing stays inside the measured row. */
   /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
@@ -74,6 +78,22 @@
   --prose-space-rule: 20px;
   --prose-space-quote: 12px;
   --prose-space-table: 12px;
+  /* Shell geometry. A pane band's height: every band (main's, the side's, the sidebar's
+     header) reads it, so the pages under them start level whatever the bands hold. A
+     finger's band is the 44px touch target its corner toggle grows to. */
+  --band-height: 2.5rem;
+  /* A dense control's box (`Button` xs, the meta chip's line), and the rows built on it:
+     the strip row (the draft dock's summary, the edits receipt's header, the review line)
+     and the write-mode notice, so each family is one height whether or not its control
+     shows. */
+  --control-dense: 1.5rem;
+  --strip-row: calc(var(--control-dense) + 0.625rem);
+  --write-mode-row: calc(var(--control-dense) + var(--chat-space-block) * 2);
+}
+@media (pointer: coarse) {
+  :root {
+    --band-height: 2.75rem;
+  }
 }
 
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
@@ -111,7 +131,7 @@
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
   --prose-space-inline: var(--chat-space-inline);
-  --prose-space-row: var(--chat-space-row);
+  --prose-space-row: var(--chat-space-inline);
   --prose-space-block: var(--chat-space-block);
   --prose-space-heading-large-top: 24px;
   --prose-space-h1-bottom: 8px;
@@ -167,25 +187,30 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
-    /* Thin scrollbars everywhere — the default chunky track fights the paper
-       calm. Firefox honours scrollbar-width/color; Chromium uses the webkit
-       pseudos below. Thumb fades from the shared foreground ink so it tracks
-       light/dark without a dedicated token. */
+    @apply border-border outline-focus;
+    /* Thin scrollbars everywhere, and only while the pointer is over the scroll area: a resting
+       thumb is a mark on the paper. Firefox and Chromium read scrollbar-width/color; Safari reads
+       the webkit pseudos below. The thumb is the shared foreground ink, so it tracks light/dark
+       without a token. */
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-foreground) 15%, transparent)
-      transparent;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: color-mix(in oklab, var(--color-foreground) 15%, transparent) transparent;
   }
   *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-  *::-webkit-scrollbar-track {
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-thumb {
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
+    border-radius: calc(infinity * 1px);
+  }
+  *:hover::-webkit-scrollbar-thumb {
     background: color-mix(in oklab, var(--color-foreground) 15%, transparent);
-    border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--color-foreground) 30%, transparent);
@@ -237,8 +262,8 @@
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-skill]:focus-visible {
-    outline: 2px solid var(--color-border-focus);
+  :root[data-focus-keys] [data-composer-skill]:focus-visible {
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
   /* Focus the app moves for continuity paints no ring. A screen heading
@@ -254,33 +279,39 @@
      which ship no heading font. */
 }
 
-/* Paper grain — a very subtle fixed fractal-noise overlay that gives the rice-
-   paper grounds a barely-there tooth. Applied to <body>; pointer-events: none so
-   it never intercepts input. The manuscript editor raises itself above this
-   (see editor.css) so long-form prose stays pristine. If in doubt, less. */
-@utility paper-grain {
-  &::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    opacity: 0.02;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 200px 200px;
-  }
-}
-
 @utility surface-card {
   @apply border border-border bg-card;
 }
 
-/* Calm "this thread is live" pulse. Uses --motion-pulse-duration for the
-   cycle and --status-streaming-ring for the halo so the dot, its glow, and
-   its cadence are all token-driven. */
+/* The state layer for controls that paint their own fill (a primary button, a chip): hover
+   lays `ink-fill` over the fill, and pressed, current, selected and open lay
+   `ink-fill-strong`. A transparent row uses `bg-ink-fill` directly; this is the same rule
+   for elements whose background colour is taken. Not inherited, so a nested control
+   starts clear. */
+@property --state-layer {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@utility interactive {
+  background-image: linear-gradient(var(--state-layer), var(--state-layer));
+  @media (hover: hover) {
+    &:hover:not(:disabled, [aria-disabled="true"]) {
+      --state-layer: var(--color-ink-fill);
+    }
+  }
+  &:active:not(:disabled, [aria-disabled="true"]),
+  &:is([aria-current]:not([aria-current="false"]), [aria-selected="true"], [aria-pressed="true"]),
+  &:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"] {
+    --state-layer: var(--color-ink-fill-strong);
+  }
+}
+
+/* Calm "this thread is live" pulse. */
 @utility streaming-dot {
-  @apply size-1.5 shrink-0 rounded-full bg-status-streaming;
-  box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+  @apply size-1.5 shrink-0 rounded-full bg-primary;
+  --streaming-halo: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px var(--streaming-halo);
 }
 @media (prefers-reduced-motion: no-preference) {
   .streaming-dot {
@@ -288,14 +319,39 @@
   }
 }
 
+/* A panel's content slides in from its edge when the panel opens. The grid
+   column changes in one step; only transform and opacity animate. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-project-slot="rail-l"][data-project-surface-state="active"] {
+    animation: panel-in-left var(--motion-duration-panel) var(--motion-ease-shell);
+  }
+  [data-project-slot="side"][data-project-surface-state="active"] {
+    animation: panel-in-right var(--motion-duration-panel) var(--motion-ease-shell);
+  }
+}
+
+@keyframes panel-in-left {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in-right {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
+  }
+}
+
 @keyframes streaming-pulse {
   0%, 100% {
     opacity: 1;
-    box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+    box-shadow: 0 0 0 3px var(--streaming-halo);
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 0 5px var(--color-status-streaming-ring);
+    box-shadow: 0 0 0 5px var(--streaming-halo);
   }
 }
 
@@ -308,7 +364,7 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at 42% 38%,
-    var(--color-ink-muted) 0%,
+    var(--color-muted-foreground) 0%,
     var(--color-ink-deep) 58%,
     transparent 76%
   );
@@ -345,7 +401,7 @@
 /* Flex/grid shrink contract: apply on pane boundaries (shell inset, chat surface,
    scroll region, column utilities). Do not sprinkle on turn leaves — prose-tokens
    and user-turn handle content overflow. Exception: flex rows that truncate
-   (disclosure-trigger, activity summary) keep min-w-0 on the truncating child.
+   (FoldToggle, activity summary) keep min-w-0 on the truncating child.
 
    Viewport shell: `app-frame` locks the outer shell to one screen; `app-scroll`
    is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). */
@@ -369,7 +425,11 @@
 
 /* Radix supplies the collision-aware bound after positioning. The fallback keeps
    the selector bounded before that custom property exists and in short mobile
-   viewports, including safe-area insets. */
+   viewports, including safe-area insets. The floor lets a tall list overflow a cramped
+   side: capped to that side's room it would always fit, and Radix would never flip it to
+   the side with space. The roomier side holds at least half the viewport less the
+   trigger, offset and padding (3rem allows a 44px trigger), so the floor never pushes a
+   list off a short screen; there it shrinks and scrolls. */
 @utility dropdown-surface {
   width: min(
     var(--dropdown-preferred-width, 14rem),
@@ -377,13 +437,13 @@
     calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 1rem)
   ) !important;
   max-height: min(
-    var(--radix-popover-content-available-height, 100svh),
+    max(var(--radix-popover-content-available-height, 100svh), min(16rem, 50svh - 3rem)),
     calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem)
   );
 }
 
 @utility main-pane {
-  @apply min-w-0 max-w-full overflow-x-hidden;
+  @apply min-w-0 max-w-full overflow-x-clip;
 }
 
 @utility chat-column {
@@ -400,26 +460,6 @@
 
   @media (min-width: 40rem) {
     padding-bottom: calc(2rem + env(safe-area-inset-bottom));
-  }
-}
-
-/* Project chat rows and their loading states share three stable lanes: flexible
-   copy, the Agent lane (`data-project-chat-row-work`: the Favorite star and
-   the Agent name, right-aligned together), and the trailing date/action slot. */
-@utility project-chat-row-layout {
-  grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
-  grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
-
-  & > [data-project-chat-row-work] {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.125rem;
-    text-align: right;
   }
 }
 
@@ -469,11 +509,7 @@
    auto-zooming the viewport on focus; tightens to 15px on desktop where
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
-  @apply text-base leading-relaxed md:text-[15px];
-  /* The composer is a raised, page-toned surface wherever it sits, so its
-     reference chips keep the page's fill (`link-chip.css`). */
-  --link-chip-fill: var(--color-muted);
-  --link-chip-fill-hover: var(--color-sidebar-accent);
+  @apply text-base leading-relaxed md:text-body;
 }
 
 @utility user-turn {
@@ -527,22 +563,6 @@
 @media (hover: none), (pointer: coarse) {
   [data-turn-role="user"] .user-turn-actions { opacity: 1; }
 }
-/* A rail area header's New file / New folder / Import… follow the same rule;
-   an open Import… menu keeps them shown. */
-@media (hover: hover) {
-  [data-rail-pane-header] .rail-pane-actions > :not([data-import-status]) {
-    opacity: 0;
-  }
-  [data-rail-pane-header]:hover .rail-pane-actions > *,
-  [data-rail-pane-header] .rail-pane-actions:focus-within > *,
-  [data-rail-pane-header]:has(.rail-pane-actions [aria-expanded="true"]) .rail-pane-actions > * {
-    opacity: 1;
-  }
-}
-@media (hover: none), (pointer: coarse) {
-  [data-rail-pane-header] .rail-pane-actions { opacity: 1; }
-}
-
 @utility chat-card {
   padding: var(--chat-card-pad-y) var(--chat-card-pad-x);
   border: 1px solid var(--chat-card-border, var(--color-border));
@@ -550,7 +570,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-4 py-3 text-prose-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-transparent bg-ink-fill px-4 py-3 text-foreground;
 }
 
 /* A queued message is not live yet: the draft link chip's outline (`link-chip.css`), dotted, with
@@ -559,43 +579,99 @@
   border-style: dotted;
   border-color: var(--color-muted-foreground);
   background-color: transparent;
-  color: var(--color-ink-muted);
-  --prose-color: var(--color-ink-muted);
+  color: var(--color-muted-foreground);
+  --prose-color: var(--color-muted-foreground);
 }
 
-/* Context-dependent interactive lift for chat elements (user bubble, composer,
-   turn-edit cards). The page-sheet placement (centered chat) lifts above the
-   warm page with --color-card; the dock placement lifts above the chrome with
-   --color-background. Both resolve to the same visual role ("raised interactive
-   surface") without per-component forks. */
-@utility bg-chat-interactive {
-  background-color: var(--color-chat-interactive, var(--color-background));
-  /* A raised surface is page-toned again, so a link chip on it takes the
-     page's fill back from the dock (`link-chip.css`). */
-  --link-chip-fill: var(--color-muted);
-  --link-chip-fill-hover: var(--color-sidebar-accent);
-}
-/* Single source of truth for the green-tinted focus ring.
-   Every interactive element opts in via `focus-ring` instead of re-deriving
-   focus styles. Consumes --border-focus + --ring tokens. */
+/* The one keyboard focus ring. Every interactive element opts in with `focus-ring`.
+   It draws INSIDE the control's own box, as an outline: a ring outside the box is cut by
+   any clipping ancestor (a scroller, a rounded card, a fold) and covered by any filled
+   neighbour, and each site would have to leave it room. An outline also leaves the
+   control's own shadow alone. A filled control, where the focus colour would not show,
+   wears `focus-ring-on-fill`. */
 @utility focus-ring {
-  @apply outline-none;
-  &:focus-visible:not([data-focus-quiet]) {
-    /* Outer glow derives from the ring token so surfaces that re-point the
-       ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
-    box-shadow:
-      0 0 0 2px var(--color-border-focus),
-      0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent);
+  /* Width, colour and offset at rest, so focus changes only the style: a control's own
+     colour transition would otherwise fade the ring in from its text colour. */
+  outline: 2px none var(--focus-ring-color, var(--color-focus));
+  outline-offset: var(--focus-ring-offset, -2px);
+  :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
+    outline-style: solid;
   }
 }
 
-/* Menu rows sit inside the surface gutter. Keep keyboard focus on the
-   rounded row, including composite rows that own a focused child. */
+/* On an opaque fill the ring takes the fill's text colour, set in from the edge so it
+   reads as a line on the fill and not as the control shrinking. */
+@utility focus-ring-on-fill {
+  --focus-ring-color: currentColor;
+  --focus-ring-offset: -4px;
+}
+
+/* The exception: a control that is only its text (an inline link, a text button) or is
+   filled edge to edge in the focus colour (a checked switch) has no room inside, and
+   always has room around it. Its ring stands off the box. */
+@utility focus-ring-outside {
+  --focus-ring-offset: 2px;
+}
+
+/* A control that fades its own edge with a mask would fade its ring too. Its positioned
+   frame draws the ring over it; the control carries `data-ring-on-frame`. */
+@utility focus-ring-frame {
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    outline: 2px none var(--focus-ring-color, var(--color-focus));
+    outline-offset: -2px;
+  }
+  :root[data-focus-keys] &:has(> [data-ring-on-frame]:focus-visible:not([data-focus-quiet]))::after {
+    outline-style: solid;
+  }
+}
+
+/* Menu rows: the same ring, also worn by a row frame whose main control has focus. */
 @utility dropdown-focus-ring {
-  @apply outline-none;
-  &:focus-visible,
-  &:has(> :focus-visible) {
-    box-shadow: inset 0 0 0 2px var(--color-dropdown-focus-indicator) !important;
+  outline: 2px none var(--color-focus);
+  outline-offset: -2px;
+  :root[data-focus-keys] &:focus-visible,
+  :root[data-focus-keys] &:has(> [data-list-item]:focus-visible) {
+    outline-style: solid !important;
+  }
+}
+
+/* Forced colours drop every fill and shadow, which is all that marks a selected tab, the
+   current row or a pressed toggle here. The system colours come through only with
+   `forced-color-adjust: none`, so the marked control paints SelectedItem itself and its
+   descendants take its text and border colour (their own tokens would be unforced). A tab that is
+   an empty button laid over its label marks the chip it covers instead. */
+@media (forced-colors: active) {
+  :is(
+      [role="tab"][aria-selected="true"]:not(:empty),
+      :has(> [role="tab"][aria-selected="true"]:empty),
+      :is([role="radio"], [role="menuitemradio"])[aria-checked="true"],
+      [aria-pressed="true"],
+      [data-list-row][data-selected="true"],
+      [aria-current]:not([aria-current="false"], li, [data-list-item])
+    ) {
+    forced-color-adjust: none;
+    background-color: SelectedItem;
+    color: SelectedItemText;
+    outline-color: SelectedItemText;
+    outline-offset: -4px;
+    & * {
+      color: inherit;
+      border-color: currentColor;
+    }
+  }
+  /* A filled button loses its fill: a frame keeps it apart from the quiet one beside it
+     (Apply from Discard). */
+  button:is([data-variant="default"], [data-variant="destructive"]) {
+    border: 2px solid ButtonText;
+  }
+  /* A menu's group rule is a 1px fill. */
+  [role="separator"]:not([tabindex]) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
   }
 }
 
@@ -631,7 +707,7 @@
   background-color: var(--inline-edit-surface, var(--color-card));
   box-shadow:
     0 0 0 var(--inline-edit-bleed, 4px) var(--inline-edit-surface, var(--color-card)),
-    0 0 0 calc(var(--inline-edit-bleed, 4px) + 1px) var(--color-border-focus);
+    0 0 0 calc(var(--inline-edit-bleed, 4px) + 1px) var(--color-focus);
 }
 
 @utility inline-edit-trigger {
@@ -642,8 +718,8 @@
     box-shadow var(--default-transition-duration);
   @media (hover: hover) {
     &:hover {
-      background-color: var(--color-dropdown-hover);
-      box-shadow: 0 0 0 var(--inline-edit-bleed, 4px) var(--color-dropdown-hover);
+      background-color: var(--color-ink-fill);
+      box-shadow: 0 0 0 var(--inline-edit-bleed, 4px) var(--color-ink-fill);
     }
   }
 }
@@ -653,30 +729,29 @@
 }
 
 /*
- * Shelf surface — the left rail: the chrome's grey-gold one shade darker
- * (see the palette story in design-tokens/ink-jade.css). Paints the shelf
- * material as one flat tone and locally RE-POINTS the semantic tokens, so rail
- * content written against the normal grammar (bg-sidebar-accent rows, text-foreground,
- * text-ink-muted, border-border-subtle, focus-ring) reads correctly without
- * per-component forks. Portalled content (menus, popovers, dialogs) mounts
- * on <body> and keeps page styling — only what literally sits on the shelf
- * re-themes. Border/muted voices are mixed from the shelf's own pigments
- * (colored greys — one light source).
- */
-/*
- * Page sheet — the lit paper rising out of the chrome. Every center pane
- * wears this below its h-10 chrome band (PaneHeader or the document tab
- * strip). Top-RIGHT corner only (shared tab radius, tucking under the chrome
- * toward the dock): the top-LEFT is deliberately square — the sheet sits
- * flush against the rail edge, and the roundness against the project header belongs
- * to the CHROME FIELD's own top-left corner (center slot / route pane), not
- * the sheet (user call, 2026-07-15). The center slot paints the chrome; the
- * sheet is the ONE sanctioned surface paint on top of it.
+ * Page sheet — the lit paper rising out of the chrome. Every pane wears
+ * this below its chrome band (`PaneHeader`), the side's inset from main's
+ * (`pageSheetClass`). It is a sheet set into the chrome: a hairline on its top and sides,
+ * both top corners rounded, running to the foot of the window. The center
+ * slot paints the chrome; the sheet is the ONE sanctioned surface paint on
+ * top of it.
  */
 @utility page-sheet {
-  /* Chat interactive surfaces lift above the warm page (card = brighter). */
-  --color-chat-interactive: var(--color-card);
-  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
+  /* `page-edge`, not `border-subtle`: a `tab-chip-active` outline ends on this top edge. */
+  @apply paper flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-page-edge;
+}
+
+/*
+ * Paper — every page's surface, a document's or a chat's (`page-sheet` applies it; the phone's
+ * page uses it directly). It re-points the page and its ink inside it, so everything drawn on the
+ * page sits on the paper in the paper's ink with no surface of its own. An active tab chip takes
+ * the same surface by default, so tab and page stay one piece.
+ */
+@utility paper {
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-paper-ink);
+  background-color: var(--color-paper);
+  color: var(--color-paper-ink);
 }
 
 /*
@@ -688,114 +763,112 @@
  * nothing; they sit transparent on this field.
  */
 @utility chrome-field {
-  /* Shares --radius-md with the tab chips and the page sheet — ONE corner
+  /* Shares --radius-md with the page sheet (the tab chips draw the same 6px) — ONE corner
      voice across the shell (user call 2026-07-16, superseding the earlier
      3px "architecture" tune). The curve exists only against the project header:
      ProjectShell zeroes --chrome-corner when the left rail is collapsed,
      otherwise the matched backdrop shows through the notch at the screen edge. */
   overflow: hidden;
   border-top-left-radius: var(--chrome-corner, var(--radius-md));
-  background-color: var(--color-sidebar);
-}
-
-/*
- * Dock surface — the chrome material (≡ the tab band) with airlight pooling
- * at its floor. One utility (not `bg-sidebar` + a gradient class) because
- * tailwind-merge can't tell a custom bg-image utility from a bg-color and
- * would drop one of the pair.
- */
-@utility dock-surface {
-  /* Chat interactive surfaces lift above the chrome (background = page tone). */
-  --color-chat-interactive: var(--color-background);
-  /* The dock's own tone is the recess, so a link chip on it would vanish; it
-     takes the next step, and hovers one further toward the ink. */
-  --link-chip-fill: var(--color-sidebar-accent);
-  --link-chip-fill-hover: color-mix(in oklab, var(--color-sidebar-accent) 90%, var(--color-foreground));
-  background-color: var(--color-sidebar);
-  background-image: var(--background-image-dock-airlight);
-}
-
-@utility shelf-surface {
-  /* The rail keeps the app's ONE black ink (rule: text is consistent
-     app-wide in light mode) — body text is untouched. Only what fails on the
-     tinted ground remaps through shelf role tokens from design-tokens: surface
-     tones, hairlines, muted/hint inks, error ink, and the focus border. The
-     outer ring follows the rail's shared black ink instead of page-tuned jade. */
-  background-color: var(--color-shelf);
-  --color-sidebar: var(--color-shelf);
-  --color-sidebar-accent: var(--color-shelf-active);
-  --color-sidebar-selected: color-mix(in oklab, var(--color-sidebar-accent) 88%, var(--color-brand-jade));
-  --color-ink-subtle: var(--color-shelf-ink-subtle);
-  --color-muted-foreground: var(--color-shelf-ink-muted);
-  --color-border-subtle: var(--color-shelf-border);
-  --color-border: var(--color-shelf-border-strong);
-  --color-accent: var(--color-shelf-hover);
-  --color-muted: var(--color-shelf-muted);
-  --color-destructive: var(--color-shelf-destructive);
-  --color-border-focus: var(--color-shelf-ring);
-  --color-ring: var(--color-foreground);
-}
-
-/*
- * Shelf hover overrides — chrome `sidebar-accent` (/50 especially) reads
- * near-white on the darker shelf. Descendant rules win over Tailwind utilities
- * so shelf rows keep the shared class names without per-component forks.
- */
-.shelf-surface .hover\:bg-sidebar-accent\/50:hover {
-  background-color: var(--color-shelf-hover);
+  background-color: var(--color-chrome);
 }
 
 /*
  * Tab-chip grammar — geometry for the places a surface RISES out of the
- * chrome: the document tab strip (`ContextTabBar`) and the centered chat
- * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
- * the chrome band; the ACTIVE chip surfaces the field tone below it — rounded
- * top plus Obsidian-style bottom flares (corner fills outside the chip so its
- * base curves outward into the page instead of meeting the band at a hard
- * right angle). An INACTIVE chip carries an inset rounded hover pill covering
- * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
- * this grammar — the dock is one uniform surface; its view switch is a
- * contained segmented track that presses into the chrome.)
+ * chrome: the document tab strip (`ContextTabBar`) and the pane band's index
+ * and title chips (`PaneHeader`). A chip sits in a `tab-band`; the ACTIVE chip
+ * is a folder tab: rounded top, open at the base, which flares outward into
+ * the sheet's top edge. An INACTIVE chip carries an inset rounded hover pill
+ * covering its full hit target. (The dock's Chat|Changes switcher is
+ * deliberately NOT this grammar — the dock is one uniform surface; its view
+ * switch is a contained segmented track that presses into the chrome.)
  *
- * The variation point is the surfacing color: consumers set
- * `--tab-chip-surface` on the strip (canvas for document tabs). These
- * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (the flares and pill
- * are absolutely-positioned pseudos).
+ * One owner per outline, after Chromium's tab path. The `page-sheet` owns its
+ * own edge, as one border. The active chip owns its whole outline (both top
+ * corners, both sides, both flares) as ONE mask image painted in one colour,
+ * and covers the sheet's top edge beneath it with its fill: the band overlaps
+ * the sheet, and the chip's last row lies inside it. Nothing is assembled
+ * from a neighbour's border, so there is no joint to misalign and no overlap
+ * to darken. Both strokes are `page-edge`, the hairline resolved onto the
+ * page and so opaque: the flares end on the sheet's edge, and a translucent
+ * stroke would darken there.
+ *
+ * Sites take a chip's classes from `tabChipClass` (features/project/shell/
+ * tab-chip.ts), never from these utilities directly: it makes the chip
+ * `relative` (outline, flares and hover pill are absolutely-positioned
+ * pseudos) and band-tall, so an active chip's base sits on the band's bottom
+ * edge. The one variation point is the surface: a chip under review sets
+ * `--tab-chip-surface`; the default is the page.
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
  * mid-fade — tab switches must snap. Only the hover pill transitions.
  */
+/* A strip wider than its box scrolls sideways with no scrollbar, so an edge with content behind
+   it fades: the suggestion menu's mask (`suggestion-menu.css`), turned on its side.
+   `useScrollEdges` sets `data-more-start` / `data-more-end`. */
+@utility scroll-fade-x {
+  --scroll-fade: 3rem;
+  --scroll-fade-start: 0px;
+  --scroll-fade-end: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  &[data-more-start] {
+    --scroll-fade-start: var(--scroll-fade);
+  }
+  &[data-more-end] {
+    --scroll-fade-end: var(--scroll-fade);
+  }
+}
+@utility tab-band {
+  position: relative;
+  z-index: 1;
+  /* The band's own height, never its content's, so both pages start level. */
+  height: var(--band-height);
+  /* The gutter: no chip starts closer to the pane's edge than the sheet's corner radius
+     plus a flare (6 + 6px), with 2px to spare, so a flare lands on the sheet's straight
+     edge. The quiet title chip's -ml-2 (`titleChipClass`) is measured from it. */
+  padding-inline-start: --spacing(3.5);
+  /* Over the sheet's top edge and one row inside it, so an active chip's fill hides the
+     edge beneath it with no gap at fractional display scales. */
+  margin-bottom: -2px;
+}
 @utility tab-chip-active {
+  /* In px, not --radius-md's rem: the mask's paths below draw this radius in px, and the
+     two must agree at any root font size. */
+  --tab-radius: 6px;
+  /* The padding gives back the margin, so the tab's content sits on the band's centre line with
+     the inactive chips and every other control in the row. */
   margin-top: --spacing(1);
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-  background-color: var(--tab-chip-surface);
+  padding-bottom: --spacing(1);
+  border-top-left-radius: var(--tab-radius);
+  border-top-right-radius: var(--tab-radius);
+  background-color: var(--tab-chip-surface, var(--color-paper));
+  /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
+     radius, which is --tab-radius: change them together. Their nested viewports anchor each
+     corner to its own corner of the chip, so the outline fits any chip size undistorted. */
   &::before,
   &::after {
     content: "";
     pointer-events: none;
     position: absolute;
-    bottom: 0;
-    width: var(--radius-md);
-    height: var(--radius-md);
+    inset: 0 calc(-1 * var(--tab-radius));
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
   }
+  /* The flares' fill, under the outline. */
   &::before {
-    left: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 0 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
+    background-color: var(--tab-chip-surface, var(--color-paper));
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
   &::after {
-    right: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 100% 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
+    background-color: var(--color-page-edge);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg width=%2260%25%22 height=%2260%25%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M6.5,9999V6.5A6 6 0 0 1 12.5,.5H9999%22/%3E%3C/svg%3E%3Csvg x=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-6.5,9999V6.5A6 6 0 0 0 -12.5,.5H-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg x=%2240%25%22 y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
 }
 @utility tab-chip-inactive {
@@ -812,22 +885,21 @@
       var(--default-transition-timing-function);
   }
   /* Same hover gate Tailwind applies to `hover:` utilities — no sticky
-     hover pills on touch. */
+     hover pills on touch. Hover darkens like every chrome row. */
   @media (hover: hover) {
     &:hover::before {
-      background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+      background-color: var(--color-ink-fill);
     }
+  }
+  /* A chip that opens a switcher wears the open fill while the switcher is open. */
+  &[aria-haspopup][aria-expanded="true"]::before {
+    background-color: var(--color-ink-fill-strong);
   }
 }
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
-}
-
-/** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
-@utility disclosure-trigger {
-  @apply focus-ring flex w-full min-w-0 items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
+  @apply focus-ring focus-ring-outside text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to
@@ -861,12 +933,6 @@
   padding-right: calc(1rem + env(safe-area-inset-right));
 }
 
-@media (hover: none), (pointer: coarse) {
-  .thread-row-pin {
-    opacity: 1;
-  }
-}
-
 @media (display-mode: standalone) {
   .mobile-top-bar {
     padding-top: env(safe-area-inset-top);
@@ -877,7 +943,7 @@
    (its h-14 row plus the standalone status-bar inset) and over the content. */
 @keyframes block-reveal {
   0%, 100% { outline-color: transparent; background-color: transparent; }
-  20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }
+  20%, 70% { outline-color: color-mix(in oklab, var(--color-primary) 40%, transparent); background-color: color-mix(in oklab, var(--color-primary) 12%, transparent); }
 }
 
 .block-reveal-flash {
@@ -889,7 +955,7 @@
 @media (prefers-reduced-motion: reduce) {
   .block-reveal-flash {
     outline-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
     animation: none;
   }
 }
@@ -898,7 +964,7 @@
    Changes list lights up once and settles. Its marks pulse in inline-review.css. */
 @keyframes review-row-arrive {
   from {
-    background-color: var(--color-review-added-ring);
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
   }
 }
 
@@ -911,3 +977,4 @@
     animation: none;
   }
 }
+

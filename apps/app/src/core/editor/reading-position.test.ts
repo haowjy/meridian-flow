@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createEditorConfig } from "./config";
+import { DocumentHistory } from "./editor-history";
 import { createLocalPresence } from "./local-presence";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
 import { claimDocumentTarget, mayRestoreReadingPosition } from "./reading-position-navigation";
@@ -32,6 +33,7 @@ function view(doc: Y.Doc) {
   const editor = new Editor(
     createEditorConfig({
       document: doc,
+      history: DocumentHistory.forDocument(doc),
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
     }),
@@ -68,6 +70,8 @@ function view(doc: Y.Doc) {
     return node;
   });
   vi.spyOn(editor.view, "posAtCoords").mockReturnValue(null);
+  // The caret's line, inside the pane: a selection the restored viewport shows is kept.
+  vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 10, bottom: 30, left: 0, right: 0 });
   return { editor, pane };
 }
 it("restores scroll and a backwards selection on reload, reopen, and another pane without focus", () => {

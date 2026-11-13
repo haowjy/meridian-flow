@@ -1,20 +1,22 @@
-/** History pointers admit only the exact account/project/Work-owned local draft. */
+/** History pointers admit only the exact account/project local document the replica holds. */
 import { describe, expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import type { OpenDocument } from "@/client/stores";
+import { resolveLocalDocumentSelection } from "./project-local-selection";
 
-const tab: ContextTab = {
+const tab: OpenDocument = {
   kind: "new",
   documentId: "draft-a",
   name: "Untitled",
   resourceHandle: "resource-draft-a",
 };
+const holding =
+  (...documents: Extract<OpenDocument, { kind: "new" }>[]) =>
+  (resourceHandle: string) =>
+    documents.find((document) => document.resourceHandle === resourceHandle) ?? null;
 const input = {
   accountId: "account",
   projectId: "project",
-  workId: "work",
-  hydrated: true,
-  tabs: [tab],
+  documentOf: holding(tab),
   pointer: {
     version: 2,
     accountId: "account",
@@ -25,8 +27,9 @@ const input = {
 describe("local document history", () => {
   it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
+    expect(resolveLocalDocumentSelection({ ...input, documentOf: null }).kind).toBe("loading");
     for (const change of [
-      { tabs: [] },
+      { documentOf: holding() },
       { accountId: "other" },
       { projectId: "other" },
       { pointer: null },
@@ -36,52 +39,8 @@ describe("local document history", () => {
   });
   it("follows a reminted document through its stable resource handle", () => {
     const reminted = { ...tab, documentId: "draft-b" };
-    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] })).toMatchObject({
-      kind: "resolved",
-      documentId: "draft-b",
-      owner: { tab: reminted },
-    });
-  });
-});
-
-describe("Editor screen entry", () => {
-  const document: ContextTab = {
-    kind: "tracked",
-    documentId: "doc",
-    name: "Renamed.md",
-    scheme: "manuscript",
-    path: "/Renamed.md",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  };
-  const entry = {
-    tabs: [tab, document],
-    selectedDocumentId: undefined,
-    recentRoutes: [],
-    workId: "work-a",
-  };
-  it("resumes the selected scratch tab of the Editor's own Work only", () => {
-    const scratch: ContextTab = {
-      ...document,
-      documentId: "note",
-      scheme: "scratch",
-      path: "/note.md",
-      workId: "work-a",
-    };
-    const selected = { ...entry, tabs: [scratch], selectedDocumentId: scratch.documentId };
-    expect(selectEditorEntryTab(selected)).toBe(scratch);
-    expect(selectEditorEntryTab({ ...selected, workId: "work-b" })).toBeNull();
-  });
-  it("does not reopen closed identities or choose an arbitrary open tab", () => {
-    expect(selectEditorEntryTab(entry)).toBeNull();
     expect(
-      selectEditorEntryTab({
-        ...entry,
-        tabs: [],
-        selectedDocumentId: "doc",
-        recentRoutes: [{ documentId: "doc", scheme: "manuscript", path: "/Old.md" }],
-      }),
-    ).toBeNull();
+      resolveLocalDocumentSelection({ ...input, documentOf: holding(reminted) }),
+    ).toMatchObject({ kind: "resolved", documentId: "draft-b", document: reminted });
   });
 });

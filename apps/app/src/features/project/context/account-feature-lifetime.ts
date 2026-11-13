@@ -1,19 +1,27 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
+import type { QueryClient } from "@tanstack/react-query";
+import { readDocumentView } from "@/client/project-shell/document-views";
+import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
+import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
-import { settleDockDraft } from "../dock/dock-document-store";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
+import { PresentedDocuments } from "./presented-documents";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
+import { observeRefusedDeletes } from "./refused-delete-observer";
 import { RemovedNoticeStore } from "./removed-notice-store";
 import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
@@ -21,6 +29,12 @@ export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
   readonly draftCommands;
+  /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
+  readonly draftOnly = new DraftOnlyPresentations();
+  /** What this browser tab's hosts mount: main's document and the side's (presented), the kept one. */
+  readonly presented = new PresentedDocuments((projectId, tab) =>
+    this.removal.reconcileInstalledTab(projectId, tab),
+  );
   readonly removal;
   readonly availability;
   readonly notices;
@@ -28,6 +42,7 @@ export class AccountFeatureLifetime {
   readonly opener;
   readonly renameOperations;
   private readonly continuity: IdentityContinuity | null;
+  private readonly stopRefusedDeletes: (() => void) | null;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
@@ -39,7 +54,7 @@ export class AccountFeatureLifetime {
 
   constructor(
     readonly accountId: string,
-    repairProjectCatalog: (projectId: string) => Promise<void>,
+    queryClient: QueryClient,
     onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
@@ -68,10 +83,12 @@ export class AccountFeatureLifetime {
         this.removedRooms.add(stop);
       },
       closeCreated: (ref) => {
-        this.removal.discardDraft(ref.projectId, ref.ownerKey, ref.itemKey);
-        settleDockDraft(ref, false);
+        this.removal.discardDraft(ref.projectId, ref.documentId);
       },
-      markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
+      markOwnRemoval: (ref) => {
+        const settle = this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]);
+        return (removed) => settle(removed ? [] : [ref.documentId]);
+      },
     });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
@@ -79,15 +96,60 @@ export class AccountFeatureLifetime {
         reconcileRecentAvailability(this.accountId, commands);
         await this.removal.reconcileDocumentAvailability(commands).localSettlement;
       },
-      repairProjectCatalog,
+      repairProjectCatalog: (projectId) =>
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "context-catalog"] }),
     });
-    this.notices = new RemovedNoticeStore(this.availability);
+    this.notices = new RemovedNoticeStore(this.availability, this.presented);
     this.removal = new ContextRemovalCoordinator(accountId, {
+      presented: this.presented,
       sessions: this.registry,
       notices: this.notices,
-      drafts: this.draftCommands,
+      drafts: {
+        // A Discarded draft's review can still hold its room, and a view can leave a draft for
+        // Live: neither shows the draft, so neither keeps a document live deleted.
+        boundDrafts: (projectId, documentId) => {
+          const pin = readDocumentView(accountId, projectId, documentId).pin;
+          return this.draftCommands
+            .boundDrafts(projectId, documentId)
+            .filter((draft) => draft.ownerKey === pin?.ownerKey && draft.itemKey === pin.itemKey);
+        },
+      },
+      draftOnly: this.draftOnly,
+      tabs: {
+        close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
+      },
+      addresses: {
+        removed: (projectId, documentIds) => {
+          const queryKey = projectQueryKeys.documentAddresses(projectId);
+          const rewrite = () =>
+            queryClient.setQueriesData<DocumentAddressResult>({ queryKey }, (answer) =>
+              answer?.kind !== "unavailable" &&
+              answer &&
+              documentIds.includes(answer.document.documentId)
+                ? { kind: "unavailable" }
+                : answer,
+            );
+          rewrite();
+          // A lookup in flight was asked before the removal: its answer would land over the
+          // rewrite. Cancelling reverts it to its last answer, so rewrite again and ask afresh.
+          const inFlight = queryClient
+            .getQueryCache()
+            .findAll({ queryKey, fetchStatus: "fetching" });
+          if (inFlight.length === 0) return;
+          void queryClient.cancelQueries({ queryKey, fetchStatus: "fetching" }).then(() => {
+            rewrite();
+            for (const query of inFlight)
+              void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
+          });
+        },
+        available: (projectId) =>
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentAddresses(projectId),
+          }),
+      },
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
+    dropRetiredTabSession(accountId);
     this.resources =
       typeof window === "undefined"
         ? null
@@ -102,6 +164,9 @@ export class AccountFeatureLifetime {
           );
     this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
     this.continuity = this.resources ? new IdentityContinuity(accountId, this.resources) : null;
+    this.stopRefusedDeletes = this.resources
+      ? observeRefusedDeletes(this.resources, this.notices)
+      : null;
     if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
@@ -165,6 +230,7 @@ export class AccountFeatureLifetime {
     for (const stop of [...this.removedRooms]) stop();
     this.renameOperations?.dispose();
     this.continuity?.dispose();
+    this.stopRefusedDeletes?.();
     this.resources?.beginClose();
     this.draftCommands.close();
     this.runtime.beginClose();
@@ -191,4 +257,13 @@ export class AccountFeatureLifetime {
       .catch(() => undefined);
     return attempt;
   }
+}
+
+/** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
+function dropRetiredTabSession(accountId: string): void {
+  browserRecord(
+    "session",
+    { key: "meridian:editor-workspace:v2", version: 0, accountId },
+    () => undefined,
+  ).write(undefined);
 }

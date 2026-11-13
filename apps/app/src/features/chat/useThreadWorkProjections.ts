@@ -1,4 +1,4 @@
-/** Persistent owner for a thread's Work-binding subscription: projected signals, receipts and gap resync. */
+/** A chat's Work-binding subscription: projected signals, receipts and gap resync. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
   decodeWorkHandle,
@@ -85,9 +85,8 @@ export function useThreadWorkProjections({
    */
   const generation = useRef(0);
   /**
-   * The Work-binding resync fetches threads + works and
-   * invalidates the thread namespace. A gap burst must not run it per gap, so it
-   * coalesces: one in flight, one follow-up.
+   * The Work-binding resync reads threads + works fresh and converges only if the binding moved.
+   * A gap burst must not run it per gap, so it coalesces: one in flight, one follow-up.
    */
   const bindingInFlight = useRef(false);
   const bindingAgain = useRef(false);
@@ -102,15 +101,11 @@ export function useThreadWorkProjections({
       try {
         await readStableThreadWorkBinding(
           queryClient,
-          {
-            projectId,
-            threadId,
-            previousWorkId: null,
-          },
+          { projectId, threadId, previousWorkId: null },
           accountSignal ?? undefined,
         );
       } catch {
-        // Best effort: the next mount, acknowledgment or gap re-runs the resync.
+        // Best effort: the next acknowledgment or gap re-runs the resync.
       } finally {
         bindingInFlight.current = false;
       }
@@ -128,11 +123,11 @@ export function useThreadWorkProjections({
     bindingInFlight.current = false;
     bindingAgain.current = false;
     const threadGeneration = ++generation.current;
-    void resyncBinding(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onLiveState: () => {
         if (accountSignal?.aborted) return;
-        // Head subscriptions omit events between the mount reads and acknowledgment.
+        // Head subscriptions omit events between mount and acknowledgment, and a rebind made in
+        // another window pushes nothing: this one fresh read catches both.
         void resyncBinding(threadGeneration);
       },
       onEvent: ({ seq, event }) => {

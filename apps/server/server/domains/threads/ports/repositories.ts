@@ -581,7 +581,6 @@ export interface ThreadDocumentRepository {
   ): Promise<ThreadDocument>;
   detach(threadId: ThreadId, documentId: string): Promise<void>;
   listByThread(threadId: ThreadId): Promise<ThreadDocument[]>;
-  listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
 }
 
 export interface ThreadWorksRepository {
@@ -614,20 +613,6 @@ export class ThreadMembershipUnavailableError extends Error {
   }
 }
 
-export interface TurnDocumentTouch {
-  id: string;
-  turnId: TurnId;
-  documentId: string;
-  threadId: ThreadId;
-  touchedAt: string;
-}
-
-export interface TurnDocumentTouchRepository {
-  recordTouch(turnId: TurnId, documentId: string): Promise<TurnDocumentTouch>;
-  listByThread(threadId: ThreadId, limit?: number): Promise<TurnDocumentTouch[]>;
-  listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
-}
-
 export type ThreadRepositories = {
   asks: AskRepository;
   threads: ThreadRepository;
@@ -642,7 +627,6 @@ export type ThreadRepositories = {
   /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
-  documentTouches: TurnDocumentTouchRepository;
   promptBakes: PromptBakeRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**

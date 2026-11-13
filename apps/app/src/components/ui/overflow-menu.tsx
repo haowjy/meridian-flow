@@ -14,12 +14,14 @@ type DropdownRootProps = React.ComponentProps<typeof DropdownMenu>;
 type DropdownContentProps = React.ComponentProps<typeof DropdownMenuContent>;
 type OverflowMenuTriggerAttributes = Omit<
   IconButtonProps,
-  "aria-label" | "children" | "className" | "onClick" | "onKeyDown" | "size" | "variant"
+  "label" | "children" | "className" | "onClick" | "onKeyDown" | "size" | "variant"
 > & { [key: `data-${string}`]: string | number | boolean | undefined };
 
 export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "onOpenChange"> & {
   children: React.ReactNode;
   label: string;
+  /** In a row that must not grow for it: the small button, with its touch area past its box. */
+  dense?: boolean;
   align?: DropdownContentProps["align"];
   sideOffset?: DropdownContentProps["sideOffset"];
   onCloseAutoFocus?: DropdownContentProps["onCloseAutoFocus"];
@@ -31,22 +33,24 @@ export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "onOpenChange">
 export type OverflowMenuTriggerProps = Omit<IconButtonProps, "children" | "size" | "variant">;
 
 export const OverflowMenuTrigger = React.forwardRef<HTMLButtonElement, OverflowMenuTriggerProps>(
-  ({ className, onClick, onKeyDown, ...props }, ref) => (
+  ({ className, onClick, onKeyDown, dense, ...props }, ref) => (
     <IconButton
       {...props}
       ref={ref}
-      size="sm"
+      size={dense ? "xs" : "sm"}
+      dense={dense}
       className={cn(className)}
       onClick={(event) => {
         event.stopPropagation();
         onClick?.(event);
       }}
       onKeyDown={(event) => {
-        event.stopPropagation();
+        // Left and Right still reach the list's keys (`handleListKeys`), back to the row.
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") event.stopPropagation();
         onKeyDown?.(event);
       }}
     >
-      <Ellipsis aria-hidden className="size-4" />
+      <Ellipsis aria-hidden />
     </IconButton>
   ),
 );
@@ -55,6 +59,7 @@ OverflowMenuTrigger.displayName = "OverflowMenuTrigger";
 export function OverflowMenu({
   children,
   label,
+  dense,
   align = "end",
   sideOffset,
   onCloseAutoFocus,
@@ -66,7 +71,12 @@ export function OverflowMenu({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <OverflowMenuTrigger {...triggerProps} aria-label={label} className={triggerClassName} />
+        <OverflowMenuTrigger
+          {...triggerProps}
+          label={label}
+          dense={dense}
+          className={triggerClassName}
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align={align}

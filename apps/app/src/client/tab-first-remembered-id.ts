@@ -1,8 +1,10 @@
 /** Tab-local selection, with a device seed only for a tab's first read. */
 import { browserRecord } from "./storage/browser-record";
 
+type RememberedKind = "chat" | "work" | "document";
+
 export function rememberedIdKey(
-  kind: "chat" | "work",
+  kind: RememberedKind,
   accountId: string,
   projectId: string,
 ): string {
@@ -11,7 +13,7 @@ export function rememberedIdKey(
 
 function selectionRecord(
   storage: "session" | "local",
-  kind: "chat" | "work",
+  kind: RememberedKind,
   accountId: string,
   projectId: string,
 ) {
@@ -29,7 +31,7 @@ function selectionRecord(
 }
 
 export function readRememberedId(
-  kind: "chat" | "work",
+  kind: RememberedKind,
   accountId: string,
   projectId: string,
 ): string | null {
@@ -43,7 +45,7 @@ export function readRememberedId(
 }
 
 export function writeRememberedId(
-  kind: "chat" | "work",
+  kind: RememberedKind,
   accountId: string,
   projectId: string,
   id: string | null,

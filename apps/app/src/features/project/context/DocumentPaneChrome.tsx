@@ -1,83 +1,64 @@
 /**
- * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the frozen-document notice (an archived Work, a trashed chat), the review-capable identity bar (whose free end
- * says what live did to the document this draft holds), and the document's
- * properties.
- * The Editor's page and the dock's document stack the same chrome, so an open
- * document looks and behaves alike wherever it is shown; the dock shows the
- * identity bar in its header instead (`identity: null`). The draft hint is the
- * same in both, live or reviewing.
+ * DocumentPaneChrome — what sits above an open document's editor: the passage
+ * notice, the frozen-document notice (an archived Work, a trashed chat), a failed
+ * review command, and the document's properties. Main's page and the side's
+ * document stack the same chrome. The document's identity and state are elsewhere:
+ * in main at the end of the toolbar row, in the side in its header (the Live
+ * menu lists other owners' drafts).
  */
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
-import { isDraftOnly } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
-import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { useAiDraftLauncher } from "../review-launch";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
-import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentProperties } from "./DocumentProperties";
 import type { DocumentFreeze } from "./use-document-freeze";
-import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
-
-/** The identity bar's inputs, or null where the pane's header shows the path instead (the dock). */
-export type PaneIdentity = {
-  /** The Work whose files this surface edits; identity moves resolve against it. */
-  editorWorkId: string | null;
-  /** The identity bar can't rename or move the document. */
-  readOnly: boolean;
-  onCommitted: (
-    documentId: string,
-    next: IdentityCommitted,
-    ownership: IdentityCommitOwnership,
-  ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
-};
 
 export type DocumentPaneChromeProps = {
   projectId: string;
-  tab: ContextTab;
+  document: OpenDocument;
   /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
   freeze: DocumentFreeze | null;
-  onCloseTab: (tab: ContextTab) => void;
-  identity: PaneIdentity | null;
+  /**
+   * In main: show a failed review command here (the side's header shows its
+   * own).
+   */
+  reviewNotices: boolean;
 };
 
 export function DocumentPaneChrome({
   projectId,
-  tab,
+  document,
   freeze,
-  onCloseTab,
-  identity,
+  reviewNotices,
 }: DocumentPaneChromeProps) {
   return (
     <>
       {/* A jump that could not find its passage says so here, over the page
           rather than in the layout. */}
-      <PassageNotice documentId={tab.documentId} />
+      <PassageNotice documentId={document.documentId} />
       {freeze ? (
         <DocumentFreezeNotice projectId={projectId} freeze={freeze} className="px-4 pt-3" />
       ) : null}
-      {/* Identity bar — the top edge of the page every open document
-          shares. Keyed by document so edit state never crosses tabs. */}
-      {identity ? (
-        <DocumentIdentityBar
-          key={tab.tabInstanceId ?? tab.documentId}
-          projectId={projectId}
-          editorWorkId={identity.editorWorkId}
-          tab={tab}
-          readOnly={identity.readOnly}
-          onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
-          onCommitted={identity.onCommitted}
-          onOpenExisting={identity.onOpenExisting}
-        />
-      ) : null}
-      {/* Properties — read-only frontmatter, under the path in the Editor and
-          the first chrome row in the dock, where the path is in the dock header. */}
-      <DocumentProperties projectId={projectId} tab={tab} />
-      <DraftedDeleteNotice documentId={tab.documentId} />
-      {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
-      <DocumentDraftHint projectId={projectId} tab={tab} />
+      {reviewNotices ? <ReviewFailureNotices document={document} /> : null}
+      <DocumentProperties projectId={projectId} document={document} />
+      <DraftedDeleteNotice documentId={document.documentId} />
     </>
+  );
+}
+
+function ReviewFailureNotices({ document }: { document: OpenDocument }) {
+  const { controller } = useDraftReview();
+  const { openReviewFile } = useAiDraftLauncher();
+  const review = controller.inlineReview;
+  if (review?.documentId !== document.documentId || !review.shown) return null;
+  return (
+    <DraftReviewFailureNotices
+      documentId={document.documentId}
+      itemKey={review.itemKey}
+      onOpenDraft={(row) => openReviewFile(row, controller.ownerKey)}
+    />
   );
 }

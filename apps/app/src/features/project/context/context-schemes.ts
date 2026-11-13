@@ -20,12 +20,6 @@ export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 
 /**
- * The project's own areas, the rail's Files tree. User is the writer's across
- * every project, so the rail docks it at the bottom beside Scratch instead.
- */
-export const PROJECT_TREE_SCHEMES = EDITOR_CONTEXT_SCHEMES.filter((scheme) => scheme !== "user");
-
-/**
  * Whether the writer can create files/folders inside a scheme from a browse
  * surface. Uploads is intake only (Jimmy's ruling, 2026-08-06): its files
  * arrive by uploading, never by in-tree creation. Scratch notes are made only
@@ -36,14 +30,24 @@ export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean 
   return scheme !== "uploads" && scheme !== "scratch";
 }
 
+/** Where something lives, for a row's second line: the source, then the folders down to it. */
+export function schemeLocation(scheme: ProjectContextTreeScheme, folders: readonly string[]) {
+  return [schemeLabel(scheme), ...folders].join(" / ");
+}
+
+/** Where the document at `path` lives (or lived, for one in Trash): its source and folders. */
+export function documentPlace(scheme: ProjectContextTreeScheme, path: string) {
+  return schemeLocation(scheme, path.split("/").filter(Boolean).slice(0, -1));
+}
+
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   switch (scheme) {
     case "manuscript":
       return t`Manuscript`;
     case "kb":
-      return t`Knowledge Base`;
+      return t`Knowledge`;
     case "user":
-      return t`User`;
+      return t`Your files`;
     case "unfiled":
       return t`Unfiled`;
     case "scratch":

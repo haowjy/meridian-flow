@@ -15,7 +15,7 @@ export function isThreadActivity(value: unknown): value is ThreadActivity {
 }
 
 /**
- * The strip shows nodes with a live lease. A settled child whose process died
+ * A running child is a node with a live lease. A settled child whose process died
  * can retain `spawnStatus: "running"` with no lease, so durable status cannot
  * stand in for liveness.
  */

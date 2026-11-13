@@ -1,39 +1,33 @@
 /**
- * DraftReviewBand — a document's review controls, as part of the identity row
- * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
- * its menu right after the breadcrumb, then, on the right, the stepper, Show
- * changes, Discard draft and Apply draft (the per-change bar's Discard and
- * Apply act on one change; these name their scope). They sit at the end of the
- * row's first line or wrap to a second one, so entering or leaving review may
- * add or remove that line.
+ * DraftReviewBand — a document's review controls: the version chip
+ * (`DocumentVersionMenu`), which takes the Live chip's place on the toolbar row, and the
+ * controls on a line of their own above the toolbar (`DocumentIdentityBar`): the change
+ * list, the stepper, Show changes, then Discard and Apply for the whole draft (the Draft
+ * chip names it; their tooltips say "Discard draft" and "Apply draft").
  *
  * The list button, left of the stepper, opens this document's own change list
  * (`DocumentChanges`) in a popover under the row, independent of marks
  * visibility. Focusing a row closes it; dispositions leave it open until the
  * last change is handled. Completion stays in the identity row.
  *
- * The row lays the two parts out (`children` receives them): the chip beside the
- * breadcrumb, the controls wrapping to a line of their own when the first is too
- * narrow for both. Label collapse and invisible phone hit boxes also belong to
- * the identity row (document-identity-row.css).
+ * The bar lays the two parts out (`children` receives them). Label collapse and
+ * invisible phone hit boxes belong to the review line (document-identity-row.css).
  *
  * Refusals are not here. The focused change's bar carries the open draft's;
  * the rest sit under the row (`DraftReviewFailureNotices`).
  */
 
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { Eye, EyeOff, List } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { PaintCapture } from "@/components/app/PaintHold";
-import { Button } from "@/components/ui/button";
+import type { OpenDocument } from "@/client/stores";
+import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
+import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -46,17 +40,25 @@ import {
   useReviewHeader,
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
-import { cn } from "@/lib/utils";
+import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
+import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
+  projectId: string;
+  document: OpenDocument;
   documentId: string;
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the editor's launcher). */
-  onOpenDraft: (row: ReviewFileTarget) => void;
+  /** Opens another draft of the Work in review (the editor's launcher); `takeFocus` as in `useReviewHeader`. */
+  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
+  /** Puts the caret back in the document when the review closes under the writer's focus. */
+  onFocusDocument: () => void;
+  /** Opened by Apply or Next draft from the previous draft's controls: take the focus once they show. */
+  focusOnOpen?: boolean;
+  onOpenFocused?: () => void;
 };
 
 /**
@@ -71,7 +73,17 @@ export function DraftReviewBand({
 }: DraftReviewBandProps & {
   children: (parts: { version: ReactNode; controls: ReactNode }) => ReactNode;
 }) {
-  const header = useReviewHeader(props);
+  const controlsRef = useRef<HTMLSpanElement>(null);
+  // The draft whose Apply or Discard ran with focus in the controls and opened
+  // nothing: focus follows to what replaces them until the writer moves it.
+  const [refocusFor, setRefocusFor] = useState<string | null>(null);
+  const header = useReviewHeader({
+    ...props,
+    onEndedWithFocus: () => setRefocusFor(props.itemKey),
+  });
+  const questionRef = useRef<HTMLSpanElement>(null);
+  const focusInControls = () =>
+    [controlsRef, questionRef].some((ref) => ref.current?.contains(document.activeElement));
   const { controller, view, locked, finished } = header;
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -79,28 +91,70 @@ export function DraftReviewBand({
   const listed = view.status === "ready" && count > 0;
   // A finger's 44px targets leave no room for every control in a docked row, so the
   // version menu carries Show changes, and the list and stepper give way before
-  // Discard draft and Apply draft do (document-identity-row.css, collapse 4).
+  // Discard and Apply do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
+  const { itemKey, focusOnOpen, onOpenFocused, onFocusDocument } = props;
+  const afterPaintRelease = useAfterPaintRelease();
+  useEffect(() => {
+    if (!focusOnOpen || !controlsRef.current) return;
+    onOpenFocused?.();
+    // The pane may still be covered while the draft paints.
+    afterPaintRelease(() => {
+      // The change list button acts on nothing, unlike Apply and Discard.
+      const first = controlsRef.current?.querySelector<HTMLElement>("button:not(:disabled)");
+      if (first && focusIsFree()) moveFocus(first, { ring: lastInputWasKeyboard() });
+    });
+  }, [focusOnOpen, onOpenFocused, afterPaintRelease, itemKey]);
+  // The pane may swap this band out with its tab when the review closes.
+  const pending = useRef({ refocusFor, onFocusDocument });
+  pending.current = { refocusFor, onFocusDocument };
+  useEffect(
+    () => () => {
+      if (pending.current.refocusFor !== null && focusIsFree()) pending.current.onFocusDocument();
+    },
+    [],
+  );
+  useEffect(() => {
+    if (refocusFor === null) return;
+    const controls = controlsRef.current;
+    if (!focusIsFree() && !controls?.contains(document.activeElement)) {
+      setRefocusFor(null);
+    } else if (!itemKey) {
+      // The review closed: Back to live or the last change took the controls away.
+      setRefocusFor(null);
+      onFocusDocument();
+    } else if (itemKey !== refocusFor) {
+      setRefocusFor(null);
+    } else if (finished) {
+      const next = controls?.querySelector<HTMLElement>("[data-review-next]");
+      if (next && next !== document.activeElement)
+        moveFocus(next, { ring: lastInputWasKeyboard() });
+    }
+  }, [refocusFor, itemKey, finished, onFocusDocument]);
   if (!props.itemKey) return children({ version: null, controls: null });
 
   const version = (
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
-      <DraftSwitcher
-        draftOnly={header.draftOnly}
-        disabled={locked}
-        onShowLive={header.showLive}
-        onRename={props.onRename}
-        marks={
-          coarse && listed
-            ? { visible: controller.marksVisible, onChange: controller.setMarksVisible }
-            : undefined
-        }
+      <DocumentVersionMenu
+        projectId={props.projectId}
+        document={props.document}
+        review={{
+          draftOnly: header.draftOnly,
+          disabled: locked,
+          onShowLive: header.showLive,
+          onRename: props.onRename,
+          marks:
+            coarse && listed
+              ? { visible: controller.marksVisible, onChange: controller.setMarksVisible }
+              : undefined,
+        }}
       />
     </>
   );
   const controls = (
     <span
+      ref={controlsRef}
       className="ml-auto flex shrink-0 items-center gap-1.5 font-sans text-xs"
       data-draft-review-controls
     >
@@ -129,52 +183,44 @@ export function DraftReviewBand({
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}
-        onOpenNext={header.openDraft}
+        onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      {finished ? null : (
-        <>
-          <Button
-            variant="quiet"
-            size="xs"
-            className="identity-discard h-5.5"
-            aria-label={t`Discard draft`}
-            disabled={locked}
-            onClick={header.discardDraft}
-          >
-            <Trash2 aria-hidden className="identity-command-icon hidden size-3.5" />
-            <span className="identity-command-label">
-              <Trans>Discard draft</Trans>
-            </span>
-            <span className="identity-command-short hidden">
-              <Trans>Discard</Trans>
-            </span>
-          </Button>
-          <Button
-            size="xs"
-            className="identity-apply h-5.5"
-            aria-label={t`Apply draft`}
-            disabled={locked || !header.canApply}
-            onClick={header.applyDraft}
-          >
-            {header.completing === "apply" ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden />
-            ) : null}
-            {header.completing === "apply" ? null : (
-              <Check aria-hidden className="identity-command-icon hidden size-3.5" />
-            )}
-            <span className="identity-command-label">
-              <Trans>Apply draft</Trans>
-            </span>
-            <span className="identity-command-short hidden">
-              <Trans>Apply</Trans>
-            </span>
-          </Button>
-        </>
+      {finished || header.asking ? null : (
+        <ReviewActions
+          scope="document"
+          disabled={locked}
+          applyDisabled={!header.canApply}
+          applying={header.completing === "apply"}
+          onDiscard={() => header.discardDraft(focusInControls())}
+          onApply={() => header.applyDraft(focusInControls())}
+        />
       )}
     </span>
   );
-  return children({ version, controls });
+  // The question is a sentence: beside the controls when the line has room, else on a line of
+  // its own, never cut by the controls' fixed width.
+  const question =
+    !finished && header.asking ? (
+      <span ref={questionRef} className="contents">
+        <DiscardQuestion
+          scope="document"
+          className="ml-auto"
+          onKeep={header.keepDraft}
+          returnFocus={() => controlsRef.current?.querySelector("[data-review-actions] button")}
+          onConfirm={() => header.confirmDiscard(focusInControls())}
+        />
+      </span>
+    ) : null;
+  return children({
+    version,
+    controls: (
+      <>
+        {controls}
+        {question}
+      </>
+    ),
+  });
 }
 
 /**
@@ -193,11 +239,10 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
       <PopoverTrigger asChild>
         <IconButton
           disabled={view.finished || !!view.completing}
-          tooltip={changeListLabel(view.items.length)}
+          label={changeListLabel(view.items.length)}
           data-review-secondary
-          className="size-5.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
         >
-          <List aria-hidden className="size-3.5" />
+          <List aria-hidden />
         </IconButton>
       </PopoverTrigger>
       <PopoverContent
@@ -213,11 +258,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
   );
 }
 
-/**
- * Show changes: an eye and its name in a wide row, the eye alone (named by
- * tooltip and `aria-label`) in a narrow one. One switch either way, so the
- * accessible name and state never depend on the width.
- */
+/** Show changes: the eye alone, a switch. */
 function ShowChangesToggle({
   visible,
   onChange,
@@ -226,29 +267,17 @@ function ShowChangesToggle({
   onChange: (visible: boolean) => void;
 }) {
   const Icon = visible ? Eye : EyeOff;
-  const name = t`Show changes`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={visible}
-          aria-label={name}
-          onClick={() => onChange(!visible)}
-          className={cn(
-            "focus-ring inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-sidebar-accent hover:text-foreground",
-            visible ? "text-jade-text" : "text-muted-foreground",
-          )}
-        >
-          <Icon aria-hidden className="size-3.5" />
-          <span className="identity-show-label">
-            <Trans>Show changes</Trans>
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{name}</TooltipContent>
-    </Tooltip>
+    <IconButton
+      role="switch"
+      aria-checked={visible}
+      label={t`Show changes`}
+      tooltipSide="bottom"
+      onClick={() => onChange(!visible)}
+      className={visible ? "text-foreground" : "text-muted-foreground"}
+    >
+      <Icon aria-hidden />
+    </IconButton>
   );
 }
 
@@ -267,7 +296,7 @@ export function DraftReviewFailureNotices({
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   if (!commandError && failedElsewhere.length === 0) return null;
   return (
-    <div className="shrink-0 text-caption" data-draft-review-notices>
+    <div className="shrink-0 text-xs" data-draft-review-notices>
       <ReviewFailureNotices
         itemKey={itemKey}
         commandError={commandError}

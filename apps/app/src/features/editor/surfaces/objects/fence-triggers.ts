@@ -4,7 +4,7 @@
  * The ladder's floor, for the one context the formatting menu deliberately
  * does not own: a fence's verbs are its language, its source, and its shape,
  * and law 4 gives the deepest context the surface. This right-click opens the
- * same list the ⋮ chip carries.
+ * same list the ⋯ chip carries.
  *
  * Pure over the claim target, so the split matrix is testable without a
  * pointer. The kernel's resolver has already named the fence and its position;

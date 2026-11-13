@@ -53,7 +53,7 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
         scratchRootThreadId={rootThreadId}
         onClose={() => surface.dismissFollow()}
         onRetry={() => surface.retryFollow()}
-        onOpen={(document) => open(document, "current")}
+        onOpen={(document) => open(document)}
       />
     </EditorDialog>
   );

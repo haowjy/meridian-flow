@@ -19,7 +19,7 @@ has no coarse-pointer emulation, so launch it with
 - **Local pointer.** Phone files don't auto-open from the Files `+` row, so that
   row never produces the pointer. Reach it at desktop width with a coarse pointer:
   hold the network offline, create a New file (a `meridianProjectSelection`
-  pointer appears in history state, and the URL stays `/editor?work=<workId>`),
+  pointer appears in history state, and the URL stays `/editor`),
   then change the viewport to 390x844. Reload keeps the pointer.
 
 1. Geometry: the editor frame's height equals its column's. A zero-height frame

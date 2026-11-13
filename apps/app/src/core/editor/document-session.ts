@@ -51,6 +51,7 @@ import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { DocumentHistory } from "./editor-history";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -215,6 +216,8 @@ export type DocumentSessionOptions = {
   ownUserId?: string | null;
 };
 
+const noop = () => {};
+
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
 type DestroyStage = { settled: boolean; run: () => void | Promise<void> };
 
@@ -226,12 +229,16 @@ export class DocumentSession {
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
+  /** The writer's undo, kept with the document: editors attach to it while mounted. */
+  readonly history: DocumentHistory;
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
   private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
+  /** The closing of a transport `detachTransport` released; the next one opens after it. */
+  private detaching: Promise<void> | null = null;
   /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
   private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
@@ -265,6 +272,20 @@ export class DocumentSession {
   private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
+  /** `detachTransport` holds one presence suspension until the next transport attaches. */
+  private presenceHeldForTransport = false;
+  /** Page hide is a presence suspension; `pageshow` releases it only if this listener took it. */
+  private presenceHeldForPageHide = false;
+  private readonly onPageHide = () => {
+    if (this.presenceHeldForPageHide) return;
+    this.presenceHeldForPageHide = true;
+    this.localPresence.suspend();
+  };
+  private readonly onPageShow = () => {
+    if (!this.presenceHeldForPageHide) return;
+    this.presenceHeldForPageHide = false;
+    this.localPresence.resume();
+  };
   private readonly localPersistenceSyncedPromise: Promise<void>;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
@@ -284,10 +305,15 @@ export class DocumentSession {
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
+    this.history = DocumentHistory.forDocument(this.document);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     this.localPresence = createLocalPresence(this.awareness);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+      window.addEventListener("pageshow", this.onPageShow);
+    }
     if (persistence.kind === "indexeddb") {
       this.persistence = new IndexeddbPersistence(persistence.key, this.document);
     } else {
@@ -317,8 +343,13 @@ export class DocumentSession {
     this.transportAttachmentPending = true;
     this.adoptionFailed = false;
     this.recomputeStatus();
-    if (this.persistence && !this.localPersistenceSynced) {
-      void this.waitForLocalPersistenceTransportGate().then(() => {
+    if ((this.persistence && !this.localPersistenceSynced) || this.detaching) {
+      void Promise.all([
+        this.detaching,
+        this.persistence && !this.localPersistenceSynced
+          ? this.waitForLocalPersistenceTransportGate()
+          : null,
+      ]).then(() => {
         if (!this.destroyed) this.connectTransport(transportFactory);
       });
       return;
@@ -327,6 +358,8 @@ export class DocumentSession {
   }
 
   private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
+    // Before the factory, so the new provider's first handshake carries this client's presence.
+    this.resumePresenceForTransport();
     try {
       this.transportProvider = transportFactory({
         roomKey: this.roomKey,
@@ -377,6 +410,43 @@ export class DocumentSession {
     this.emit();
   }
 
+  /**
+   * Close the server transport and keep the Y.Doc, its local persistence and its history. Edits
+   * made after this wait in the document until `attachTransport` syncs the difference. A
+   * following `attachTransport` waits for this to finish.
+   */
+  detachTransport(): Promise<void> {
+    const previous = this.transportProvider;
+    if (this.destroyed || !previous) return this.detaching ?? Promise.resolve();
+    this.unsubscribeTransportStatus?.();
+    this.unsubscribeTransportAccess?.();
+    this.unsubscribeChangeEvents?.();
+    this.unsubscribeAcknowledgement?.();
+    this.unsubscribeTransportStatus = null;
+    this.unsubscribeTransportAccess = null;
+    this.unsubscribeChangeEvents = null;
+    this.unsubscribeAcknowledgement = null;
+    // The provider never destroys this session's Awareness, so presence is held here and put
+    // back on attach.
+    if (!this.presenceHeldForTransport) {
+      this.presenceHeldForTransport = true;
+      this.localPresence.suspend();
+    }
+    this.transportProvider = null;
+    this.transportState = null;
+    this.transportInitialSyncComplete = false;
+    this.transportAcknowledged = false;
+    this.status = "detached";
+    this.serverHasLocalChanges = false;
+    const closing = Promise.resolve(previous.destroy());
+    const settled = closing.then(noop, noop).then(() => {
+      if (this.detaching === settled) this.detaching = null;
+    });
+    this.detaching = settled;
+    this.emit();
+    return closing;
+  }
+
   /** Replace a terminal transport while preserving local persistence and the live Y.Doc. */
   async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
     if (this.destroyed) {
@@ -386,22 +456,7 @@ export class DocumentSession {
       // A reconnect would replay the refused edits from this Y.Doc.
       throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
     }
-    const previous = this.transportProvider;
-    this.unsubscribeTransportStatus?.();
-    this.unsubscribeTransportAccess?.();
-    this.unsubscribeChangeEvents?.();
-    this.unsubscribeAcknowledgement?.();
-    this.unsubscribeTransportStatus = null;
-    this.unsubscribeTransportAccess = null;
-    this.unsubscribeChangeEvents = null;
-    this.unsubscribeAcknowledgement = null;
-    this.transportProvider = null;
-    this.transportState = null;
-    this.transportInitialSyncComplete = false;
-    this.transportAcknowledged = false;
-    this.status = "detached";
-    this.serverHasLocalChanges = false;
-    await previous?.destroy();
+    await this.detachTransport();
     await this.localPeers?.drain();
     this.localPeers = null;
     this.attachTransport(transportFactory);
@@ -430,13 +485,7 @@ export class DocumentSession {
       };
       const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
       stop = this.subscribe((snapshot) => {
-        const connection = snapshot.connectionState;
-        if (
-          snapshot.status === "destroyed" ||
-          connection?.kind === "reset" ||
-          connection?.kind === "terminal" ||
-          connection?.kind === "unauthorized"
-        )
+        if (this.isRoomEnded())
           finish(new Error("Document session can no longer acknowledge this cut"));
         else if (!prefix && snapshot.serverHasLocalChanges) finish();
       });
@@ -450,6 +499,29 @@ export class DocumentSession {
 
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
+  }
+
+  /**
+   * Whether this room can still take the unsent edits: false once it is reset, unauthorized,
+   * terminal, destroyed or admitted read-only (the server drops writes without closing).
+   * Owners that keep a released session until its edits are acknowledged ask this to know the
+   * wait can end.
+   */
+  canDeliverUnsentEdits(): boolean {
+    return !this.isRoomEnded() && this.access !== "read";
+  }
+
+  /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
+  isRoomEnded(): boolean {
+    const { status, connectionState } = this.getSnapshot();
+    return (
+      this.resetDisposition !== null ||
+      status === "destroyed" ||
+      status === "access-lost" ||
+      connectionState?.kind === "reset" ||
+      connectionState?.kind === "unauthorized" ||
+      connectionState?.kind === "terminal"
+    );
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
@@ -669,6 +741,12 @@ export class DocumentSession {
     return this.localPresence;
   }
 
+  private resumePresenceForTransport(): void {
+    if (!this.presenceHeldForTransport) return;
+    this.presenceHeldForTransport = false;
+    this.localPresence.resume();
+  }
+
   /** Take this client off the wire. Field writes made meanwhile still count. */
   suspendPresence(): void {
     if (this.destroyed) return;
@@ -702,6 +780,14 @@ export class DocumentSession {
       this.destroyStages = [
         { settled: false, run: () => this.emit() },
         { settled: false, run: () => this.markerStore.clear() },
+        {
+          settled: false,
+          run: () => {
+            if (typeof window === "undefined") return;
+            window.removeEventListener("pagehide", this.onPageHide);
+            window.removeEventListener("pageshow", this.onPageShow);
+          },
+        },
         { settled: false, run: () => this.localPresence.release() },
         {
           settled: false,
@@ -733,6 +819,7 @@ export class DocumentSession {
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
+        { settled: false, run: () => this.history.destroy() },
         { settled: false, run: () => this.document.destroy() },
         { settled: false, run: () => this.listeners.clear() },
       ];

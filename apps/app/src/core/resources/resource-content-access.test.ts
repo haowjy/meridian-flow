@@ -82,6 +82,7 @@ function registryOwnership(
     lease: { accountId, projectId, documentId: record.resource.identity.documentId, generation },
     persistenceGeneration: generation,
     exactDatabaseName: exactDatabaseName(record),
+    setHosted: () => undefined,
     release,
   };
 }

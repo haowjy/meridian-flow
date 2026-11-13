@@ -40,12 +40,19 @@ export function ReasonTooltip({ name, reason, side = "right", children }: Reason
           caret goes where the writer clicked (the same reason menus are
           non-modal), not that a bubble swallowed it. */}
       <TooltipContent side={side} className="max-w-56">
-        {name ? <span className="block">{name}</span> : null}
-        {/* Muted only under a name — alone it IS the message. */}
-        {reason ? (
-          <span className={cn("block", name && "text-background/70")}>{reason}</span>
-        ) : null}
+        <ReasonLines name={name} reason={reason} />
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/** The tooltip's lines: the name, then the reason beneath it. */
+export function ReasonLines({ name, reason }: Pick<ReasonTooltipProps, "name" | "reason">) {
+  return (
+    <>
+      {name ? <span className="block">{name}</span> : null}
+      {/* Muted only under a name — alone it IS the message. */}
+      {reason ? <span className={cn("block", name && "text-background/70")}>{reason}</span> : null}
+    </>
   );
 }

@@ -8,8 +8,8 @@
 - A reversible create Undo stores the removed recent with its tombstone. Redo
   restores the row at its original `openedAt`, updating only the document's
   current name and address, so reversal doesn't make an old document recent.
-- Availability admits deletion, access loss and a later locator. An open tab does
-  the same for a row still in the record, including a local draft's name.
+- Availability admits deletion, access loss and a later locator. A presented document
+  does the same for a row still in the record, including a local draft's name.
 - A local handle isn't watched; a document locator is. Never-admitted
   `not-visible` is already a non-removal in the availability coordinator, so this
   record keeps no admission flag. Focus, online and the existing poll cover the

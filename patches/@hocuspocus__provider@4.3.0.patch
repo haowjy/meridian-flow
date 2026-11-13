@@ -1,0 +1,217 @@
+diff --git a/dist/hocuspocus-provider.cjs b/dist/hocuspocus-provider.cjs
+index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191edec262c 100644
+--- a/dist/hocuspocus-provider.cjs
++++ b/dist/hocuspocus-provider.cjs
+@@ -690,7 +690,9 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.forwardDestroy = () => this.emit("destroy");
+ 		this.setConfiguration(configuration);
+ 		this.configuration.document = configuration.document ? configuration.document : new yjs.Doc();
+-		this.configuration.awareness = configuration.awareness !== void 0 ? configuration.awareness : new y_protocols_awareness.Awareness(this.document);
++		// A supplied Awareness belongs to its supplier; destroy() leaves it alive.
++		this.ownsAwareness = configuration.awareness === void 0;
++		this.configuration.awareness = this.ownsAwareness ? new y_protocols_awareness.Awareness(this.document) : configuration.awareness;
+ 		this.on("open", this.configuration.onOpen);
+ 		this.on("message", this.configuration.onMessage);
+ 		this.on("outgoingMessage", this.configuration.onOutgoingMessage);
+@@ -702,12 +704,14 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.on("unsyncedChanges", this.configuration.onUnsyncedChanges);
+ 		this.on("authenticated", this.configuration.onAuthenticated);
+ 		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
+-		this.awareness?.on("update", () => {
++		this.boundAwarenessEmitUpdate = () => {
+ 			this.emit("awarenessUpdate", { states: (0, _hocuspocus_common.awarenessStatesToArray)(this.awareness.getStates()) });
+-		});
+-		this.awareness?.on("change", () => {
++		};
++		this.boundAwarenessEmitChange = () => {
+ 			this.emit("awarenessChange", { states: (0, _hocuspocus_common.awarenessStatesToArray)(this.awareness.getStates()) });
+-		});
++		};
++		this.awareness?.on("update", this.boundAwarenessEmitUpdate);
++		this.awareness?.on("change", this.boundAwarenessEmitChange);
+ 		this.document.on("update", this.boundDocumentUpdateHandler);
+ 		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
+ 		this.registerEventListeners();
+@@ -757,7 +761,7 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		});
+ 	}
+ 	pageHide() {
+-		if (this.awareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
++		if (this.awareness && this.ownsAwareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
+ 	}
+ 	registerEventListeners() {
+ 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
+@@ -870,9 +874,13 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.emit("destroy");
+ 		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);
+ 		if (this.awareness) {
+-			(0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "provider destroy");
+ 			this.awareness.off("update", this.boundAwarenessUpdateHandler);
+-			this.awareness.destroy();
++			this.awareness.off("update", this.boundAwarenessEmitUpdate);
++			this.awareness.off("change", this.boundAwarenessEmitChange);
++			if (this.ownsAwareness) {
++				(0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "provider destroy");
++				this.awareness.destroy();
++			}
+ 		}
+ 		this.document.off("update", this.boundDocumentUpdateHandler);
+ 		this.removeAllListeners();
+diff --git a/dist/hocuspocus-provider.esm.js b/dist/hocuspocus-provider.esm.js
+index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a36841189ccb6 100644
+--- a/dist/hocuspocus-provider.esm.js
++++ b/dist/hocuspocus-provider.esm.js
+@@ -660,7 +660,9 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.forwardDestroy = () => this.emit("destroy");
+ 		this.setConfiguration(configuration);
+ 		this.configuration.document = configuration.document ? configuration.document : new Y.Doc();
+-		this.configuration.awareness = configuration.awareness !== void 0 ? configuration.awareness : new Awareness(this.document);
++		// A supplied Awareness belongs to its supplier; destroy() leaves it alive.
++		this.ownsAwareness = configuration.awareness === void 0;
++		this.configuration.awareness = this.ownsAwareness ? new Awareness(this.document) : configuration.awareness;
+ 		this.on("open", this.configuration.onOpen);
+ 		this.on("message", this.configuration.onMessage);
+ 		this.on("outgoingMessage", this.configuration.onOutgoingMessage);
+@@ -672,12 +674,14 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.on("unsyncedChanges", this.configuration.onUnsyncedChanges);
+ 		this.on("authenticated", this.configuration.onAuthenticated);
+ 		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
+-		this.awareness?.on("update", () => {
++		this.boundAwarenessEmitUpdate = () => {
+ 			this.emit("awarenessUpdate", { states: awarenessStatesToArray(this.awareness.getStates()) });
+-		});
+-		this.awareness?.on("change", () => {
++		};
++		this.boundAwarenessEmitChange = () => {
+ 			this.emit("awarenessChange", { states: awarenessStatesToArray(this.awareness.getStates()) });
+-		});
++		};
++		this.awareness?.on("update", this.boundAwarenessEmitUpdate);
++		this.awareness?.on("change", this.boundAwarenessEmitChange);
+ 		this.document.on("update", this.boundDocumentUpdateHandler);
+ 		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
+ 		this.registerEventListeners();
+@@ -727,7 +731,7 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		});
+ 	}
+ 	pageHide() {
+-		if (this.awareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
++		if (this.awareness && this.ownsAwareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
+ 	}
+ 	registerEventListeners() {
+ 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
+@@ -840,9 +844,13 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		this.emit("destroy");
+ 		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);
+ 		if (this.awareness) {
+-			removeAwarenessStates(this.awareness, [this.document.clientID], "provider destroy");
+ 			this.awareness.off("update", this.boundAwarenessUpdateHandler);
+-			this.awareness.destroy();
++			this.awareness.off("update", this.boundAwarenessEmitUpdate);
++			this.awareness.off("change", this.boundAwarenessEmitChange);
++			if (this.ownsAwareness) {
++				removeAwarenessStates(this.awareness, [this.document.clientID], "provider destroy");
++				this.awareness.destroy();
++			}
+ 		}
+ 		this.document.off("update", this.boundDocumentUpdateHandler);
+ 		this.removeAllListeners();
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 2f8588e44a91c8c6249ac740421684deaefc8133..0f31c8bfa59807efe290abdb3692043887632eb5 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -377,6 +377,9 @@ declare class HocuspocusProvider extends EventEmitter {
+   intervals: any;
+   constructor(configuration: HocuspocusProviderConfiguration);
+   boundDocumentUpdateHandler: (update: Uint8Array, origin: any) => void;
++  ownsAwareness: boolean;
++  boundAwarenessEmitUpdate: () => void;
++  boundAwarenessEmitChange: () => void;
+   boundAwarenessUpdateHandler: ({
+     added,
+     updated,
+diff --git a/src/HocuspocusProvider.ts b/src/HocuspocusProvider.ts
+index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ecdec1b69d 100644
+--- a/src/HocuspocusProvider.ts
++++ b/src/HocuspocusProvider.ts
+@@ -183,10 +183,11 @@ export class HocuspocusProvider extends EventEmitter {
+ 		this.configuration.document = configuration.document
+ 			? configuration.document
+ 			: new Y.Doc();
+-		this.configuration.awareness =
+-			configuration.awareness !== undefined
+-				? configuration.awareness
+-				: new Awareness(this.document);
++		// A supplied Awareness belongs to its supplier; destroy() leaves it alive.
++		this.ownsAwareness = configuration.awareness === undefined;
++		this.configuration.awareness = this.ownsAwareness
++			? new Awareness(this.document)
++			: configuration.awareness;
+ 
+ 		this.on("open", this.configuration.onOpen);
+ 		this.on("message", this.configuration.onMessage);
+@@ -201,17 +202,8 @@ export class HocuspocusProvider extends EventEmitter {
+ 		this.on("authenticated", this.configuration.onAuthenticated);
+ 		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
+ 
+-		this.awareness?.on("update", () => {
+-			this.emit("awarenessUpdate", {
+-				states: awarenessStatesToArray(this.awareness!.getStates()),
+-			});
+-		});
+-
+-		this.awareness?.on("change", () => {
+-			this.emit("awarenessChange", {
+-				states: awarenessStatesToArray(this.awareness!.getStates()),
+-			});
+-		});
++		this.awareness?.on("update", this.boundAwarenessEmitUpdate);
++		this.awareness?.on("change", this.boundAwarenessEmitChange);
+ 
+ 		this.document.on("update", this.boundDocumentUpdateHandler);
+ 		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
+@@ -237,6 +229,20 @@ export class HocuspocusProvider extends EventEmitter {
+ 
+ 	boundAwarenessUpdateHandler = this.awarenessUpdateHandler.bind(this);
+ 
++	ownsAwareness: boolean;
++
++	boundAwarenessEmitUpdate = () => {
++		this.emit("awarenessUpdate", {
++			states: awarenessStatesToArray(this.awareness!.getStates()),
++		});
++	};
++
++	boundAwarenessEmitChange = () => {
++		this.emit("awarenessChange", {
++			states: awarenessStatesToArray(this.awareness!.getStates()),
++		});
++	};
++
+ 	boundPageHide = this.pageHide.bind(this);
+ 
+ 	boundOnOpen = this.onOpen.bind(this);
+@@ -502,13 +508,17 @@ export class HocuspocusProvider extends EventEmitter {
+ 		}
+ 
+ 		if (this.awareness) {
+-			removeAwarenessStates(
+-				this.awareness,
+-				[this.document.clientID],
+-				"provider destroy",
+-			);
+ 			this.awareness.off("update", this.boundAwarenessUpdateHandler);
+-			this.awareness.destroy();
++			this.awareness.off("update", this.boundAwarenessEmitUpdate);
++			this.awareness.off("change", this.boundAwarenessEmitChange);
++			if (this.ownsAwareness) {
++				removeAwarenessStates(
++					this.awareness,
++					[this.document.clientID],
++					"provider destroy",
++				);
++				this.awareness.destroy();
++			}
+ 		}
+ 
+ 		this.document.off("update", this.boundDocumentUpdateHandler);

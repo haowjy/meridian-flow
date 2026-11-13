@@ -6,7 +6,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useWorks } from "@/client/query/useWorks";
-import type { ServerContextTab } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
@@ -22,7 +22,9 @@ import { type ScratchSource, useScratchCatalogs } from "./use-scratch-catalogs";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
-  tabFor(rowId: string): ServerContextTab | null;
+  tabFor(rowId: string): ServerOpenDocument | null;
+  /** How the catalog behind the folder on screen (its trail, outermost first) is loading. */
+  loadState(trail: readonly DrillNode[]): "ready" | "loading" | "failed";
   /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
   trailInside(folderId: string): DrillNode[] | null;
   /** Resolve an area or folder row into its placement destination. */
@@ -45,7 +47,7 @@ export type ProjectMenuSource = {
 };
 
 /**
- * The project browsing tree: Manuscript, Knowledge Base, User, Unfiled and the
+ * The project browsing tree: Manuscript, Knowledge, User, Unfiled and the
  * Scratch on screen as folders under the project's title. The own area (the open
  * document's, an entry being moved, or the folder a mention opens) is always
  * reachable; when it is not one of those (an Uploads file, or another Work's
@@ -159,6 +161,18 @@ export function useProjectMenuSource({
   return {
     tree,
     tabFor: (rowId) => menuTabFor(areas, rowId),
+    loadState: (trail) => {
+      const areaId = trail[0]?.id;
+      const view =
+        areaId === "area:scratch"
+          ? trail.at(1)?.id.startsWith("earlier:")
+            ? earlier
+            : primary
+          : areaId === "area:document"
+            ? hidden
+            : projectViews[areaId?.replace("area:", "") as keyof typeof projectViews];
+      return !view || view.catalog ? "ready" : view.isError ? "failed" : "loading";
+    },
     trailInside: (folderId) => {
       for (const area of areas) {
         const folder = area.catalog ? menuEntryFor(area.catalog, folderId) : null;

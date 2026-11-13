@@ -8,6 +8,7 @@ import {
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -52,8 +53,6 @@ function focusVerified(node: HTMLElement | null | undefined, allowAriaDisabled =
   target.focus({ preventScroll: true });
   return document.activeElement === target || Boolean(target.contains(document.activeElement));
 }
-
-const overflowControlClassName = "[@media(pointer:coarse)]:size-11";
 
 export function ComposerToolbar({
   model,
@@ -273,8 +272,7 @@ export function ComposerToolbar({
           <OverflowMenuTrigger
             ref={overflowTrigger}
             type="button"
-            className={overflowControlClassName}
-            aria-label={t`More composer controls`}
+            label={t`More composer controls`}
             aria-haspopup="dialog"
             aria-controls={view.kind === "overflow" ? contentId : undefined}
             aria-expanded={view.kind === "overflow"}
@@ -291,10 +289,8 @@ export function ComposerToolbar({
           tabIndex={-1}
           inert
           aria-hidden
-          className={cn(
-            overflowControlClassName,
-            "pointer-events-none invisible absolute left-0 top-0",
-          )}
+          label={t`More composer controls`}
+          className="pointer-events-none invisible absolute left-0 top-0"
         />
       </fieldset>
       <PopoverAnchor virtualRef={virtualRef} />
@@ -309,10 +305,7 @@ export function ComposerToolbar({
           aria-label={panel?.ariaLabel ?? t`More composer controls`}
           aria-busy={locked || activeBusy || undefined}
           data-page={panel ? panel.focus.pageId : "root"}
-          className={dropdownSurfaceVariants({
-            measure: panel?.size ?? "compact",
-            page: !panel || panel.size === "compact" ? "navigation" : "picker",
-          })}
+          className={dropdownSurfaceVariants({ measure: panel?.size ?? "compact" })}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             if (state.surface.kind === "panel")
@@ -333,6 +326,20 @@ export function ComposerToolbar({
                 cause: "outside",
               });
             else dispatch({ type: "root.dismissRequested", cause: "outside" });
+          }}
+          // A menu that opens on pointerdown (Radix's dropdown trigger) stacks a modal layer
+          // before the outside pointerdown reaches this one, so only the focus it takes says
+          // the writer moved on. That focus stays where it went.
+          onFocusOutside={(event) => {
+            event.preventDefault();
+            if (root.current?.contains(event.target as Node)) return;
+            if (state.surface.kind === "panel")
+              dispatch({
+                type: "panel.dismissRequested",
+                panel: state.surface.panel,
+                cause: "focus",
+              });
+            else dispatch({ type: "root.dismissRequested", cause: "focus" });
           }}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => {
@@ -359,7 +366,7 @@ export function ComposerToolbar({
               {panel.render(commands(state.surface.panel))}
             </>
           ) : (
-            <ul>
+            <ul onKeyDown={handleListKeys}>
               {overflow.map((control) => (
                 <li key={control.id}>
                   {control.kind === "status" ? (
@@ -369,6 +376,7 @@ export function ComposerToolbar({
                     </div>
                   ) : (
                     <Button
+                      data-list-item
                       {...triggerBinding(control, "root-row").buttonProps}
                       ref={triggerBinding(control, "root-row").ref}
                       variant="ghost"

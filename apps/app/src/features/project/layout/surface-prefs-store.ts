@@ -1,72 +1,117 @@
 /**
- * Device-local project surface preference store.
+ * Device-local project chrome preferences.
  *
- * Purpose: persist user chrome preferences for stateful surfaces AND for the
- * shared right-dock slot. Surface prefs are keyed by stable surface identity
- * (last committed width + collapsed). The dock slot also has its own
- * width/collapsed pref so that whichever surface currently occupies the dock
- * (chat on Work/Editor, context-rail on Chat) reads/writes a
- * single shared width and collapse state — the dock reads as one persistent
- * sidebar across screens, only its inner content swaps.
- *
- * Key decision: slot placement is not stored here because it is a pure function
- * of the active screen; the placement module merges these prefs into a
- * render-time SurfaceLayoutMap, overlaying the shared dock pref onto whichever
- * surface lands in the dock slot.
+ * Widths belong to slots (the left rail and the side), so whatever surface sits in
+ * a slot reads one width. Whether the sidebar and the side panel are open is one
+ * choice for the device, whatever main shows. Placement is not stored here: it follows the kind
+ * of item the address names.
  */
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-import {
-  type DesktopProjectSlotId,
-  PROJECT_SURFACE_IDS,
-  type SurfaceId,
-  type SurfacePrefs,
-  type SurfacePrefsMap,
-} from "./types";
+import type { PanelSlotId } from "./types";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export type SurfaceWidthBounds = Partial<Record<SurfaceId, { min: number; max: number }>>;
+export type SlotWidths = Record<PanelSlotId, number>;
+/** Whether the left sidebar and the side panel are open. */
+export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
-export type SlotWidthBounds = Partial<Record<DesktopProjectSlotId, { min: number; max: number }>>;
-
-export const DEFAULT_SURFACE_PREFS: SurfacePrefsMap = {
-  threads: { width: 264, collapsed: false },
-  chat: { width: 360, collapsed: false },
-  "context-viewer": { width: 0, collapsed: true },
-  "context-rail": { width: 320, collapsed: true },
+export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
+  "rail-l": { min: 220, max: 380 },
+  // Below this the side header's title, Swap with main and rename input compress into slivers.
+  // The shell caps the side at half the room beside the sidebar (`desktop-layout.ts`).
+  side: { min: 280, max: 2400 },
 };
 
-/** Shared right-dock pref. Seeded from chat's previous width on first run. */
-export const DEFAULT_DOCK_PREFS: SurfacePrefs = { width: 360, collapsed: false };
+export const DEFAULT_SLOT_WIDTHS: SlotWidths = { "rail-l": 264, side: 360 };
 
-export const SURFACE_WIDTH_BOUNDS: SurfaceWidthBounds = {
-  threads: { min: 220, max: 380 },
-  chat: { min: 280, max: 520 },
-  "context-rail": { min: 240, max: 480 },
-};
+export const DEFAULT_PANEL_PREFS: PanelPrefs = { sidebarOpen: true, sideOpen: true };
 
-/** One bounds entry per slot whose width is persisted at slot level. */
-export const SLOT_WIDTH_BOUNDS: SlotWidthBounds = {
-  // Min matches the chat occupant's floor — below it the dock header's
-  // trigger and rename input compress into unusable slivers.
-  dock: { min: 280, max: 520 },
-};
+function savedWidth(slot: PanelSlotId, width: unknown): number {
+  if (typeof width !== "number" || !Number.isFinite(width)) return DEFAULT_SLOT_WIDTHS[slot];
+  const bounds = SLOT_WIDTH_BOUNDS[slot];
+  return clamp(Math.round(width), bounds.min, bounds.max);
+}
 
-type PersistedSurfacePrefsMap = Partial<Record<SurfaceId, Partial<SurfacePrefs>>>;
+export function normalizeSlotWidths(widths?: Partial<SlotWidths> | null): SlotWidths {
+  return {
+    "rail-l": savedWidth("rail-l", widths?.["rail-l"]),
+    side: savedWidth("side", widths?.side),
+  };
+}
 
-type PersistedSlotPrefsMap = Partial<Record<DesktopProjectSlotId, Partial<SurfacePrefs>>>;
+export function normalizePanelPrefs(panels?: Partial<PanelPrefs> | null): PanelPrefs {
+  return {
+    sidebarOpen:
+      typeof panels?.sidebarOpen === "boolean"
+        ? panels.sidebarOpen
+        : DEFAULT_PANEL_PREFS.sidebarOpen,
+    sideOpen:
+      typeof panels?.sideOpen === "boolean" ? panels.sideOpen : DEFAULT_PANEL_PREFS.sideOpen,
+  };
+}
 
 type PersistedSurfacePrefsBlob = {
-  prefs?: PersistedSurfacePrefsMap | null;
-  slotPrefs?: PersistedSlotPrefsMap | null;
-  railPrefs?: Partial<RailPrefs> | null;
+  widths?: Partial<SlotWidths> | null;
+  panels?: Partial<PanelPrefs> | null;
   documentPrefs?: Partial<DocumentPrefs> | null;
 };
+
+type Saved = Record<string, unknown>;
+const record = (value: unknown): Saved =>
+  value && typeof value === "object" ? (value as Saved) : {};
+
+/**
+ * Version 4 (`main`) kept a width and collapsed flag per surface and for the dock slot; version 5
+ * kept open/closed per mode, which maps only where every mode agrees; version 6 named the side's
+ * slot `dock`. What does not map is left out and `merge` fills it with its default.
+ */
+function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurfacePrefsBlob {
+  const blob = record(persisted);
+  const kept = {
+    documentPrefs: record(blob.documentPrefs),
+  };
+  const widths = (rail: unknown, side: unknown) => ({
+    "rail-l": rail as number,
+    side: side as number,
+  });
+  if (version === 4) {
+    const threads = record(record(blob.prefs).threads);
+    const dock = record(record(blob.slotPrefs).dock);
+    const open = (collapsed: unknown) => (typeof collapsed === "boolean" ? !collapsed : undefined);
+    return {
+      ...kept,
+      widths: widths(threads.width, dock.width),
+      panels: { sidebarOpen: open(threads.collapsed), sideOpen: open(dock.collapsed) },
+    };
+  }
+  const saved = record(blob.widths);
+  if (version === 5) {
+    const modes = Object.values(record(blob.modes)).map(record);
+    const agreed = (key: string) => {
+      const values = new Set(modes.map((mode) => mode[key]));
+      const [only] = values;
+      return values.size === 1 && typeof only === "boolean" ? only : undefined;
+    };
+    return {
+      ...kept,
+      widths: widths(saved["rail-l"], saved.dock),
+      panels: { sidebarOpen: agreed("railOpen"), sideOpen: agreed("dockOpen") },
+    };
+  }
+  if (version === 6) {
+    return {
+      ...kept,
+      widths: widths(saved["rail-l"], saved.dock),
+      panels: record(blob.panels),
+    };
+  }
+  return {};
+}
 
 /** How an open document's chrome is set; shared across documents on this device. */
 export type DocumentPrefs = { propertiesOpen: boolean };
@@ -81,56 +126,15 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
   };
 }
 
-export type RailSectionId = "scratch" | "user" | "recent";
-/** The rail sections docked above the account row, each trading height with the tree. */
-export type DockedRailSectionId = "scratch" | "user";
-export type RailPrefs = {
-  scratchExpanded: boolean;
-  userExpanded: boolean;
-  recentExpanded: boolean;
-  scratchHeight: number | null;
-  userHeight: number | null;
-};
-export const DEFAULT_RAIL_PREFS: RailPrefs = {
-  scratchExpanded: false,
-  userExpanded: false,
-  recentExpanded: true,
-  scratchHeight: null,
-  userHeight: null,
-};
-
-function savedHeight(height: unknown): number | null {
-  return typeof height === "number" && Number.isFinite(height) && height > 0
-    ? Math.round(height)
-    : null;
-}
-
-export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
-  return {
-    scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
-    userExpanded: typeof prefs?.userExpanded === "boolean" ? prefs.userExpanded : false,
-    recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
-    scratchHeight: savedHeight(prefs?.scratchHeight),
-    userHeight: savedHeight(prefs?.userHeight),
-  };
-}
-
-export type SlotPrefsMap = { dock: SurfacePrefs };
-
 export type SurfacePrefsState = {
-  prefs: SurfacePrefsMap;
-  slotPrefs: SlotPrefsMap;
-  railPrefs: RailPrefs;
+  widths: SlotWidths;
+  panels: PanelPrefs;
   documentPrefs: DocumentPrefs;
 };
 
 export type SurfacePrefsActions = {
-  setSurfaceWidth: (id: SurfaceId, widthPx: number) => void;
-  setSurfaceCollapsed: (id: SurfaceId, collapsed: boolean) => void;
-  setDockWidth: (widthPx: number) => void;
-  setDockCollapsed: (collapsed: boolean) => void;
-  setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
-  setRailHeight: (id: DockedRailSectionId, height: number | null) => void;
+  setSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
+  setSlotOpen: (slot: PanelSlotId, open: boolean) => void;
   setPropertiesOpen: (open: boolean) => void;
   setHydrated: () => void;
 };
@@ -148,90 +152,31 @@ type SurfacePrefsPersistApi = {
 
 export type SurfacePrefsStore = UseBoundStore<StoreApi<SurfacePrefsSlice> & SurfacePrefsPersistApi>;
 
-function patchPrefs(
-  prefs: SurfacePrefsMap,
-  id: SurfaceId,
-  patch: Partial<SurfacePrefsMap[SurfaceId]>,
-): SurfacePrefsMap {
-  const current = prefs[id] ?? DEFAULT_SURFACE_PREFS[id];
-  const nextWidth = patch.width ?? current.width;
-  const bounds = SURFACE_WIDTH_BOUNDS[id];
-  const width = bounds ? clamp(nextWidth, bounds.min, bounds.max) : nextWidth;
-  return {
-    ...prefs,
-    [id]: {
-      ...current,
-      ...patch,
-      width,
-    },
-  };
-}
-
-function patchDockPrefs(slotPrefs: SlotPrefsMap, patch: Partial<SurfacePrefs>): SlotPrefsMap {
-  const current = slotPrefs.dock ?? DEFAULT_DOCK_PREFS;
-  const nextWidth = patch.width ?? current.width;
-  const bounds = SLOT_WIDTH_BOUNDS.dock;
-  const width = bounds ? clamp(nextWidth, bounds.min, bounds.max) : nextWidth;
-  return {
-    ...slotPrefs,
-    dock: { ...current, ...patch, width },
-  };
-}
-
-export function normalizeSurfacePrefs(prefs?: PersistedSurfacePrefsMap | null): SurfacePrefsMap {
-  const normalized = {} as SurfacePrefsMap;
-  for (const id of PROJECT_SURFACE_IDS) {
-    const defaults = DEFAULT_SURFACE_PREFS[id];
-    const persisted = prefs?.[id];
-    normalized[id] = {
-      width: persisted?.width ?? defaults.width,
-      collapsed: persisted?.collapsed ?? defaults.collapsed,
-    };
-  }
-  return normalized;
-}
-
-export function normalizeSlotPrefs(slotPrefs?: PersistedSlotPrefsMap | null): SlotPrefsMap {
-  const persistedDock = slotPrefs?.dock;
-  return {
-    dock: {
-      width: persistedDock?.width ?? DEFAULT_DOCK_PREFS.width,
-      collapsed: persistedDock?.collapsed ?? DEFAULT_DOCK_PREFS.collapsed,
-    },
-  };
+function openKey(slot: PanelSlotId): keyof PanelPrefs {
+  return slot === "rail-l" ? "sidebarOpen" : "sideOpen";
 }
 
 export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePrefsSlice>()(
   devtools(
     persist(
       (set) => ({
-        prefs: DEFAULT_SURFACE_PREFS,
-        slotPrefs: { dock: DEFAULT_DOCK_PREFS },
-        railPrefs: DEFAULT_RAIL_PREFS,
+        widths: DEFAULT_SLOT_WIDTHS,
+        panels: DEFAULT_PANEL_PREFS,
         documentPrefs: DEFAULT_DOCUMENT_PREFS,
         _hydrated: false,
 
-        setSurfaceWidth: (id, width) =>
-          set((state) => ({ prefs: patchPrefs(state.prefs, id, { width }) })),
-        setSurfaceCollapsed: (id, collapsed) =>
-          set((state) => ({ prefs: patchPrefs(state.prefs, id, { collapsed }) })),
-        setDockWidth: (width) =>
-          set((state) => ({ slotPrefs: patchDockPrefs(state.slotPrefs, { width }) })),
-        setDockCollapsed: (collapsed) =>
-          set((state) => ({ slotPrefs: patchDockPrefs(state.slotPrefs, { collapsed }) })),
-        setRailExpanded: (id, expanded) =>
-          set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
-        setRailHeight: (id, height) =>
-          set((state) => ({
-            railPrefs: normalizeRailPrefs({ ...state.railPrefs, [`${id}Height`]: height }),
-          })),
+        setSlotWidth: (slot, width) =>
+          set((state) => ({ widths: { ...state.widths, [slot]: savedWidth(slot, width) } })),
+        setSlotOpen: (slot, open) =>
+          set((state) => ({ panels: { ...state.panels, [openKey(slot)]: open } })),
         setPropertiesOpen: (propertiesOpen) =>
           set((state) => ({ documentPrefs: { ...state.documentPrefs, propertiesOpen } })),
         setHydrated: () => set({ _hydrated: true }),
       }),
       {
         name: "meridian:project-surface-layout",
-        version: 4,
+        version: 7,
+        migrate: migrateSurfacePrefs,
         storage: createJSONStorage(() => ({
           getItem: (key) => {
             try {
@@ -259,16 +204,14 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           const blob = (persisted as PersistedSurfacePrefsBlob | null) ?? {};
           return {
             ...current,
-            prefs: normalizeSurfacePrefs(blob.prefs),
-            slotPrefs: normalizeSlotPrefs(blob.slotPrefs),
-            railPrefs: normalizeRailPrefs(blob.railPrefs),
+            widths: normalizeSlotWidths(blob.widths),
+            panels: normalizePanelPrefs(blob.panels),
             documentPrefs: normalizeDocumentPrefs(blob.documentPrefs),
           };
         },
         partialize: (state) => ({
-          prefs: state.prefs,
-          slotPrefs: state.slotPrefs,
-          railPrefs: state.railPrefs,
+          widths: state.widths,
+          panels: state.panels,
           documentPrefs: state.documentPrefs,
         }),
         skipHydration: true,
@@ -282,12 +225,8 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
 export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
   return useProjectSurfacePrefsStore(
     useShallow((state) => ({
-      setSurfaceWidth: state.setSurfaceWidth,
-      setSurfaceCollapsed: state.setSurfaceCollapsed,
-      setDockWidth: state.setDockWidth,
-      setDockCollapsed: state.setDockCollapsed,
-      setRailExpanded: state.setRailExpanded,
-      setRailHeight: state.setRailHeight,
+      setSlotWidth: state.setSlotWidth,
+      setSlotOpen: state.setSlotOpen,
       setPropertiesOpen: state.setPropertiesOpen,
       setHydrated: state.setHydrated,
     })),

@@ -3,10 +3,10 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
 import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";
-import type { ServerContextTab } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { fileKindIcon } from "./context-file-icon";
-import { serverTabFromFile } from "./context-tab-from-file";
+import { serverDocumentFromFile } from "./open-document-from-file";
 
 export type MenuArea = {
   /** A stable folder id for the area itself, never a catalog entry id. */
@@ -32,6 +32,7 @@ function listChildren(catalog: CatalogContextView, parentId: string | null): Dri
     name: node.name,
     folder: node.kind === "dir",
     icon: node.kind === "dir" ? Folder : fileKindIcon(node),
+    editable: node.kind === "dir" ? undefined : node.editable,
   }));
 }
 
@@ -79,13 +80,13 @@ export function buildMenuTree({
 }
 
 /** The tab a picked row opens as, from whichever area holds it. */
-export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerContextTab | null {
+export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpenDocument | null {
   for (const area of areas) {
     const own = area.catalog?.files().find((file) => file.entryId === rowId);
-    if (own) return serverTabFromFile(area.scheme, own, area.owner);
+    if (own) return serverDocumentFromFile(area.scheme, own, area.owner);
     const old = area.earlier?.catalog?.files().find((file) => file.entryId === rowId);
     if (old && area.earlier)
-      return serverTabFromFile("scratch", old, { rootThreadId: area.earlier.rootThreadId });
+      return serverDocumentFromFile("scratch", old, { rootThreadId: area.earlier.rootThreadId });
   }
   return null;
 }

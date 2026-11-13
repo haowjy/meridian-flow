@@ -38,7 +38,7 @@ export function FileCard({ name, mimeType, sizeBytes, url, className }: FileCard
         <span className="truncate text-sm text-foreground" title={name}>
           {name}
         </span>
-        {details ? <span className="text-meta text-muted-foreground">{details}</span> : null}
+        {details ? <span className="text-xs text-muted-foreground">{details}</span> : null}
       </span>
       <a
         href={url}

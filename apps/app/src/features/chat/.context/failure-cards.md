@@ -5,8 +5,8 @@ action and its anchor. `ChatCards.tsx` draws each card and decides nothing;
 `chat-card-copy.ts` words it. Who sees a failure and for how long is in
 [Failures](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/failures.md).
 
-A running subagent's failed Stop is the exception: the strip draws `handBackCards`
-on that child's row, because the failure is the child's, not this chat's.
+A running subagent's failed Stop is the exception: its transcript card draws
+`handBackCards` under its row, because the failure is the child's, not this chat's.
 
 ## Announcing
 
@@ -19,8 +19,8 @@ call `announceError` for a chat failure.
 
 A terminal socket close or refused subscription supplies an `unavailable` occurrence
 through `ThreadSync`, separate from retryable diagnostic errors. Socket recovery
-alone isn't enough: the affected subscription has to acknowledge catchup. The global
-connection banner only describes transient reconnects.
+alone isn't enough: the affected subscription has to acknowledge catchup. The
+composer's connection line (`ConnectionLine`) only describes transient reconnects.
 
 ## Failure logging
 

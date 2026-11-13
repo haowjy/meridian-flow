@@ -192,8 +192,22 @@ export type DraftOwnerHint = {
   owner: DraftOwnerKey;
 };
 
+/**
+ * A chat in the project started or ended a reply, or asked the writer or was answered, from any
+ * client: the project's chat list (its Working and Waiting marks) is stale. Truth-free, like the
+ * hints above. A removal names what it removed so open windows close those chats' tabs without
+ * a probe: `removedChatIds` for a deleted chat, `recheckTabs` when the removed set is not known
+ * (a deleted Work, or the socket client after a reconnect, when hints were lost).
+ */
+export type ProjectChatsHint = {
+  type: "project-chats-hint";
+  projectId: ProjectId;
+  removedChatIds?: string[];
+  recheckTabs?: true;
+};
+
 /** What a project's catalog subscription receives. */
-export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint;
+export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint | ProjectChatsHint;
 
 export function catalogScopeKey(scope: CatalogScope): string {
   switch (scope.kind) {

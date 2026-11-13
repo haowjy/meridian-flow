@@ -52,6 +52,7 @@ export class ThreadSocketClient implements ThreadTransport {
     send: (message) => this.send(message),
   });
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
+  private hasConnected = false;
   private readonly catalogSubscriptions = new Map<
     string,
     Set<(hint: CatalogChannelMessage) => void>
@@ -198,7 +199,7 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
-    if (message.type === "draft-owner-hint") {
+    if (message.type === "draft-owner-hint" || message.type === "project-chats-hint") {
       for (const listener of this.catalogSubscriptions.get(message.projectId) ?? [])
         listener(message);
       return;
@@ -226,9 +227,15 @@ export class ThreadSocketClient implements ThreadTransport {
       onConnected: () => {
         this.socket.markConnected();
         this.subscriptions.connected();
-        for (const projectId of this.catalogSubscriptions.keys()) {
+        for (const [projectId, listeners] of this.catalogSubscriptions) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
+          // Hints sent while the socket was down are gone, deletions among them: tell the
+          // listeners to recheck their chat tabs.
+          if (this.hasConnected)
+            for (const listener of listeners)
+              listener({ type: "project-chats-hint", projectId, recheckTabs: true });
         }
+        this.hasConnected = true;
       },
       onAskAnswerReply: (reply) => this.settleAskAnswer(reply.requestId, reply),
       onRequestError: (requestId, error, retryable) => {

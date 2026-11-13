@@ -41,10 +41,13 @@ the subscription. A first send keeps the subscriber inactive while the chat is p
 creation.
 
 Activity and durable-projection subscribers without a cursor start at the server's
-current head. `useThreadWorkProjections` reads the Work binding on mount and
-on each acknowledgment, because events between the mount read and head sampling are
-omitted from replay. Mount reads also cover joining an already active shared lease,
-which produces no new acknowledgment.
+current head. `useThreadWorkProjections` reads the Work binding on each acknowledgment, because
+events between mount and head sampling are omitted from replay, and because a rebind made in
+another window or on another device pushes no hint. The read is always fresh (thread list and
+Works, no reuse of a cached list), and both land in their caches, so the list is fresh for the
+sidebar's own mount refetch (30 s) after it. It converges (patches the snapshot, invalidates
+Work-derived keys) only when the row's `workId` differs from the one the snapshot holds. A gap
+reads the same way.
 
 ## Live CUSTOM events
 

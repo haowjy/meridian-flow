@@ -29,7 +29,7 @@ export function ReportContent({
     !!report.summary || report.payload !== undefined || report.artifacts.length > 0;
   if (!hasContent) {
     return (
-      <div className={emptyClassName ?? className ?? "text-caption text-muted-foreground"}>
+      <div className={emptyClassName ?? className ?? "text-xs text-muted-foreground"}>
         {message ? <p>{message}</p> : null}
         {empty ? <p>{empty}</p> : null}
         {showStopMetadata && report.reason ? (
@@ -49,14 +49,14 @@ export function ReportContent({
         </pre>
       ) : null}
       {report.artifacts.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
-      {message ? <p className="text-caption text-muted-foreground">{message}</p> : null}
+      {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
       {showStopMetadata && report.reason ? (
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           <Trans>Reason: {report.reason}</Trans>
         </p>
       ) : null}
       {showStopMetadata && report.partial ? (
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           <Trans>Partial result</Trans>
         </p>
       ) : null}

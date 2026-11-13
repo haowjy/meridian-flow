@@ -28,48 +28,48 @@ const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
   background: "--color-background",
   primaryColor: "--color-card",
   mainBkg: "--color-card",
-  primaryBorderColor: "--color-ink-subtle",
-  nodeBorder: "--color-ink-subtle",
-  primaryTextColor: "--color-prose-foreground",
-  textColor: "--color-prose-foreground",
+  primaryBorderColor: "--color-muted-foreground",
+  nodeBorder: "--color-muted-foreground",
+  primaryTextColor: "--color-foreground",
+  textColor: "--color-foreground",
   titleColor: "--color-foreground",
-  lineColor: "--color-ink-muted",
+  lineColor: "--color-muted-foreground",
 
   // Alternates: mermaid reaches for these on subgraphs, clusters, and any
   // second surface a diagram type invents.
-  secondaryColor: "--color-muted",
+  secondaryColor: "--color-ink-fill",
   secondaryBorderColor: "--color-border",
-  secondaryTextColor: "--color-prose-foreground",
+  secondaryTextColor: "--color-foreground",
   tertiaryColor: "--color-background",
   tertiaryBorderColor: "--color-border-subtle",
-  tertiaryTextColor: "--color-prose-foreground",
-  clusterBkg: "--color-muted",
+  tertiaryTextColor: "--color-foreground",
+  clusterBkg: "--color-ink-fill",
   clusterBorder: "--color-border",
 
   // Edge labels sit ON the paper, so they carry the page's own ground rather
   // than a white card that would punch a hole in it.
   edgeLabelBackground: "--color-background",
   labelBackground: "--color-background",
-  labelColor: "--color-prose-foreground",
+  labelColor: "--color-foreground",
 
   // ── sequence diagrams ────────────────────────────────────────────
   actorBkg: "--color-card",
-  actorBorder: "--color-ink-subtle",
-  actorTextColor: "--color-prose-foreground",
+  actorBorder: "--color-muted-foreground",
+  actorTextColor: "--color-foreground",
   actorLineColor: "--color-border",
-  signalColor: "--color-ink-muted",
-  signalTextColor: "--color-prose-foreground",
+  signalColor: "--color-muted-foreground",
+  signalTextColor: "--color-foreground",
   labelBoxBkgColor: "--color-card",
-  labelBoxBorderColor: "--color-ink-subtle",
-  labelTextColor: "--color-prose-foreground",
-  loopTextColor: "--color-prose-foreground",
-  activationBkgColor: "--color-muted",
+  labelBoxBorderColor: "--color-muted-foreground",
+  labelTextColor: "--color-foreground",
+  loopTextColor: "--color-foreground",
+  activationBkgColor: "--color-ink-fill",
   activationBorderColor: "--color-border",
   // Notes are the one place a diagram raises its voice, so they borrow the
   // warning family the editor already uses for "read this".
-  noteBkgColor: "--color-warning-bg",
-  noteTextColor: "--color-warning-foreground",
-  noteBorderColor: "--color-warning-border",
+  noteBkgColor: "--color-warning-tint",
+  noteTextColor: "--color-warning-ink",
+  noteBorderColor: "--color-border",
 
   errorBkgColor: "--color-destructive-tint",
   errorTextColor: "--color-destructive",
@@ -92,7 +92,7 @@ export type MermaidTheme = {
  * measurement of a token, not a color anybody authored — which is why a `rgb()`
  * string appearing outside `design-tokens` is not the drift the rule forbids.
  */
-function createColorResolver(): (css: string) => string | null {
+function createColorResolver(ground: string): (css: string) => string | null {
   const canvas = document.createElement("canvas");
   canvas.width = 1;
   canvas.height = 1;
@@ -100,7 +100,9 @@ function createColorResolver(): (css: string) => string | null {
 
   return (css) => {
     if (!context || !css) return null;
-    context.clearRect(0, 0, 1, 1);
+    // Overlay tokens (fills, borders) are translucent ink: read them as painted on the page.
+    context.fillStyle = ground;
+    context.fillRect(0, 0, 1, 1);
     context.fillStyle = "#000";
     context.fillStyle = css;
     // An unparseable value leaves `fillStyle` at the previous one, so a token
@@ -122,7 +124,7 @@ export function readMermaidTheme(): MermaidTheme | null {
   if (typeof document === "undefined") return null;
 
   const computed = getComputedStyle(document.documentElement);
-  const resolve = createColorResolver();
+  const resolve = createColorResolver(computed.getPropertyValue("--color-background").trim());
 
   const variables: Record<string, string> = {};
   for (const [key, token] of Object.entries(DIAGRAM_TOKENS)) {

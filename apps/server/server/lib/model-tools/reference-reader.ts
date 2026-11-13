@@ -15,7 +15,6 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
         result: JSON.parse(JSON.stringify(outcome.output)) as JsonValue,
         revision: outcome.revision,
         ...(outcome.evidence ? { evidence: outcome.evidence } : {}),
-        ...(outcome.touchedDocumentId ? { touchedDocumentId: outcome.touchedDocumentId } : {}),
       };
     },
   };

@@ -3,7 +3,7 @@
  * this editor actually goes.
  *
  * The editor core knows a link is internal and nothing else; the project, the
- * Work, the router, and the tab strip are the app's, and resolving and
+ * Work, and the router are the app's, and resolving and
  * following belong to [`features/links`](../../../links/AGENTS.md). This
  * supplies the Editor's three parts (its scope, its destination, and the store
  * its outcome is reported into), registers the follower as the navigator a
@@ -34,34 +34,37 @@ import {
   type FollowReporter,
   type LinkableDocumentIndex,
   type LinkDestination,
+  type LinkDocumentRef,
   type LinkResolutionScope,
   useLinkFollower,
 } from "@/features/links";
 import { useReferenceDragStart } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
+import { useLinkPlacement } from "@/features/project/review-launch";
 
 import { useEditorScope } from "../../editor-scope";
 
 /**
- * The Editor's destination: the document opens in this editor's pane, or on
- * the tab strip for a new-tab gesture, using the holder's link scope.
+ * The Editor's destination: the document opens in main, using the holder's link scope.
  */
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  const openLive = useCallback<LinkDestination>(
-    (document, gesture) =>
+  const openLive = useCallback(
+    (document: LinkDocumentRef) =>
       openDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
         workId: workId ?? undefined,
-        disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openDocument, workId],
   );
-  return useReviewingLinkDestination(openLive);
+  const place = useLinkPlacement(projectId, null);
+  return useCallback<LinkDestination>(
+    (document) => place(document, openLive, workId),
+    [place, openLive, workId],
+  );
 }
 
 /** Runtime over the scope's document index and the holder address supplied by its surface. */
@@ -120,8 +123,8 @@ export function ProjectLinkRuntime({
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;
-    const navigate: InternalLinkNavigator = ({ target, ref, disposition }) => {
-      follower.follow(target, disposition, ref);
+    const navigate: InternalLinkNavigator = ({ target, ref }) => {
+      follower.follow(target, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
     // A selected link drags as the entry it names, whatever draft the holder shows.

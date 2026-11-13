@@ -21,7 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -289,7 +289,7 @@ function LinkFields({
         />
       ) : (
         <div className="flex flex-col gap-1">
-          <span className="text-meta text-muted-foreground">{t`Destination`}</span>
+          <span className="text-xs text-muted-foreground">{t`Destination`}</span>
           <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 break-words">{destinationLabel}</span>
             <Button
@@ -317,15 +317,17 @@ function LinkFields({
         </div>
       )}
       {refused ? (
-        <p
-          role="alert"
-          className="text-destructive text-xs"
-        >{t`This link can no longer be edited. Close the form and try again.`}</p>
+        <InlineErrorRow
+          message={t`This link can no longer be edited. Close the form and try again.`}
+          className="p-0"
+        />
       ) : null}
       {invalid ? (
-        <p id={`${fieldId}-error`} className="text-destructive text-xs" role="alert">
-          {t`Choose a document or enter a web address or document path.`}
-        </p>
+        <InlineErrorRow
+          id={`${fieldId}-error`}
+          message={t`Choose a document or enter a web address or document path.`}
+          className="p-0"
+        />
       ) : null}
       <div className="flex items-center justify-end gap-1.5">
         {draft.existing ? (
@@ -386,7 +388,7 @@ function LinkField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-meta text-muted-foreground" htmlFor={id}>
+      <label className="text-xs text-muted-foreground" htmlFor={id}>
         {label}
       </label>
       <Input

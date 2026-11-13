@@ -4,8 +4,8 @@
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
  * shared `ReadOnlyViewerFrame`. Every host's own chrome names the file: the
- * Editor's document path, the dock's title chip, the phone's top bar. Only
- * images, PDFs and binaries land here from the dock; a text file mounts the
+ * main's title chip, the side header, the phone's top bar. Only
+ * images, PDFs and binaries land here from the side; a text file mounts the
  * editor.
  */
 
@@ -13,9 +13,8 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle } from "lucide-react";
 import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { cn } from "@/lib/utils";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
@@ -25,25 +24,23 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  tab: Extract<ContextTab, { kind: "viewer" }>;
-  /** The surface's material; the dock paints its own and passes `bg-transparent`. */
-  className?: string;
+  document: Extract<OpenDocument, { kind: "viewer" }>;
 };
 
-export function ContextViewerHost({ projectId, tab, className }: ContextViewerHostProps) {
-  const read = useProjectContextRead(projectId, tab.documentId);
+export function ContextViewerHost({ projectId, document }: ContextViewerHostProps) {
+  const read = useProjectContextRead(projectId, document.documentId);
   if (read.status === "loading") {
     return (
-      <ReadOnlyViewerFrame className={className}>
+      <ReadOnlyViewerFrame>
         <div className="relative h-full" aria-busy>
-          <DelayedContentSkeleton key={tab.documentId} className="absolute inset-0" />
+          <DelayedContentSkeleton key={document.documentId} className="absolute inset-0" />
         </div>
       </ReadOnlyViewerFrame>
     );
   }
   if (read.status === "error") {
     return (
-      <ViewerError className={className}>
+      <ViewerError>
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't load this file.</Trans>
       </ViewerError>
@@ -56,9 +53,9 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
   // Tracked-classified viewer tabs use the same read-only text preview in the
   // Editor host. Collaborative editing remains in the tracked editor
   // mount and does not render through this component.
-  const kind = previewKind(tab, read.data);
+  const kind = previewKind(document, read.data);
   const emptyMessage =
-    tab.scheme === "scratch" ? (
+    document.scheme === "scratch" ? (
       <Trans>This note is empty. Open it in the Editor to write.</Trans>
     ) : undefined;
   const binary = read.data.kind === "binary" ? read.data : null;
@@ -67,12 +64,12 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
     case "text":
     case "markdown":
       return (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <TextViewer
             source={
               read.data.kind === "tracked" ? { content: read.data.content } : { url: read.data.url }
             }
-            name={tab.name}
+            name={document.name}
             markdown={kind === "markdown"}
             emptyMessage={emptyMessage}
           />
@@ -81,14 +78,16 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
     case "image":
       return binary ? (
         <ReadOnlyViewerFrame
-          className={className}
-          footer={imageViewerFooter({ url: documentDownloadUrl(tab.documentId), name: tab.name })}
+          footer={imageViewerFooter({
+            url: documentDownloadUrl(document.documentId),
+            name: document.name,
+          })}
         >
           <ImageViewer
-            key={tab.documentId}
-            url={documentDownloadUrl(tab.documentId)}
+            key={document.documentId}
+            url={documentDownloadUrl(document.documentId)}
             drawUrl={binary.drawUrl}
-            name={tab.name}
+            name={document.name}
             mimeType={binary.mimeType}
             sizeBytes={binary.sizeBytes}
             refresh={async () => {
@@ -100,22 +99,22 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
       ) : null;
     case "pdf":
       return binary ? (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <PdfViewer
             url={binary.url}
-            downloadUrl={documentDownloadUrl(tab.documentId)}
-            name={tab.name}
+            downloadUrl={documentDownloadUrl(document.documentId)}
+            name={document.name}
             sizeBytes={binary.sizeBytes}
           />
         </ReadOnlyViewerFrame>
       ) : null;
     case "binary":
       return binary ? (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <BinaryFallbackViewer
-            url={documentDownloadUrl(tab.documentId)}
+            url={documentDownloadUrl(document.documentId)}
             mimeType={binary.mimeType}
-            name={tab.name}
+            name={document.name}
             sizeBytes={binary.sizeBytes}
           />
         </ReadOnlyViewerFrame>
@@ -123,14 +122,9 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
   }
 }
 
-function ViewerError({ children, className }: { children: React.ReactNode; className?: string }) {
+function ViewerError({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        "grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive",
-        className,
-      )}
-    >
+    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive">
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );

@@ -113,7 +113,8 @@ export function dropChoices(
           reason: reason("copy", resolved, copy),
         };
   return {
-    items: [moveItem, copyItem],
+    // The writer's own files take copies: what lives in a project stays there.
+    items: target.scheme === "user" ? [copyItem] : [moveItem, copyItem],
     plans: {
       ...(move.kind === "ready" ? { move } : {}),
       ...(copy.kind === "ready" ? { copy } : {}),

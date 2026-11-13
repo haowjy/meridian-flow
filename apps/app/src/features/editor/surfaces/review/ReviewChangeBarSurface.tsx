@@ -67,6 +67,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       canApply
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}
+      discardAsks={view.discardAsks(focusedItem.change)}
     />
   );
 
