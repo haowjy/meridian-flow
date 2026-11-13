@@ -4,7 +4,8 @@
  * writes them: it replays live and each view the records can change, compares with what the
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
-import type { ContextSourceId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, ProjectId } from "@meridian/contracts";
+import { filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeNodes,
@@ -32,7 +33,7 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
-import { openBranches } from "./tree-list-facts.js";
+import { openBranches, projectOfList } from "./tree-list-facts.js";
 
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
@@ -50,11 +51,17 @@ function chunks<T>(items: readonly T[]): T[][] {
 }
 
 /**
- * The rows a replay shows. A purged node is gone for good: it has no row.
+ * The rows a replay shows. A purged node is gone for good: it has no row. A file's row is a
+ * document's, typed by its blob's mime (the package leaves a file's type null).
  */
 function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   const rows = projectedRows(projection);
-  for (const node of projection.nodes.values()) if (node.purged) rows.delete(node.id);
+  for (const node of projection.nodes.values()) {
+    const row = rows.get(node.id);
+    if (node.purged) rows.delete(node.id);
+    else if (row && node.kind === "file")
+      row.filetype = filetypeForMimeType(node.blob?.mime ?? "application/octet-stream");
+  }
   return rows;
 }
 
@@ -198,27 +205,31 @@ export async function claimNodeIds(
 }
 
 /**
- * A document made by an admitted `create` has its `documents` row from the same transaction,
- * drafted or live: its drafts, receipts and links point at it by foreign key. Its source, name
- * and type are the replay's row, the place the tree shows it, not the record's words. A node
- * that no view shows has no row.
+ * A document or file made by an admitted `create` has its `documents` row from the same
+ * transaction, drafted or live: its drafts, receipts and links point at it by foreign key. A
+ * file's bytes are the record's blob. A node that no view shows has no row.
  */
 async function insertDocumentRows(
   tx: DrizzleDb,
+  projectId: string,
   records: readonly TreeRecord[],
-  rowOf: (id: string) => ProjectedRow | undefined,
+  shown: (id: string) => boolean,
 ): Promise<void> {
-  const created = records.flatMap((record) => {
-    const row = record.type === "create" && record.kind === "document" ? rowOf(record.node) : null;
-    return row ? [row] : [];
-  });
+  const created = records.flatMap((record) =>
+    record.type === "create" && record.kind !== "folder" && shown(record.node) ? [record] : [],
+  );
   for (const batch of chunks(created))
     await tx.insert(documents).values(
-      batch.map((row) => ({
-        id: row.id as DocumentId,
-        contextSourceId: row.sourceId as ContextSourceId,
-        name: row.name,
-        fileType: row.filetype as string,
+      batch.map((record) => ({
+        id: record.node as DocumentId,
+        projectId: projectId as ProjectId,
+        ...(record.blob
+          ? {
+              storageUrl: record.blob.storageKey,
+              mimeType: record.blob.mime,
+              sizeBytes: record.blob.size,
+            }
+          : {}),
       })),
     );
 }
@@ -389,12 +400,12 @@ export async function syncRows(
         branchRows(liveRows, shownRows(replayView(doc, { draft: branchId }, text.get(branchId)))),
       );
 
-  await insertDocumentRows(tx, added, (id) => {
-    const row = liveRows.get(id);
-    if (row) return row;
-    for (const view of next.values()) if (view.has(id)) return view.get(id);
-    return undefined;
-  });
+  await insertDocumentRows(
+    tx,
+    await projectOfList(tx, list),
+    added,
+    (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
+  );
   await writeLive(tx, listId, liveRows, trashRecords(live));
   await testHook("treeList.afterLiveRows");
 

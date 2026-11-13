@@ -31,6 +31,16 @@ export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | 
   return row?.id ?? null;
 }
 
+/** The project that owns the documents a list's creates make: an account's list is its personal project's. */
+export async function projectOfList(db: DrizzleDb, list: TreeList): Promise<string> {
+  if (list.kind === "project") return list.projectId;
+  const [row] = await currentDrizzleDb(db as Database).execute<{ id: string }>(
+    sql`SELECT id::text FROM projects WHERE user_id = ${list.userId}::uuid AND is_personal AND deleted_at IS NULL`,
+  );
+  if (!row) throw new Error("The account has no personal project");
+  return row.id;
+}
+
 /**
  * The open Works of a list, as their branch ids: the one meaning of "open" for both a write's
  * check (`Connection.drafts`) and the views the rows are replayed for. A Work is open while its

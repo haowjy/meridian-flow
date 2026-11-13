@@ -97,8 +97,11 @@ export type RenameRecord = RecordBase & {
 /** `cascade` is the nodes its author saw inside; only those that are still inside go with it. */
 export type DeleteRecord = RecordBase & { type: "delete"; cascade: string[] };
 export type RestoreRecord = RecordBase & { type: "restore" };
-/** Trash emptied: the node is gone for good. Only the server writes one. */
-export type PurgeRecord = RecordBase & { type: "purge" };
+/**
+ * One Trash entry emptied: `delete` is the id of the delete record that put it there (`node` is
+ * that delete's node), and what that delete took is gone for good. Only the server writes one.
+ */
+export type PurgeRecord = RecordBase & { type: "purge"; delete: string };
 
 export type TreeRecord =
   | CreateRecord

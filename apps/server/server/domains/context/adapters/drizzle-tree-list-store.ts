@@ -195,14 +195,16 @@ export function createDrizzleTreeListStore(deps: {
       }
     },
 
-    submit: ({ list, entries }) =>
+    submit: ({ list, make }) =>
       withList(list, async (tx, copy, listId) => {
         const before = Y.encodeStateVector(copy.doc);
+        let made: ReturnType<typeof make> | undefined;
         copy.writer.transact(() => {
-          recordsOf(copy.doc).push([...entries.records]);
-          settleLogOf(copy.doc).push([...(entries.settlements ?? [])]);
+          made = make(copy.writer);
         });
-        return commitChange(tx, list, copy, listId, before, entries.records);
+        const { records, result } = made as NonNullable<typeof made>;
+        const committed = await commitChange(tx, list, copy, listId, before, records);
+        return { committed, result };
       }),
 
     onCommitted(listener) {

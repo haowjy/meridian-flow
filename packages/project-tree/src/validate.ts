@@ -18,10 +18,10 @@ const FIELDS = new Map<string, readonly string[]>([
   ["delete", [...BASE, "cascade"]],
   ["restore", BASE],
 ]);
-/** What the server adds: a file's blob, a document's aliases and properties mark, `replaces`, and `purge`. */
+/** What the server adds: a file's blob, a document's aliases and properties mark, `replaces`, and `purge`, which names the Trash entry it empties. */
 const SERVER_FIELDS = new Map<string, readonly string[]>([
   ["create", ["aliases", "hasProperties", "blob", "replaces"]],
-  ["purge", BASE],
+  ["purge", [...BASE, "delete"]],
 ]);
 
 export type ReadRecord = { ok: true; record: TreeRecord } | { ok: false; why: string };
@@ -201,7 +201,8 @@ function read(value: unknown, client: Actor | null): ReadRecord {
       return { ok: true, record: { ...base, type: "delete", cascade: [...cascade] } };
     }
     case "purge":
-      return { ok: true, record: { ...base, type: "purge" } };
+      if (!matches(value.delete, ID)) return fail("delete");
+      return { ok: true, record: { ...base, type: "purge", delete: value.delete } };
     default:
       return { ok: true, record: { ...base, type: "restore" } };
   }

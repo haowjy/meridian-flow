@@ -5,7 +5,7 @@
  * leaves no record and no row.
  */
 
-import type { SettleRecord, TreeRecord } from "@meridian/project-tree";
+import type { TreeRecord, TreeWriter } from "@meridian/project-tree";
 
 /**
  * A list is one project's, or one account's (`user://`). Its journal id is the owner's
@@ -13,11 +13,13 @@ import type { SettleRecord, TreeRecord } from "@meridian/project-tree";
  */
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
-/** What the server itself appends: records, and the settlements that go with them. */
-export type ServerEntries = {
-  records: readonly TreeRecord[];
-  settlements?: readonly SettleRecord[];
-};
+/**
+ * What the server's own change makes, in the list's copy under its lock: the writer makes the
+ * records (names numbered, ranks placed against the copy's own view, settlements appended) and
+ * `make` returns the records it made, with whatever the caller reads back from the copy's replay
+ * (the names a node ended at, what a delete took).
+ */
+export type ServerChange<T> = (writer: TreeWriter) => { records: readonly TreeRecord[]; result: T };
 
 /** What a commit added to the list: the update every other copy of it needs. */
 export type CommittedTreeUpdate = {
@@ -40,11 +42,16 @@ export interface TreeListStore {
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
   /**
-   * Appends records the server made, in the caller's transaction when there is one (a document
-   * command's), else in one of its own. The records join the list and the rows follow with
-   * them; the update reaches `onCommitted` after the outermost commit.
+   * Makes records the server wants in the list, in the caller's transaction when there is one (a
+   * document command's), else in one of its own. The records join the list and the rows follow
+   * with them; the update reaches `onCommitted` after the outermost commit. `make` runs under
+   * the list's lock on a copy at the journal's head, so it holds no document or namespace key
+   * and does no I/O.
    */
-  submit(input: { list: TreeList; entries: ServerEntries }): Promise<CommittedTreeUpdate | null>;
+  submit<T>(input: {
+    list: TreeList;
+    make: ServerChange<T>;
+  }): Promise<{ committed: CommittedTreeUpdate | null; result: T }>;
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */
   onCommitted(listener: (committed: CommittedTreeUpdate) => void): () => void;
 }

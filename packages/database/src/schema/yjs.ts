@@ -426,23 +426,3 @@ export const applyCommandEffects = pgTable(
     uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
   ],
 );
-
-/** Private initial states; no live document exists until Context reveals the stage. */
-export const collabStagedStates = pgTable(
-  "collab_staged_states",
-  {
-    stagingId: uuid("staging_id").notNull(),
-    documentId: uuid("document_id").$type<DocumentId>().notNull(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    generation: integer("generation").notNull(),
-    state: byteaColumn("state").notNull(),
-    stateVector: byteaColumn("state_vector").notNull(),
-    attributionManifest: jsonb("attribution_manifest").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.stagingId, table.documentId] }),
-    index("collab_staged_states_project_idx").on(table.projectId),
-  ],
-);

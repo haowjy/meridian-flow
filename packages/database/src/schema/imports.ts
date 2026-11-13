@@ -22,7 +22,6 @@ export const imports = pgTable(
     folderId: uuid("folder_id"),
     roots: jsonb("roots").notNull(),
     placement: jsonb("placement"),
-    placementGeneration: integer("placement_generation").notNull().default(0),
     fingerprint: text("fingerprint").notNull(),
     state: text("state").notNull(),
     /** Retained when entries expire, so exact-command replay still returns the terminal summary. */
@@ -71,6 +70,12 @@ export const importEntries = pgTable(
     convertedKey: text("converted_key"),
     receivedSize: bigint("received_size", { mode: "number" }),
     sha256: text("sha256"),
+    /**
+     * What a batch worked out for this file's document and cannot work out twice: its properties
+     * and aliases, and the links it made to documents that do not exist yet, whose random ids are
+     * inside the text the journal holds. Read by the import's last step.
+     */
+    ahead: jsonb("ahead"),
   },
   (table) => [
     index("import_entries_import_order").on(table.importId, table.ordinal),

@@ -608,13 +608,35 @@ describe("found in the second review", () => {
   });
 });
 
+describe("a purge empties one Trash entry", () => {
+  it("takes what the delete took, and is skipped while a node outside it stands in the folder", () => {
+    const t = start();
+    const arc = t.folder("Arc");
+    const ch = t.chapter("Chapter", arc);
+    const removal = t.w.delete(LIVE, WRITER, arc);
+    t.w.restore(LIVE, WRITER, ch);
+    t.w.purge("system", removal);
+    const live = t.w.view(LIVE);
+    expect(live.skipped.map((s) => s.reason)).toEqual(["standing"]);
+    expect(live.nodes.get(arc)).toMatchObject({ purged: false });
+    expect(live.nodes.get(ch)).toMatchObject({ purged: false, trashed: false });
+    t.valid();
+
+    const gone = start();
+    const folder = gone.folder("Old");
+    const inside = gone.chapter("Inside", folder);
+    gone.w.purge("system", gone.w.delete(LIVE, WRITER, folder));
+    expect(gone.w.view(LIVE).nodes.get(inside)).toMatchObject({ purged: true });
+    expect(gone.w.view(LIVE).trash).toEqual([]);
+  });
+});
+
 describe("a purged node is absent from every view, for placement as for display", () => {
   it("a create into a purged folder is rescued to the top of its source, and a move into it is skipped", () => {
     const t = start();
     const old = t.folder("Old");
     const kept = t.chapter("Kept");
-    t.w.delete(LIVE, "system", old);
-    t.w.author(LIVE, "system", { type: "purge", node: old });
+    t.w.purge("system", t.w.delete(LIVE, "system", old));
     const made = t.w.create(LIVE, WRITER, {
       kind: "document",
       filetype: "markdown",
