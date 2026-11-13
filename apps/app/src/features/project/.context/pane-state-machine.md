@@ -7,7 +7,7 @@ placement rule in code that this page doesn't state is a bug in one of the two.
 
 Status: current. The code implements this page: `useMainArrival` writes the slots and main's tabs,
 `place(item)` is the one placement command, and the Write | Chat switch opens the slot of its
-kind in main (`shell/MainModeSwitch.tsx`). Every swap, whatever opened it (the switch, Open in main, a pick or a link), glides in one place: `layout/SlotGrid.tsx` animates any host whose slot changed. Where this page and the
+kind in main (`shell/MainModeSwitch.tsx`). Every swap, whatever opened it (the switch, Swap with main in the side header or Open in main on the phone, a pick or a link), glides in one place: `layout/SlotGrid.tsx` animates any host whose slot changed. Where this page and the
 code disagree, one of them is a bug.
 
 ## State

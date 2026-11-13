@@ -1,10 +1,10 @@
 /**
- * SideHeader — the band above the side view: the picker naming what it shows, and Open in main. The
+ * SideHeader — the band above the side view: the picker naming what it shows, and Swap with main. The
  * side's page sits below it, inset from main's. The side's own toggle is the shell's corner button;
  * the spacer holds its place.
  */
 import { t } from "@lingui/core/macro";
-import { Maximize2, MessageSquare } from "lucide-react";
+import { ArrowLeftRight, MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -60,8 +60,8 @@ function SideBand({
           <div className="flex items-center gap-0.5">
             {actions}
             {onOpenInMain ? (
-              <IconButton size="sm" label={t`Open in main`} onClick={onOpenInMain}>
-                <Maximize2 aria-hidden />
+              <IconButton size="sm" label={t`Swap with main`} onClick={onOpenInMain}>
+                <ArrowLeftRight aria-hidden />
               </IconButton>
             ) : null}
             <PanelToggleSpacer />

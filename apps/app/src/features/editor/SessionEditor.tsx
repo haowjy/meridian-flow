@@ -314,6 +314,7 @@ function ActiveSessionEditorView({
     identity,
     session,
     agentNames,
+    user: { accountId },
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     atReferenceCatalog,

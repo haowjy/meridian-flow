@@ -22,12 +22,24 @@ function resolve(runtime: RelativePositionRuntime, value: ReadingAnchor): number
   }
 }
 
+/**
+ * The reading line: the top of the prose column, below its top inset. Measured from the pane's
+ * edge instead, a document read from its first line reopens scrolled by the inset.
+ */
+function readingLine(editor: Editor, pane: HTMLElement): number {
+  return (
+    pane.getBoundingClientRect().top +
+    pane.clientTop +
+    Number.parseFloat(getComputedStyle(editor.view.dom).paddingTop)
+  );
+}
+
 export function captureReadingPosition(editor: Editor, pane: HTMLElement): ReadingPosition | null {
   if (editor.isDestroyed) return null;
   try {
     const runtime = relativePositionRuntimeFromState(editor.state);
     if (!runtime) return null;
-    const top = pane.getBoundingClientRect().top + pane.clientTop;
+    const top = readingLine(editor, pane);
     let viewport: ReadingPosition["viewport"] | null = null;
     editor.state.doc.forEach((node, pos) => {
       if (viewport) return;
@@ -70,7 +82,13 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
   }
 }
 
-/** Dispatch selection without focus or scrollIntoView; scroll is independently anchored. */
+/**
+ * Scroll to the saved reading line, then restore the selection, without focus or scrollIntoView.
+ * A selection the restored viewport doesn't show (the writer scrolled without clicking, or away
+ * from a passage they selected) becomes a caret at the reading line instead: left off-screen, the
+ * first focus or keystroke scrolls back to it, and ProseMirror's own post-focus check does exactly
+ * that for a selection at the document start.
+ */
 export function restoreReadingPosition(
   editor: Editor,
   pane: HTMLElement,
@@ -79,21 +97,12 @@ export function restoreReadingPosition(
   if (editor.isDestroyed) return false;
   const runtime = relativePositionRuntimeFromState(editor.state);
   if (!runtime) return false;
+  let scrolled = false;
   try {
-    const from = resolve(runtime, place.selection.anchor) ?? 0;
-    const to = resolve(runtime, place.selection.head) ?? from;
     const doc = editor.state.doc;
-    const selectedNode = doc.nodeAt(from);
-    const selection =
-      place.selection.node && selectedNode && NodeSelection.isSelectable(selectedNode)
-        ? NodeSelection.create(doc, from)
-        : doc.resolve(from).parent.inlineContent && doc.resolve(to).parent.inlineContent
-          ? TextSelection.create(doc, from, to)
-          : Selection.near(doc.resolve(from));
-    editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
     const block = resolve(runtime, place.viewport.block);
     const text = place.viewport.text ? resolve(runtime, place.viewport.text) : null;
-    const top = pane.getBoundingClientRect().top + pane.clientTop;
+    const top = readingLine(editor, pane);
     if (text !== null && doc.resolve(text).parent.isTextblock) {
       const line = editor.view.coordsAtPos(text);
       pane.scrollTop += line.top - top + place.viewport.offset * (line.bottom - line.top);
@@ -105,10 +114,29 @@ export function restoreReadingPosition(
         pane.scrollTop += rect.top - top + place.viewport.offset * rect.height;
       } else pane.scrollTop = 0;
     } else pane.scrollTop = 0;
+    scrolled = true;
+
+    const from = resolve(runtime, place.selection.anchor) ?? 0;
+    const to = resolve(runtime, place.selection.head) ?? from;
+    const selectedNode = doc.nodeAt(from);
+    const saved =
+      place.selection.node && selectedNode && NodeSelection.isSelectable(selectedNode)
+        ? NodeSelection.create(doc, from)
+        : doc.resolve(from).parent.inlineContent && doc.resolve(to).parent.inlineContent
+          ? TextSelection.create(doc, from, to)
+          : Selection.near(doc.resolve(from));
+    const shown = pane.getBoundingClientRect();
+    const head = editor.view.coordsAtPos(saved.head);
+    const reading = text ?? block;
+    const selection =
+      (head.bottom > shown.top && head.top < shown.bottom) || reading === null
+        ? saved
+        : Selection.near(doc.resolve(reading));
+    editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
     return true;
   } catch {
     // Deleted types, replaced content, and unavailable layout are convenience loss, never a broken editor.
-    pane.scrollTop = 0;
+    if (!scrolled) pane.scrollTop = 0;
     return true;
   }
 }

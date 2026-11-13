@@ -60,9 +60,9 @@ Run these against an owned worktree and stack. Discover URLs with
 18. Close the side, then flip the switch. The side stays closed and **carries nothing**.
 19. With a chat in main, follow a document link in a message. **The page opens in main
     and the chat moves to the side**, still mounted.
-20. With a document in the side beside a chat, press **Open in main** in its header.
+20. With a document in the side beside a chat, press **Swap with main** in its header.
     The document moves to main without remounting (caret and undo kept) and the chat
-    moves to the side. The side header has no `…` menu: its name and **Open in main**
+    moves to the side. The side header has no `…` menu: its name and **Swap with main**
     are all it carries.
 21. Open documents A, B, then C. A is no longer main, side or kept. Go Back to B: B's
     undo history is intact (it was kept, mounted and hidden). A kept document reviews

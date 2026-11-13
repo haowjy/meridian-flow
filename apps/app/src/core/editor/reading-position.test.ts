@@ -70,6 +70,8 @@ function view(doc: Y.Doc) {
     return node;
   });
   vi.spyOn(editor.view, "posAtCoords").mockReturnValue(null);
+  // The caret's line, inside the pane: a selection the restored viewport shows is kept.
+  vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 10, bottom: 30, left: 0, right: 0 });
   return { editor, pane };
 }
 it("restores scroll and a backwards selection on reload, reopen, and another pane without focus", () => {

@@ -94,6 +94,8 @@ export function editorProseClass(toolbar: "docked" | "none"): string {
     "pl-[calc(max(0px,(100%-56rem)/2)+var(--prose-lead))]",
     "pr-[max(calc(max(0px,(100%-56rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-56rem)/2)-var(--prose-lead)-76ch+5rem))]",
     editorProseScrollPastEnd,
-    toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
+    // pt-5 is the least that shows a hovered peer's name label whole above the first line: the
+    // scroll pane clips anything above it, and the toolbar sits outside that pane.
+    toolbar === "docked" ? "pt-5" : "pt-6 md:pt-8",
   );
 }

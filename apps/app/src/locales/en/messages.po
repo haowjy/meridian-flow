@@ -4276,7 +4276,6 @@ msgid "Open full screen"
 msgstr "Open full screen"
 
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/side/SideHeader.tsx
 msgid "Open in main"
 msgstr "Open in main"
 
@@ -5176,6 +5175,10 @@ msgstr "Some of these items are no longer there"
 msgid "Some text was removed"
 msgstr "Some text was removed"
 
+#: src/core/editor/extensions/peer-carets.ts
+msgid "Someone"
+msgstr "Someone"
+
 #: src/features/import/reason-copy.ts
 msgid "Something went wrong on our side. Try again."
 msgstr "Something went wrong on our side. Try again."
@@ -5331,6 +5334,10 @@ msgstr "subsection"
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
 msgstr "Summarize earlier messages so the model has room to keep going"
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Swap with main"
+msgstr "Swap with main"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat"
@@ -6626,6 +6633,7 @@ msgstr "Yes"
 msgid "Yesterday"
 msgstr "Yesterday"
 
+#: src/core/editor/extensions/peer-carets.ts
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "You"
 msgstr "You"

@@ -22,7 +22,7 @@ export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
-  // Below this the side header's title and Open in main and rename input compress into slivers.
+  // Below this the side header's title, Swap with main and rename input compress into slivers.
   // The shell caps the side at half the room beside the sidebar (`desktop-layout.ts`).
   side: { min: 280, max: 2400 },
 };

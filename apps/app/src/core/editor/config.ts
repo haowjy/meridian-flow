@@ -10,7 +10,6 @@
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
@@ -50,6 +49,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
+import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
@@ -67,9 +67,12 @@ import type { SessionMarkerStore } from "./session-marker-store";
 import { editorSuggestionHost } from "./suggestion-host";
 import { UploadPresenceExtension } from "./upload-presence";
 
+/**
+ * Who this client is, published with its caret: a peer on the same account labels it "You".
+ * No name yet: every peer today is the writer's own tab or device.
+ */
 export type EditorUser = {
-  name: string;
-  color: string;
+  accountId: string;
 };
 
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
@@ -157,13 +160,10 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
 ];
 
 /**
- * Collaboration cursor default. The composition path resolves its token before
+ * Caret colour fallback. The composition path resolves its token before
  * publishing awareness because y-prosemirror accepts concrete colors only.
  */
-const DEFAULT_USER: EditorUser = {
-  name: "Meridian Researcher",
-  color: COLLABORATION_CURSOR_COLORS[4],
-};
+const FALLBACK_CARET_COLOR = COLLABORATION_CURSOR_COLORS[4];
 
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(peers: PeerAwareness): string {
@@ -234,8 +234,8 @@ function createCollaborationExtensions({
   CreateEditorExtensionsOptions,
   "document" | "history" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
-  const resolvedUser: EditorUser = {
-    name: (user ?? DEFAULT_USER).name,
+  const published = {
+    accountId: user?.accountId ?? "",
     color: pickCursorColor(presence.peers),
   };
 
@@ -258,26 +258,13 @@ function createCollaborationExtensions({
     // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
     // and a raw write made while the writer is hidden behind inline review is
     // dropped, then overwritten by the snapshot the review restores.
-    CollaborationCaret.configure({
+    PeerCarets.configure({
       provider: presence.caretProvider,
-      user: resolvedUser,
-      render: (cursorUser) => {
-        const cursor = window.document.createElement("span");
-        cursor.classList.add("meridian-collab-cursor");
-        cursor.style.borderColor = String(cursorUser.color ?? DEFAULT_USER.color);
-
-        const label = window.document.createElement("span");
-        label.classList.add("meridian-collab-cursor__label");
-        label.style.backgroundColor = String(cursorUser.color ?? DEFAULT_USER.color);
-        label.textContent = String(cursorUser.name ?? DEFAULT_USER.name);
-
-        cursor.append(label);
-        return cursor;
-      },
+      user: published,
       selectionRender: (cursorUser) => ({
         nodeName: "span",
         class: "meridian-collab-selection",
-        style: `background-color: ${String(cursorUser.color ?? DEFAULT_USER.color)}`,
+        style: `--caret-color: ${String(cursorUser.color ?? FALLBACK_CARET_COLOR)}`,
       }),
     }),
   ];
@@ -288,7 +275,7 @@ export function createEditorExtensions({
   history,
   schemaType = "document",
   presence,
-  user = DEFAULT_USER,
+  user,
   assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
