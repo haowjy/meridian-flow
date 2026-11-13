@@ -319,14 +319,9 @@ export function replay(
         // every delete of the node. Out of a deleted folder either brings back only the node
         // and what is inside it: they leave that folder's delete, and the folder stands holding
         // them (rule 3) with the rest in Trash.
-        const undone = record.undoes;
-        deletes = deletes.filter((entry) =>
-          undone === undefined
-            ? entry.node !== record.node
-            : !(entry.node === record.node && (entry.id === undone || entry.from === undone)),
-        );
+        deletes = deletes.filter((entry) => !lifts(record, entry));
         node.arrivedAt = index;
-        if (undone === undefined)
+        if (record.undoes === undefined)
           for (const entry of deletes) {
             if (!isAncestor(entry.node, record.node)) continue;
             for (const member of [...entry.cascade])
@@ -343,6 +338,14 @@ export function replay(
 
   return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued);
 }
+
+/** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
+export const lifts = (
+  restore: { node: string; undoes?: string },
+  entry: { id: string; node: string; from?: string },
+) =>
+  entry.node === restore.node &&
+  (restore.undoes === undefined || entry.id === restore.undoes || entry.from === restore.undoes);
 
 /**
  * A node something may be placed under or done to: its create is in force in the view (the node

@@ -88,6 +88,21 @@ export function viewRecords(
   return viewValues(doc, view, settled).filter(isRecord);
 }
 
+/**
+ * The last record in force in the view that is the record `id` names or a copy of it, whichever
+ * of the original or its copies `id` is (a copy always names the root original in `carries`).
+ * "unknown" when no record of the list has that id; undefined when none of the family is in the
+ * view.
+ */
+export function inForce(doc: Y.Doc, view: View, id: string): TreeRecord | "unknown" | undefined {
+  const named = listRecords(doc).find((record) => record.id === id);
+  if (!named) return "unknown";
+  const root = named.carries ?? named.id;
+  return viewRecords(doc, view)
+    .filter((record) => (record.carries ?? record.id) === root)
+    .pop();
+}
+
 /** The Work's pending records, in order. */
 export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
   return viewRecords(doc, { draft }).filter((record) => record.draft === draft);

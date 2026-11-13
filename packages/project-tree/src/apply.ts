@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
 import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
-import { placeIn, replay, type SkipReason } from "./replay.js";
+import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { writable } from "./validate.js";
 import {
@@ -407,12 +407,14 @@ export function restoreDiscard(
         } as TreeRecord),
       );
   }
-  // A create or delete overrides nothing; a restore overrides a pending delete of the node.
+  // A create or delete overrides nothing; a restore overrides the pending deletes it lifts.
   const overrides = (copy: TreeRecord, pending: TreeRecord) =>
-    copy.node === pending.node &&
-    (copy.type === "restore"
-      ? pending.type === "delete"
-      : (copy.type === "rename" || copy.type === "move") && pending.type === copy.type);
+    copy.type === "restore"
+      ? pending.type === "delete" &&
+        lifts(copy, { id: pending.id, node: pending.node, from: pending.carries })
+      : copy.node === pending.node &&
+        (copy.type === "rename" || copy.type === "move") &&
+        pending.type === copy.type;
   const overridden = pendingRecords(doc, draft)
     .filter((pending) => copies.some((copy) => overrides(copy, pending)))
     .map((pending) => pending.id);

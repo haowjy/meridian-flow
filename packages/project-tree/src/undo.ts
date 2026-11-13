@@ -1,7 +1,7 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { listRecords, type View, viewRecords } from "./view.js";
+import { inForce, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Whether the record is the one that last set the fact `setter` stands for. */
@@ -23,11 +23,8 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | "superseded" | "unknown" {
-  if (!listRecords(writer.doc).some((candidate) => candidate.id === recordId)) return "unknown";
-  // The record to take back is the last one in force that is `recordId` or carries it.
-  const record = viewRecords(writer.doc, view)
-    .filter((candidate) => candidate.id === recordId || candidate.carries === recordId)
-    .pop();
+  const record = inForce(writer.doc, view, recordId);
+  if (record === "unknown") return record;
   if (!record) return "superseded";
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);

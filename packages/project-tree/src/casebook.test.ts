@@ -1053,4 +1053,53 @@ describe("part 5: what a document is, and a move between two lists", () => {
     expect(restoreDiscard(t.w, restore, WRITER, "work-1", cmd())).not.toBe("superseded");
     expect(t.at(ch, D)?.displayName).toBe("New");
   });
+
+  it("36. restores a discarded selective Undo: it lifts the delete it undid, not another actor's pending delete", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    const mine = t.w.delete(D, CHAT, ch);
+    t.w.author(D, CHAT, { type: "restore", node: ch }, { undoes: mine.id });
+    const second = cmd();
+    discardDraft(t.w, "work-1", WRITER, second);
+    const theirs = t.w.delete(D, CHAT2, ch);
+    const restored = restoreDiscard(t.w, second, WRITER, "work-1", cmd());
+    expect(restored).not.toBe("superseded");
+    expect(pendingRecords(t.doc, "work-1").map((op) => op.id)).toContain(theirs.id);
+    expect(t.at(ch, D)?.trashed).toBe(true);
+  });
+
+  it("37. an intermediate copy's id resolves to the record in force: Undo and Trash restore take it", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    const gone = t.chapter("Chapter 2");
+    t.w.rename(D, CHAT, ch, "Draft name");
+    t.w.delete(D, CHAT, gone);
+    const ids: string[][] = [];
+    for (let round = 0; round < 2; round += 1) {
+      const command = cmd();
+      discardDraft(t.w, "work-1", WRITER, command);
+      const restored = restoreDiscard(t.w, command, WRITER, "work-1", cmd());
+      if (restored === "superseded") throw new Error("expected copies");
+      ids.push(restored.copies.map((copy) => copy.id));
+    }
+    const { copies } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(copies).toHaveLength(2);
+    // The first round's copies are in no view now: only the second round's copies were applied.
+    expect(undoChange(t.w, LIVE, WRITER, ids[0][0])).toMatchObject({ type: "rename" });
+    expect(t.at(ch)?.displayName).toBe("Chapter 1");
+    expect(t.w.restoreEntry(LIVE, WRITER, ids[0][1])).toMatchObject({ type: "restore" });
+    expect(t.at(gone)?.trashed).toBe(false);
+  });
+
+  it("38. a drafted change that was taken back and Applied leaves the earlier one undoable", () => {
+    const t = start();
+    const ch = t.chapter("Original");
+    const first = t.w.rename(D, CHAT, ch, "First");
+    const second = t.w.rename(D, CHAT, ch, "Second");
+    expect(undoChange(t.w, D, CHAT, second.id)).toMatchObject({ type: "rename" });
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(t.at(ch)?.displayName).toBe("First");
+    expect(undoChange(t.w, LIVE, WRITER, first.id)).toMatchObject({ type: "rename" });
+    expect(t.at(ch)?.displayName).toBe("Original");
+  });
 });
