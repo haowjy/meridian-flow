@@ -248,7 +248,7 @@ describe.runIf(enabled)("import resume", () => {
       destination: { folderUri: "kb://" },
       roots: [{ rootId: 0, kind: "file", name: "note.md" }],
       folders: [],
-      entries: [{ entryId: 0, rootId: 0, path: "note.md", size: 6, modifiedAt: 1 }],
+      entries: [{ entryId: 0, rootId: 0, path: "", size: 6, modifiedAt: 1 }],
     };
     await service.create(projectId, userId, input);
     await service.receive(input.importId, projectId, async () => [

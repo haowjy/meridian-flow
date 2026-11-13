@@ -717,6 +717,10 @@ export class ContextFS implements ContextSchemeAdapter {
           : {}),
       };
       if (result.moved) await input.afterWrite?.(result);
+      // A move into a live address is an arrival (contract §9.3): once per move, so a folder
+      // settles against its final tree. Only live documents arrive; a drafted move is not one.
+      if (result.moved && !target.view.draft && moved.value.documentIds.length > 0)
+        await this.liveCreate.arrive(moved.value.documentIds as DocumentId[]);
       return Ok(result);
     });
   }

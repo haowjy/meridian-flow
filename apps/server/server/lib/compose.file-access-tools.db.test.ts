@@ -137,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await treeSeeder(db).folder(MANUSCRIPT_ID, "scenes");
       await treeSeeder(db).document(MANUSCRIPT_ID, "outline.json", { id: data });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
-      expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
+      expect(manuscriptCall.output).toBe("manuscript://\n  chapter\n  scenes/\n  outline.json");
       expect(manuscriptCall.output).not.toContain(".md");
       const missing = await call("read", { path: "manuscript://missing.md" });
       expect(missing.output).toContain("path: manuscript://missing.md");

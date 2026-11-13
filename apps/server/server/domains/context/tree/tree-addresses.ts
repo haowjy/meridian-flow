@@ -21,6 +21,7 @@ import {
   isContextUriScheme,
   isProjectScopedScheme,
 } from "@meridian/contracts/context-uri";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -111,7 +112,7 @@ export async function loadDocumentAddresses(
     is_no_work: boolean | null;
     path: string;
     deleted: boolean;
-    image: boolean;
+    file_type: string;
   }>(sql`
     WITH RECURSIVE candidates AS (
       SELECT d.id, d.name, d.parent_id AS folder_id, d.context_source_id, d.file_type, d.deleted
@@ -134,7 +135,7 @@ export async function loadDocumentAddresses(
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
       up.path || c.name AS path,
       c.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL AS deleted,
-      c.file_type = 'image' AS image
+      c.file_type
     FROM candidates c
     JOIN up ON up.document_id = c.id AND up.folder_id IS NULL
     JOIN context_sources cs ON cs.id = c.context_source_id
@@ -174,10 +175,16 @@ export async function loadDocumentAddresses(
         path: row.path,
         uri,
         deleted: row.deleted,
-        image: row.image,
+        image: isImageFiletype(row.file_type),
       },
     ];
   });
+}
+
+/** A stored image's `file_type` is its filetype (`png`, `jpg`, `svg`), not the word `image`. */
+function isImageFiletype(fileType: string): boolean {
+  const disposition = classifyFiletype(fileType);
+  return disposition.kind === "binary" && disposition.fileType === "image";
 }
 
 function selectionFilter(selection: DocumentAddressSelection): SQL | null {
@@ -483,7 +490,7 @@ export async function spellNodeAddresses(
       contextSourceId: location.contextSourceId,
       path,
       uri,
-      image: location.fileType === "image",
+      image: isImageFiletype(location.fileType),
     };
   });
 }

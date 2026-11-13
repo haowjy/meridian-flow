@@ -1,7 +1,11 @@
 /** Durable prepare → plan → batches of first texts → one reveal orchestration. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { ImportLinkBinder, MarkdownDocumentStore } from "../../../collab/index.js";
+import type {
+  DocumentProjectionRefresher,
+  ImportLinkBinder,
+  MarkdownDocumentStore,
+} from "../../../collab/index.js";
 import type {
   ContextImportRead,
   ContextImportReveal,
@@ -37,7 +41,8 @@ type OrganizerDeps = {
   converter: DocumentConverterPort;
   read(record: ImportRecord): ContextImportRead;
   binder: ImportLinkBinder;
-  documents: Pick<MarkdownDocumentStore, "encodeSeed" | "installSeeds">;
+  documents: Pick<MarkdownDocumentStore, "encodeSeed" | "installSeeds"> &
+    Pick<DocumentProjectionRefresher, "refreshDocumentProjection">;
   reveal: ContextImportReveal;
   diagnostic(cause: unknown, detail: Record<string, unknown>): void;
   /** An image preview that should have been made but failed; the file shows as a card. */
@@ -357,11 +362,14 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       built += batch;
     }
     if (signal.aborted) return built;
+    let revealedNodes: ImportRevealNode[] = [];
     const revealed = await deps.repository.organizeTransaction(claim, async (locked) => {
-      await deps.reveal.reveal({
-        projectId,
-        nodes: revealNodes(tree, build.entriesById, await deps.repository.readAhead(locked.id)),
-      });
+      revealedNodes = revealNodes(
+        tree,
+        build.entriesById,
+        await deps.repository.readAhead(locked.id),
+      );
+      await deps.reveal.reveal({ projectId, nodes: revealedNodes });
       const now = await deps.repository.now();
       await deps.repository.transitionEntries(locked.id, ["prepared"], {
         state: "organized",
@@ -381,7 +389,18 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         leaseUntil: null,
       });
     });
-    return revealed.kind === "committed" ? 1 : 0;
+    if (revealed.kind !== "committed") return 0;
+    // The documents are visible now: their blocks and links derive from the texts that waited.
+    const documentIds = revealedNodes.flatMap((node) =>
+      node.kind === "document" ? [node.id as DocumentId] : [],
+    );
+    for (let offset = 0; offset < documentIds.length; offset += 8)
+      await Promise.all(
+        documentIds
+          .slice(offset, offset + 8)
+          .map((documentId) => deps.documents.refreshDocumentProjection({ documentId })),
+      );
+    return 1;
   }
 
   return {

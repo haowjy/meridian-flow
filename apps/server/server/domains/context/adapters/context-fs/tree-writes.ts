@@ -225,6 +225,8 @@ export type CreatedNode = { id: string; name: string; path: string[] };
 
 export type MovedNode = {
   moved: boolean;
+  /** The documents and files that moved, the node itself among them when it is one. */
+  documentIds: string[];
   path: string[];
   /** The node's facts in a Work's view before and after, for the edit history. */
   facts?: { before: BranchTreeFacts; after: BranchTreeFacts };
@@ -433,7 +435,7 @@ export function createSourceTree(deps: {
       const { result } = await deps.store.submit<Result<MovedNode, AdapterFault>>({
         list: here,
         make: (writer) => {
-          const projection = writer.view(target.view);
+          let projection = writer.view(target.view);
           const node = projection.nodes.get(input.node);
           const wanted = input.kind === "folder" ? "folder" : undefined;
           if (!node || node.trashed || node.purged || (wanted && node.kind !== wanted))
@@ -444,10 +446,14 @@ export function createSourceTree(deps: {
             return { records: [], result: Err({ code: "stale_source" } as AdapterFault) };
           if (input.onlyAt !== undefined && pathOf(projection, node.id).join("/") !== input.onlyAt)
             return { records: [], result: Err({ code: "stale_target" } as AdapterFault) };
-          const parent =
-            input.dir === null ? node.parent : findFolder(projection, sourceId, input.dir);
-          if (parent === null)
-            return { records: [], result: Err({ code: "destination_missing" } as AdapterFault) };
+          const made: TreeRecord[] = [];
+          let parent = node.parent;
+          if (input.dir !== null) {
+            const ensured = ensureFolders(writer, target, sourceId, input.dir, made);
+            if (!ensured.ok) return { records: [], result: ensured };
+            parent = ensured.value;
+            projection = writer.view(target.view);
+          }
           if (
             node.kind === "folder" &&
             (parent === node.id || descendantsOf(projection, node.id).includes(parent))
@@ -478,7 +484,10 @@ export function createSourceTree(deps: {
           const sameParent = node.parent === parent;
           const renamed = filename !== node.displayName;
           if (sameParent && !renamed && !input.position)
-            return { records: [], result: Ok({ moved: false, path: pathOf(projection, node.id) }) };
+            return {
+              records: [],
+              result: Ok({ moved: false, documentIds: [], path: pathOf(projection, node.id) }),
+            };
 
           const before = factsOf(writer, target.view, node.id);
           if (!sameParent || input.position)
@@ -499,9 +508,12 @@ export function createSourceTree(deps: {
             );
           const after = factsOf(writer, target.view, node.id);
           return {
-            records: [],
+            records: made,
             result: Ok({
               moved: true,
+              documentIds: [node.id, ...descendantsOf(projection, node.id)].filter(
+                (id) => projection.nodes.get(id)?.kind !== "folder",
+              ),
               path: pathOf(writer.view(target.view), node.id),
               ...(before && after ? { facts: { before, after } } : {}),
             }),

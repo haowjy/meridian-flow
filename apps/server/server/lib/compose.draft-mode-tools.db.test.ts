@@ -469,9 +469,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(copied.isError).toBeFalsy();
       const [copy] = await db
         .select({ metadata: schema.documents.metadata })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "gate-copy"));
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -574,9 +574,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // A drafted copy is a record of the Work's branch with its own stored object.
       const [copy] = await db
         .select({ storageUrl: schema.documents.storageUrl })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "scan-copy.pdf"));
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
       await expect(
         runtime.ports.contextPorts

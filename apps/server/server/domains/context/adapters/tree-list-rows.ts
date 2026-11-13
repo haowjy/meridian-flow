@@ -75,17 +75,22 @@ function trashRecords(projection: TreeProjection): Map<string, string> {
 }
 
 /** Where a node is: its source and the names above it, so a move of any ancestor shows. */
-function addresses(rows: ReadonlyMap<string, ProjectedRow>): Map<string, string> {
-  const memo = new Map<string, string>();
-  const pathOf = (row: ProjectedRow): string => {
+/** Each node's source (its top folder's) and its path from that source's top. */
+function addresses(
+  rows: ReadonlyMap<string, ProjectedRow>,
+): Map<string, { source: string; path: string }> {
+  const memo = new Map<string, { source: string; path: string }>();
+  const addressOf = (row: ProjectedRow): { source: string; path: string } => {
     const known = memo.get(row.id);
-    if (known !== undefined) return known;
+    if (known) return known;
     const parent = row.parentId === null ? undefined : rows.get(row.parentId);
-    const path = parent ? `${pathOf(parent)}/${row.name}` : `${row.sourceId}:${row.name}`;
-    memo.set(row.id, path);
-    return path;
+    const address = parent
+      ? { source: addressOf(parent).source, path: `${addressOf(parent).path}/${row.name}` }
+      : { source: row.sourceId, path: row.name };
+    memo.set(row.id, address);
+    return address;
   };
-  for (const row of rows.values()) pathOf(row);
+  for (const row of rows.values()) addressOf(row);
   return memo;
 }
 
@@ -254,7 +259,9 @@ async function writeLive(
   const was = addresses(prev);
   const now = addresses(next);
   const moved = (id: string) =>
-    was.get(id) !== now.get(id) || prev.get(id)?.deleted !== next.get(id)?.deleted;
+    was.get(id)?.path !== now.get(id)?.path ||
+    was.get(id)?.source !== now.get(id)?.source ||
+    prev.get(id)?.deleted !== next.get(id)?.deleted;
   // A node whose address (its source included) or Trash state changed has a new version, and so
   // has everything under a folder that moved or was renamed: it is the address text derivations
   // compare.
@@ -314,14 +321,14 @@ async function writeLive(
   for (const [id, row] of next) {
     if (row.kind !== "document" || row.deleted) continue;
     const before = prev.get(id);
-    const path = now.get(id) as string;
-    if (before && !before.deleted && was.get(id) === path && before.sourceId === row.sourceId)
+    const path = (now.get(id) as { path: string }).path;
+    if (before && !before.deleted && was.get(id)?.path === path && before.sourceId === row.sourceId)
       continue;
     claimed.push({ contextSourceId: row.sourceId, path });
     if (before && !before.deleted)
       vacated.push({
         contextSourceId: before.sourceId,
-        path: was.get(id) as string,
+        path: (was.get(id) as { path: string }).path,
         documentId: id,
       });
   }

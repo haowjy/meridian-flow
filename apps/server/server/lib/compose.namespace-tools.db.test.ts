@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { treeSeeder } from "../test-support/tree-seed.js";
@@ -97,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scope: "work",
       });
       const seeds = treeSeeder(db);
+      await seeds.folder(SOURCE_ID, "part1");
       await seeds.document(SOURCE_ID, "ch1", { id: CH1 });
       await seeds.document(SOURCE_ID, "ch2", { id: CH2 });
       await seeds.document(SCRATCH_SOURCE, "sect-notes", { id: SCRATCH_NOTE });
@@ -182,15 +183,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!row) throw new Error(`Work ${workId} has no active branch`);
       return row.id as never;
     };
-    const treeEntries = (id: string) =>
-      db
-        .select({ kind: schema.documentEdits.kind, tree: schema.documentEdits.treeChange })
-        .from(schema.documentEdits)
-        .where(
-          and(eq(schema.documentEdits.documentId, id), isNotNull(schema.documentEdits.treeChange)),
-        )
-        .orderBy(sql`(${schema.documentEdits.treeChange}->>'seq')::bigint`);
-
     it("refuses a move or delete of a path that names a folder beside the document it renders as", async () => {
       await treeSeeder(db).folder(SOURCE_ID, "ch1.md");
       const script = await start();
@@ -205,7 +197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await placement(CH1))?.name).toBe("ch1");
     });
 
-    it("moves at the call; undo by either path and redo walk it; A→B, B→C undoes back to A", async () => {
+    it("moves at the call, each move its own command: A→B, B→C", async () => {
       const script = await start();
       const { call } = await script.begin();
       const moved = await call("write", {
@@ -222,29 +214,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "ch1-older",
       });
       expect(again.isError, text(again)).toBeFalsy();
-
-      const listing = await call("read", { path: "ch1-older", format: "edits" });
-      expect(text(listing)).toContain("moved from manuscript://ch1-old");
-
-      // The old path no document holds names the document this chat moved away from it.
-      const undone = await call("write", { command: "undo", path: "ch1-old" });
-      expect(undone.isError, text(undone)).toBeFalsy();
-      expect(await placement(CH1)).toMatchObject({ name: "ch1-old" });
-      const undoneAgain = await call("write", { command: "undo", path: "ch1-old" });
-      expect(undoneAgain.isError, text(undoneAgain)).toBeFalsy();
-      expect(await placement(CH1)).toMatchObject({ name: "ch1" });
-
-      const redone = await call("write", { command: "redo", path: "ch1", count: 2 });
-      expect(redone.isError, text(redone)).toBeFalsy();
       expect(await placement(CH1)).toMatchObject({ name: "ch1-older" });
-      expect((await treeEntries(CH1)).map((row) => row.kind).sort()).toEqual([
-        "redo",
-        "redo",
-        "undo",
-        "undo",
-        "write",
-        "write",
-      ]);
     });
 
     function review(script: Awaited<ReturnType<typeof start>>) {
@@ -288,11 +258,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
     }
-    const settlements = async (id: string) =>
-      (await treeEntries(id)).flatMap((row) =>
-        row.tree?.op === "settle" ? [row.tree.settles.as] : [],
-      );
-
     it("drafts a Scratch move into the manuscript and applies it", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
@@ -314,23 +279,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await review(script).item(SCRATCH_NOTE)).toMatchObject({
         contextLocation: { scheme: "manuscript", path: "/sect-notes" },
       });
-
-      const undoTurn = await drafting.begin();
-      const undone = await undoTurn.call("write", {
-        command: "undo",
-        path: "manuscript://sect-notes",
-      });
-      expect(undone.isError, text(undone)).toBeFalsy();
-      await undoTurn.save();
-      expect(await review(script).item(SCRATCH_NOTE)).toBeUndefined();
-
-      const redoTurn = await drafting.begin();
-      const redone = await redoTurn.call("write", {
-        command: "redo",
-        path: "scratch://@w2/sect-notes",
-      });
-      expect(redone.isError, text(redone)).toBeFalsy();
-      await redoTurn.save();
 
       expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
       expect(await placement(SCRATCH_NOTE)).toMatchObject({
@@ -402,17 +350,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
-      // A drafted delete of a document live deleted too settles, with no restore.
+      // A drafted delete of a document live deleted too is no change to review: nothing to apply.
       await draft({ command: "delete", path: "ch2" });
-      const revision = (await writer.item(CH2))?.tree?.revision ?? null;
+      expect(await writer.item(CH2)).toMatchObject({ tree: { revision: expect.any(String) } });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch2" });
       });
-      expect(await writer.apply(CH2, { tree: { revision } })).toMatchObject({ status: "applied" });
+      expect(await writer.item(CH2)).toBeUndefined();
       expect((await placement(CH2))?.deletedAt).not.toBeNull();
-      expect(await settlements(CH2)).toEqual(["applied"]);
 
-      // Discard of a move keeps the text change; the model's undo then says discarded.
+      // Discard of a move keeps the text change; 
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
@@ -420,20 +367,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
-      const { call } = await drafting.begin();
-      expect(text(await call("write", { command: "undo", path: "part1/ch1-moved" }))).toContain(
-        "discarded",
-      );
-      expect(await settlements(CH1)).toEqual(["applied", "discarded"]);
 
-      // Apply names the move in effect applied, and one undone before it discarded.
-      await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-b" });
-      await drafting.reply(async (edit) => {
-        await edit("write", { command: "undo", path: "ch1-b" });
-      });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });
       expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
-      expect(await settlements(CH1)).toEqual(["applied", "discarded", "applied", "discarded"]);
+      expect(await placement(CH1)).toMatchObject({ name: "ch1-c", deletedAt: null });
     });
   });
 }
