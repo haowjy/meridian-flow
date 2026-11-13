@@ -122,19 +122,42 @@ export function correspond(
   return c;
 }
 
-/** Half of the smaller block's words are in the other, in order: the two may be one block. */
-export const couldBeOne = (a: PMNode, b: PMNode) =>
-  similarity(a, b, true, TUNE.similar) >= TUNE.similar;
+/** Words two blocks share in order and the size of the smaller one; null when under half the smaller's. */
+function overlap(a: PMNode, b: PMNode) {
+  const sim = similarity(a, b, true, TUNE.similar);
+  if (sim < TUNE.similar) return null;
+  const [x, y] = [contentWords(a).length, contentWords(b).length];
+  const smaller = Math.min(x, y);
+  return { shared: Math.round(sim * smaller), smaller, larger: Math.max(x, y) };
+}
 
 /**
- * `couldBeOne`, and at least three of the words (or all of a smaller block's): two blocks added at
- * one place have no base block to vouch for either, and without the floor two short unrelated
- * paragraphs ("Live lore." and "Pending lore.") share one word and read as one block.
+ * Two blocks added at one place have no base block to vouch for either: at least half the smaller
+ * block's words in the other, in order, and three of them (or all of a smaller block's). Without
+ * the floor two short unrelated paragraphs ("Live lore." and "Pending lore.") share one word and
+ * read as one block.
  */
 export function couldBeSameAddition(a: PMNode, b: PMNode): boolean {
-  const sim = similarity(a, b, true, TUNE.similar);
-  const smaller = Math.min(contentWords(a).length, contentWords(b).length);
-  return sim >= TUNE.similar && Math.round(sim * smaller) >= Math.min(TUNE.sharedFloor, smaller);
+  const o = overlap(a, b);
+  return !!o && o.shared >= Math.min(TUNE.sharedFloor, o.smaller);
+}
+
+/**
+ * Two blocks in different places: nothing but their words says they are one. Three shared words
+ * are needed, however short the blocks, or all of them: a short line ("No.") shares its words with
+ * a paragraph anywhere, and linking those would pull both places into one change, but the same
+ * short line twice ("Yes." and "Yes.") is one block that moved. A smaller block that has an equal
+ * twin on its own side ("Yes." twice, one of them edited) is ambiguous about which was edited, which
+ * is what an unsure group is for, so its words are evidence too.
+ */
+function couldBeOneAcross(a: PMNode, b: PMNode, smallerHasTwin: boolean): boolean {
+  const o = overlap(a, b);
+  return (
+    !!o &&
+    (o.shared >= TUNE.sharedFloor ||
+      o.shared === o.larger ||
+      (smallerHasTwin && o.shared === o.smaller))
+  );
 }
 
 /** Steps 1 and 2: the ends, the anchors, then everything left in each gap at once. */
@@ -445,8 +468,8 @@ function wordsNotIn(x: readonly string[], y: readonly string[]): string[] {
 /**
  * Step 5, certain mode: the blocks whose pairing nothing settles, in groups. One group is one
  * question, so the merge can answer it once:
- * - an old and a new block that could be one block, wherever they sit: removed here and added
- *   there, cut down, or grown;
+ * - an old and a new block that could be one block, wherever they sit and with the words to show
+ *   it: removed here and added there, cut down, or grown;
  * - old and new blocks left in one gap: an edit past recognition, or a removal and an addition;
  * - a removed block and a changed pair that gained half of that block's words (or half of whose
  *   gained words are that block's), and the same for an added block and a pair that lost words:
@@ -465,9 +488,20 @@ function markUnsure(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
   if (oldLeft.length * nextLeft.length > TUNE.cells) {
     for (const i of oldLeft) link(i, oldLeft[0]);
     for (const j of nextLeft) link(N + j, oldLeft[0]);
-  } else
+  } else {
+    const twins = (nodes: readonly PMNode[]) => {
+      const seen = new Map<string, number>();
+      for (const n of nodes) seen.set(contentKey(n), (seen.get(contentKey(n)) ?? 0) + 1);
+      return (n: PMNode) => (seen.get(contentKey(n)) ?? 0) > 1;
+    };
+    const [oldTwin, nextTwin] = [twins(old), twins(next)];
     for (const i of oldLeft)
-      for (const j of nextLeft) if (couldBeOne(old[i], next[j])) link(i, N + j);
+      for (const j of nextLeft) {
+        const oldIsSmaller = contentWords(old[i]).length <= contentWords(next[j]).length;
+        const twin = oldIsSmaller ? oldTwin(old[i]) : nextTwin(next[j]);
+        if (couldBeOneAcross(old[i], next[j], twin)) link(i, N + j);
+      }
+  }
   // Old and new blocks left in one gap between two pairs in order.
   const unitEnd = (pi: number, pj: number): [number, number] => {
     let [u1, v1] = [pi + 1, pj + 1];

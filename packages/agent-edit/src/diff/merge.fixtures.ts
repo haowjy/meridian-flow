@@ -1796,4 +1796,27 @@ export const CASES: Case[] = [
     merged: "p:她走了。",
     conflicts: 1,
   },
+  // A short line does not link to a paragraph in another place
+  {
+    row: "a short line removed, an echo of it added far away",
+    name: "short-line-far-addition",
+    base: "p:No. | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:The door stayed shut.",
+    live: "p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:No, she said quietly. | p:The door stayed shut.",
+    draft:
+      "p:No! | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:The door stayed shut.",
+    merged:
+      "p:No! | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:No, she said quietly. | p:The door stayed shut.",
+    conflicts: 1,
+  },
+  {
+    row: "a short line removed, a far paragraph rewritten to hold it",
+    name: "short-line-far-rewrite",
+    base: "p:He nodded. | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:The end came.",
+    live: "p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:He nodded at her and the end came.",
+    draft:
+      "p:He nodded slowly. | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:The end came.",
+    merged:
+      "p:He nodded slowly. | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:He nodded at her and the end came.",
+    conflicts: 1,
+  },
 ];

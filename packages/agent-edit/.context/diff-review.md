@@ -213,20 +213,27 @@ covers, and live's words the draft lacks count under `overrode`. Live is set bac
 rather than to the draft's blocks: copying the draft's blocks in doubled them when the sides
 also disagreed about order.
 
-"Could be one block" (`couldBeOne`) is half the smaller block's words in the other, in order. It
-decides unsure groups. Two blocks added at one gap, where no base block vouches for either, need
-three of those words too (or all of a smaller block's): `couldBeSameAddition`. Without the floor,
-"Live lore." and "Pending lore." read as one paragraph typed on both sides. A live paragraph that
-could be one of the draft's new paragraphs, and is not equal to it, is the draft's, one clash;
-equal ones are kept once and unrelated ones both kept. Measured on real text (this repo's fiction
-fixtures, its Markdown and the markup tests' strings, 20,000 generated merges): unrelated
-paragraphs pass the half-words test in 1 to 5 percent of pairs when they have 4 to 12 words, and
-in up to 2 percent below that; the floor cuts the short ones by about two thirds and leaves
-longer ones. Unrelated paragraphs added at one gap and linked: 2 of 20,000 generated merges.
+Which blocks could be one block decides the unsure groups. Blocks left in one gap are one group
+whatever their words: position vouches for them. Two blocks in different places have only their
+words (`couldBeOneAcross`): half the smaller block's words in the other, in order, and then three
+of them however short the blocks, or all of them when the two have the same words ("Yes." and
+"Yes." is one block that moved), or all of the smaller's when it has an equal twin on its own side
+("Yes." twice, one edited: which one is the ambiguity an unsure group answers). Without the floor a
+short line ("No.") linked to any paragraph containing its word, the stretch covered both places,
+and live's change far from the draft's was reverted, silently on Apply. Two blocks added at one gap, where no base block vouches for either,
+need half the smaller's words and three of them too, or all of a smaller block's
+(`couldBeSameAddition`): without that, "Live lore." and "Pending lore." read as one paragraph typed
+on both sides. A live paragraph that could be one of the draft's new paragraphs, and is not equal
+to it, is the draft's, one clash; equal ones are kept once and unrelated ones both kept. Measured on
+real text (this repo's fiction fixtures, its Markdown and the markup tests' strings, 20,000
+generated merges): unrelated paragraphs pass the half-words test in 1 to 5 percent of pairs when
+they have 4 to 12 words, and in up to 2 percent below that; the floor cuts the short ones by about
+two thirds and leaves longer ones. Unrelated paragraphs added at one gap and linked: 2 of 20,000
+generated merges.
 
 Known limit: a run of one or two words live carries out of a block into an otherwise new
-paragraph, beside the draft's version of the source block, can appear twice (generated seeds
-858, 942 and 1973 of the restructuring run). The new paragraph shares under half its words with
+paragraph in another place, beside the draft's version of the source block, can appear twice (the
+restructuring run's 3,000 generated merges, whose paragraphs average three words: 17 of them). The new paragraph shares under half its words with
 the source, so by the rule it is new text, and `moved-text-dropped` has the same floor. Treating
 any shared word as evidence would link unrelated paragraphs through common words.
 
