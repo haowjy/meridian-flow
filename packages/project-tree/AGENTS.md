@@ -14,7 +14,12 @@ it may write, whether a node id is in use) comes in as plain inputs.
 - A client may write five record kinds with its own account as the actor. Everything else
   (applied copies, files, `purge`, settlements, `replaces`) is the server's, and
   `malformedRecord` refuses a client's update that carries it.
-- The server keeps one `TreeWriter` per copy of the list and one Yjs client id below 1,000.
-  Ids from a fresh writer repeat the last one's.
+- Record ids are uuids, so any number of writers may share a copy. The server's Yjs client id is
+  below 1,000.
+- What a document is (type, provisional name, aliases, properties mark) rides on its `create`
+  and `rename`. Which types a client may state, and whether a type change stays in one Yjs
+  schema, are the server's facts: they come in through `Connection`.
+- A move between two lists is `moveBetweenLists`: a `move` to `list:<id>` in one list and a
+  `create` in the other. Only the server writes it.
 
 Design and the evidence behind each rule: [.context/CONTEXT.md](.context/CONTEXT.md).

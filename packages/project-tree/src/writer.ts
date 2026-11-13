@@ -12,8 +12,10 @@ import {
   type CreateRecord,
   type DeleteRecord,
   isSourceRoot,
+  listRoot,
   type MoveRecord,
   type NodeKind,
+  newId,
   type RenameRecord,
   type RestoreRecord,
   recordsOf,
@@ -26,27 +28,18 @@ import {
 import type { TreeProjection } from "./replay.js";
 import { descendantsOf, rankAt } from "./shape.js";
 import { undoRecord } from "./undo.js";
-import { replayView, type View, viewRecords } from "./view.js";
+import { LIVE, replayView, type View, viewRecords } from "./view.js";
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
  * writes its own records this way; the server writes Apply, Discard, Undo and an AI tool's
  * records on a copy at the journal's head, and sends the Yjs update the copy emits.
- *
- * Ids come from the Yjs client id and a counter, so use one writer per client id.
  */
 export class TreeWriter {
-  private counter = 0;
-
   constructor(
     readonly doc: Y.Doc,
     private readonly origin: string = "local",
   ) {}
-
-  nextId(prefix: string): string {
-    this.counter += 1;
-    return `${prefix}-${this.doc.clientID.toString(36)}-${this.counter}`;
-  }
 
   view(view: View): TreeProjection {
     return replayView(this.doc, view);
@@ -65,7 +58,7 @@ export class TreeWriter {
   ): TreeRecord {
     const record = {
       ...input,
-      id: this.nextId("op"),
+      id: newId(),
       actor,
       draft: view.draft,
       ...extra,
@@ -82,9 +75,7 @@ export class TreeWriter {
     extra: { reason?: string; command?: string } = {},
   ): void {
     if (targets.length === 0) return;
-    settleLogOf(this.doc).push([
-      { id: this.nextId("st"), actor, targets: [...targets], to, ...extra },
-    ]);
+    settleLogOf(this.doc).push([{ id: newId(), actor, targets: [...targets], to, ...extra }]);
   }
 
   create(
@@ -97,6 +88,8 @@ export class TreeWriter {
       index?: number;
       blob?: BlobRef;
       node?: string;
+      filetype?: string;
+      provisional?: true;
     },
   ): CreateRecord {
     const projection = this.view(view);
@@ -106,12 +99,14 @@ export class TreeWriter {
     if (source === undefined) throw new Error(`create under unknown parent ${input.parent}`);
     return this.author(view, actor, {
       type: "create",
-      node: input.node ?? this.nextId("n"),
+      node: input.node ?? newId(),
       kind: input.kind,
       name: input.name,
       parent: input.parent,
       source,
       rank: rankAt(projection, input.parent, input.index ?? Number.MAX_SAFE_INTEGER),
+      ...(input.filetype ? { filetype: input.filetype } : {}),
+      ...(input.provisional ? { provisional: true as const } : {}),
       ...(input.blob ? { blob: input.blob } : {}),
     }) as CreateRecord;
   }
@@ -134,13 +129,14 @@ export class TreeWriter {
     }) as MoveRecord;
   }
 
-  rename(view: View, actor: Actor, node: string, name: string): RenameRecord {
+  rename(view: View, actor: Actor, node: string, name: string, filetype?: string): RenameRecord {
     const current = this.view(view).nodes.get(node);
     return this.author(view, actor, {
       type: "rename",
       node,
       name,
       fromName: current?.name ?? "",
+      ...(filetype ? { filetype } : {}),
     }) as RenameRecord;
   }
 
@@ -216,4 +212,51 @@ export class TreeWriter {
   undo(view: View, actor: Actor, recordId: string): TreeRecord | "superseded" | "unknown" {
     return undoRecord(this, view, actor, recordId);
   }
+}
+
+/** One side of a move between two lists: the writer on that list's copy, and the list's id. */
+export type ListEnd = { writer: TreeWriter; list: string };
+
+/**
+ * A move between two lists (a project's and the account's `user://`), as the pair the server
+ * appends in one transaction: a `move` in the list the node leaves, whose parent names the
+ * other list, and a `create` for the same node id in the list it enters, under `parent` there.
+ * Moving back is the same pair the other way. A folder stays: what is inside it has no pair.
+ */
+export function moveBetweenLists(
+  out: ListEnd,
+  into: ListEnd & { parent: string; index?: number },
+  actor: Actor,
+  node: string,
+): { left: MoveRecord; entered: CreateRecord } {
+  const was = out.writer.view(LIVE).nodes.get(node);
+  if (!was || was.trashed || was.kind === "folder")
+    throw new Error(`${node} is not a document that can leave its list`);
+  const arrives = into.writer.view(LIVE);
+  const source = isSourceRoot(into.parent)
+    ? sourceIdOf(into.parent)
+    : arrives.nodes.get(into.parent)?.source;
+  if (source === undefined) throw new Error(`move into unknown parent ${into.parent}`);
+  const left = out.writer.author(LIVE, actor, {
+    type: "move",
+    node,
+    parent: listRoot(into.list),
+    rank: was.rank,
+    from: { parent: was.parent, rank: was.rank },
+  }) as MoveRecord;
+  const entered = into.writer.author(LIVE, actor, {
+    type: "create",
+    node,
+    kind: was.kind,
+    name: was.name,
+    parent: into.parent,
+    source,
+    rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),
+    ...(was.filetype ? { filetype: was.filetype } : {}),
+    ...(was.provisional ? { provisional: true as const } : {}),
+    ...(was.aliases ? { aliases: was.aliases } : {}),
+    ...(was.hasProperties ? { hasProperties: true as const } : {}),
+    ...(was.blob ? { blob: was.blob } : {}),
+  }) as CreateRecord;
+  return { left, entered };
 }

@@ -23,6 +23,22 @@ export function sourceIdOf(root: string): string {
   return root.slice("source:".length);
 }
 
+/**
+ * The parent of a `move` out of this list into another (a project's list and the account's
+ * `user://` list). Only the server writes one, as half of a move between two lists.
+ */
+export function listRoot(listId: string): string {
+  return `list:${listId}`;
+}
+export function isListRoot(id: string): boolean {
+  return id.startsWith("list:");
+}
+
+/** A record or settlement id. A uuid, so two writers on one copy never repeat one. */
+export function newId(): string {
+  return crypto.randomUUID();
+}
+
 type RecordBase = {
   id: string;
   node: string;
@@ -48,6 +64,14 @@ export type CreateRecord = RecordBase & {
   /** The source it was made in: where it shows if its folder never existed in a view (rule 6). */
   source: string;
   rank: string;
+  /** A document's type at creation, which decides the editor that opens it. */
+  filetype?: string;
+  /** The name was given, not chosen ("Untitled"); it ends at the node's first rename by a person. */
+  provisional?: true;
+  /** Other names it answers to in links; an import's frontmatter. Server only. */
+  aliases?: string[];
+  /** It has imported properties to show, which load by id. Server only. */
+  hasProperties?: true;
   blob?: BlobRef;
   /** On a create the server appended for a node whose client create it refused: that create. */
   replaces?: string;
@@ -59,7 +83,13 @@ export type MoveRecord = RecordBase & {
   /** Where the author saw it, for the Undo. */
   from: { parent: string; rank: string };
 };
-export type RenameRecord = RecordBase & { type: "rename"; name: string; fromName: string };
+export type RenameRecord = RecordBase & {
+  type: "rename";
+  name: string;
+  fromName: string;
+  /** Set when the new name's extension changes the type (notes.md to notes.txt). */
+  filetype?: string;
+};
 /** `cascade` is the nodes its author saw inside; only those that are still inside go with it. */
 export type DeleteRecord = RecordBase & { type: "delete"; cascade: string[] };
 export type RestoreRecord = RecordBase & { type: "restore" };

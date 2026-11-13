@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { type Actor, recordsOf, type TreeRecord } from "./record.js";
+import { type Actor, newId, recordsOf, type TreeRecord } from "./record.js";
 import { replay } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { LIVE, lastSettlements, pendingRecords, viewRecords } from "./view.js";
@@ -193,7 +193,7 @@ export function applyLanding(
     if (!taken.has(record.id)) continue;
     const copy = {
       ...record,
-      id: writer.nextId("op"),
+      id: newId(),
       draft: null,
       appliedFrom: record.id,
       appliedBy,

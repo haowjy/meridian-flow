@@ -1,6 +1,7 @@
 import {
   type Actor,
   type BlobRef,
+  isListRoot,
   isSourceRoot,
   type NodeKind,
   sourceIdOf,
@@ -19,6 +20,12 @@ export type TreeNode = {
   /** The source this node is in now, from the top of its parent chain. */
   source: string;
   rank: string;
+  /** A document's type: the last rename's that changed it, else its create's. */
+  filetype?: string;
+  /** The name was given, not chosen; false once a person has renamed the node. */
+  provisional: boolean;
+  aliases?: string[];
+  hasProperties: boolean;
   /** In Trash: deleted, and nothing not deleted below it keeps it standing. */
   trashed: boolean;
   /** Deleted, but shown because something not deleted is inside (rule 3). */
@@ -75,6 +82,10 @@ type Working = {
   rank: string;
   /** The source it was created in; the shown source is derived from the parent chain. */
   source: string;
+  filetype?: string;
+  provisional: boolean;
+  aliases?: string[];
+  hasProperties: boolean;
   blob?: BlobRef;
   createdBy: Actor;
   lastChangedBy: Actor;
@@ -161,6 +172,10 @@ export function replay(
         parent: parentId,
         rank: record.rank,
         source: record.source,
+        ...(record.filetype ? { filetype: record.filetype } : {}),
+        provisional: record.provisional === true,
+        ...(record.aliases ? { aliases: record.aliases } : {}),
+        hasProperties: record.hasProperties === true,
         ...(record.blob ? { blob: record.blob } : {}),
         createdBy: record.actor,
         lastChangedBy: record.actor,
@@ -181,6 +196,11 @@ export function replay(
     }
     switch (record.type) {
       case "move": {
+        // Out to another list: the node is in no view of this one, and its Trash entries go.
+        if (isListRoot(record.parent)) {
+          nodes.delete(record.node);
+          break;
+        }
         if (!isSourceRoot(record.parent)) {
           const parent = nodes.get(record.parent);
           if (!parent) {
@@ -208,6 +228,9 @@ export function replay(
         pend(record);
         arrival(node, record, index, node.name !== record.name);
         node.name = record.name;
+        if (record.filetype) node.filetype = record.filetype;
+        // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
+        if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
         break;
       case "delete":
@@ -366,6 +389,10 @@ function derive(
       parent: node.parent,
       source: state.source,
       rank: node.rank,
+      ...(node.filetype ? { filetype: node.filetype } : {}),
+      provisional: node.provisional,
+      ...(node.aliases ? { aliases: node.aliases } : {}),
+      hasProperties: node.hasProperties,
       trashed: node.purged || (state.deleted && !state.keptByChild),
       keptByChild: state.keptByChild,
       keptByPending: state.keptByPending,
@@ -385,7 +412,7 @@ function derive(
     skipped,
     rescued,
     trash: deletes
-      .filter((entry) => !nodes.get(entry.node)?.purged)
+      .filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged)
       .map((entry) => ({
         id: entry.id,
         ...(entry.from ? { from: entry.from } : {}),

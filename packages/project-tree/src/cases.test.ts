@@ -387,4 +387,14 @@ describe("file tree log: cases found in review", () => {
     expect(replayView(a.doc, LIVE).skipped).toEqual([]);
     expect(names(a, ROOT)).toEqual(["Ch"]);
   });
+
+  it("two writers on one copy never make the same record id", () => {
+    const doc = new Y.Doc({ gc: false });
+    const first = new TreeWriter(doc);
+    const second = new TreeWriter(doc);
+    first.create(LIVE, W, { kind: "folder", name: "A", parent: ROOT });
+    second.create(LIVE, W, { kind: "folder", name: "B", parent: ROOT });
+    const ids = recordsOf(doc).map((record) => record.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });

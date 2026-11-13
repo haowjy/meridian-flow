@@ -13,9 +13,12 @@ export {
   type CreateRecord,
   type DeleteRecord,
   type DraftId,
+  isListRoot,
   isSourceRoot,
+  listRoot,
   type MoveRecord,
   type NodeKind,
+  newId,
   type PurgeRecord,
   type RenameRecord,
   type RestoreRecord,
@@ -53,4 +56,4 @@ export {
   type View,
   viewRecords,
 } from "./view.js";
-export { TreeWriter } from "./writer.js";
+export { type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";

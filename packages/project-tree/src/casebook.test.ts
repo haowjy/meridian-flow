@@ -10,6 +10,7 @@ import {
   childrenOf,
   fingerprint,
   LIVE,
+  moveBetweenLists,
   recordsOf,
   replayView,
   sourceRoot,
@@ -20,6 +21,7 @@ import {
   type View,
   viewRecords,
 } from "./index.js";
+import { projectedRows } from "./rows.js";
 
 const ROOT = sourceRoot("manuscript");
 
@@ -868,3 +870,82 @@ function reorganisedOnce() {
   t.w.move(D, CHAT, ch, arc);
   return t;
 }
+
+describe("part 5: what a document is, and a move between two lists", () => {
+  const MINE = sourceRoot("user-files");
+
+  it("29. a document's type is its create's until a rename changes it; a provisional name ends at the first rename by a person, even to the same name", () => {
+    const t = start();
+    const ch = t.w.create(LIVE, WRITER, {
+      kind: "document",
+      name: "Untitled",
+      parent: ROOT,
+      filetype: "markdown",
+      provisional: true,
+    }).node;
+    t.w.rename(LIVE, CHAT, ch, "Untitled.txt", "text");
+    expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: true });
+    expect(projectedRows(t.w.view(LIVE)).get(ch)).toMatchObject({
+      filetype: "text",
+      extension: "txt",
+    });
+    t.w.rename(LIVE, WRITER, ch, "Untitled.txt");
+    expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: false });
+  });
+
+  it("30. a document moved to another list is in no view and no Trash there, and a record arriving for it after is skipped", () => {
+    const here = start();
+    const there = start();
+    const ch = here.chapter("Chapter 1");
+    const folder = here.folder("Arc");
+    here.w.rename(LIVE, WRITER, ch, "Chapter One", "text");
+    const { left, entered } = moveBetweenLists(
+      { writer: here.w, list: "project" },
+      { writer: there.w, list: "account", parent: MINE },
+      WRITER,
+      ch,
+    );
+    expect(left).toMatchObject({ type: "move", parent: "list:account" });
+    expect(entered).toMatchObject({
+      type: "create",
+      node: ch,
+      name: "Chapter One",
+      filetype: "text",
+    });
+    expect(here.names(ROOT)).toEqual(["Arc"]);
+    expect(here.at(ch)).toBeUndefined();
+    expect(there.at(ch)).toMatchObject({ name: "Chapter One", source: "user-files", parent: MINE });
+    // A client that had not seen the move renames it in the list it left.
+    const late = here.w.rename(LIVE, WRITER, ch, "Late");
+    expect(here.w.view(LIVE).skipped).toContainEqual({ record: late.id, reason: "missing-node" });
+    expect(there.at(ch)?.name).toBe("Chapter One");
+    expect(() =>
+      moveBetweenLists(
+        { writer: here.w, list: "project" },
+        { writer: there.w, list: "account", parent: MINE },
+        WRITER,
+        folder,
+      ),
+    ).toThrow();
+  });
+
+  it("31. a document moved out and back stands in the list it returned to, with its type, and was never in Trash", () => {
+    const here = start();
+    const there = start();
+    const ch = here.w.create(LIVE, WRITER, {
+      kind: "document",
+      name: "Chapter 1",
+      parent: ROOT,
+      filetype: "markdown",
+    }).node;
+    const out = { writer: here.w, list: "project" };
+    const away = { writer: there.w, list: "account" };
+    moveBetweenLists(out, { ...away, parent: MINE }, WRITER, ch);
+    moveBetweenLists(away, { ...out, parent: ROOT }, WRITER, ch);
+    expect(here.at(ch)).toMatchObject({ name: "Chapter 1", filetype: "markdown", trashed: false });
+    expect(there.at(ch)).toBeUndefined();
+    expect(here.w.view(LIVE).trash).toEqual([]);
+    expect(there.w.view(LIVE).trash).toEqual([]);
+    here.valid();
+  });
+});

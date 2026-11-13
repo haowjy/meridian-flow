@@ -2,6 +2,7 @@ import * as Y from "yjs";
 import {
   type CreateRecord,
   isSourceRoot,
+  newId,
   recordsOf,
   sourceIdOf,
   sourceRoot,
@@ -22,6 +23,10 @@ export type Connection = {
   writableSources: ReadonlySet<string>;
   /** The project's Unfiled source id: where a create the server will not allow is kept. */
   unfiledSource: string;
+  /** The types a client may give a document: an editable one. A file's type is the server's. */
+  editableTypes: ReadonlySet<string>;
+  /** Whether a type change stays within one Yjs schema (markdown to text does; to a canvas does not). */
+  sameSchema: (from: string, to: string) => boolean;
   /** Whether a row anywhere in the database already uses this node id. */
   takenElsewhere?: (id: string) => boolean;
 };
@@ -34,6 +39,9 @@ export type KeptCreate = {
   source: string;
   /** The name the node last had in the update. */
   name: string;
+  /** The type and provisional mark the node ended the update with. */
+  filetype?: string;
+  provisional?: true;
 };
 
 export type Admission =
@@ -114,7 +122,14 @@ export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connecti
     for (const value of struct.content.getContent()) {
       const why = malformedRecord(value, connection.user);
       if (why) return { ok: false, reason: `a record that is ${why}` };
-      records.push(value as TreeRecord);
+      const record = value as TreeRecord;
+      if (
+        (record.type === "create" || record.type === "rename") &&
+        record.filetype !== undefined &&
+        !connection.editableTypes.has(record.filetype)
+      )
+        return { ok: false, reason: "a type that is not editable" };
+      records.push(record);
     }
     if (records.length > MAX_RECORDS) return { ok: false, reason: "too many records" };
   }
@@ -153,7 +168,11 @@ function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connectio
     return view;
   };
   // Nodes this update creates, as they will stand: where, and what.
-  const created = new Map<string, { source: string; kind: string }>();
+  const created = new Map<string, { source: string; kind: string; filetype?: string }>();
+  // The type each node has as the update goes: its view's, a create's, an admitted rename's.
+  const types = new Map<string, string | undefined>();
+  const typeOf = (id: string, draft: string | null) =>
+    types.has(id) ? types.get(id) : viewOf(draft).nodes.get(id)?.filetype;
   const kindOf = (id: string, draft: string | null) =>
     viewOf(draft).nodes.get(id)?.kind ?? created.get(id)?.kind;
   const sourceOf = (id: string, draft: string | null): string | undefined =>
@@ -188,12 +207,20 @@ function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connectio
       record.cascade.some((member) => known(member, draft) && !writable(member, draft))
     )
       reason = "a source you cannot change";
+    else if (record.type === "rename" && record.filetype !== undefined) {
+      const was = typeOf(record.node, draft);
+      if (was === undefined || !connection.sameSchema(was, record.filetype))
+        reason = "a type across schemas";
+    }
     if (reason === null) {
-      if (record.type === "create")
+      if (record.type === "create") {
         created.set(record.node, {
           source: sourceOf(record.parent, draft) ?? record.source,
           kind: record.kind,
         });
+        types.set(record.node, record.filetype);
+      } else if (record.type === "rename" && record.filetype !== undefined)
+        types.set(record.node, record.filetype);
       continue;
     }
     refused.push({ id: record.id, reason });
@@ -213,13 +240,28 @@ function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connectio
       keptNodes.get(place)?.source ?? sourceOf(place, null) ?? connection.unfiledSource;
     keptNodes.set(record.node, { source, kind: record.kind });
     created.set(record.node, { source, kind: record.kind });
-    kept.set(record.node, { create: record.id, parent: place, source, name: record.name });
+    types.set(record.node, record.filetype);
+    kept.set(record.node, {
+      create: record.id,
+      parent: place,
+      source,
+      name: record.name,
+      ...(record.filetype ? { filetype: record.filetype } : {}),
+      ...(record.provisional ? { provisional: true as const } : {}),
+    });
   }
-  // The name the node last had in the update, so a chapter made as "Untitled" and named a
-  // moment later, offline, keeps its name.
-  for (const record of records)
-    if (record.type === "rename" && kept.has(record.node))
-      (kept.get(record.node) as KeptCreate).name = record.name;
+  // What the node last was in the update, so a chapter made as "Untitled" and named a moment
+  // later, offline, keeps its name, its type and its end of "Untitled". A rename the account
+  // may not make keeps its name only, as its type change is the one refused.
+  const refusedIds = new Set(refused.map((entry) => entry.id));
+  for (const record of records) {
+    const entry = record.type === "rename" ? kept.get(record.node) : undefined;
+    if (record.type !== "rename" || !entry) continue;
+    entry.name = record.name;
+    if (record.filetype !== undefined && !refusedIds.has(record.id))
+      entry.filetype = record.filetype;
+    if (record.actor.startsWith("user:")) delete entry.provisional;
+  }
   return { refused, kept: [...kept.values()] };
 }
 
@@ -228,7 +270,6 @@ export function keptCreateRecords(
   records: readonly TreeRecord[],
   kept: readonly KeptCreate[],
   account: string,
-  newId: () => string,
 ): CreateRecord[] {
   const byId = new Map(records.map((record) => [record.id, record]));
   return kept.map((entry) => {
@@ -244,6 +285,8 @@ export function keptCreateRecords(
       parent: entry.parent,
       source: entry.source,
       rank: refused.rank,
+      ...(entry.filetype ? { filetype: entry.filetype } : {}),
+      ...(entry.provisional ? { provisional: true as const } : {}),
       replaces: refused.id,
     };
   });
@@ -252,8 +295,7 @@ export function keptCreateRecords(
 /**
  * Admits a checked update to the server's copy: applies it, then appends the server's verdicts
  * (`refused` settlements, and the creates it keeps) in the same transaction. The caller holds
- * the list's lock and has journaled the update. `server` is the writer the server keeps on its
- * copy, so the ids it makes never repeat.
+ * the list's lock and has journaled the update.
  */
 export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
   const verdict = checkUpdate(server.doc, update, connection);
@@ -265,9 +307,7 @@ export function admit(server: TreeWriter, update: Uint8Array, connection: Connec
       byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
     for (const [reason, targets] of byReason)
       server.settle("system", targets, "refused", { reason });
-    recordsOf(server.doc).push(
-      keptCreateRecords(verdict.records, verdict.kept, connection.user, () => server.nextId("op")),
-    );
+    recordsOf(server.doc).push(keptCreateRecords(verdict.records, verdict.kept, connection.user));
   });
   return verdict;
 }

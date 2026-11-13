@@ -13,12 +13,22 @@ export type ProjectedRow = {
   sourceId: string;
   /** The name shown, numbered where a sibling shows the same. */
   name: string;
+  /** What follows the last dot of the name, lowercased; empty for a folder or a bare name. */
+  extension: string;
+  /** A document's type: the editor that opens it. Null for a folder. */
+  filetype: string | null;
   rank: string;
   deleted: boolean;
 };
 
 /** A row of a Work's view: it differs from live, or exists only in the Work. */
 export type BranchRow = ProjectedRow & { existsOnlyInDraft: boolean };
+
+function extensionOf(node: TreeNode): string {
+  if (node.kind === "folder") return "";
+  const dot = node.name.lastIndexOf(".");
+  return dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "";
+}
 
 function toRow(node: TreeNode): ProjectedRow {
   return {
@@ -28,6 +38,8 @@ function toRow(node: TreeNode): ProjectedRow {
     parentId: isSourceRoot(node.parent) ? null : node.parent,
     sourceId: node.source,
     name: node.displayName,
+    extension: extensionOf(node),
+    filetype: node.filetype ?? null,
     rank: node.rank,
     deleted: node.trashed,
   };
@@ -43,6 +55,8 @@ function same(a: ProjectedRow, b: ProjectedRow): boolean {
     a.parentId === b.parentId &&
     a.sourceId === b.sourceId &&
     a.name === b.name &&
+    a.extension === b.extension &&
+    a.filetype === b.filetype &&
     a.rank === b.rank &&
     a.deleted === b.deleted &&
     (a as Partial<BranchRow>).existsOnlyInDraft === (b as Partial<BranchRow>).existsOnlyInDraft

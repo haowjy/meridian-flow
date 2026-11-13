@@ -21,17 +21,15 @@ const connection: Connection = {
   drafts: new Set(["my-work"]),
   writableSources: new Set(["manuscript", "kb", "unfiled"]),
   unfiledSource: "unfiled",
+  editableTypes: new Set(["markdown", "text", "canvas"]),
+  sameSchema: (from, to) => from === to || (from !== "canvas" && to !== "canvas"),
 };
-
-/** The server keeps one writer per copy, so the ids it makes never repeat. */
-const writers = new WeakMap<Y.Doc, TreeWriter>();
 
 /** The server's list: two sources the account may write, one it may not, some nodes. */
 function server() {
   const doc = new Y.Doc({ gc: false });
   doc.clientID = 7;
   const w = new TreeWriter(doc);
-  writers.set(doc, w);
   const arc = w.create(LIVE, "system", {
     kind: "folder",
     name: "Arc",
@@ -49,9 +47,7 @@ function server() {
 }
 
 function admit(doc: Y.Doc, update: Uint8Array, conn: Connection) {
-  const writer = writers.get(doc) ?? new TreeWriter(doc);
-  writers.set(doc, writer);
-  return admitTo(writer, update, conn);
+  return admitTo(new TreeWriter(doc), update, conn);
 }
 
 /** A client's copy, and the update it would send after `change`. */
@@ -540,5 +536,57 @@ describe("a record is judged against the list it joins", () => {
     expect(live.nodes.get("odd")?.parent).toBe(source("unfiled"));
     expect(state(doc).replace(/\nsource:unfiled\n[^\n]*#odd@[^\n]*/, "")).toBe(before);
     expect(live.rescued).toEqual([]);
+  });
+
+  it("a client's create or rename may state only an editable type, and a rename may not cross schemas", () => {
+    const doc = server();
+    refusedWhole(push(record({ type: "create", filetype: "pdf" })));
+    refusedWhole(push(record({ filetype: "pdf" })));
+    refusedWhole(push(record({ type: "create", aliases: ["x"] })));
+    refusedWhole(push(record({ type: "create", kind: "folder", filetype: "markdown" })));
+    // Ch1 has no type in this list; a type change on it, or one from a canvas, is marked.
+    const bad = record({ id: "to-text", filetype: "text" });
+    const ok = record({
+      type: "create",
+      node: "typed",
+      filetype: "markdown",
+      provisional: true,
+    });
+    const drawn = record({ type: "create", node: "drawn", filetype: "canvas" });
+    const toText = record({ id: "drawn-to-text", node: "drawn", filetype: "text" });
+    const retyped = record({ id: "typed-to-text", node: "typed", filetype: "text" });
+    const { update } = client(doc, push(ok, bad, drawn, toText, retyped));
+    const verdict = admit(doc, update, connection);
+    expect(verdict.ok && verdict.refused).toEqual([
+      { id: "to-text", reason: "a type across schemas" },
+      { id: "drawn-to-text", reason: "a type across schemas" },
+    ]);
+    expect(replayView(doc, LIVE).nodes.get("typed")).toMatchObject({
+      filetype: "text",
+      provisional: false,
+    });
+  });
+
+  it("a create kept in Unfiled keeps its type, and a later rename by the person ends its provisional name", () => {
+    const doc = server();
+    const make = record({
+      id: "made",
+      type: "create",
+      node: "late",
+      parent: source("skills"),
+      source: "skills",
+      filetype: "markdown",
+      provisional: true,
+    });
+    const named = record({ id: "named", node: "late", name: "Chapter 9", filetype: "text" });
+    const { update } = client(doc, push(make, named));
+    const verdict = admit(doc, update, connection);
+    expect(verdict.ok && verdict.kept.map((k) => k.create)).toEqual(["made"]);
+    expect(replayView(doc, LIVE).nodes.get("late")).toMatchObject({
+      name: "Chapter 9",
+      filetype: "text",
+      provisional: false,
+      parent: source("unfiled"),
+    });
   });
 });

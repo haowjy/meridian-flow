@@ -13,10 +13,10 @@ page says where each part lives and what the code decided where the design left 
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 8, then one pass over the nodes for Trash, kept folders and names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
-| `writer.ts` | `TreeWriter`: makes records in one copy of the list |
+| `writer.ts` | `TreeWriter`: makes records in one copy of the list; `moveBetweenLists` |
 | `apply.ts`, `undo.ts` | Apply, Discard, Undo of a Discard and of an Apply; Undo of one change |
 | `admission.ts` | `checkUpdate`, `admit`, `keptCreateRecords` |
-| `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay |
+| `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
 
 ## The rules
 
@@ -55,7 +55,11 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 
 ## What the server must do
 
-- Keep one `TreeWriter` per copy of the list, under one client id below 1,000, and call
+- Put the server's Yjs copy under one client id below 1,000, and call
   `admit` under the list's lock after journaling the update.
+- Fill `Connection` with `editableTypes` and `sameSchema`: the package knows no file types.
+  A rename that fails `sameSchema` is admitted and settled `refused`.
+- Move a document between two lists with `moveBetweenLists`, writing both updates in one
+  transaction. In the list it left the node is in no view and in no Trash entry.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.
