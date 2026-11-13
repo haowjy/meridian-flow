@@ -190,10 +190,20 @@ for (const page of written) {
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
 
 // Coverage: every app, package, domain and feature has a box with a path inside it.
-const subdirectories = (path, wanted = () => true) =>
-  readdirSync(join(repo, path), { withFileTypes: true })
-    .filter((e) => e.isDirectory() && wanted(e.name))
-    .map((e) => `${path}/${e.name}`);
+// From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
+const gitFiles = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+  cwd: repo,
+  encoding: "utf8",
+})
+  .split("\n")
+  .filter(Boolean);
+const subdirectories = (path) => [
+  ...new Set(
+    gitFiles
+      .filter((f) => f.startsWith(`${path}/`) && f.slice(path.length + 1).includes("/"))
+      .map((f) => `${path}/${f.slice(path.length + 1).split("/")[0]}`),
+  ),
+];
 const hasManifest = (path) => existsSync(join(repo, path, "package.json"));
 for (const directory of [
   ...subdirectories("apps"),

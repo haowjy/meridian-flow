@@ -18,7 +18,17 @@ export function el(tag, attrs, ...children) {
 
 /** A repo file's text, served by `pnpm dev` at its repo path. */
 export async function fetchRepoFile(path) {
-  const response = await fetch(new URL(REPO_ROOT + path, location.href));
+  const root = new URL(REPO_ROOT, location.href);
+  const url = new URL(REPO_ROOT + path, location.href);
+  // `path` can come from the address bar (?doc=). Check the URL the browser will request, not
+  // the string: URL parsing turns %2e%2e into .. and moves a ? tail into the query.
+  const requested = url.pathname.startsWith(root.pathname)
+    ? decodeURIComponent(url.pathname.slice(root.pathname.length))
+    : null;
+  if (url.origin !== root.origin || url.search || url.hash || requested !== path) {
+    throw new Error(`${path}: not a file in this repository`);
+  }
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`.trim());
   return response.text();
 }
