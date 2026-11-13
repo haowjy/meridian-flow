@@ -4,34 +4,29 @@ How Meridian Flow is built. It is a writing app for long fiction: a writer edits
 the browser and works on it with a model in chat, and both edit the same documents at once.
 Product words are in the [glossary](../glossary.md).
 
-Every page is Markdown with a Mermaid diagram, so it reads on GitHub and in an editor as it
-does in the viewer. `pnpm dev` prints a `map` URL that opens the same pages in a viewer; the HTML
-holds no content. The viewer and the check are an engine, [tools/architecture-map](../../tools/architecture-map/README.md);
-everything about Meridian that they use is in [map.config.mjs](map.config.mjs) (the repo, the globs that say
-what must be covered, the dependency rules, the nav labels) and in the pages here.
+Every page is Markdown with a Mermaid diagram, so it reads on GitHub as it does in the viewer.
+`pnpm dev` prints a `map` URL that opens the pages in the viewer. The viewer and the check are a
+reusable engine in [tools/architecture-map](../../tools/architecture-map/README.md); what is
+specific to Meridian is in the pages here and in [map.config.mjs](map.config.mjs).
 
 ## The pages
 
-Each level is a picture of **parts and the flow between them**, not of imports: at most about 12
-boxes, arrows that say what moves. Where there is one main path it is numbered (System, Server, App, www); on Code an arrow means "uses", so nothing is. A box that stands for several parts is a
-group and opens a page of its own.
+A level page is a picture of parts and what moves between them, not of imports, with about 12
+boxes at most. Where a page has one main path, its arrows are numbered.
 
-- [System](system.md): what runs when a writer uses it, and what happens when they send a message.
-- [Code](code.md): the apps and packages as layers.
+- [System](system.md): what runs, and what happens when a writer sends a message.
+- [Code](code.md): the apps and packages as layers. Its arrows mean "uses" and carry no numbers.
+- [Server](server.md), [App](app.md) and [www](www.md): opened from their boxes on System and Code.
+  Their groups open child pages, `server-<group>.md` and `app-<group>.md`.
+- [Journeys](journeys/index.md): what a writer does and sees, step by step, linked to the boxes and
+  state machines behind each step.
+- [Flows](flows/index.md): the calls underneath a journey step, as sequence diagrams.
+- [Dependencies](dependencies.md): the import rules, and where the code breaks them.
+- [State machines](../state-machines/index.md): pages that sit beside the code they describe. A box
+  links each one.
 
-Everything below those two is reached by drilling in. The `server` and `app` boxes on System and on
-Code open [Server](server.md) (`apps/server/server`, in groups of domains by the writer work they
-serve) and [App](app.md) (`apps/app/src`: routes, `core`, `client`, `components` and the features);
-their groups open the child pages `server-<group>.md` and `app-<group>.md`. Any box with an `Opens`
-line opens a level page. A page's parent is the page whose box opens it, System before Code, and the
-viewer shows the trail (`System › Server › conversation`) under the nav.
-
-[Flows](flows/index.md): end-to-end sequences, one page each, linked from the journey step each one
-traces and listed under the journeys as "What happens underneath". [Dependencies](dependencies.md): the
-rules the code is meant to keep and the places it breaks them. [Journeys](journeys/index.md): what a
-writer does and sees, one step per card, linked to the boxes and state machines behind it. State
-machine pages sit in `.context/` beside the code they describe and are listed in the
-[state machines index](../state-machines/index.md); a box attaches each one.
+A box with an `Opens` line opens another level page. A page's parent is the page whose box opens
+it (System before Code), and the viewer shows the trail, such as `System › Server › conversation`.
 
 ## Editing
 
@@ -123,16 +118,18 @@ sequenceDiagram
 2. [runtime](../server.md#runtime) asks [file-policy](../server.md#file-policy).
 ````
 
-A participant is a box id that is unique among the non-context boxes of all level pages. When two pages use one id (`routes` is on both `server` and `app`), write `<page>-<id>`: `server-routes`, `server-files-import`. The numbered steps under the diagram link to
-boxes and state machines. [flows/index.md](flows/index.md) lists every flow.
+A participant is a box id. When the same id is on two level pages (`routes` is on both `server`
+and `app`), write `<page>-<id>` and give it a display name: `participant server-routes as routes`.
+The numbered steps under the diagram link to boxes and state machines, and
+[flows/index.md](flows/index.md) lists every flow.
 
 ### dependencies.md
 
-The rules in prose, then one table of the places the code breaks them today, one row per
-break: `| from | to | rule | example file |`. `from` and `to` are single domains, a domain and `lib`, or a
-package and an app, each named by its last path segment (`runtime`, `lib`, `contracts`, `server`). `rule` is one of the rules in `map.config.mjs` (`domains are acyclic`, `domains do not import lib/`, `packages do
-not import apps`; [CONTEXT.md](../CONTEXT.md) writes them). A new rule is a new entry there. The example file is an importing file.
-Only value imports count; a type-only import is not run-time coupling.
+The rules in prose, then a table with one row per break: `| from | to | rule | example file |`.
+`from` and `to` are named by their last path segment (`runtime`, `lib`, `contracts`, `server`).
+`rule` is one of the rules in `map.config.mjs`, which [CONTEXT.md](../CONTEXT.md) writes down; a
+new rule is a new entry there. Only value imports count: a type-only import is not run-time
+coupling.
 
 ### A journey page
 
@@ -142,25 +139,24 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 
 ## What `pnpm check:architecture` catches
 
-- A Mermaid line the format doesn't allow; a box without a section or a section without a box; a
-  `Kind` that isn't the box's class; an unknown node kind; an arrow with a kind prefix or an import
-  arrow; numbered arrows out of order (a page may have none); a group with no `Opens`; a level page nothing lists or opens; an `apps/*` directory with no System box that covers it and opens its page;
-  a note that links to nothing, joins two notes or two boxes, or has a section.
-- A path that doesn't exist; a `Paths` line on a group; a link whose file or `#id` doesn't resolve, in every page here and in
-  the journeys and flows; a journey `Map` link that isn't a box or a flow; a flow no journey step links.
-- A flow participant that isn't one box (an id on two pages needs `<page>-<id>`); a flow that isn't in `flows/index.md` or has no numbered
-  steps.
-- An app, package (with a `package.json`), server domain or app feature directory that no box's
-  `Paths` reaches: a new one needs a box, or a path on the box that holds it.
-- A `*state-machine*.md` page the index links that is on no box (the index's other links, such as the pattern pages and the glossary, are exempt); a `*state-machine*.md` the index doesn't link.
-- A break with no row ("a regression: remove the import first"), a row that matches no break (stale
-  or too broad), or an example file that doesn't make the break, computed from value imports. The check reads source (relative imports, `@/` in `apps/app`,
-  `~/` in `apps/www`, `@meridian/*` package names, stylesheet `@import`), leaves out tests and
-  `test-support` files, and ignores imports in comments.
-- A break of a written rule with no row: a domain's value import of another domain inside an import
-  cycle (one row per direction), a domain's value import of `apps/server/server/lib/`, a package's
-  import of an app. The failure names the importing and imported files.
-- The viewer's colours: `styles/tokens.css` must match `packages/design-tokens`, and the engine's `page.css`
+- **Format:** a Mermaid line the format doesn't allow; a box without a section, or a section
+  without a box; a `Kind` that isn't the box's class; numbered arrows out of order; an import arrow;
+  a group with no `Opens` or with `Paths`; a note that links to nothing, joins two notes or two
+  boxes, or has a section.
+- **Links and paths:** a path that doesn't exist; a link whose file or `#id` doesn't resolve; a
+  journey `Map` link that isn't a box or a flow.
+- **Coverage:** an app, package, server domain or app feature directory that no box's `Paths`
+  reaches; an `apps/*` directory with no System box that opens its page; a level page nothing lists
+  or opens.
+- **Flows:** a participant that isn't exactly one box; a flow missing from `flows/index.md`, without
+  numbered steps, or linked from no journey step.
+- **State machines:** a `*state-machine*.md` page the index links that is on no box, or one the
+  index doesn't link.
+- **Dependencies:** a break of a written rule with no row, a row that matches no break, or an
+  example file that doesn't make the break. The check reads value imports from source (relative
+  imports, `@/` in `apps/app`, `~/` in `apps/www`, `@meridian/*` names, stylesheet `@import`) and
+  leaves out tests, `test-support` files and comments.
+- **Colours:** `styles/tokens.css` must match `packages/design-tokens`, and the engine's `page.css`
   holds no raw colour.
 
 It doesn't catch: whether a box's words or an arrow are still true; an ordinary import (none is
@@ -170,12 +166,16 @@ the checker can't see in source text, such as a path built at run time.
 
 ## The viewer
 
-`pnpm dev` serves it at `/architecture/` (the `map` URL it prints; `apps/app/vite.config.ts` registers the engine's
-plugin with this directory's config). Opened from disk it says so. A level page opens as Map (boxes you can drag;
-where you put them is remembered for that page on this computer, and "Reset layout" undoes it) or Read (the
-Markdown with its diagram); the header toggles. Every repo path in it, a box's `Paths` (files and directories),
-its `Docs`, `AGENTS.md`, a link inside Markdown, opens in the viewer: Markdown rendered, source with line
-numbers, a directory as its tracked entries; each view links "on GitHub". The dev server serves only files git
-tracks (and new unignored files in this directory), so `.env` and `node_modules` are never shown; `pnpm dev:funnel`
-publishes the dev server, and with it the tracked source, which is public here. Scripts come from a CDN with pinned
-versions and integrity hashes. See [AGENTS.md](AGENTS.md).
+`pnpm dev` serves it at `/architecture/`, the `map` URL it prints. Opened from disk, it says to
+run `pnpm dev`.
+
+- **Map and Read.** A level page opens as Map (boxes you can drag; positions are remembered per
+  page on this computer, and "Reset layout" clears them) or Read (the Markdown with its diagram).
+  The header switches between them.
+- **Repo files open in the viewer:** a box's `Paths` and `Docs`, and any link in a page. Markdown
+  is rendered, source shows line numbers, a directory lists its tracked entries, and each view
+  links to GitHub.
+- **Only tracked files are served**, plus new unignored files in this directory, so `.env` and
+  `node_modules` are never shown. `pnpm dev:funnel` publishes the dev server and with it the
+  tracked source, which is already public.
+- Scripts come from a CDN with pinned versions and integrity hashes. More in [AGENTS.md](AGENTS.md).
