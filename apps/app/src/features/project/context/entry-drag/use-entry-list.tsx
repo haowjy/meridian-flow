@@ -1,8 +1,8 @@
 /**
  * One list of rows is one selection, one route for rows dropped on it and one
- * drop scope. The Files tree is one list over the project's areas, User is
- * one, a chat's Scratch one over the current and Earlier notes, and a Work's
- * Files one over its Scratch.
+ * drop scope. The sidebar is one list over the project's areas, User and the
+ * picked Work's Scratch, a chat's Scratch one over the current and Earlier
+ * notes, and a Work's Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
  * target would do and what a drop does. A list row dropped within one system
  * moves at once; a drop across systems, and any other source (a chip, tab,

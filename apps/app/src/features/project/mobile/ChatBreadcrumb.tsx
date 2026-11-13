@@ -17,7 +17,7 @@ export function ChatBreadcrumb({
   /** Main's chat, a new chat, or Recent chats. */
   display: ChatDisplay;
 }) {
-  if (display.kind === "recents")
+  if (display.kind === "chat-recents")
     return <MobileBreadcrumb segments={[{ label: t`Chat` }, { label: t`Recent chats` }]} />;
   const current = (
     <ChatThreadTitle

@@ -1,4 +1,4 @@
-/** One area's document tree in a sidebar list: Manuscript, Knowledge, Your files, Unfiled. */
+/** One area's document tree in a sidebar list: Manuscript, Knowledge, Your files, Unfiled, a Work's Scratch. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -26,7 +26,7 @@ import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
-import { matchFileSuggestions } from "./file-suggestions/file-suggestions";
+import { fileSuggestion, matchFileSuggestions } from "./file-suggestions/file-suggestions";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
@@ -261,6 +261,10 @@ export function ContextTreePanel({
   ) : undefined;
 
   const [search, setSearch] = useState<string | null>(null);
+  // The inline row lives in the tree, which a search hides: asking to create shows the tree.
+  useEffect(() => {
+    if (creating) setSearch(null);
+  }, [creating]);
   const empty = Boolean(
     env && isComplete && importedTree && importedTree.rows(importedTree.root.entryId).length === 0,
   );
@@ -314,7 +318,7 @@ export function ContextTreePanel({
 }
 
 /** A search's matches as one flat list, best first; the folder tells two of one name apart. */
-export function FoundFiles({
+function FoundFiles({
   files,
   scheme,
   search,
@@ -327,16 +331,9 @@ export function FoundFiles({
   activePath: string | null;
   onOpen: (file: ContextFile) => void;
 }) {
-  const byPath = new Map(files.map((file) => [file.path, file]));
+  const byId = new Map(files.map((file) => [file.documentId, file]));
   const found = matchFileSuggestions(
-    files.map((file) => ({
-      entryId: file.path,
-      scheme,
-      path: file.path,
-      name: file.name,
-      kind: "file" as const,
-      parents: file.path.split("/").filter(Boolean).slice(0, -1),
-    })),
+    files.map((file) => fileSuggestion(scheme, file)),
     search,
   );
   if (found.length === 0)
@@ -350,11 +347,11 @@ export function FoundFiles({
   return (
     <div className="px-2">
       {found.map((match) => {
-        const file = byPath.get(match.path);
+        const file = byId.get(match.entryId);
         if (!file) return null;
         return (
           <ListRow
-            key={file.path}
+            key={file.documentId}
             icon={fileKindIcon(file)}
             title={file.name}
             meta={match.parents.at(-1)}

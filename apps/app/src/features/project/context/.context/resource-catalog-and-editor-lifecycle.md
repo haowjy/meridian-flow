@@ -175,10 +175,10 @@ opened as blank documents.
 
 ## Editor versus chat resources
 
-Editor trees list project document schemes only. Scratch documents open in
-main through links and the sidebar's Scratch section, owned by their
-Work or, for a No Work chat, by their lineage; nothing in the Editor browses
-Scratch, and a Scratch crumb links nowhere. Uploads remain storage and
+Editor trees list project document schemes, plus the picked named Work's
+Scratch as a sidebar source. Scratch documents open in main from there, from
+links and from a chat's Files menu, owned by their Work or, for a No Work chat,
+by their lineage; a Scratch crumb links nowhere. Uploads remain storage and
 reference/tool resources; their direct URLs show the viewing-not-available state.
 
 Eligibility is enforced at live transitions, including bootstrap,

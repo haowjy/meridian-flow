@@ -125,7 +125,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         : destination.kind === "new-chat"
           ? { kind: "new" }
           : destination.kind === "chat-recents"
-            ? { kind: "recents" }
+            ? { kind: "chat-recents" }
             : null,
     go: (next, options) => go(toDestination(next), options),
   });

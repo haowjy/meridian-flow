@@ -232,6 +232,7 @@ export function MobileProject(props: MobileProjectProps) {
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
+        activeContextWork={props.activeContextWork}
         chatThreadId={chatOnScreen}
       />
     </div>
@@ -249,7 +250,7 @@ function OpenInMainButton({ onOpen }: { onOpen: () => void }) {
 }
 
 function renderActiveView(props: MobileProjectProps) {
-  if (props.chatDisplay?.kind === "recents")
+  if (props.chatDisplay?.kind === "chat-recents")
     return <RecentChatsLanding projectId={props.projectId} />;
   if (props.chatDisplay) {
     return (

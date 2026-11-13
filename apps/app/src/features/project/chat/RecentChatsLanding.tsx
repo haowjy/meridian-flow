@@ -31,8 +31,15 @@ export function RecentChatsLanding({ projectId }: { projectId: string }) {
   const now = useMinuteClock();
   const startChat = () => void chat.openNewChat();
 
-  // No chats at all: the heading and search promise a list that does not exist.
-  if (!search && !feed.isPending && !feed.isError && feed.items.length === 0 && !feed.isFetching)
+  // No chats at all: the heading and search promise a list that does not exist. A cleared
+  // search's empty results, kept while the full list loads, don't say that.
+  if (
+    !search &&
+    !feed.isPending &&
+    !feed.isError &&
+    !feed.isPlaceholderData &&
+    feed.items.length === 0
+  )
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
         <p className="font-medium text-foreground">
@@ -104,7 +111,7 @@ function RecentChats({
         onRetry={() => void feed.refetch()}
       />
     );
-  if (feed.items.length === 0 && !feed.hasNextPage && !feed.isPlaceholderData)
+  if (search && feed.items.length === 0 && !feed.hasNextPage && !feed.isPlaceholderData)
     return (
       <ListLine>
         <Trans>No chats match “{search}”.</Trans>

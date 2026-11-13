@@ -34,7 +34,6 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { WorkScratchSource } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
@@ -51,7 +50,9 @@ import { TREE_TABS, type TreeTab, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { useTrashDrop } from "./trash-drop";
 
-type TreeKey = (typeof EDITOR_CONTEXT_SCHEMES)[number];
+/** The catalogs the sidebar lists: the project's areas, and the picked named Work's Scratch. */
+const TREE_SCHEMES = [...EDITOR_CONTEXT_SCHEMES, "scratch"] as const;
+type TreeKey = (typeof TREE_SCHEMES)[number];
 
 /**
  * Every pane the sidebar can show: the strip's Chat, tree tabs and Changes, and the quiet rows
@@ -66,10 +67,9 @@ type WriteSources = {
   scopeWorkId: string | null;
   /** The chat on screen: its row reads as current, Changes asks of it. */
   chatThreadId: string | null;
-  /** The picked Work when it is a named one: whose Scratch the foot offers. */
-  scratchWorkId: string | null;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
+  /** Main's document, as far as the sidebar lists it. */
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   onSelectFile: (
@@ -166,17 +166,7 @@ const SOURCES: Record<SourceKey, Source> = {
   manuscript: treeSource("manuscript"),
   kb: treeSource("kb"),
   user: treeSource("user"),
-  scratch: {
-    label: () => schemeLabel("scratch"),
-    icon: schemeIcon("scratch"),
-    useDrop: () => IDLE_DROP,
-    Body: () => {
-      const { projectId, scratchWorkId, onPicked } = useWriteSources();
-      return scratchWorkId ? (
-        <WorkScratchSource projectId={projectId} workId={scratchWorkId} onPicked={onPicked} />
-      ) : null;
-    },
-  },
+  scratch: treeSource("scratch"),
   unfiled: treeSource("unfiled"),
   trash: {
     label: () => t`Trash`,
@@ -222,21 +212,21 @@ function isTreeTab(key: string): key is TreeTab {
   return (TREE_TABS as readonly string[]).includes(key);
 }
 
-/** Where a document of this scheme is listed: its tree's tab, Unfiled, or Scratch under its chat. */
+/** The source that lists a document of this scheme. */
 function sourceOfScheme(scheme: ProjectContextTreeScheme): SourceKey | null {
-  if (isTreeTab(scheme) || scheme === "unfiled") return scheme;
-  return scheme === "scratch" ? "scratch" : null;
+  return (TREE_SCHEMES as readonly string[]).includes(scheme) ? (scheme as TreeKey) : null;
 }
 
 /**
  * The sidebar's sources, on the desktop sidebar and the phone drawer: one pane at a time behind
  * a strip of tabs, so each list gets the full height. The strip is Chat, then the tree sources
- * the writer chose (+ picks them), then Changes while it has something to offer. Unfiled and
- * Trash sit as quiet rows at the foot and show their pane the same way. Tabs are icons named on
- * hover; the pane names its source. Main's item's source becomes the shown one when it changes
- * (a document's tree, Trash for a deleted one, the Chat list for a chat), unless Changes is
- * shown. The strip, the foot and every pane are one list: one selection, and a row dragged
- * anywhere in the sidebar drops on any tab, row or pane.
+ * the writer chose (⋯ picks them), then Changes while it has something to offer. Scratch (under
+ * a named Work), Unfiled and Trash sit as quiet rows at the foot and show their pane the same
+ * way. Tabs are icons named on hover; the pane names its source. Main's item's source becomes
+ * the shown one when it changes (a document's tree, Trash for a deleted one, the Chat list for a
+ * chat), unless Changes is shown; a document the sidebar doesn't list leaves it where it is.
+ * The strip, the foot and every pane are one list: one selection, and a row dragged anywhere in
+ * the sidebar drops on any tab, row or pane.
  */
 export function SourcesBody({
   projectId,
@@ -244,13 +234,25 @@ export function SourcesBody({
   editorWorkId,
   chatThreadId,
   contextLive,
-  activeScheme,
-  activePath,
+  activeScheme: mainScheme,
+  activePath: mainPath,
+  activeWorkId,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands" | "scratchWorkId"> & {
+}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands"> & {
   contextLive: boolean;
+  /** Who owns main's document when it is a Work's Scratch note. */
+  activeWorkId: string | null;
 }) {
+  // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
+  // in its Files menu, and the foot has no Scratch.
+  const { noWork } = useWorks(projectId);
+  const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
+  // Another owner's note (another Work's, a chat's) is in no list here.
+  const listed =
+    mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
+  const activeScheme = listed ? mainScheme : null;
+  const activePath = listed ? mainPath : null;
   const chosen = useSidebarTabs((state) => state.shown);
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
@@ -307,10 +309,6 @@ export function SourcesBody({
     : (tabs.find((key) => activeScheme !== null && key === sourceOfScheme(activeScheme)) ??
       chosen[0] ??
       "chat");
-  // Scratch is the picked Work's: under No Work its row goes and its pane can't stay. A chat
-  // on No Work keeps its notes in its Files menu.
-  const { noWork } = useWorks(projectId);
-  const scratchWorkId = scopeWorkId && scopeWorkId !== noWork?.id ? scopeWorkId : null;
   const foot = FOOT_SOURCES.filter((key) => key !== "scratch" || scratchWorkId);
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
@@ -322,13 +320,14 @@ export function SourcesBody({
     surface: "changes",
   });
 
-  const catalogs = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
-    workId: editorWorkId,
+  // Only Scratch reads the Work; without a named one it has no catalog.
+  const catalogs = useContextCatalogViews(projectId, TREE_SCHEMES, {
+    workId: scratchWorkId,
     enabled: contextLive,
   });
   const areas = useMemo<MoveArea[]>(
     () =>
-      EDITOR_CONTEXT_SCHEMES.flatMap((scheme) => {
+      TREE_SCHEMES.flatMap((scheme) => {
         const catalog = catalogs[scheme].catalog;
         return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
       }),
@@ -354,7 +353,6 @@ export function SourcesBody({
       projectId,
       scopeWorkId,
       chatThreadId,
-      scratchWorkId,
       editorWorkId,
       activeScheme,
       activePath,
@@ -511,8 +509,8 @@ function FootSource({
 }
 
 /**
- * A tab, like the strip's + button: 28px, 44px under a finger. With a mouse every tab and +
- * fit a default-width sidebar; under a finger six tabs and + fill the 320px phone drawer only
+ * A tab, like the strip's ⋯ button: 28px, 44px under a finger. With a mouse every tab and ⋯
+ * fit a default-width sidebar; under a finger six tabs and ⋯ fill the 320px phone drawer only
  * because the row drops its gaps and half its inset. More tabs, or a narrower sidebar, scroll
  * the strip.
  */

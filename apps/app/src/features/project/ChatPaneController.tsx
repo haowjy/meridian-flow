@@ -10,7 +10,6 @@ import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { useChatNavigation } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import type { ProjectRouteCommands } from "./routing/project-route";
 import { MainHeader } from "./shell/MainHeader";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -18,7 +17,6 @@ export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
   open: OpenContextRoute;
-  onShowRecents: ProjectRouteCommands["showEditorRecents"];
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
 };
@@ -27,7 +25,6 @@ export function ChatPaneController({
   projectId,
   threadId,
   open,
-  onShowRecents,
   sidebarToggle,
   contextToggle,
 }: ChatPaneControllerProps) {
@@ -44,7 +41,7 @@ export function ChatPaneController({
       mainTab={threadId ? { kind: "chat", chatId: threadId } : undefined}
       keepMain={threadId === null}
       onNew={() => void chat.openNewChat()}
-      onShowRecents={onShowRecents}
+      onShowRecents={() => void chat.openChatRecents()}
       sidebarToggle={sidebarToggle}
       sideToggle={contextToggle}
       actions={

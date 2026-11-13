@@ -35,7 +35,7 @@ import type { NavigationOptions } from "./project-route";
  */
 export type ChatDisplay =
   | { kind: "new" }
-  | { kind: "recents" }
+  | { kind: "chat-recents" }
   | { kind: "thread"; threadId: string };
 
 export type ChatNavigation = {
@@ -48,7 +48,7 @@ export type ChatNavigation = {
   /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
   openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<NavigationSettlement>;
   /** Main goes to Recent chats; already there, nothing moves. */
-  openRecents: (options?: { replace?: boolean }) => Promise<NavigationSettlement>;
+  openChatRecents: (options?: { replace?: boolean }) => Promise<NavigationSettlement>;
   /**
    * A just-sent new chat. Sent from main's composer it becomes main's chat; sent from the side's
    * composer it fills the chat slot and stays there, beside main.
@@ -111,8 +111,8 @@ export function useProjectChatNavigation({
           ? ({ kind: "applied" } as const)
           : go({ kind: "new-chat" }, { replace: options?.replace ?? false });
       },
-      openRecents: async (options?: { replace?: boolean }) =>
-        latest.current.mainKind === "recents"
+      openChatRecents: async (options?: { replace?: boolean }) =>
+        latest.current.mainKind === "chat-recents"
           ? ({ kind: "applied" } as const)
           : go({ kind: "chat-recents" }, { replace: options?.replace ?? false }),
       acceptCreatedChat: (threadId: string) => {

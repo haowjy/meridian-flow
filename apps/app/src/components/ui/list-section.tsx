@@ -33,7 +33,7 @@ export function ListSectionHeader({
   const look = level === 2 ? role.groupLabel : role.subgroupLabel;
   const name = <span className="min-w-0 truncate">{label}</span>;
   return (
-    <div {...headerProps} data-rail-pane-header className="mx-2 flex min-h-7 shrink-0 items-center">
+    <div {...headerProps} className="mx-2 flex min-h-7 shrink-0 items-center">
       <Heading
         title={title}
         aria-label={fold ? undefined : title}

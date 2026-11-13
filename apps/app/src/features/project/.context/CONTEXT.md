@@ -160,11 +160,14 @@ the lane's empty page (Recently opened; a new chat); the side then shows what ma
 rule. The pressed side shows until main's item agrees.
 
 Under it, the sidebar's sources (`shell/sidebar/SourcesBody.tsx`, also the phone drawer's) are one
-strip, Chat, then the tree tabs the writer chose with + (`sidebar-tabs-store.ts`: Manuscript and
-Knowledge by default; + adds Your files), then Changes while it has something to offer; Unfiled (with its
-count) and Trash are quiet rows at the foot. The shown pane follows main's item: a document's tree,
-Unfiled, Trash for a deleted one, the Chat list for a chat or a Scratch note, unless Changes is on
-show. Scratch docks under the Chat list. Widths are per slot; the sidebar and the side panel each have one open/closed
+strip, Chat, then the tree tabs the writer chose with ⋯ (`sidebar-tabs-store.ts`: Manuscript and
+Knowledge by default; ⋯ adds Your files), then Changes while it has something to offer; Scratch,
+Unfiled (with its count) and Trash are quiet rows at the foot. Scratch is the picked named Work's
+notes, one more tree source over that Work's catalog; under No Work there is none, and a chat's
+notes stay in its Files menu. The shown pane follows main's item: a document's tree, Unfiled,
+Scratch for a note of the picked Work, Trash for a deleted one, the Chat list for a chat, unless
+Changes is on show. A document the sidebar doesn't list (another Work's note, a chat's) leaves the
+pane where it is. Widths are per slot; the sidebar and the side panel each have one open/closed
 preference for every kind of main. Preferences hydrate before the desktop component
 mounts, and `ProjectView` gates the mount rather than placing a conditional between hooks. One
 merged layout subscription is the only whole-preferences subscription.
@@ -234,10 +237,10 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 ## Navigation and chat
 
 `routing/chat-navigation.tsx` is the single command seam for main: `openChat` navigates main to the
-chat, `openNewChat` to `/chats`, main's new-chat composer, and `openRecents` to `/chats/recent`, Recent
+chat, `openNewChat` to `/chats`, main's new-chat composer, and `openChatRecents` to `/chats/recent`, Recent
 chats (the band's clock door in Chat; in Write it opens Recently opened). The side chooses its own chat only
 through the chat slot (the side's picker, or a chat created from the side's composer). `display` is
-the chat lane's page main shows (`new`, `recents` or one thread), null when main holds no chat; `lastShownChatId` is the
+the chat lane's page main shows (`new`, `chat-recents` or one thread), null when main holds no chat; `lastShownChatId` is the
 chat slot (`readLastShownChat` in `client/project-shell/store.ts`). A chat created from `/chats`
 takes main and its arrival fills the slot; one created from the side's composer fills the slot
 and stays beside. A link or door to a page that

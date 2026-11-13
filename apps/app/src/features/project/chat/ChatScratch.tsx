@@ -5,34 +5,29 @@
  * the Editor. Rows offer Rename, Move… and Delete like any list's while the
  * owner can still be edited; the AI makes the notes, so there is no New note.
  *
- * Two surfaces show it: the Chat list's docked section (`RailScratchSection`) and a
- * chat's Files menu (`MenuScratchSection`). The wording "Scratch for this chat" / "Scratch for
- * <Work>" is the heading's tooltip and accessible name, not a line of text.
+ * A chat's Files menu shows it (`MenuScratchSection`), headed "Scratch for this chat" /
+ * "Scratch for <Work>". The sidebar's Scratch is another thing: the picked Work's catalog as one
+ * of its tree sources (`SourcesBody`).
  */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { ListSectionHeader } from "@/components/ui/list-section";
-import { SettledSearchField } from "@/components/ui/search-field";
-import { FoundFiles } from "../context/ContextTreePanel";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeLabel } from "../context/context-schemes";
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { serverDocumentFromFile } from "../context/open-document-from-file";
-import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
-import { type ScratchSource, useScratchCatalogs } from "../context/use-scratch-catalogs";
+import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
@@ -45,7 +40,8 @@ function useOpenDocumentId(): string | undefined {
 }
 
 /** A chat's Scratch: its catalogs, the list areas they make, and the load state. */
-export function useScratch(projectId: string, source: ScratchSource | null) {
+function useChatScratch(projectId: string, threadId: string | null) {
+  const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchCatalogs(projectId, source);
   const { works, noWork } = useWorks(projectId);
   const work =
@@ -101,89 +97,7 @@ export function useScratch(projectId: string, source: ScratchSource | null) {
   };
 }
 
-type ChatScratch = ReturnType<typeof useScratch>;
-
-/**
- * Scratch as a sidebar source, at its foot with Unfiled and Trash: the notes of the Work the
- * picker shows. A chat on No Work keeps its notes in its own Files menu, not here.
- */
-export function WorkScratchSource({
-  projectId,
-  workId,
-  onPicked,
-}: {
-  projectId: string;
-  /** The picked Work, a named one. */
-  workId: string;
-  /** After a note opens elsewhere (the phone drawer closes). */
-  onPicked?: () => void;
-}) {
-  const workSource = useMemo<ScratchSource>(
-    () => ({ owner: { workId }, heading: schemeLabel("scratch") }),
-    [workId],
-  );
-  const scratch = useScratch(projectId, workSource);
-  const list = useEntryList({ projectId, areas: scratch.areas });
-  const openNote = useOpenDocumentInEditor();
-  const [search, setSearch] = useState<string | null>(null);
-  const { source } = scratch;
-  if (!source) return null;
-  const { catalog } = scratch.primary;
-  return (
-    <EntryList list={list}>
-      <AreaDropRegion
-        scheme="scratch"
-        catalogRootId={catalog?.root.entryId ?? null}
-        reveal={() => {}}
-        className="flex min-h-0 flex-1 flex-col"
-        header={(dropProps) => (
-          <div {...dropProps} className="shrink-0">
-            <div className="px-2 pb-1">
-              <SettledSearchField
-                quiet
-                label={t`Find in Scratch`}
-                value={search}
-                onSettle={setSearch}
-              />
-            </div>
-            <ListSectionHeader level={2} label={schemeLabel("scratch")} />
-          </div>
-        )}
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-2">
-          {search && catalog ? (
-            <FoundFiles
-              files={catalog.files()}
-              scheme="scratch"
-              search={search}
-              activePath={null}
-              onOpen={(file) => {
-                const tab = serverDocumentFromFile("scratch", file, source.owner);
-                if (!tab) return;
-                openNote(tab);
-                onPicked?.();
-              }}
-            />
-          ) : (
-            <>
-              <div className="px-2">
-                <ChatScratchTree
-                  projectId={projectId}
-                  scratch={scratch}
-                  depth={0}
-                  onPicked={onPicked}
-                />
-              </div>
-              <div className="px-2">
-                <ChatScratchStatus scratch={scratch} depth={0} />
-              </div>
-            </>
-          )}
-        </div>
-      </AreaDropRegion>
-    </EntryList>
-  );
-}
+type ChatScratch = ReturnType<typeof useChatScratch>;
 
 /**
  * A chat's Scratch in its Files menu: the same rows in their own list, so
@@ -198,7 +112,7 @@ export function MenuScratchSection({
   threadId: string | null;
   onPicked?: () => void;
 }) {
-  const scratch = useScratch(projectId, useChatScratchSource(projectId, threadId));
+  const scratch = useChatScratch(projectId, threadId);
   const list = useEntryList({ projectId, areas: scratch.areas });
   if (!scratch.source) return null;
   return (
@@ -221,13 +135,13 @@ export function MenuScratchSection({
   );
 }
 
-function ChatScratchStatus({ scratch, depth = 1 }: { scratch: ChatScratch; depth?: number }) {
+function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
   if (scratch.isError)
     return <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />;
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
   return (
-    <ListLine depth={depth} iconSlot>
+    <ListLine depth={1} iconSlot>
       {t`No scratch notes yet.`}
     </ListLine>
   );

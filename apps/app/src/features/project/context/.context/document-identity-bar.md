@@ -30,7 +30,7 @@ Discard's notice takes that line when the Discard ends the review, and shares it
 it does not; it never sits in the toolbar row, which a narrow pane can't widen. In the notice only
 the document's name shortens: the verb and Undo always show. The phone's review header gives the
 notice a row of its own under its first row. Coarse pointers give each control a 44px box. Renaming and
-moving a homed document belong to the lists (Files, Scratch section, phone
+moving a homed document belong to the lists (Files, the sidebar's sources, phone
 browser); see the KB's path-navigates-lists-edit page.
 
 Contracts:

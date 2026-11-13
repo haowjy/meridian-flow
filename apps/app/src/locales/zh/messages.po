@@ -2970,8 +2970,8 @@ msgid "Find in {0}"
 msgstr ""
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Find in Scratch"
-msgstr ""
+#~ msgid "Find in Scratch"
+#~ msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
 msgid "Finding a document…"
