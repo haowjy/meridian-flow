@@ -1,23 +1,62 @@
 /** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
-import { realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "./dev-db";
-import {
-  formatDatabaseHistoryRefusal,
-  planDatabaseMigrations,
-  readAppliedMigrations,
-  readMigrationHistory,
-} from "./migration-history";
 
-import {
-  CONCURRENT_INDEX_CREATE,
-  executableSql,
-  isNoTransactionMigration,
-  migrationCompanion,
-  normalizeMigrationSql,
-} from "./migration-sql";
+interface Baseline {
+  hash: string;
+  sql: string;
+}
+
+function readBaseline(directory: string): Baseline {
+  const files = readdirSync(directory).filter((name) => name.endsWith(".sql"));
+  if (files.length !== 1 || files[0] !== "0000_baseline.sql") {
+    throw new Error("Expected one 0000_baseline.sql; run pnpm db:generate");
+  }
+  const bytes = readFileSync(path.join(directory, "0000_baseline.sql"));
+  return {
+    hash: createHash("sha256").update(bytes).digest("hex"),
+    sql: bytes
+      .toString("utf8")
+      .replace(/^\uFEFF/, "")
+      .replace(/\r\n/g, "\n"),
+  };
+}
+
+async function baselineStatus(
+  session: postgres.Sql | postgres.ReservedSql,
+  baseline: Baseline,
+  databaseUrl: string,
+): Promise<"pending" | "current"> {
+  const [present] =
+    await session`SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists`;
+  if (!present.exists) return "pending";
+  const rows = await session<{ hash: string }[]>`SELECT hash FROM drizzle.__drizzle_migrations`;
+  if (rows.length === 0) return "pending";
+  if (rows.length === 1 && rows[0].hash === baseline.hash) return "current";
+  const databaseName = decodeURIComponent(new URL(databaseUrl).pathname.slice(1));
+  throw new MigrationHistoryError(
+    `db:migrate: database "${databaseName}" has a different baseline.\n` +
+      (isLocalDevPostgres(databaseUrl)
+        ? "Run `pnpm db:reset` from the checkout that owns this dev database."
+        : "This is a shared or deployed database and requires human repair. Do not reset it."),
+  );
+}
+
+export async function currentBaselineStatus(input: {
+  databaseUrl: string;
+  migrationsDirectory: string;
+}): Promise<"pending" | "current"> {
+  const baseline = readBaseline(input.migrationsDirectory);
+  const client = postgres(input.databaseUrl, { max: 1, connect_timeout: 5 });
+  try {
+    return await baselineStatus(client, baseline, input.databaseUrl);
+  } finally {
+    await client.end();
+  }
+}
 
 export const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 
@@ -107,77 +146,28 @@ export async function runMigrations(input: {
     }
   }
   try {
-    const history = readMigrationHistory(input.migrationsDirectory);
-    if (history.issues.length > 0) {
-      throw new MigrationHistoryError(
-        `db:migrate: refused inconsistent migration files\n${history.issues.map((issue) => `  - ${issue}`).join("\n")}`,
-      );
-    }
+    const baseline = readBaseline(input.migrationsDirectory);
     const session = await client.reserve();
     try {
       await session`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
-      const applied = (await readAppliedMigrations(session)) ?? [];
-      const plan = planDatabaseMigrations(history, applied);
-      if (plan.issues.length > 0) {
-        const databaseName = decodeURIComponent(
-          new URL(input.databaseUrl).pathname.replace(/^\//, ""),
-        );
-        throw new MigrationHistoryError(
-          formatDatabaseHistoryRefusal({
-            databaseName,
-            issues: plan.issues,
-            localDevDatabase: isLocalDevPostgres(input.databaseUrl),
-          }),
-        );
-      }
-      await session`CREATE SCHEMA IF NOT EXISTS drizzle`;
-      await session`
-        CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
-          id SERIAL PRIMARY KEY,
-          hash text NOT NULL,
-          created_at bigint
-        )
-      `;
-      for (const entry of plan.pending) {
-        const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
-        const content = normalizeMigrationSql(entry.sql.toString("utf8"));
-        const noTransaction = isNoTransactionMigration(content);
-        // Reserved postgres.js sessions do not expose begin(); keep transaction
-        // control on the same connection that owns the session advisory lock.
-        if (!noTransaction) await session`BEGIN`;
-        try {
-          if (noTransaction) {
-            for (const match of executableSql(content).matchAll(CONCURRENT_INDEX_CREATE)) {
-              const [index] = await session`SELECT i.indisvalid,
-                quote_ident(n.nspname) || '.' || quote_ident(c.relname) AS name
-                FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE c.oid = to_regclass(${match[1]})`;
-              if (index && !index.indisvalid) {
-                await session.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.name}`);
-              }
-            }
-          }
-          const companion = migrationCompanion(content);
-          if (companion) {
-            const code = await import(
-              pathToFileURL(realpathSync(path.join(input.migrationsDirectory, companion.file))).href
-            );
-            await code.migrate(session);
-          }
-          for (const statement of content.split("--> statement-breakpoint")) {
-            await session.unsafe(statement);
-          }
-          await session.unsafe(
-            `INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2)`,
-            [entry.hash, entry.when],
-          );
-          if (!noTransaction) await session`COMMIT`;
-        } catch (error) {
-          observeFailure(error);
-          if (!noTransaction && !disconnected) await cleanup(() => session`ROLLBACK`);
-          throw new MigrationStatementError(migrationPath, error);
+      if ((await baselineStatus(session, baseline, input.databaseUrl)) === "current") return;
+      const migrationPath = path.join(input.migrationsDirectory, "0000_baseline.sql");
+      // Reserved sessions need transaction control on the connection holding the lock.
+      await session`BEGIN`;
+      try {
+        await session`CREATE SCHEMA IF NOT EXISTS drizzle`;
+        await session`CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+          id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
+        )`;
+        for (const statement of baseline.sql.split("--> statement-breakpoint")) {
+          await session.unsafe(statement);
         }
+        await session`INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES (${baseline.hash}, 0)`;
+        await session`COMMIT`;
+      } catch (error) {
+        observeFailure(error);
+        if (!disconnected) await cleanup(() => session`ROLLBACK`);
+        throw new MigrationStatementError(migrationPath, error);
       }
     } catch (error) {
       observeFailure(error);

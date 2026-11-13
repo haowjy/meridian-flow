@@ -24,7 +24,6 @@ import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
 import { liveDuplicateFrame } from "./live-duplicate-frame.mts";
-import { migrationOnline } from "./migration-online.mts";
 import { coldLoadCommit, droppedDelivery, readOnlyHandshake } from "./room-enrollment.mts";
 import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-process-frames.mts";
 
@@ -48,7 +47,6 @@ const PROBES: readonly Probe[] = [
   archiveInFlightAppend,
   effectProjection,
   effectWatermarkSweep,
-  migrationOnline,
   clientResync,
   // A draft's review while live is ahead of its last pull (owner report, live-edit-review).
   // A live update relayed onto a second socket of its room is journaled once (#946).

@@ -1,12 +1,7 @@
 #!/usr/bin/env tsx
 /** Apply committed migrations and surface the exact file and PostgreSQL failure. */
-import { execFileSync } from "node:child_process";
 import path from "node:path";
-import {
-  ALLOW_MAIN_DATABASE,
-  MANAGED_TEST_DATABASE,
-  resolveDatabaseAdminTarget,
-} from "./lib/dev-db-target";
+import { resolveDatabaseAdminTarget } from "./lib/dev-db-target";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
 import { formatMigrationFailure, runMigrations } from "./lib/migration-runner";
 
@@ -24,16 +19,6 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-
-  console.log(`db:migrate: applying SQL functions to "${target.databaseName}"`);
-  const functionArgs = args.filter(
-    (arg) => arg === ALLOW_MAIN_DATABASE || arg === MANAGED_TEST_DATABASE,
-  );
-  execFileSync(
-    "pnpm",
-    ["exec", "tsx", "packages/database/scripts/apply-functions.ts", ...functionArgs],
-    { cwd: repoRoot, stdio: "inherit", env: process.env },
-  );
 }
 
 main().catch((error: unknown) => {

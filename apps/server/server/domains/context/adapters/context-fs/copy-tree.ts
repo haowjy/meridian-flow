@@ -189,10 +189,10 @@ function toNewTree(
     };
     const { source } = node;
     if (source.fileType !== null) {
-      if (!source.storageUrl) {
+      if (!source.storageUrl || !source.mimeType) {
         return Err({
           code: "io_error",
-          message: `Copied binary ${source.path} has no stored object`,
+          message: `Copied binary ${source.path} has no stored object or MIME type`,
         });
       }
       return Ok({
@@ -201,8 +201,7 @@ function toNewTree(
           kind: "binary",
           fileType: source.fileType,
           storageUrl: source.storageUrl,
-          // A binary row normally carries its type; an old row that lost it copies as opaque bytes.
-          mimeType: source.mimeType ?? "application/octet-stream",
+          mimeType: source.mimeType,
           sizeBytes: source.sizeBytes ?? 0,
           hasPreview: source.hasPreview,
           // A binary has no drafts or revisions, so its copy always records the live file.

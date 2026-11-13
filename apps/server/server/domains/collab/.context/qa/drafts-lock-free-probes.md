@@ -44,7 +44,6 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `archive-in-flight-append` | Only a key whose post-lock read preceded Archive can land. | Hold a frame while Archive runs, queue a second frame, then send a post-Archive frame. |
 | `effect-projection` | The pending badge follows appends through the projection job. | Type, delete all, stage Apply, type again, and type from two processes during one debounce. |
 | `effect-watermark-sweep` | The watermark repairs stale judgements in a finite sweep. | Sweep an unjobbed key, a compaction, and 51 stale drafts while one Work is held. |
-| `migration-online` | Migration 0064 gives up rather than queueing readers. | Migrate a seeded 0063 database behind a held reader, a looping reader, and the old creator. |
 | `client-resync` | A draft tab reconnects without terminal resync failure. | Drop sockets around a held append, partial acknowledgement, server restart, offline reload, and a raw dependent update. |
 
 The former Work-first pull and pull-recapture probes are retired: Work rebases

@@ -1,5 +1,4 @@
 import postgres from "postgres";
-import { readAppliedMigrations as readAppliedMigrationsWithSql } from "./migration-history";
 
 /** Host port mapped in tools/dev/docker-compose.yml (tools/postgres image → 54422). */
 export const LOCAL_DEV_POSTGRES_PORT = 54422;
@@ -91,22 +90,6 @@ export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
   try {
     await sql`SELECT 1`;
-  } finally {
-    await sql.end();
-  }
-}
-
-/**
- * Read applied drizzle migration identities (oldest first). Returns `null` when the
- * `drizzle.__drizzle_migrations` table does not exist, i.e. the database was
- * never migrated — callers distinguish that from an up-to-date empty result.
- */
-export async function readAppliedMigrations(
-  databaseUrl: string,
-): ReturnType<typeof readAppliedMigrationsWithSql> {
-  const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
-  try {
-    return await readAppliedMigrationsWithSql(sql);
   } finally {
     await sql.end();
   }

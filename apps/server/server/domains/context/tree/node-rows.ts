@@ -25,7 +25,6 @@ import {
   observationFrontiers,
   threadDocuments,
   threadShownLinks,
-  turnDocumentTouches,
   userRecentDocuments,
 } from "@meridian/database/schema";
 import { inArray, like, or } from "drizzle-orm";
@@ -216,7 +215,6 @@ export async function releaseDocumentStorage(
   await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
-  await tx.delete(turnDocumentTouches).where(inArray(turnDocumentTouches.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));
   await tx
     .delete(documentPreviousLocations)

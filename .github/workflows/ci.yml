@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # S7 reads the pre-history snapshot when bootstrapping its immutable
-          # append-only schema-version baseline.
+          # collaboration schema history.
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # S7 reads the pre-history snapshot when bootstrapping its immutable
-          # append-only schema-version baseline.
+          # collaboration schema history.
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -114,8 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so --changed can diff against the PR base branch.
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -123,44 +122,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meridian/database exec drizzle-kit check
-      - name: Guard frozen migration history (pull request)
-        if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'staging')
+      - name: Check generated baseline
         run: |
-          pnpm db:migration-history -- --base HEAD^1
-      - name: Guard frozen migration history (non-PR)
-        if: github.event_name != 'pull_request'
-        env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "Skipping migration history guard: this event has no prior revision to compare against; db:migrate's runtime guard still refuses divergent database history."
-          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "Skipping migration history guard: no prior revision is available."
-          else
-            git fetch origin "$BEFORE" || true
-            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-              echo "Migration history guard failed: prior tip $BEFORE is unavailable (force push?); main and staging history must not be rewritten." >&2
-              exit 1
-            fi
-            pnpm db:migration-history -- --base "$BEFORE"
-          fi
-      # PRs: lint only migrations this branch introduces. Warnings block merges
-      # to main/staging (production-bound); feature-branch PRs block errors only.
-      - name: Migration lint (pull request)
-        if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.base_ref }}
-        run: |
-          git fetch origin "$BASE"
-          STRICT_FLAG=""
-          if [ "$BASE" = "main" ] || [ "$BASE" = "staging" ]; then
-            STRICT_FLAG="--strict"
-          fi
-          pnpm exec tsx tools/dev/migration-lint.ts --changed "origin/$BASE" $STRICT_FLAG
-      # Post-merge push: informational lint of all migrations (errors only).
-      - name: Migration lint (push)
-        if: github.event_name == 'push'
-        run: pnpm exec tsx tools/dev/migration-lint.ts --all
+          pnpm db:generate
+          git diff --exit-code -- packages/database/src/migrations
 
   db-tests:
     name: db-tests
@@ -208,10 +173,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Create throwaway database
         run: createdb -h 127.0.0.1 -U postgres meridian_test_ci
-      - name: Prove migration chain from empty
+      - name: Prove baseline from empty
         run: pnpm db:migrate
-      - name: Install database functions
-        run: pnpm db:apply-functions
       - name: Prove search extensions install
         run: pnpm db:check-extensions
       - name: Run required DB suites

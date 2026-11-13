@@ -11,7 +11,6 @@ export * from "./content";
 export * from "./context-catalog";
 export * from "./context-operation-receipts";
 export * from "./imports";
-export * from "./provenance";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
@@ -31,7 +30,6 @@ import * as contextCatalog from "./context-catalog";
 import * as contextOperations from "./context-operation-receipts";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
-import * as provenance from "./provenance";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as threadAsks from "./thread-asks";
@@ -55,7 +53,6 @@ export const schema = {
   ...agentThreads,
   ...threadAsks,
   ...agentDefinitionRevisions,
-  ...provenance,
   ...recentDocuments,
   ...results,
   ...user,

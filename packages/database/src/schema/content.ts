@@ -308,6 +308,10 @@ export const documents = pgTable(
   },
   (table) => [
     check(
+      "documents_stored_mime_type",
+      sql`${table.storageUrl} IS NULL OR ${table.mimeType} IS NOT NULL`,
+    ),
+    check(
       "documents_removal_presence",
       sql`(${table.deletedAt} IS NOT NULL) = (${table.deletionReason} IS NOT NULL)`,
     ),

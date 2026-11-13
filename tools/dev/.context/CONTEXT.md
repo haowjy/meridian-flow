@@ -17,7 +17,7 @@ its connection as `PG*` variables, never argv. CI and deploy migrations reach th
 loader through `db:migrate` with no file defining the URL. Failure to derive a
 scoped database is loud, never a fallback.
 
-`db:migrate` and `db:apply-functions` resolve the checkout the same way and
+`db:migrate` resolves the checkout the same way and
 refuse a registered main database unless a human passes `--allow-main-database`;
 their managed-test bypass accepts only a local disposable database whose owner
 PID is a live, distinct ancestor of the command. Any other direct admin or test
@@ -251,22 +251,12 @@ never touches routes. No branch, worktree, database, or work-item state is delet
 
 ## Migration and observability helpers
 
-Migration identity is the journal entry plus SQL hash. History checks reject
-removed, edited, renumbered, retimestamped, non-contiguous, or out-of-order
-entries. Ordinary files commit each file with history; marked no-transaction
-files autocommit breakpoint chunks and record history last. Lint rules are
-centralized and a skip must be safe on populated tables.
-
-Gate policy: lint errors always block and warnings block only under `--strict`
-(CI PRs targeting `main` or `staging`); `--changed <ref>` scopes PR lint,
-`--staged` powers pre-commit (errors only), and the `0000_` baseline is
-warning-exempt except `DELETE_WITHOUT_WHERE`. CI always runs `drizzle-kit check`.
-`check-migration-history.ts` compares the head against the base ref's journal
-and SQL without a checkout; CI runs it on PRs into `main`/`staging` and on
-pushes to `main` and `staging`, and only a manual `workflow_dispatch` skips it.
-A column retirement needs a transactional `SET LOCAL lock_timeout` of 1 to 5
-seconds before the drop (it bounds lock acquisition, not hold time), with reads
-removed and data moved in the same change.
+The baseline runner holds a session advisory lock and commits its SQL with the
+ledger row in one transaction. An installed hash mismatch requires an explicit
+local reset; no deployed database is reset automatically. Dev preflight uses the
+same check. `generate-baseline.ts` rebuilds from schema, function and custom SQL
+inputs; CI checks regeneration produces no diff and applies it from empty.
+See [database rules](../../../packages/database/AGENTS.md).
 
 Plain HTTP requests to `/api/threads/ws` and `/ws/yjs` produce expected 426
 responses and are suppressed by server observability. Add new WebSocket routes

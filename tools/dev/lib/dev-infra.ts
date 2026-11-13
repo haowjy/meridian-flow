@@ -1,17 +1,8 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import {
-  formatPgError,
-  isLocalDevPostgres,
-  pingDatabaseForUrl,
-  readAppliedMigrations,
-} from "./dev-db";
+import { formatPgError, pingDatabaseForUrl } from "./dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./dev-env";
-import {
-  formatDatabaseHistoryRefusal,
-  planDatabaseMigrations,
-  readMigrationHistory,
-} from "./migration-history";
+import { currentBaselineStatus } from "./migration-runner";
 
 const DEV_POSTGRES_CONTAINER = "meridian-dev-postgres-1";
 
@@ -90,50 +81,19 @@ export async function assertDevInfraReady(): Promise<void> {
   }
 }
 
-/**
- * Fail fast when a live dev database has drifted from the repo's migration
- * baseline. Without this, a worktree DB stamped from an older/squashed baseline
- * boots happily and only breaks later inside feature code. Best-effort: a check
- * that cannot run (no migrations dir configured, query failure) does not block dev.
- */
 async function assertMigrationsCurrent(
   repoRoot: string,
   db: (typeof DEV_DATABASES)[number],
   dbUrl: string,
 ): Promise<void> {
   if (!db.migrationsDir) return;
-
-  const history = readMigrationHistory(path.join(repoRoot, db.migrationsDir));
-  let applied: Awaited<ReturnType<typeof readAppliedMigrations>>;
-  try {
-    applied = await readAppliedMigrations(dbUrl);
-  } catch {
-    // Diagnostic only — never let a drift probe failure block dev startup.
-    return;
-  }
-
-  if (history.issues.length > 0) {
+  const status = await currentBaselineStatus({
+    databaseUrl: dbUrl,
+    migrationsDirectory: path.join(repoRoot, db.migrationsDir),
+  });
+  if (status === "pending") {
     throw new DevInfraNotReadyError(
-      `dev infra check failed — migration files are inconsistent:\n${history.issues.map((issue) => `  - ${issue}`).join("\n")}`,
-    );
-  }
-  const plan = planDatabaseMigrations(history, applied ?? []);
-  if (plan.issues.length > 0) {
-    const databaseName = decodeURIComponent(new URL(dbUrl).pathname.replace(/^\//, ""));
-    throw new DevInfraNotReadyError(
-      `dev infra check failed — ${formatDatabaseHistoryRefusal({
-        databaseName,
-        issues: plan.issues,
-        prefix: db.label,
-        localDevDatabase: isLocalDevPostgres(dbUrl),
-        resetCommand: db.resetHint ?? "pnpm db:reset",
-      })}`,
-    );
-  }
-  if (plan.pending.length > 0) {
-    throw new DevInfraNotReadyError(
-      `dev infra check failed — ${db.label}: live database is behind repo migrations ` +
-        `(${plan.pending.length} pending migration(s)) — run \`${db.catchUpHint ?? db.migrateScript}\``,
+      `dev infra check failed — ${db.label}: baseline is not installed — run \`${db.catchUpHint ?? db.migrateScript}\``,
     );
   }
 }

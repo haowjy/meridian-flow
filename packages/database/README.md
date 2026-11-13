@@ -9,9 +9,8 @@ Drizzle schema and migrations for the v3 Meridian Postgres database (Docker cont
 From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
 
 ```bash
-pnpm db:migrate          # apply pending migrations and sync SQL functions
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ after editing functions
-pnpm db:generate         # drizzle-kit generate (review output)
+pnpm db:migrate          # install the baseline (refuses a different installed baseline)
+pnpm db:generate         # regenerate the baseline from schema and SQL inputs
 pnpm db:studio
 ```
 
@@ -26,7 +25,7 @@ pnpm typecheck
 pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
-**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then migrate + apply functions).
+**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then install baseline).
 
 ## Auth boundary
 
@@ -40,7 +39,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 |--------|------|
 | `input_tokens` / `output_tokens` | Headline totals (queryable) |
 | `usage_breakdown` | Nullable JSONB with DB default `'{}'`; omit only when usage is unknown |
-| `response_metadata` | Audit only; rows from before the `provider_request_id` drop (0113) may carry `providerRequestId`, the provider's generation ID |
+| `response_metadata` | Audit metadata from the provider |
 | `price_source` | `computed` or `unknown` (usage missing); default `computed` |
 | `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
@@ -55,4 +54,5 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
 
-Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` reapplies functions after migrations, and `db:apply-functions` keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.
+
+Schema changes before the first deploy follow [the baseline rule](AGENTS.md).

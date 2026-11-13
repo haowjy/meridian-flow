@@ -28,8 +28,8 @@ this directory never imports application packages. The `./mf` CLI lives in
   `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
   recreates the container onto the tag and the named volume keeps the data.
   `pnpm db:check-extensions` proves the extensions work.
-- Change schemas with `pnpm db:generate` plus `pnpm db:migrate`, never `push`. Migration lint
-  has one `RULES` list; a skip must be safe on populated tables.
+- Change schemas with `pnpm db:generate` plus `pnpm db:reset`, never `push`.
+  The pre-deploy baseline rule is in [database guidance](../../packages/database/AGENTS.md).
 - No secret value appears in the tmux command, stdout or
   `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
   which loads them at startup. Keep the pane's exports non-secret and inside

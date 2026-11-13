@@ -1,5 +1,3 @@
-DROP FUNCTION IF EXISTS consume_credit_lots_fifo(UUID, BIGINT, UUID, TEXT, JSONB);
-
 CREATE OR REPLACE FUNCTION consume_credit_lots_fifo(
   p_user_id UUID,
   p_amount BIGINT,

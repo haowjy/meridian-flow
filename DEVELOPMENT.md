@@ -59,7 +59,7 @@ pnpm install
 cp .env.example .env          # DEV_AUTH_BYPASS=1 needs no WorkOS keys; fill them in for real login
 pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:54422) if not running
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap                # create the DB, migrate, apply-functions
+pnpm bootstrap                # create the DB and install the baseline
 pnpm dev
 pnpm portless:list
 ```
@@ -105,18 +105,17 @@ Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `
 | `pnpm dev:infra:upgrade` | Build the image and recreate the container onto the tag in `docker-compose.yml`; the data volume stays. The one command that moves the shared server to a new image (e.g. after merging `main` that bumps the pg_bigm tag, or from the older plain `postgres:16`) |
 | `pnpm db:check-extensions` | Prove pg_bigm is preloaded and the search extensions install and serve a 1-character Han `LIKE` (rolled back) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
-| `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
-| `pnpm db:generate` | Generate migration SQL from schema changes |
+| `pnpm db:generate` | Regenerate the baseline from schema and SQL inputs |
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `tools/dev/psql [args…]` | Run `psql` against this checkout's database |
-| `pnpm bootstrap` | Ensure DB + migrate + apply-functions |
+| `pnpm bootstrap` | Ensure DB + install baseline |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, any database with a connection, active tests, reserved manual-test names, and reserved databases |
 
 ### Resetting a dev database
 
 Until launch, resetting a database is always an option. `pnpm db:reset`, run
 from the checkout that owns the database, destroys its schema and data, then
-installs the migrations from `0000_baseline` and the post-migrate functions.
+installs the baseline from `0000_baseline` and the included SQL functions.
 Back up anything you need first. `pnpm db:migrate` cannot upgrade a database
 whose migration history predates `0000_baseline`; reset it instead. Never reset
 someone else's database or a shared deployment.
@@ -210,7 +209,7 @@ Run once per checkout (main or worktree). Hooks in [lefthook.yml](lefthook.yml):
 
 | Hook | Runs |
 |------|------|
-| **pre-commit** | Staged Biome, staged migration lint, then `pnpm typecheck:staged` |
+| **pre-commit** | Staged Biome, then `pnpm typecheck:staged` |
 | **pre-push** | Debug-probe checks, then `pnpm --filter @meridian/database test` |
 
 `typecheck:staged` skips documentation-only changes. Otherwise, Nx selects projects
