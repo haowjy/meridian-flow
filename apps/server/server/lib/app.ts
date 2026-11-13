@@ -45,6 +45,7 @@ async function createAppServices(): Promise<AppServices> {
     eventSink,
   });
   await ports.fileAccessChanges.listen();
+  await ports.treeLists.listen();
   const scheduler = startRecoveryScheduler(
     [
       {

@@ -22,6 +22,7 @@ import {
 } from "../domains/billing/index.js";
 import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -31,6 +32,10 @@ import {
   createLinkScopeObserver,
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
+import {
+  createDrizzleTreeListStore,
+  type PgTreeListStore,
+} from "../domains/context/adapters/drizzle-tree-list-store.js";
 import {
   type ContextCatalog,
   type ContextCatalogFileMutationPort,
@@ -84,6 +89,7 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
 import {
@@ -306,6 +312,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   restoreRemovedDocuments: RestoreRemovedDocuments;
@@ -397,6 +405,8 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog &
     ContextCatalogMutationPort &
@@ -544,6 +554,7 @@ export async function createProductionAppPorts(input: {
   const projectRepo = createDrizzleProjectRepository({
     db,
     catalogLifecycle: contextCatalog,
+    fileAccessChanges,
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
@@ -716,6 +727,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    treeLists: createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) }),
     documentArrivals: arrivals,
     organizeWake,
     linkAheadRegistry,
@@ -1227,6 +1239,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
@@ -1550,6 +1563,22 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    treeLists: {
+      async open() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async readSince() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async admit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async submit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      onCommitted: () => () => {},
+      onJournalAdvanced: () => () => {},
+    },
     liveDocuments: {
       async findById() {
         throw new Error("Live tree reads are unavailable in memory");

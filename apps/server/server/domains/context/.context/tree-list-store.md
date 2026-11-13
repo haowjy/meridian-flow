@@ -36,8 +36,7 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    replay's rows, compare with the rows last written, write the rows that differ, the
    previous locations and `location_version`. "Open Work" is `openBranches`
    (`tree-list-facts.ts`), the one predicate for both a write's check and the views;
-6. after the outermost commit, `onCommitted` listeners get the update (the room, step 5 of the
-   build, is one).
+6. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
 
 `submit` joins the caller's transaction, so a caller must hold no document or namespace key
 when it calls (the list's key sorts before them; see the lock order in
@@ -91,3 +90,25 @@ the branch's rows) with each walk step a `LATERAL (... OFFSET 0)` subquery, 0.48
 two-table shape in the same walk costs 3.1 ms. A recursive step that joins the relation without
 the `LATERAL` is planned as a hash join of the whole relation, whatever the form: write
 readers' walks with the `LATERAL`.
+
+## The list's room
+
+`lib/yjs-tree-room.ts`, mounted in `lib/yjs-ws-handler.ts` beside the document rooms (same
+gateway, same Hocuspocus, hooks branch on the room's kind). `open` names the access (the
+project's owner: `edit` when the account can write a source, else `read`) and the journal id;
+`readSince` gives the room its state, and each catch-up the rows past the room's `seq`. The
+protocol and the machine are in `lib/.context/state-machines.md`, "Tree list room connection".
+
+What a change must keep:
+
+- **The room's document is never written by a client's frame.** `beforeSync` admits through the
+  store first, and a refusal throws before Hocuspocus applies anything; what reaches the
+  document is `onCommitted`'s update, so a refused update is in no copy.
+- **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
+  row. A commit applies its update to the process's own room at once; the `NOTIFY` it sent in
+  its transaction then reaches every process (this one too), whose room reads the rows past
+  `seq`. `listen()` on the store starts hearing it (`app.ts`); the catalog this list replaces
+  gave every tab cross-process freshness, so the tree must too. Measured across two processes
+  in the room's test: about 20 ms from a tab's record to an idle tab on the other.
+- **Nothing is cut on the way to a browser.** Only the client's sends are split in parts.
+

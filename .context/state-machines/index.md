@@ -38,6 +38,7 @@ have it:
 | Draft write journal row | Whether an undo left part of a recorded write unresolved | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Draft room handshake | Whether a connection may send edits to a draft room | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
 
@@ -56,6 +57,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
 | Draft room read | Whether a draft's room can be shown and acted on | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Sync pill outage phase | Whether the pill is reporting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
 | Upload store | One file being sent from the editor or composer | [core/uploads](../../apps/app/src/core/uploads/.context/state-machines.md) |

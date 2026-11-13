@@ -7,6 +7,7 @@ flowchart LR
   core-editor["core-editor<br/><small>the editor schema and document sessions</small>"]:::module
   core-transport["core-transport<br/><small>the Yjs socket and connectivity</small>"]:::module
   core-resources["core-resources<br/><small>the local replica of documents and folders</small>"]:::module
+  core-tree-list["core-tree-list<br/><small>the browser's copy of the project tree's list</small>"]:::module
   core-uploads["core-uploads<br/><small>the upload store</small>"]:::module
   core-completion["core-completion<br/><small>what a suggestion menu offers</small>"]:::module
   client["client<br/><small>HTTP clients</small>"]:::context
@@ -18,6 +19,7 @@ flowchart LR
   server -->|"3. sends updates"| core-transport
   core-transport -->|"4. reports sync status"| core-editor
   core-resources -->|"catches up with the server through"| client
+  core-tree-list -->|"connects the list's room on"| server
   core-editor -->|"tracks uploads in"| core-uploads
   core-editor -->|"offers suggestions from"| core-completion
   core-resources -->|"opens documents through"| core-editor
@@ -56,6 +58,17 @@ Sits on `@meridian/resource-replica`: documents and folders get a local identity
 - Kind: module
 - Paths: `apps/app/src/core/resources`
 - Docs: [CONTEXT](../../apps/app/src/core/resources/.context/CONTEXT.md)
+
+## core-tree-list
+
+The browser's copy of a project's tree list, beside the document sessions.
+
+A Yjs document in `y-indexeddb` shared by the tabs, one tab owning the connection, with a sync status. No screen reads it yet.
+
+- Kind: module
+- Paths: `apps/app/src/core/tree-list`
+- Docs: [AGENTS](../../apps/app/src/core/tree-list/AGENTS.md)
+- Machines: [tree list](../../apps/app/src/core/tree-list/.context/state-machines.md)
 
 ## core-uploads
 
