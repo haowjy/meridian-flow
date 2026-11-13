@@ -1,7 +1,7 @@
 # Invariants: how each is kept
 
-The root `AGENTS.md` states each invariant and why writers rely on it. This page says
-how the code keeps it today, what checks it, and where it falls short. The mechanisms
+Three rules the whole system keeps, each with why writers rely on it, how the code keeps it
+today, what checks it, and where it falls short. The mechanisms
 are current choices; the invariant is what they serve.
 
 ## Text merges through Yjs

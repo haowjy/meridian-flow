@@ -18,7 +18,8 @@ the headless seams here.
   with `EditorAnchor`/`NodeHold`, then resolve and validate at use time. Never trust
   a raw position or DOM element.
 - Only `local-presence.ts` may call `setLocalState*`; don't expose raw Awareness to
-  an extension. Awareness cursor colors are concrete RGB hex before publication.
+  an extension. Awareness cursor colors are design tokens, resolved to concrete RGB hex before
+  publication (y-prosemirror accepts concrete colors only).
 - Peer marks are projections: never persisted, draft-projected, or locally authored.
 - Reading memory persists only account-stamped Yjs anchors and dimensionless
   viewport offsets. Only a new mount restores, without taking focus; an explicit
