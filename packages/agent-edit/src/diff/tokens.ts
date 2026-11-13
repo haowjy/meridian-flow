@@ -306,7 +306,7 @@ export function blockWords(node: PMNode): string[] {
 
 const containedWords = new WeakMap<PMNode, string[]>();
 /** The words a block holds: a container's are its descendant textblocks' in order (a leaf block holds none). */
-function contentWords(node: PMNode): string[] {
+export function contentWords(node: PMNode): string[] {
   if (node.isTextblock) return blockWords(node);
   let w = containedWords.get(node);
   if (!w) {
