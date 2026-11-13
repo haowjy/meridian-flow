@@ -6,7 +6,14 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { mergeAttributes, Node, textblockTypeInputRule, wrappingInputRule } from "@tiptap/core";
+import {
+  type CommandProps,
+  InputRule,
+  mergeAttributes,
+  Node,
+  textblockTypeInputRule,
+  wrappingInputRule,
+} from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
@@ -24,7 +31,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import { DOMSerializer, type Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
-import { Plugin, Selection } from "@tiptap/pm/state";
+import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -596,10 +603,53 @@ export const MeridianLink = Link.extend({
 /** Markdown list tightness is a serialization fact, never a DOM attribute. */
 const tightAttribute = { default: false, renderHTML: () => ({}) };
 
+/** A list item holds body text: wrapping a heading in a list, by shortcut, toolbar or input rule, clears its level. */
+function clearSelectedLevels(tr: Transaction): void {
+  const { from, to } = tr.selection;
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name === "paragraph" && node.attrs.level !== null) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, level: null });
+    }
+    return !node.isTextblock;
+  });
+}
+
+function bodyTextListRule(rule: InputRule): InputRule {
+  return new InputRule({
+    find: rule.find,
+    handler: (props) => {
+      const result = rule.handler(props);
+      if (result !== null) clearSelectedLevels(props.state.tr);
+      return result;
+    },
+  });
+}
+
+/** TipTap's toggleList wraps when the selection is outside the list type and unwraps inside it. */
+function toggleListWithBodyText(
+  { chain, editor }: CommandProps,
+  list: { name: string; itemTypeName: string; keepMarks: boolean },
+): boolean {
+  const run = chain();
+  if (!editor.isActive(list.name)) run.command(({ tr }) => (clearSelectedLevels(tr), true));
+  return run.toggleList(list.name, list.itemTypeName, list.keepMarks).run();
+}
+
 export const MeridianBulletList = BulletList.extend({
   name: "bullet_list",
   content: "list_item+",
   group: "block",
+
+  addCommands() {
+    return {
+      toggleBulletList: () => (props) =>
+        toggleListWithBodyText(props, { name: this.name, ...this.options }),
+    };
+  },
+
+  addInputRules() {
+    return (this.parent?.() ?? []).map(bodyTextListRule);
+  },
 
   addAttributes() {
     return {
@@ -632,14 +682,23 @@ export const MeridianOrderedList = OrderedList.extend({
     };
   },
 
+  addCommands() {
+    return {
+      toggleOrderedList: () => (props) =>
+        toggleListWithBodyText(props, { name: this.name, ...this.options }),
+    };
+  },
+
   addInputRules() {
     return [
-      wrappingInputRule({
-        find: /^(\d+)\.\s$/,
-        type: this.type,
-        getAttributes: (match) => ({ order: Number(match[1]) }),
-        joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
-      }),
+      bodyTextListRule(
+        wrappingInputRule({
+          find: /^(\d+)\.\s$/,
+          type: this.type,
+          getAttributes: (match) => ({ order: Number(match[1]) }),
+          joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
+        }),
+      ),
     ];
   },
 }).configure({ itemTypeName: "list_item" });

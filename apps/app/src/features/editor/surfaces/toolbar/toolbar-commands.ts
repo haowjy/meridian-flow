@@ -375,15 +375,7 @@ function hasCollaborativeHistory(editor: Editor): boolean {
 /** TipTap reverses a list by looking for an ancestor whose extension group holds "list", and the Meridian list nodes declare `group: "block"` to stay in parity with the server schema — so its own toggle only ever wraps. */
 function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
   if (!editor.isActive(listType)) {
-    // A list item holds body text: wrapping a heading gives a plain item.
-    const { from, to } = editor.state.selection;
-    let hasHeading = false;
-    editor.state.doc.nodesBetween(from, to, (node) => {
-      if (node.type.name === "paragraph" && node.attrs.level !== null) hasHeading = true;
-      return !hasHeading;
-    });
     const chain = editor.chain().focus();
-    if (hasHeading) chain.updateAttributes("paragraph", { level: null });
     return listType === "bullet_list"
       ? chain.toggleBulletList().run()
       : chain.toggleOrderedList().run();
