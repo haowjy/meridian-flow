@@ -13,13 +13,16 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { ListSectionHeader } from "@/components/ui/list-section";
+import { role } from "@/components/ui/roles";
+import { SettledSearchField } from "@/components/ui/search-field";
+import { cn } from "@/lib/utils";
+import { FoundFiles } from "../context/ContextTreePanel";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeLabel } from "../context/context-schemes";
 import type { DragEntry } from "../context/entry-drag/entry";
@@ -32,6 +35,7 @@ import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
@@ -119,36 +123,86 @@ export function ScratchSource({
 }) {
   const scratch = useChatScratch(projectId, threadId);
   const list = useEntryList({ projectId, areas: scratch.areas });
+  const chat = useChatNavigation();
+  const openNote = useOpenDocumentInEditor();
+  const [search, setSearch] = useState<string | null>(null);
   const { source } = scratch;
   if (!source) return null;
+  const { catalog } = scratch.primary;
+  // A chat on no Work has notes of its own: the heading links to it. A Work's notes are
+  // shared by its chats, and the picker above already names the Work.
+  const chatOwned = threadId !== null && "rootThreadId" in source.owner;
   return (
     <EntryList list={list}>
       <AreaDropRegion
         scheme="scratch"
-        catalogRootId={scratch.primary.catalog?.root.entryId ?? null}
+        catalogRootId={catalog?.root.entryId ?? null}
         reveal={() => {}}
         className="flex min-h-0 flex-1 flex-col"
         header={(dropProps) => (
           <div {...dropProps} className="shrink-0">
-            <ListSectionHeader level={2} label={schemeLabel("scratch")} title={source.heading} />
-            <p className="mx-2 truncate px-1.5 pb-1 text-xs text-muted-foreground">
-              {source.ownerName}
-            </p>
+            <div className="px-2 pb-1">
+              <SettledSearchField
+                quiet
+                label={t`Find in Scratch`}
+                value={search}
+                onSettle={setSearch}
+              />
+            </div>
+            <div className="mx-2 flex min-h-7 min-w-0 items-center gap-1.5 pr-1 pl-1.5">
+              <h2 className={cn("shrink-0", role.groupLabel)}>{schemeLabel("scratch")}</h2>
+              {chatOwned ? (
+                <button
+                  type="button"
+                  title={source.ownerName}
+                  onClick={() => {
+                    void chat.openChat(threadId).then(() => onPicked?.());
+                  }}
+                  className="focus-ring min-w-0 truncate rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {source.ownerName}
+                </button>
+              ) : (
+                <span
+                  title={source.ownerName}
+                  className="min-w-0 truncate text-xs text-muted-foreground"
+                >
+                  {source.ownerName}
+                </span>
+              )}
+            </div>
           </div>
         )}
       >
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-2">
-          <div className="px-2">
-            <TreeGroup depth={1}>
-              <ChatScratchTree
-                projectId={projectId}
-                scratch={scratch}
-                depth={1}
-                onPicked={onPicked}
-              />
-            </TreeGroup>
-          </div>
-          <ChatScratchStatus scratch={scratch} />
+          {search && catalog ? (
+            <FoundFiles
+              files={catalog.files()}
+              scheme="scratch"
+              search={search}
+              activePath={null}
+              onOpen={(file) => {
+                const tab = serverDocumentFromFile("scratch", file, source.owner);
+                if (!tab) return;
+                openNote(tab);
+                onPicked?.();
+              }}
+            />
+          ) : (
+            <>
+              <div className="px-2">
+                <ChatScratchTree
+                  projectId={projectId}
+                  scratch={scratch}
+                  depth={0}
+                  onPicked={onPicked}
+                />
+              </div>
+              <div className="px-2">
+                <ChatScratchStatus scratch={scratch} depth={0} />
+              </div>
+            </>
+          )}
         </div>
       </AreaDropRegion>
     </EntryList>
@@ -191,12 +245,16 @@ export function MenuScratchSection({
   );
 }
 
-function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
+function ChatScratchStatus({ scratch, depth = 1 }: { scratch: ChatScratch; depth?: number }) {
   if (scratch.isError)
     return <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />;
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
-  return <ListLine depth={1} iconSlot>{t`No scratch notes yet.`}</ListLine>;
+  return (
+    <ListLine depth={depth} iconSlot>
+      {t`No scratch notes yet.`}
+    </ListLine>
+  );
 }
 
 /** A chat's Scratch rows: Earlier notes first, then the current notes, starting at `depth`. */

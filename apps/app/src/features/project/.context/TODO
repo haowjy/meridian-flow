@@ -22,3 +22,4 @@
   The side's rules carry over to any such UI: what each tile shows is browser-level (per tab)
   state, independent of the panes; which tiles appear, and how they are arranged, follows what is
   in main.
+- Trash in the sidebar has no search. Add "Find in Trash" (quiet SearchField above the heading, as the trees and Scratch do) when folder deletions land in Trash and the list grows. Owner, 2026-11-12.

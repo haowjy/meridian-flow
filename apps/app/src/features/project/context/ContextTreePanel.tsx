@@ -314,7 +314,7 @@ export function ContextTreePanel({
 }
 
 /** A search's matches as one flat list, best first; the folder tells two of one name apart. */
-function FoundFiles({
+export function FoundFiles({
   files,
   scheme,
   search,
