@@ -102,7 +102,7 @@ export function readImports(repo, roots) {
     if (spec.startsWith("@/") && from.startsWith("apps/app/")) return { to: settle(`apps/app/src/${spec.slice(2)}`) };
     if (spec.startsWith("~/") && from.startsWith("apps/www/")) return { to: settle(`apps/www/src/${spec.slice(2)}`) };
     const name = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
-    return packages.has(name) ? { to: packages.get(name), pkg: true } : null;
+    return packages.has(name) ? { to: packages.get(name) } : null;
   };
 
   const imports = [];
@@ -118,6 +118,3 @@ export function readImports(repo, roots) {
 
 /** Whether `path` is `root` or lies under it. */
 export const under = (path, root) => path === root || path.startsWith(`${root}/`);
-
-/** Whether an import's target is inside `root`; a package import points at the package, so any root within it counts. */
-export const reaches = ({ to, pkg }, root) => under(to, root) || (pkg === true && under(root, to));

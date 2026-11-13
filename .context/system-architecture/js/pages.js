@@ -34,7 +34,6 @@ const LINE = {
   node: new RegExp(`^(${ID})\\["([^"]*)"\\]:::(\\w+)$`),
   edge: new RegExp(`^(${ID}) (-->|<-->)\\|"([^"]+)"\\| (${ID})$`),
   noteLink: new RegExp(`^(${ID}) -\\.- (${ID})$`),
-  subgraph: new RegExp(`^subgraph ${ID}(?:\\["[^"]*"\\])?$`),
   sequenceHeader: /^sequenceDiagram$/,
   participant: new RegExp(`^(?:participant|actor) (${SEQ_ID})(?: as .+)?$`),
   message: new RegExp(`^(${SEQ_ID}) ?(?:-->>|->>|--x|-x|--\\)|-\\))[+-]? ?(${SEQ_ID}): .+$`),
@@ -131,7 +130,6 @@ function parseMermaidLine(mermaid, line, n, fail) {
     return;
   }
   if (mermaid.type === "sequence") return parseSequenceLine(mermaid, line, n, fail);
-  if (line === "end" || LINE.subgraph.test(line)) return;
   let m = LINE.node.exec(line);
   if (m) {
     const bad = m[2].replace(LABEL_TAGS, "").match(/[<>]/);
@@ -162,6 +160,19 @@ function parseSequenceLine(mermaid, line, n, fail) {
   else if ((m = LINE.activation.exec(line))) participants(m[1]);
   else if (line === "end" || LINE.sequenceBlock.test(line)) return;
   else fail(n, `A sequenceDiagram line the format doesn't allow: ${line}`);
+}
+
+/**
+ * The box a flow participant names: its id when one non-context box has it, else `<page>-<id>` (the
+ * page file's name without .md, e.g. server-routes). `levels` is [{ id: page name, nodes }].
+ * Returns { level, box } or { error }.
+ */
+export function resolveParticipant(levels, name) {
+  const hits = levels.flatMap((l) => l.nodes.filter((n) => n.kind !== "context" && (n.id === name || `${l.id}-${n.id}` === name)).map((n) => ({ level: l, box: n })));
+  const bare = hits.filter((h) => h.box.id === name);
+  if (bare.length > 1) return { error: `participant ${name} is the id of boxes on ${bare.map((h) => h.level.id).join(", ")}: write <page>-${name}, e.g. ${bare[0].level.id}-${name}.` };
+  if (hits.length !== 1) return { error: hits.length ? `participant ${name} names ${hits.length} boxes.` : `participant ${name} isn't a box id on any level page.` };
+  return hits[0];
 }
 
 /** The item of a section with this key, or undefined. */

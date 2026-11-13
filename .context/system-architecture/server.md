@@ -46,7 +46,6 @@ Chat turns: admitting a message, the run with the model, the saved thread.
 `runtime`, `threads`, `notices` and `packages`. A message is admitted, a run asks the model with tools, and the threads domain journals the events and pushes them to the browser. `lib/model-tools` binds the model's `read` and `write` tools to the documents group.
 
 - Kind: group
-- Paths: `apps/server/server/domains/runtime`, `apps/server/server/domains/threads`, `apps/server/server/domains/notices`, `apps/server/server/domains/packages`
 - Opens: [Conversation](server-conversation.md)
 
 ## documents
@@ -56,7 +55,6 @@ The writer's documents: live Yjs rooms, drafts, the context filesystem and who m
 `collab`, `context` and `file-policy`. The model and the writer both edit through collab; context gives documents their addresses; file-policy answers whether this actor may read or write this document.
 
 - Kind: group
-- Paths: `apps/server/server/domains/collab`, `apps/server/server/domains/context`, `apps/server/server/domains/file-policy`
 - Opens: [Documents](server-documents.md)
 
 ## workspace
@@ -66,7 +64,6 @@ Projects and Works: who owns what, and what the writer had open.
 `projects`, `working-set` and `recent-documents`. A Work is a task-scoped editing context in a project; these domains gate writes on it and remember what the writer was looking at.
 
 - Kind: group
-- Paths: `apps/server/server/domains/projects`, `apps/server/server/domains/working-set`, `apps/server/server/domains/recent-documents`
 - Opens: [Workspace](server-workspace.md)
 
 ## files
@@ -76,7 +73,6 @@ Bytes in and out: import, export, uploads and the object store.
 `import`, `export`, `file-intake` and `storage`. A writer imports a folder, exports a ZIP, or attaches an image; these domains classify, move and keep the bytes.
 
 - Kind: group
-- Paths: `apps/server/server/domains/import`, `apps/server/server/domains/export`, `apps/server/server/domains/file-intake`, `apps/server/server/domains/storage`
 - Opens: [Files](server-files.md)
 
 ## account
@@ -86,7 +82,6 @@ What belongs to the account and the operator: credits, settings, and the safe ev
 `billing`, `preferences` and `observability`. Billing is the credit ledger that runs consume; observability sanitizes every event so writer text stays out of logs.
 
 - Kind: group
-- Paths: `apps/server/server/domains/billing`, `apps/server/server/domains/preferences`, `apps/server/server/domains/observability`
 - Opens: [Account](server-account.md)
 
 ## routes

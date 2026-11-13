@@ -8,7 +8,7 @@ over the Yjs socket. The numbers below are the steps in the list under the pictu
 sequenceDiagram
   participant chat
   participant client
-  participant routes
+  participant server-routes
   participant runtime
   participant threads
   participant packages
@@ -19,10 +19,10 @@ sequenceDiagram
   participant postgres
   participant core-transport
   chat->>client: 1. send the message
-  client->>routes: 2. POST /api/threads/:id/messages
-  routes->>runtime: 3. admit the message
+  client->>server-routes: 2. POST /api/threads/:id/messages
+  server-routes->>runtime: 3. admit the message
   runtime->>threads: 4. save the writer's turn, queue it for the run
-  routes-->>client: 5. 202 accepted
+  server-routes-->>client: 5. 202 accepted
   runtime->>packages: 6. load the Agent and its skills
   runtime->>models: 7. stream the request
   models-->>runtime: 8. text and a write tool call

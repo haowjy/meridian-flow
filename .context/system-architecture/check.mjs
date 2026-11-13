@@ -8,8 +8,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readImports, reaches, under } from "./imports.mjs";
-import { item, JOURNEY_KEYS, levelLinks, linksOf, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
+import { readImports, under } from "./imports.mjs";
+import { item, JOURNEY_KEYS, levelLinks, linksOf, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
 import { blocks, expectedTokens, MIRRORED } from "./tokens.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,7 @@ for (const path of pages.keys()) {
 // ---- Level pages ----
 
 const isLevelPath = (path) => levelFiles.some((f) => `${MAP_DIR}/${f}` === path);
-/** Every box on every page: { id, page, kind, paths, section }. A group's paths are its own plus its child page's boxes'. */
+/** Every box on every page: { id, page, kind, paths }. A group's paths are its child page's boxes'. */
 const boxes = [];
 const opened = new Set();
 
@@ -109,6 +109,7 @@ for (const { file, path, page } of levels) {
   for (const n of nodes)
     if (n.kind === "note" && !page.mermaid.noteLinks.some((l) => l.from === n.id || l.to === n.id)) fail(`${file}:${n.line}`, `note ${n.id} links to nothing: add "${n.id} -.- <box>".`);
   for (const e of edges) {
+    for (const end of [e.from, e.to]) if (kindOf.get(end) === "note") fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} touches note ${end}: a note joins a box only by "-.-".`);
     for (const end of [e.from, e.to]) if (!nodeIds.has(end)) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} names ${end}, which isn't a box.`);
     const kind = /^(http|ws|sql|model|files|call|port|import): /.exec(e.label);
     if (kind) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} starts with "${kind[1]}:": arrows carry words, not kinds, and none says "import" (dependencies.md lists the broken rules).`);
@@ -130,7 +131,8 @@ for (const { file, path, page } of levels) {
     if (!s.paragraphs.length) fail(where, "no sub line (the first paragraph).");
     const paths = [];
     for (const it of s.items) {
-      if (it.key === "Paths") {
+      if (it.key === "Paths" && node.kind === "group") fail(`${file}:${it.line}`, `${s.id} is a group: it takes no Paths; its child page's boxes cover the code.`);
+      else if (it.key === "Paths") {
         for (const p of pathsOf(it.value)) {
           if (existsSync(join(repo, p))) paths.push(p);
           else fail(`${file}:${it.line}`, `${s.id} names ${p}, which doesn't exist.`);
@@ -154,7 +156,7 @@ for (const box of boxes) {
   const child = resolveHref(box.path, linksOf(box.opens)[0]?.href ?? "").path;
   box.paths.push(...boxes.filter((b) => b.path === child).flatMap((b) => b.paths));
 }
-const boxIds = new Set(boxes.map((b) => b.id));
+const levelNodes = levels.map((l) => ({ id: l.file.slice(0, -3), nodes: l.page.mermaid?.nodes ?? [] }));
 
 // ---- Journeys ----
 
@@ -193,8 +195,10 @@ for (const f of flows) {
   if (!flowIndexLinks.includes(f.path)) fail("flows/index.md", `doesn't link ${f.file}.`);
   const m = f.page.mermaid;
   if (m?.type !== "sequence") fail(f.file, "has no sequenceDiagram.");
-  for (const p of m?.participants ?? [])
-    if (!boxIds.has(p.id)) fail(`${f.file}:${p.line}`, `participant ${p.id} isn't a box id on any level page.`);
+  for (const p of m?.participants ?? []) {
+    const hit = resolveParticipant(levelNodes, p.id);
+    if (hit.error) fail(`${f.file}:${p.line}`, hit.error);
+  }
   if (!/^\d+\. /m.test(withoutFences(read(f.path)))) fail(f.file, "has no numbered steps under the diagram.");
 }
 
@@ -229,8 +233,8 @@ for (const page of written) {
 }
 
 // ---- Dependencies ----
-// dependencies.md lists the places the code breaks CONTEXT.md's rules. Every row must be a real import, and
-// every real break of a written rule must have a row; ordinary imports are listed nowhere.
+// dependencies.md lists the places the code breaks CONTEXT.md's rules, one row per break. The rows and the
+// breaks the check computes from value imports must match one to one; ordinary imports are listed nowhere.
 
 const DEPENDENCIES = "dependencies.md";
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
@@ -266,42 +270,42 @@ const LIB = "apps/server/server/lib";
 const domainOf = (path) => (under(path, DOMAINS) ? path.slice(DOMAINS.length + 1).split("/")[0] : null);
 const first = (path, n) => path.split("/").slice(0, n).join("/");
 
-/** The breaks the code has today: { what, sample import }, one per domain direction in a cycle, per domain importing lib/, per package importing an app. */
-const breaks = [];
+/** The kinds of break a row's rule cell may name: the cell text, and how a break of that kind reads. */
+const RULES = {
+  "domains are acyclic": (from, to) => `domain ${from} importing domain ${to} inside a cycle`,
+  "domains do not import lib/": (from) => `domain ${from} importing lib/`,
+  "packages do not import apps": (from, to) => `${from} importing ${to}`,
+};
+/** One entry per break the code has: key → { rule, from, to, files: the importing files }. Type-only imports are no run-time coupling and don't count. */
+const breaks = new Map();
+const addBreak = (rule, from, to, file) => {
+  const key = `${rule}|${from}|${to}`;
+  if (!breaks.has(key)) breaks.set(key, { rule, from, to, files: new Set() });
+  breaks.get(key).files.add(file);
+};
 const graph = new Map();
-const sample = new Map();
-const seen = new Set();
+const domainEdges = new Map();
 for (const i of imports) {
+  if (i.typeOnly) continue;
   const from = domainOf(i.from);
   const to = domainOf(i.to);
-  if (from && to && from !== to && !i.typeOnly) {
+  if (from && to && from !== to) {
     if (!graph.has(from)) graph.set(from, new Set());
     graph.get(from).add(to);
-    if (!sample.has(`${from}>${to}`)) sample.set(`${from}>${to}`, i);
+    domainEdges.set(`${from}|${to}`, [...(domainEdges.get(`${from}|${to}`) ?? []), i.from]);
   }
-  const once = (key, what) => {
-    if (seen.has(key)) return;
-    seen.add(key);
-    breaks.push({ what, imp: i });
-  };
-  if (from && under(i.to, LIB) && !i.typeOnly) once(`lib>${from}`, `domain ${from} importing lib/`);
-  if (i.from.startsWith("packages/") && i.to.startsWith("apps/")) once(`app>${first(i.from, 2)}>${first(i.to, 2)}`, `${first(i.from, 2)} importing ${first(i.to, 2)}`);
+  if (from && under(i.to, LIB)) addBreak("domains do not import lib/", from, "lib", i.from);
+  if (i.from.startsWith("packages/") && i.to.startsWith("apps/")) addBreak("packages do not import apps", first(i.from, 2), first(i.to, 2), i.from);
 }
 const component = stronglyConnected(graph);
 for (const [from, targets] of graph)
   for (const to of targets)
-    if (component.get(from) === component.get(to)) breaks.push({ what: `domain ${from} importing domain ${to} inside a cycle`, imp: sample.get(`${from}>${to}`) });
-
-/** The repo paths a table cell names: a path that exists, or a box id (a box with Paths). */
-const rootsOf = (name) => {
-  if (name && existsSync(join(repo, name))) return [name];
-  return boxes.filter((b) => b.id === name && b.kind !== "context").flatMap((b) => b.paths);
-};
+    if (component.get(from) === component.get(to)) for (const file of domainEdges.get(`${from}|${to}`)) addBreak("domains are acyclic", from, to, file);
 
 const rows = [];
 withoutFences(read(`${MAP_DIR}/${DEPENDENCIES}`)).split("\n").forEach((text, i) => {
   if (!text.trim().startsWith("|")) return;
-  const cells = text.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  const cells = text.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim().replaceAll("`", ""));
   if (cells.every((c) => /^:?-+:?$/.test(c))) return;
   if (cells[0].toLowerCase() === "from") {
     if (cells.map((c) => c.toLowerCase()).join("|") !== "from|to|rule|example file") fail(`${DEPENDENCIES}:${i + 1}`, "the table header must be: | from | to | rule | example file |");
@@ -311,29 +315,28 @@ withoutFences(read(`${MAP_DIR}/${DEPENDENCIES}`)).split("\n").forEach((text, i) 
 });
 if (!rows.length) fail(DEPENDENCIES, "has no table of broken rules (| from | to | rule | example file |).");
 
+const matched = new Set();
 for (const row of rows) {
   const where = `${DEPENDENCIES}:${row.line}`;
-  const [from, to, rule, example] = row.cells.map((cell) => cell.replaceAll("`", "").trim());
-  if (row.cells.length !== 4 || !rule) {
+  if (row.cells.length !== 4) {
     fail(where, "a row has four cells: from, to, rule, example file.");
     continue;
   }
-  const fromRoots = rootsOf(from);
-  const toRoots = rootsOf(to);
-  if (!fromRoots.length) fail(where, `${from} is neither a repo path nor a box id with Paths.`);
-  if (!toRoots.length) fail(where, `${to} is neither a repo path nor a box id with Paths.`);
-  if (!fromRoots.length || !toRoots.length) continue;
-  const file = example;
-  const real = imports.filter((i) => fromRoots.some((r) => under(i.from, r)) && toRoots.some((r) => reaches(i, r)));
-  row.imports = real;
-  if (!real.length) fail(where, `${from} to ${to}: nothing in ${from}'s paths imports ${to}'s.`);
-  else if (!existsSync(join(repo, file))) fail(where, `example file ${file} doesn't exist.`);
-  else if (!real.some((i) => i.from === file)) fail(where, `example file ${file} doesn't import ${to}.`);
+  const [from, to, rule, example] = row.cells;
+  if (!RULES[rule]) {
+    fail(where, `rule "${rule}" isn't one of: ${Object.keys(RULES).join("; ")}.`);
+    continue;
+  }
+  const key = `${rule}|${from}|${to}`;
+  const found = breaks.get(key);
+  if (matched.has(key)) fail(where, `${from} to ${to} (${rule}) has two rows.`);
+  else if (!found) fail(where, `stale row: ${from} to ${to} is no break of "${rule}" today. Delete the row; \`from\` and \`to\` name single domains, \`lib\`, or a package and an app.`);
+  else if (!found.files.has(example)) fail(where, `example file ${example} doesn't break "${rule}" from ${from} to ${to}${existsSync(join(repo, example)) ? "" : " (it doesn't exist)"}; one that does: ${[...found.files][0]}.`);
+  matched.add(key);
 }
-for (const b of breaks) {
-  const covered = rows.some((r) => r.imports?.includes(b.imp));
-  if (!covered) fail(DEPENDENCIES, `no row for ${b.what}: ${b.imp.from} imports ${b.imp.to}.`);
-}
+for (const [key, b] of breaks)
+  if (!matched.has(key))
+    fail(DEPENDENCIES, `new break, a regression: ${RULES[b.rule](b.from, b.to)} (${[...b.files][0]}). Remove the import first; add a row only if the break is accepted.`);
 
 /** Tarjan: node → component number; nodes in one cycle share one, and a lone node gets its own. */
 function stronglyConnected(adjacency) {
@@ -410,5 +413,5 @@ if (problems.length) {
 }
 const edgeCount = levels.reduce((n, l) => n + (l.page.mermaid?.edges.length ?? 0), 0);
 console.log(
-  `architecture map: ${levels.length} levels, ${boxes.length} boxes, ${edgeCount} arrows, ${flows.length} flows, ${rows.length} broken-rule rows, ${journeys.length} journeys, ${imports.length} imports read, ${attached.size} state machine pages on boxes, ${written.length} state machine pages, all in the index`,
+  `architecture map: ${levels.length} levels, ${boxes.length} boxes, ${edgeCount} arrows, ${flows.length} flows, ${rows.length} break rows, ${journeys.length} journeys, ${imports.length} imports read, ${attached.size} state machine pages on boxes, ${written.length} state machine pages, all in the index`,
 );

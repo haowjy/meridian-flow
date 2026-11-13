@@ -77,12 +77,11 @@ Drafts and edits.
 ````
 
 - **One `mermaid` block, a `flowchart`.** Each line is the `flowchart` header, a node
-  `id["Name<br/><small>role</small>"]:::kind`, an arrow, `subgraph ... ["Title"]` / `end`, or a `%%`
-  comment. A label holds only `<br/>` and `<small>`. Anything else fails the check.
+  `id["Name<br/><small>role</small>"]:::kind`, an arrow, a note link, or a `%%` comment. A label holds only `<br/>` and `<small>`. Anything else fails the check.
 - **An arrow** is `a -->|"label"| b`, or `<-->` when data flows back, and points from the side that
   starts the exchange. The label says what moves ("streams the reply"). The main path's labels start
   `1. `, `2. `, … and must run in order on the page; side arrows have no number. An `import` arrow
-  fails: imports are not drawn.
+  fails: imports are not drawn. A note takes no arrow, only its dotted link.
 - **A note** explains a box in a sentence or two: `note1["text"]:::note`, attached to the box with an
   unlabelled dotted link, `note1 -.- runtime`. A note takes no `##` section, no `Paths` and no `Kind`;
   it must link to a box. GitHub draws it as an ordinary box.
@@ -90,8 +89,8 @@ Drafts and edits.
   section is a node. A box that belongs to another level, shown for reference, has kind `context`
   and `- See: [label](other.md#id)`.
 - **Node kinds** (the class): `person`, `client`, `service`, `store`, `external`, `files`, `domain`,
-  `feature`, `module`, `package`, `context`, `group`. A `group` needs `- Opens: [label](child.md)`; its coverage is the paths of
-  the boxes on the child page, plus any `Paths` of its own.
+  `feature`, `module`, `package`, `context`, `group`. A `group` needs `- Opens: [label](child.md)` and takes no `Paths`: its coverage is the paths of
+  the boxes on the child page (`server-*` and `app-*` pages).
 - **List items:** `Kind` (required, equals the class), `Paths`, `Docs`, `Machines`, `Opens`,
   `Breaks`, `Drift`, `See`, and `Shot` (a screenshot, later). Paths and links must resolve.
 - A level page is listed in the pages above, or opened by a group.
@@ -115,15 +114,16 @@ sequenceDiagram
 2. [runtime](../server.md#runtime) asks [file-policy](../server.md#file-policy).
 ````
 
-A participant is a box id from some level page. The numbered steps under the diagram link to
+A participant is a box id that is unique among the non-context boxes of all level pages. When two pages use one id (`routes` is on both `server` and `app`), write `<page>-<id>`: `server-routes`, `server-files-import`. The numbered steps under the diagram link to
 boxes and state machines. [flows/index.md](flows/index.md) lists every flow.
 
 ### dependencies.md
 
 The rules in prose, then one table of the places the code breaks them today, one row per
-direction: `| from | to | rule | example file |`. `from` and `to` are repo paths or box ids; the
-example file is a real importing file. The rules are the ones [CONTEXT.md](../CONTEXT.md) writes:
-domains don't import each other in a cycle, domains don't import `lib/`, packages don't import apps.
+break: `| from | to | rule | example file |`. `from` and `to` are single domains, a domain and `lib`, or a
+package and an app. `rule` is one of `domains are acyclic`, `domains do not import lib/`, `packages do
+not import apps` ([CONTEXT.md](../CONTEXT.md) writes the rules). The example file is an importing file.
+Only value imports count; a type-only import is not run-time coupling.
 
 ### A journey page
 
@@ -137,15 +137,15 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
   `Kind` that isn't the box's class; an unknown node kind; an arrow with a kind prefix or an import
   arrow; numbered arrows out of order; a group with no `Opens`; a level page nothing lists or opens;
   a note that links to nothing, joins two notes or two boxes, or has a section.
-- A path that doesn't exist; a link whose file or `#id` doesn't resolve, in every page here and in
+- A path that doesn't exist; a `Paths` line on a group; a link whose file or `#id` doesn't resolve, in every page here and in
   the journeys and flows; a journey `Map` link that isn't a box.
-- A flow participant that isn't a box id; a flow that isn't in `flows/index.md` or has no numbered
+- A flow participant that isn't one box (an id on two pages needs `<page>-<id>`); a flow that isn't in `flows/index.md` or has no numbered
   steps.
 - An app, package (with a `package.json`), server domain or app feature directory that no box's
   `Paths` reaches: a new one needs a box, or a path on the box that holds it.
 - A `*state-machine*.md` page the index links that is on no box (the index's other links, such as the pattern pages and the glossary, are exempt); a `*state-machine*.md` the index doesn't link.
-- A `dependencies.md` row with no import behind it: nothing under `from` imports `to`, or the
-  example file isn't such an importer. The check reads source (relative imports, `@/` in `apps/app`,
+- A break with no row ("a regression: remove the import first"), a row that matches no break (stale
+  or too broad), or an example file that doesn't make the break, computed from value imports. The check reads source (relative imports, `@/` in `apps/app`,
   `~/` in `apps/www`, `@meridian/*` package names, stylesheet `@import`), leaves out tests and
   `test-support` files, and ignores imports in comments.
 - A break of a written rule with no row: a domain's value import of another domain inside an import

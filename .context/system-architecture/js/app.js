@@ -10,7 +10,7 @@
 import { createJourneys } from "./journeys.js";
 import { createMap } from "./map.js";
 import { isDocPath, loadFailure, paintMarkdown } from "./markdown.js";
-import { item, linksOf, MAP_DIR, STATE_MACHINES_INDEX, resolveHref, sourceUrl } from "./pages.js";
+import { item, linksOf, MAP_DIR, STATE_MACHINES_INDEX, resolveHref, resolveParticipant, sourceUrl } from "./pages.js";
 import { currentTheme, el, fetchPage, fetchRepoFile, loadLevels, onThemeChange, pinTheme } from "./shell.js";
 
 const root = document.getElementById("root");
@@ -171,13 +171,13 @@ function wireDiagram(holder, source, scrollTo) {
     g.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onclick()));
   };
   if (source.startsWith("sequenceDiagram")) {
-    const known = new Set([...levels.values()].flatMap((l) => l.page.mermaid?.nodes.map((n) => n.id) ?? []));
+    const pages = [...levels.values()].map((l) => ({ id: l.id, nodes: l.page.mermaid?.nodes ?? [] }));
     for (const actor of holder.querySelectorAll("rect.actor[name]")) {
-      const id = actor.getAttribute("name");
-      const level = known.has(id) && [...levels.values()].find((l) => l.page.mermaid?.nodes.some((n) => n.id === id && n.kind !== "context"));
-      if (!level) continue;
+      const hit = resolveParticipant(pages, actor.getAttribute("name"));
+      if (hit.error) continue;
+      const { level, box } = hit;
       const group = actor.closest("g") ?? actor;
-      click(group, () => openOnMap(level.id, id), `Open ${id} on the map`);
+      click(group, () => openOnMap(level.id, box.id), `Open ${box.id} on the map`);
     }
     return;
   }

@@ -51,7 +51,7 @@ adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
 **Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
-draws the system, the code's boxes and their dependencies, and the writer journeys; each state
+draws the system, the code's boxes, the writer journeys and the broken dependency rules (a table); each state
 machine is drawn in a `state-machines.md` beside its code, listed in
 [the index](.context/state-machines/index.md). A change that adds, removes or moves something
 the map names (a package, a domain, a feature directory, a boundary or a dependency direction),

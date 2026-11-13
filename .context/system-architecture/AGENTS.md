@@ -38,7 +38,7 @@ editing a page. The check passing is not the test.
   phone, opens at its start to pan. Boxes drag and the arrows follow; positions go to
   `localStorage` per page (`meridian-architecture-layout-v2:<path>`), only when a drag ends, and a page
   whose boxes aren't all saved is laid out afresh. Read view draws the Mermaid block itself.
-- A flow's participants are clickable: they open the box on the map (they set the view to Map).
+- A flow's participants are clickable (`resolveParticipant` in `pages.js`, shared with the check): they open the box on the map (they set the view to Map).
 - `fetchRepoFile` checks the URL the browser will request, not the path string, and the doc route
   accepts only a `.context` `.md` path with no `..`, `.` or empty segment: both come from the address bar.
 - The nav is the `## The pages` list in README.md (`levelLinks` in `pages.js`) plus Flows, State

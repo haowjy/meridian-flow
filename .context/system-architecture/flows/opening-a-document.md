@@ -10,8 +10,8 @@ sequenceDiagram
   participant core-editor
   participant core-resources
   participant core-transport
-  participant routes
-  participant lib
+  participant server-routes
+  participant server-lib
   participant file-policy
   participant collab
   participant postgres
@@ -19,10 +19,10 @@ sequenceDiagram
   editor->>core-editor: 2. bind a document session
   core-resources-->>editor: 3. the local copy of the document
   core-editor->>core-transport: 4. connect the room
-  core-transport->>routes: 5. WebSocket upgrade on /ws/yjs
-  routes->>lib: 6. authenticate, admit the connection
-  lib->>file-policy: 7. may this account edit it?
-  lib->>collab: 8. load the room's state
+  core-transport->>server-routes: 5. WebSocket upgrade on /ws/yjs
+  server-routes->>server-lib: 6. authenticate, admit the connection
+  server-lib->>file-policy: 7. may this account edit it?
+  server-lib->>collab: 8. load the room's state
   collab->>postgres: 9. read the journal
   collab-->>core-transport: 10. the document's state
   core-transport->>collab: 11. the writer's edits

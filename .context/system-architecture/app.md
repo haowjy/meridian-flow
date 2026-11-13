@@ -64,7 +64,6 @@ Chat and the Agent picker.
 `chat` draws the transcript and the composer from the same view model `./mf` prints; `agents` is the picker and the Agent identity a new chat records.
 
 - Kind: group
-- Paths: `apps/app/src/features/chat`, `apps/app/src/features/agents`
 - Opens: [Conversation](app-conversation.md)
 
 ## documents
@@ -74,7 +73,6 @@ Writing and reviewing documents.
 `editor` is the editor's chrome and surfaces, `draft-review` is Changes, Apply, Discard and Undo, `links` follows an internal link.
 
 - Kind: group
-- Paths: `apps/app/src/features/editor`, `apps/app/src/features/draft-review`, `apps/app/src/features/links`
 - Opens: [Documents](app-documents.md)
 
 ## library
@@ -84,7 +82,6 @@ The project list, project creation, import, export and the account pages.
 `home`, `creation`, `import`, `export`, `account` and `billing`: the screens around the workspace.
 
 - Kind: group
-- Paths: `apps/app/src/features/home`, `apps/app/src/features/creation`, `apps/app/src/features/import`, `apps/app/src/features/export`, `apps/app/src/features/account`, `apps/app/src/features/billing`
 - Opens: [Library](app-library.md)
 
 ## debug
@@ -117,7 +114,6 @@ The editor core: document sessions, the socket to the server, the local replica.
 `core-editor`, `core-transport`, `core-resources`, `core-uploads` and `core-completion`. They draw nothing of their own; the features use them.
 
 - Kind: group
-- Paths: `apps/app/src/core/editor`, `apps/app/src/core/transport`, `apps/app/src/core/resources`, `apps/app/src/core/uploads`, `apps/app/src/core/completion`
 - Opens: [Core](app-core.md)
 
 ## shared
@@ -127,7 +123,6 @@ Shared UI, helpers and rich text.
 `components` (shadcn primitives and the composer), `hooks`, `lib` (utils, i18n, the optimistic send helper) and `rich-content` (Markdown through the markup codec).
 
 - Kind: group
-- Paths: `apps/app/src/components`, `apps/app/src/hooks`, `apps/app/src/lib`, `apps/app/src/rich-content`
 - Opens: [Shared](app-shared.md)
 
 ## server

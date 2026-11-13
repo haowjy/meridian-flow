@@ -7,25 +7,25 @@ browser side is the app's `import` feature, which calls through the client.
 ```mermaid
 sequenceDiagram
   participant client
-  participant routes
-  participant import
+  participant server-routes
+  participant server-files-import
   participant storage
   participant file-intake
   participant context
   participant collab
   participant postgres
-  client->>routes: 1. POST /projects/:id/imports
-  routes->>import: 2. create the import and its entries
-  client->>routes: 3. POST .../files (batched multipart)
-  routes->>import: 4. receive the parts
-  import->>storage: 5. stage the bytes
-  import->>postgres: 6. last file received: set organizing
-  import->>import: 7. organizer wakes
-  import->>file-intake: 8. classify, make previews
-  import->>context: 9. stage the tree
-  import->>collab: 10. stage the documents
-  import->>postgres: 11. reveal the tree and mark done
-  client->>routes: 12. poll GET .../imports/:id
+  client->>server-routes: 1. POST /projects/:id/imports
+  server-routes->>server-files-import: 2. create the import and its entries
+  client->>server-routes: 3. POST .../files (batched multipart)
+  server-routes->>server-files-import: 4. receive the parts
+  server-files-import->>storage: 5. stage the bytes
+  server-files-import->>postgres: 6. last file received: set organizing
+  server-files-import->>server-files-import: 7. organizer wakes
+  server-files-import->>file-intake: 8. classify, make previews
+  server-files-import->>context: 9. stage the tree
+  server-files-import->>collab: 10. stage the documents
+  server-files-import->>postgres: 11. reveal the tree and mark done
+  client->>server-routes: 12. poll GET .../imports/:id
 ```
 
 1. **Create.** The app's `import` feature (`features/import/import-coordinator.ts`, an account-lifetime coordinator, so navigating away does not stop it) posts to `routes/api/projects/[projectId]/imports/index.post.ts` through [client](../app.md#client).

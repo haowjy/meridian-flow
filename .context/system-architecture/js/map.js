@@ -31,7 +31,8 @@ const plain = (label) => parts(label).name;
 /** Where the reader dragged this page's boxes: { id: { x, y } }, or {} (no storage, or nothing saved). */
 function savedLayout(path) {
   try {
-    return JSON.parse(localStorage.getItem(LAYOUT_KEY + path) ?? "{}");
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY + path));
+    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
   } catch {
     return {};
   }
@@ -189,7 +190,7 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
     const sizes = new Map(flow.getNodes().map((n) => [n.id, n.measured]));
     const { positions, hints } = layoutLevel({ nodes: sourceNodes, edges: sourceEdges, noteLinks, sizes, labelSize }, area);
     const saved = savedLayout(path);
-    const useSaved = sourceNodes.every((n) => saved[n.id]);
+    const useSaved = sourceNodes.every((n) => Number.isFinite(saved[n.id]?.x) && Number.isFinite(saved[n.id]?.y));
     setNodes((current) => current.map((n) => ({ ...n, position: useSaved ? saved[n.id] : positions.get(n.id), style: {} })));
     setPlacement((p) => ({ ...p, key: areaKey, hints }));
   }, [measured, placement.key, areaKey, area, flow, sourceNodes, sourceEdges, noteLinks, path, setNodes, labelSize]);
