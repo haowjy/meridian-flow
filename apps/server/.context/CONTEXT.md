@@ -242,4 +242,4 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 ## Cross-module links
 
 → [../../app/.context/CONTEXT.md](../../app/.context/CONTEXT.md) — frontend state/transport seams
-→ [`server/domains/`](../server/domains/) — projects, threads, context, runtime, packages, collab, storage, billing, observability, preferences, working-set
+→ [`server/domains/`](../server/domains/) — one directory per domain; read a domain's `AGENTS.md` and `.context/`, where it has them, before changing it

@@ -12,6 +12,11 @@ For setup, see [DEVELOPMENT.md](DEVELOPMENT.md). For product context, see [PRODU
 | `@meridian/database` | Drizzle schema, migrations, PL/pgSQL functions, and Postgres connection helpers for the Drizzle-backed local/runtime database. |
 | `@meridian/design-tokens` | Warm-paper design token package for colors, typography, spacing, and shared primitives. |
 | `@meridian/prosemirror-schema` | Shared ProseMirror structural contract for TipTap/Yjs document editing. |
+| `@meridian/markup` | Text to ProseMirror codecs, and the link rules the server and client share. |
+| `@meridian/agent-edit` | Yjs editing core for the model's document `read` and `write`: reply-scoped save buffering, write handles and undo. |
+| `@meridian/thread-client` | Framework-free chat core shared by the app and `./mf`: the thread socket, turn reduction, run state and the transcript view model. |
+| `@meridian/resource-replica` | Pure policy for the browser's replica of document and folder metadata. |
+| `@meridian/yjs-inspect` | Turns binary Hocuspocus/Yjs messages into metadata-only summaries, never text. |
 
 Domain runtime lives in `apps/server/server/domains/`, not in package route handlers. See [AGENTS.md](AGENTS.md) for the active layout rules.
 

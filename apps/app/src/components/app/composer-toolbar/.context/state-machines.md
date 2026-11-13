@@ -7,18 +7,22 @@ while it does work that must not be interrupted.
 ```mermaid
 stateDiagram-v2
   [*] --> closed
-  closed --> root: root.triggered, when controls overflow
-  root --> closed: root.triggered, root.dismissRequested, or the layout leaves nothing in overflow
+  closed --> overflow: root.triggered, when controls overflow
+  overflow --> closed: root.triggered, root.dismissRequested, or the layout leaves nothing in overflow
   closed --> panel: panel.triggered or panel.blockingTriggered
-  root --> panel: panel.triggered or panel.blockingTriggered
-  panel --> root: panel.backRequested, for a control that lives in overflow
+  overflow --> panel: panel.triggered or panel.blockingTriggered
+  panel --> overflow: panel.backRequested, for a control that lives in overflow
   panel --> closed: its own trigger again, panel.dismissRequested, panel.terminalClose
+  state "root (the overflow list)" as overflow
   state panel {
     [*] --> dismissible
     dismissible --> nondismissible: panel.blockingStarted
     nondismissible --> dismissible: panel.blockingSettled, outcome stay
   }
 ```
+
+The overflow list is `root` in the code. The diagram calls it `overflow` because Mermaid
+cannot draw a state whose id is `root`.
 
 - **A locked panel ignores dismiss, back, and other panels' triggers.** It closes only through
   `panel.blockingSettled` with outcome `close`, or `panel.terminalClose`.
