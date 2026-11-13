@@ -24,7 +24,7 @@ import type {
 
 type ReadModelProjectorRepositories = Pick<
   ThreadRepositories,
-  "blocks" | "imageInclusions" | "modelResponses" | "threads" | "turns"
+  "blocks" | "mediaInclusions" | "modelResponses" | "threads" | "turns"
 >;
 
 function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelResponseInput {
@@ -135,8 +135,8 @@ export async function projectReadModelEvent(
     case "turns.forgotten":
       await repos.turns.forgetTurns(event.turnIds as TurnId[], event.byTurnId as TurnId);
       return null;
-    case "image.inclusion_decided":
-      await projectImageInclusionDecision(repos, event);
+    case "media.inclusion_decided":
+      await projectMediaInclusionDecision(repos, event);
       return null;
     default:
       return null;
@@ -144,9 +144,9 @@ export async function projectReadModelEvent(
 }
 
 /** Shared repository write used by both journal projection and fork inheritance. */
-export async function projectImageInclusionDecision(
-  repos: Pick<ThreadRepositories, "imageInclusions">,
-  event: Extract<OrchestratorEvent, { type: "image.inclusion_decided" }>,
+export async function projectMediaInclusionDecision(
+  repos: Pick<ThreadRepositories, "mediaInclusions">,
+  event: Extract<OrchestratorEvent, { type: "media.inclusion_decided" }>,
 ): Promise<void> {
-  await repos.imageInclusions.set(event);
+  await repos.mediaInclusions.set(event);
 }

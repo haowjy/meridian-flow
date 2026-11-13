@@ -8,15 +8,15 @@
  */
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 
-import { isImageBlock, isToolDeliveryBlock } from "./block-kind";
+import { isToolDeliveryBlock } from "./block-kind";
 
 export type ToolView = {
   toolCallId: string | null;
   toolName: string;
   input: JsonValue | null;
   /**
-   * The tool's typed result. Renderers read fields here. The model's text
-   * (`output` on the block) is deliberately absent: the app never parses it.
+   * The tool's typed result. Renderers read fields here. What the model saw
+   * (`content` on the block) is deliberately absent: the app never parses it.
    * `null` while the call runs.
    */
   result: JsonValue | null;
@@ -69,7 +69,7 @@ export function groupDeliverySegments(blocks: Block[]): DeliverySegment[] {
     run = [];
   };
   for (const block of blocks) {
-    if (!isToolDeliveryBlock(block) || isImageBlock(block)) {
+    if (!isToolDeliveryBlock(block)) {
       flush();
       segments.push({ kind: "block", block });
     } else {

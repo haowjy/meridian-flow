@@ -82,7 +82,7 @@ One schema per HTTP response. A chat's run state is one versioned record, always
 
 ## gateway
 
-The model gateway: one streaming port to Anthropic, OpenAI and OpenAI-compatible providers.
+The model gateway: one streaming port to Anthropic, OpenAI, Gemini and OpenAI-compatible providers.
 
 Published to npm as `@meridian-flow/gateway` for other products, so it imports no workspace code, reads no environment variables and takes keys through its provider config. The server builds it from `FLOW_` variables in `lib/gateway/`.
 

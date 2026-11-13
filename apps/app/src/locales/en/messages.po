@@ -2549,8 +2549,8 @@ msgid "Deleting a Work…"
 msgstr "Deleting a Work…"
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Demo image"
-msgstr "Demo image"
+#~ msgid "Demo image"
+#~ msgstr "Demo image"
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Denied"
@@ -2880,8 +2880,8 @@ msgid "Failed"
 msgstr "Failed"
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Failed to load image"
-msgstr "Failed to load image"
+#~ msgid "Failed to load image"
+#~ msgstr "Failed to load image"
 
 #. placeholder {0}: upload.name
 #: src/components/app/composer/composer-document.ts
@@ -3470,7 +3470,6 @@ msgid "Loading files…"
 msgstr "Loading files…"
 
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "Loading image"
 
@@ -5419,6 +5418,10 @@ msgstr "That's more files than one import can hold. Import fewer at a time."
 msgid "That's more than one import can hold. Import less at a time."
 msgstr "That's more than one import can hold. Import less at a time."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI can't view this file."
+msgstr "The AI can't view this file."
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "The AI in {chat} deleted {count} documents ({names})."
@@ -5470,6 +5473,14 @@ msgstr "The AI in a chat deleted this document."
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI read the text extracted from this file."
+msgstr "The AI read the text extracted from this file."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI saw this file."
+msgstr "The AI saw this file."
 
 #: src/features/chat/tool-failure.tsx
 msgid "The assistant called this tool with arguments it couldn't use."

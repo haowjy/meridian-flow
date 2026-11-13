@@ -5,6 +5,7 @@
  * - lifecycle-aware file access projection and target resolution before refusal (kb/wiki/architecture/documents/access.md)
  */
 
+import { toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -142,10 +143,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
-      expect(scratchCall.output).toBe("scratch://@w1/\n  notes (read-only)");
+      expect(toolContentText(scratchCall.content)).toBe("scratch://@w1/\n  notes (read-only)");
       const search = await call("grep", { pattern: "Writer" });
-      expect(search.output).toContain("manuscript://chapter");
-      expect(search.output).not.toContain(".md");
+      expect(toolContentText(search.content)).toContain("manuscript://chapter");
+      expect(toolContentText(search.content)).not.toContain(".md");
       const data = crypto.randomUUID();
       await db.insert(schema.folders).values({
         contextSourceId: MANUSCRIPT_ID,
@@ -161,10 +162,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         rank: "a2",
       });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
-      expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
-      expect(manuscriptCall.output).not.toContain(".md");
+      expect(toolContentText(manuscriptCall.content)).toBe(
+        "manuscript://\n  scenes/\n  chapter\n  outline.json",
+      );
+      expect(toolContentText(manuscriptCall.content)).not.toContain(".md");
       const missing = await call("read", { path: "manuscript://missing.md" });
-      expect(missing.output).toContain("path: manuscript://missing.md");
+      expect(toolContentText(missing.content)).toContain("path: manuscript://missing.md");
     });
 
     // a switch that couldn't happen says why before action policy or mutation.
@@ -182,7 +185,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const script = await start();
       const { call } = await script.begin();
       const switchTo = async (work: string) =>
-        (await call("work", { command: "switch", work })).output;
+        toolContentText((await call("work", { command: "switch", work })).content);
 
       // a refusal reaches the model as its message and code.
       expect(await switchTo("ghost")).toBe("Unknown Work ghost. Use work list. (work_not_found)");
@@ -232,14 +235,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const archive = await call("work", { command: "archive", work: "w1" });
       expect(archive.isError).toBe(true);
-      expect(archive.output).toBe(
+      expect(toolContentText(archive.content)).toBe(
         "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
       );
       expect(archive.result).toMatchObject({ details: { reason: "action_denied" } });
 
       const switchWork = await call("work", { command: "switch", work: "w2" });
       expect(switchWork.isError).toBe(true);
-      expect(switchWork.output).toBe(
+      expect(toolContentText(switchWork.content)).toBe(
         "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
       );
       const writeMode = await call("work", { command: "write_mode", mode: "draft" });
@@ -266,7 +269,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "permission_denied",
         reason: "agent_read_only",
       });
-      expect(String(refused.output)).toContain(
+      expect(String(toolContentText(refused.content))).toContain(
         "Your permission is read, so you can change only scratch://.",
       );
 

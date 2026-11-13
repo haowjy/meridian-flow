@@ -5,7 +5,7 @@ export type {
   OrchestratorEvent,
 } from "@meridian/contracts/threads";
 export type { WorkContextNotices } from "../projects/index.js";
-export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
+export { createContextMediaResolver } from "./adapters/context-media-resolver.js";
 export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
 export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
@@ -156,8 +156,8 @@ export {
 } from "./loop/write-mode-switch.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
-export type { ImageAssetPort } from "./ports/image-asset.js";
-export { unavailableImageAssetPort } from "./ports/image-asset.js";
+export type { MediaResolverPort } from "./ports/media-resolver.js";
+export { unavailableMediaResolver } from "./ports/media-resolver.js";
 export type { FrontierLookups, ObservationFrontiers } from "./ports/observation-frontiers.js";
 export type { ShownLink, ShownLinkShowing, ShownLinkStore } from "./ports/shown-links.js";
 export {

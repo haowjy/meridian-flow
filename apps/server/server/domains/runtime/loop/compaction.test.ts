@@ -221,7 +221,11 @@ describe("estimateRequestTokens", () => {
                 toolName: "read",
                 input: { chapter: text },
               },
-              { type: "tool_result", toolCallId: "call-1", output: { chapter: text } },
+              {
+                type: "tool_result",
+                toolCallId: "call-1",
+                content: [{ type: "text", text: JSON.stringify({ chapter: text }) }],
+              },
             ],
           },
         ],
@@ -311,7 +315,7 @@ describe("planCompaction", () => {
       block("old-use", oldAnswer.id, 0, "tool_use", { toolCallId: "historical-tool", input: {} }),
       block("old-result", oldAnswer.id, 1, "tool_result", {
         toolCallId: "historical-tool",
-        output: "finished",
+        content: [{ type: "text", text: "finished" }],
       }),
       block("old-answer-text", oldAnswer.id, 2, "text", { text: "old answer" }, "old answer"),
     );
@@ -524,8 +528,12 @@ describe("compaction-owned elisions", () => {
     const reply = turn("reply", 2, "assistant");
     const c = compactionTurn("c", 3, "old", "pin");
     const late = turn("late", 4, "assistant");
-    const raw = { toolCallId: "call", toolName: "write", output: "STALE" };
-    const replacement = { ...raw, output: "FROZEN STUB" };
+    const raw = {
+      toolCallId: "call",
+      toolName: "write",
+      content: [{ type: "text", text: "STALE" }],
+    };
+    const replacement = { ...raw, content: [{ type: "text", text: "FROZEN STUB" }] };
     c.metadata = {
       ...(c.metadata as JsonObject),
       elisions: [

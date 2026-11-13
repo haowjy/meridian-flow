@@ -10,10 +10,12 @@
  * reads do, in the view their facts were spelled in, under the turn that
  * shows them. No persisted result carries the evidence itself.
  */
+
 import type { WriteOutcome } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { GenerateResult } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
@@ -33,6 +35,7 @@ import {
   type ToolRegistration,
   type ToolRegistry,
 } from "../../domains/runtime/index.js";
+import { admitted } from "../../domains/runtime/loop/__tests__/media-test-support.js";
 import { runtimeScenario } from "../../domains/runtime/loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../../domains/runtime/loop/__tests__/test-gateway.js";
 import type { ReferenceReader } from "../../domains/runtime/loop/reference-context.js";
@@ -329,7 +332,7 @@ async function runTurn(
     const run = await rig.orchestrator.prepare({
       threadId: rig.thread.id,
       userText: "Go.",
-      ...(control.userBlocks ? { userBlocks: control.userBlocks } : {}),
+      ...(control.userBlocks ? { userBlocks: admitted(control.userBlocks) } : {}),
       ...(control.signal ? { signal: control.signal } : {}),
     });
     turnId = run.executionTurnId;
@@ -456,7 +459,7 @@ const rows: Array<{
       const plain = await runTurn(windowed, [toolCall("grep", { pattern: "needle" })]);
       // What the model reads: the rendered text, not the typed hits beside it.
       const output = plain.results
-        .map((result) => String((result as { output?: unknown }).output))
+        .map((result) => toolContentText((result as { content: ToolContentPart[] }).content))
         .join("\n");
       check(output, "the left-out link is not in the output").not.toContain("never-shown");
       check(output, "the window cuts into the second link").toContain("[Cut…");
@@ -591,7 +594,7 @@ const rows: Array<{
             content: {
               toolCallId,
               toolName: "write",
-              output: "status: success\n\n[a](user://target-1)",
+              content: [{ type: "text", text: "status: success\n\n[a](user://target-1)" }],
               isError: false,
               metadata: {
                 documentRevisions: [{ documentId: TARGET, uri: TARGET_URI, revision: "r" }],
@@ -601,7 +604,9 @@ const rows: Array<{
         },
       });
       check(
-        results.map((result) => (result as { output?: unknown }).output),
+        results.map((result) =>
+          toolContentText((result as { content: ToolContentPart[] }).content),
+        ),
         "the model got the history quoting the write",
       ).toEqual([expect.stringContaining("target")]);
       return { store: h.store, threadId, shown: { [TARGET]: [] } };
@@ -637,7 +642,9 @@ const rows: Array<{
       paused.release();
       await new Promise((resolve) => setTimeout(resolve, 0));
       check(
-        results.map((result) => (result as { output?: unknown }).output),
+        results.map((result) =>
+          toolContentText((result as { content: ToolContentPart[] }).content),
+        ),
         "the model got the timeout",
       ).toEqual([expect.stringContaining("timed out")]);
       return { store: h.store, threadId, shown: { [SOURCE]: [] } };
@@ -664,7 +671,7 @@ const rows: Array<{
           toolExecutor: {
             executeTool: async (toolCall: { id: string }) => ({
               toolCallId: toolCall.id,
-              output: "read",
+              content: [{ type: "text", text: "read" }],
               result: {},
               evidence: {
                 shown: [

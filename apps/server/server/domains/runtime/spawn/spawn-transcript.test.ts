@@ -80,7 +80,7 @@ describe("persistReturnResult", () => {
 
     expect(settled.endsBatch).toBe(false);
     expect(settled.block.content).toMatchObject({
-      output: "A different return_result was already accepted",
+      content: [{ type: "text", text: "A different return_result was already accepted" }],
       result: { ok: false },
       isError: true,
     });

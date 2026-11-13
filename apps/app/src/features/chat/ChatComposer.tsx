@@ -11,7 +11,6 @@ import {
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { canOpenReference } from "@/features/project/context/open-project-document";
 import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useAskTakeover } from "./ask/useAskTakeover";
@@ -87,7 +86,6 @@ function ChatComposerComponent({
   const dock = useDraftDock({ threadId, generating, active });
   const openReferenceDocument = useOpenPlacedDocument(projectId);
   const onOpenReference = useCommittedEvent((reference: { uri: string; documentId: string }) => {
-    if (!canOpenReference(reference.uri)) return;
     void openReferenceDocument(reference.documentId);
   });
 

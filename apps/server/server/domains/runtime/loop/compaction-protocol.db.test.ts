@@ -12,15 +12,17 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 import {
   CompactionMetadataCodec,
-  encodeImageInclusionMetadata,
+  encodeMediaInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
-import { ImageAssetResolutionError } from "../ports/image-asset.js";
+import { MediaResolutionError } from "../ports/media-resolver.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { grepDocumentText, readDocumentText, writeDocumentText } from "../tools/document-text.js";
+import { jsonContent } from "../tools/tool-content.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
+import { bytesMedia } from "./__tests__/media-test-support.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
@@ -103,9 +105,15 @@ else
           const uri = `scratch://${key}.png`;
           const block = await rig.repos.blocks.create({
             turnId: userTurn.id,
-            blockType: "image",
+            blockType: "media",
             sequence: sequence + 1,
-            content: { type: "image_reference", documentId, uri },
+            content: {
+              type: "media",
+              ref: { documentId, uri },
+              mediaType: "image/png",
+              sizeBytes: 5,
+              name: `${key}.png`,
+            },
             status: "complete",
           });
           return { block, documentId, uri };
@@ -117,6 +125,7 @@ else
         const breaks = excluded.map(({ block, uri }) => ({
           blockId: block.id,
           uri,
+          mediaType: "image/png",
           reason: "budget_eviction" as const,
         }));
         const notice = await rig.repos.turns.create({
@@ -125,42 +134,42 @@ else
           role: "system",
           origin: "system",
           status: "complete",
-          metadata: encodeImageInclusionMetadata(breaks),
+          metadata: encodeMediaInclusionMetadata(breaks),
         });
         await rig.repos.blocks.create({
           turnId: notice.id,
           blockType: "text",
           sequence: 0,
-          content: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
-          textContent: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
+          content: `<system_update>\nMedia context changed.\n${breaks.map(({ uri }) => `Removed the image ${uri} to fit the media budget.`).join("\n")}\n</system_update>`,
+          textContent: `<system_update>\nMedia context changed.\n${breaks.map(({ uri }) => `Removed the image ${uri} to fit the media budget.`).join("\n")}\n</system_update>`,
           status: "complete",
         });
         exclusionTurnId = notice.id;
       }
       for (const [index, { block }] of savedImages.entries()) {
-        await rig.repos.imageInclusions.set({
+        await rig.repos.mediaInclusions.set({
           threadId: rig.threadId,
           blockId: block.id,
+          partIndex: 0,
           decisionTurnId: images[index]?.included ? userTurn.id : exclusionTurnId,
           included: images[index]?.included ?? false,
         });
       }
       const assets = new Map(images.map((image) => [`image-${image.key}`, image]));
       const resolutionCounts = new Map<string, number>();
-      rig.deps.imageAssets = {
+      rig.deps.mediaResolver = {
         async resolve(_context, reference) {
           resolutionCounts.set(
             reference.documentId,
             (resolutionCounts.get(reference.documentId) ?? 0) + 1,
           );
           const asset = assets.get(reference.documentId);
-          if (asset?.key === "transient") throw new ImageAssetResolutionError("retry later");
+          if (asset?.key === "transient") throw new MediaResolutionError("retry later");
           if (!asset) return null;
-          return {
-            mediaType: "image/png",
+          return bytesMedia({
             data: `data:image/png;base64,${asset.key}`,
             sizeBytes: asset.sizeBytes,
-          };
+          });
         },
       };
       return { userTurn, savedImages, assets, resolutionCounts };
@@ -169,8 +178,8 @@ else
     function requestImageData(request: import("@meridian-flow/gateway").GenerateRequest) {
       return request.messages
         .flatMap((message) => message.content)
-        .filter((part) => part.type === "image")
-        .map((part) => part.data);
+        .filter((part) => part.type === "media")
+        .map((part) => ("data" in part.source ? part.source.data : part.source));
     }
 
     async function imageFixture(
@@ -231,6 +240,26 @@ else
                 },
           },
         });
+        const stored = isGrep
+          ? {
+              files: [
+                {
+                  uri,
+                  matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
+                  matchCount: 7,
+                },
+                {
+                  uri: "kb://fresh",
+                  matches: [{ excerpt: "FRESH SEARCH TEXT" }],
+                  matchCount: 1,
+                },
+              ],
+              totalFiles: 2,
+              exact: true,
+            }
+          : record.id === "failed-write"
+            ? "Write did not land"
+            : staleText;
         results.push(
           await rig.repos.blocks.create({
             turnId: answer.id,
@@ -240,26 +269,8 @@ else
             content: {
               toolCallId: record.id,
               toolName,
-              output: isGrep
-                ? {
-                    files: [
-                      {
-                        uri,
-                        matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
-                        matchCount: 7,
-                      },
-                      {
-                        uri: "kb://fresh",
-                        matches: [{ excerpt: "FRESH SEARCH TEXT" }],
-                        matchCount: 1,
-                      },
-                    ],
-                    totalFiles: 2,
-                    exact: true,
-                  }
-                : record.id === "failed-write"
-                  ? "Write did not land"
-                  : staleText,
+              content: jsonContent(stored),
+              ...(isGrep ? { result: stored } : {}),
               isError: record.id === "failed-write",
               metadata: {
                 documentRevisions: [
@@ -387,7 +398,7 @@ else
       });
       expect(promptBytes(rebuilt.generateRequest)).toBe(bytes);
       expect((await rig.repos.blocks.findById(results[0].id))!.content).toMatchObject({
-        output: "STALE-READ TEXT",
+        content: [{ type: "text", text: "STALE-READ TEXT" }],
       });
       usage.inputTokens = 50_000;
       rig.setThreshold(100_000);
@@ -425,7 +436,7 @@ else
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
       expect(promptBytes(rig.gateway.requests.at(-1)!)).not.toContain("FRESH-READ TEXT");
       expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
-        output: "FRESH-READ TEXT",
+        content: [{ type: "text", text: "FRESH-READ TEXT" }],
       });
     });
 
@@ -520,7 +531,9 @@ else
       expect(JSON.stringify(await projected(forkAfter))).not.toContain("STALE-READ TEXT");
       expect(
         (await projected(forkAfter)).blocks.find((b) => b.id === results[0].id)?.content,
-      ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
+      ).toMatchObject({
+        content: [{ type: "text", text: expect.stringContaining("Cleared at compaction") }],
+      });
     });
 
     it("sends no image block of a forgotten message and reads no asset for it (C11)", async () => {
@@ -583,13 +596,14 @@ else
       const compaction = turns.find((turn) => turn.role === "compaction");
       if (!compaction) throw new Error("Missing compaction turn");
       expect(
-        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+        (await rig.repos.mediaInclusions.listByThread(rig.threadId)).filter(
           (row) => row.blockId === savedImages[0]?.block.id && row.decisionTurnId === compaction.id,
         ),
       ).toEqual([
         {
           threadId: rig.threadId,
           blockId: savedImages[0]?.block.id,
+          partIndex: 0,
           decisionTurnId: compaction.id,
           included: true,
         },
@@ -618,8 +632,8 @@ else
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,
-        imageAssets: rig.deps.imageAssets,
-        imageInclusions: rig.repos.imageInclusions,
+        mediaResolver: rig.deps.mediaResolver,
+        mediaInclusions: rig.repos.mediaInclusions,
         promptBakes: rig.repos.promptBakes,
         workContext: rig.deps.workContext,
       });
@@ -649,7 +663,7 @@ else
       );
       if (!compaction) throw new Error("Missing compaction turn");
       expect(
-        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+        (await rig.repos.mediaInclusions.listByThread(rig.threadId)).filter(
           (row) => row.blockId === savedImages[0]?.block.id,
         ),
       ).toHaveLength(1);
@@ -1697,11 +1711,16 @@ else
             {
               type: "tool_result",
               toolCallId: "last-tool",
-              output: {
-                error: "permission_denied",
-                reason:
-                  'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
-              },
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    error: "permission_denied",
+                    reason:
+                      'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
+                  }),
+                },
+              ],
               isError: true,
             },
           ],
@@ -1950,7 +1969,8 @@ else
         maxOutputTokens: 100,
         promptCache: { kind: "automatic" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] as const },
-        capabilities: new Set<import("@meridian-flow/gateway").Capability>(),
+        wire: "openai" as const,
+        inputModalities: ["text" as const],
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);

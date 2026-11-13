@@ -11,8 +11,7 @@ export const turnRoleSchema = z.enum(["user", "assistant", "system", "compaction
 export const turnOriginSchema = z.enum(["writer", "assistant", "system"]);
 export const blockTypeSchema = z.enum([
   "text",
-  "image",
-  "file",
+  "media",
   "reasoning",
   "thinking",
   "tool_use",

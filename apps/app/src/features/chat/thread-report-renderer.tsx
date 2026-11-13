@@ -1,7 +1,7 @@
 /**
  * Fold row for `thread_report`: the step where the model read a subagent's
  * report. The report itself lives on the launch card; this row records the read.
- * It reads the typed `tool.result`; `tool.output` is the model's text rendering.
+ * It reads the typed `tool.result`; `tool.content` is what the model saw.
  * `SubagentRefLine` names the addressed subagent for every ref-addressed row.
  */
 

@@ -4,7 +4,9 @@
  * victim, and its draft stays writable; admission opens only a draft destination in a branch
  * that has an active draft of the document.
  */
+
 import type { DocumentId, WorkId } from "@meridian/contracts";
+import { toolContentText } from "@meridian/contracts/threads";
 import { documentDrafts } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
@@ -46,12 +48,14 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     await s.model(second).edit("ch3", "crossed the river", "crossed the burning river");
     expect.soft(await s.view(ascension).text("ch3")).toContain("burning river");
     const read = await s.model(second).now("read", { path: "manuscript://ch3" });
-    expect.soft(String(read.output), "read says why").toContain("Deleted from the manuscript");
+    expect
+      .soft(String(toolContentText(read.content)), "read says why")
+      .toContain("Deleted from the manuscript");
     // Its own edit undoes in the draft it landed in.
     const undone = await s
       .model(second)
       .now("write", { command: "undo", path: "manuscript://ch3" });
-    expect.soft(undone.isError ?? false, JSON.stringify(undone.output)).toBe(false);
+    expect.soft(undone.isError ?? false, JSON.stringify(undone.content)).toBe(false);
     expect.soft(await s.view(ascension).text("ch3")).not.toContain("burning");
 
     const access = runtime.ports.fileAccess;

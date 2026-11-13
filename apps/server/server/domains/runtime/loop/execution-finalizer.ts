@@ -149,7 +149,7 @@ export async function finalizeExecution(
       | "threads"
       | "turns"
       | "blocks"
-      | "imageInclusions"
+      | "mediaInclusions"
       | "modelResponses"
       | "transaction"
       | "executionReports"

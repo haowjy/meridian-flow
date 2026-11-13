@@ -7,9 +7,11 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Extensionless, read-only skill addresses (kb/wiki/architecture/agents/definitions.md)
  */
+
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolContentText } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
@@ -65,12 +67,14 @@ async function criticTools() {
     createToolRegistry({ registrations: createModelToolRegistrations(deps) }),
   );
   return async (name: string, input: Record<string, unknown>) =>
-    (
-      await executor.executeTool({ id: "call-1", name, arguments: input }, {
-        threadId: THREAD_ID,
-        turnId: "turn-1",
-      } as never)
-    ).output;
+    toolContentText(
+      (
+        await executor.executeTool({ id: "call-1", name, arguments: input }, {
+          threadId: THREAD_ID,
+          turnId: "turn-1",
+        } as never)
+      ).content,
+    );
 }
 
 describe("skills:// at the model tools", () => {

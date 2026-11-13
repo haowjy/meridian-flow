@@ -7,7 +7,6 @@ import { type Block, blockPlainText, type Turn } from "@meridian/contracts/proto
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { sameJson } from "../turns/same-turn";
-import { isImageBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
@@ -268,7 +267,7 @@ function artifactItem(block: Block, direct: DirectInvocationResult | null): View
     direct,
     cardKind:
       block.blockType === "custom" ? (componentBlockContent(block.content)?.kind ?? null) : null,
-    text: block.blockType === "custom" || isImageBlock(block) ? null : plainRowText(block),
+    text: block.blockType === "custom" ? null : plainRowText(block),
   };
 }
 

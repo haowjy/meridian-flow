@@ -10,8 +10,7 @@ const EXCERPT_CHARACTERS = 1200;
 
 function renderPart(part: ContentPart): string {
   if (part.type === "text") return part.text;
-  if (part.type === "image" || part.type === "file")
-    return `[${part.type}: ${(part as unknown as { uri?: string }).uri ?? "URI unavailable"}]`;
+  if (part.type === "media") return `[media: ${part.filename ?? part.mediaType}]`;
   return JSON.stringify(part);
 }
 

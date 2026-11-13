@@ -41,7 +41,7 @@ function readPair(metadata: JsonObject) {
     block("result", "tool_result", {
       toolCallId: "call-id",
       toolName: "write",
-      output: "OLD DOCUMENT",
+      content: [{ type: "text", text: "OLD DOCUMENT" }],
       metadata,
     }),
   ];

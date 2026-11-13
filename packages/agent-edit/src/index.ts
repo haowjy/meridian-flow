@@ -84,6 +84,7 @@ export {
   type NamespaceRefusal,
   type WriteRejection,
 } from "./tool/model-result.js";
+export { readStaticMarkdown } from "./tool/read-static.js";
 export { removedFile, survivingDraftNotice } from "./tool/removal-copy.js";
 export {
   agentEditResultSummary,

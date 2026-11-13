@@ -428,32 +428,7 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/adapters/context-image-assets.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/runtime/adapters/drizzle-session-lock.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/adapters/provider-http-error.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/attempt-stream.ts",
-        "line": "void Promise.resolve()",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/helpers/serialize.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/lib/gateway/instrumented-gateway.ts",
         "line": "} catch {",
         "count": 1
       },
@@ -464,6 +439,11 @@
       },
       {
         "path": "apps/server/server/domains/runtime/tools/tool-executor.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/gateway/instrumented-gateway.ts",
         "line": "} catch {",
         "count": 1
       },
@@ -495,6 +475,16 @@
       {
         "path": "packages/agent-edit/src/tool/write.ts",
         "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/gateway/src/adapters/provider-http-error.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/gateway/src/attempt-stream.ts",
+        "line": "void Promise.resolve()",
         "count": 1
       },
       {

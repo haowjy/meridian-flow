@@ -28,11 +28,14 @@ flowchart LR
   app -->|"signs the writer in"| workos
   app -->|"fetches data while rendering a page"| server
   server -->|"stores and fetches bytes"| objectstore
+  models -->|"fetch signed links to a file the model reads"| objectstore
   server <-->|"checkout, payment webhook"| stripe
   www -->|"links to sign-in"| app
   note1["The server, not the app, owns chat, documents and files. The app only serves pages and signs the writer in."]:::note
   note1 -.- server
   note1 -.- app
+  note3["When a model reads a picture or PDF, the server sends it a signed, expiring link instead of the bytes, and the provider fetches the file from the object store itself."]:::note
+  note3 -.- objectstore
   note2["mf and ci are tools around the system, not parts a writer meets. mf calls the server the way the app does; ci builds, tests and migrates."]:::note
   note2 -.- mf
   note2 -.- ci

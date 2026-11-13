@@ -9,8 +9,11 @@
  * - Assistant messages with tool_use parts emit both a text `content` field
  *   (possibly null) and a `tool_calls` array, matching the Chat Completions
  *   assistant-message shape.
- * - Image parts trigger array-format content (text + image_url blocks);
+ * - Media parts trigger array-format content (text + image_url/file blocks);
  *   text-only messages use the simpler string content format.
+ * - A tool result's media go in one user message right after the run of tool
+ *   messages (the `tool` role takes text only), each preceded by a line naming its
+ *   tool call, not stringified into the result.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
  * - Reasoning: a resolved effort goes out as `reasoning_effort`; `default` and
@@ -22,54 +25,55 @@ import type OpenAI from "openai";
 import type {
   ContentPart,
   GenerateRequest,
+  MediaPart,
   Message,
   ModelInfo,
   ResolvedCall,
+  TextPart,
   Tool,
 } from "../../domain/index.js";
-import { safeToolOutput } from "../../helpers/serialize.js";
+import { wireMediaSource } from "../../domain/media.js";
 
-function textFromParts(parts: ContentPart[]): string {
+type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+type ChatContentPart = OpenAI.Chat.Completions.ChatCompletionContentPart;
+type MediaTarget = Pick<ModelInfo, "wire" | "imageLinks">;
+
+function textFromParts(parts: readonly ContentPart[]): string {
   return parts
-    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+    .filter((p): p is TextPart => p.type === "text")
     .map((p) => p.text)
     .join("");
 }
 
+/** Images go by link (where the host fetches them) or as a data URL; a PDF is bytes only (`file` with a filename), as Chat Completions has no file URL. */
+function mapMedia(part: MediaPart, target: MediaTarget): ChatContentPart {
+  const media = wireMediaSource(target, part);
+  if (media.kind === "image") {
+    const url = "url" in media ? media.url : `data:${media.mediaType};base64,${media.data}`;
+    return { type: "image_url", image_url: { url } };
+  }
+  if ("url" in media) throw new Error("Chat Completions has no file URL for a PDF");
+  return {
+    type: "file",
+    file: { filename: media.filename, file_data: `data:${media.mediaType};base64,${media.data}` },
+  };
+}
+
 /**
  * Map canonical ContentPart[] to Chat Completions content.
- * Text-only messages use the string shorthand; messages with images use the
- * array format (text + image_url blocks). Non-text/non-image parts are
- * silently dropped because Chat Completions has no native reasoning_part or
- * tool_use_part in user/assistant message content.
+ * Text-only messages use the string shorthand; messages with media use the
+ * array format. Non-text/non-media parts are silently dropped because Chat
+ * Completions has no native reasoning_part or tool_use_part in user/assistant
+ * message content.
  */
-function mapContentParts(
-  parts: ContentPart[],
-): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
-  const hasImage = parts.some((p) => p.type === "image");
-  if (!hasImage) return textFromParts(parts);
+function mapContentParts(parts: ContentPart[], target: MediaTarget): string | ChatContentPart[] {
+  if (!parts.some((p) => p.type === "media")) return textFromParts(parts);
 
-  const mapped: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
+  const mapped: ChatContentPart[] = [];
   for (const part of parts) {
-    switch (part.type) {
-      case "text":
-        if (part.text.length > 0) {
-          mapped.push({ type: "text", text: part.text });
-        }
-        break;
-      case "image": {
-        const url =
-          part.data instanceof URL
-            ? part.data.href
-            : part.data.startsWith("data:")
-              ? part.data
-              : `data:${part.mediaType};base64,${part.data}`;
-        mapped.push({ type: "image_url", image_url: { url } });
-        break;
-      }
-      default:
-        break;
-    }
+    if (part.type === "text" && part.text.length > 0)
+      mapped.push({ type: "text", text: part.text });
+    else if (part.type === "media") mapped.push(mapMedia(part, target));
   }
   return mapped;
 }
@@ -89,6 +93,56 @@ function hasContent(
   return content.length > 0;
 }
 
+function mapToolMessage(message: Message): ChatMessage | null {
+  const result = message.content.find((p) => p.type === "tool_result");
+  if (!result) return null;
+  const text = textFromParts(result.content);
+  const hasMedia = result.content.some((p) => p.type === "media");
+  return {
+    role: "tool",
+    tool_call_id: result.toolCallId,
+    content: text.length > 0 || !hasMedia ? text : "(attachments follow)",
+  };
+}
+
+/** The user message that carries a run of tool messages' media, or null when they had none. */
+function toolMediaMessage(run: Message[], target: MediaTarget): ChatMessage | null {
+  const content: ChatContentPart[] = [];
+  for (const message of run) {
+    const result = message.content.find((p) => p.type === "tool_result");
+    const media = result?.content.filter((p) => p.type === "media") ?? [];
+    if (!result || media.length === 0) continue;
+    content.push({
+      type: "text",
+      text: `Attachments from the result of tool call ${result.toolCallId}:`,
+    });
+    for (const part of media) content.push(mapMedia(part, target));
+  }
+  return content.length > 0 ? { role: "user", content } : null;
+}
+
+/** Map a message list; a run of tool messages is followed by one user message with their media. */
+function mapMessages(messages: Message[], target: MediaTarget): ChatMessage[] {
+  const mapped: ChatMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role !== "tool") {
+      const next = mapMessage(messages[i], target);
+      if (next) mapped.push(next);
+      continue;
+    }
+    const run: Message[] = [];
+    while (i < messages.length && messages[i].role === "tool") run.push(messages[i++]);
+    i--;
+    for (const message of run) {
+      const next = mapToolMessage(message);
+      if (next) mapped.push(next);
+    }
+    const media = toolMediaMessage(run, target);
+    if (media) mapped.push(media);
+  }
+  return mapped;
+}
+
 /**
  * Map a canonical Message to a Chat Completions message param.
  *
@@ -97,18 +151,9 @@ function hasContent(
  * other roles pass through directly. Messages with empty content are
  * filtered out (null return).
  */
-function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
+function mapMessage(message: Message, target: MediaTarget): ChatMessage | null {
   if (message.role === "system") return mapSystemMessage(message);
-
-  if (message.role === "tool") {
-    const result = message.content.find((p) => p.type === "tool_result");
-    if (!result) return null;
-    return {
-      role: "tool",
-      tool_call_id: result.toolCallId,
-      content: safeToolOutput(result.output),
-    };
-  }
+  if (message.role === "tool") return mapToolMessage(message);
 
   if (message.role === "assistant") {
     const toolUses = message.content.filter((p) => p.type === "tool_use");
@@ -128,7 +173,7 @@ function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMes
     }
   }
 
-  const content = mapContentParts(message.content);
+  const content = mapContentParts(message.content, target);
   if (!hasContent(content)) return null;
 
   return {
@@ -171,14 +216,12 @@ function mapReasoningEffort(
  */
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
-  model: Pick<ModelInfo, "id">,
+  model: Pick<ModelInfo, "id" | "wire" | "imageLinks">,
   call: ResolvedCall,
 ): OpenAI.Chat.Completions.ChatCompletionCreateParams {
   return {
     model: model.id,
-    messages: request.messages
-      .map(mapMessage)
-      .filter((m): m is OpenAI.Chat.Completions.ChatCompletionMessageParam => m !== null),
+    messages: mapMessages(request.messages, model),
     tools: mapTools(request.tools),
     reasoning_effort: mapReasoningEffort(call.reasoning),
     stream: true,

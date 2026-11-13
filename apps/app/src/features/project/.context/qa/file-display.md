@@ -31,7 +31,7 @@ a scratch directory outside the checkout:
    Drop `broken.tiff`: the inline card appears after one automatic refresh.
 5. Attach `map.tiff` to a chat with the paperclip and send. The server log shows
    the image sent as `image/webp`; the model describes it. With `broken.tiff` the
-   image is left out with an `image.omitted` event, not sent as `image/tiff`.
+   image is left out with an `media.omitted` event, not sent as `image/tiff`.
 6. Copy `map.tiff` (Copy to…): the copy opens with its preview; delete the
    original and the copy still draws.
 7. Ask a Work to create `map.tiff`'s duplicate in a draft: the draft strip opens

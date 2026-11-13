@@ -4,18 +4,19 @@
  * writer send persisted at enqueue and a run-start turn are byte-identical.
  */
 import {
+  type AdmittedMessageBlock,
   referenceOccurrenceContent,
   skillOccurrenceContent,
   type UserMessageBlock,
   userMessageTurnBlock,
 } from "@meridian/contracts/protocol";
 import type { TurnId } from "@meridian/contracts/runtime";
-import type { BlockUpsertedRow } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, StoredMediaPart } from "@meridian/contracts/threads";
 import { contentForBlockInput } from "./block-helpers.js";
 
 export function writerUserTurnBlocks(
   userTurnId: TurnId,
-  blocks: readonly UserMessageBlock[],
+  blocks: readonly AdmittedMessageBlock[],
 ): BlockUpsertedRow[] {
   return blocks.map((block, sequence) =>
     contentForBlockInput({
@@ -37,18 +38,14 @@ export function userMessageBlocksFromTurn(
 ): UserMessageBlock[] {
   const ordered = [...blocks].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
   return ordered.flatMap((block): UserMessageBlock[] => {
-    if (block.blockType === "image") {
-      const content = block.content as {
-        type?: string;
-        documentId?: string;
-        uri?: string;
-      } | null;
-      return content?.type === "image_reference" && content.documentId && content.uri
+    if (block.blockType === "media") {
+      const content = block.content as Partial<StoredMediaPart> | null;
+      return content?.type === "media" && content.ref
         ? [
             {
               type: "image",
-              documentId: content.documentId as never,
-              uri: content.uri as never,
+              documentId: content.ref.documentId as never,
+              uri: content.ref.uri as never,
             },
           ]
         : [];

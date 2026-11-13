@@ -69,6 +69,12 @@ export interface ObjectStoreSignedUrlOptions {
   contentDisposition?: string;
 }
 
+export interface ObjectStoreProviderLinkOptions {
+  /** The moment the link is signed as of. A caller that passes the same time gets the same link. */
+  signedAt: Date;
+  expiresInSeconds: number;
+}
+
 export interface ObjectStoreListEntry {
   key: string;
   sizeBytes: number;
@@ -128,5 +134,15 @@ export interface ObjectStorePort {
     key: string,
     options?: ObjectStoreSignedUrlOptions,
   ): Promise<ObjectStoreResult<string>>;
+  /**
+   * An `https` GET link a model provider can fetch, or `null` when this store has none (local and
+   * in-memory stores, or an endpoint that is not `https`): the caller then reads the bytes. The
+   * link is a pure function of key, `signedAt` and `expiresInSeconds`, so a caller can keep it
+   * identical across requests. Does not check that the object exists.
+   */
+  getProviderReadLink(
+    key: string,
+    options: ObjectStoreProviderLinkOptions,
+  ): Promise<ObjectStoreResult<string | null>>;
   delete(key: string): Promise<ObjectStoreResult<void>>;
 }

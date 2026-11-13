@@ -16,6 +16,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { isSafeKey, isSafeKeyPrefix } from "../../object-key.js";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
@@ -23,6 +24,7 @@ import type {
   ObjectStoreGetOptions,
   ObjectStoreHead,
   ObjectStorePort,
+  ObjectStoreProviderLinkOptions,
   ObjectStoreResult,
   ObjectStoreSignedPut,
   ObjectStoreSignedPutOptions,
@@ -55,12 +57,6 @@ function ok<T>(value: T): ObjectStoreResult<T> {
 
 function err(code: ObjectStoreErrorCode, message: string): ObjectStoreResult<never> {
   return { ok: false, error: { code, message } };
-}
-
-const SAFE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$/;
-
-function isSafeKey(key: string): boolean {
-  return SAFE_KEY_RE.test(key) && !key.split("/").some((part) => part === ".." || part === "");
 }
 
 function isNotFound(error: unknown): boolean {
@@ -272,8 +268,7 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       cursor?: string;
     }>
   > {
-    if (!isSafeKey(prefix) && prefix !== "")
-      return err("invalid_key", "Object key prefix is invalid");
+    if (!isSafeKeyPrefix(prefix)) return err("invalid_key", "Object key prefix is invalid");
 
     const limit = options?.limit ?? 1_000;
     try {
@@ -327,6 +322,24 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
         { expiresIn: this.signedUrlTtlSeconds },
       );
       return ok(url);
+    } catch (error) {
+      return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
+    }
+  }
+
+  async getProviderReadLink(
+    key: string,
+    options: ObjectStoreProviderLinkOptions,
+  ): Promise<ObjectStoreResult<string | null>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+    try {
+      const url = await getSignedUrl(
+        this.presignClient,
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        { expiresIn: options.expiresInSeconds, signingDate: options.signedAt },
+      );
+      // A provider only fetches https; a plain-http dev endpoint has no link to give.
+      return ok(url.startsWith("https://") ? url : null);
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
     }

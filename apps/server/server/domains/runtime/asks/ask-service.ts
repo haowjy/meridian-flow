@@ -19,6 +19,7 @@ import type {
   QuestionAskPayload,
   ResolvedQuestionAnswer,
   ThreadAsk,
+  ToolContentPart,
 } from "@meridian/contracts/threads";
 import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -32,6 +33,7 @@ import type {
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
+import { jsonContent } from "../tools/tool-content.js";
 import { askDeadline } from "./ask-deadline.js";
 
 export type AskAnswerResult =
@@ -55,7 +57,7 @@ export type AskRequestOutcome =
   | { kind: "refused"; refusal: JsonValue };
 
 export type AskToolResult = {
-  output: JsonValue;
+  content: ToolContentPart[];
   result: JsonValue;
   isError: boolean;
   metadata?: JsonObject;
@@ -180,13 +182,16 @@ export const refusingPermissionExecutor: PermissionExecutor = {
 };
 
 const DENIED: AskToolResult = {
-  output: { allowed: false },
+  content: jsonContent({ allowed: false }),
   result: { allowed: false },
   isError: false,
 };
 
 const UNREADABLE_COMMAND: AskToolResult = {
-  output: { allowed: false, error: "This request was stored by another version and cannot run." },
+  content: jsonContent({
+    allowed: false,
+    error: "This request was stored by another version and cannot run.",
+  }),
   result: { allowed: false, error: "This request was stored by another version and cannot run." },
   isError: true,
 };
@@ -314,7 +319,7 @@ export function createAskService(deps: {
     const decision = ask.resolution?.kind;
     if (ask.kind === "question" || decision === "cancelled") {
       const result = askToolResult(ask);
-      return { output: result, result, isError: false };
+      return { content: jsonContent(result), result, isError: false };
     }
     if (decision === "deny") return DENIED;
     if (decision !== "allow" && decision !== "allow_always")

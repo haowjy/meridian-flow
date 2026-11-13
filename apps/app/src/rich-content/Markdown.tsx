@@ -17,8 +17,6 @@ type MarkdownBaseProps = {
   skills?: readonly MarkdownSkillOccurrence[];
   referenceResolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpenReference?: (documentId: string) => void;
-  /** A reference the host has no way to open is drawn without its link. */
-  canOpenReference?: (uri: string) => boolean;
   uploadsChat?: string;
 };
 
@@ -36,7 +34,6 @@ export function Markdown({
   skills,
   referenceResolutions,
   onOpenReference,
-  canOpenReference,
   uploadsChat,
 }: MarkdownProps) {
   return (
@@ -44,7 +41,6 @@ export function Markdown({
       value={{
         resolutions: referenceResolutions,
         onOpen: onOpenReference,
-        canOpen: canOpenReference,
         uploadsChat,
       }}
     >

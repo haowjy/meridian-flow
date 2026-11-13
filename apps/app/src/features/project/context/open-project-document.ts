@@ -38,6 +38,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
@@ -58,6 +59,7 @@ import {
 } from "./account-feature-context";
 import { openDocumentFromFile } from "./open-document-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
+import { UploadViewerDialog } from "./UploadViewerDialog";
 
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
@@ -292,7 +294,7 @@ export type OpenDocumentOutcome =
   | { kind: "committed"; documentId: string }
   | { kind: "trashed"; documentId: string }
   | { kind: "cancelled" }
-  | { kind: "refused"; reason: "gone" | "no-viewer" | "lookup-failed" };
+  | { kind: "refused"; reason: "gone" | "lookup-failed" };
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
 ) => Promise<OpenDocumentOutcome>;
@@ -302,6 +304,8 @@ type NavigationAdapterDependencies = {
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
+  /** Shows a chat's upload, which belongs to no main address, in its viewer. */
+  viewUpload(tab: Extract<OpenDocument, { kind: "viewer" }>): void;
   resources?: Pick<
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
     "accountId" | "observeProjection" | "readProjectionState"
@@ -336,11 +340,7 @@ function identityForRecord(
   };
 }
 
-type CommitResult =
-  | { kind: "applied" }
-  | { kind: "cancelled" }
-  | { kind: "no-viewer" }
-  | { kind: "failed" };
+type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
 
 /** Turns a document identity into a committed destination; the destination owns content. */
 export class ProjectDocumentNavigationAdapter {
@@ -409,6 +409,18 @@ export class ProjectDocumentNavigationAdapter {
         return this.openTrash(documentId, controller.signal, isCurrent, replace);
       const { identity, transfer } = identified;
 
+      if (!isEditorScheme(identity.scheme)) {
+        const tab = openDocumentFromFile(
+          identity.scheme,
+          identity.file,
+          identity.chatId ? { chatThreadId: identity.chatId } : {},
+        );
+        if (tab.kind !== "viewer") return { kind: "refused", reason: "lookup-failed" };
+        if (!isCurrent()) return { kind: "cancelled" };
+        this.dependencies.viewUpload(tab);
+        return { kind: "committed", documentId };
+      }
+
       if (refreshIdentity && this.dependencies.resources) {
         // Restoring a deleted ancestor republishes the document through the catalog. Do not
         // open it while the replica still holds the prior terminal record: that record would
@@ -444,7 +456,6 @@ export class ProjectDocumentNavigationAdapter {
         transfer,
       });
       if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
-      if (committed.kind === "no-viewer") return { kind: "refused", reason: "no-viewer" };
       return committed.kind === "applied"
         ? { kind: "committed", documentId }
         : { kind: "cancelled" };
@@ -524,10 +535,24 @@ export class ProjectDocumentNavigationAdapter {
     return { kind: "identified", identity, ...(transfer ? { transfer } : {}) };
   }
 
+  /** Whether the replica holds `documentId` as a file the Editor never opens (a chat's upload). */
+  isUpload(projectId: string, documentId: string): boolean {
+    const projection = this.dependencies.resources?.readProjectionState(projectId);
+    if (projection?.kind !== "ready") return false;
+    const record = projection.snapshot.records.find(
+      (candidate) => candidate.resource.identity.documentId === documentId,
+    );
+    const scheme = record
+      ? resourcePlacementForSnapshot(projectId, projection.snapshot).resourceLocation(record)
+          ?.scheme
+      : undefined;
+    return scheme !== undefined && !isEditorScheme(scheme);
+  }
+
   /**
    * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
    * the side's document. Null when the document no longer opens in the editor (removed, or an
-   * upload); throws when the lookup failed.
+   * upload, which opens in a dialog instead); throws when the lookup failed.
    */
   async describe(
     projectId: string,
@@ -580,11 +605,6 @@ export class ProjectDocumentNavigationAdapter {
     transfer?: AvailableOpenResolution;
   }): Promise<CommitResult> {
     if (!input.isCurrent()) return { kind: "cancelled" };
-    // An upload belongs to its chat and has no Editor address.
-    if (!isEditorScheme(input.scheme)) {
-      this.current = null;
-      return { kind: "no-viewer" };
-    }
     const owner: ContextOwner = input.rootThreadId
       ? { rootThreadId: input.rootThreadId }
       : { workId: input.workId ?? null };
@@ -682,6 +702,7 @@ export function ProjectDocumentNavigationProvider({
   const resources = useOptionalAccountResourceReplica();
   const presented = useOptionalPresentedDocuments();
   const openContextRoute = useOpenContextRoute();
+  const [upload, setUpload] = useState<Extract<OpenDocument, { kind: "viewer" }> | null>(null);
   useEffect(() => {
     if (!resources) return;
     return resources.observeProjection(
@@ -717,6 +738,7 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         openTrash,
+        viewUpload: setUpload,
         resources,
       }),
     }),
@@ -724,7 +746,16 @@ export function ProjectDocumentNavigationProvider({
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
-  return createElement(ProjectDocumentNavigationContext.Provider, { value: owner }, children);
+  return createElement(
+    ProjectDocumentNavigationContext.Provider,
+    { value: owner },
+    children,
+    createElement(UploadViewerDialog, {
+      projectId,
+      document: upload,
+      onClose: () => setUpload(null),
+    }),
+  );
 }
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {
@@ -740,9 +771,16 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
   );
 }
 
-/** Whether a chat's reference opens in main: an upload belongs to its chat and has no Editor address. */
-export function canOpenReference(uri: string): boolean {
-  return !uri.startsWith("uploads://");
+/** Whether the project's replica already knows `documentId` as a chat's upload. */
+export function useIsChatUpload(projectId: string | undefined): (documentId: string) => boolean {
+  const owner = useContext(ProjectDocumentNavigationContext);
+  return useCallback(
+    (documentId) =>
+      !!projectId &&
+      owner?.projectId === projectId &&
+      owner.adapter.isUpload(projectId, documentId),
+    [owner, projectId],
+  );
 }
 
 /** Resolves a document's descriptor without opening it (`describe`). */

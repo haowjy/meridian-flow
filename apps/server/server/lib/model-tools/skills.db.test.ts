@@ -4,10 +4,12 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - thread-scoped invoked-skill visibility
  */
+
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Thread } from "@meridian/contracts/threads";
+import { toolContentText } from "@meridian/contracts/threads";
 import { createDb } from "@meridian/database";
 import {
   assertThrowawayDatabaseForRunDbTests,
@@ -130,12 +132,14 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         createToolRegistry({ registrations: createModelToolRegistrations(deps) }),
       );
       const call = async (threadId: string, name: string, input: Record<string, unknown>) =>
-        (
-          await executor.executeTool({ id: "call-1", name, arguments: input }, {
-            threadId,
-            turnId: "turn-1",
-          } as never)
-        ).output;
+        toolContentText(
+          (
+            await executor.executeTool({ id: "call-1", name, arguments: input }, {
+              threadId,
+              turnId: "turn-1",
+            } as never)
+          ).content,
+        );
       expect(await call(PARENT, "ls", { path: "skills://" })).toBe("skills://\n  (empty)");
 
       const body = await loadUserSkillBody({

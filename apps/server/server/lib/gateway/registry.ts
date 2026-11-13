@@ -10,13 +10,13 @@
 
 import {
   type BuiltinAdapter,
-  type Capability,
   DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
   DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
   type GatewayConfig,
-  type ModelInfo,
+  type InputModality,
   type PromptCacheDescriptor,
   type ProviderConfig,
+  type ProviderModel,
   type ReasoningSupport,
   type TokenizerFamily,
 } from "@meridian-flow/gateway";
@@ -34,8 +34,10 @@ export interface RegisteredModel {
   displayName: string;
   contextWindow: number;
   maxOutputTokens: number;
-  /** JSON-natural capability list; converted to Set only at the gateway boundary. */
-  capabilities: readonly Capability[];
+  /** Copied from models.dev `modalities.input` (`pnpm check:models` reports drift). */
+  inputModalities: readonly InputModality[];
+  /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
+  maxLinkBytes?: number;
   reasoning: ReasoningSupport;
 }
 
@@ -124,7 +126,7 @@ const CLAUDE_OPUS_5_5_MODEL = {
   displayName: "Claude Opus 5.5",
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: CLAUDE_REASONING,
 } satisfies RegisteredModel;
 
@@ -134,7 +136,7 @@ const CLAUDE_SONNET_5_5_MODEL = {
   displayName: "Claude Sonnet 5.5",
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: CLAUDE_REASONING,
 } satisfies RegisteredModel;
 
@@ -144,7 +146,7 @@ const CLAUDE_FABLE_5_1_MODEL = {
   displayName: "Claude Fable 5.1",
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: CLAUDE_REASONING,
 } satisfies RegisteredModel;
 
@@ -155,7 +157,7 @@ const GPT_6_1_SOL_MODEL = {
   displayName: "GPT-6.1 Sol",
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: GPT_REASONING,
 } satisfies RegisteredModel;
 
@@ -165,7 +167,7 @@ const GPT_6_1_TERRA_MODEL = {
   displayName: "GPT-6.1 Terra",
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: GPT_REASONING_CAN_DISABLE,
 } satisfies RegisteredModel;
 
@@ -175,7 +177,7 @@ const GPT_5_6_LUNA_MODEL = {
   displayName: "GPT-5.6 Luna",
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "pdf"],
   reasoning: GPT_REASONING_CAN_DISABLE,
 } satisfies RegisteredModel;
 
@@ -185,7 +187,7 @@ const DEEPSEEK_FLASH_MODEL = {
   displayName: "DeepSeek V4.1 Flash",
   contextWindow: 1_048_576,
   maxOutputTokens: 393_216,
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image"],
   // models.dev: a thinking toggle, and low/high/max (no medium).
   reasoning: { efforts: ["low", "high", "max"], canDisable: true, thinksByDefault: true },
 } satisfies RegisteredModel;
@@ -196,9 +198,11 @@ const GEMINI_4_ARGON_MODEL = {
   displayName: "Gemini 4 Argon",
   contextWindow: 1_048_576,
   maxOutputTokens: 32_768,
-  // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`.
+  // The native API takes the effort as `thinkingConfig.thinkingLevel`.
   reasoning: { efforts: ["low", "medium", "high"] },
-  capabilities: ["image_input"],
+  inputModalities: ["text", "image", "video", "audio", "pdf"],
+  // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
+  maxLinkBytes: 15_000_000,
 } satisfies RegisteredModel;
 
 export const MODEL_REGISTRY: ModelRegistry = {
@@ -315,9 +319,9 @@ export const MODEL_REGISTRY: ModelRegistry = {
     },
     {
       id: "gemini",
-      adapter: "openai-compatible",
+      adapter: "gemini",
       apiKeyEnv: "FLOW_GEMINI_API_KEY",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      baseUrl: "https://generativelanguage.googleapis.com",
       offerings: [
         {
           model: GEMINI_4_ARGON_MODEL,
@@ -389,7 +393,7 @@ export function hasRealApiKey(key: string | undefined): boolean {
   return Boolean(key && key.length > 0 && !key.startsWith("dev-"));
 }
 
-function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering): ModelInfo {
+function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering): ProviderModel {
   const { model, pricing } = offering;
   return {
     id: model.id,
@@ -402,7 +406,8 @@ function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering)
     ...(provider.projectToolSchema ? { projectToolSchema: true as const } : {}),
     promptCache: resolvePromptCache(offering),
     reasoning: model.reasoning,
-    capabilities: new Set(model.capabilities),
+    inputModalities: model.inputModalities,
+    ...(model.maxLinkBytes === undefined ? {} : { maxLinkBytes: model.maxLinkBytes }),
   };
 }
 

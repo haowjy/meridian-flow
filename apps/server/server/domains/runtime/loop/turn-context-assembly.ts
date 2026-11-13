@@ -23,14 +23,14 @@ import {
   bakeInEffect,
   findCutoffOwnerThreadId,
   hashPromptBakeContent,
-  type ImageContextBreak,
+  type MediaContextBreak,
 } from "../../threads/index.js";
 import type {
   PromptBakeContent,
   PromptBakeRepository,
-  ThreadImageInclusionRepository,
+  ThreadMediaInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { ImageAssetPort } from "../ports/image-asset.js";
+import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
   resolveThreadModelAvailableSkills,
@@ -48,12 +48,14 @@ import {
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import {
-  type CompactionImageProjectionMode,
-  type ImageInclusionDecision,
-  projectImageBlocksForModel,
-} from "./image-context.js";
+  type CompactionMediaProjectionMode,
+  type MediaInclusionDecision,
+  mediaUnitKey,
+  projectMediaBlocksForModel,
+} from "./media-context.js";
+import { linkWindowAt } from "./media-link-window.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
-import { promptCacheRetentionFor } from "./prefix-cache-state.js";
+import { linkWindowSeconds, promptCacheRetentionFor } from "./prefix-cache-state.js";
 import type { WorkContextReader } from "./work-context.js";
 
 /** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
@@ -81,16 +83,18 @@ export interface AssembleNextTurnContextInput {
   threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
-  imageAssets?: ImageAssetPort;
-  imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
-  imageProjectionMode?: CompactionImageProjectionMode;
+  mediaResolver?: MediaResolverPort;
+  /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
+  mediaLinkWindowSeconds?: number;
+  mediaInclusions?: Pick<ThreadMediaInclusionRepository, "findByThread">;
+  mediaProjectionMode?: CompactionMediaProjectionMode;
   signal?: AbortSignal;
-  persistImageProjection?: (input: {
+  persistMediaProjection?: (input: {
     afterTurnId: TurnId | null;
     afterTurnPosition: number | null;
-    imageProjectionMode?: CompactionImageProjectionMode;
-    decisions: readonly ImageInclusionDecision[];
-    breaks: readonly ImageContextBreak[];
+    mediaProjectionMode?: CompactionMediaProjectionMode;
+    decisions: readonly MediaInclusionDecision[];
+    breaks: readonly MediaContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
   baseTools?: Tool[];
   /** When true, first-attempt bake is persisted immediately; preview/runtime prep pass false. */
@@ -176,6 +180,31 @@ interface PreparedNextTurnContext
   eventSink?: EventSink;
 }
 
+function modelOf(
+  gateway: AssembleNextTurnContextInput["gateway"],
+  agentContext: Awaited<ReturnType<typeof resolveAgentThreadTurnContext>>,
+): ModelInfo | undefined {
+  const modelId = agentContext.gatewayParams.model ?? gateway?.getDefaultModel?.();
+  return gateway?.listModels().find((model) => model.id === modelId);
+}
+
+/**
+ * The thread's model, looked up on first use: a reference read learns what it may show the
+ * model only once it meets a binary file, and most turns never do.
+ */
+export function lazyThreadModel(
+  input: Pick<
+    AssembleNextTurnContextInput,
+    "thread" | "agentRevisions" | "threads" | "toolRegistry" | "gateway" | "baseTools"
+  >,
+): () => Promise<ModelInfo | undefined> {
+  let model: Promise<ModelInfo | undefined> | undefined;
+  return () =>
+    (model ??= resolveAgentThreadTurnContext({ ...input, baseTools: input.baseTools }).then(
+      (context) => modelOf(input.gateway, context),
+    ));
+}
+
 /** Assemble the next model request context — shared by orchestrator and debug preview. */
 export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
@@ -231,46 +260,48 @@ export async function prepareNextTurnContext(
     }
   }
 
-  const gatewayParams = agentContext.gatewayParams;
-  const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
-  const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
+  const resolvedModel = modelOf(input.gateway, agentContext);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
     input.thread.ref,
     input.promptBakes,
   );
-  const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
-  const imageProjection = await projectImageBlocksForModel({
+  const savedInclusions = (await input.mediaInclusions?.findByThread(thread.id as ThreadId)) ?? [];
+  const mediaProjection = await projectMediaBlocksForModel({
     thread,
     blocks: activeHistory.blocks,
-    inclusions: new Map(savedInclusions.map(({ blockId, included }) => [blockId, included])),
-    supportsImageInput,
-    imageAssets: input.imageAssets ?? {
-      async resolve() {
-        return null;
-      },
-    },
-    mode: input.imageProjectionMode,
+    inclusions: new Map(
+      savedInclusions.map(({ blockId, partIndex, included }) => [
+        mediaUnitKey(blockId, partIndex),
+        included,
+      ]),
+    ),
+    model: resolvedModel ?? null,
+    media: input.mediaResolver ?? unavailableMediaResolver,
+    window: linkWindowAt(
+      Date.now(),
+      linkWindowSeconds(resolvedModel ?? null, thread.kind, input.mediaLinkWindowSeconds),
+    ),
+    mode: input.mediaProjectionMode,
     signal: input.signal,
   });
   const preparationUpdates =
-    input.persistImageProjection &&
-    (imageProjection.decisions.length > 0 || imageProjection.breaks.length > 0)
-      ? await input.persistImageProjection({
+    input.persistMediaProjection &&
+    (mediaProjection.decisions.length > 0 || mediaProjection.breaks.length > 0)
+      ? await input.persistMediaProjection({
           afterTurnId: (input.turns.at(-1)?.id as TurnId | undefined) ?? null,
           afterTurnPosition: input.turns.at(-1)?.position ?? null,
-          imageProjectionMode: input.imageProjectionMode,
-          decisions: imageProjection.decisions,
-          breaks: imageProjection.breaks,
+          mediaProjectionMode: input.mediaProjectionMode,
+          decisions: mediaProjection.decisions,
+          breaks: mediaProjection.breaks,
         })
       : { turns: [], blocks: [] };
   const imageTurnIds = new Set(preparationUpdates.turns.map((turn) => turn.id));
   const modelHistory = {
     turns: [...activeHistory.turns, ...preparationUpdates.turns],
     blocks: [
-      ...imageProjection.blocks,
+      ...mediaProjection.blocks,
       ...preparationUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
     ],
   };
@@ -295,7 +326,7 @@ export async function prepareNextTurnContext(
     promptCacheKey: cacheKeyOwner,
     eventSink: input.eventSink,
     policy: agentContext.policy,
-    gatewayParams,
+    gatewayParams: agentContext.gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
     compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,
