@@ -11,7 +11,7 @@ export class ConversionRefused extends Error {
 export const CONVERSION_LIMITS = {
   /** The stored file: larger ones are not read into memory. */
   originalBytes: 100 * 1024 * 1024,
-  /** Wall-clock budget for one conversion, inside `read`'s 30 s timeout. */
+  /** Wall-clock budget for one conversion, inside `read`'s 30 s timeout; the worker is terminated at it. */
   timeMs: 20_000,
   /** The Markdown kept: the rest is cut and the text says so. */
   outputChars: 1_000_000,
@@ -26,12 +26,6 @@ export const CONVERSION_LIMITS = {
   },
   pdf: { pages: 2_000 },
 } as const;
-
-/** Throws when the conversion's deadline has passed. */
-export function checkDeadline(deadline: number): void {
-  if (Date.now() > deadline)
-    throw new ConversionRefused("timeout", "The conversion took too long.");
-}
 
 /** Joins converted pieces, cutting at the output cap. */
 export function createTextBuilder(): {

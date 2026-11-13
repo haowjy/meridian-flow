@@ -153,6 +153,8 @@ export interface AgentEditModelPayload {
     name: string;
     mediaType: string;
     sizeBytes: number;
+    /** A PDF's page count, set when it is given as media. */
+    pageCount?: number;
     given: "media" | "text" | "description";
   };
   read?: {

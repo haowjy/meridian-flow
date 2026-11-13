@@ -6,11 +6,11 @@
 import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
+  putDerivedObject,
   textObjectKey,
 } from "../../storage/index.js";
-import { epubToMarkdown } from "./epub-markdown.js";
+import { convertToMarkdown } from "./convert.js";
 import { CONVERSION_LIMITS, ConversionRefused } from "./limits.js";
-import { pdfToMarkdown } from "./pdf-markdown.js";
 
 export type TextSource = "epub" | "pdf";
 
@@ -23,7 +23,7 @@ const TEXT_MIME_TYPE = "text/markdown; charset=utf-8";
 const STORED_TEXT_MAX_BYTES = CONVERSION_LIMITS.outputChars * 4 + 1024;
 
 export async function extractedText(
-  objectStore: Pick<ObjectStorePort, "get" | "put">,
+  objectStore: Pick<ObjectStorePort, "get" | "put" | "readHead" | "delete">,
   file: { storageUrl: string; source: TextSource },
 ): Promise<ExtractedText> {
   const originalKey = objectStoreKeyFromStorageUrl(file.storageUrl);
@@ -48,14 +48,15 @@ export async function extractedText(
           : original.error.message,
     };
   try {
-    const deadline = Date.now() + CONVERSION_LIMITS.timeMs;
-    const markdown = await (file.source === "epub" ? epubToMarkdown : pdfToMarkdown)(
-      original.value.bytes,
-      deadline,
-    );
+    const markdown = await convertToMarkdown(file.source, original.value.bytes);
     // Atomic, and the same bytes from a concurrent first read, so a lost race changes nothing.
     // A failed put costs only a conversion on the next read.
-    await objectStore.put(textKey, new TextEncoder().encode(markdown), TEXT_MIME_TYPE);
+    await putDerivedObject(objectStore, {
+      originalKey,
+      key: textKey,
+      bytes: new TextEncoder().encode(markdown),
+      mimeType: TEXT_MIME_TYPE,
+    });
     return { ok: true, markdown };
   } catch (error) {
     // Messages are ours, never the file's text.

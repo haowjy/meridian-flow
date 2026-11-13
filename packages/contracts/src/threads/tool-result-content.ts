@@ -10,6 +10,8 @@ export type StoredMediaPart = {
   ref: { documentId: string; uri: string };
   mediaType: string;
   sizeBytes: number;
+  /** A PDF's page count, counted when it was read; what it costs the model depends on it. */
+  pageCount?: number;
   name: string;
 };
 

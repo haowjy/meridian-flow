@@ -8,14 +8,14 @@
  * synchronous and would freeze every request for seconds. A worker that crashes, runs out of
  * memory or hangs is replaced and its file gets the card.
  */
-import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
 import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
+  putDerivedObject,
 } from "../storage/index.js";
 import { sniffMime } from "./index.js";
+import { createWorkerPool, WorkerPoolError } from "./worker-pool.js";
 
 export const PREVIEW_MIME_TYPE = "image/webp";
 
@@ -57,105 +57,39 @@ class ImagePreviewError extends Error {
   }
 }
 
-const POOL_SIZE = 2;
 /** A decode that outlives this is stuck; its worker is replaced and the file gets the card. */
 const JOB_TIMEOUT_MS = 60_000;
-/** Each worker's JS heap cap; pixel buffers live outside it and are bounded by the pixel cap. */
-const WORKER_LIMITS = { maxOldGenerationSizeMb: 256 };
 
-type Job = {
-  mime: string;
-  bytes: Uint8Array;
-  resolve(preview: Uint8Array): void;
-  reject(error: ImagePreviewError): void;
-};
-type Slot = { worker: Worker; job?: Job & { id: number; timer: NodeJS.Timeout } };
+export type PreviewJob = { mime: string; bytes: Uint8Array };
+export type PreviewReply = { preview: Uint8Array } | { reason: "decode_failed" | "too_large" };
 
-const slots: Slot[] = [];
-const queue: Job[] = [];
-let nextJobId = 0;
+const pool = createWorkerPool<PreviewJob, PreviewReply>({
+  entry: new URL("./image-preview-worker.ts", import.meta.url),
+  size: 2,
+  // Pixel buffers live outside the heap and are bounded by the pixel cap.
+  maxOldGenerationSizeMb: 256,
+  // libheif's WASM module may be left unusable by a failed decode, so a HEIC error retires the
+  // worker; the next job starts a fresh one.
+  retireAfter: (job, reply) =>
+    "reason" in reply && reply.reason === "decode_failed" && job.mime.startsWith("image/hei"),
+});
 
-/** Ends the slot's job with `outcome` and, if the worker is gone, replaces it. */
-function settle(slot: Slot, outcome: { preview: Uint8Array } | { error: ImagePreviewError }): void {
-  const job = slot.job;
-  if (!job) return;
-  clearTimeout(job.timer);
-  slot.job = undefined;
-  if ("error" in outcome) job.reject(outcome.error);
-  else job.resolve(outcome.preview);
-  pump();
-}
-
-function retire(slot: Slot): void {
-  const index = slots.indexOf(slot);
-  if (index >= 0) slots.splice(index, 1);
-}
-
-function spawnSlot(): Slot {
-  const worker = new Worker(new URL("./image-preview-worker.ts", import.meta.url), {
-    resourceLimits: WORKER_LIMITS,
-  });
-  const slot: Slot = { worker };
-  worker.on(
-    "message",
-    (message: { id: number; preview?: Uint8Array; reason?: "decode_failed" | "too_large" }) => {
-      const job = slot.job;
-      if (job?.id !== message.id) return;
-      if (message.preview) return settle(slot, { preview: new Uint8Array(message.preview) });
-      // libheif's WASM module may be left unusable by a failed decode, so a HEIC error retires
-      // the worker; the next job starts a fresh one.
-      if (message.reason === "decode_failed" && job.mime.startsWith("image/hei")) {
-        retire(slot);
-        void slot.worker.terminate();
-      }
-      settle(slot, { error: new ImagePreviewError(message.reason ?? "decode_failed") });
-    },
-  );
-  // A crash or out-of-memory kill ends the worker: fail its job and drop the slot; the next job
-  // starts a fresh one.
-  const onGone = (reason: ImagePreviewFailureReason) => {
-    retire(slot);
-    settle(slot, { error: new ImagePreviewError(reason) });
-  };
-  worker.on("error", (error) =>
-    onGone(
-      (error as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND"
+async function convertInWorker(mime: string, bytes: Uint8Array): Promise<Uint8Array> {
+  let reply: PreviewReply;
+  try {
+    reply = await pool.run({ mime, bytes }, JOB_TIMEOUT_MS);
+  } catch (error) {
+    if (!(error instanceof WorkerPoolError)) throw error;
+    throw new ImagePreviewError(
+      error.reason === "unavailable"
         ? "worker_unavailable"
-        : "decode_failed",
-    ),
-  );
-  worker.on("exit", () => onGone("decode_failed"));
-  // After the listeners: adding a 'message' listener re-refs the worker. Unreffed, an idle pool
-  // never holds the process open; a pending job's timer does.
-  worker.unref();
-  return slot;
-}
-
-function pump(): void {
-  while (queue.length > 0) {
-    let slot = slots.find((candidate) => !candidate.job);
-    if (!slot && slots.length < POOL_SIZE) {
-      slot = spawnSlot();
-      slots.push(slot);
-    }
-    const job = queue.shift();
-    if (!slot || !job) return;
-    const id = nextJobId++;
-    const timer = setTimeout(() => {
-      retire(slot);
-      settle(slot, { error: new ImagePreviewError("timeout") });
-      void slot.worker.terminate();
-    }, JOB_TIMEOUT_MS);
-    slot.job = { ...job, id, timer };
-    slot.worker.postMessage({ id, mime: job.mime, bytes: job.bytes });
+        : error.reason === "timeout"
+          ? "timeout"
+          : "decode_failed",
+    );
   }
-}
-
-function convertInWorker(mime: string, bytes: Uint8Array): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    queue.push({ mime, bytes, resolve, reject });
-    pump();
-  });
+  if ("reason" in reply) throw new ImagePreviewError(reply.reason);
+  return new Uint8Array(reply.preview);
 }
 
 /**
@@ -175,7 +109,7 @@ export async function makeImagePreview(bytes: Uint8Array): Promise<Uint8Array | 
  * now exists, which the caller records as the document's `has_preview`. Never throws.
  */
 export async function saveImagePreview(input: {
-  objectStore: Pick<ObjectStorePort, "put">;
+  objectStore: Pick<ObjectStorePort, "put" | "readHead" | "delete">;
   storageUrl: string;
   bytes: Uint8Array;
   onFailure?: (reason: ImagePreviewFailureReason) => void;
@@ -185,8 +119,13 @@ export async function saveImagePreview(input: {
     if (!key) return false;
     const preview = await makeImagePreview(input.bytes);
     if (!preview) return false;
-    const put = await input.objectStore.put(previewObjectKey(key), preview, PREVIEW_MIME_TYPE);
-    if (!put.ok) throw new Error(put.error.message);
+    const stored = await putDerivedObject(input.objectStore, {
+      originalKey: key,
+      key: previewObjectKey(key),
+      bytes: preview,
+      mimeType: PREVIEW_MIME_TYPE,
+    });
+    if (!stored) throw new Error("The preview was not stored");
     return true;
   } catch (error) {
     input.onFailure?.(error instanceof ImagePreviewError ? error.reason : "decode_failed");

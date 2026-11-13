@@ -47,7 +47,7 @@ export interface ImageContextProjection {
 
 export type MediaModel = Pick<
   ModelInfo,
-  "id" | "wire" | "inputModalities" | "maxLinkBytes" | "imageLinks"
+  "id" | "wire" | "inputModalities" | "maxLinkBytes" | "imageLinks" | "contextWindow"
 >;
 
 export function mediaUnitKey(blockId: string, partIndex: number): string {
@@ -89,6 +89,7 @@ function referencedMedia(block: Block): StoredMediaPart | null {
         ref: { documentId: file.documentId as string, uri: file.uri as string },
         mediaType: file.mediaType as string,
         sizeBytes: file.sizeBytes as number,
+        ...(typeof file.pageCount === "number" ? { pageCount: file.pageCount } : {}),
         name: file.name as string,
       }
     : null;

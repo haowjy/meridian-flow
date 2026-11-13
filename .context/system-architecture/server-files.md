@@ -49,9 +49,9 @@ Drafts are not included. The inventory and addresses are captured before any con
 
 ## file-intake
 
-Classifies uploaded files and makes image previews.
+Classifies uploaded files, makes image previews and extracts the text of EPUBs and PDFs.
 
-HEIC, BMP and TIFF become WebP previews on a small worker pool. `sharp` is native, so build on the target platform.
+HEIC, BMP and TIFF become WebP previews, and an EPUB or PDF becomes Markdown (and a PDF's page count), each on a small worker pool that stops a job at its deadline. `sharp` is native, so build on the target platform.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/file-intake`

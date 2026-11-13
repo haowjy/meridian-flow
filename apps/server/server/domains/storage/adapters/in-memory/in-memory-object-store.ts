@@ -1,5 +1,6 @@
 /** In-memory implementation of the object-store port: a Map of bytes+mime keyed by storage URL. Used by tests and local dev; depends inward on the port and URL helper. */
 import { Readable } from "node:stream";
+import { isSafeKeyPrefix } from "../../object-key.js";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
@@ -95,6 +96,8 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
       cursor?: string;
     }>
   > {
+    if (!isSafeKeyPrefix(prefix))
+      return { ok: false, error: { code: "invalid_key", message: "Object key prefix is invalid" } };
     const limit = options?.limit ?? 1_000;
     const keys = [...this.objects.keys()]
       .filter((key) => key.startsWith(prefix))

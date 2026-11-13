@@ -9,6 +9,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
     async read(reference, ctx) {
       const outcome = await readTrackedDocument(deps, ctx.input ?? { path: reference.uri }, ctx, {
         expectedDocumentId: reference.documentId,
+        placement: "user-message",
         ...(ctx.model ? { model: ctx.model } : {}),
         ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),
       });
