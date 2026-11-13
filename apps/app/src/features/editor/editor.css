@@ -311,8 +311,6 @@
   pointer-events: none;
 }
 
-/* The cap atop a peer's caret: the only part that takes the pointer, and hovering it names the
-   peer. */
 .meridian-collab-cursor::before {
   content: "";
   position: absolute;
@@ -321,6 +319,17 @@
   width: 0.375rem;
   height: 0.375rem;
   background: var(--caret-color, var(--color-primary));
+}
+
+/* The hover target: the caret's whole height, a few pixels either side, so pointing at the caret
+   names the peer. The caret itself stays transparent to the pointer. */
+.meridian-collab-cursor::after {
+  content: "";
+  position: absolute;
+  top: -0.125rem;
+  bottom: 0;
+  left: -0.3125rem;
+  width: 0.5rem;
   pointer-events: auto;
 }
 
