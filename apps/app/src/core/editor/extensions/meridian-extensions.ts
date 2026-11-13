@@ -23,7 +23,7 @@ import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
-import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { DOMSerializer, type Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
 import { Plugin, Selection } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
@@ -239,33 +239,23 @@ export const MeridianParagraph = Paragraph.extend({
     return [
       new Plugin({
         props: {
-          // A heading pasted over a block's whole content takes the block's
-          // place on main; the same node name now merges into it instead, so
-          // the level moves with the paste, in one step.
-          handlePaste(view, _event, slice) {
-            const { $from, $to } = view.state.selection;
-            const pasted = slice.content.firstChild;
+          // ProseMirror lets a pasted node replace the block it lands in, instead of
+          // merging into it, when the pasted node type is `defining`. That is a flag
+          // on the type, and a heading is no longer a type: closing the slice's open
+          // start for a leveled paragraph gives replaceRange the same input a
+          // `defining` heading gave it. A target with the same level and alignment
+          // still takes the content in place, as `defining` also lets it.
+          transformPasted(slice, view) {
+            const first = slice.content.firstChild;
             if (
-              $from.parent !== $to.parent ||
-              $from.parent.type !== type ||
-              $from.parentOffset > 0 ||
-              $to.parentOffset < $from.parent.content.size ||
-              pasted?.type !== type ||
-              pasted.attrs.level === null
+              slice.openStart !== 1 ||
+              first?.type !== type ||
+              first.attrs.level === null ||
+              first.sameMarkup(view.state.selection.$from.parent)
             ) {
-              return false;
+              return slice;
             }
-            const tr = view.state.tr
-              .setNodeMarkup($from.before(), undefined, {
-                ...$from.parent.attrs,
-                level: pasted.attrs.level,
-              })
-              .replaceSelection(slice)
-              .scrollIntoView()
-              .setMeta("paste", true)
-              .setMeta("uiEvent", "paste");
-            view.dispatch(tr);
-            return true;
+            return new Slice(slice.content, 0, slice.openEnd);
           },
         },
       }),
