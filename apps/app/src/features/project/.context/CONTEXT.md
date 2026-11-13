@@ -37,8 +37,11 @@ its right neighbour, else its left, else the lane's empty page (Recently opened;
 composer). Back and Forward reopen a tab the writer closed, by design: the address leads, the tabs
 follow it. A close, a Discard, a removal or a vanished document closes its tab through the
 coordinator's `tabs` port (`forget`; a draft-only page's own Close closes it once main's address has
-left, so main's page is not drawn without it); a deleted chat, or one `useMissingChatFallback` finds
-missing, drops its chat tab (`dropMainTabChat`). `MainTabStrip` draws the mode's lane in main's band:
+left, so main's page is not drawn without it); a deleted chat, one `useMissingChatFallback` finds
+missing, or one the owner gate reports deleted (`useDropGoneChatTabs`: the project's chat list holds
+primary chats only and learns of a delete elsewhere only by refetch; a delete's `project-chats-hint` names the removed chat ids and closes those tabs without a request; the owner-gate probe runs only at mount and on a hint marked `recheckTabs` (a deleted Work, a reconnect), one batch at a time, so a subagent's or archived
+chat is never judged by it), drops its chat tab (`dropMainTabChat`). The commands read the lane the
+strip draws (`useLiveTabs`). `MainTabStrip` draws the mode's lane in main's band:
 documents in Write, chats in Chat, with the inset sheet's folder-tab look and a per-kind chip (a
 document's name; the chat bubble and the thread's live title). What main shows never depends on the
 record: main's document with no tab in it, or an address that names nothing, is the active chip
@@ -57,7 +60,7 @@ own band, so the focus follows to the new one. The band's far right holds the ta
 sends main to the lane's empty page unless it is there already. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed, and of chats the
 project's list no longer holds, are not drawn once the replica or the list has loaded, and a tab
-shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.ts`, read
+shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.tsx`, one projection a `LiveTabsProvider` shares, read
 by the strip, the tab list and the side's document list; the record is left alone, so a document
 that comes back has its tab). A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.
@@ -93,20 +96,23 @@ and the tabs are choices on offer, never a source of the side. A document fits b
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
 one that doesn't (removed, an upload) leaves the side empty. While a describe is out, the side
 keeps what it showed. The header names the item and says no reason for it. `side/SideView.tsx`
-holds this state and the pick command (`useShellCommands`); both shells read it, and the phone's
+holds this state and the placement command; both shells read it, and the phone's
 sheet shows the same item. The sheet is no history entry: Back while it is open dismisses it and
 leaves main where it is. Back and Forward move main only; the side follows the slots.
-Every link, door and reveal of an item follows one placement command, `place(item, from)`
-(`side/SideView.tsx`, `placeIn` in `side/side-item.ts`): the same kind as the pane it was followed
-in opens in that pane, the other kind in the other pane, and the left sidebar always opens in main.
-Each host provides its pane (`PanePlaceContext`, `pane-place.ts`: the document host, the chat
-surface, the phone's sheet and main chat), which is `from`; with no host it is the sidebar. For the
-side, `place` writes the slot (and the draft the document shows) and has the side seen: the desktop
-opens it, the phone opens the sheet; for main the caller opens the item, since only it knows how.
+Every link, door and reveal of an item, and every pick in the side's picker, follows one placement
+command, `place(item)` (`side/SideView.tsx`, `placeIn(kind, main)` in `side/side-item.ts`): main's
+kind opens in main, the other kind in the other pane, which is the same rule from main and from the
+side. A surface in no pane (the left sidebar) opens in main without asking `place`
+(`useOptionalPlaceHere`, `usePlaceChat`). Each host provides its pane (`PanePlaceContext`,
+`pane-place.ts`: the document host, the chat surface, the phone's sheet and main chat); `place` no
+longer reads it, but focus (a chat in main takes it), the draft scope and the announcement do. For the
+side, `place` writes the slot (and the draft and Work a document shows) and has the side seen: the
+desktop opens it, the phone opens the sheet; for main the caller opens the item, since only it knows
+how.
 Documents come through `useLinkPlacement` (`review-launch.tsx`: editor links, transcript links,
 chat doors, the draft dock's rows and a reply's "Drafted N documents" rows). Chats come through
 `usePlaceChat`, behind `ChatThreadNavigation` (spawn doors, the subagent button) and the
-conversation reveal (`useRequestConversationReveal` carries `from`: a peer mark's or change's chat
+conversation reveal (`useRequestConversationReveal` carries the pane, so a reveal in none goes to main: a peer mark's or change's chat
 in a document, a subagent link in a chat). So a subagent link inside the side's chat replaces the
 side. The click's modifier (cmd, ctrl, middle) places nothing and the link follower treats every
 follow alike (a newer follow aborts the last): main's opener has no new-tab mode.
@@ -128,8 +134,15 @@ name says that, not main's document.
 Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
 each document host registers its current descriptor there, and `shown` orders them newest on
 screen first. Besides main's and the side's document, the newest open tab shown that is off screen
-stays mounted as the kept host, hidden so its undo survives a return, so at most three documents
-are mounted (main, side, kept). The kept document is mounted but not presented:
+stays mounted as the kept host, hidden for a warm return, so at most three documents
+are mounted (main, side, kept). The kept host no longer holds undo: a session owns it, and
+`useOpenTabSessions` holds a session by an open-content lease while its tab is on screen, and
+after it leaves only while its history has something to undo or redo (at most 8 such sessions,
+the least recently edited dropped first, so reading other tabs never evicts an edited one). A
+tab never shown this visit is not held, and a tab in review mode edits the draft room's session,
+so its undo ends with the room as before. A kept return measured about 80 ms (16%) faster than a remount on a 4,000-word
+document, which is all the kept host buys now. A parked host (`SlotGrid`) keeps the size of the slot it left and sets
+`content-visibility: hidden`, so an edit into the kept document lays out nothing until it returns. The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
 is not on screen for removals or availability. A close, a Discard and a removal `forget` the
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking

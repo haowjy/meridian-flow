@@ -150,6 +150,7 @@ export function useMountedEditor({
     const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
       document: session.document,
+      history: session.history,
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
       // caret's included. Its caret is arbitrated, because another view of

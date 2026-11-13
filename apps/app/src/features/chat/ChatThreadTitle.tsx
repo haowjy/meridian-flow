@@ -80,15 +80,15 @@ function ExistingThreadTitle({
 }
 
 /** A chat's live title: its row in the project's chat list, else the open chat's snapshot (a subagent's chat has no row). */
-export function useChatTitle(projectId: string, threadId: string): string {
+export function useChatTitle(projectId: string, threadId: string | null): string {
   const { threadById } = useProjectThreadGroups(projectId);
   const opened = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
+    queryKey: threadQueryKeys.snapshot(threadId ?? ""),
     queryFn: skipToken,
     select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
   }).data;
   return displayThreadTitle(
-    threadById.get(threadId)?.title ??
+    (threadId ? threadById.get(threadId)?.title : null) ??
       opened?.title ??
       (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
   );

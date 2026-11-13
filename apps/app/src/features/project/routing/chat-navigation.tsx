@@ -37,9 +37,9 @@ export type ChatNavigation = {
   /** The chat slot: the last chat on screen, in either pane. */
   lastShownChatId: string | null;
   /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
-  openChat: (threadId: string, options?: { replace?: boolean }) => Promise<void>;
+  openChat: (threadId: string, options?: { replace?: boolean }) => Promise<NavigationSettlement>;
   /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
-  openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<void>;
+  openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<NavigationSettlement>;
   /**
    * A just-sent new chat. Sent from main's composer it becomes main's chat; sent from the side's
    * composer it fills the chat slot and stays there, beside main.
@@ -90,19 +90,17 @@ export function useProjectChatNavigation({
       const { accountId, projectId } = latest.current;
       writeLastShownChat(accountId, projectId, threadId);
     };
-    const go = async (destination: ProjectDestination, options: NavigationOptions) => {
-      const result = await latest.current.go(destination, options);
-      if (result.kind === "failed") throw result.error;
-    };
-    const openChat = async (threadId: string, options?: { replace?: boolean }) => {
-      await go({ kind: "chat", chatId: threadId }, { replace: options?.replace ?? false });
-    };
+    const go = (destination: ProjectDestination, options: NavigationOptions) =>
+      latest.current.go(destination, options);
+    const openChat = (threadId: string, options?: { replace?: boolean }) =>
+      go({ kind: "chat", chatId: threadId }, { replace: options?.replace ?? false });
     const commands = {
       openChat,
       openNewChat: async (options?: { replace?: boolean; focus?: boolean }) => {
         if (options?.focus !== false) setNewChatRequest(nextFocusRequestId.current++);
-        if (latest.current.mainKind !== "new")
-          await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
+        return latest.current.mainKind === "new"
+          ? ({ kind: "applied" } as const)
+          : go({ kind: "new-chat" }, { replace: options?.replace ?? false });
       },
       acceptCreatedChat: (threadId: string) => {
         // Main's composer navigates and the arrival records the chat; the side's composer sends

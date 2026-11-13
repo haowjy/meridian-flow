@@ -18,6 +18,8 @@ export type TransferredDocumentSessionOwnership = Readonly<{
   lease: LiveDocumentSessionLease;
   persistenceGeneration: AvailabilityGeneration;
   exactDatabaseName: string;
+  /** Whether a host is on screen on this document; an unhosted session closes its socket. */
+  setHosted(hosted: boolean): void;
   release(): void;
 }>;
 

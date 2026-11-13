@@ -177,7 +177,7 @@ The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`, `pong`
 and `catalog.unsubscribe`; its server vocabulary is `connected`, `subscribed`, `event`, `gap`, `error`, `ping`,
 `ask.answer.ok`, `ask.answer.error`, and the project channel's `context-catalog-hint`,
 `draft-owner-hint` and `project-chats-hint` (a chat's run, question or status changed, so its project's chat
-list is stale). Turn cancellation is an HTTP operation through the
+list is stale; a delete adds `removedChatIds`, a Work delete or the client's own post-reconnect replay adds `recheckTabs`). Turn cancellation is an HTTP operation through the
 injected `cancelTurn` port. Keep these names aligned with `@meridian/contracts/protocol`.
 
 **Every client message except `pong` carries a `requestId`** (`r1`, `r2`, ..., a counter per `ThreadSocketClient`).

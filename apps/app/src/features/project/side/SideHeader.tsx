@@ -6,14 +6,13 @@
 import { t } from "@lingui/core/macro";
 import { Maximize2, MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
+import { useChatTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import { displayThreadTitle } from "@/lib/thread-title";
 import { fileKindIcon } from "../context/context-file-icon";
 import { PaneHeader } from "../shell/PaneHeader";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
@@ -26,14 +25,14 @@ import { useNewChatAbout, useSideItem } from "./SideView";
  * document while the composer follows it, else the chip the writer kept.
  */
 export function useSideChatName(projectId: string, chatId: string | null): string {
-  const { threads } = useProjectThreads(projectId);
+  const title = useChatTitle(projectId, chatId);
   const about = useNewChatAbout().about;
   const mainName = useMainItem().document.document?.name ?? null;
   if (chatId === null) {
     const aboutName = about === "follows" ? mainName : (about?.label ?? null);
     return aboutName ? t`New chat about ${aboutName}` : t`New chat`;
   }
-  return displayThreadTitle(threads?.find((thread) => thread.id === chatId)?.title);
+  return title;
 }
 
 function SideBand({

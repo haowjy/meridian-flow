@@ -129,7 +129,7 @@ export function MobileProject(props: MobileProjectProps) {
         notice={onChat ? undefined : removedNotice}
         chatAction={
           sheetName ? (
-            // Names what the sheet will show: the project's current item of the kind main is not.
+            // Names what the sheet will show: the slot of the kind main is not.
             <button
               type="button"
               aria-label={t`Show ${sheetName}`}

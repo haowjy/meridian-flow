@@ -11,13 +11,23 @@ import type {
 } from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
+import { readChatViewRecord, writeChatViewRecord } from "./chat-view-record";
 import { CompactionDivider } from "./compaction/CompactionDivider";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
@@ -178,6 +188,8 @@ export function TurnList({
     (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
     [rowOffset, noticeAt],
   );
+  // The chat as the writer last left it: row sizes, offset and follow mode.
+  const [restored] = useState(() => readChatViewRecord(threadId));
   const virtualizer = useVirtualizer({
     count: listRows.length,
     getScrollElement: () => viewportRef.current,
@@ -192,6 +204,8 @@ export function TurnList({
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
+    initialMeasurementsCache: restored?.measurements,
+    initialOffset: restored?.offset,
   });
 
   // Preserve the reader's place when a row ENTIRELY above the viewport changes
@@ -215,10 +229,26 @@ export function TurnList({
   // height (not a bare counter) lets the pin compute the bottom without reading
   // `scrollHeight`, which would force a layout on every revision.
   // The thread opens in `follow`, so the very first pin anchors to the newest turn.
-  const { mode, enterFollow, releaseFollow } = useChatFollowScroll({
+  const { mode, currentMode, enterFollow, releaseFollow } = useChatFollowScroll({
     scrollRef: viewportRef,
     contentHeight: virtualizer.getTotalSize(),
+    initialMode: restored?.mode,
   });
+
+  // Leaving the chat records where it was. A chat that never measured a row (left before its
+  // history arrived) keeps the record it has.
+  useLayoutEffect(
+    () => () => {
+      const measurements = virtualizer.takeSnapshot();
+      if (measurements.length === 0) return;
+      writeChatViewRecord(threadId, {
+        measurements,
+        offset: virtualizer.scrollOffset ?? 0,
+        mode: currentMode(),
+      });
+    },
+    [currentMode, threadId, virtualizer],
+  );
 
   // Turn stage of a conversation reveal. The transcript owns the landing (and
   // the verdict when the turn isn't here); the scroll capability stays here.

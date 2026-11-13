@@ -13,19 +13,21 @@
 import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
+import { useLiveTabs } from "@/client/project-shell/live-tabs";
+import { mainTabKey } from "@/client/project-shell/main-tabs";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
-import { useAccountId, useShownDocuments } from "./context/account-feature-context";
+import { useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { TrashedDocument } from "./context/TrashedDocument";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useNewDocument } from "./context/use-new-document";
+import { useOpenTabSessions } from "./context/use-open-tab-sessions";
 import {
   NO_HELD_PANELS,
   type PanelSlotId,
@@ -50,7 +52,7 @@ import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/Side
 import {
   useChatOnScreen,
   useHostChatId,
-  useShellCommands,
+  usePlace,
   useSideItem,
   useSideRevealed,
 } from "./side/SideView";
@@ -108,17 +110,15 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // The newest open tab shown that is off screen stays mounted, hidden: closing a tab lets its
   // editor go. A document moving
   // between main and the side passes through here while main's address loads, so it never
-  // remounts.
-  const accountId = useAccountId();
-  const { tabs } = useMainTabs(accountId, projectId).document;
+  // remounts. A tab the strip leaves out (its document is gone) keeps no host.
+  const { tabs } = useLiveTabs().lanes.document;
+  useOpenTabSessions(projectId, tabs, shown);
   const keptTab =
     shown.find(
       (tab) =>
         tab.documentId !== mainTab?.documentId &&
         tab.documentId !== sideTab?.documentId &&
-        tabs.some(
-          (open) => open.kind === "document" && open.document.documentId === tab.documentId,
-        ),
+        tabs.some((open) => open.document.documentId === tab.documentId),
     ) ?? null;
 
   const open = props.onOpenContextTarget;
@@ -329,7 +329,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 /** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
   const { pending, failed } = useSideItem();
-  const { swapSide } = useShellCommands(projectId);
+  const place = usePlace();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
@@ -339,7 +339,7 @@ function SideEmpty({ projectId }: { projectId: string }) {
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}
-              choose={(documentId) => swapSide({ kind: "document", documentId })}
+              choose={(documentId) => place({ kind: "document", documentId })}
             />
           </div>
         )}
