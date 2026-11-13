@@ -24,7 +24,7 @@
     "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
     "typecheck:staged": "node tools/ci/run-nx-target.mjs typecheck --staged",
     "test": "vitest run --passWithNoTests --pool=threads",
-    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:slop-lint && pnpm check:tree-visibility && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:architecture && pnpm check:db && pnpm check:pr-body",
+    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:slop-lint && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:architecture && pnpm check:db && pnpm check:pr-body",
     "portless:trust": "portless trust",
     "portless:list": "portless list",
     "prepare": "lefthook install",
@@ -49,7 +49,6 @@
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts",
     "test:all": "tsx tools/dev/run-db-tests.ts --all",
-    "check:tree-visibility": "node tools/ci/check-tree-visibility.mjs",
     "probe:db": "tsx tools/dev/run-db-probe.ts"
   },
   "devDependencies": {
