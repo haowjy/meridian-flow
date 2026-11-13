@@ -16,7 +16,7 @@ type Message =
   | { kind: "update"; update: Uint8Array }
   | { kind: "hello"; stateVector: Uint8Array; reply: boolean }
   /** The owner's copy was rebuilt: every tab throws its own away and asks the owner for the new one. */
-  | { kind: "reset" }
+  | { kind: "reset"; generation: number }
   | { kind: "status"; status: string };
 
 function newDoc(): Y.Doc {
@@ -33,6 +33,11 @@ export class StoredListCopy implements ListCopy {
   private readonly channel: BroadcastChannel;
   private readonly listeners = new Set<() => void>();
   private closed = false;
+  /**
+   * Which stored database is the copy: a rebuild opens the next one and the old one is deleted
+   * once every tab has let go of it, so a tab never waits on another's connection to delete.
+   */
+  private generation: number;
 
   constructor(
     private readonly name: string,
@@ -40,14 +45,23 @@ export class StoredListCopy implements ListCopy {
     private readonly onPeerStatus: (status: string) => void,
     private readonly currentStatus: () => string | null,
   ) {
+    this.generation = Number(localStorage.getItem(this.generationKey) ?? 0);
     this.channel = new BroadcastChannel(`meridian:tree-list:v1:${name}`);
     this.channel.onmessage = ({ data }: MessageEvent<Message>) => void this.receive(data);
     this.attach(this.doc);
   }
 
+  private get generationKey() {
+    return `${this.name}:generation`;
+  }
+
+  private databaseName(generation: number) {
+    return generation === 0 ? this.name : `${this.name}:${generation}`;
+  }
+
   private attach(doc: Y.Doc) {
     this.doc = doc;
-    this.persistence = new IndexeddbPersistence(this.name, doc);
+    this.persistence = new IndexeddbPersistence(this.databaseName(this.generation), doc);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       if (origin !== RELAY) this.post({ kind: "update", update });
     });
@@ -68,7 +82,6 @@ export class StoredListCopy implements ListCopy {
         Y.applyUpdate(this.doc, message.update, RELAY);
         return;
       case "hello": {
-        await this.loaded;
         this.post({
           kind: "update",
           update: Y.encodeStateAsUpdate(this.doc, message.stateVector),
@@ -87,7 +100,8 @@ export class StoredListCopy implements ListCopy {
         this.onPeerStatus(message.status);
         return;
       case "reset":
-        await this.persistence.clearData();
+        await this.persistence.destroy();
+        this.generation = message.generation;
         this.attach(newDoc());
         return;
     }
@@ -100,9 +114,14 @@ export class StoredListCopy implements ListCopy {
 
   /** The rebuild after a whole refusal: the stored copy goes, and every tab starts over. */
   async replace() {
-    await this.persistence.clearData();
+    const old = this.databaseName(this.generation);
+    await this.persistence.destroy();
+    this.generation += 1;
+    localStorage.setItem(this.generationKey, String(this.generation));
     this.attach(newDoc());
-    this.post({ kind: "reset" });
+    this.post({ kind: "reset", generation: this.generation });
+    // Blocked until every tab has let go of the old copy, then done.
+    indexedDB.deleteDatabase(old);
   }
 
   /** Called when `doc` is replaced. */

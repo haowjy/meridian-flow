@@ -36,8 +36,7 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    replay's rows, compare with the rows last written, write the rows that differ, the
    previous locations and `location_version`. "Open Work" is `openBranches`
    (`tree-list-facts.ts`), the one predicate for both a write's check and the views;
-6. after the outermost commit, `onCommitted` listeners get the update (the room, step 5 of the
-   build, is one).
+6. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
 
 `submit` joins the caller's transaction, so a caller must hold no document or namespace key
 when it calls (the list's key sorts before them; see the lock order in
@@ -91,3 +90,27 @@ the branch's rows) with each walk step a `LATERAL (... OFFSET 0)` subquery, 0.48
 two-table shape in the same walk costs 3.1 ms. A recursive step that joins the relation without
 the `LATERAL` is planned as a hash join of the whole relation, whatever the form: write
 readers' walks with the `LATERAL`.
+
+## The list's room
+
+`lib/yjs-tree-room.ts`, mounted in `lib/yjs-ws-handler.ts` beside the document rooms (same
+gateway, same Hocuspocus, hooks branch on the room's kind). `open` names the access (the
+project's owner: `edit` when the account can write a source, else `read`) and the journal id;
+`readSince` gives the room its state, and each catch-up the rows past the room's `seq`. The
+protocol and the machine are in `lib/.context/state-machines.md`, "Tree list room connection".
+
+What a change must keep:
+
+- **The room's document is never written by a client's frame.** `beforeSync` admits through the
+  store first, and a refusal throws before Hocuspocus applies anything; what reaches the
+  document is `onCommitted`'s update, so a refused update is in no copy.
+- **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
+  row. A commit applies its update at once and then runs a catch-up, which reads the rows past
+  `seq`, whichever process wrote them.
+- **The room reads the journal at a connection's SyncStep1 and at each admission, not on a
+  timer.** A browser on one process sees another process's record when its room next has an
+  exchange: the same as a text room. Closing the gap is one `LISTEN` or timer away; nobody has
+  asked for it.
+- **Outgoing frames are cut in parts by wrapping the connection's `send`** on its first
+  `beforeSync`, which runs before the first reply.
+

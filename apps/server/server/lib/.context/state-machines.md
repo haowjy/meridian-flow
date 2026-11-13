@@ -1,6 +1,6 @@
 # WebSocket handler state machines
 
-Two per-connection machines held in process memory. Both exist so that a client never receives
+Three per-connection machines held in process memory. Both exist so that a client never receives
 or sends frames for a room it has not been admitted to.
 
 ## Thread subscription, server half
@@ -48,3 +48,34 @@ stateDiagram-v2
 closes the socket with a typed close code (`DRAFT_CLOSED`, `DRAFT_PREFIX_MISSING`). `rejected`
 is final for that connection: the client reconnects, or reads the close code and gives the room
 up. Authorization happens at the upgrade; no frame can grant it later.
+
+## Tree list room connection
+
+One connection to a project's (or an account's) tree list room (`yjs-tree-room.ts`; its state is
+`TreeRoomConnection` in the connection's context). The room is named `tree:project:<id>` or
+`tree:account:<id>` and admitted by the project, not a document.
+
+```mermaid
+stateDiagram-v2
+  [*] --> open: the account owns the list (edit or read)
+  [*] --> refused: not the list's account (4403)
+  open --> open: SyncStep1 catches the room up to the journal, an update is admitted
+  open --> closed: a whole refusal (4210 list-rebuild), access lost (4409), rate wait over ten seconds (1013)
+  closed --> [*]
+  refused --> [*]
+```
+
+- **A client's update never reaches the room's document.** It goes to `TreeListStore.admit`;
+  the room's document gains what the store committed (the client's items with the verdicts the
+  server appended), delivered from `onCommitted`, so every connection hears the verdicts.
+- **A whole refusal closes the connection** (`4210 list-rebuild`) and applies nothing; the
+  client rebuilds from the server's copy. An account that lost write access since it connected
+  gets `4409` instead, and a limit an honest client can reach is never a whole refusal.
+- **A read-only connection's updates are dropped before the check** (`level: "read"`).
+- **Admissions are rate limited per connection** (a burst of 60, 30 a second): the connection
+  waits, and is closed only when the wait would pass ten seconds.
+- **Everything the connection sends and receives is in parts** of 300 records
+  (`splitSyncFrame`), whatever its size.
+- **A room learns of another process's commit at its next exchange** (a connection's SyncStep1,
+  an admission), as a text room does: there is no periodic read of the journal.
+
