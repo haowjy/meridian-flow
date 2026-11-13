@@ -797,7 +797,7 @@ export class DocumentSessionRegistry
    */
   private detachUnwantedTransport(session: DocumentSession): void {
     if (session.getSnapshot().status === "detached" || this.mustKeepForUnsentEdits(session)) return;
-    void session.detachTransport().catch(() => undefined);
+    void session.detachTransport().catch(reportError);
   }
 
   /** A session whose unsent edits were acknowledged or became undeliverable no longer needs its socket. */
