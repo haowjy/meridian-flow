@@ -20,6 +20,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import type { ModelInfo } from "@meridian-flow/gateway";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
@@ -81,6 +82,8 @@ export interface ToolDispatchContext {
   replyMutations: ReplyMutations;
   /** The run's credited ids, live: a sibling call's result counts as seen. */
   credited: CreditedBlocks;
+  /** The model this turn runs on, so a tool can decide what it can show it. */
+  model?: ModelInfo;
 }
 
 export type CompletedToolOutcome = {
@@ -359,6 +362,7 @@ export async function dispatchToolCall(
       },
       agentSlug: ctx.agentSlug,
       signal: ctx.signal,
+      ...(ctx.model ? { model: ctx.model } : {}),
       emitOutputDelta,
       spawn,
       threadMessage,

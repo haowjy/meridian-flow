@@ -449,6 +449,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         responseIdentity: ctx.responseIdentity,
         agentSlug: ctx.agentSlug,
         ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
+        ...(ctx.model ? { model: ctx.model } : {}),
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
           : undefined,

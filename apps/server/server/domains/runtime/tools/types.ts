@@ -19,7 +19,7 @@ import type {
   SpawnResult,
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts/threads";
-import type { Tool } from "@meridian-flow/gateway";
+import type { ModelInfo, Tool } from "@meridian-flow/gateway";
 import type { z } from "zod";
 import type { FrontierLookups } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -81,6 +81,8 @@ export interface ToolExecutionContext {
   request?: RequestToolHandlerContext["request"];
   /** The run's observation-frontier lookups, for tools that show documents. */
   frontiers?: FrontierLookups;
+  /** The model this turn runs on. */
+  model?: ModelInfo;
 }
 
 /**
@@ -174,6 +176,8 @@ export interface ToolHandlerContext {
    * a result chains from (`recording`) and the request's view (`planning`).
    */
   frontiers?: FrontierLookups;
+  /** The model this turn runs on, for a tool that decides what it can show it. */
+  model?: ModelInfo;
 }
 
 export interface SpawnToolHandlerContext extends ToolHandlerContext {

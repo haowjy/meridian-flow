@@ -15,10 +15,12 @@ export {
 export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export {
   createObjectStorageUrl,
+  derivedObjectKeys,
   drawObjectKey,
   incomingObjectKey,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
+  textObjectKey,
 } from "./object-storage-url.js";
 export type {
   ObjectStoreError,

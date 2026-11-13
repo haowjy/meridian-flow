@@ -45,6 +45,18 @@ inside the mutation's own transaction. Tool handlers return the typed agent-edit
 and model renderers never replace the persisted typed result. Context-backed
 handlers resolve one unified `ContextPort` per call.
 
+`read` on a binary file (`model-tools/binary-read.ts`) decides once, at the call, what the
+model is given, and the typed result's `file.given` says which: an image, or a PDF the thread's
+model takes (`placeMedia`, with the model on `ToolHandlerContext.model`), as a media part
+(`renderReadResult` in `core-tools.ts` adds it after the text); a PDF the model can't take, or an
+EPUB, as its extracted Markdown (`given: "text"`); any other file as a description. Extracted text
+is read through agent-edit's `readStaticMarkdown`: the same renderer as a document, in a throwaway
+in-memory document with fixed Yjs ids so block hashes stay the same between reads. So outline,
+`#heading` sections, `in` ranges and `around` searches all work on it; nothing is recorded as seen
+and nothing can be written. A whole read of more than `OUTLINE_FIRST_CHARS` (30,000) characters
+returns the outline first; naming a section, `in`, `around` or `format` reads what was asked. A
+hostile file is an error result; reference snapshots of binary files still get the binary refusal.
+
 ## HTTP and WebSocket seams
 
 Routes are thin entry points. Reusable route behavior belongs in testable

@@ -143,6 +143,18 @@ export interface AgentEditModelPayload {
    * named it, and the Works whose drafts of a deleted document survive it, by handle.
    */
   namespace?: { kind: "moved"; from: string } | { kind: "deleted"; survivingWorks?: string[] };
+  /**
+   * A read of a file that is not a tracked document: which file it was and what the model was
+   * given of it (`media` to look at, `text` extracted from it, or only a `description`).
+   */
+  file?: {
+    documentId: string;
+    uri: string;
+    name: string;
+    mediaType: string;
+    sizeBytes: number;
+    given: "media" | "text" | "description";
+  };
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */

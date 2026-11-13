@@ -2650,6 +2650,7 @@ async function executeLoop({
                   batch,
                   credited,
                   replyMutations: scope.reply,
+                  ...(built.resolvedModel ? { model: built.resolvedModel } : {}),
                 },
               );
               blockSeq = blockSeqRef.value;

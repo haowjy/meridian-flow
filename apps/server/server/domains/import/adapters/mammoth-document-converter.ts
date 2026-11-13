@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import mammoth from "mammoth";
-import rehypeParse from "rehype-parse";
-import rehypeRemark from "rehype-remark";
-import remarkGfm from "remark-gfm";
-import remarkStringify from "remark-stringify";
-import { unified } from "unified";
+import { createHtmlToMarkdown } from "../../file-intake/html-markdown.js";
 import type { ConvertedImage, DocumentConverterPort } from "../ports/document-converter.js";
 
 const EXTENSIONS: Record<string, string> = {
@@ -24,11 +20,7 @@ function imageExtension(contentType: string): string {
 }
 
 export function createMammothDocumentConverter(): DocumentConverterPort {
-  const htmlToMarkdown = unified()
-    .use(rehypeParse, { fragment: true })
-    .use(rehypeRemark)
-    .use(remarkGfm)
-    .use(remarkStringify, { bullet: "-", fences: true, emphasis: "_", rule: "-" });
+  const htmlToMarkdown = createHtmlToMarkdown();
 
   return {
     async convert(bytes, imageFolder) {
@@ -57,7 +49,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
           }),
         },
       );
-      const markdown = String(await htmlToMarkdown.process(result.value)).trim();
+      const markdown = await htmlToMarkdown(result.value);
       return { markdown, images };
     },
   };

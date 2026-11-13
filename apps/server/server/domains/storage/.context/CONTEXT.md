@@ -91,8 +91,30 @@ doesn't starve other writers' previews. `image-preview.ts` starts the worker wit
 Nitro traces
 `sharp`, `heic-decode`, `libheif-js` and `bmp-ts` as external packages.
 
-Every delete of a stored object that may have a preview, compensating deletes
-included, goes through `ObjectRelease`, so a key's preview never outlives it.
+Every delete of a stored object that may have a derived file, compensating deletes
+included, goes through `ObjectRelease`, so a derived file never outlives its original.
+
+## Derived files
+
+A file is derived from an original and lives and dies with it. `derivedObjectKeys(key)`
+(`object-storage-url.ts`) is the one list: today `previewObjectKey` (`.preview`) and
+`textObjectKey` (`.text`). Release (`object-release.ts`), the binary copy
+(`context/binary-copy.ts`) and the import sweep (`import/domain/object-sweep.ts`) all use it;
+add a new derived file there and nowhere else.
+
+`.text` is the Markdown extracted from an EPUB or PDF, made by the first `read` that needs it
+(`file-intake/text/extracted-text.ts`), not at upload. Finding it at that key is valid for good
+because a stored file's bytes never change: an upload's key is `uploads/<project>/<doc>`, a copy
+gets a new key, and nothing replaces an object in place. Keep that true (the sandbox's
+read-write mounts included), or the cache serves stale text. Two first reads at once write the
+same bytes, and every adapter's `put` is atomic (the local one writes a temp file and renames it).
+
+Conversion limits (`file-intake/text/limits.ts`): an EPUB's entry count, each entry's declared
+size and the total are checked from the zip's central directory before anything inflates, and only
+XML and XHTML entries are inflated; XML that declares an entity is refused whole; XHTML goes
+through the HTML5 parser, which has no DTD. Every conversion has a 20 s deadline and a
+1,000,000-character output cap (the text says where it was cut). No extracted text goes into a
+log, event or error: refusals carry our own sentence.
 
 ## Adapters and composition
 
