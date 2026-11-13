@@ -180,7 +180,7 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
  *
  * `DATABASE_URL`, when the main `.env` defines it: the expected database is the
  * bare name in the main checkout and `<name>_<slug>` in a linked worktree. An
- * incoming value that is unset (so filled from the file), the base, or the
+ * incoming value that is unset or empty (so filled from the file), the base, or the
  * expected name resolves to the file's URL with the expected name, so host and
  * credentials always come from the file and a second run is a no-op. Any other
  * name (a worktree's URL left in a shell, then a branch switch) throws.

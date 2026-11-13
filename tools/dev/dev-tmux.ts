@@ -143,7 +143,7 @@ function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
       `shared port: ${entry.service}=backend:${entry.appBackendPort},${entry.externalMode}:${entry.externalHttpsPort}`,
     );
   console.log(
-    `tmux -L ${DEV_TMUX_SOCKET} new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`,
+    `tmux -L ${DEV_TMUX_SOCKET} new-session -d -s ${plan.session.sessionName} -c ${repoRoot} (with -e for ${Object.keys(plan.command.env).length} variables: ${Object.keys(plan.command.env).join(", ")})`,
   );
   console.log(
     `tmux -L ${DEV_TMUX_SOCKET} send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`,
@@ -235,6 +235,9 @@ async function main(): Promise<void> {
       ? previous.mode
       : options.mode);
   applyModeEnv(mode);
+  // What the shell set, before `.env` is filled in: the stack inherits this, and
+  // with-dev-env fills the rest inside each service.
+  const callerEnv = { ...process.env };
   if (!options.stop && !active) applyDevEnvToProcess(repoRoot);
   const session = active ?? {
     sessionName: identity.sessionName,
@@ -250,6 +253,7 @@ async function main(): Promise<void> {
   const plan = createDevSessionPlan({
     repoRoot,
     session,
+    callerEnv,
     force: options.restart,
   });
   if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
@@ -289,7 +293,7 @@ async function main(): Promise<void> {
     }
     await tailscale.pruneStaleRoutes();
     requireSuccess(
-      store.createSession(session.sessionName),
+      store.createSession(session.sessionName, plan.command.env),
       `failed to create tmux session '${session.sessionName}'`,
     );
     // Record launch identity immediately: HEAD may change before readiness finishes.
