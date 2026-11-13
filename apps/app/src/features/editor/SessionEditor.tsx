@@ -7,6 +7,7 @@ import { WS_CLOSE } from "@meridian/contracts/protocol";
 import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
+import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import {
   type ReactNode,
   type RefObject,
@@ -160,6 +161,7 @@ function ActiveSessionEditorView({
   } = surfaceOptions;
   const active = hostActive && !held;
   const accountId = useAccountId();
+  const accountName = useAccountName();
   const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const inReview = identity.surface === "review";
@@ -314,6 +316,7 @@ function ActiveSessionEditorView({
     identity,
     session,
     agentNames,
+    user: { accountId, name: accountName },
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     atReferenceCatalog,
@@ -524,4 +527,10 @@ function EditorCanvas({
       <EditorContent editor={editor} className={editorColumnFill} />
     </EditorSurfaceFrame>
   );
+}
+
+/** The name another writer's cursor label shows for this one. */
+function useAccountName(): string {
+  const { user } = useAuth();
+  return [user?.firstName, user?.lastName].filter(Boolean).join(" ") || (user?.email ?? "");
 }

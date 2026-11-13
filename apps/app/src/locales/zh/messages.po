@@ -5175,6 +5175,10 @@ msgstr ""
 msgid "Some text was removed"
 msgstr ""
 
+#: src/core/editor/config.ts
+msgid "Someone"
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "Something went wrong on our side. Try again."
 msgstr ""
@@ -6629,6 +6633,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
+#: src/core/editor/config.ts
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "You"
 msgstr ""

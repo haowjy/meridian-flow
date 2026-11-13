@@ -7,6 +7,7 @@
  * not the session lifecycle (see `document-session.ts`).
  */
 
+import { t } from "@lingui/core/macro";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
@@ -67,9 +68,10 @@ import type { SessionMarkerStore } from "./session-marker-store";
 import { editorSuggestionHost } from "./suggestion-host";
 import { UploadPresenceExtension } from "./upload-presence";
 
+/** Who this client is, published with its caret so a peer can label it. */
 export type EditorUser = {
+  accountId: string;
   name: string;
-  color: string;
 };
 
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
@@ -155,13 +157,10 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
 ];
 
 /**
- * Collaboration cursor default. The composition path resolves its token before
+ * Caret colour fallback. The composition path resolves its token before
  * publishing awareness because y-prosemirror accepts concrete colors only.
  */
-const DEFAULT_USER: EditorUser = {
-  name: "Meridian Researcher",
-  color: COLLABORATION_CURSOR_COLORS[4],
-};
+const FALLBACK_CARET_COLOR = COLLABORATION_CURSOR_COLORS[4];
 
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(peers: PeerAwareness): string {
@@ -231,8 +230,9 @@ function createCollaborationExtensions({
   CreateEditorExtensionsOptions,
   "document" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
-  const resolvedUser: EditorUser = {
-    name: (user ?? DEFAULT_USER).name,
+  const published = {
+    accountId: user?.accountId ?? "",
+    name: user?.name ?? "",
     color: pickCursorColor(presence.peers),
   };
 
@@ -255,15 +255,18 @@ function createCollaborationExtensions({
     // dropped, then overwritten by the snapshot the review restores.
     CollaborationCaret.configure({
       provider: presence.caretProvider,
-      user: resolvedUser,
+      user: published,
       render: (cursorUser) => {
         const cursor = window.document.createElement("span");
         cursor.classList.add("meridian-collab-cursor");
-        cursor.style.setProperty("--caret-color", String(cursorUser.color ?? DEFAULT_USER.color));
+        cursor.style.setProperty("--caret-color", String(cursorUser.color ?? FALLBACK_CARET_COLOR));
 
         const label = window.document.createElement("span");
         label.classList.add("meridian-collab-cursor__label");
-        label.textContent = String(cursorUser.name ?? DEFAULT_USER.name);
+        label.textContent =
+          published.accountId && cursorUser.accountId === published.accountId
+            ? t`You`
+            : String(cursorUser.name || t`Someone`);
 
         cursor.append(label);
         return cursor;
@@ -271,7 +274,7 @@ function createCollaborationExtensions({
       selectionRender: (cursorUser) => ({
         nodeName: "span",
         class: "meridian-collab-selection",
-        style: `--caret-color: ${String(cursorUser.color ?? DEFAULT_USER.color)}`,
+        style: `--caret-color: ${String(cursorUser.color ?? FALLBACK_CARET_COLOR)}`,
       }),
     }),
     PeerCaretHoverExtension,
@@ -282,7 +285,7 @@ export function createEditorExtensions({
   document,
   schemaType = "document",
   presence,
-  user = DEFAULT_USER,
+  user,
   assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,

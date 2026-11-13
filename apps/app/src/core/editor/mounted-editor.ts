@@ -18,7 +18,7 @@ import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentNameStore } from "./agent-name-store";
-import { createEditorConfig } from "./config";
+import { createEditorConfig, type EditorUser } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { ReferenceDropOptions } from "./extensions/reference-drop";
@@ -96,6 +96,8 @@ export type MountedEditorInput = {
   session: DocumentSession;
   /** Subscribable name lookup; the projection repaints, the editor is not rebuilt. */
   agentNames: AgentNameStore;
+  /** The signed-in writer, published with the caret. Read once at mount. */
+  user: EditorUser;
   placeholder: string;
   /**
    * Reads the insertion catalog when the menu opens. Mounting the extension is
@@ -122,6 +124,7 @@ export function useMountedEditor({
   identity,
   session,
   agentNames,
+  user,
   placeholder,
   slashCommandCatalog,
   atReferenceCatalog,
@@ -161,6 +164,7 @@ export function useMountedEditor({
       enableDraftInlineReview: identity.surface === "review",
       markerStore: identity.surface === "review" ? undefined : session.markerStore,
       agentNames,
+      user,
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
