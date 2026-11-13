@@ -106,8 +106,7 @@ function uriFamily(uri: string): ContextUriScheme | null {
 function fileFacts(name: string, mimeType: string, sizeBytes: number | null): string | null {
   const facts = [fileTypeLabel(name, mimeType), sizeBytes === null ? "" : formatBytes(sizeBytes)];
   const known = facts.filter(Boolean);
-  // slop-lint: allow middle-dot file-detail row
-  return known.length > 0 ? known.join(" · ") : null;
+  return known.length > 0 ? known.join(", ") : null;
 }
 
 /**
