@@ -48,6 +48,7 @@ import {
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
+import { PeerCaretHoverExtension } from "./extensions/PeerCaretHoverExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
@@ -273,6 +274,7 @@ function createCollaborationExtensions({
         style: `--caret-color: ${String(cursorUser.color ?? DEFAULT_USER.color)}`,
       }),
     }),
+    PeerCaretHoverExtension,
   ];
 }
 

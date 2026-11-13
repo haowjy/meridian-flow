@@ -321,24 +321,12 @@
   background: var(--caret-color, var(--color-primary));
 }
 
-/* The hover target: the caret's whole height, a few pixels either side, so pointing at the caret
-   names the peer. The caret itself stays transparent to the pointer. */
-.meridian-collab-cursor::after {
-  content: "";
-  position: absolute;
-  top: -0.125rem;
-  bottom: 0;
-  left: -0.3125rem;
-  width: 0.5rem;
-  pointer-events: auto;
-}
-
 .meridian-collab-cursor .meridian-collab-cursor__label {
   display: none;
   background: var(--caret-color, var(--color-primary));
 }
 
-.meridian-collab-cursor:hover .meridian-collab-cursor__label {
+.meridian-collab-cursor[data-hovered] .meridian-collab-cursor__label {
   display: block;
 }
 
