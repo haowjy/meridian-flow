@@ -3,13 +3,13 @@
  * source text, not types: it sees `import`/`export ... from`/dynamic `import()`/`require()` and a stylesheet's `@import`,
  * resolves relative paths, the `@/` alias (apps/app/src), the `~/` alias (apps/www/src) and
  * workspace package names (`@meridian/x[/sub]` is the package's directory). Test files are
- * left out: the map describes what the code does, not what its tests reach into.
+ * left out (with `test-support` directories and files): the map describes what the code does, not what its tests reach into.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
 const SOURCE = /\.(?:[cm]?[jt]s|tsx|jsx|css)$/;
-const TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$|\.d\.ts$|(?:^|\/)(?:__tests__|tests?|e2e|fixtures)\//;
+const TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$|\.d\.ts$|(?:^|\/)(?:__tests__|tests?|e2e|fixtures|test-support)\/|[^/]*test-support[^/]*$/;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".output", ".nitro", ".tanstack"]);
 const EXTENSIONS = ["", ".ts", ".tsx", ".js", ".mjs", ".mts", ".cjs", ".jsx", "/index.ts", "/index.tsx", "/index.js"];
 
@@ -24,9 +24,11 @@ const STATEMENTS = [
 // @import "x" in a stylesheet
 const CSS_IMPORT = /@import\s+["']([^"']+)["']/g;
 
-/** The module specifiers a file imports: [{ spec, typeOnly }]. */
-function specifiersIn(text, isCss) {
+/** The module specifiers a file imports: [{ spec, typeOnly }]. Comments are blanked first, so a commented-out import doesn't count. */
+function specifiersIn(source, isCss) {
   const found = [];
+  const noBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const text = isCss ? noBlocks : noBlocks.replace(/(^|[^:"'`\w])\/\/.*$/gm, "$1");
   if (isCss) {
     for (const m of text.matchAll(CSS_IMPORT)) found.push({ spec: m[1], typeOnly: false });
     return found;

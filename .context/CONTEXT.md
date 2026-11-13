@@ -10,7 +10,8 @@ The running system, the code's boxes and their dependencies, and the writer jour
   project and Work ownership, never the reverse. But runtime, threads, projects,
   file-policy, context and collab import each other in a cycle, and
   `runtime/gateway/config` imports `lib/`; the [server map](system-architecture/server.md)
-  marks each such import, and `pnpm check:architecture` fails on a new one it doesn't mark.
+  marks each such import, and `pnpm check:architecture` fails on a cycle import with no marked
+  edge in its direction, or a domain that imports `lib/` with no marked edge to the lib box.
   `apps/server/server/lib/` is the composition root and may wire every domain;
   a new domain import of `lib/` or a new cycle edge is a regression.
 - **Ports.** JSON-natural shared DTOs live in `@meridian/contracts`; behavioral

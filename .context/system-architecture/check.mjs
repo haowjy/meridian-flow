@@ -220,19 +220,23 @@ for (const { file, page } of levels) {
   }
 }
 
-/** Whether the page both boxes are on has an edge between them whose label says "breaks:". */
-const markedBetween = (a, z) =>
+/** Whether the page both boxes are on has an edge from `a` to `z` (or either way, with `eitherWay`) whose label says "breaks:". */
+const marked = (a, z, eitherWay = false) =>
   a.page === z.page &&
   levels
     .find((l) => l.file === a.page)
-    .page.mermaid.edges.some((e) => e.label.includes("breaks:") && ((e.from === a.id && e.to === z.id) || (e.from === z.id && e.to === a.id)));
+    .page.mermaid.edges.some(
+      (e) =>
+        e.label.includes("breaks:") &&
+        ((e.from === a.id && e.to === z.id) || ((e.both || eitherWay) && e.from === z.id && e.to === a.id)),
+    );
 
 const DOMAINS = "apps/server/server/domains";
 const LIB = "apps/server/server/lib";
 const domainOf = (path) => (under(path, DOMAINS) ? path.slice(DOMAINS.length + 1).split("/")[0] : null);
 const domainBox = (name) => boxes.find((b) => b.kind === "domain" && b.paths.includes(`${DOMAINS}/${name}`));
 
-// Rule: domains are acyclic. Every domain-to-domain value import inside a cycle needs a marked edge.
+// Rule: domains are acyclic. Every domain-to-domain value import inside a cycle needs a marked edge in its own direction.
 const graph = new Map();
 const sample = new Map();
 for (const i of imports) {
@@ -244,22 +248,23 @@ for (const i of imports) {
   sample.set(`${from}>${to}`, sample.get(`${from}>${to}`) ?? `${i.from} imports ${i.to}`);
 }
 const component = stronglyConnected(graph);
-const reported = new Set();
+const noBox = new Set();
 for (const [from, targets] of graph) {
   for (const to of targets) {
     if (component.get(from) !== component.get(to)) continue;
-    // A marked edge covers a pair in both directions, so a pair is reported once.
-    const pair = [from, to].sort().join(">");
-    if (reported.has(pair)) continue;
-    reported.add(pair);
     const a = domainBox(from);
     const z = domainBox(to);
-    if (!a || !z) fail("map", `domains ${from} and ${to} import each other in a cycle but ${!a ? from : to} has no domain box (Paths: \`${DOMAINS}/${!a ? from : to}\`).`);
-    else if (!markedBetween(a, z)) fail(`${a.page}`, `no edge between ${from} and ${to} carries "breaks:", yet ${sample.get(`${from}>${to}`)} inside a domain cycle.`);
+    for (const [name, box] of [[from, a], [to, z]])
+      if (!box && !noBox.has(name)) {
+        noBox.add(name);
+        fail("map", `domain ${name} is in an import cycle but has no domain box (Paths: \`${DOMAINS}/${name}\`).`);
+      }
+    if (a && z && !marked(a, z))
+      fail(a.page, `no edge from ${from} to ${to} carries "breaks:", yet ${sample.get(`${from}>${to}`)} inside a domain cycle.`);
   }
 }
 
-// Rule: domains do not import lib/. Every such import needs a marked edge.
+// Rule: domains do not import lib/. One marked edge between a domain's box and a lib box covers all that domain's imports.
 const libSeen = new Set();
 for (const i of imports) {
   const from = domainOf(i.from);
@@ -270,7 +275,7 @@ for (const i of imports) {
   const a = domainBox(from);
   const libBoxes = boxes.filter((b) => b.kind !== "domain" && b.paths.some((p) => under(i.to, p)) && b.page === a?.page);
   if (!a) fail("map", `domain ${from} imports lib/ but has no domain box (Paths: \`${DOMAINS}/${from}\`).`);
-  else if (!libBoxes.some((z) => markedBetween(a, z))) fail(a.page, `no edge between ${from} and the lib box carries "breaks:", yet ${i.from} imports ${i.to}.`);
+  else if (!libBoxes.some((z) => marked(a, z, true))) fail(a.page, `no edge between ${from} and the lib box carries "breaks:", yet ${i.from} imports ${i.to}.`);
 }
 
 /** Tarjan: node → component number; nodes in one cycle share one, and a lone node gets its own. */

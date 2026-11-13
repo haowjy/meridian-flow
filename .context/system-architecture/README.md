@@ -100,11 +100,14 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 - A state machine page the index links that is on no box; a `*state-machine*.md` the index doesn't link.
 - An `import` or `call` edge between boxes that have `Paths` when nothing in the first box's paths
   imports the second's. It reads the source (relative imports, `@/` in `apps/app`, `~/` in
-  `apps/www`, `@meridian/*` package names, stylesheet `@import`), leaving tests out.
+  `apps/www`, `@meridian/*` package names, stylesheet `@import`), leaving out tests and `test-support` files, and ignoring imports in comments.
 - A dependency rule broken in the code and not marked on the map. Only the rules
-  [CONTEXT.md](../CONTEXT.md) writes and that hold as written are checked: every domain-to-domain value
-  import inside a cycle needs an edge between the two domain boxes with `breaks:` in its label, and every
-  domain import from `apps/server/server/lib/` needs a marked edge between that domain's box and the lib box.
+  [CONTEXT.md](../CONTEXT.md) writes and that hold as written are checked. Every domain-to-domain
+  value import inside a cycle needs an edge in its own direction (from the importing domain's box to
+  the imported one's, or `<-->`) with `breaks:` in its label; the failure names that import. A domain's
+  imports of `apps/server/server/lib/` need one marked edge between its box and the lib box, either
+  direction; it covers all of that domain's imports. A domain that joins a cycle fails once for each
+  of its edges that was acyclic until now, and the one that names the new file is the cause.
 - The viewer's colours: `styles/tokens.css` must match `packages/design-tokens`, and `styles/page.css`
   holds no raw colour.
 
