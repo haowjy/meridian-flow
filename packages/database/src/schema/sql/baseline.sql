@@ -204,3 +204,22 @@ ALTER TABLE ONLY public.threads
 
 ALTER TABLE ONLY public.turns
     ALTER CONSTRAINT turns_prompt_bake_id_prompt_bakes_id_fk DEFERRABLE INITIALLY DEFERRED;
+
+CREATE FUNCTION public.delete_document_yjs_head() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- The Yjs document is keyed by its head, not by `documents`, so a document's delete takes
+  -- its head, and through it the journal, here.
+  DELETE FROM document_yjs_heads WHERE document_id = OLD.id;
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER documents_delete_yjs_head AFTER DELETE ON public.documents FOR EACH ROW EXECUTE FUNCTION public.delete_document_yjs_head();
+
+ALTER TABLE ONLY public.tree_nodes
+    ALTER CONSTRAINT tree_nodes_parent_in_source DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.document_yjs_checkpoints
+    ALTER CONSTRAINT document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk DEFERRABLE INITIALLY DEFERRED;

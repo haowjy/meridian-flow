@@ -178,7 +178,7 @@ export const documentYjsCheckpoints = pgTable(
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
     authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
@@ -203,7 +203,7 @@ export const documentYjsUpdates = pgTable(
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
     authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
@@ -264,32 +264,54 @@ export const agentEditWidCounters = pgTable(
   (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
 );
 
-export const documentYjsHeads = pgTable("document_yjs_heads", {
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .primaryKey()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  authorityId: uuid("authority_id")
-    .$type<DocumentAuthorityId>()
-    .notNull()
-    .default(sql`gen_random_uuid()`),
-  authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull().default(sql`1`),
-  nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
-    .notNull()
-    .default(sql`1`),
-  fragmentName: text("fragment_name").notNull().default("prosemirror"),
-  schemaVersion: integer("schema_version")
-    .notNull()
-    .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-  retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
-  latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
-  latestStateVector: byteaColumn("latest_state_vector"),
-  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
-    () => documentYjsCheckpoints.id,
-    { onDelete: "set null" },
-  ),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * One row per Yjs document, the identity its journal rows (`document_yjs_updates`,
+ * `document_yjs_checkpoints`) hang from. `document_id` is a `documents.id` for a manuscript
+ * document, or the id of a list (a project's tree list is the project's id, an account's is the
+ * account's); it names no `documents` row of its own, so a Yjs document can exist before its
+ * `documents` row does (an import writes text first). A `documents` delete takes its head and
+ * journal with it through a trigger; `project_id` and `user_id` give a head with no `documents`
+ * row (a list) the project or account whose delete takes it, and mark it as one that needs
+ * no living document to be written.
+ */
+export const documentYjsHeads = pgTable(
+  "document_yjs_heads",
+  {
+    documentId: uuid("document_id").$type<DocumentId>().primaryKey(),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id")
+      .$type<DocumentAuthorityId>()
+      .notNull()
+      .default(sql`gen_random_uuid()`),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" })
+      .notNull()
+      .default(sql`1`),
+    nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
+      .notNull()
+      .default(sql`1`),
+    fragmentName: text("fragment_name").notNull().default("prosemirror"),
+    schemaVersion: integer("schema_version")
+      .notNull()
+      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+    retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
+    latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
+    latestStateVector: byteaColumn("latest_state_vector"),
+    /** No foreign key: checkpoints reference their head, and a cycle has no delete order. */
+    latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "document_yjs_heads_one_owner",
+      sql`num_nonnulls(${table.projectId}, ${table.userId}) <= 1`,
+    ),
+  ],
+);
 
 /**
  * One row per document: the live room's derived outputs, certified against one cut. `blockOrder`

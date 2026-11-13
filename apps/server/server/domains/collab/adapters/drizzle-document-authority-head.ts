@@ -1,7 +1,7 @@
 /**
  * The durable document authority head (`document_yjs_heads`), and its one writer; the one
  * deleter besides is the context purge (`releaseDocumentStorage`), which drops a discarded
- * document's storage with its removal. Only
+ * document's storage with its removal. A document's delete takes its head by trigger. Only
  * materialization (a create's transaction, or explicit repair of a living document) makes a
  * head; every later write moves it under the caller's document mutation lock and requires a
  * living document in the same statement, so a removal that won the lock refuses here at no
@@ -10,7 +10,7 @@
  */
 
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
-import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
+import type { DocumentAuthorityId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
 import {
@@ -19,7 +19,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
@@ -30,11 +30,25 @@ export type DocumentAuthorityHeadGeneration = {
   generation: bigint;
 };
 
-/** A living document's first head, at birth; an existing head (a head-only anomaly) is reused. */
-export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId): Promise<void> {
+/** The project or account a head with no `documents` row (a tree list) belongs to. */
+export type HeadOwner = { projectId: ProjectId } | { userId: UserId };
+
+/**
+ * A living document's first head, at birth; an existing head (a head-only anomaly) is reused.
+ * A list has no document: its head names its `owner` instead, and is writable without one.
+ */
+export async function initializeHead(
+  db: AuthorityHeadDb,
+  documentId: DocumentId,
+  owner?: HeadOwner,
+): Promise<void> {
   await db
     .insert(documentYjsHeads)
-    .values({ documentId, schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
+    .values({
+      documentId,
+      schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+      ...owner,
+    })
     .onConflictDoNothing({ target: documentYjsHeads.documentId });
 }
 
@@ -197,7 +211,11 @@ export async function refusedAuthority(
 function living(documentId: string) {
   return and(
     eq(documentYjsHeads.documentId, documentId as DocumentId),
-    livingDocumentSql(documentYjsHeads.documentId),
+    or(
+      isNotNull(documentYjsHeads.projectId),
+      isNotNull(documentYjsHeads.userId),
+      livingDocumentSql(documentYjsHeads.documentId),
+    ),
   );
 }
 
