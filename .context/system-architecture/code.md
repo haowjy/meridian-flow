@@ -14,6 +14,7 @@ flowchart TB
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
   resource-replica["resource-replica<br/><small>the local copy of documents</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
+  project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
   prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
@@ -126,6 +127,16 @@ Stages one reply's writes, saves them together and builds the inverses Undo appl
 - Paths: `packages/agent-edit/src`
 - Docs: [CONTEXT](../../packages/agent-edit/.context/CONTEXT.md), [AGENTS](../../packages/agent-edit/AGENTS.md)
 - Machines: [agent-edit](../../packages/agent-edit/.context/state-machines.md)
+
+## project-tree
+
+The project tree as an append-only list of records in a Yjs document, and the replay that turns it into a tree.
+
+The records, the replay and its rules, Apply, Discard and Undo, the server's check of a client's update, and the rows to write after a replay. It owns no database or access rules: the server supplies what only it knows. Not yet imported by the server or the app.
+
+- Kind: package
+- Paths: `packages/project-tree/src`
+- Docs: [CONTEXT](../../packages/project-tree/.context/CONTEXT.md), [AGENTS](../../packages/project-tree/AGENTS.md)
 
 ## resource-replica
 
