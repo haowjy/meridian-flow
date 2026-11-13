@@ -243,7 +243,7 @@ export interface OrchestratorRepositories {
   threads: ThreadRepository;
   turns: TurnRepository;
   promptBakes: ThreadRepositories["promptBakes"];
-  imageInclusions: ThreadRepositories["imageInclusions"];
+  mediaInclusions: ThreadRepositories["mediaInclusions"];
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ThreadRepositories["executionReports"];
@@ -356,7 +356,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       const error =
         input.error instanceof RequestPreparationError ? input.error.original : input.error;
       const contextError = error instanceof ThreadConversationContextError ? error : null;
-      const imageResolutionError = error instanceof MediaResolutionError ? error : null;
+      const mediaResolutionError = error instanceof MediaResolutionError ? error : null;
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
       const failedTurn = await deps.repos.turns.findById(input.turnId);
@@ -380,8 +380,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   (error instanceof CompactionPreparationError
                     ? error.reason
                     : contextError?.code) ??
-                  (imageResolutionError
-                    ? "image_resolution_failed"
+                  (mediaResolutionError
+                    ? "media_resolution_failed"
                     : requestPreparationFailed
                       ? "request_preparation_failed"
                       : "execution_error"),

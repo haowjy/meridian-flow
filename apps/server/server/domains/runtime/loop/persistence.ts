@@ -45,7 +45,7 @@ export type PersistenceDeps = {
   repos: Pick<
     ThreadRepositories,
     | "blocks"
-    | "imageInclusions"
+    | "mediaInclusions"
     | "modelResponses"
     | "runTurnStartTransition"
     | "threads"

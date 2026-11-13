@@ -2,7 +2,7 @@
  * tool-kind — the two kinds of assistant activity on the turn surface.
  *
  * An **artifact** is writer-facing and stays visible: a custom card (spawn
- * report, child Return) or a file. A **process**
+ * report, child Return). A **process**
  * item is scaffolding — reasoning, reads, searches, shell, context — and belongs
  * inside the collapsed Thinking disclosure. The kind comes from the surface a
  * block produces, never from a tool-name list, so a new tool needs no edit here.
@@ -13,5 +13,5 @@
 import type { Block } from "@meridian/contracts/protocol";
 
 export function isArtifactBlock(block: Block): boolean {
-  return block.blockType === "custom" || block.blockType === "file";
+  return block.blockType === "custom";
 }

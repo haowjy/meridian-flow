@@ -12,7 +12,7 @@ import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.
 import {
   childCompletionMetadata,
   classifyHistoryItem,
-  decodeImageInclusionMetadata,
+  decodeMediaInclusionMetadata,
   skillBodyMetadata,
 } from "../../../threads/index.js";
 import { createInMemoryRunClaim } from "../../adapters/in-memory/loop-ports.js";
@@ -427,10 +427,10 @@ describe("inbox drain", () => {
       status: "error",
       finishReason: "error",
     });
-    expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
+    expect(await repos.mediaInclusions.findByThread(thread.id)).toEqual([]);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(0);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -442,7 +442,7 @@ describe("inbox drain", () => {
     ).toMatchObject({
       error: {
         message: "temporary object-store timeout",
-        details: { reason: "image_resolution_failed" },
+        details: { reason: "media_resolution_failed" },
       },
     });
 
@@ -455,10 +455,10 @@ describe("inbox drain", () => {
         .some((part) => part.type === "media"),
     ).toBe(true);
     const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
-      (block) => block.blockType === "image",
+      (block) => block.blockType === "media",
     );
     expect(
-      (await repos.imageInclusions.findByThread(thread.id)).find(
+      (await repos.mediaInclusions.findByThread(thread.id)).find(
         (decision) => decision.blockId === imageBlock?.id,
       )?.included,
     ).toBe(true);

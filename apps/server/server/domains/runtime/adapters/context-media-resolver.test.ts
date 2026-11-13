@@ -21,6 +21,7 @@ function resolver(input: {
   availability?: { kind: string; entry?: { uri: string; scope?: { kind: string } } };
   fileAccess?: Pick<FileAccess, "authorize">;
   link?: string | null;
+  missingObject?: boolean;
   reads: string[];
 }) {
   const availability = {
@@ -53,6 +54,9 @@ function resolver(input: {
     },
     async get(key: string) {
       input.reads.push(key);
+      if (input.missingObject) {
+        return { ok: false as const, error: { code: "not_found", message: "Object not found" } };
+      }
       return {
         ok: true as const,
         value: { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" },
@@ -97,22 +101,23 @@ describe("context media resolution", () => {
     ).resolves.toBeNull();
   });
 
-  it("treats a changed address as gone, but a chat's upload by its identity", async () => {
+  it("keeps a moved or renamed file visible, since identity and the read grant decide", async () => {
     await expect(
       resolver({
         reads: [],
         availability: { kind: "available", entry: { uri: "uploads://@c1/renamed.png" } },
       }).resolve(context, reference, window),
-    ).resolves.toBeNull();
-    await expect(
-      resolver({
-        reads: [],
-        availability: {
-          kind: "available",
-          entry: { uri: "uploads://@c15/image.png", scope: { kind: "chat" } },
-        },
-      }).resolve(context, reference, window),
     ).resolves.toMatchObject({ mediaType: "image/png" });
+  });
+
+  it("makes a missing stored object that file's outcome, not an error", async () => {
+    const file = await resolver({ reads: [], missingObject: true, link: null }).resolve(
+      context,
+      reference,
+      window,
+    );
+    await expect(file?.source("original", "bytes")).resolves.toBeNull();
+    await expect(file?.source("original", "link")).resolves.toBeNull();
   });
 
   it("throws only when availability is indeterminate", async () => {

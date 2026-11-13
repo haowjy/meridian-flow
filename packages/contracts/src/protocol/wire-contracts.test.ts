@@ -245,7 +245,7 @@ describe("thread socket frames", () => {
       ).toBeNull();
       expect(
         referenceOccurrenceContent({
-          blockType: "image",
+          blockType: "media",
           content: occurrence,
         }),
       ).toBeNull();
@@ -281,7 +281,7 @@ describe("thread socket frames", () => {
           content: { ...skill, extra: true },
         }),
       ).toBeNull();
-      expect(skillOccurrenceContent({ blockType: "image", content: skill })).toBeNull();
+      expect(skillOccurrenceContent({ blockType: "media", content: skill })).toBeNull();
       expect(
         skillOccurrenceContent({
           blockType: "text",

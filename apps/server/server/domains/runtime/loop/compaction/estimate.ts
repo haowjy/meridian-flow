@@ -6,6 +6,9 @@ import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
+/** A PDF costs by page: Claude billed 3,664 input tokens for two short pages (live-link-check). */
+export const PDF_PAGE_TOKEN_ESTIMATE = 2_000;
+/** A PDF whose page count is unknown. */
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
 /** Conservative CJK code-point rates; refresh from published or live probe evidence. */
 export const CJK_CODE_POINT_TOKEN_RATES: Record<TokenizerFamily, number> = {
@@ -97,7 +100,9 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
     const fixed =
       typeof record.mediaType === "string" && record.mediaType.startsWith("image/")
         ? IMAGE_PART_TOKEN_ESTIMATE
-        : FILE_PART_TOKEN_ESTIMATE;
+        : typeof record.pageCount === "number"
+          ? record.pageCount * PDF_PAGE_TOKEN_ESTIMATE
+          : FILE_PART_TOKEN_ESTIMATE;
     return fixed + estimateModelJsonTokens({ ...rest, source: sourceWithoutPayload }, tokenizer);
   }
   return estimateModelJsonTokens(record, tokenizer);
@@ -126,7 +131,7 @@ function blockModelPart(block: Block): unknown {
         ...content,
         text: typeof content.text === "string" ? content.text : (block.textContent ?? ""),
       };
-    case "image":
+    case "media":
     case "tool_use":
     case "tool_result":
       return { type: block.blockType, ...content };

@@ -33,6 +33,9 @@ export class InvalidAdmissionError extends Error {
   readonly code = "invalid_message" as const;
 }
 
+/** A picture the writer attached can't be stored: the send fails in the app's words for a failed upload. */
+const attachmentFailed = () => new InvalidAdmissionError("The upload failed.");
+
 export class AdmissionConflictError extends Error {
   readonly code = "idempotency_conflict" as const;
 }
@@ -587,6 +590,7 @@ export function createUserTurnAdmission(deps: {
         if (block.type === "text" || block.type === "skill") return [block];
         const admittedUri = admittedUris.get(referenceIdentity(block));
         if (admittedUri === undefined) {
+          if (block.type === "image") throw attachmentFailed();
           return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
         }
         if (admittedUri === block.uri) return [block];
@@ -608,7 +612,8 @@ export function createUserTurnAdmission(deps: {
           continue;
         }
         const media = await deps.describeImage(block.documentId);
-        if (media) storedBlocks.push({ ...block, ...media });
+        if (!media) throw attachmentFailed();
+        storedBlocks.push({ ...block, ...media });
       }
       const admittedText = admittedBlocks
         .filter((block) => block.type !== "image")

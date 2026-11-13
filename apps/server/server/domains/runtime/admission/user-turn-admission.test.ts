@@ -413,8 +413,15 @@ describe("UserTurnAdmission", () => {
     ],
     ["upload identity mismatch", [availableResolution()], false],
   ])("degrades %s identity in place without veto or retargeting", async (_label, resolutions, draftUploadMatches) => {
+    // A picture that can't be admitted fails the send, in the app's words for a failed upload.
+    await expect(
+      harness(null, resolutions, draftUploadMatches).service.admit(input()),
+    ).rejects.toThrow("The upload failed.");
     const h = harness(null, resolutions, draftUploadMatches);
-    await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
+    const mentionsOnly = input({
+      blocks: (input().blocks as { type: string }[]).filter((block) => block.type !== "image"),
+    });
+    await expect(h.service.admit(mentionsOnly)).resolves.toMatchObject({ kind: "accepted" });
     expect(h.captured()?.blocks).toEqual([
       { type: "text", text: "see " },
       { type: "text", text: occurrenceText },

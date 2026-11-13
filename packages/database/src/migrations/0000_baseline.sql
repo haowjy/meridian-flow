@@ -132,7 +132,7 @@ CREATE TABLE "model_responses" (
 	"completed_at" timestamp with time zone,
 	CONSTRAINT "model_responses_price_source_valid" CHECK ("model_responses"."price_source" IN ('computed', 'unknown')),
 	CONSTRAINT "model_responses_predicted_cache_state_valid" CHECK ("model_responses"."predicted_cache_state" IN ('warm', 'cold')),
-	CONSTRAINT "model_responses_predicted_cache_reason_valid" CHECK ("model_responses"."predicted_cache_reason" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable'))
+	CONSTRAINT "model_responses_predicted_cache_reason_valid" CHECK ("model_responses"."predicted_cache_reason" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'media_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable'))
 );
 --> statement-breakpoint
 CREATE TABLE "observation_frontiers" (
@@ -221,16 +221,6 @@ CREATE TABLE "thread_hand_backs" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "thread_image_inclusions" (
-	"thread_id" uuid NOT NULL,
-	"block_id" uuid NOT NULL,
-	"part_index" integer NOT NULL,
-	"decision_turn_id" uuid NOT NULL,
-	"included" boolean NOT NULL,
-	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","part_index","decision_turn_id")
-);
---> statement-breakpoint
 CREATE TABLE "thread_inbox_messages" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"thread_id" uuid NOT NULL,
@@ -248,6 +238,16 @@ CREATE TABLE "thread_inbox_messages" (
 	CONSTRAINT "thread_inbox_messages_intent_valid" CHECK ("thread_inbox_messages"."intent" IN ('message','notice','control')),
 	CONSTRAINT "thread_inbox_messages_provenance_valid" CHECK (("thread_inbox_messages"."provenance"->>'kind' IN ('writer','agent','child','system')) IS TRUE),
 	CONSTRAINT "thread_inbox_messages_body_valid" CHECK ((CASE WHEN "thread_inbox_messages"."intent" = 'control' THEN ("thread_inbox_messages"."body"->>'kind' IN ('compact','ask_resolved') OR ("thread_inbox_messages"."body"->>'kind' = 'write_mode' AND "thread_inbox_messages"."body"->>'mode' IN ('direct','draft'))) ELSE "thread_inbox_messages"."body"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE)
+);
+--> statement-breakpoint
+CREATE TABLE "thread_media_inclusions" (
+	"thread_id" uuid NOT NULL,
+	"block_id" uuid NOT NULL,
+	"part_index" integer NOT NULL,
+	"decision_turn_id" uuid NOT NULL,
+	"included" boolean NOT NULL,
+	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "thread_media_inclusions_thread_id_block_id_part_index_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","part_index","decision_turn_id")
 );
 --> statement-breakpoint
 CREATE TABLE "thread_run_leases" (
@@ -357,7 +357,7 @@ CREATE TABLE "turn_blocks" (
 	"execution_side" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "turn_blocks_status_valid" CHECK ("turn_blocks"."status" IN ('complete', 'partial')),
-	CONSTRAINT "turn_blocks_block_type_valid" CHECK ("turn_blocks"."block_type" IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom'))
+	CONSTRAINT "turn_blocks_block_type_valid" CHECK ("turn_blocks"."block_type" IN ('text', 'media', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom'))
 );
 --> statement-breakpoint
 CREATE TABLE "turns" (
@@ -1171,11 +1171,11 @@ ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_card_block_id_turn_blocks_id_fk" FOREIGN KEY ("card_block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_child_turn_fk" FOREIGN KEY ("child_thread_id","execution_turn_id") REFERENCES "public"."turns"("thread_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_hand_backs" ADD CONSTRAINT "thread_hand_backs_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_block_id_turn_blocks_id_fk" FOREIGN KEY ("block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_decision_turn_id_turns_id_fk" FOREIGN KEY ("decision_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_inbox_messages" ADD CONSTRAINT "thread_inbox_messages_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_inbox_messages" ADD CONSTRAINT "thread_inbox_messages_handed_back_by_fk" FOREIGN KEY ("handed_back_by") REFERENCES "public"."thread_hand_backs"("request_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "thread_media_inclusions" ADD CONSTRAINT "thread_media_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "thread_media_inclusions" ADD CONSTRAINT "thread_media_inclusions_block_id_turn_blocks_id_fk" FOREIGN KEY ("block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "thread_media_inclusions" ADD CONSTRAINT "thread_media_inclusions_decision_turn_id_turns_id_fk" FOREIGN KEY ("decision_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_run_leases" ADD CONSTRAINT "thread_run_leases_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_shown_links" ADD CONSTRAINT "thread_shown_links_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_shown_links" ADD CONSTRAINT "thread_shown_links_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

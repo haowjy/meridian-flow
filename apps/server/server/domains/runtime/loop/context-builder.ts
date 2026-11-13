@@ -28,7 +28,7 @@ import {
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
-import { describeMedia } from "./image-context.js";
+import { describeMedia } from "./media-context.js";
 import { referenceReadText } from "./reference-context.js";
 
 export interface BuildContextInput {
@@ -280,7 +280,7 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
 
 /** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
 function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "image"]);
+  const parts = turnBlocksToContentParts([...blocks], ["text", "media"]);
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -353,7 +353,7 @@ function blockToContentPart(block: Block): ContentPart | null {
         input: content?.input ?? {},
       } satisfies ToolUsePart;
     }
-    case "image": {
+    case "media": {
       // Only a projected picture carries a source; the stored part holds identity alone.
       const image = block.content as Partial<MediaPart> | null;
       return image?.type === "media" && image.source ? (image as MediaPart) : null;

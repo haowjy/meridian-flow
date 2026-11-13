@@ -93,7 +93,7 @@ export interface BlockRepository {
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }
 
-export interface ThreadImageInclusion {
+export interface ThreadMediaInclusion {
   threadId: ThreadId;
   blockId: string;
   /** Which media part of the block; 0 for a picture. */
@@ -102,12 +102,12 @@ export interface ThreadImageInclusion {
   included: boolean;
 }
 
-export interface ThreadImageInclusionRepository {
+export interface ThreadMediaInclusionRepository {
   /** Latest decision per media part, ordered by the deciding turn's transcript position. */
-  findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  findByThread(threadId: ThreadId): Promise<ThreadMediaInclusion[]>;
   /** Append-only decision history, used to reconstruct forks at their cutoff. */
-  listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
-  set(input: ThreadImageInclusion): Promise<void>;
+  listByThread(threadId: ThreadId): Promise<ThreadMediaInclusion[]>;
+  set(input: ThreadMediaInclusion): Promise<void>;
 }
 
 export interface CreateModelResponseInput {
@@ -623,7 +623,7 @@ export type ThreadRepositories = {
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
-  imageInclusions: ThreadImageInclusionRepository;
+  mediaInclusions: ThreadMediaInclusionRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ExecutionReportRepository;
   /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */

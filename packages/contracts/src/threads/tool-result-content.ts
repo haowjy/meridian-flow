@@ -11,6 +11,8 @@ export type StoredMediaPart = {
   mediaType: string;
   sizeBytes: number;
   name: string;
+  /** A PDF's page count, set at `read`; providers bill a PDF by page. */
+  pageCount?: number;
 };
 
 export type StoredTextPart = { type: "text"; text: string };

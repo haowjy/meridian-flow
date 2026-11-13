@@ -135,8 +135,8 @@ This is the server half of [a command that may have landed](../../../../../../.c
 Whether one piece of media is in the model request: a picture the writer attached, a file the
 writer mentioned that its read showed as media, or a media part inside a tool result. The unit is
 `(blockId, partIndex)`: a picture or a mentioned file is part 0 of its block, and a tool result's
-media are the indexes of its `content` parts. `loop/image-context.ts` decides;
-decisions are saved per unit in `thread_image_inclusions`, one row per deciding turn, never
+media are the indexes of its `content` parts. `loop/media-context.ts` decides;
+decisions are saved per unit in `thread_media_inclusions`, one row per deciding turn, never
 updated.
 
 ```mermaid
@@ -161,9 +161,15 @@ stateDiagram-v2
 - **Links come last.** Only included units get a signed link (or bytes, where the object store has
   no link), after every decision is made. A link is identical for every request in the thread's
   cache window; when the window rolls over the prefix changes once, and
-  `loop/prefix-cache-state.ts` predicts that as one miss.
-- **Access is checked on every request** by the host's resolver; a file the thread can no longer
-  read becomes a first-sight or `asset_unavailable` exclusion, never a link.
+  `loop/prefix-cache-state.ts` predicts that as one miss. A link stays valid for the window plus
+  an hour, so a request built at the window's end still has working links through the gateway's
+  retries and the provider's fetch.
+- **Access is checked on every request** by the host's resolver, on the file's identity and the
+  read grant, so a moved or renamed file stays visible. A file the thread can no longer read, or
+  whose stored object is gone, becomes a first-sight or `asset_unavailable` exclusion for that
+  file alone, never a link and never a failed turn.
+- **Order is chronological.** Eviction and a compaction's re-admission rank media by block, then by
+  part within the block.
 
 ## Spawn status
 

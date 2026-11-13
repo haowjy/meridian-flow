@@ -22,17 +22,17 @@
  */
 import type OpenAI from "openai";
 
-import {
-  type ContentPart,
-  type GenerateRequest,
-  type MediaPart,
-  type Message,
-  type ModelInfo,
-  type ResolvedCall,
-  type TextPart,
-  type Tool,
-  wireMediaSource,
+import type {
+  ContentPart,
+  GenerateRequest,
+  MediaPart,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  TextPart,
+  Tool,
 } from "../../domain/index.js";
+import { wireMediaSource } from "../../domain/media.js";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatContentPart = OpenAI.Chat.Completions.ChatCompletionContentPart;

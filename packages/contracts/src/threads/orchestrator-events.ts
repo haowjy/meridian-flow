@@ -106,7 +106,7 @@ export type OrchestratorEvent =
   | { type: "block.upserted"; block: BlockUpsertedRow }
   | { type: "block.updated"; block: BlockUpsertedRow }
   | {
-      type: "image.inclusion_decided";
+      type: "media.inclusion_decided";
       threadId: string;
       blockId: string;
       /** Which media part of the block: 0 for a picture, the index in `content` for a tool result's. */

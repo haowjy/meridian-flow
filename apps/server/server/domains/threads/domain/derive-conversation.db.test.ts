@@ -109,7 +109,7 @@ else
         threadWorks: repos.threadWorks,
         turns: repos.turns,
         promptBakes: repos.promptBakes,
-        imageInclusions: repos.imageInclusions,
+        mediaInclusions: repos.mediaInclusions,
         blocks: repos.blocks,
         threadDocuments: repos.threadDocuments,
         transaction: repos.transaction,
@@ -214,7 +214,7 @@ else
       const fixture = await setupSource();
       const image = await repos.blocks.create({
         turnId: fixture.firstTurn.id,
-        blockType: "image",
+        blockType: "media",
         sequence: 0,
         content: {
           type: "media",
@@ -225,7 +225,7 @@ else
         },
         status: "complete",
       });
-      await repos.imageInclusions.set({
+      await repos.mediaInclusions.set({
         threadId: fixture.source.id,
         blockId: image.id,
         partIndex: 0,
@@ -246,7 +246,7 @@ else
           pinnedRequestTurnIds: [fixture.firstTurn.id],
         },
       });
-      await repos.imageInclusions.set({
+      await repos.mediaInclusions.set({
         threadId: fixture.source.id,
         blockId: image.id,
         partIndex: 0,
@@ -257,7 +257,7 @@ else
       const beforeCompaction = await createFork(fixture.source, fixture.deps, {
         originTurnId: fixture.firstTurn.id,
       });
-      expect(await repos.imageInclusions.listByThread(beforeCompaction.thread.id)).toEqual([
+      expect(await repos.mediaInclusions.listByThread(beforeCompaction.thread.id)).toEqual([
         {
           threadId: beforeCompaction.thread.id,
           blockId: image.id,
@@ -271,7 +271,7 @@ else
         originTurnId: compaction.id,
       });
       expect(
-        (await repos.imageInclusions.listByThread(afterCompaction.thread.id))
+        (await repos.mediaInclusions.listByThread(afterCompaction.thread.id))
           .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
           .sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
       ).toEqual(
@@ -281,7 +281,7 @@ else
         ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
       );
       expect(
-        (await repos.imageInclusions.findByThread(afterCompaction.thread.id)).find(
+        (await repos.mediaInclusions.findByThread(afterCompaction.thread.id)).find(
           (row) => row.blockId === image.id,
         )?.included,
       ).toBe(true);
@@ -290,7 +290,7 @@ else
         originTurnId: compaction.id,
       });
       expect(
-        (await repos.imageInclusions.listByThread(forkOfFork.thread.id))
+        (await repos.mediaInclusions.listByThread(forkOfFork.thread.id))
           .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
           .sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
       ).toEqual(

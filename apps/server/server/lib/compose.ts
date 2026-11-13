@@ -1191,7 +1191,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
     mediaResolver,
-    mediaLinkWindowSeconds: Number(process.env.MEDIA_LINK_WINDOW_SECONDS) || undefined,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;

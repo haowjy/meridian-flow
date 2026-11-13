@@ -9,11 +9,11 @@ import { describe, expect, it } from "vitest";
 import { MediaResolutionError, type MediaResolverPort } from "../ports/media-resolver.js";
 import { bytesMedia } from "./__tests__/media-test-support.js";
 import {
-  MAX_MODEL_IMAGE_CONTEXT_BYTES,
+  MAX_MODEL_MEDIA_CONTEXT_BYTES,
   type MediaModel,
   mediaUnitKey,
-  projectImageBlocksForModel,
-} from "./image-context.js";
+  projectMediaBlocksForModel,
+} from "./media-context.js";
 
 const MODEL: MediaModel = {
   id: "gpt-5.6-luna",
@@ -33,7 +33,7 @@ const imageBlock: Block = {
   id: "image-1",
   turnId: "turn-1",
   responseId: null,
-  blockType: "image",
+  blockType: "media",
   sequence: 0,
   content: {
     type: "media",
@@ -73,11 +73,11 @@ function imageIds(blocks: readonly Block[]) {
   return blocks.map((block) => block.id);
 }
 
-describe("projectImageBlocksForModel", () => {
+describe("projectMediaBlocksForModel", () => {
   it("fills free budget with excluded retained candidates, newest first", async () => {
     const mib = 1024 * 1024;
     const candidates = [image("old"), image("middle"), image("new")];
-    const projection = await projectImageBlocksForModel({
+    const projection = await projectMediaBlocksForModel({
       thread,
       blocks: candidates,
       inclusions: new Map(candidates.map((block) => [unit(block.id), false])),
@@ -103,7 +103,7 @@ describe("projectImageBlocksForModel", () => {
       { blockId: "new", partIndex: 0, included: true, decidedByCompaction: true },
       { blockId: "middle", partIndex: 0, included: true, decidedByCompaction: true },
     ]);
-    expect(17 * mib).toBeLessThanOrEqual(MAX_MODEL_IMAGE_CONTEXT_BYTES);
+    expect(17 * mib).toBeLessThanOrEqual(MAX_MODEL_MEDIA_CONTEXT_BYTES);
   });
 
   it("does not evict included images for a candidate and keeps late-arrival eviction", async () => {
@@ -111,7 +111,7 @@ describe("projectImageBlocksForModel", () => {
     const protectedImage = image("protected");
     const protectedImage2 = image("protected-2");
     const blockedCandidate = image("blocked");
-    const protectedProjection = await projectImageBlocksForModel({
+    const protectedProjection = await projectMediaBlocksForModel({
       thread,
       blocks: [protectedImage, protectedImage2, blockedCandidate],
       inclusions: new Map([
@@ -144,7 +144,7 @@ describe("projectImageBlocksForModel", () => {
     const candidate = image("candidate");
     const lateArrival = image("late");
     const blocks = [included, included2, candidate, lateArrival];
-    const projection = await projectImageBlocksForModel({
+    const projection = await projectMediaBlocksForModel({
       thread,
       blocks,
       inclusions: new Map([
@@ -183,7 +183,7 @@ describe("projectImageBlocksForModel", () => {
   it("skips a transient candidate failure without deciding or failing", async () => {
     const candidate = image("candidate");
     let attempts = 0;
-    const projection = await projectImageBlocksForModel({
+    const projection = await projectMediaBlocksForModel({
       thread,
       blocks: [candidate],
       inclusions: new Map([[unit(candidate.id), false]]),
@@ -215,7 +215,7 @@ describe("projectImageBlocksForModel", () => {
     let attempts = 0;
 
     await expect(
-      projectImageBlocksForModel({
+      projectMediaBlocksForModel({
         thread,
         blocks: [first, second],
         inclusions: new Map([

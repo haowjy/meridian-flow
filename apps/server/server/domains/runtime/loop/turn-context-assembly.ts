@@ -23,12 +23,12 @@ import {
   bakeInEffect,
   findCutoffOwnerThreadId,
   hashPromptBakeContent,
-  type ImageContextBreak,
+  type MediaContextBreak,
 } from "../../threads/index.js";
 import type {
   PromptBakeContent,
   PromptBakeRepository,
-  ThreadImageInclusionRepository,
+  ThreadMediaInclusionRepository,
 } from "../../threads/ports/repositories.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
@@ -48,11 +48,11 @@ import {
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import {
-  type CompactionImageProjectionMode,
-  type ImageInclusionDecision,
+  type CompactionMediaProjectionMode,
+  type MediaInclusionDecision,
   mediaUnitKey,
-  projectImageBlocksForModel,
-} from "./image-context.js";
+  projectMediaBlocksForModel,
+} from "./media-context.js";
 import { linkWindowAt } from "./media-link-window.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
 import { linkWindowSeconds, promptCacheRetentionFor } from "./prefix-cache-state.js";
@@ -86,15 +86,15 @@ export interface AssembleNextTurnContextInput {
   mediaResolver?: MediaResolverPort;
   /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
   mediaLinkWindowSeconds?: number;
-  imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
-  imageProjectionMode?: CompactionImageProjectionMode;
+  mediaInclusions?: Pick<ThreadMediaInclusionRepository, "findByThread">;
+  mediaProjectionMode?: CompactionMediaProjectionMode;
   signal?: AbortSignal;
-  persistImageProjection?: (input: {
+  persistMediaProjection?: (input: {
     afterTurnId: TurnId | null;
     afterTurnPosition: number | null;
-    imageProjectionMode?: CompactionImageProjectionMode;
-    decisions: readonly ImageInclusionDecision[];
-    breaks: readonly ImageContextBreak[];
+    mediaProjectionMode?: CompactionMediaProjectionMode;
+    decisions: readonly MediaInclusionDecision[];
+    breaks: readonly MediaContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
   baseTools?: Tool[];
   /** When true, first-attempt bake is persisted immediately; preview/runtime prep pass false. */
@@ -267,8 +267,8 @@ export async function prepareNextTurnContext(
     input.thread.ref,
     input.promptBakes,
   );
-  const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
-  const imageProjection = await projectImageBlocksForModel({
+  const savedInclusions = (await input.mediaInclusions?.findByThread(thread.id as ThreadId)) ?? [];
+  const mediaProjection = await projectMediaBlocksForModel({
     thread,
     blocks: activeHistory.blocks,
     inclusions: new Map(
@@ -283,25 +283,25 @@ export async function prepareNextTurnContext(
       Date.now(),
       linkWindowSeconds(resolvedModel ?? null, thread.kind, input.mediaLinkWindowSeconds),
     ),
-    mode: input.imageProjectionMode,
+    mode: input.mediaProjectionMode,
     signal: input.signal,
   });
   const preparationUpdates =
-    input.persistImageProjection &&
-    (imageProjection.decisions.length > 0 || imageProjection.breaks.length > 0)
-      ? await input.persistImageProjection({
+    input.persistMediaProjection &&
+    (mediaProjection.decisions.length > 0 || mediaProjection.breaks.length > 0)
+      ? await input.persistMediaProjection({
           afterTurnId: (input.turns.at(-1)?.id as TurnId | undefined) ?? null,
           afterTurnPosition: input.turns.at(-1)?.position ?? null,
-          imageProjectionMode: input.imageProjectionMode,
-          decisions: imageProjection.decisions,
-          breaks: imageProjection.breaks,
+          mediaProjectionMode: input.mediaProjectionMode,
+          decisions: mediaProjection.decisions,
+          breaks: mediaProjection.breaks,
         })
       : { turns: [], blocks: [] };
   const imageTurnIds = new Set(preparationUpdates.turns.map((turn) => turn.id));
   const modelHistory = {
     turns: [...activeHistory.turns, ...preparationUpdates.turns],
     blocks: [
-      ...imageProjection.blocks,
+      ...mediaProjection.blocks,
       ...preparationUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
     ],
   };

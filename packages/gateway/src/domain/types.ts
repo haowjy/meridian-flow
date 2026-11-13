@@ -143,6 +143,8 @@ export interface MediaPart {
   type: "media";
   mediaType: string;
   filename?: string;
+  /** A PDF's page count. No adapter sends it; callers use it to estimate what the part costs. */
+  pageCount?: number;
   source: { url: string } | { data: string } | { reference: { provider: string; id: string } };
 }
 

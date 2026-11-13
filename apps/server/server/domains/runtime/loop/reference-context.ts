@@ -107,7 +107,7 @@ export async function loadReferenceReads(input: {
   // A picture the writer attached is already shown as media; its mention reads nothing more.
   const images = new Set(
     input.blocks
-      .filter((block) => block.turnId === input.userTurnId && block.blockType === "image")
+      .filter((block) => block.turnId === input.userTurnId && block.blockType === "media")
       .flatMap((block) => {
         const content = block.content as { ref?: { documentId?: unknown } } | null;
         return typeof content?.ref?.documentId === "string" ? [content.ref.documentId] : [];

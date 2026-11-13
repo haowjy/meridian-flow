@@ -26,16 +26,16 @@
  *   default.
  */
 import type OpenAI from "openai";
-import {
-  type ContentPart,
-  type GenerateRequest,
-  type MediaPart,
-  type Message,
-  type ModelInfo,
-  type ResolvedCall,
-  type Tool,
-  wireMediaSource,
+import type {
+  ContentPart,
+  GenerateRequest,
+  MediaPart,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  Tool,
 } from "../../domain/index.js";
+import { wireMediaSource } from "../../domain/media.js";
 
 /** The `prompt_cache_options.ttl` each supported lifetime, in seconds, is sent as; the 30m default is sent as no parameter. */
 const TTL_WIRE = new Map<number, "12h" | undefined>([

@@ -317,10 +317,10 @@ if (!RUN) {
       expect(persisted.map((block) => block.blockType)).toEqual([
         "text",
         "text",
-        "image",
+        "media",
         "text",
         "text",
-        "image",
+        "media",
       ]);
       expect(persisted.map((block) => block.sequence)).toEqual([0, 1, 2, 3, 4, 5]);
       expect(persisted[1]).toMatchObject({
@@ -345,7 +345,7 @@ if (!RUN) {
           uri,
         },
       });
-      expect(persisted.filter((block) => block.blockType === "image")).toHaveLength(2);
+      expect(persisted.filter((block) => block.blockType === "media")).toHaveLength(2);
       await expect(service.admit(request)).resolves.toMatchObject({
         kind: "already-accepted",
         snapshotFloorNextSeq: (accepted as { snapshotFloorNextSeq: string }).snapshotFloorNextSeq,

@@ -25,18 +25,17 @@ import type {
   Part,
   ThinkingConfig,
 } from "@google/genai";
-import {
-  type ContentPart,
-  type GenerateRequest,
-  geminiMajorVersion,
-  type MediaPart,
-  type Message,
-  type ModelInfo,
-  type ResolvedCall,
-  type TextPart,
-  type Tool,
-  wireMediaSource,
+import type {
+  ContentPart,
+  GenerateRequest,
+  MediaPart,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  TextPart,
+  Tool,
 } from "../../domain/index.js";
+import { geminiMajorVersion, wireMediaSource } from "../../domain/media.js";
 
 /** Google's documented value that skips signature validation on a replayed function call. */
 const SKIP_SIGNATURE_VALIDATION = "skip_thought_signature_validator";

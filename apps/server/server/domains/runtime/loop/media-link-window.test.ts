@@ -17,7 +17,7 @@ describe("media link window", () => {
     expect(first).toEqual({ startMs: start, lengthSeconds: 3600 });
     expect(linkWindowAt(start + HOUR_MS - 1, 3600)).toEqual(first);
     expect(linkWindowAt(start + HOUR_MS, 3600).startMs).toBe(start + HOUR_MS);
-    expect(linkExpirySeconds(first)).toBe(7200);
+    expect(linkExpirySeconds({ startMs: 0, lengthSeconds: 300 })).toBe(300 + 3600);
   });
 
   it("makes an S3 link identical across a window and different in the next", async () => {

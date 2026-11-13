@@ -48,8 +48,8 @@ import type {
   ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
-  ThreadImageInclusion,
-  ThreadImageInclusionRepository,
+  ThreadMediaInclusion,
+  ThreadMediaInclusionRepository,
   ThreadRepository,
   ThreadWorksRepository,
   TranscriptItemRow,
@@ -213,7 +213,7 @@ export function createInMemoryRepositories(
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
   const blocks = transactionOwner.map<string, Block>();
-  const imageInclusions = transactionOwner.map<string, ThreadImageInclusion>();
+  const mediaInclusions = transactionOwner.map<string, ThreadMediaInclusion>();
   const modelResponses = transactionOwner.map<string, ModelResponse>();
   const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
@@ -1372,10 +1372,10 @@ export function createInMemoryRepositories(
     userStateByThreadUser,
   );
 
-  const imageInclusionsRepo: ThreadImageInclusionRepository = {
+  const mediaInclusionsRepo: ThreadMediaInclusionRepository = {
     async findByThread(threadId) {
-      const latest = new Map<string, ThreadImageInclusion>();
-      const history = [...imageInclusions.values()]
+      const latest = new Map<string, ThreadMediaInclusion>();
+      const history = [...mediaInclusions.values()]
         .filter((row) => row.threadId === threadId)
         .sort(
           (left, right) =>
@@ -1386,12 +1386,12 @@ export function createInMemoryRepositories(
       return [...latest.values()].map((row) => ({ ...row }));
     },
     async listByThread(threadId) {
-      return [...imageInclusions.values()]
+      return [...mediaInclusions.values()]
         .filter((row) => row.threadId === threadId)
         .map((row) => ({ ...row }));
     },
     async set(input) {
-      imageInclusions.set(
+      mediaInclusions.set(
         `${input.threadId}\0${input.blockId}\0${input.partIndex}\0${input.decisionTurnId}`,
         {
           ...input,
@@ -1574,7 +1574,7 @@ export function createInMemoryRepositories(
     turns: turnRepo,
     promptBakes: promptBakeRepo,
     blocks: blockRepo,
-    imageInclusions: imageInclusionsRepo,
+    mediaInclusions: mediaInclusionsRepo,
     modelResponses: modelResponseRepo,
     executionReports: createInMemoryExecutionReportRepository(transactionOwner, {
       threads,

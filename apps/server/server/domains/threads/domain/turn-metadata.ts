@@ -22,16 +22,16 @@ export const SavedSubagentReportMetadataCodec = SystemUpdateMetadataCodec.extend
   section: z.literal("saved_subagent_report"),
 });
 
-export const ImageContextBreakCodec = z.object({
+export const MediaContextBreakCodec = z.object({
   blockId: z.string(),
   uri: z.string(),
   mediaType: z.string(),
   reason: z.enum(["asset_unavailable", "asset_unavailable_first_sight", "budget_eviction"]),
 });
 
-export const ImageInclusionMetadataCodec = SystemUpdateMetadataCodec.extend({
-  section: z.literal("image_inclusion"),
-  breaks: z.array(ImageContextBreakCodec),
+export const MediaInclusionMetadataCodec = SystemUpdateMetadataCodec.extend({
+  section: z.literal("media_inclusion"),
+  breaks: z.array(MediaContextBreakCodec),
 });
 
 export const InboxMessageMetadataCodec = z
@@ -203,8 +203,8 @@ export const WriteModeSwitchMetadataCodec = z.object({
 });
 export type WriteModeSwitchMetadata = z.infer<typeof WriteModeSwitchMetadataCodec>;
 
-export type ImageContextBreak = z.infer<typeof ImageContextBreakCodec>;
-export type ImageInclusionMetadata = z.infer<typeof ImageInclusionMetadataCodec>;
+export type MediaContextBreak = z.infer<typeof MediaContextBreakCodec>;
+export type MediaInclusionMetadata = z.infer<typeof MediaInclusionMetadataCodec>;
 export type CompactionMetadata = z.infer<typeof CompactionMetadataCodec>;
 export type CompactionPlanMetadata = z.infer<typeof CompactionPlanMetadataCodec>;
 export type CompactionFailureReason = z.infer<typeof CompactionFailureReasonCodec>;
@@ -220,7 +220,7 @@ export type HistoryItemClass =
   | { kind: "notice" }
   | { kind: "skill_body" }
   | { kind: "compaction_notes" }
-  | { kind: "image_update" }
+  | { kind: "media_update" }
   | { kind: "fork_or_handoff_seed"; derivation: "fork" | "handoff" }
   | { kind: "compaction"; metadata?: CompactionMetadata }
   | { kind: "system_update" }
@@ -396,10 +396,10 @@ export function compactionFailureMetadata(
   };
 }
 
-export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[]): JsonObject {
+export function encodeMediaInclusionMetadata(breaks: readonly MediaContextBreak[]): JsonObject {
   return {
     kind: "system_update",
-    section: "image_inclusion",
+    section: "media_inclusion",
     breaks: breaks.map(({ blockId, uri, mediaType, reason }) => ({
       blockId,
       uri,
@@ -409,8 +409,8 @@ export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[
   };
 }
 
-export function decodeImageInclusionMetadata(value: unknown): ImageInclusionMetadata | null {
-  const parsed = ImageInclusionMetadataCodec.safeParse(value);
+export function decodeMediaInclusionMetadata(value: unknown): MediaInclusionMetadata | null {
+  const parsed = MediaInclusionMetadataCodec.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
@@ -449,8 +449,8 @@ export function classifyHistoryItem(
     return { kind: "fork_or_handoff_seed", derivation: derivationSeed.data.derivation };
   }
 
-  if (ImageInclusionMetadataCodec.safeParse(turn.metadata).success) {
-    return { kind: "image_update" };
+  if (MediaInclusionMetadataCodec.safeParse(turn.metadata).success) {
+    return { kind: "media_update" };
   }
 
   if (SavedSubagentReportMetadataCodec.safeParse(turn.metadata).success) {

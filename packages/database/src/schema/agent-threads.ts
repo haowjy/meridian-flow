@@ -515,7 +515,7 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_predicted_cache_reason_valid",
-      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'media_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );
@@ -550,14 +550,14 @@ export const turnBlocks = pgTable(
     check("turn_blocks_status_valid", sql`${table.status} IN ('complete', 'partial')`),
     check(
       "turn_blocks_block_type_valid",
-      sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
+      sql`${table.blockType} IN ('text', 'media', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
     ),
   ],
 );
 
 /** Per-thread decisions keep a fork's request history independent from its source. */
-export const threadImageInclusions = pgTable(
-  "thread_image_inclusions",
+export const threadMediaInclusions = pgTable(
+  "thread_media_inclusions",
   {
     threadId: uuid("thread_id")
       .$type<ThreadId>()

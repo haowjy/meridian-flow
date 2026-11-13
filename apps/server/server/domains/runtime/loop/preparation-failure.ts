@@ -25,8 +25,8 @@ export function preparationFailureError(error: Error): ReturnType<typeof meridia
   }
   if (error instanceof MediaResolutionError) {
     return meridianErrorFromSystem(
-      "image_resolution_failed",
-      "An image in this message couldn't be loaded. Try again.",
+      "media_resolution_failed",
+      "A file in this message couldn't be loaded. Try again.",
     );
   }
   return meridianErrorFromSystem(

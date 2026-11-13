@@ -18,7 +18,7 @@ import {
 } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/adapters/in-memory/repositories.js";
 import {
-  decodeImageInclusionMetadata,
+  decodeMediaInclusionMetadata,
   forkThreadAgent,
   type HandoffBriefLauncher,
   handoffThreadAgent,
@@ -265,11 +265,11 @@ describe("frozen prompt provider requests", () => {
     const original = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
     await original.execute();
     const originalImage = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
-      (block) => block.blockType === "image",
+      (block) => block.blockType === "media",
     );
     if (!originalImage) throw new Error("Missing original image block");
     expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === originalImage.id,
       )?.included,
     ).toBe(true);
@@ -277,13 +277,13 @@ describe("frozen prompt provider requests", () => {
     assetAvailable = false;
     await rig.run(rig.thread.id);
     expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === originalImage.id,
       )?.included,
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
@@ -294,7 +294,7 @@ describe("frozen prompt provider requests", () => {
       originTurnId: original.executionTurnId,
     });
     expect(
-      (await rig.repos.imageInclusions.findByThread(fork.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(fork.id)).find(
         (decision) => decision.blockId === originalImage.id,
       ),
     ).toMatchObject({ included: true });
@@ -344,11 +344,11 @@ describe("frozen prompt provider requests", () => {
     const originalImage = image("uploads://@c1/original.png");
     const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
     const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
-      (block) => block.blockType === "image",
+      (block) => block.blockType === "media",
     );
     expect(originalImageBlock).toBeDefined();
     expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === originalImageBlock?.id,
       )?.included,
     ).toBe(true);
@@ -370,15 +370,15 @@ describe("frozen prompt provider requests", () => {
       image("uploads://@c1/source-large-2.png"),
     ]);
     const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
-      (block) => block.blockType === "image",
+      (block) => block.blockType === "media",
     );
-    const sourceDecisions = await rig.repos.imageInclusions.findByThread(rig.thread.id);
+    const sourceDecisions = await rig.repos.mediaInclusions.findByThread(rig.thread.id);
     expect(
       sourceDecisions.find((decision) => decision.blockId === sourceImages[0]?.id)?.included,
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
@@ -390,7 +390,7 @@ describe("frozen prompt provider requests", () => {
     });
     await sendAndRun(forkAfterSourceEviction.thread.id, "cutoff still includes image", []);
     expect(
-      (await rig.repos.imageInclusions.findByThread(forkAfterSourceEviction.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(forkAfterSourceEviction.thread.id)).find(
         (decision) => decision.blockId === originalImageBlock?.id,
       ),
     ).toMatchObject({ included: true, decisionTurnId: expect.any(String) });
@@ -403,7 +403,7 @@ describe("frozen prompt provider requests", () => {
 
     await sendAndRun(firstFork.id, "first fork retains source image", []);
     expect(
-      (await rig.repos.imageInclusions.findByThread(firstFork.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(firstFork.id)).find(
         (decision) => decision.blockId === originalImageBlock?.id,
       )?.included,
     ).toBe(true);
@@ -424,28 +424,28 @@ describe("frozen prompt provider requests", () => {
       image("uploads://@c1/fork-large-1.png"),
       image("uploads://@c1/fork-large-2.png"),
     ]);
-    const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
+    const firstForkDecisions = await rig.repos.mediaInclusions.findByThread(firstFork.id);
     expect(
       firstForkDecisions.find((decision) => decision.blockId === originalImageBlock?.id)?.included,
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(firstFork.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
     expect(
-      (await rig.repos.imageInclusions.findByThread(secondFork.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(secondFork.id)).find(
         (decision) => decision.blockId === originalImageBlock?.id,
       )?.included,
     ).toBe(true);
     expect(
       (await rig.repos.turns.listByThread(secondFork.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(0);
     expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === sourceImages[0]?.id,
       )?.included,
     ).toBe(false);
@@ -454,7 +454,7 @@ describe("frozen prompt provider requests", () => {
     const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
     const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
       const content = block.content as { ref?: { uri?: string } } | null;
-      return block.blockType === "image" && content?.ref?.uri === reverseImage.uri;
+      return block.blockType === "media" && content?.ref?.uri === reverseImage.uri;
     });
     if (!reverseImageBlock) throw new Error("Missing reverse-direction source image block");
     const reverseFork = await forkThreadAgent(rig.derive, {
@@ -468,12 +468,12 @@ describe("frozen prompt provider requests", () => {
       image("uploads://@c1/reverse-fork-large-2.png"),
     ]);
     expect(
-      (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(reverseFork.thread.id)).find(
         (decision) => decision.blockId === reverseImageBlock.id,
       )?.included,
     ).toBe(false);
     expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+      (await rig.repos.mediaInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === reverseImageBlock.id,
       )?.included,
     ).toBe(true);

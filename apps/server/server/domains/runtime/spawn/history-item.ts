@@ -225,8 +225,8 @@ export function describeBlock(input: {
         ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
         : null;
     text = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
-  } else if (block.blockType === "image")
-    text = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
+  } else if (block.blockType === "media")
+    text = `[media: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
   else text = block.textContent ?? stringify(block.content);
   const metadata = turn.metadata as JsonObject | null;
   if (classifyHistoryItem(turn).kind === "compaction" && typeof metadata?.instructions === "string")

@@ -38,7 +38,7 @@ export function userMessageBlocksFromTurn(
 ): UserMessageBlock[] {
   const ordered = [...blocks].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
   return ordered.flatMap((block): UserMessageBlock[] => {
-    if (block.blockType === "image") {
+    if (block.blockType === "media") {
       const content = block.content as Partial<StoredMediaPart> | null;
       return content?.type === "media" && content.ref
         ? [

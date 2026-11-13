@@ -430,7 +430,7 @@ function predictionReasonLabel(
     no_response: "No prior response",
     model_changed: "Model changed",
     prompt_epoch: "Prompt changed",
-    image_eviction: "Image prefix changed",
+    media_eviction: "Media prefix changed",
     media_link_window: "Media link renewed",
     compaction: "Compaction boundary",
     ttl_unknown: "Cache lifetime unknown",

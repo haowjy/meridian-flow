@@ -1320,7 +1320,7 @@
         },
         "model_responses_predicted_cache_reason_valid": {
           "name": "model_responses_predicted_cache_reason_valid",
-          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
+          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'media_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
         }
       },
       "isRLSEnabled": false
@@ -2052,106 +2052,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.thread_image_inclusions": {
-      "name": "thread_image_inclusions",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "block_id": {
-          "name": "block_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "part_index": {
-          "name": "part_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_turn_id": {
-          "name": "decision_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "included": {
-          "name": "included",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "thread_image_inclusions_thread_id_threads_id_fk": {
-          "name": "thread_image_inclusions_thread_id_threads_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_image_inclusions_block_id_turn_blocks_id_fk": {
-          "name": "thread_image_inclusions_block_id_turn_blocks_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "turn_blocks",
-          "columnsFrom": [
-            "block_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_image_inclusions_decision_turn_id_turns_id_fk": {
-          "name": "thread_image_inclusions_decision_turn_id_turns_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "decision_turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk": {
-          "name": "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk",
-          "columns": [
-            "thread_id",
-            "block_id",
-            "part_index",
-            "decision_turn_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.thread_inbox_messages": {
       "name": "thread_inbox_messages",
       "schema": "",
@@ -2323,6 +2223,106 @@
           "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN (\"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','ask_resolved') OR (\"thread_inbox_messages\".\"body\"->>'kind' = 'write_mode' AND \"thread_inbox_messages\".\"body\"->>'mode' IN ('direct','draft'))) ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.thread_media_inclusions": {
+      "name": "thread_media_inclusions",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block_id": {
+          "name": "block_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_index": {
+          "name": "part_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_turn_id": {
+          "name": "decision_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "included": {
+          "name": "included",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_media_inclusions_thread_id_threads_id_fk": {
+          "name": "thread_media_inclusions_thread_id_threads_id_fk",
+          "tableFrom": "thread_media_inclusions",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_media_inclusions_block_id_turn_blocks_id_fk": {
+          "name": "thread_media_inclusions_block_id_turn_blocks_id_fk",
+          "tableFrom": "thread_media_inclusions",
+          "tableTo": "turn_blocks",
+          "columnsFrom": [
+            "block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_media_inclusions_decision_turn_id_turns_id_fk": {
+          "name": "thread_media_inclusions_decision_turn_id_turns_id_fk",
+          "tableFrom": "thread_media_inclusions",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "decision_turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_media_inclusions_thread_id_block_id_part_index_decision_turn_id_pk": {
+          "name": "thread_media_inclusions_thread_id_block_id_part_index_decision_turn_id_pk",
+          "columns": [
+            "thread_id",
+            "block_id",
+            "part_index",
+            "decision_turn_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.thread_run_leases": {
@@ -3407,7 +3407,7 @@
         },
         "turn_blocks_block_type_valid": {
           "name": "turn_blocks_block_type_valid",
-          "value": "\"turn_blocks\".\"block_type\" IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')"
+          "value": "\"turn_blocks\".\"block_type\" IN ('text', 'media', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')"
         }
       },
       "isRLSEnabled": false

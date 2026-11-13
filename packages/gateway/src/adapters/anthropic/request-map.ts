@@ -41,18 +41,18 @@
  *   registry's `cacheWriteUsdPerMillionTokens` pinned rates.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import {
-  type ContentPart,
-  type GenerateRequest,
-  type MediaPart,
-  type Message,
-  type ModelInfo,
-  type ResolvedCall,
-  type TextPart,
-  type Tool,
-  type ToolResultPart,
-  wireMediaSource,
+import type {
+  ContentPart,
+  GenerateRequest,
+  MediaPart,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  TextPart,
+  Tool,
+  ToolResultPart,
 } from "../../domain/index.js";
+import { wireMediaSource } from "../../domain/media.js";
 import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;

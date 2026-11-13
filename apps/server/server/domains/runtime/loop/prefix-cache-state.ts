@@ -16,7 +16,7 @@ import {
 } from "@meridian-flow/gateway";
 import {
   bakeIdAt,
-  decodeImageInclusionMetadata,
+  decodeMediaInclusionMetadata,
   ForkCutoffOwnerNotFoundError,
   findCutoffOwnerThreadId,
   isPromptEpochMetadata,
@@ -107,9 +107,9 @@ function lastResponse(history: PrefixCacheHistory): LastResponse | null {
   return latest ? { ...latest, turn: latest.turn } : null;
 }
 
-function imageBreaksPrefix(turn: Turn): boolean {
+function mediaBreaksPrefix(turn: Turn): boolean {
   return (
-    decodeImageInclusionMetadata(turn.metadata)?.breaks.some(
+    decodeMediaInclusionMetadata(turn.metadata)?.breaks.some(
       (entry) => entry.reason === "budget_eviction" || entry.reason === "asset_unavailable",
     ) ?? false
   );
@@ -119,7 +119,7 @@ function boundaryReason(turn: Turn): PrefixCacheStateReason | null {
   if (turn.role === "compaction") return "compaction";
   if (isPromptEpochMetadata(turn.metadata)) return "prompt_epoch";
 
-  if (imageBreaksPrefix(turn)) return "image_eviction";
+  if (mediaBreaksPrefix(turn)) return "media_eviction";
   return null;
 }
 

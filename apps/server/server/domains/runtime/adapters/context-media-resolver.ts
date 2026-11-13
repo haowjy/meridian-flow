@@ -25,14 +25,11 @@ export function createContextMediaResolver(deps: {
   objects: ObjectStorePort;
   eventSink: EventSink;
 }): MediaResolverPort {
-  async function bytesSource(key: string, mediaType: string, sizeBytes: number, uri: string) {
+  /** Null: the object is gone or not what the record says; that file is unavailable, not the turn. */
+  async function bytesSource(key: string, mediaType: string, sizeBytes: number) {
     const object = await deps.objects.get(key, { maxBytes: sizeBytes });
-    if (!object.ok) {
-      throw new MediaResolutionError(`Could not read media ${uri}: ${object.error.message}`);
-    }
-    if (object.value.mimeType.split(";")[0]?.trim().toLowerCase() !== mediaType) {
-      throw new MediaResolutionError(`Stored media ${uri} is not of type ${mediaType}`);
-    }
+    if (!object.ok) return null;
+    if (object.value.mimeType.split(";")[0]?.trim().toLowerCase() !== mediaType) return null;
     return { data: Buffer.from(object.value.bytes).toString("base64") };
   }
 
@@ -40,16 +37,14 @@ export function createContextMediaResolver(deps: {
     key: string,
     mediaType: string,
     sizeBytes: number,
-    uri: string,
     window: LinkWindow,
   ) {
     const link = await deps.objects.getProviderReadLink(key, {
       signedAt: new Date(window.startMs),
       expiresInSeconds: linkExpirySeconds(window),
     });
-    if (!link.ok)
-      throw new MediaResolutionError(`Could not link media ${uri}: ${link.error.message}`);
-    return link.value === null ? bytesSource(key, mediaType, sizeBytes, uri) : { url: link.value };
+    if (!link.ok) return null;
+    return link.value === null ? bytesSource(key, mediaType, sizeBytes) : { url: link.value };
   }
 
   return {
@@ -57,7 +52,7 @@ export function createContextMediaResolver(deps: {
       emitEvent(deps.eventSink, {
         level: "info",
         source: "runtime.media-resolver",
-        name: "image.omitted",
+        name: "media.omitted",
         correlation: { threadId: input.threadId },
         payload: { projectId: input.projectId, reason: input.reason },
       });
@@ -72,10 +67,8 @@ export function createContextMediaResolver(deps: {
         if (available?.kind === "indeterminate")
           throw new MediaResolutionError(`Media resolution is indeterminate: ${reference.uri}`);
         if (available?.kind !== "available") return null;
-        // A chat's upload is its document: the spelling moves from the bare form to the handle
-        // once the chat has a row, so only its identity and the read grant below decide.
-        if (available.entry.scope?.kind !== "chat" && available.entry.uri !== reference.uri)
-          return null;
+        // The path is not checked: a moved or renamed file is the same document, and the read
+        // grant below decides.
         const grant = await deps.fileAccess.authorize(
           { accountId: context.actorUserId as UserId },
           { kind: "document", documentId: reference.documentId as DocumentId },
@@ -97,11 +90,7 @@ export function createContextMediaResolver(deps: {
         if (isImage && !UNIVERSAL_IMAGE_TYPES.has(mediaType) && identity.hasPreview) {
           const head = await deps.objects.readHead(previewKey, 0);
           if (head.ok) preview = { mediaType: PREVIEW_MIME_TYPE, sizeBytes: head.value.sizeBytes };
-          else if (head.error.code !== "not_found") {
-            throw new MediaResolutionError(
-              `Could not stat preview of ${reference.uri}: ${head.error.message}`,
-            );
-          }
+          else if (head.error.code !== "not_found") return null;
         }
 
         return {
@@ -115,8 +104,8 @@ export function createContextMediaResolver(deps: {
                 ? [previewKey, preview.mediaType, preview.sizeBytes]
                 : [originalKey, mediaType, originalSize];
             return transport === "link"
-              ? linkOrBytes(key, type, size, reference.uri, window)
-              : bytesSource(key, type, size, reference.uri);
+              ? linkOrBytes(key, type, size, window)
+              : bytesSource(key, type, size);
           },
         };
       } catch (error) {

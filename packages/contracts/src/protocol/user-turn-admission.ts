@@ -52,7 +52,7 @@ export type AdmittedMessageBlock =
  * sees before admission carries the same occurrences the snapshot will.
  */
 export function userMessageTurnBlock(block: AdmittedMessageBlock): {
-  blockType: "text" | "image";
+  blockType: "text" | "media";
   content: JsonValue;
 } {
   switch (block.type) {
@@ -60,7 +60,7 @@ export function userMessageTurnBlock(block: AdmittedMessageBlock): {
       return { blockType: "text", content: block.text };
     case "image":
       return {
-        blockType: "image",
+        blockType: "media",
         content: {
           type: "media",
           ref: { documentId: block.documentId, uri: block.uri },

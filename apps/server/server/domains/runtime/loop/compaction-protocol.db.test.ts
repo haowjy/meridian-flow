@@ -12,7 +12,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 import {
   CompactionMetadataCodec,
-  encodeImageInclusionMetadata,
+  encodeMediaInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
@@ -105,7 +105,7 @@ else
           const uri = `scratch://${key}.png`;
           const block = await rig.repos.blocks.create({
             turnId: userTurn.id,
-            blockType: "image",
+            blockType: "media",
             sequence: sequence + 1,
             content: {
               type: "media",
@@ -134,7 +134,7 @@ else
           role: "system",
           origin: "system",
           status: "complete",
-          metadata: encodeImageInclusionMetadata(breaks),
+          metadata: encodeMediaInclusionMetadata(breaks),
         });
         await rig.repos.blocks.create({
           turnId: notice.id,
@@ -147,7 +147,7 @@ else
         exclusionTurnId = notice.id;
       }
       for (const [index, { block }] of savedImages.entries()) {
-        await rig.repos.imageInclusions.set({
+        await rig.repos.mediaInclusions.set({
           threadId: rig.threadId,
           blockId: block.id,
           partIndex: 0,
@@ -596,7 +596,7 @@ else
       const compaction = turns.find((turn) => turn.role === "compaction");
       if (!compaction) throw new Error("Missing compaction turn");
       expect(
-        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+        (await rig.repos.mediaInclusions.listByThread(rig.threadId)).filter(
           (row) => row.blockId === savedImages[0]?.block.id && row.decisionTurnId === compaction.id,
         ),
       ).toEqual([
@@ -633,7 +633,7 @@ else
         baseTools: [],
         gateway: rig.deps.gateway,
         mediaResolver: rig.deps.mediaResolver,
-        imageInclusions: rig.repos.imageInclusions,
+        mediaInclusions: rig.repos.mediaInclusions,
         promptBakes: rig.repos.promptBakes,
         workContext: rig.deps.workContext,
       });
@@ -663,7 +663,7 @@ else
       );
       if (!compaction) throw new Error("Missing compaction turn");
       expect(
-        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+        (await rig.repos.mediaInclusions.listByThread(rig.threadId)).filter(
           (row) => row.blockId === savedImages[0]?.block.id,
         ),
       ).toHaveLength(1);

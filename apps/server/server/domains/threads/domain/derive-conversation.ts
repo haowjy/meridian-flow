@@ -18,10 +18,10 @@ import {
 } from "../../projects/index.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
 import type { HandoffBriefLauncher } from "../ports/handoff-brief-launcher.js";
-import type { InternalThreadRepositories, ThreadImageInclusion } from "../ports/repositories.js";
+import type { InternalThreadRepositories, ThreadMediaInclusion } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
-import { projectImageInclusionDecision } from "./read-model-projector.js";
+import { projectMediaInclusionDecision } from "./read-model-projector.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
 import { derivationSeedMetadata, handoffSeedMetadata } from "./turn-metadata.js";
 
@@ -31,7 +31,7 @@ export interface ThreadAgentSwapDeps {
   turns: InternalThreadRepositories["turns"];
   promptBakes: InternalThreadRepositories["promptBakes"];
   blocks: InternalThreadRepositories["blocks"];
-  imageInclusions: InternalThreadRepositories["imageInclusions"];
+  mediaInclusions: InternalThreadRepositories["mediaInclusions"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
   projects: Pick<ProjectRepository, "findById">;
@@ -254,8 +254,8 @@ export async function forkThreadAgent(
     }
     const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
     const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
-    const decisionsAtCutoff: ThreadImageInclusion[] = [];
-    for (const decision of await deps.imageInclusions.listByThread(lockedSource.id as ThreadId)) {
+    const decisionsAtCutoff: ThreadMediaInclusion[] = [];
+    for (const decision of await deps.mediaInclusions.listByThread(lockedSource.id as ThreadId)) {
       const rank = turnOrder.get(decision.decisionTurnId);
       if (!inheritedBlockIds.has(decision.blockId) || rank === undefined) continue;
       decisionsAtCutoff.push(decision);
@@ -266,14 +266,14 @@ export async function forkThreadAgent(
     );
     for (const decision of decisionsAtCutoff) {
       const event = {
-        type: "image.inclusion_decided" as const,
+        type: "media.inclusion_decided" as const,
         threadId: target.id,
         blockId: decision.blockId,
         partIndex: decision.partIndex,
         decisionTurnId: decision.decisionTurnId,
         included: decision.included,
       };
-      await projectImageInclusionDecision(deps, event);
+      await projectMediaInclusionDecision(deps, event);
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
