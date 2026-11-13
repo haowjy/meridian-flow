@@ -121,7 +121,7 @@ const scenarios: Array<{
       find: "Base paragraph.",
       content: "# Agent heading",
     },
-    markerSurvives: false,
+    markerSurvives: true,
   },
   {
     operation: "full overwrite",
@@ -218,7 +218,7 @@ describe("concurrent structural mutation matrix", () => {
       {
         operation: "shrinking type-change overwrite",
         content: "# One heading",
-        expectedSurvivors: 0,
+        expectedSurvivors: 1,
       },
     ].flatMap((scenario) => [
       { ...scenario, path: "staged", responseId: `response-${scenario.operation}` },

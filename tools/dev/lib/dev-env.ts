@@ -141,8 +141,8 @@ export function resolveLiveWorktreeDatabaseNames(
 /**
  * Fill step shared by every env consumer: sets variables that are still unset
  * from the checkout's own `.env.local`, then the main checkout's `.env` (so a
- * worktree override beats the shared file, even when its value is empty, and both lose to a
- * non-empty value in the caller's environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
+ * worktree override beats the shared file, even when its value is empty, and both lose to any
+ * value in the caller's environment, empty included: `KEY=` in the shell turns a file setting off), and pins `LOG_DIR`. `.env.local` may not define a database URL:
  * the main `.env` is the one source of the base database.
  */
 export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
@@ -157,11 +157,11 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
   }
   const main = readMainEnvFile(repoRoot);
   for (const [key, value] of Object.entries(local)) {
-    if (!env[key]) env[key] = value;
+    if (env[key] === undefined) env[key] = value;
   }
   for (const [key, value] of Object.entries(main)) {
     // A key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting.
-    if (!env[key] && !(key in local)) env[key] = value;
+    if (env[key] === undefined && !(key in local)) env[key] = value;
   }
 
   // The dev stack owns the structured-event mirror location. Pin it here rather
@@ -180,7 +180,7 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
  *
  * `DATABASE_URL`, when the main `.env` defines it: the expected database is the
  * bare name in the main checkout and `<name>_<slug>` in a linked worktree. An
- * incoming value that is unset (so filled from the file), the base, or the
+ * incoming value that is unset or empty (so filled from the file), the base, or the
  * expected name resolves to the file's URL with the expected name, so host and
  * credentials always come from the file and a second run is a no-op. Any other
  * name (a worktree's URL left in a shell, then a branch switch) throws.
@@ -201,7 +201,7 @@ export function applyDevEnvToProcess(
     const expected = isMainCheckout(repoRoot)
       ? baseDbName
       : resolveWorktreeDatabaseName(baseDbName, resolveCheckoutSessionIdentity(repoRoot).slug);
-    const actual = databaseNameFromUrl(env[db.envVar] ?? fileUrl);
+    const actual = databaseNameFromUrl(env[db.envVar] || fileUrl);
     if (actual !== baseDbName && actual !== expected) {
       throw new Error(
         `${db.envVar} names database "${actual}" but this checkout's is "${expected}". ` +
