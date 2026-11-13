@@ -1,15 +1,13 @@
 # App
 
-`apps/app/src`: the web app, in layers (`routes`, `client`, `components`, `core`, `features`, and a few
-helpers). `routes` mounts a screen from a feature, a feature draws it from `components` and reads
-data through `client`, and `core` holds the editor, the resource replica and the sockets. **No
-dependency rule is written for these layers**, and imports run both ways between them (see Drift
-below), so read the arrows as "uses", not as a layer order.
+`apps/app/src`: the web app. `routes` mounts a screen from a feature, a feature draws it from
+`components` and reads data through `client`, and `core` holds the editor, the resource replica
+and the document transport. **No dependency rule is written for these layers**, and imports run
+both ways between them, so read an arrow as "uses".
 
 The diagram draws every `routes` import of a feature, and every other import that five or more
-files make. It leaves out a feature's imports of `client`, `components`, `lib` and `hooks` (every
-feature has them) and imports of packages, which are on [code](code.md). The server's domains
-are on [server](server.md).
+files make. It leaves out a feature's imports of `client`, `components`, `lib` and `hooks`, and
+imports of packages, which are on [code](code.md).
 
 ```mermaid
 flowchart LR
@@ -102,7 +100,7 @@ flowchart LR
 
 TanStack file routes: each URL mounts a screen.
 
-The root route, the `_authenticated` layout (which mounts one unconditional provider tree; do not gate a provider by pathname), the project routes, `projects/new`, billing, `/login`, `/logout`, `/signup` and `/api/auth/callback`. `/logout` is a full-document `<a href>`, never a `<Link>`.
+The `_authenticated` layout mounts one provider tree for every route: do not gate a provider by pathname. `/logout` is a full-document `<a href>`, never a `<Link>`.
 
 - Kind: module
 - Paths: `apps/app/src/routes`
@@ -112,7 +110,7 @@ The root route, the `_authenticated` layout (which mounts one unconditional prov
 
 Server-only code: config, the WorkOS middleware and the route-owner list.
 
-Reads the runtime config, runs `meridianAuthkitMiddleware`, and keeps the inventory of which `/api` routes the app owns and which the dev proxy forwards to the server (`DEV_AUTH_BYPASS` skips AuthKit locally).
+Runs `meridianAuthkitMiddleware` and keeps the list of which `/api` routes the app owns and which go to the server.
 
 - Kind: module
 - Paths: `apps/app/src/server`
@@ -134,7 +132,7 @@ Shared UI: shadcn primitives and the composer.
 
 Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
-`api/` has the HTTP clients, `query/` the React Query hooks, `stores/` the thread store, `providers/` the transport provider. It also holds chat submissions and the project creation record. Both are optimistic: the app shows the result and navigates before the server answers, and a failure shows on the thing the writer did. The failure cards live here too, with the working set (the documents open in a project on this device, restored on return) and recents.
+HTTP clients, React Query hooks, the thread store and the transport provider. Also chat submissions and the project creation record, which let the app show a result before the server answers, and the working set and recents.
 
 - Kind: module
 - Paths: `apps/app/src/client`
@@ -146,7 +144,7 @@ Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
 Small shared React hooks.
 
-Pointer type, the phone shell, text size, UI theme, a minute clock and a virtual list that scrolls with an outer container. They hold no server state.
+Pointer type, the phone shell, text size, theme, a minute clock and a virtual list. No server state.
 
 - Kind: module
 - Paths: `apps/app/src/hooks`
@@ -156,7 +154,7 @@ Pointer type, the phone shell, text size, UI theme, a minute clock and a virtual
 
 Helpers: utils, i18n and optimistic thread helpers.
 
-Context-URI parsing, date and size formatting, the account-settings cache, thread titles and the optimistic send helper `send-project-chat.ts`. Plain functions; some import `features/agents`.
+Context-URI parsing, formatting, thread titles and the optimistic send helper `send-project-chat.ts`.
 
 - Kind: module
 - Paths: `apps/app/src/lib`
@@ -176,7 +174,7 @@ Chat messages and reviewed drafts both render through it, so they show the same 
 
 What a suggestion menu offers, without drawing it.
 
-Holds the menu's state and the browser that walks a project's documents to complete a reference to one. It draws nothing and knows nothing of the editor, so the composer and the editor both use it and supply the trigger, the position and the rendering.
+The menu's state and the browser that completes a reference to a document. It draws nothing, so the composer and the editor both use it.
 
 - Kind: module
 - Paths: `apps/app/src/core/completion`
@@ -186,7 +184,7 @@ Holds the menu's state and the browser that walks a project's documents to compl
 
 The TipTap schema and the Yjs document session.
 
-`createEditorExtensions()` builds the extensions one way only. The schema mirrors `@meridian/prosemirror-schema`, and a test compares the two. It has the document session status machine and the draft room read.
+`createEditorExtensions()` is the one way to build the extensions. The schema mirrors `@meridian/prosemirror-schema`, and a test compares the two.
 
 - Kind: module
 - Paths: `apps/app/src/core/editor`
@@ -238,7 +236,7 @@ The menu, the settings dialog (with a phone variant) and the provider that cache
 
 The Agent picker and Agent identity.
 
-An Agent is the profile a chat runs with: a model, its tools and its instructions. A new chat records exactly which Agent, and which revision of it, the writer picked.
+A new chat records exactly which Agent, and which revision of it, the writer picked.
 
 - Kind: feature
 - Paths: `apps/app/src/features/agents`
@@ -248,7 +246,7 @@ An Agent is the profile a chat runs with: a model, its tools and its instruction
 
 The usage and credits page.
 
-The page shows what the server's credit ledger reports. The browser never computes a balance or predicts a charge.
+Shows what the server's credit ledger reports. The browser never computes a balance.
 
 - Kind: feature
 - Paths: `apps/app/src/features/billing`
@@ -258,7 +256,7 @@ The page shows what the server's credit ledger reports. The browser never comput
 
 The transcript and the composer.
 
-The transcript is drawn from the same view model `./mf` prints. Four state machines live here: the composer's Work picker, a queued control, and the creation of a chat by fork or by handoff.
+The transcript is drawn from the same view model `./mf` prints.
 
 - Kind: feature
 - Paths: `apps/app/src/features/chat`
@@ -269,7 +267,7 @@ The transcript is drawn from the same view model `./mf` prints. Four state machi
 
 The dialog for creating a project.
 
-The record that lets the app open the new project before the server has answered lives in `client/creation`.
+The record that lets the app open a new project before the server answers is in `client/creation`.
 
 - Kind: feature
 - Paths: `apps/app/src/features/creation`
@@ -278,7 +276,7 @@ The record that lets the app open the new project before the server has answered
 
 The debug overlay: trace capture, model-request inspector, server feed.
 
-A pill shows transport health; inspectors open from the surface that owns the state (alt-click the transcript or the composer). It is read-only, apart from a throwaway account-skill section.
+A pill shows transport health; inspectors open by alt-clicking the transcript or the composer. Read-only.
 
 - Kind: feature
 - Paths: `apps/app/src/features/debug`
@@ -300,7 +298,7 @@ Review is derived from the draft's text, not from stored change records.
 
 Editor chrome and its surfaces over `core/editor`.
 
-Binds the document session, chooses live or review presentation and mounts the toolbar, identity bar and sync pill. The sync pill reports an outage.
+Binds the document session, chooses live or review presentation and mounts the toolbar, identity bar and sync pill.
 
 - Kind: feature
 - Paths: `apps/app/src/features/editor`
@@ -340,7 +338,7 @@ An account-lifetime coordinator keeps an import running while the writer navigat
 
 Following an internal link.
 
-Resolves links from the local project index first and asks the server about at most 200 links at a time; a failed request keeps the local answer. Opening finds a folder by identity, so a move or rename after the link was written still opens.
+Resolves links from the local project index first, then the server; a failed request keeps the local answer. A link still opens after its target is moved or renamed.
 
 - Kind: feature
 - Paths: `apps/app/src/features/links`
@@ -350,7 +348,7 @@ Resolves links from the local project index first and asks the server about at m
 
 The workspace shell: panes, sidebar, tabs, Works and routing.
 
-The largest feature. Every other feature except `billing` imports it or is imported by it. Its state machines cover live document binding, route selection during removal, and rename and move feedback.
+The largest feature: every other feature except `billing` imports it or is imported by it.
 
 - Kind: feature
 - Paths: `apps/app/src/features/project`

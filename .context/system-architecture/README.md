@@ -1,15 +1,11 @@
 # Architecture map
 
-How Meridian Flow is built today. Meridian Flow is a writing app for long fiction: a writer
-edits a manuscript in the browser and works on it with a model in chat, and both edit the same
-documents at once.
+How Meridian Flow is built. It is a writing app for long fiction: a writer edits a manuscript in
+the browser and works on it with a model in chat, and both edit the same documents at once.
+Product words are in the [glossary](../glossary.md).
 
-Read [product words](../glossary.md) first if the product is new to you, then System, then
-Code, then Server or App. The journeys show the same parts from the writer's side.
-
-Every page is Markdown with one Mermaid diagram, so GitHub renders it and an LLM can read it in
-place. `pnpm dev` prints a `map` URL that opens the same pages as a clickable map. The pages
-hold all the content; the HTML is only a viewer.
+Every page is Markdown with one Mermaid diagram. `pnpm dev` prints a `map` URL that opens the
+same pages as a clickable map; the HTML is only a viewer.
 
 ## The pages
 

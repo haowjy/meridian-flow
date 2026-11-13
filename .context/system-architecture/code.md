@@ -55,7 +55,7 @@ flowchart LR
 
 `apps/app`: the writer's web app, its pages and its browser code.
 
-TanStack Start on Nitro. It holds the routes, the editor, the chat transcript and every screen a writer sees. It is the largest consumer of `contracts` and `thread-client`. Its layers are on the next level.
+Every screen a writer sees: the routes, the editor and the chat.
 
 - Kind: module
 - Paths: `apps/app/src`
@@ -66,7 +66,7 @@ TanStack Start on Nitro. It holds the routes, the editor, the chat transcript an
 
 `apps/server`: the HTTP and WebSocket server and every domain's logic.
 
-Routes are thin; domains hold the logic and `lib/` composes them. It imports the most packages, and it is the only app that imports `database` (scripts under `tools/` do too). Its layers are on the next level.
+Routes are thin, domains hold the logic and `lib/` composes them. The only app that imports `database`.
 
 - Kind: module
 - Paths: `apps/server/server`
@@ -77,7 +77,7 @@ Routes are thin; domains hold the logic and `lib/` composes them. It imports the
 
 `apps/www`: the public landing site.
 
-Imports only `design-tokens`. It has one state machine, the landing page's.
+Imports only `design-tokens`.
 
 - Kind: module
 - Paths: `apps/www/src`
@@ -88,7 +88,7 @@ Imports only `design-tokens`. It has one state machine, the landing page's.
 
 `tools/mf`: the `./mf` command-line client.
 
-It reads the same HTTP responses and thread events as the app, through `contracts` and `thread-client`. A wrong value that shows in both is in the data or the shared client; one that shows only in the app is in the app's rendering.
+Reads the same responses and thread events as the app. A wrong value in both is in the data; one only in the app is in its rendering.
 
 - Kind: module
 - Paths: `tools/mf/src`
@@ -97,7 +97,7 @@ It reads the same HTTP responses and thread events as the app, through `contract
 
 The shapes that cross the wire.
 
-One schema per HTTP response, shared by the app and `./mf`. A chat's run state is one versioned record: every message that carries it carries all of it, a receiver keeps the newest version, and no fact in it is sent a second way.
+One schema per HTTP response. A chat's run state is one versioned record, always sent whole; a receiver keeps the newest.
 
 - Kind: package
 - Paths: `packages/contracts/src`
@@ -107,7 +107,7 @@ One schema per HTTP response, shared by the app and `./mf`. A chat's run state i
 
 The Drizzle schema and the migrations.
 
-The schema stays ordinary Postgres and holds no business logic. Migrations merged to `main` or `staging` are frozen: append, never edit or renumber. The schema files take their column types from `contracts`; one migration imports `agent-edit`, and `prosemirror-schema` is imported by one schema file and one migration.
+Plain Postgres with no business logic. Merged migrations are frozen: append, never edit or renumber.
 
 - Kind: package
 - Paths: `packages/database/src`
@@ -126,7 +126,7 @@ The app and the landing site take their colours from it, and the architecture vi
 
 The text and ProseMirror codecs, and the link rules the server and client share.
 
-MDX is the wire format and plain Markdown a supported subset. A leaf: it never imports `agent-edit`. Link rules are at `./links` and Yjs walks at `./stored-links`, both outside the root export. Every serialize takes a `DocumentLinkScope`.
+MDX is the wire format and plain Markdown a subset. It never imports `agent-edit`, and every serialize takes a `DocumentLinkScope`.
 
 - Kind: package
 - Paths: `packages/markup/src`
@@ -146,7 +146,7 @@ A change to a node, mark or attribute updates `meridian-extensions.ts` in the ap
 
 The Yjs editing core for the model's document `read` and `write`.
 
-It stages the writes of one model reply, saves them together and builds the inverse of each write, which is what Undo applies. The host (the server) supplies the journal, coordinator and ports; the package owns no Postgres, routes or auth. It holds no document or cache between calls. Every write lands through `ResponseCommitter` and `prepareSave`, and durability belongs to the host's commit. `./diff` and `./yjs-mutation` load in the browser and import no host code.
+Stages one reply's writes, saves them together and builds the inverses Undo applies. It owns no Postgres, routes or auth: the server supplies the journal and does the durable save.
 
 - Kind: package
 - Paths: `packages/agent-edit/src`
@@ -157,7 +157,7 @@ It stages the writes of one model reply, saves them together and builds the inve
 
 Pure policy for the writer's local copy of documents and folders.
 
-The replica follows catalogs, the server's listings of a project's documents and folders. A catalog update is installed whole or not at all, and a document missing from one listing is not thereby deleted. Where a document sits is worked out from ids (which folder id it is in), never from its path, so a rename or move cannot make two things look like one. No I/O: the app supplies storage.
+Follows the server's catalogs, its listings of documents and folders. A document's place comes from ids, never from its path. No I/O: the app supplies storage.
 
 - Kind: package
 - Paths: `packages/resource-replica/src`
@@ -168,7 +168,7 @@ The replica follows catalogs, the server's listings of a project's documents and
 
 The thread socket client and view model, shared by the app and `./mf`.
 
-Framework-free: no React and no browser or Node globals at module evaluation. It depends only on `contracts` and `markup/links`. `createThreadSync` never fetches, and the view model emits counts and kinds, never translated strings.
+No React and no browser or Node globals. `createThreadSync` never fetches, and the view model emits counts and kinds, never translated strings.
 
 - Kind: package
 - Paths: `packages/thread-client/src`
@@ -179,7 +179,7 @@ Framework-free: no React and no browser or Node globals at module evaluation. It
 
 Turns binary Hocuspocus and Yjs messages into metadata-only summaries.
 
-No export may return writer text. A canary test is the only check that writer text stays out of diagnostics.
+No export may return writer text; a canary test checks it.
 
 - Kind: package
 - Paths: `packages/yjs-inspect/src`
