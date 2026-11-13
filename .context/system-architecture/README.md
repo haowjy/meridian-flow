@@ -141,8 +141,11 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 
 - **Format:** a Mermaid line the format doesn't allow; a box without a section, or a section
   without a box; a `Kind` that isn't the box's class; numbered arrows out of order; an import arrow;
-  a group with no `Opens` or with `Paths`; a note that links to nothing, joins two notes or two
-  boxes, or has a section.
+  a group with no `Opens` or with `Paths`; a context box with no `See`; an `Opens` that isn't a
+  level page; a list item that isn't one of the known keys; a note that links to nothing, joins two
+  notes or two boxes, or has a section.
+- **Journeys:** a journey missing from `journeys/index.md`; a step without `Does:` and `Sees:`, or
+  with a list item other than the known keys.
 - **Links and paths:** a path that doesn't exist; a link whose file or `#id` doesn't resolve; a
   journey `Map` link that isn't a box or a flow.
 - **Coverage:** an app, package, server domain or app feature directory that no box's `Paths`
