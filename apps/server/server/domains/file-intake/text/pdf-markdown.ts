@@ -6,12 +6,7 @@
  * can name pages.
  */
 import { getDocumentProxy } from "unpdf";
-import {
-  CONVERSION_LIMITS,
-  ConversionRefused,
-  checkDeadline,
-  createTextBuilder,
-} from "./limits.js";
+import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
 type Line = { text: string; size: number; y: number };
 type Page = { lines: Line[] };
@@ -84,11 +79,12 @@ function pageToMarkdown(page: Page, body: number): string[] {
   return blocks;
 }
 
-export async function pdfToMarkdown(bytes: Uint8Array, deadline: number): Promise<string> {
-  let pdf: Awaited<ReturnType<typeof getDocumentProxy>>;
+type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
+
+async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
   try {
     // A copy: pdf.js takes ownership of the buffer it is given.
-    pdf = await getDocumentProxy(new Uint8Array(bytes));
+    return await getDocumentProxy(new Uint8Array(bytes));
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     throw new ConversionRefused(
@@ -96,14 +92,25 @@ export async function pdfToMarkdown(bytes: Uint8Array, deadline: number): Promis
       name === "PasswordException" ? "The PDF is password protected." : "The PDF can't be read.",
     );
   }
+}
+
+export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
+  const pdf = await openPdf(bytes);
+  try {
+    return pdf.numPages;
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
+}
+
+export async function pdfToMarkdown(bytes: Uint8Array): Promise<string> {
+  const pdf = await openPdf(bytes);
   try {
     if (pdf.numPages > CONVERSION_LIMITS.pdf.pages)
       throw new ConversionRefused("too_large", "The PDF has too many pages.");
     const pages: Page[] = [];
-    for (let number = 1; number <= pdf.numPages; number++) {
-      checkDeadline(deadline);
+    for (let number = 1; number <= pdf.numPages; number++)
       pages.push(await readPage(await pdf.getPage(number)));
-    }
     const body = bodySize(pages);
     const converted = pages.map((page) => pageToMarkdown(page, body));
     const headings = converted.some((blocks) => blocks.some((block) => block.startsWith("#")));

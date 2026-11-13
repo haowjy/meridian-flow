@@ -40,7 +40,7 @@ import {
 } from "../../domains/runtime/index.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { readBinaryFile } from "./binary-read.js";
+import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
   type CopiedSource,
@@ -294,6 +294,8 @@ export async function readTrackedDocument(
     recordingFrontier?: FrontierLookup;
     /** The thread's model, asked for only when the file is binary and what to show depends on it. */
     model?: () => Promise<ModelInfo | undefined>;
+    /** Where the file is shown: a writer's mention goes in the user message, the agent's read in the tool result. */
+    placement?: ReadPlacement;
   } = {},
 ): Promise<{
   output: AgentEditResultV1;
@@ -308,7 +310,13 @@ export async function readTrackedDocument(
   const address = await resolveDocumentAddress(call.context, "read", path);
   if (isToolError(address)) {
     if (address.output.status === "binary_file")
-      return readBinaryFile(deps, call, input, await options.model?.());
+      return readBinaryFile(
+        deps,
+        call,
+        input,
+        await options.model?.(),
+        options.placement ?? "tool-result",
+      );
     const removed =
       address.output.status === "document_not_found"
         ? await removedPathError(deps, call, "read", path, ctx.threadId)

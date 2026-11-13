@@ -270,6 +270,7 @@ function renderReadResult(result: unknown): ToolContentPart[] {
       ref: { documentId: file.documentId, uri: file.uri },
       mediaType: file.mediaType,
       sizeBytes: file.sizeBytes,
+      ...(file.pageCount !== undefined ? { pageCount: file.pageCount } : {}),
       name: file.name,
     },
   ];

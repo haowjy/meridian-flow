@@ -47,7 +47,7 @@ export interface MediaContextProjection {
 
 export type MediaModel = Pick<
   ModelInfo,
-  "id" | "wire" | "inputModalities" | "maxLinkBytes" | "imageLinks"
+  "id" | "wire" | "inputModalities" | "maxLinkBytes" | "imageLinks" | "contextWindow"
 >;
 
 export function mediaUnitKey(blockId: string, partIndex: number): string {
@@ -89,6 +89,7 @@ function referencedMedia(block: Block): StoredMediaPart | null {
         ref: { documentId: file.documentId as string, uri: file.uri as string },
         mediaType: file.mediaType as string,
         sizeBytes: file.sizeBytes as number,
+        ...(typeof file.pageCount === "number" ? { pageCount: file.pageCount } : {}),
         name: file.name as string,
       }
     : null;
@@ -118,12 +119,14 @@ function choose(
   model: MediaModel | null,
   file: ResolvedMedia,
   inToolResult: boolean,
+  pages: number | undefined,
 ): Chosen | null {
   if (!model) return null;
   const flag = inToolResult ? ({ inToolResult: true } as const) : {};
   const original = placeMedia(model, {
     mediaType: file.mediaType,
     sizeBytes: file.sizeBytes,
+    ...(pages === undefined ? {} : { pages }),
     ...flag,
   });
   if (original.transport !== "none") {
@@ -242,7 +245,7 @@ export async function projectMediaBlocksForModel(input: {
         continue;
       }
 
-      const chosen = choose(input.model, file, unit.inToolResult);
+      const chosen = choose(input.model, file, unit.inToolResult, unit.part.pageCount);
       if (!chosen) {
         // The model can't take this file: say so, and keep it out of the saved decisions, since
         // switching models changes the answer.

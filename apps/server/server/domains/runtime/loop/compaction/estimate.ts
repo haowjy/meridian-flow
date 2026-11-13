@@ -1,13 +1,15 @@
 /** Shared per-part and request-level token estimates for planning and delivery checks. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
+import {
+  type GenerateRequest,
+  PDF_PAGE_TOKENS,
+  type TokenizerFamily,
+} from "@meridian-flow/gateway";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
-/** A PDF costs by page: Claude billed 3,664 input tokens for two short pages (live-link-check). */
-export const PDF_PAGE_TOKEN_ESTIMATE = 2_000;
 /** A PDF whose page count is unknown. */
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
 /** Conservative CJK code-point rates; refresh from published or live probe evidence. */
@@ -101,7 +103,7 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
       typeof record.mediaType === "string" && record.mediaType.startsWith("image/")
         ? IMAGE_PART_TOKEN_ESTIMATE
         : typeof record.pageCount === "number"
-          ? record.pageCount * PDF_PAGE_TOKEN_ESTIMATE
+          ? record.pageCount * PDF_PAGE_TOKENS
           : FILE_PART_TOKEN_ESTIMATE;
     return fixed + estimateModelJsonTokens({ ...rest, source: sourceWithoutPayload }, tokenizer);
   }

@@ -23,7 +23,7 @@ function epub(files: Record<string, string | Uint8Array>): Uint8Array {
 }
 
 const refusal = (bytes: Uint8Array) =>
-  epubToMarkdown(bytes, Date.now() + 10_000).then(
+  epubToMarkdown(bytes).then(
     () => null,
     (error: unknown) => (error instanceof ConversionRefused ? error.reason : error),
   );
@@ -35,7 +35,6 @@ describe("epubToMarkdown", () => {
         "a.xhtml":
           "<html><body><h1>One</h1><p>Hello <a href='x'>world</a></p><img src='i.png'/></body></html>",
       }),
-      Date.now() + 10_000,
     );
     expect(markdown).toBe("# T\n\n# One\n\nHello world");
   });

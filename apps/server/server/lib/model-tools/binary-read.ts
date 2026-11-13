@@ -19,9 +19,18 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type ModelInfo, placeMedia } from "@meridian-flow/gateway";
 import type { BinaryFileRef } from "../../domains/context/index.js";
 import { PREVIEW_MIME_TYPE } from "../../domains/file-intake/image-preview.js";
+import { countPdfPages } from "../../domains/file-intake/text/convert.js";
 import { extractedText, type TextSource } from "../../domains/file-intake/text/extracted-text.js";
+import { CONVERSION_LIMITS, ConversionRefused } from "../../domains/file-intake/text/limits.js";
+import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../domains/storage/index.js";
 import { documentGrant } from "./file-access.js";
 import { isToolError, type ToolCall, type ToolWiringDeps, writeToolError } from "./tool-context.js";
+
+/**
+ * Where what the model is given goes: in the tool result (the agent's own read) or in the user
+ * message (a file the writer mentioned). Models differ in what they take in each place.
+ */
+export type ReadPlacement = "tool-result" | "user-message";
 
 /**
  * Extracted text longer than this many characters (about 7,500 tokens) is read as its outline
@@ -44,6 +53,7 @@ export async function readBinaryFile(
   call: ToolCall,
   input: ReadToolInput,
   model: ModelInfo | undefined,
+  placement: ReadPlacement,
 ): Promise<{ output: AgentEditResultV1; revision: null; isError?: true }> {
   const { filePath, fragment } = splitDocumentFile(input.path);
   const found = await call.context.port.stat(filePath);
@@ -89,27 +99,33 @@ export async function readBinaryFile(
       output: await text(deps, ref, file, input, fragment, "epub", describe),
       revision: null,
     };
+  const where = placement === "tool-result" ? ({ inToolResult: true } as const) : {};
   if (file.mediaType === "application/pdf") {
-    const placement = model
-      ? placeMedia(model, {
-          mediaType: file.mediaType,
-          sizeBytes: file.sizeBytes,
-          inToolResult: true,
-        })
-      : { transport: "none" as const };
+    const pages = model
+      ? await pdfMediaPages(deps, ref, file.mediaType, file.sizeBytes, model, where)
+      : null;
     return done(
-      placement.transport !== "none"
-        ? result(file, "media", {})
+      pages !== null
+        ? result({ ...file, pageCount: pages }, "media", {})
         : await text(deps, ref, file, input, fragment, "pdf", describe),
     );
   }
   if (file.mediaType.startsWith("image/")) {
-    // An image type the models don't take goes as the preview the server made of it.
-    const viewable = [file.mediaType, ...(ref.hasPreview ? [PREVIEW_MIME_TYPE] : [])].some(
-      (mediaType) =>
-        model !== undefined &&
-        placeMedia(model, { mediaType, sizeBytes: file.sizeBytes, inToolResult: true })
-          .transport !== "none",
+    // An image type the models don't take goes as the preview the server made of it, whose own
+    // size is the one a provider's link limit applies to.
+    const previewKey = ref.hasPreview ? objectStoreKeyFromStorageUrl(ref.storageUrl) : null;
+    const preview = previewKey
+      ? await deps.objectStore.readHead(previewObjectKey(previewKey), 0)
+      : null;
+    const candidates = [
+      { mediaType: file.mediaType, sizeBytes: file.sizeBytes },
+      ...(preview?.ok
+        ? [{ mediaType: PREVIEW_MIME_TYPE, sizeBytes: preview.value.sizeBytes }]
+        : []),
+    ];
+    const viewable = candidates.some(
+      (candidate) =>
+        model !== undefined && placeMedia(model, { ...candidate, ...where }).transport !== "none",
     );
     return done(
       viewable ? result(file, "media", {}) : describe("this model can't view images of this kind."),
@@ -129,6 +145,34 @@ function done(output: AgentEditResultV1): {
     revision: null,
     ...(output.status === "success" ? {} : { isError: true as const }),
   };
+}
+
+/**
+ * The page count of a PDF the model takes as media, or null when it goes as text instead: the
+ * model doesn't take PDFs here, the PDF can't be opened (the text read says why), or it is too
+ * long for the model.
+ */
+async function pdfMediaPages(
+  deps: ToolWiringDeps,
+  ref: BinaryFileRef,
+  mediaType: string,
+  sizeBytes: number,
+  model: ModelInfo,
+  where: { inToolResult?: true },
+): Promise<number | null> {
+  if (placeMedia(model, { mediaType, sizeBytes, ...where }).transport === "none") return null;
+  const key = objectStoreKeyFromStorageUrl(ref.storageUrl);
+  if (!key) return null;
+  const original = await deps.objectStore.get(key, { maxBytes: CONVERSION_LIMITS.originalBytes });
+  if (!original.ok) return null;
+  const pages = await countPdfPages(original.value.bytes).catch((error: unknown) => {
+    if (error instanceof ConversionRefused) return null;
+    throw error;
+  });
+  if (pages === null) return null;
+  return placeMedia(model, { mediaType, sizeBytes, pages, ...where }).transport === "none"
+    ? null
+    : pages;
 }
 
 function leaf(uri: string): string {

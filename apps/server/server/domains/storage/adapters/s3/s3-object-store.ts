@@ -16,6 +16,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { isSafeKey, isSafeKeyPrefix } from "../../object-key.js";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
@@ -56,12 +57,6 @@ function ok<T>(value: T): ObjectStoreResult<T> {
 
 function err(code: ObjectStoreErrorCode, message: string): ObjectStoreResult<never> {
   return { ok: false, error: { code, message } };
-}
-
-const SAFE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$/;
-
-function isSafeKey(key: string): boolean {
-  return SAFE_KEY_RE.test(key) && !key.split("/").some((part) => part === ".." || part === "");
 }
 
 function isNotFound(error: unknown): boolean {
@@ -273,8 +268,7 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       cursor?: string;
     }>
   > {
-    if (!isSafeKey(prefix) && prefix !== "")
-      return err("invalid_key", "Object key prefix is invalid");
+    if (!isSafeKeyPrefix(prefix)) return err("invalid_key", "Object key prefix is invalid");
 
     const limit = options?.limit ?? 1_000;
     try {

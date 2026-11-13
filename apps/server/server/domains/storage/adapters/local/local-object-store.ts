@@ -7,7 +7,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
+  appendFile,
   copyFile,
+  type FileHandle,
   mkdir,
   open,
   readdir,
@@ -15,12 +17,14 @@ import {
   rename,
   rm,
   stat,
+  truncate,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { type Readable, Transform } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { isSafeKey, isSafeKeyPrefix } from "../../object-key.js";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
@@ -91,10 +95,43 @@ function ioError(error: unknown, fallback: string): ObjectStoreResult<never> {
   return err("io_error", error instanceof Error ? error.message : fallback);
 }
 
-const SAFE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$/;
+/**
+ * An object is one file: its bytes, then its metadata as JSON, then the metadata's length as four
+ * big-endian bytes. One rename publishes bytes and metadata together, so a crash leaves the old
+ * object or the new one, never bytes without metadata.
+ */
+const FOOTER_LENGTH_BYTES = 4;
 
-function isSafeKey(key: string): boolean {
-  return SAFE_KEY_RE.test(key) && !key.split("/").some((part) => part === ".." || part === "");
+/** The metadata and the byte length of the content in an object file. */
+async function readFooter(
+  file: FileHandle,
+): Promise<{ metadata: LocalObjectMetadata; dataBytes: number }> {
+  const { size } = await file.stat();
+  const length = Buffer.alloc(FOOTER_LENGTH_BYTES);
+  if (size < FOOTER_LENGTH_BYTES) throw new Error("Object file is truncated");
+  await file.read(length, 0, FOOTER_LENGTH_BYTES, size - FOOTER_LENGTH_BYTES);
+  const metadataBytes = length.readUInt32BE(0);
+  const dataBytes = size - FOOTER_LENGTH_BYTES - metadataBytes;
+  if (dataBytes < 0) throw new Error("Object file is truncated");
+  const json = Buffer.alloc(metadataBytes);
+  await file.read(json, 0, metadataBytes, dataBytes);
+  return { metadata: JSON.parse(json.toString("utf8")) as LocalObjectMetadata, dataBytes };
+}
+
+async function readObjectFooter(target: string) {
+  const file = await open(target, "r");
+  try {
+    return await readFooter(file);
+  } finally {
+    await file.close();
+  }
+}
+
+function footer(metadata: LocalObjectMetadata): Buffer {
+  const json = Buffer.from(JSON.stringify(metadata), "utf8");
+  const length = Buffer.alloc(FOOTER_LENGTH_BYTES);
+  length.writeUInt32BE(json.length, 0);
+  return Buffer.concat([json, length]);
 }
 
 function encodePayload(payload: SignedPayload): string {
@@ -172,14 +209,14 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     if (!target.ok) return target;
 
     try {
-      if (options?.maxBytes !== undefined && (await stat(target.value)).size > options.maxBytes)
+      const { metadata, dataBytes } = await readObjectFooter(target.value);
+      if (options?.maxBytes !== undefined && dataBytes > options.maxBytes)
         return err("too_large", "Object is too large to read");
-      const [bytes, metadata] = await Promise.all([
-        readFile(target.value),
-        readFile(this.metadataPath(target.value), "utf8"),
-      ]);
-      const parsed = JSON.parse(metadata) as LocalObjectMetadata;
-      return ok({ bytes: new Uint8Array(bytes), mimeType: parsed.mimeType });
+      const bytes = await readFile(target.value);
+      return ok({
+        bytes: new Uint8Array(bytes.subarray(0, dataBytes)),
+        mimeType: metadata.mimeType,
+      });
     } catch (error) {
       return isMissingFile(error)
         ? err("not_found", "Object not found")
@@ -192,15 +229,11 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     if (!target.ok) return target;
 
     try {
-      const [size, metadata] = await Promise.all([
-        stat(target.value),
-        readFile(this.metadataPath(target.value), "utf8"),
-      ]);
-      const parsed = JSON.parse(metadata) as LocalObjectMetadata;
+      const { metadata, dataBytes } = await readObjectFooter(target.value);
       return ok({
-        stream: createReadStream(target.value),
-        mimeType: parsed.mimeType,
-        sizeBytes: Number(size.size),
+        stream: this.contentStream(target.value, dataBytes),
+        mimeType: metadata.mimeType,
+        sizeBytes: dataBytes,
       });
     } catch (error) {
       return isMissingFile(error)
@@ -216,12 +249,11 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     if (!target.ok) return target;
 
     try {
-      const metadata = JSON.parse(
-        await readFile(this.metadataPath(source.value), "utf8"),
-      ) as LocalObjectMetadata;
+      const { metadata, dataBytes } = await readObjectFooter(source.value);
       const tempData = await this.tempPath();
       try {
         await copyFile(source.value, tempData);
+        await truncate(tempData, dataBytes);
         await this.commit(tempData, target.value, {
           ...metadata,
           key: toKey,
@@ -250,10 +282,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     try {
       const file = await open(target.value, "r");
       try {
-        const { size } = await file.stat();
-        const head = Buffer.alloc(Math.min(headBytes, size));
+        const { dataBytes } = await readFooter(file);
+        const head = Buffer.alloc(Math.min(headBytes, dataBytes));
         const { bytesRead } = await file.read(head, 0, head.length, 0);
-        return ok({ head: new Uint8Array(head.subarray(0, bytesRead)), sizeBytes: size });
+        return ok({ head: new Uint8Array(head.subarray(0, bytesRead)), sizeBytes: dataBytes });
       } finally {
         await file.close();
       }
@@ -341,12 +373,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       cursor?: string;
     }>
   > {
-    const normalizedPrefix = prefix.replace(/\/+$/, "");
-    if (!isSafeKey(normalizedPrefix) && normalizedPrefix !== "")
-      return err("invalid_key", "Object key prefix is invalid");
+    if (!isSafeKeyPrefix(prefix)) return err("invalid_key", "Object key prefix is invalid");
 
     const limit = options?.limit ?? 1_000;
-    const collected = await this.collectKeysUnderPrefix(normalizedPrefix);
+    const collected = await this.collectKeysUnderPrefix(prefix);
     if (!collected.ok) return collected;
     const keys = collected.value;
     const startIndex = options?.cursor ? Number.parseInt(options.cursor, 10) : 0;
@@ -356,12 +386,8 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         const target = this.objectPath(key);
         if (!target.ok) return target;
         try {
-          const [fileStat, metadata] = await Promise.all([
-            stat(target.value),
-            readFile(this.metadataPath(target.value), "utf8"),
-          ]);
-          const parsed = JSON.parse(metadata) as LocalObjectMetadata;
-          return ok({ key, sizeBytes: Number(fileStat.size), mimeType: parsed.mimeType });
+          const { metadata, dataBytes } = await readObjectFooter(target.value);
+          return ok({ key, sizeBytes: dataBytes, mimeType: metadata.mimeType });
         } catch (error) {
           return isMissingFile(error)
             ? err("not_found", "Object changed while listing")
@@ -416,24 +442,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
 
     try {
       await unlink(target.value).catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "ENOENT"
-        )
-          return;
-        throw error;
-      });
-      await unlink(this.metadataPath(target.value)).catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "ENOENT"
-        )
-          return;
-        throw error;
+        if (!isMissingFile(error)) throw error;
       });
       return ok(undefined);
     } catch (error) {
@@ -449,30 +458,19 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     const target = this.objectPath(payload.value.key);
     if (!target.ok) return target;
 
-    let metadata: LocalObjectMetadata;
     try {
-      metadata = JSON.parse(
-        await readFile(this.metadataPath(target.value), "utf8"),
-      ) as LocalObjectMetadata;
-    } catch (error) {
-      return isMissingFile(error)
-        ? err("not_found", "Object metadata not found")
-        : ioError(error, "Failed to read object metadata");
-    }
-
-    try {
-      const size = await stat(target.value);
+      const { metadata, dataBytes } = await readObjectFooter(target.value);
       return ok({
         key: payload.value.key,
         mimeType: metadata.mimeType,
-        sizeBytes: Number(size.size),
+        sizeBytes: dataBytes,
         ...(payload.value.cd ? { contentDisposition: payload.value.cd } : {}),
-        stream: createReadStream(target.value),
+        stream: this.contentStream(target.value, dataBytes),
       });
     } catch (error) {
       return isMissingFile(error)
         ? err("not_found", "Object not found")
-        : ioError(error, "Failed to stat object");
+        : ioError(error, "Failed to read object");
     }
   }
 
@@ -500,25 +498,22 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return path.join(dir, `${crypto.randomUUID()}.part`);
   }
 
-  /**
-   * Moves a finished temp file to `target` with its metadata. The metadata is written to a temp
-   * file first, so a failure to write it leaves an existing object as it was.
-   */
+  /** Seals a finished temp file with its metadata and publishes it at `target` in one rename. */
   private async commit(
     tempData: string,
     target: string,
     metadata: LocalObjectMetadata,
   ): Promise<void> {
-    const tempMetadata = `${tempData}.metadata`;
-    try {
-      await writeFile(tempMetadata, JSON.stringify(metadata, null, 2));
-      await mkdir(path.dirname(target), { recursive: true });
-      await rename(tempData, target);
-      await rename(tempMetadata, this.metadataPath(target));
-    } catch (error) {
-      await rm(tempMetadata, { force: true });
-      throw error;
-    }
+    await appendFile(tempData, footer(metadata));
+    await mkdir(path.dirname(target), { recursive: true });
+    await rename(tempData, target);
+  }
+
+  /** The object's content without its footer. An empty object is an empty stream. */
+  private contentStream(target: string, dataBytes: number): Readable {
+    return dataBytes === 0
+      ? Readable.from([])
+      : createReadStream(target, { start: 0, end: dataBytes - 1 });
   }
 
   /** Crash leftovers, cleared once per process before the first write that makes a temp file. */
@@ -533,10 +528,6 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         if (!isMissingFile(error)) throw error;
       }
     }
-  }
-
-  private metadataPath(objectPath: string): string {
-    return `${objectPath}.metadata.json`;
   }
 
   private async collectKeysUnderPrefix(prefix: string): Promise<ObjectStoreResult<string[]>> {
@@ -554,7 +545,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
             : ioError(error, "Failed to enumerate object store");
       }
       for (const entry of entries) {
-        if (entry.endsWith(".metadata.json") || (!relativeDir && entry === TEMP_DIR)) continue;
+        if (!relativeDir && entry === TEMP_DIR) continue;
         const relativePath = relativeDir ? path.join(relativeDir, entry) : entry;
         const absolutePath = path.join(absoluteDir, entry);
         let fileStat: Stats;

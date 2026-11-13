@@ -21,8 +21,12 @@ A file can reach 200 MiB, so only a bounded read holds an object whole:
   stream abandons the read.
 - `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
   the copy's size and type. A failed copy leaves no object at `to`. Local copy and PUT write a temp file under
-  `.tmp/` and rename it with its metadata, so a failed write leaves an existing object as
-  it was; temp files older than a day (crash leftovers) are cleared before the first write after a start.
+  `.tmp/`, append the object's metadata to it (an object is one file: bytes, metadata JSON,
+  then the JSON's length as four bytes) and publish it with one rename, so a failed write or a
+  crash leaves an existing object as it was, never bytes without metadata; temp files older than a day (crash leftovers) are cleared before the first write after a start.
+- `list(prefix)` takes `""` or a key with an optional trailing `/`, and matches by plain string
+  prefix, in every adapter (`isSafeKeyPrefix` in `object-key.ts`, with the key rule `isSafeKey`).
+  Callers list `imports/<id>/`.
 - `readHead(key, n)` answers the object's size and first `n` bytes without reading the
   rest; an empty object answers size 0 (S3 refuses a range read of one).
 - `signPut(key, { sizeBytes, mimeType })` is a short-lived URL for a browser PUT of
@@ -74,8 +78,8 @@ returns null for them without trying, so they stay cards and log nothing. Files
 saved before previews existed have none and show the card; nothing generates
 one later.
 
-Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.ts`),
-never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
+Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.ts`; the pool is
+`file-intake/worker-pool.ts`, the one every conversion uses), never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
 server for seconds per photo. The worker reads HEIC and BMP dimensions before
 decoding and refuses an image over 50 MP (a phone photo fits; at the cap a
 BMP peaks near 360 MB RSS per worker). A worker that crashes, runs out of memory
@@ -102,18 +106,29 @@ A file is derived from an original and lives and dies with it. `derivedObjectKey
 (`context/binary-copy.ts`) and the import sweep (`import/domain/object-sweep.ts`) all use it;
 add a new derived file there and nowhere else.
 
+A derived file is stored with `putDerivedObject` (`derived-object.ts`), which checks after the put
+that the original still exists and deletes the derived file if not. Release deletes the original
+first, then its derived keys, so a conversion that read the original before a release and puts
+after it finds the original gone and removes its own file. Only a process crash between the put
+and the check can leave one behind.
+
 `.text` is the Markdown extracted from an EPUB or PDF, made by the first `read` that needs it
 (`file-intake/text/extracted-text.ts`), not at upload. Finding it at that key is valid for good
 because a stored file's bytes never change: an upload's key is `uploads/<project>/<doc>`, a copy
 gets a new key, and nothing replaces an object in place. Keep that true (the sandbox's
 read-write mounts included), or the cache serves stale text. Two first reads at once write the
-same bytes, and every adapter's `put` is atomic (the local one writes a temp file and renames it).
+same bytes, and every adapter's `put` is atomic.
 
 Conversion limits (`file-intake/text/limits.ts`): an EPUB's entry count, each entry's declared
 size and the total are checked from the zip's central directory before anything inflates, and only
 XML and XHTML entries are inflated; XML that declares an entity is refused whole; XHTML goes
-through the HTML5 parser, which has no DTD. Every conversion has a 20 s deadline and a
-1,000,000-character output cap (the text says where it was cut). No extracted text goes into a
+through the HTML5 parser, which has no DTD. Every conversion runs in a worker
+(`file-intake/text/convert.ts`, `conversion-worker.ts`, the shared `worker-pool.ts`) that is
+terminated at a 20 s deadline and capped at 512 MB of heap, so a hostile file can't freeze the
+event loop or outlive its read; the output cap is 1,000,000 characters (the text says where it
+was cut). A new converter is a new job kind there. `read` also counts a PDF's pages in that worker
+(`countPdfPages`) and stores the count on the media part (`pageCount`), because whether a PDF goes
+as media depends on it (`placeMedia`'s `pages`). No extracted text goes into a
 log, event or error: refusals carry our own sentence.
 
 ## Adapters and composition

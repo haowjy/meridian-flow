@@ -12,12 +12,7 @@ import path from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
 import { type Unzipped, unzipSync } from "fflate";
 import { createHtmlToMarkdown } from "../html-markdown.js";
-import {
-  CONVERSION_LIMITS,
-  ConversionRefused,
-  checkDeadline,
-  createTextBuilder,
-} from "./limits.js";
+import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
 const { epub: LIMITS } = CONVERSION_LIMITS;
 const ENTITY_DECLARATION = /<!ENTITY/i;
@@ -84,7 +79,7 @@ function resolveEntry(from: string, href: string): string {
   return path.posix.normalize(path.posix.join(path.posix.dirname(from), target));
 }
 
-export async function epubToMarkdown(bytes: Uint8Array, deadline: number): Promise<string> {
+export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const names = new Set(listEntries(bytes).map((entry) => entry.name));
   const container = inflate(bytes, new Set(["META-INF/container.xml"]))["META-INF/container.xml"];
   if (!container) throw new ConversionRefused("unreadable", "The EPUB has no container.xml.");
@@ -116,7 +111,6 @@ export async function epubToMarkdown(bytes: Uint8Array, deadline: number): Promi
   const title = pkg.getElementsByTagName("dc:title")[0]?.textContent?.trim().replace(/\s+/g, " ");
   let titled = false;
   for (const [index, entry] of chapters.entries()) {
-    checkDeadline(deadline);
     const data = files[entry];
     if (!data) continue;
     const markdown = await htmlToMarkdown(xmlText(data));

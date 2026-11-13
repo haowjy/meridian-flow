@@ -19,6 +19,7 @@ const MODEL: MediaModel = {
   id: "gpt-5.6-luna",
   wire: "openai",
   inputModalities: ["text", "image"],
+  contextWindow: 200_000,
 };
 const WINDOW = { startMs: 0, lengthSeconds: 3600 };
 const unit = (blockId: string) => mediaUnitKey(blockId, 0);

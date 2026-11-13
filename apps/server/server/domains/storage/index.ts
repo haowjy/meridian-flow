@@ -12,6 +12,7 @@ export {
   S3ObjectStoreAdapter,
   type S3ObjectStoreOptions,
 } from "./adapters/s3/s3-object-store.js";
+export { putDerivedObject } from "./derived-object.js";
 export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export {
   createObjectStorageUrl,
