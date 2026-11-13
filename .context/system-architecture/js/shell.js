@@ -1,0 +1,88 @@
+/* What both viewers share: DOM helper, theme, page fetching, and the top bar. */
+import { levelLinks, MAP_DIR, parsePage } from "./pages.js";
+
+/** Where the repo root is, from the map's directory (`.context/system-architecture/`). */
+export const REPO_ROOT = "../../";
+
+/** el("a", { href, class }, child, ...): children are nodes or strings; false/null are skipped. */
+export function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs ?? {})) {
+    if (value == null || value === false) continue;
+    if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  node.append(...children.flat().filter((c) => c != null && c !== false));
+  return node;
+}
+
+/** A repo file's text, served by `pnpm dev` at its repo path. */
+export async function fetchRepoFile(path) {
+  const response = await fetch(new URL(REPO_ROOT + path, location.href));
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`.trim());
+  return response.text();
+}
+
+export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
+
+/** The map's level pages, from the links in README.md: [{ id, title, path }]. */
+export async function loadLevels() {
+  const links = levelLinks(await fetchRepoFile(`${MAP_DIR}/README.md`));
+  return links.map(({ id, title, href }) => ({ id, title, path: `${MAP_DIR}/${href}` }));
+}
+
+// ---- Theme: follows the system until the reader pins one ----
+
+const THEME_KEY = "meridian-architecture-theme";
+const themeListeners = new Set();
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+export const currentTheme = () => document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");
+
+try {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+} catch {
+  // No storage: follow the system.
+}
+systemDark.addEventListener("change", () => themeListeners.forEach((cb) => cb()));
+
+export const onThemeChange = (cb) => themeListeners.add(cb);
+
+function pinTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Not remembered; the pin still holds for this visit.
+  }
+  themeListeners.forEach((cb) => cb());
+}
+
+/**
+ * The top bar. `current` is a level id, or "journeys". `onMachines` opens the state machines
+ * index. Returns the element; the level links are filled in once README.md has loaded.
+ */
+export function topBar({ current, levels, onMachines }) {
+  const nav = el(
+    "nav",
+    { class: "levels", "aria-label": "Levels" },
+    levels.map((level) =>
+      el("a", { href: `index.html#${level.id}`, "aria-current": level.id === current ? "page" : null }, level.title),
+    ),
+  );
+  const theme = el("button", { type: "button", class: "text-button" });
+  const sync = () => {
+    theme.textContent = currentTheme() === "dark" ? "Light theme" : "Dark theme";
+  };
+  theme.addEventListener("click", () => pinTheme(currentTheme() === "dark" ? "light" : "dark"));
+  onThemeChange(sync);
+  sync();
+  return el(
+    "header",
+    { class: "topbar" },
+    nav,
+    el("a", { class: "bar-link", href: "journeys.html", "aria-current": current === "journeys" ? "page" : null }, "Journeys"),
+    el("button", { type: "button", class: "text-button", onclick: onMachines }, "State machines"),
+    theme,
+  );
+}

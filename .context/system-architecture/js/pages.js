@@ -1,0 +1,195 @@
+/*
+ * Reads a map page (see README.md for the format). No DOM and no Node APIs, so the viewers and
+ * check.mjs parse pages with the same code and cannot disagree about what a page says.
+ */
+
+export const REPO = "haowjy/meridian-flow";
+export const BRANCH = "main";
+
+export const NODE_KINDS = [
+  "person",
+  "client",
+  "service",
+  "store",
+  "external",
+  "files",
+  "domain",
+  "feature",
+  "module",
+  "package",
+  "context",
+];
+export const EDGE_KINDS = ["http", "ws", "sql", "model", "files", "call", "port", "import"];
+
+/** The section list items each kind of page may carry. */
+export const MAP_KEYS = ["Kind", "Paths", "Docs", "Machines", "Opens", "Breaks", "Drift", "See", "Shot"];
+export const JOURNEY_KEYS = ["Map", "Machines", "Shot"];
+
+const ID = "[A-Za-z][A-Za-z0-9_-]*";
+const LINE = {
+  header: /^flowchart (?:LR|RL|TB|TD|BT)$/,
+  node: new RegExp(`^(${ID})\\["([^"]*)"\\]:::(\\w+)$`),
+  edge: new RegExp(`^(${ID}) (-->|<-->)\\|"(\\w+): ([^"]+)"\\| (${ID})$`),
+  subgraph: new RegExp(`^subgraph ${ID}(?:\\["[^"]*"\\])?$`),
+};
+
+/**
+ * @typedef {{ line: number, message: string }} Problem
+ * @returns {{
+ *   title: string, intro: string,
+ *   mermaid: null | { source: string, line: number, nodes: {id, label, kind, line}[], edges: {from, to, both, kind, label, line}[] },
+ *   sections: { id: string, line: number, paragraphs: string[], items: { key: string | null, value: string, line: number }[] }[],
+ *   problems: Problem[],
+ * }}
+ */
+export function parsePage(text) {
+  const lines = text.split("\n");
+  const page = { title: "", intro: "", mermaid: null, sections: [], problems: [] };
+  const fail = (line, message) => page.problems.push({ line, message });
+  let fence = null; // { length, kind: "mermaid" | "other" } inside a fenced block
+  let section = null;
+  let paragraph = [];
+  const introParts = [];
+
+  const endParagraph = () => {
+    if (!paragraph.length) return;
+    const joined = paragraph.join(" ");
+    if (section) section.paragraphs.push(joined);
+    else if (page.title) introParts.push(joined);
+    paragraph = [];
+  };
+
+  lines.forEach((raw, i) => {
+    const n = i + 1;
+    const line = raw.trim();
+    const marker = /^(`{3,})\s*(\S*)\s*$/.exec(line);
+    if (fence) {
+      if (marker && marker[1].length >= fence.length && !marker[2]) fence = null;
+      else if (fence.kind === "mermaid") {
+        parseMermaidLine(page.mermaid, line, n, fail);
+        page.mermaid.source += `${line}\n`;
+      }
+      return;
+    }
+    if (marker) {
+      endParagraph();
+      const kind = marker[2] === "mermaid" && !page.mermaid ? "mermaid" : "other";
+      if (marker[2] === "mermaid") {
+        if (page.mermaid) fail(n, "A second mermaid block: a page has one.");
+        else page.mermaid = { source: "", line: n, nodes: [], edges: [] };
+      }
+      fence = { length: marker[1].length, kind };
+      return;
+    }
+    const heading = /^(#{1,6}) (.+)$/.exec(line);
+    if (heading) {
+      endParagraph();
+      if (heading[1] === "#" && !page.title) page.title = heading[2];
+      else if (heading[1] === "##") {
+        section = { id: heading[2], line: n, paragraphs: [], items: [] };
+        page.sections.push(section);
+      }
+      return;
+    }
+    if (!line) return endParagraph();
+    if (section && line.startsWith("- ")) {
+      endParagraph();
+      const item = /^- ([A-Za-z]+): ?(.*)$/.exec(line);
+      section.items.push(item ? { key: item[1], value: item[2], line: n } : { key: null, value: line.slice(2), line: n });
+      return;
+    }
+    paragraph.push(line);
+  });
+  endParagraph();
+  page.intro = introParts.join("\n\n");
+  return page;
+}
+
+function parseMermaidLine(mermaid, line, n, fail) {
+  if (!line || line.startsWith("%%") || line === "end") return;
+  if (LINE.header.test(line) || LINE.subgraph.test(line)) return;
+  let m = LINE.node.exec(line);
+  if (m) {
+    mermaid.nodes.push({ id: m[1], label: m[2], kind: m[3], line: n });
+    return;
+  }
+  m = LINE.edge.exec(line);
+  if (m) {
+    mermaid.edges.push({ from: m[1], to: m[5], both: m[2] === "<-->", kind: m[3], label: m[4], line: n });
+    return;
+  }
+  fail(n, `A mermaid line the format doesn't allow: ${line}`);
+}
+
+/** The item of a section with this key, or undefined. */
+export const item = (section, key) => section.items.find((it) => it.key === key);
+
+/** Backtick-quoted repo paths in a list value. */
+export const pathsOf = (value) => [...value.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+
+/** Markdown links in a list value: [{ label, href }]. */
+export const linksOf = (value) => [...value.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)].map((m) => ({ label: m[1], href: m[2] }));
+
+const isUrl = (href) => /^[a-z][a-z0-9+.-]*:/i.test(href);
+
+/** A relative `href` from the page at repo path `from`: { path, fragment }, path null for a URL or one that climbs out of the repo. */
+export function resolveHref(from, href) {
+  if (isUrl(href)) return { path: null, fragment: null, url: href };
+  const [file, fragment = null] = href.split("#");
+  const out = file === "" ? from.split("/") : from.split("/").slice(0, -1);
+  if (file !== "") {
+    for (const part of file.split("/")) {
+      if (part === "..") {
+        if (!out.length) return { path: null, fragment };
+        out.pop();
+      } else if (part !== "." && part !== "") out.push(part);
+    }
+  }
+  return { path: out.join("/"), fragment };
+}
+
+/** GitHub-style heading ids, so `page.md#heading` links land. */
+export const slug = (text) =>
+  text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .trim()
+    .replace(/\s/g, "-");
+
+export const sourceUrl = (path) => `https://github.com/${REPO}/blob/${BRANCH}/${path}`;
+
+export const MAP_DIR = ".context/system-architecture";
+
+/** The text with the lines inside fenced code blocks blanked, so line numbers stay. */
+export function withoutFences(text) {
+  let fence = 0;
+  return text
+    .split("\n")
+    .map((line) => {
+      const marker = /^(`{3,})\s*(\S*)\s*$/.exec(line.trim());
+      if (fence) {
+        if (marker && marker[1].length >= fence && !marker[2]) fence = 0;
+        return "";
+      }
+      if (marker) {
+        fence = marker[1].length;
+        return "";
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+/** The level pages a README links: [{ id, title, href }], in order, fenced examples left out. */
+export function levelLinks(readme) {
+  const seen = new Set();
+  const out = [];
+  for (const { label, href } of linksOf(withoutFences(readme))) {
+    const m = /^([\w-]+)\.md$/.exec(href);
+    if (!m || m[1] === "README" || m[1] === "AGENTS" || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    out.push({ id: m[1], title: label, href });
+  }
+  return out;
+}

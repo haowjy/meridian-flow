@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Meridian writer journeys</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  A viewer over the Markdown pages in this directory (README.md says how to read and edit them).
+  It holds no content and no colours: pages come from the repo, colours from styles/tokens.css.
+  Open it through `pnpm dev` (the printed `map` URL); from disk it can't read the pages. marked is pinned here with its integrity hash, Mermaid in js/doc-view.js.
+-->
+<link rel="stylesheet" href="styles/tokens.css" />
+<link rel="stylesheet" href="styles/page.css" />
+
+<!-- Module scripts don't run from file://, so this note is what a page opened from disk shows. -->
+<div id="app" class="app">
+  <div class="doc-note" style="padding: 24px">
+    <p>A browser won't read the map's pages from disk (file://).</p>
+    <p>Run <code>pnpm dev</code> and open the printed <code>map</code> URL.</p>
+  </div>
+</div>
+<script>
+  if (location.protocol !== "file:") document.getElementById("app").textContent = "Loading…";
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@18.2.0/lib/marked.umd.js" integrity="sha384-DDYDxilZ1LlqPSbaRHlrwh12h+3fUewuQj7HjscrZIWt5bGyQ+n0DHtIoZE3i3zU" crossorigin="anonymous"></script>
+<script type="module" src="js/journeys.js"></script>
