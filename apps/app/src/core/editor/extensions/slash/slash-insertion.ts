@@ -198,9 +198,13 @@ export function applySlashCommand(
 
       if (target.mode === "convert") {
         const current = tr.doc.nodeAt(target.from);
-        // Same node name: retype in place, so the block keeps its Yjs element.
+        // Same node name: retype in place, so the block keeps its Yjs element
+        // and its alignment; only the level is the writer's choice.
         if (current?.type === node.type) {
-          tr.setNodeMarkup(target.from, undefined, { ...current.attrs, ...node.attrs });
+          tr.setNodeMarkup(target.from, undefined, {
+            ...current.attrs,
+            level: node.attrs.level,
+          });
         } else {
           tr.replaceWith(target.from, target.to, node);
         }
