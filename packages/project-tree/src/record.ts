@@ -53,6 +53,8 @@ type RecordBase = {
   fromDraft?: DraftId;
   /** On an opposite record: the record it takes back. */
   undoes?: string;
+  /** On a pending copy made by restoring a Discard: that Discard's command. Server only. */
+  restores?: string;
 };
 
 export type CreateRecord = RecordBase & {
@@ -118,7 +120,8 @@ export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "re
 /**
  * A settlement is a record too, appended and never changed. A record's state is its last
  * settlement in list order, so the list holds no deletions and a state vector names a point in
- * it exactly. `pending` puts a drafted record back, as an Undo of an Apply does.
+ * it exactly. `pending` puts a drafted record back, as an Undo of an Apply does. A Discard is
+ * final: restoring one appends new pending copies, never a `pending` settlement.
  */
 export type SettleRecord = {
   id: string;
@@ -127,7 +130,7 @@ export type SettleRecord = {
   to: Settlement | "pending";
   /** On a refusal at admission: why, for the client to show on the thing the writer did. */
   reason?: string;
-  /** The command (a uuid) that made it: Undo of a Discard selects by it, and a repeat finds nothing left. */
+  /** The command (a uuid) that made it: Undo of an Apply and the restore of a Discard select by it. */
   command?: string;
 };
 

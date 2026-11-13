@@ -9,9 +9,11 @@ export {
 export {
   type ApplyResult,
   applyDraft,
+  type DiscardedBy,
   discardDraft,
+  discardedBy,
+  restoreDiscard,
   undoApply,
-  undoDiscard,
 } from "./apply.js";
 export {
   type Actor,
@@ -62,6 +64,7 @@ export { type ReadRecord, readRecord } from "./validate.js";
 export {
   LIVE,
   lastSettlements,
+  listRecords,
   pendingRecords,
   replayView,
   settlementsOf,

@@ -9,14 +9,14 @@ page says where each part lives and what the code decided where the design left 
 | File | Holds |
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
-| `validate.ts` | `readRecord`: builds the record a client's value stands for from its own allowed fields, or says why there is none |
+| `validate.ts` | `readRecord` (a client's value, for admission) and `readStored` (the server's list, for everything else): each builds the record a value stands for from its own allowed fields, or says why there is none |
 | `names.ts` | `nameFault`, `freeName`: a name's rules and numbering, from the contracts filename codec |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 8, then one pass over the nodes for Trash, kept folders and names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list; `moveBetweenLists` |
-| `apply.ts`, `undo.ts` | Apply, Discard, Undo of a Discard and of an Apply; Undo of one change |
+| `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
 | `admission.ts` | `checkUpdate`, `admit`, `keptCreateRecords` |
 | `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
 
@@ -72,10 +72,22 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   right after; `undoApply` is `gone` once the state vector moved or text was written in a
   document the Apply created. On the server `mark` is the journal's head. It puts back
   everything its command settled, the superseded records too, and refuses as superseded when a
-  record it would restore no longer fits (its node purged, or its folder gone). Undo of a
-  Discard does the same for what it discarded.
-- **Settlements carry `command`** when a command made them, so Undo of a Discard selects by it
-  and a repeat finds nothing left to do.
+  record it would restore no longer fits (its node purged, or its folder gone).
+- **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
+  settled, under the same Work's branch: new record ids, the same node ids, `restores` naming the
+  Discard (server only). They land after anything drafted since, so the restored change wins on a
+  fact both touched, and nothing is refused. A copy whose node was purged is left out and
+  returned. A Discard restores once (`discardedBy(...).restored`); `discardedBy` lists what a
+  Discard settled and the nodes it created, for Trash.
+- **Settlements carry `command`** when a command made them, so Undo of an Apply and the restore
+  of a Discard select by it.
+- **Every read of the list goes through `readStored`.** `replay`, `listRecords` (what `viewRecords`,
+  Undo, Apply and the list index read), and admission's positions never touch a decoded object:
+  they use the copy built from its own allowed fields, once per decoded object. A value that is
+  not a record is skipped by `replay` as `unreadable` and left out of `listRecords`. So the
+  server may apply a client's original bytes: whatever reads them reads the rebuilt copy. Cost on
+  22,000 records: the first replay of a decoded list is about twice as slow (about 120 ms against 56 ms),
+  later ones read the cached copies.
 - **The server's settlement actor is `system`.** Refusals are not any account's act.
 
 ## What the server must do

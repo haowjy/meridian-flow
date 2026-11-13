@@ -3,7 +3,14 @@ import { assertNewCommand } from "./list-index.js";
 import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
 import { replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { LIVE, lastSettlements, pendingRecords, settlementsOf, viewRecords } from "./view.js";
+import {
+  LIVE,
+  lastSettlements,
+  listRecords,
+  pendingRecords,
+  settlementsOf,
+  viewRecords,
+} from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 export type ApplyResult = {
@@ -278,9 +285,9 @@ function stillFit(writer: TreeWriter, restored: ReadonlySet<string>, undone: rea
   for (const id of undone) settled.set(id, "undone");
   for (const id of restored) settled.delete(id);
   const drafts = new Set(
-    recordsOf(writer.doc)
-      .toArray()
-      .flatMap((record) => (restored.has(record.id) && record.draft ? [record.draft] : [])),
+    listRecords(writer.doc).flatMap((record) =>
+      restored.has(record.id) && record.draft ? [record.draft] : [],
+    ),
   );
   return [...drafts].every((draft) =>
     replay(viewRecords(writer.doc, { draft }, settled), { draft }).skipped.every(
@@ -311,9 +318,9 @@ export function undoApply(
   if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
   const settled = settledBy(writer, applied, "applied", "superseded");
   const landed = new Set(settled.filter(([, to]) => to === "applied").map(([id]) => id));
-  const copies = recordsOf(writer.doc)
-    .toArray()
-    .filter((record) => record.appliedFrom !== undefined && landed.has(record.appliedFrom));
+  const copies = listRecords(writer.doc).filter(
+    (record) => record.appliedFrom !== undefined && landed.has(record.appliedFrom),
+  );
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
   const restored = new Set(settled.map(([id]) => id));
   const undone = copies.map((copy) => copy.id);
@@ -325,18 +332,68 @@ export function undoApply(
   return "undone";
 }
 
-/** Undo of a Discard: every record that command discarded and nobody has settled since goes back to pending. */
-export function undoDiscard(
+/** What one Discard command settled, for Trash to show as an entry. */
+export type DiscardedBy = {
+  /** The records it discarded, in list order. */
+  records: TreeRecord[];
+  /** The nodes those records created. */
+  created: string[];
+  /** Restored already: copies of these records are pending again. */
+  restored: boolean;
+};
+
+/** The records a Discard command settled, with the nodes they created. */
+export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
+  const last = lastSettlements(doc);
+  const all = listRecords(doc);
+  const records = all.filter((record) => {
+    const settle = last.get(record.id);
+    return settle?.to === "discarded" && settle.command === discarded;
+  });
+  return {
+    records,
+    created: records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
+    restored: all.some((record) => record.restores === discarded),
+  };
+}
+
+/**
+ * Restoring a Discard: a Discard is final, so its records stay discarded and the Work gets fresh
+ * pending copies of them, under its own branch, after anything it drafted since (so on a fact
+ * both touched, the restored change wins). A copy has a new id and the same node id, and `restores`
+ * names the Discard. A record whose node was purged since is left out and returned. Once.
+ */
+export function restoreDiscard(
   writer: TreeWriter,
   discarded: string,
-  by: Actor,
-  command: string,
-): string[] | "superseded" {
-  assertNewCommand(writer.doc, command);
-  const targets = settledBy(writer, discarded, "discarded").map(([id]) => id);
-  if (!stillFit(writer, new Set(targets), [])) return "superseded";
-  writer.transact(() => writer.settle(by, targets, "pending", { command }));
-  return targets;
+): { copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded" {
+  const { doc } = writer;
+  const { records, restored } = discardedBy(doc, discarded);
+  if (restored || records.length === 0) return "superseded";
+  const purged = new Set(
+    listRecords(doc).flatMap((record) => (record.type === "purge" ? [record.node] : [])),
+  );
+  const leftOut = records.filter((record) => purged.has(record.node));
+  const copyOf = new Map(
+    records.filter((record) => !purged.has(record.node)).map((record) => [record.id, newId()]),
+  );
+  const copies = records.flatMap((record) => {
+    const id = copyOf.get(record.id);
+    if (id === undefined) return [];
+    // A copy that took back another discarded record takes back that record's copy.
+    const undoes =
+      record.undoes === undefined ? undefined : (copyOf.get(record.undoes) ?? record.undoes);
+    return [
+      {
+        ...record,
+        id,
+        restores: discarded,
+        ...(undoes === undefined ? {} : { undoes }),
+      } as TreeRecord,
+    ];
+  });
+  writer.transact(() => recordsOf(doc).push(copies));
+  return { copies, leftOut };
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */

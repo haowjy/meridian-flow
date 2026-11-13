@@ -11,7 +11,7 @@ import {
   type TreeRecord,
 } from "./record.js";
 import { placeIn, type TreeProjection } from "./replay.js";
-import { readRecord } from "./validate.js";
+import { readRecord, readStored } from "./validate.js";
 import { LIVE, replayView } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
@@ -353,7 +353,12 @@ export function admit(server: TreeWriter, update: Uint8Array, connection: Connec
     const keeps = keptCreateRecords(verdict.records, verdict.kept, connection.user);
     if (keeps.length === 0) return;
     // From the end, so an insert does not move the places of those still to come.
-    const places = new Map(list.toArray().map((record, at) => [record.id, at]));
+    const places = new Map(
+      list.toArray().flatMap((value, at) => {
+        const read = readStored(value);
+        return read.ok ? [[read.record.id, at] as const] : [];
+      }),
+    );
     for (const keep of keeps.sort(
       (a, b) => (places.get(b.after) as number) - (places.get(a.after) as number),
     ))

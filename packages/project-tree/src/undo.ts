@@ -1,7 +1,7 @@
-import { type Actor, isSourceRoot, recordsOf, type TreeRecord } from "./record.js";
+import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import type { Setter } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { type View, viewRecords } from "./view.js";
+import { listRecords, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Whether the record is the one that last set the fact `setter` stands for (a live copy answers to its drafted record's id too). */
@@ -24,9 +24,7 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | "superseded" | "unknown" {
-  const record = recordsOf(writer.doc)
-    .toArray()
-    .find((candidate) => candidate.id === recordId);
+  const record = listRecords(writer.doc).find((candidate) => candidate.id === recordId);
   if (!record) return "unknown";
   const projection = writer.view(view);
   const node = projection.nodes.get(record.node);

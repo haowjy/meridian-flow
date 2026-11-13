@@ -9,6 +9,7 @@ import {
   sourceRoot,
   type TreeRecord,
 } from "./record.js";
+import { readStored } from "./validate.js";
 
 export type TreeNode = {
   id: string;
@@ -52,7 +53,9 @@ export type SkipReason =
   | "missing-parent"
   | "parent-not-folder"
   | "duplicate"
-  | "purged";
+  | "purged"
+  /** The value is not a record the server writes (decoded from a list that was changed outside the package). */
+  | "unreadable";
 
 /** One delete still in force: a Trash entry, with what it still takes. */
 export type TrashEntry = {
@@ -128,12 +131,14 @@ type DeleteInForce = {
 };
 
 /**
- * Turns records, in replay order, into a tree: the eight rules of the design, section 2.
+ * Turns records, in replay order, into a tree: the eight rules of the design, section 2. Each
+ * value is read through `readStored` and the replay uses the copy that builds; one that is not a
+ * record is skipped as `unreadable`.
  * `of.draft` is the Work whose view this is (null for live); `of.pendingText` the documents it
  * holds pending text of, which the list cannot see.
  */
 export function replay(
-  records: readonly TreeRecord[],
+  values: readonly unknown[],
   of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
 ): TreeProjection {
   const nodes = new Map<string, Working>();
@@ -195,7 +200,14 @@ export function replay(
     if (changed) node.arrivedAt = index;
   };
 
-  for (const [index, record] of records.entries()) {
+  for (const [index, value] of values.entries()) {
+    const read = readStored(value);
+    if (!read.ok) {
+      const id = (value as { id?: unknown } | null)?.id;
+      skipped.push({ record: typeof id === "string" ? id : "", reason: "unreadable" });
+      continue;
+    }
+    const record = read.record;
     const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
     if (record.type === "create") {
       if (nodes.has(record.node)) {

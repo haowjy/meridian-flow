@@ -1,5 +1,6 @@
 import type * as Y from "yjs";
-import { recordsOf, type SettleRecord, settleLogOf, type TreeRecord } from "./record.js";
+import { recordsOf, type SettleRecord, settleLogOf } from "./record.js";
+import { readStored } from "./validate.js";
 
 /**
  * What admission and the commands ask of the whole list, kept with a copy as it changes instead
@@ -12,6 +13,14 @@ export type ListIndex = {
   commands: Set<string>;
 };
 
+/** A value that is not a record is in no index: nothing could name it. */
+function note(index: ListIndex, value: unknown): void {
+  const read = readStored(value);
+  if (!read.ok) return;
+  index.records.add(read.record.id);
+  if (read.record.type === "create") index.nodes.add(read.record.node);
+}
+
 const indexes = new WeakMap<Y.Doc, ListIndex>();
 
 export function listIndex(doc: Y.Doc): ListIndex {
@@ -20,17 +29,11 @@ export function listIndex(doc: Y.Doc): ListIndex {
   const index: ListIndex = { records: new Set(), nodes: new Set(), commands: new Set() };
   const ops = recordsOf(doc);
   const settle = settleLogOf(doc);
-  for (const record of ops.toArray()) {
-    index.records.add(record.id);
-    if (record.type === "create") index.nodes.add(record.node);
-  }
+  for (const value of ops.toArray()) note(index, value);
   for (const entry of settle.toArray()) if (entry.command) index.commands.add(entry.command);
   ops.observe((event) => {
     for (const item of event.changes.added)
-      for (const record of item.content.getContent() as TreeRecord[]) {
-        index.records.add(record.id);
-        if (record.type === "create") index.nodes.add(record.node);
-      }
+      for (const value of item.content.getContent()) note(index, value);
   });
   settle.observe((event) => {
     for (const item of event.changes.added)

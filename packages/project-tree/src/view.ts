@@ -7,6 +7,7 @@ import {
   type TreeRecord,
 } from "./record.js";
 import { replay, type TreeProjection } from "./replay.js";
+import { readStored } from "./validate.js";
 
 /** Live (`draft: null`), or live and then one Work's pending records. */
 export type View = { draft: string | null };
@@ -27,6 +28,16 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
   return new Map([...lastSettlements(doc)].map(([id, settle]) => [id, settle.to]));
 }
 
+/** The list's records in order, each read through `readStored`: a value that is not a record is left out. */
+export function listRecords(doc: Y.Doc): TreeRecord[] {
+  return recordsOf(doc)
+    .toArray()
+    .flatMap((value) => {
+      const read = readStored(value);
+      return read.ok ? [read.record] : [];
+    });
+}
+
 /**
  * The records a view replays, in replay order: the live ones, then the Work's pending ones. A
  * record id counts once (a client that sends a record again after rebuilding its copy adds
@@ -41,7 +52,7 @@ export function viewRecords(
 ): TreeRecord[] {
   const seen = new Set<string>();
   const all: TreeRecord[] = [];
-  for (const record of recordsOf(doc).toArray()) {
+  for (const record of listRecords(doc)) {
     if (seen.has(record.id)) continue;
     seen.add(record.id);
     all.push(record);

@@ -5,15 +5,16 @@ import {
   applyDraft,
   childrenOf,
   discardDraft,
+  discardedBy,
   fingerprint,
   LIVE,
   recordsOf,
   replayView,
+  restoreDiscard,
   sourceRoot,
   TreeWriter,
   treeViolations,
   undoChange,
-  undoDiscard,
 } from "./index.js";
 
 const ROOT = sourceRoot("manuscript");
@@ -362,15 +363,40 @@ describe("file tree log: cases found in review", () => {
     expect(names(a, ROOT)).toEqual([]);
   });
 
-  it("Undo of a Discard puts back what that command discarded, and a repeat finds nothing", () => {
+  it("restoring a Discard appends new pending copies and leaves the discarded records discarded", () => {
     const a = replica(1);
     const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
-    a.rename({ draft: "w" }, A, ch, "Draft name");
+    const renamed = a.rename({ draft: "w" }, A, ch, "Draft name");
     discardDraft(a, "w", W, "cmd-1");
-    expect(names(a, ROOT, "w")).toEqual(["Ch"]);
-    expect(undoDiscard(a, "cmd-1", W, "cmd-2")).toHaveLength(1);
+    a.rename({ draft: "w" }, A, ch, "Newer name");
+    expect(names(a, ROOT, "w")).toEqual(["Newer name"]);
+    const result = restoreDiscard(a, "cmd-1");
+    if (result === "superseded") throw new Error("expected copies");
+    expect(result.copies).toHaveLength(1);
+    expect(result.copies[0]).toMatchObject({
+      type: "rename",
+      node: ch,
+      name: "Draft name",
+      restores: "cmd-1",
+    });
+    expect(result.copies[0]?.id).not.toBe(renamed.id);
+    // The restored change lands after the newer one, so it wins; the discarded record stays discarded.
     expect(names(a, ROOT, "w")).toEqual(["Draft name"]);
-    expect(undoDiscard(a, "cmd-1", W, "cmd-3")).toEqual([]);
+    expect(discardedBy(a.doc, "cmd-1")).toMatchObject({
+      records: [{ id: renamed.id }],
+      restored: true,
+    });
+    expect(restoreDiscard(a, "cmd-1")).toBe("superseded");
+  });
+
+  it("restoring a Discard leaves out a record whose node was purged, and reports it", () => {
+    const a = replica(1);
+    const made = a.create({ draft: "w" }, A, { kind: "folder", name: "Arc", parent: ROOT });
+    discardDraft(a, "w", W, "cmd-1");
+    expect(discardedBy(a.doc, "cmd-1").created).toEqual([made.node]);
+    a.author(LIVE, "system", { type: "purge", node: made.node });
+    const result = restoreDiscard(a, "cmd-1");
+    expect(result).toEqual({ copies: [], leftOut: [made] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {
