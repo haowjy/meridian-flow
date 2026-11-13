@@ -10,7 +10,8 @@
 import { DIFF_EQUAL } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import { weightedOrderedMatches } from "../ordered-matching.js";
-import { blockKey, blockWords, diffKeys, similarity } from "./tokens.js";
+import { Dsu } from "./dsu.js";
+import { blockKey, blockWords, contentWords, diffKeys, similarity } from "./tokens.js";
 
 export interface Correspondence {
   /** Old index to the new index of the first block of its unit, or -1. */
@@ -23,13 +24,29 @@ export interface Correspondence {
   oldPiece: Int32Array;
   /** New index to the first new block of the unit it was split from, or -1. */
   nextPiece: Int32Array;
+  /** Old index to its unsure group, or -1 (certain mode). */
+  unsureOld: Int32Array;
+  /** New index to its unsure group, or -1. */
+  unsureNext: Int32Array;
 }
+
+export const emptyCorrespondence = (oldCount: number, nextCount: number): Correspondence => ({
+  partner: new Int32Array(oldCount).fill(-1),
+  back: new Int32Array(nextCount).fill(-1),
+  moved: new Set(),
+  oldPiece: new Int32Array(oldCount).fill(-1),
+  nextPiece: new Int32Array(nextCount).fill(-1),
+  unsureOld: new Int32Array(oldCount).fill(-1),
+  unsureNext: new Int32Array(nextCount).fill(-1),
+});
 
 const TUNE = {
   /** Share of words two blocks must have in common to be the same block edited. */
   similar: 0.5,
   /** A pairing is kept only if giving it up costs at least this share of its score. */
   margin: 0.2,
+  /** Words two added blocks must share, in order, to be one block (all of the smaller block's, if fewer). */
+  sharedFloor: 3,
   /** Share of a block's words that must be in a pair for the block to be a split or a join's piece. */
   piece: 0.5,
   /** Old-by-new pairs searched exhaustively; a larger gap is searched in a band. */
@@ -92,13 +109,7 @@ export function correspond(
   next: readonly PMNode[],
   opts: { moves?: boolean; guess?: boolean } = {},
 ): Correspondence {
-  const c: Correspondence = {
-    partner: new Int32Array(old.length).fill(-1),
-    back: new Int32Array(next.length).fill(-1),
-    moved: new Set(),
-    oldPiece: new Int32Array(old.length).fill(-1),
-    nextPiece: new Int32Array(next.length).fill(-1),
-  };
+  const c = emptyCorrespondence(old.length, next.length);
   const pair = (i: number, j: number) => {
     c.partner[i] = j;
     c.back[j] = i;
@@ -107,7 +118,23 @@ export function correspond(
   findPieces(old, next, c);
   rootUnits(old, next, c);
   if (opts.moves) findMoves(old, next, c);
+  if (!opts.guess) markUnsure(old, next, c);
   return c;
+}
+
+/** Half of the smaller block's words are in the other, in order: the two may be one block. */
+export const couldBeOne = (a: PMNode, b: PMNode) =>
+  similarity(a, b, true, TUNE.similar) >= TUNE.similar;
+
+/**
+ * `couldBeOne`, and at least three of the words (or all of a smaller block's): two blocks added at
+ * one place have no base block to vouch for either, and without the floor two short unrelated
+ * paragraphs ("Live lore." and "Pending lore.") share one word and read as one block.
+ */
+export function couldBeSameAddition(a: PMNode, b: PMNode): boolean {
+  const sim = similarity(a, b, true, TUNE.similar);
+  const smaller = Math.min(contentWords(a).length, contentWords(b).length);
+  return sim >= TUNE.similar && Math.round(sim * smaller) >= Math.min(TUNE.sharedFloor, smaller);
 }
 
 /** Steps 1 and 2: the ends, the anchors, then everything left in each gap at once. */
@@ -226,16 +253,23 @@ function findAnchors(
     if (at.length === 1 && other?.length === 1) cand.push([at[0], other[0]]);
   }
   cand.sort((x, y) => x[0] - y[0]);
-  // Length of the longest in-order set ending at, and starting at, each candidate.
-  const left = cand.map(() => 1);
-  const right = cand.map(() => 1);
-  for (let k = 0; k < cand.length; k++)
-    for (let q = 0; q < k; q++)
-      if (cand[q][1] < cand[k][1]) left[k] = Math.max(left[k], left[q] + 1);
-  for (let k = cand.length - 1; k >= 0; k--)
-    for (let q = k + 1; q < cand.length; q++)
-      if (cand[k][1] < cand[q][1]) right[k] = Math.max(right[k], right[q] + 1);
-  const longest = Math.max(0, ...left);
+  // Length of the longest in-order set ending at, and starting at, each candidate (patience sorting).
+  const lengthsEndingAt = (values: number[]) => {
+    const tails: number[] = [];
+    return values.map((v) => {
+      let [lo, hi] = [0, tails.length];
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (tails[mid] < v) lo = mid + 1;
+        else hi = mid;
+      }
+      tails[lo] = v;
+      return lo + 1;
+    });
+  };
+  const left = lengthsEndingAt(cand.map(([, j]) => j));
+  const right = lengthsEndingAt(cand.map(([, j]) => -j).reverse()).reverse();
+  const longest = left.reduce((m, v) => Math.max(m, v), 0);
   // One candidate at its place in every longest set is an anchor; two at one place cross.
   const atLevel = new Map<number, Array<[number, number]>>();
   cand.forEach((pair, k) => {
@@ -395,4 +429,93 @@ function findMoves(old: readonly PMNode[], next: readonly PMNode[], c: Correspon
     c.back[nextLeft[a]] = i;
     c.moved.add(i);
   });
+}
+
+/** The words of `x` that `y` does not account for, counting repeats. */
+function wordsNotIn(x: readonly string[], y: readonly string[]): string[] {
+  const have = new Map<string, number>();
+  for (const w of y) have.set(w, (have.get(w) ?? 0) + 1);
+  return x.filter((w) => {
+    const n = have.get(w) ?? 0;
+    if (n) have.set(w, n - 1);
+    return !n;
+  });
+}
+
+/**
+ * Step 5, certain mode: the blocks whose pairing nothing settles, in groups. One group is one
+ * question, so the merge can answer it once:
+ * - an old and a new block that could be one block, wherever they sit: removed here and added
+ *   there, cut down, or grown;
+ * - old and new blocks left in one gap: an edit past recognition, or a removal and an addition;
+ * - a removed block and a changed pair that gained half of that block's words (or half of whose
+ *   gained words are that block's), and the same for an added block and a pair that lost words:
+ *   a join or a split that also rewrote the text.
+ */
+function markUnsure(old: readonly PMNode[], next: readonly PMNode[], c: Correspondence) {
+  const { partner, back } = c;
+  const N = old.length;
+  const groups = new Dsu(N + next.length);
+  const link = (a: number, b: number) => groups.union(a, b);
+  const freeOld = (i: number) => partner[i] < 0 && c.oldPiece[i] < 0;
+  const freeNext = (j: number) => back[j] < 0 && c.nextPiece[j] < 0;
+  const oldLeft = [...partner.keys()].filter(freeOld);
+  const nextLeft = [...back.keys()].filter(freeNext);
+  // Past the pair limit everything left is one group.
+  if (oldLeft.length * nextLeft.length > TUNE.cells) {
+    for (const i of oldLeft) link(i, oldLeft[0]);
+    for (const j of nextLeft) link(N + j, oldLeft[0]);
+  } else
+    for (const i of oldLeft)
+      for (const j of nextLeft) if (couldBeOne(old[i], next[j])) link(i, N + j);
+  // Old and new blocks left in one gap between two pairs in order.
+  const unitEnd = (pi: number, pj: number): [number, number] => {
+    let [u1, v1] = [pi + 1, pj + 1];
+    while (u1 < old.length && c.oldPiece[u1] === pi) u1++;
+    while (v1 < next.length && c.nextPiece[v1] === pj) v1++;
+    return [u1, v1];
+  };
+  let [i, j] = [0, 0];
+  while (i <= old.length) {
+    let pi = i;
+    while (pi < old.length && !(partner[pi] >= 0 && !c.moved.has(pi))) pi++;
+    const pj = pi < old.length ? partner[pi] : next.length;
+    const gapOld: number[] = [];
+    const gapNext: number[] = [];
+    for (let k = i; k < pi; k++) if (freeOld(k)) gapOld.push(k);
+    for (let k = j; k < pj; k++) if (freeNext(k)) gapNext.push(k);
+    if (gapOld.length && gapNext.length) {
+      for (const k of gapOld) link(k, gapOld[0]);
+      for (const k of gapNext) link(N + k, gapOld[0]);
+    }
+    if (pi >= old.length) break;
+    [i, j] = unitEnd(pi, pj);
+  }
+  // A join or a split that also rewrote the text.
+  const text = (n: PMNode) => contentWords(n);
+  const took = (from: readonly string[], inside: readonly string[]) =>
+    from.length > 0 && (from.length - wordsNotIn(from, inside).length) / from.length >= TUNE.piece;
+  if (oldLeft.length || nextLeft.length)
+    for (let pi = 0; pi < old.length; pi++) {
+      const pj = partner[pi];
+      if (pj < 0 || sameContent(old[pi], next[pj])) continue;
+      const [u1, v1] = unitEnd(pi, pj);
+      const ow = old.slice(pi, u1).flatMap(text);
+      const nw = next.slice(pj, v1).flatMap(text);
+      const gained = wordsNotIn(nw, ow);
+      const lost = wordsNotIn(ow, nw);
+      if (gained.length)
+        for (const k of oldLeft)
+          if (took(gained, text(old[k])) || took(text(old[k]), gained)) link(k, pi);
+      if (lost.length)
+        for (const k of nextLeft)
+          if (took(lost, text(next[k])) || took(text(next[k]), lost)) link(N + k, pi);
+    }
+  const size = new Map<number, number>();
+  for (let k = 0; k < N + next.length; k++)
+    size.set(groups.find(k), (size.get(groups.find(k)) ?? 0) + 1);
+  for (let k = 0; k < N; k++)
+    if ((size.get(groups.find(k)) ?? 0) > 1) c.unsureOld[k] = groups.find(k);
+  for (let k = 0; k < next.length; k++)
+    if ((size.get(groups.find(N + k)) ?? 0) > 1) c.unsureNext[k] = groups.find(N + k);
 }

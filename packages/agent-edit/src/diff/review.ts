@@ -11,6 +11,7 @@
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { type ComposeMode, composeHunks, type SpanPatch } from "./compose.js";
+import { Dsu } from "./dsu.js";
 import type { BlockDiff, Hunk, HunkKind } from "./hunks.js";
 import { hunkKind } from "./hunks.js";
 import { isBlockTok, isWordTok, type Side, type Tok } from "./tokens.js";
@@ -52,23 +53,6 @@ export interface ReviewProjection {
   hasChanges: boolean;
   diff: BlockDiff;
   blockStarts: number[]; // draft position of each top-level block, plus the document size last
-}
-
-class Dsu {
-  private parent: number[];
-  constructor(n: number) {
-    this.parent = Array.from({ length: n }, (_, i) => i);
-  }
-  find(x: number): number {
-    while (this.parent[x] !== x) {
-      this.parent[x] = this.parent[this.parent[x]];
-      x = this.parent[x];
-    }
-    return x;
-  }
-  union(a: number, b: number) {
-    this.parent[this.find(a)] = this.find(b);
-  }
 }
 
 export function projectReview(diff: BlockDiff): ReviewProjection {

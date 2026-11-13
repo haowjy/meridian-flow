@@ -160,7 +160,7 @@ insertions at either edge of an adjacent replacement peel off before clustering,
 A list, quote or table is one token to `align`, so a cluster in which both sides changed
 containers is merged over their children (`mergeContainers`), pairwise when each side replaced
 a run of the same containers, and at every depth. It falls back to a clash of the whole block
-when the types or counts differ, when the merged node fails `check()`, or when a merged table's
+(`whole-block-unit`) when the types or counts differ, when the merged node fails `check()`, or when a merged table's
 cells, with their `colspan` and `rowspan`, do not fill a rectangle. The merge and review pair
 blocks with the same function (`correspond`), so they agree on which block is which.
 
@@ -187,6 +187,48 @@ run meets the other side's edit or removal of each block separately. A shared ed
 replacements is kept once only inside one block (`shared-edge-kept-once`): two paragraphs that
 end in the same word do not share it. A hunk keeps the side range it came from (`sfrom`..`sto`);
 a filter such as moved-text dropping changes its payload and `sidx`, never its range.
+
+### Stretches: `draft-wins-stretch`
+
+When the merge cannot tell which block is which, the draft's version of that stretch stands as
+one counted clash, and the merge never combines, doubles or silently drops words.
+`settleStretches` (`src/diff/stretch.ts`) runs before any token merges. It lays each side's
+correspondence over the base: every block of a side sits in a base block's place or in a gap, and
+the places it changed are text (paired in place, differs), removed, or restructured (split,
+joined, moved, or added in a gap). Two sides' changes clash where they meet and the token merge
+cannot be trusted with them:
+
+- at a base block: either change is unsure (certain mode left it unpaired, or in a group of
+  blocks that could be each other), or one side removed the block and the other changed it in
+  any way, or both restructured it;
+- at a gap inside a join or an unsure group: the other side has anything there;
+- at any other gap: one change is unsure and neither is only blocks added there.
+
+Text against text, text against a split, a join or a move of that block (the edit travels with
+the block), additions by both sides at one gap, and removals of different blocks are left to the
+token merge. A stretch is the changes joined by clashes; where both sides hold the same blocks
+in it, it is no clash. Otherwise the draft's blocks stand, live is handed on with its changes to
+the stretch undone (the base's blocks in place), one conflict is recorded with the base blocks it
+covers, and live's words the draft lacks count under `overrode`. Live is set back to the base
+rather than to the draft's blocks: copying the draft's blocks in doubled them when the sides
+also disagreed about order.
+
+"Could be one block" (`couldBeOne`) is half the smaller block's words in the other, in order. It
+decides unsure groups. Two blocks added at one gap, where no base block vouches for either, need
+three of those words too (or all of a smaller block's): `couldBeSameAddition`. Without the floor,
+"Live lore." and "Pending lore." read as one paragraph typed on both sides. A live paragraph that
+could be one of the draft's new paragraphs, and is not equal to it, is the draft's, one clash;
+equal ones are kept once and unrelated ones both kept. Measured on real text (this repo's fiction
+fixtures, its Markdown and the markup tests' strings, 20,000 generated merges): unrelated
+paragraphs pass the half-words test in 1 to 5 percent of pairs when they have 4 to 12 words, and
+in up to 2 percent below that; the floor cuts the short ones by about two thirds and leaves
+longer ones. Unrelated paragraphs added at one gap and linked: 2 of 20,000 generated merges.
+
+Known limit: a run of one or two words live carries out of a block into an otherwise new
+paragraph, beside the draft's version of the source block, can appear twice (generated seeds
+858, 942 and 1973 of the restructuring run). The new paragraph shares under half its words with
+the source, so by the rule it is new text, and `moved-text-dropped` has the same floor. Treating
+any shared word as evidence would link unrelated paragraphs through common words.
 
 Move-text matching checks whether the other side touched a source or pasted the same text
 only after selecting the globally longest run. Filtering sources first would change the

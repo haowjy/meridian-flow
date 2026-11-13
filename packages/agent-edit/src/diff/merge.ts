@@ -12,7 +12,7 @@
  */
 import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
 import { align } from "./align.js";
-import { type Correspondence, correspond } from "./correspond.js";
+import { type Correspondence, correspond, emptyCorrespondence } from "./correspond.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
 import {
@@ -32,6 +32,7 @@ import {
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
+import { settleStretches } from "./stretch.js";
 import {
   blockKey,
   buildBlocks,
@@ -220,13 +221,7 @@ function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Co
   sideOrder.forEach((o, n) => {
     sideAt[o] = n;
   });
-  const out: Correspondence = {
-    partner: new Int32Array(baseOrder.length).fill(-1),
-    back: new Int32Array(sideOrder.length).fill(-1),
-    moved: new Set(),
-    oldPiece: new Int32Array(baseOrder.length).fill(-1),
-    nextPiece: new Int32Array(sideOrder.length).fill(-1),
-  };
+  const out = emptyCorrespondence(baseOrder.length, sideOrder.length);
   baseOrder.forEach((o, n) => {
     if (c.partner[o] >= 0 && sideAt[c.partner[o]] >= 0) {
       out.partner[n] = sideAt[c.partner[o]];
@@ -249,6 +244,11 @@ export function rebase(
   shareBlockTokens([base, live, draft]);
   let inLive = correspond(base, live, { moves: true });
   let inDraft = correspond(base, draft, { moves: true });
+  const stretches = settleStretches(base, live, draft, inLive, inDraft);
+  if (stretches) {
+    live = stretches.live;
+    inLive = stretches.inLive;
+  }
   let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
   let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
 
@@ -308,6 +308,21 @@ export function rebase(
     live: [],
     draft: [],
   }));
+  // A stretch where the pairing could not be trusted keeps the draft's blocks: one clash each.
+  for (const st of stretches?.stretches ?? []) {
+    const [l, d] = [st.live, st.draft].map((bs) => bs.flatMap((b) => tokenizeBlock(b)));
+    replacedWords(
+      l.map((tok) => ({ tok, origin: LIVE, index: 0 })),
+      d.map((tok) => ({ tok, origin: DRAFT, index: 0 })),
+    );
+    conflicts.push({
+      kind: "overlap",
+      baseIds: st.baseIds,
+      base: st.baseIds.flatMap((i) => tokenizeBlock(base[i])),
+      live: l,
+      draft: d,
+    });
+  }
   // Live's paste of text the draft changed is left out; the draft's paste of text live changed stays
   // (the draft wins) but is reported, since it carries the text from before live's change.
   const movedByLive = dropMovedText(baseToks, liveAlignment.hunks, draftAlignment.hunks);
@@ -394,18 +409,7 @@ export function rebase(
       continue;
     }
     if (lo === hi) {
-      const union = unionInsertions(liveVersion, draftVersion);
-      if (union.chose) {
-        replacedWords(liveVersion, union.out);
-        conflicts.push({
-          kind: "overlap",
-          baseIds: idsIn(Math.max(0, lo - 1), lo),
-          base: [],
-          live: toks(liveVersion),
-          draft: toks(draftVersion),
-        });
-      }
-      merged.push(...union.out);
+      merged.push(...unionInsertions(liveVersion, draftVersion));
       continue;
     }
     // One side's text may already carry the other's change here (the same edit made on both sides
