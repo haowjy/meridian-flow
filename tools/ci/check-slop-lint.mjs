@@ -29,7 +29,6 @@ const ALLOW_PATTERN =
 const ALLOW_MARKER = /slop-lint:\s*allow\b/i;
 const SUPPRESSION_PATTERN = /\bbiome-ignore(?:-all)?\b|@ts-(?:ignore|expect-error|nocheck)\b/g;
 const DECISION_PATTERN = /\b[DW]\d+\b/g;
-const MIDDLE_DOT_EXCEPTION_REASON = /file-detail row/i;
 const TEST_FILE_PATTERN = /\.test\.(ts|tsx)$/;
 const SLEEP_HELPERS = new Set(["sleep", "delay", "wait"]);
 const CLOCK_MATCHERS = new Set([
@@ -389,7 +388,7 @@ function collectFindings() {
           candidate.path === finding.path &&
           !candidate.used &&
           candidate.reason &&
-          (category !== "middle-dot" || MIDDLE_DOT_EXCEPTION_REASON.test(candidate.reason)) &&
+          category !== "middle-dot" &&
           candidate.lineNumber >= finding.lineNumber - 1 &&
           candidate.lineNumber <= finding.lineNumber,
       );

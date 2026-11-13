@@ -1,8 +1,8 @@
 # features/chat — turn rendering and transcript viewport
 
-- `ChatView` calls `viewTranscript` (`@meridian/thread-client`) once, and
-  `./mf thread view` prints the same view model. A component that selects,
-  filters or classifies raw turns makes the two disagree.
+- `ChatView` calls `viewTranscript` once. A component that selects, filters or
+  classifies raw turns makes the app disagree with `./mf thread view`
+  ([thread-client](../../../../../packages/thread-client/AGENTS.md)).
 - Snapshot sync and transport recovery own block updates. Views don't apply
   snapshots or synthesize streaming turns.
 - `TurnList` is the only transcript scroller.

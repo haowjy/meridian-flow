@@ -59,7 +59,7 @@ the file exists. What the chip says is drawn, never stored (`link-chip.ts`'s
   lands.
 - A document answer carries `file` (type, MIME type, size) for a stored file, from the
   resolve route. The local index knows type and MIME but not size, so a stored file's chip
-  asks the server once. The detail row is `PDF · 2.4 MB`; a picture's chip carries none.
+  asks the server once. The detail row is `PDF, 2.4 MB`; a picture's chip carries none.
 - A chip named like a host (`notes.zip`, `a.io`) must not be rewritten into a website:
   placement sets `preventAutolink` and no `uiEvent: "drop"` (TipTap's paste rules read that
   as an outside drop and linkify the range).

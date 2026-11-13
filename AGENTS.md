@@ -1,6 +1,7 @@
 # Meridian Flow — Agent Instructions
 
 This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+Product decisions are the owner's.
 
 ## Mission
 
@@ -14,31 +15,23 @@ documents, often at once, and their writes land: no approval gates, refusals or
 take it back. In the app, teach a concept once, then show state, not standing
 explanations. See [trust the LLM][trust-llm] and [trust the user][trust-user].
 
-## Invariants
-
-These hold however the work is done, but they can change too. When evidence shows one
-no longer serves writers, propose the change to the owner as its own step, never as a
-side effect of getting a task to pass. How the code keeps each one, what checks it and
-where it falls short: [.context/invariants.md](.context/invariants.md).
-
-- **Text merges through Yjs.** Anything else that changes text does it as an ordinary
-  edit every copy receives.
-- **Writer text stays out of logs and diagnostics.**
-- **Marks and receipts say truthfully who did what.**
-
-Everything else is the current implementation, open to rewriting once evidence or
-testing shows something better.
-
 ## Engineering
 
 **Choose the simpler system, not the smaller change.** When a case doesn't fit, change the
 design so it does instead of adding a branch, flag or special case to the old one. Judge a
 choice by the code it leaves: a bigger change, or more deletion, is the right one when less is
-left to understand and the next change gets easier.
+left to understand and the next change gets easier. Fix structural debt in the same PR,
+whatever its size: refactor, delete dead code and simplify without asking. A found fix too
+large for the PR gets its own PR now; an issue is only for a fix that needs a product decision
+or is a project of its own.
 
-**Fix structural debt in the same PR,** whatever the PR's size: refactor, delete dead
-code and simplify without asking. A found fix too large for the PR gets its own PR now;
-an issue is only for a fix that needs a product decision or is a project of its own.
+**One way to do one thing, so the app feels consistent.** The same situation behaves and
+looks the same wherever the writer meets it: an action the server hasn't answered yet, a
+failure, an Undo, a list, a picker. A state machine takes one of the shapes under Patterns in
+[the index](.context/state-machines/index.md), and a screen uses the shared component where one
+exists. Before adding a state or a component, check whether an existing one already covers the
+case. A second way to do the same thing is structural debt: fix it by moving every use onto
+one.
 
 **Optimistic UI.** The writer sees the result of their action at once, and failure
 shows on the thing they did. **Navigate first:** every destination change goes to
@@ -55,32 +48,18 @@ adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
 **Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
-draws the system, the code's boxes, the writer journeys and the broken dependency rules (a table); each state
+draws the system, the code, the writer journeys and the broken dependency rules; each state
 machine is drawn in a `state-machines.md` beside its code, listed in
 [the index](.context/state-machines/index.md). A change that adds, removes or moves something
-the map names (a package, a domain, a feature directory, a boundary or a dependency direction),
-changes a writer journey, or changes a machine's states or transitions updates its diagram in
-the same commit. `pnpm check:architecture` catches a path that disappeared, not a picture that
-went wrong: passing it is not the test. The map opens at the `map` URL `pnpm dev`
-prints. The pages and `map.config.mjs` (everything Meridian-specific: the coverage globs, dependency
-rules, nav) live in `.context/system-architecture/`; the viewer, the check and the dev server are the
-reusable engine in [tools/architecture-map](tools/architecture-map/README.md), which names no project.
-
-**One way to do one thing, so the app feels consistent.** The same situation behaves and
-looks the same wherever the writer meets it: an action the server hasn't answered yet, a
-failure, an Undo, a list, a picker. A state machine takes one of the shapes under Patterns in
-[the index](.context/state-machines/index.md), and a screen uses the shared component where one
-exists. Before adding a state or a component, check whether an existing one already covers the
-case. A second way to do the same thing is structural debt: fix it by moving every use onto
-one.
+the map names, changes a writer journey, or changes a machine's states or transitions updates
+its diagram in the same commit. `pnpm check:architecture` catches a path that disappeared, not
+a picture that went wrong. The map opens at the `map` URL `pnpm dev` prints.
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
 
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
-
-Debugging: [docs/debugging.md](docs/debugging.md).
 
 ## Dev environment
 
@@ -91,7 +70,7 @@ patching a package, run `pnpm dev:restart`: the dev server doesn't watch `node_m
 session that started it.
 
 **Debug with `./mf`; verify in the browser.** Use `./mf` to reproduce and read
-state. Every change a writer sees or relies on, server-only changes included, gets
+state; [docs/debugging.md](docs/debugging.md) has the rest. Every change a writer sees or relies on, server-only changes included, gets
 a prober's `agent-browser` run of the final code before it reaches `main`, with
 screenshots in its PR. A feature built as part PRs into a release branch gets that
 run once, on the whole feature after review, not one per part; each part's coder
@@ -118,15 +97,17 @@ decision, change the test.
 
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
 
-A human merges into `main` or `staging`, or a model the global grant covers. A feature built
+A human merges into `main`, or a model the global grant covers. A feature built
 in several pieces gets one integration branch: each finished piece bases on it and merges into
 it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
 soon as it's in. One PR carries the integration branch into `main`.
 
 Once a PR is complete and a reviewer (another model, or the owner) has approved it, whoever
-may merge it merges it at once. Before the merge, CI is green, the regressions the change could cause are exercised on the real system (`/testing`), and the
-PR body is reread against the final diff, with evidence from the commit being merged. Don't hold
-a finished PR for the owner to try first: he uses the app, and what he finds wrong becomes a follow-up PR.
+may merge it merges it at once. Before the merge, CI is green, the prober's browser run is done
+where "Debug with `./mf`" asks for one, the regressions the change could cause are exercised on
+the real system (`/testing`), and the PR body is reread against the final diff, with evidence
+from the commit being merged. Don't hold a finished PR for the owner to try first: he uses the
+app, and what he finds wrong becomes a follow-up PR.
 
 Open a draft PR as soon as a branch has its first commit, and update its body with each push,
 so anyone can see the work's state from the PR. Mark it ready when it's complete.

@@ -12,8 +12,8 @@ finalizer.
   cell selection keeps ownership.
 - The lift is a decoration. Inserting into or setting attributes on the manuscript DOM
   fights ProseMirror.
-- The handle owns the outer margin band and table row grips the inner one; overlapping
-  them breaks the table surface's geometry.
+- The handle owns the outer margin band and the table's row grips the inner one; keep
+  them disjoint, or the table surface's geometry breaks.
 - Every ending (commit, cancel, refusal, pointer loss, suppression, unmount) runs through
   the shared finalizer; local timers or pointer listeners leak a drag state it can't end.
 

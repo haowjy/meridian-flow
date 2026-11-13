@@ -48,8 +48,8 @@ the notes say.
 | Machine | Side | Notes |
 |---|---|---|
 | [Thread socket](../../packages/thread-client/.context/state-machines.md) | Client | The connection half |
-| [Thread subscription](../../packages/thread-client/.context/state-machines.md) | Client | The subscription half |
-| [Thread subscription lease](../../apps/server/server/lib/.context/state-machines.md) | Server | Buffers live events while it reads the replay |
+| [Thread subscription, client half](../../packages/thread-client/.context/state-machines.md) | Client | The subscription half |
+| [Thread subscription, server half](../../apps/server/server/lib/.context/state-machines.md) | Server | Buffers live events while it reads the replay |
 | [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Computed from the same connection states. There is no replay: Yjs sync brings the document up to date |
 | [Draft room handshake](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: no edits are accepted before it |
 | [Server feed](../../apps/app/src/features/debug/.context/state-machines.md) | Client | The connection only: the browser's `EventSource` reconnects, and nothing is replayed |

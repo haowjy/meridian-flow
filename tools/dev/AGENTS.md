@@ -19,15 +19,12 @@ this directory never imports application packages. The `./mf` CLI lives in
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared
   database, or open an ad-hoc admin client.
-- The dev Postgres image is `tools/postgres/Dockerfile` (`postgres:16` + pg_bigm).
-  `meridian-dev-postgres-1` serves every worktree on the machine: test compose
-  changes under another project name and port, never recreate it from a
-  branch you are still checking. `ensureDevInfraUp` (`pnpm dev:infra`, bootstrap,
-  `db:reset`) starts a missing server and never reconciles a running one. Bump
-  the image tag in `docker-compose.yml` with the pg_bigm pin, then run
-  `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
-  recreates the container onto the tag and the named volume keeps the data.
-  `pnpm db:check-extensions` proves the extensions work.
+- `meridian-dev-postgres-1` serves every worktree on the machine: test compose
+  changes under another project name and port, never recreate it from a branch you
+  are still checking. Only `pnpm dev:infra:upgrade`, run from a checkout that has
+  merged `main`, moves it to a new image
+  ([DEVELOPMENT.md](../../DEVELOPMENT.md)); `pnpm dev:infra` and bootstrap start a
+  missing server and never touch a running one.
 - Change schemas with `pnpm db:generate` plus `pnpm db:reset`, never `push`.
   The pre-deploy baseline rule is in [database guidance](../../packages/database/AGENTS.md).
 - No secret value appears in the tmux command, stdout or
@@ -44,8 +41,7 @@ this directory never imports application packages. The `./mf` CLI lives in
   or a name prefix alone. Inspect orphans with
   `pnpm dev:prune-worktrees -- --orphans --dry-run`.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
-  (`portless-prefix.ts`, `portless-routes.ts`, `dev-readiness.ts`,
-  `dev-session-state.ts`). Keep those free of import-time side effects, with
+  ([the list](../mf/AGENTS.md)). Keep those free of import-time side effects, with
   Node built-ins as their only runtime dependencies.
 - DB tests use owned databases and rollback or FK-ordered reset. Never add
   per-case truncation or share a managed database between workers.

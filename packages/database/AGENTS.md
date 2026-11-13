@@ -5,6 +5,9 @@ and transaction propagation live in the server, not here.
 
 ## Before the first deploy with retained data
 
+No stored data is kept until the first deploy with data worth keeping, so a schema
+change never carries a backfill or a repair of old rows.
+
 - There is one migration: `src/migrations/0000_baseline.sql`. Edit
   `src/schema/` and regenerate with `pnpm db:generate`; never edit generated SQL,
   its journal or snapshot by hand. SQL Drizzle cannot model lives in

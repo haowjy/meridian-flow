@@ -282,4 +282,4 @@ an exception that no longer matches a finding. Every failure says what to do:
 handle or surface the error, fix the type or lint error, delete the decision ID,
 separate facts with spacing, weight or muted color in UI and with a sentence or
 parentheses in text, or wait for the event instead of the clock. A middle-dot
-exception's reason must include `file-detail row`.
+finding has no exception: rewrite the text.
