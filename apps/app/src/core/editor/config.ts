@@ -7,11 +7,9 @@
  * not the session lifecycle (see `document-session.ts`).
  */
 
-import { t } from "@lingui/core/macro";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
@@ -49,8 +47,8 @@ import {
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
-import { PeerCaretHoverExtension } from "./extensions/PeerCaretHoverExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
+import { PeerCaretLayer, PeerSelections } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
@@ -253,31 +251,16 @@ function createCollaborationExtensions({
     // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
     // and a raw write made while the writer is hidden behind inline review is
     // dropped, then overwritten by the snapshot the review restores.
-    CollaborationCaret.configure({
+    PeerSelections.configure({
       provider: presence.caretProvider,
       user: published,
-      render: (cursorUser) => {
-        const cursor = window.document.createElement("span");
-        cursor.classList.add("meridian-collab-cursor");
-        cursor.style.setProperty("--caret-color", String(cursorUser.color ?? FALLBACK_CARET_COLOR));
-
-        const label = window.document.createElement("span");
-        label.classList.add("meridian-collab-cursor__label");
-        label.textContent =
-          published.accountId && cursorUser.accountId === published.accountId
-            ? t`You`
-            : String(cursorUser.name || t`Someone`);
-
-        cursor.append(label);
-        return cursor;
-      },
       selectionRender: (cursorUser) => ({
         nodeName: "span",
         class: "meridian-collab-selection",
         style: `--caret-color: ${String(cursorUser.color ?? FALLBACK_CARET_COLOR)}`,
       }),
     }),
-    PeerCaretHoverExtension,
+    PeerCaretLayer.configure({ peers: presence.peers, accountId: published.accountId }),
   ];
 }
 
