@@ -30,11 +30,31 @@ export type CommittedTreeUpdate = {
   seq: number;
 };
 
+/** Why `admit` refused an account that cannot write the list now: not a fault of the update. */
+export const NO_WRITE_ACCESS = "no write access";
+
 export type AdmitResult =
   | { ok: true; committed: CommittedTreeUpdate | null }
   | { ok: false; reason: string };
 
+/** What an account may do in a list's room: write, or only read. */
+export type TreeListAccess = { listId: string; level: "edit" | "read" };
+
 export interface TreeListStore {
+  /**
+   * The journal id of the list and what the account may do in its room, or null when the list is
+   * not the account's: the project (or account) decides, never a document.
+   */
+  open(input: { list: TreeList; accountId: string }): Promise<TreeListAccess | null>;
+  /**
+   * The list's state past journal row `afterSeq` as one update, and the row it reaches: the
+   * rows after it, or the whole state when `afterSeq` is 0 or behind a checkpoint. Read
+   * without the list's lock, which is safe because rows are only ever added at the head.
+   */
+  readSince(input: {
+    listId: string;
+    afterSeq: number;
+  }): Promise<{ seq: number; update: Uint8Array }>;
   /**
    * Admits a client's Yjs update for the connection of `accountId`: checks it, appends the
    * server's verdicts, journals it and writes the rows it changes. A refused whole update stores
@@ -54,4 +74,9 @@ export interface TreeListStore {
   }): Promise<{ committed: CommittedTreeUpdate | null; result: T }>;
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */
   onCommitted(listener: (committed: CommittedTreeUpdate) => void): () => void;
+  /**
+   * Called with the list's id once any server process has committed a journal row to it: a room
+   * that holds the list reads the rows it lacks. Only commits are announced, never a rollback.
+   */
+  onJournalAdvanced(listener: (listId: string) => void): () => void;
 }

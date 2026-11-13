@@ -54,6 +54,8 @@ const expectedSuites = [
   "apps/server/server/domains/collab/branch-tree.reply.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/tree-list-store.db.test.ts",
+  "apps/server/server/lib/yjs-tree-room.db.test.ts",
+  "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
   "apps/server/server/domains/context/document-address.review.db.test.ts",

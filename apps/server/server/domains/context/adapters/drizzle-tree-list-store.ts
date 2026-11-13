@@ -12,7 +12,12 @@ import {
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabJournal } from "../../collab/adapters/drizzle-journal.js";
-import type { CommittedTreeUpdate, TreeList, TreeListStore } from "../ports/tree-list-store.js";
+import {
+  type CommittedTreeUpdate,
+  NO_WRITE_ACCESS,
+  type TreeList,
+  type TreeListStore,
+} from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
 import { claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
 
@@ -48,16 +53,25 @@ function applyHistory(doc: Y.Doc, updates: readonly Uint8Array[]) {
   }
 }
 
+/** Every instance hears this at the commit of a journal row; the payload is the list's id. */
+const CHANNEL = "tree_list_advanced";
+
 const sameBytes = (a: Uint8Array, b: Uint8Array) =>
   a.length === b.length && a.every((byte, at) => byte === b[at]);
+
+export type PgTreeListStore = TreeListStore & {
+  /** Starts hearing every instance's commits (this one's too) for `onJournalAdvanced`. */
+  listen(): Promise<{ unlisten: () => Promise<void> }>;
+};
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
   journal: CollabJournal;
-}): TreeListStore {
+}): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
   const listeners = new Set<(committed: CommittedTreeUpdate) => void>();
+  const advancedListeners = new Set<(listId: string) => void>();
 
   /** The journal's newest row, and the newest row it may have folded into a checkpoint. */
   async function journalBounds(tx: DrizzleDb, listId: string) {
@@ -149,6 +163,8 @@ export function createDrizzleTreeListStore(deps: {
     // edit, and a list's receipt is the record itself.
     const seq = await journal.append(listId, update, { origin: "system", seq: 0 });
     copy.seq = seq;
+    // Delivered at the commit, to every instance: a room on another process catches up from it.
+    await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
     await syncRows(tx, list, listId, copy.doc, added);
     await testHook("treeList.afterRows");
@@ -162,11 +178,48 @@ export function createDrizzleTreeListStore(deps: {
   }
 
   return {
+    open: async ({ list, accountId }) => {
+      const listId = await listIdOf(db as DrizzleDb, list);
+      if (listId === null) return null;
+      const [owner] = await (db as DrizzleDb).execute<{ id: string }>(
+        list.kind === "project"
+          ? sql`SELECT id::text FROM projects
+              WHERE id = ${list.projectId}::uuid AND user_id = ${accountId}::uuid AND deleted_at IS NULL`
+          : sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid AND id = ${accountId}::uuid`,
+      );
+      if (!owner) return null;
+      const connection = await readConnection(db as DrizzleDb, list, accountId);
+      return { listId, level: connection ? "edit" : "read" };
+    },
+
+    readSince: async ({ listId, afterSeq }) => {
+      const { retired, head } = await journalBounds(db as DrizzleDb, listId);
+      if (afterSeq > 0 && afterSeq >= retired) {
+        const rows = await journal.readUpdates(listId, afterSeq, head);
+        return {
+          seq: head,
+          update:
+            rows.length === 0
+              ? Y.encodeStateAsUpdate(new Y.Doc())
+              : Y.mergeUpdates(rows.map((row) => row.update)),
+        };
+      }
+      const snapshot = await journal.read(listId);
+      const updates = [
+        ...(snapshot.checkpoint ? [snapshot.checkpoint] : []),
+        ...snapshot.updates.map((row) => row.update),
+      ];
+      return {
+        seq: snapshot.persistenceWatermark ?? 0,
+        update: updates.length === 0 ? Y.encodeStateAsUpdate(new Y.Doc()) : Y.mergeUpdates(updates),
+      };
+    },
+
     admit: async ({ list, accountId, update }) => {
       try {
         return await withList(list, async (tx, copy, listId) => {
           const connection: Connection | null = await readConnection(tx, list, accountId);
-          if (!connection) return { ok: false as const, reason: "no write access" };
+          if (!connection) return { ok: false as const, reason: NO_WRITE_ACCESS };
           const before = Y.encodeStateVector(copy.doc);
           const verdict = admit(copy.writer, update, connection);
           if (!verdict.ok) return verdict;
@@ -204,5 +257,15 @@ export function createDrizzleTreeListStore(deps: {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+
+    onJournalAdvanced(listener) {
+      advancedListeners.add(listener);
+      return () => advancedListeners.delete(listener);
+    },
+
+    listen: () =>
+      db.listen(CHANNEL, (listId) => {
+        for (const listener of advancedListeners) listener(listId);
+      }),
   };
 }

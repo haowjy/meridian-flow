@@ -15,6 +15,7 @@ flowchart TB
   resource-replica["resource-replica<br/><small>the local copy of documents</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
+  tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
   prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
@@ -33,6 +34,8 @@ flowchart TB
   server -->|"calls the models through"| gateway
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
+  app -->|"syncs the tree's list with"| tree-list-sync
+  tree-list-sync -->|"reads the list's records with"| project-tree
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
   note1 -.- markup
 ```
@@ -172,6 +175,16 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 - Paths: `packages/thread-client/src`
 - Docs: [CONTEXT](../../packages/thread-client/.context/CONTEXT.md), [AGENTS](../../packages/thread-client/AGENTS.md)
 - Machines: [thread-client](../../packages/thread-client/.context/state-machines.md)
+
+## tree-list-sync
+
+How a client keeps its copy of the project tree's list the server's: the connection to the list's room, sending in parts of at most an eighth of an admission, and the rebuild after a whole refusal.
+
+Owns no storage and no tabs: the browser's copy comes in through `ListCopy`. The server's room cuts what it sends with the same function.
+
+- Kind: package
+- Paths: `packages/tree-list-sync/src`
+- Docs: [CONTEXT](../../packages/tree-list-sync/.context/CONTEXT.md), [AGENTS](../../packages/tree-list-sync/AGENTS.md)
 
 ## yjs-inspect
 

@@ -87,6 +87,7 @@ async function main(): Promise<void> {
       projects: createDrizzleProjectRepository({
         db,
         ensureNoWork: (projectId) => workRepository.ensureNoWork(projectId),
+        fileAccessChanges: createLocalFileAccessChanges(),
       }),
       works: workRepository,
       ...createDrizzleRepositories(db, workProjectionMutation, lineageScratch),

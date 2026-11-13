@@ -32,7 +32,10 @@ import {
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import { createDrizzleContextImportReveal } from "../domains/context/adapters/drizzle-import-reveal.js";
-import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
+import {
+  createDrizzleTreeListStore,
+  type PgTreeListStore,
+} from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
 import {
   type ContextCatalog,
@@ -303,6 +306,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   documentTrash: DocumentTrash;
@@ -393,7 +398,8 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
-  treeLists: TreeListStore;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & DraftOwnerHintPort;
   documentTrash: DocumentTrash;
@@ -533,6 +539,7 @@ export async function createProductionAppPorts(input: {
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
     db,
+    fileAccessChanges,
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
@@ -1197,6 +1204,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
@@ -1519,6 +1527,22 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    treeLists: {
+      async open() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async readSince() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async admit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async submit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      onCommitted: () => () => {},
+      onJournalAdvanced: () => () => {},
+    },
     liveDocuments: {
       async findById() {
         throw new Error("Live tree reads are unavailable in memory");
