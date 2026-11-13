@@ -17,7 +17,11 @@ import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
-import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
+import {
+  type OpenDocumentOutcome,
+  useIsChatUpload,
+  useOpenProjectDocument,
+} from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
@@ -242,10 +246,14 @@ export function useOpenPlacedDocument(
   projectId: string | undefined,
 ): (documentId: string) => Promise<OpenDocumentOutcome> {
   const openDocument = useOpenProjectDocument(projectId);
+  const isUpload = useIsChatUpload(projectId);
   const place = useLinkPlacement(projectId ?? null, null);
   return useCallback(
     (documentId) =>
-      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
-    [place, openDocument],
+      // An upload opens in a dialog whichever pane the click came from, so no pane is chosen.
+      isUpload(documentId)
+        ? openDocument({ documentId })
+        : place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+    [isUpload, place, openDocument],
   );
 }
