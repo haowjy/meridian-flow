@@ -1,11 +1,11 @@
 # Server: workspace
 
-The domains about the writer's project and what they were doing in it. Opening a project: `projects` checks the writer owns it (1), `working-set` returns the documents that were open (2), and `recent-documents` lists what was opened lately from the document catalog (3). Archiving or deleting a Work reaches into the documents group and the object store. Back to the [server](server.md).
+The domains about the writer's project and what they were doing in it. Opening a project: `projects` checks the writer owns it (1), `working-set` returns the last few documents the writer had open there (2), and `recent-documents` lists what was opened lately from the document catalog (3). Archiving or deleting a Work reaches into the documents group and the object store. Back to the [server](server.md).
 
 ```mermaid
 flowchart LR
   projects["projects<br/><small>projects, Works and who owns them</small>"]:::domain
-  working-set["working-set<br/><small>the documents the writer had open</small>"]:::domain
+  working-set["working-set<br/><small>the last few documents the writer had open</small>"]:::domain
   recent-documents["recent-documents<br/><small>what the writer opened lately</small>"]:::domain
   browser["browser<br/><small>the writer's tab</small>"]:::context
   conversation["conversation<br/><small>the chat's Work</small>"]:::context
@@ -40,7 +40,7 @@ Projects and Works: ownership gates, bootstrap and the Work lifecycle.
 
 The writer's working-set snapshot.
 
-A snapshot of the documents the writer had open in a project, per account.
+A snapshot of up to three recent document routes per account and project, so another device can reopen them.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/working-set`

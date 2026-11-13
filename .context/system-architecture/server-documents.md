@@ -23,7 +23,7 @@ flowchart LR
   context -->|"writes whole documents through the collab engine"| collab
   files -->|"writes an imported tree"| context
   context -->|"copies binary bytes"| objectstore
-  note1["Every route, tool, live room and write asks file-policy before it touches a document. The built-in Critic, Continuity-checker and Reader-sim Agents are read-only there."]:::note
+  note1["Every route, tool, live room and write asks file-policy before it touches a document. The built-in Critic, Continuity-checker and Reader-sim Agents may read documents but edit only Scratch."]:::note
   note1 -.- file-policy
   note2["Addresses like manuscript:// and scratch:// resolve to documents here. A bare path means manuscript://."]:::note
   note2 -.- context

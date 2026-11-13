@@ -1,13 +1,11 @@
 # Server
 
-The server is one Nitro process. Its 17 domains are grouped here by the writer work they serve. Follow
-the numbered arrows for one chat turn: the writer's message arrives (1), a route admits it (2), the
-conversation group asks the model for a reply (3), the model's tool calls read and edit documents
-through the documents group (4), the edit is journaled in Postgres (5), and the reply (6) and the
-edit (7) stream back to the browser. Click a group to see its domains and the same story at that
-scale. The imports that break the written dependency rules, among them a cycle between six domains,
-are on [dependencies](dependencies.md), not drawn here. Step by step with the calls named:
-[a message becomes an edit](flows/message-becomes-edit.md).
+One Nitro process. Its 17 domains are grouped by the writer work they serve, and a group opens a
+page of its domains. Follow the numbers for one chat turn: the message arrives (1), a route admits
+it (2), conversation asks the model for a reply (3), the model's tool calls read and edit documents
+(4), the edit is journaled in Postgres (5), and the reply (6) and the edit (7) stream back to the
+browser. Step by step: [a message becomes an edit](flows/message-becomes-edit.md). Imports that
+break the written rules, among them a cycle of six domains, are on [dependencies](dependencies.md).
 
 ```mermaid
 flowchart LR

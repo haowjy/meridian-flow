@@ -1,6 +1,6 @@
 # Server: conversation
 
-The domains behind a chat turn, in the order a message uses them. The browser sends the message to `runtime` (1); `runtime` saves the writer's turn through `threads` (2), loads the Agent and its skills from `packages` (3), asks the model (4), runs the model's tool calls on documents (5), saves each turn and block through `threads` (6), and `threads` streams the events back to the browser (7). The other arrows are side collaborations. Back to the [server](server.md); the same path as calls: [a message becomes an edit](flows/message-becomes-edit.md).
+The domains behind a chat turn, in the order a message uses them. The browser sends the message to `runtime` (1); `runtime` saves the writer's turn through `threads` (2), loads the Agent and its skills from `packages` (3), asks the model (4), runs the model's tool calls on documents (5), saves each turn and block through `threads` (6), and `threads` streams the events back to the browser (7). Unnumbered arrows are side paths. Back to the [server](server.md); the same path as calls: [a message becomes an edit](flows/message-becomes-edit.md).
 
 ```mermaid
 flowchart LR

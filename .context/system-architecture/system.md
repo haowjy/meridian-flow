@@ -1,12 +1,11 @@
 # The running system
 
-What happens when a writer sends a message: the browser sends it (1), the server asks the model for a
-reply (2), saves the reply and the model's edits to the writer's documents in Postgres (3), and streams
-both back to the browser (4). Everything else on the page is what that path stands on. Under
-`pnpm dev` these are a browser, two Nitro processes (the app and the server), a landing site,
-Postgres and the outside services the server calls, each behind a Portless HTTPS route. **Nothing is
-deployed yet**; the plan is on the [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
-The full path, step by step: [a message becomes an edit](flows/message-becomes-edit.md).
+What runs when a writer uses Meridian Flow. Follow the numbers for one chat message: the browser
+sends it (1), the server asks a model for a reply (2), saves the reply and the model's edits in
+Postgres (3), and streams both back (4). The other boxes are what that path depends on. **Nothing
+is deployed yet**: under `pnpm dev` each process sits behind a Portless HTTPS route, and the plan is
+on the [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
+Step by step: [a message becomes an edit](flows/message-becomes-edit.md).
 
 ```mermaid
 flowchart LR

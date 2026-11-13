@@ -1,7 +1,7 @@
 # Dependencies
 
-The map's pictures show what moves between parts, not what imports what. This page holds the other
-half: the rules about who may import whom, and the places the code breaks them today.
+The map's pictures show what moves between parts. This page holds what they leave out: the rules
+about who may import whom, and where the code breaks them today.
 
 ## The rules
 
@@ -50,11 +50,7 @@ example is one importing file, not the only one.
 
 ## Reading the table
 
-Eight pairs import each other (`collab` and `context`, `collab` and `file-policy`, `collab` and
-`projects`, `context` and `file-policy`, `context` and `projects`, `file-policy` and `projects`,
-`runtime` and `context`, `threads` and `context`), which is 16 rows; five one-way imports (`collab` to
-`runtime`, `runtime` to `file-policy`, `runtime` to `projects`, `runtime` to `threads`, and `threads` to `projects`) make 21. At run
-time the domains are wired through ports that `lib/` fills, so many of these imports are type-only (a
-port's type) and the call goes through `lib`. Cross-domain imports of another domain's `adapters/`
-(eight today) are named in the `Breaks` of the box that makes them on the [server](server.md) child
-pages; they are not a written rule.
+At run time the domains are wired through ports that `lib/` fills, so many of these imports carry
+only a port's type and the call goes through `lib`. A domain importing another domain's `adapters/`
+breaks no written rule; those are named in `Breaks` on the box that makes them, on the
+[server](server.md) group pages.

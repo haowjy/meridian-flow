@@ -65,6 +65,8 @@ Holds the HTTP client, the thread socket and the Yjs socket.
 
 Stripe: checkout and a webhook.
 
+Credit grants arrive by webhook.
+
 
 
 - Kind: context

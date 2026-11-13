@@ -1,6 +1,11 @@
 # App
 
-`apps/app/src`: the web app. Follow the numbered arrows for one chat turn: the route mounts the workspace (1), the workspace shows the chat (2), the chat sends the message (3) through the client, which posts it and listens on the thread socket (4); the server streams the reply events back (5), the chat draws them from the thread store (6); when the model edits a document the draft edit arrives over the Yjs socket (7) and the editor shows it (8). Click a group for its parts. **No dependency rule is written for these layers**, and imports run both ways between them, so read an arrow as "uses". The server side of the same story: [a message becomes an edit](flows/message-becomes-edit.md).
+`apps/app/src`: the web app. Follow the numbers for one chat turn: a route mounts the workspace (1),
+which shows the chat (2). The chat sends the message (3) through the client, which posts it and
+listens on the thread socket (4). The server streams the reply back (5) and the chat draws it from
+the thread store (6). When the model edits a document, the edit arrives over the Yjs socket (7) and
+the editor shows it (8). No dependency rule is written for these layers, so read an arrow as
+"uses". The server's side: [a message becomes an edit](flows/message-becomes-edit.md).
 
 ```mermaid
 flowchart LR

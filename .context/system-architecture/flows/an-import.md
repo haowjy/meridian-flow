@@ -33,7 +33,7 @@ sequenceDiagram
 3. **Upload.** The client sends the files in batched multipart posts to `.../imports/[importId]/files.post.ts`.
 4. **Receive.** The route reads the parts (`lib/import-body.ts`) and `service.receive` bounds parts, bytes and concurrency.
 5. **Stage.** The bytes go to [storage](../server-files.md#storage) under a staging key.
-6. **Complete.** When the last file is received the import moves to `organizing` in the same step; the client reports nothing. (`picked.post.ts` is only for Continue, a re-pick of files already received.) *Not traced:* the code that detects the last receipt; the domain's CONTEXT says upload completion sets `organizing`.
+6. **Complete.** When the last file is received the import moves to `organizing` in the same step; the client reports nothing. `receive` calls `complete()` in the same transaction (`domain/upload-service.ts`), which sets `organizing` once no entry is still awaiting bytes. (`picked.post.ts` is only for Continue, a re-pick of files already received.)
 7. **Wake.** A durable queue row wakes the organizer lane; the wake is only a latency hint and the rows are authoritative.
 8. **Classify.** The organizer calls [file-intake](../server-files.md#file-intake) to classify each file and make WebP previews for HEIC, BMP and TIFF.
 9. **Stage tree.** It stages bounded generations of the tree through [context](../server-documents.md#context).

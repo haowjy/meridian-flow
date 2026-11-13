@@ -1,11 +1,11 @@
 # Code
 
-The apps sit on top and the packages under them. Apps never sit under packages: no package imports
-an app. A package uses only packages lower down: `contracts`, `prosemirror-schema`, `yjs-inspect` and
-`design-tokens` use no workspace code. The numbered arrows are what a chat message and its edits use, in order (the app follows the chat, the
-server applies the model's edits and saves them); the others are what each layer borrows. An arrow here means "calls code from", at the level of layers; the exact import breaks of
-the written rules are on [dependencies](dependencies.md). `tools/` (the `./mf` client) is outside
-these layers and is on the [system](system.md) page.
+The apps, and the packages under them. An arrow means "calls code from". The numbers follow a chat
+message: the app follows the chat (1), and the server applies the model's edits (2) and saves them
+(3). No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
+`design-tokens` import no workspace code. Where the code breaks its written rules is on
+[dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
+[system](system.md#mf).
 
 ```mermaid
 flowchart TB
