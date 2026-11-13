@@ -5,7 +5,7 @@
 What one open document's connection to the server is doing (`DocumentSessionStatus` in
 `document-session.ts`). Apart from `destroyed`, the status is not stored and stepped: it is
 recomputed by `deriveStatus` from the facts below whenever one of them changes. To change it,
-change the derivation.
+change the derivation. `detachTransport` removes the transport, so the derivation gives `detached`.
 
 ```mermaid
 stateDiagram-v2
@@ -16,6 +16,10 @@ stateDiagram-v2
   synced --> offline: disconnected
   syncing --> offline: disconnected, or a terminal close
   offline --> syncing: the transport reconnects
+  syncing --> detached: detachTransport
+  synced --> detached: detachTransport
+  offline --> detached: detachTransport
+  access_lost --> detached: detachTransport
   syncing --> access_lost: unauthorized, or a reset
   synced --> access_lost: unauthorized, or a reset
   offline --> access_lost: unauthorized, or a reset
@@ -47,6 +51,11 @@ stateDiagram-v2
 - **`synced` does not mean the server has every local edit.** That is
   `serverHasLocalChanges`: true once the server has acknowledged every local update sent on
   this connection.
+- **A detached session keeps its document.** `detachTransport` closes the socket and keeps the
+  Y.Doc, local persistence and undo history; edits made meanwhile wait in the document until
+  the next `attachTransport` syncs them. The session registry detaches a session it is keeping
+  when no view wants its socket open and it has no unsent edits
+  (`detachUnwantedTransport`). An attach that follows waits for the detach to finish closing.
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
 - The transport states are `ConnectionState` from
   [thread-client](../../../../../../packages/thread-client/.context/state-machines.md); the
