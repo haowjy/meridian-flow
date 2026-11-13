@@ -173,16 +173,30 @@ export function convergeThreadWorkBinding(
     client.setQueryData(projectQueryKeys.threads(projectId), transition.threads);
     seedWorksSnapshot(client, transition.catalog);
     const row = transition.threads.find(({ id }) => id === threadId);
-    patchSnapshot(client, threadId, row?.workId ?? null);
-    const ids = new Set([transition.previousWorkId, row?.workId].filter(Boolean) as string[]);
+    const workId = row?.workId ?? null;
+    // A mount reads the binding on every chat switch, and nearly always finds it unchanged. A
+    // caller that knows the binding it started from names it; otherwise the snapshot is the
+    // record, and a chat without one yet has nothing cached to correct.
+    const snapshotWorkId = client.getQueryData<ThreadSnapshotResponse>(
+      threadQueryKeys.snapshot(threadId),
+    )?.thread.workId;
+    const before =
+      transition.previousWorkId !== null
+        ? transition.previousWorkId
+        : snapshotWorkId === undefined
+          ? workId
+          : snapshotWorkId;
+    if (before === workId) return;
+    patchSnapshot(client, threadId, workId);
+    const ids = new Set([transition.previousWorkId, workId].filter(Boolean) as string[]);
     invalidateThreadProjectionDependencies(client, {
       threadId,
       projectId,
       refreshLists: false,
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
-      // Runs on every mount: the snapshot already carries the Work (`patchSnapshot`), and its
-      // reads belong to the thread sync alone.
+      // The snapshot already carries the Work (`patchSnapshot`), and its reads belong to the
+      // thread sync alone.
       skipSnapshot: true,
     });
     convergeWorkProjection(client, { kind: "binding", projectId });
@@ -200,8 +214,39 @@ export async function readStableThreadWorkBinding(
   client: QueryClient,
   input: { projectId: string; threadId: string; previousWorkId: string | null },
   accountSignal?: AbortSignal,
+  /** Reads the thread list and Works from cache when both were loaded this recently. */
+  maxAgeMs?: number,
 ): Promise<{ threads: ThreadListItem[]; catalog: ListWorksResponse; workId: string | null }> {
   const cursorKey = threadQueryKeys.workProjectionCursor(input.threadId);
+  if (maxAgeMs !== undefined) {
+    const cachedThreads = client.getQueryState<ThreadListItem[]>(
+      projectQueryKeys.threads(input.projectId),
+    );
+    const cachedWorks = client.getQueryState<ListWorksResponse>(
+      projectQueryKeys.works(input.projectId),
+    );
+    if (
+      cachedThreads?.data &&
+      cachedWorks?.data &&
+      Date.now() - Math.min(cachedThreads.dataUpdatedAt, cachedWorks.dataUpdatedAt) < maxAgeMs
+    ) {
+      convergeThreadWorkBinding(
+        client,
+        {
+          source: "reconciled",
+          ...input,
+          threads: cachedThreads.data,
+          catalog: cachedWorks.data,
+        },
+        accountSignal,
+      );
+      return {
+        threads: cachedThreads.data,
+        catalog: cachedWorks.data,
+        workId: cachedThreads.data.find(({ id }) => id === input.threadId)?.workId ?? null,
+      };
+    }
+  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (accountSignal?.aborted) throw new ThreadWorkOutcomeUnconfirmedError(accountSignal.reason);
     const before = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;

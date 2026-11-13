@@ -44,7 +44,10 @@ Activity and durable-projection subscribers without a cursor start at the server
 current head. `useThreadWorkProjections` reads the Work binding on mount and
 on each acknowledgment, because events between the mount read and head sampling are
 omitted from replay. Mount reads also cover joining an already active shared lease,
-which produces no new acknowledgment.
+which produces no new acknowledgment. Those two reads reuse the thread list and Works
+when both were loaded within the list's 30 s window, so a chat switch costs no request,
+and they converge (patch the snapshot, invalidate Work-derived keys) only when the row's
+`workId` differs from the one the snapshot holds. A gap reads fresh.
 
 ## Live CUSTOM events
 
