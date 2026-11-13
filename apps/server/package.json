@@ -23,6 +23,7 @@
     "@meridian/database": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/project-tree": "workspace:*",
+    "@meridian/tree-list-sync": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "@meridian/resource-replica": "workspace:*",
     "@meridian/thread-client": "workspace:*",

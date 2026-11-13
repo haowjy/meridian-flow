@@ -300,7 +300,7 @@ export class DocumentSession {
     ownUserId = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
-    if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
+    if (!room || room.kind === "tree") throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;

@@ -12,6 +12,8 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
+import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
@@ -39,6 +41,9 @@ export class AccountFeatureLifetime {
   readonly availability;
   readonly notices;
   readonly resources;
+  /** The project tree's lists this account has open; step 6's tree screens read them. */
+  readonly treeLists: TreeListRegistry;
+  private readonly stopTreeListDebugHook: () => void;
   readonly opener;
   readonly renameOperations;
   private readonly continuity: IdentityContinuity | null;
@@ -59,6 +64,8 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
+    this.treeLists = new TreeListRegistry(accountId);
+    this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
     this.draftCommands = new DraftCommandOwner(this.registry, {
       resolveGone: async (ref) => {
@@ -231,6 +238,8 @@ export class AccountFeatureLifetime {
     this.renameOperations?.dispose();
     this.continuity?.dispose();
     this.stopRefusedDeletes?.();
+    this.stopTreeListDebugHook();
+    this.treeLists.close();
     this.resources?.beginClose();
     this.draftCommands.close();
     this.runtime.beginClose();

@@ -13,6 +13,12 @@ export const WS_CLOSE = {
   DRAFT_PREFIX_MISSING: { code: 4207, reason: "draft-prefix-missing" },
   /** Terminal: the document was removed. Never reconnect. */
   DOCUMENT_DELETED: { code: 4208, reason: "document-deleted" },
+  /**
+   * A tree list's room refused an update whole, or a client's copy cannot be the server's.
+   * Not terminal and not a plain reconnect: the client throws its copy away, rebuilds from the
+   * server's under a new Yjs client id and appends again what the rebuilt copy lacks.
+   */
+  LIST_REBUILD: { code: 4210, reason: "list-rebuild" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**

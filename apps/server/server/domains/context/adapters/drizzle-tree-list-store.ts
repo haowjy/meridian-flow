@@ -19,7 +19,12 @@ import {
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabJournal } from "../../collab/adapters/drizzle-journal.js";
-import type { CommittedTreeUpdate, TreeList, TreeListStore } from "../ports/tree-list-store.js";
+import {
+  type CommittedTreeUpdate,
+  NO_WRITE_ACCESS,
+  type TreeList,
+  type TreeListStore,
+} from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
 import { claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
 
@@ -169,11 +174,48 @@ export function createDrizzleTreeListStore(deps: {
   }
 
   return {
+    open: async ({ list, accountId }) => {
+      const listId = await listIdOf(db as DrizzleDb, list);
+      if (listId === null) return null;
+      const [owner] = await (db as DrizzleDb).execute<{ id: string }>(
+        list.kind === "project"
+          ? sql`SELECT id::text FROM projects
+              WHERE id = ${list.projectId}::uuid AND user_id = ${accountId}::uuid AND deleted_at IS NULL`
+          : sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid AND id = ${accountId}::uuid`,
+      );
+      if (!owner) return null;
+      const connection = await readConnection(db as DrizzleDb, list, accountId);
+      return { listId, level: connection ? "edit" : "read" };
+    },
+
+    readSince: async ({ listId, afterSeq }) => {
+      const { retired, head } = await journalBounds(db as DrizzleDb, listId);
+      if (afterSeq > 0 && afterSeq >= retired) {
+        const rows = await journal.readUpdates(listId, afterSeq, head);
+        return {
+          seq: head,
+          update:
+            rows.length === 0
+              ? Y.encodeStateAsUpdate(new Y.Doc())
+              : Y.mergeUpdates(rows.map((row) => row.update)),
+        };
+      }
+      const snapshot = await journal.read(listId);
+      const updates = [
+        ...(snapshot.checkpoint ? [snapshot.checkpoint] : []),
+        ...snapshot.updates.map((row) => row.update),
+      ];
+      return {
+        seq: snapshot.persistenceWatermark ?? 0,
+        update: updates.length === 0 ? Y.encodeStateAsUpdate(new Y.Doc()) : Y.mergeUpdates(updates),
+      };
+    },
+
     admit: async ({ list, accountId, update }) => {
       try {
         return await withList(list, async (tx, copy, listId) => {
           const connection: Connection | null = await readConnection(tx, list, accountId);
-          if (!connection) return { ok: false as const, reason: "no write access" };
+          if (!connection) return { ok: false as const, reason: NO_WRITE_ACCESS };
           const before = Y.encodeStateVector(copy.doc);
           const verdict = admit(copy.writer, update, connection);
           if (!verdict.ok) return verdict;

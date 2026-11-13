@@ -160,6 +160,9 @@ importers:
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
+      '@meridian/project-tree':
+        specifier: workspace:*
+        version: link:../../packages/project-tree
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
@@ -169,6 +172,9 @@ importers:
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
+      '@meridian/tree-list-sync':
+        specifier: workspace:*
+        version: link:../../packages/tree-list-sync
       '@meridian/yjs-inspect':
         specifier: workspace:*
         version: link:../../packages/yjs-inspect
@@ -458,6 +464,9 @@ importers:
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
+      '@meridian/tree-list-sync':
+        specifier: workspace:*
+        version: link:../../packages/tree-list-sync
       '@sanity/diff-match-patch':
         specifier: ^3.2.0
         version: 3.2.0
@@ -909,6 +918,31 @@ importers:
       '@meridian/markup':
         specifier: workspace:*
         version: link:../markup
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/tree-list-sync:
+    dependencies:
+      '@hocuspocus/provider':
+        specifier: 4.3.0
+        version: 4.3.0(patch_hash=8e979151de75d6702f1a906e926c7dbd172e0bd3cd8b0051aad0f978b935c738)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
+      '@meridian/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@meridian/project-tree':
+        specifier: workspace:*
+        version: link:../project-tree
+      lib0:
+        specifier: ^0.2.117
+        version: 0.2.117
+      yjs:
+        specifier: 13.6.31
+        version: 13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -12713,7 +12747,7 @@ snapshots:
   unplugin@3.2.0(esbuild@0.28.1)(rolldown@1.1.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      picomatch: 4.0.4
+      picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
       esbuild: 0.28.1
@@ -12723,7 +12757,7 @@ snapshots:
   unplugin@3.2.0(esbuild@0.28.1)(rolldown@1.1.3)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      picomatch: 4.0.4
+      picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
       esbuild: 0.28.1

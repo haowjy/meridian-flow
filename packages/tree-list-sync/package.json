@@ -1,0 +1,25 @@
+{
+  "name": "@meridian/tree-list-sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hocuspocus/provider": "4.3.0",
+    "@meridian/contracts": "workspace:*",
+    "@meridian/project-tree": "workspace:*",
+    "lib0": "^0.2.117",
+    "yjs": "13.6.31"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
