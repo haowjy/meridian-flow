@@ -7,8 +7,8 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { MODEL_REGISTRY } from "../../../lib/gateway/registry.js";
 import { compactionTurnMetadata } from "../../threads/index.js";
-import { MODEL_REGISTRY } from "../gateway/config/registry.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,

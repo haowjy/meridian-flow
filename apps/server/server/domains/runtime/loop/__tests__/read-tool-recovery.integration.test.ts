@@ -4,8 +4,8 @@
  * - Recoverable read and write command separation
  */
 import { modelResult } from "@meridian/agent-edit/integration";
+import type { GenerateResult } from "@meridian-flow/gateway";
 import { describe, expect, it } from "vitest";
-import type { GenerateResult } from "../../gateway/index.js";
 import {
   type CoreToolHandlers,
   createCoreToolRegistrations,

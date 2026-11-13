@@ -3,9 +3,9 @@
  * differs from the merge it was given, and a late peer's edit that vanishes without being noticed.
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";

@@ -6,6 +6,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
+import type { Gateway, GenerateResult, Message } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import {
@@ -15,7 +16,6 @@ import {
   skillBodyMetadata,
 } from "../../../threads/index.js";
 import { createInMemoryRunClaim } from "../../adapters/in-memory/loop-ports.js";
-import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
 import { ImageAssetResolutionError } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {

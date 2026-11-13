@@ -11,9 +11,13 @@ import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
+import type { GenerateResult } from "@meridian-flow/gateway";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import { type ComputedModelCost, computeModelCost } from "../costing/pricing.js";
-import type { GenerateResult } from "../gateway/index.js";
+import {
+  type ComputedModelCost,
+  computeModelCost,
+  type ModelTokenRateSource,
+} from "../costing/pricing.js";
 import {
   assertCostBudget,
   assertTurnBudget,
@@ -23,6 +27,7 @@ import {
 
 export interface TurnAccountingDeps {
   billingUsage: BillingUsagePolicy;
+  rateSource: ModelTokenRateSource;
 }
 
 export interface TurnAccounting {
@@ -95,6 +100,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
         model: response.model,
         usage: response.usage,
         meteringStatus: response.meteringStatus,
+        rateSource: deps.rateSource,
       });
 
       if (BigInt(computedCost.millicredits) > 0n) {

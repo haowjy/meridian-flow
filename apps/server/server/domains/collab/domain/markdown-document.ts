@@ -270,9 +270,6 @@ export function createMarkdownDocumentEngine(
     const nodeSpans = xmlNodeSpans(state);
     const clone = createCollabYDoc({ gc: false });
     Y.applyUpdate(clone, state);
-    // y-prosemirror has identity-sensitive repairs. Restore the source client
-    // after applying state so the clone projects exactly as the source would.
-    clone.clientID = doc.clientID;
     const repairUpdates: Uint8Array[] = [];
     const observeRepair = (update: Uint8Array) => repairUpdates.push(update);
     clone.on("update", observeRepair);

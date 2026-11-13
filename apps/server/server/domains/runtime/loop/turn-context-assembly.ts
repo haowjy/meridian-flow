@@ -16,6 +16,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -29,7 +30,6 @@ import type {
   PromptBakeRepository,
   ThreadImageInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {

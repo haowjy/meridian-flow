@@ -4,15 +4,15 @@
  * - Warm and rolling summary strategy (kb/wiki/architecture/compaction-memory.md#two-summary-paths)
  */
 import type { Block, Turn } from "@meridian/contracts/threads";
-import { describe, expect, it, vi } from "vitest";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import type {
   Gateway,
   GenerateRequest,
   GenerateResult,
   ModelInfo,
   StreamEvent,
-} from "../gateway/index.js";
+} from "@meridian-flow/gateway";
+import { describe, expect, it, vi } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";

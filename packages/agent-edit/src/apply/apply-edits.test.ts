@@ -11,9 +11,9 @@ import { weightedOrderedMatches } from "../ordered-matching.js";
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";

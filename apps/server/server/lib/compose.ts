@@ -8,6 +8,8 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import type { Gateway } from "@meridian-flow/gateway";
+import type { MockScriptQueue } from "@meridian-flow/gateway/mock";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -164,11 +166,11 @@ import {
   createAskService,
   refusingPermissionExecutor,
 } from "../domains/runtime/asks/ask-service.js";
+import type { ModelTokenRateSource } from "../domains/runtime/costing/pricing.js";
 import {
   createDetachedWorkTracker,
   type DetachedWorkTracker,
 } from "../domains/runtime/detached-work.js";
-import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
   createHandoffBriefs,
@@ -187,14 +189,12 @@ import {
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
   createDrizzleThreadLock,
-  createGatewayFromEnv,
   createInMemoryInbox,
   createInMemoryRunClaim,
   createInMemoryRunStarter,
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
-  createInstrumentedGateway,
   createLineageCancellation,
   createOrchestrator,
   createOrphanReportRepair,
@@ -210,7 +210,6 @@ import {
   createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
-  type Gateway,
   InvalidAdmissionError,
   type ObservationFrontiers,
   type RunClaim,
@@ -280,6 +279,9 @@ import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
+import { createGatewayFromEnv } from "./gateway/create-from-env.js";
+import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
+import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
 import {
   type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
@@ -424,6 +426,7 @@ export type ProductionAppPorts = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   billing: BillingService;
   billingUsage: BillingUsagePolicy;
+  rateSource: ModelTokenRateSource;
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   accountSettings: AccountSettingsRepository;
@@ -756,6 +759,7 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     billing: billingDomain.service,
     billingUsage: billingDomain.usagePolicy,
+    rateSource: registryTokenRateSource(),
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     accountSettings,
@@ -1171,6 +1175,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContext,
     childRunCoordinator,
     billingUsage: ports.billingUsage,
+    rateSource: ports.rateSource,
     eventSink: ports.eventSink,
     wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
@@ -1192,6 +1197,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shutdown,
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
+    rateSource: ports.rateSource,
     toolRegistry,
     generate: ({ destination, seed, signal }) =>
       generateHandoffBrief(orchestratorDeps, destination, seed, signal),

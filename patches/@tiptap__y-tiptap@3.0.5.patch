@@ -20,7 +20,7 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62548ab81b 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c65754a9c 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
 @@ -753,35 +753,14 @@ class ProsemirrorBinding {
@@ -62,7 +62,286 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y__namespace.UndoManager });
-@@ -1797,6 +1776,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -900,20 +879,7 @@ const createNodeFromYElement = (
+         children.push(n);
+       }
+     } else {
+-      // If the next ytext exists and was created by us, move the content to the current ytext.
+-      // This is a fix for #160 -- duplication of characters when two Y.Text exist next to each
+-      // other.
+-      const nextytext = /** @type {Y.ContentType} */ (type._item.right?.content)?.type;
+-      if (nextytext instanceof Y__namespace.Text && !nextytext._item.deleted && nextytext._item.id.client === nextytext.doc.clientID) {
+-        type.applyDelta([
+-          { retain: type.length },
+-          ...nextytext.toDelta()
+-        ]);
+-        nextytext.doc.transact(tr => {
+-          nextytext._item.delete(tr);
+-        });
+-      }
+-      // now create the prosemirror text nodes
++      // Adjacent Y.XmlText children are one run of text (see groupYChildren), so there is nothing to merge here.
+       const ns = createTextNodesFromYText(
+         type,
+         schema,
+@@ -1104,11 +1070,46 @@ const normalizePNodeContent = (pnode) => {
+ };
+ 
+ /**
+- * @param {Y.XmlText} ytext
++ * Meridian patch: peers typing into an empty block at once leave several adjacent Y.XmlText
++ * children. They read as one run of text, so every comparison and edit treats them as one.
++ * @param {Array<Y.XmlElement|Y.XmlText|Y.XmlHook>} yChildren
++ * @return {Array<Y.XmlElement|Y.XmlHook|Array<Y.XmlText>>}
++ */
++const groupYChildren = (yChildren) => {
++  const groups = [];
++  for (const child of yChildren) {
++    const last = groups[groups.length - 1];
++    if (!(child instanceof Y__namespace.XmlText)) {
++      groups.push(child);
++    } else if (last instanceof Array) {
++      last.push(child);
++    } else {
++      groups.push([child]);
++    }
++  }
++  return groups
++};
++
++/** The mapping key of a group: its first text. */
++const yGroupKey = (group) => group instanceof Array ? group[0] : group;
++
++/** How many fragment children a group covers. */
++const yGroupLength = (group) => group instanceof Array ? group.length : 1;
++
++/**
++ * @param {Array<Y.XmlText>} ytexts
+  * @param {Array<any>} ptexts
+  */
+-const equalYTextPText = (ytext, ptexts) => {
+-  const delta = ytext.toDelta();
++const equalYTextPText = (ytexts, ptexts) => {
++  const delta = [];
++  for (const d of ytexts.flatMap((ytext) => ytext.toDelta())) {
++    const last = delta[delta.length - 1];
++    if (last !== undefined && equalAttrs(last.attributes || {}, d.attributes || {}) && equalAttrs(d.attributes || {}, last.attributes || {})) {
++      last.insert += d.insert;
++    } else {
++      delta.push({ ...d });
++    }
++  }
+   return delta.length === ptexts.length &&
+     delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
+       d.insert === /** @type {any} */ (ptexts[i]).text &&
+@@ -1131,7 +1132,7 @@ const equalYTextPText = (ytext, ptexts) => {
+ };
+ 
+ /**
+- * @param {Y.XmlElement|Y.XmlText|Y.XmlHook} ytype
++ * @param {Y.XmlElement|Array<Y.XmlText>|Y.XmlHook} ytype
+  * @param {any|Array<any>} pnode
+  */
+ const equalYTypePNode = (ytype, pnode) => {
+@@ -1140,13 +1141,14 @@ const equalYTypePNode = (ytype, pnode) => {
+     matchNodeName(ytype, pnode)
+   ) {
+     const normalizedContent = normalizePNodeContent(pnode);
+-    return ytype._length === normalizedContent.length &&
++    const ygroups = groupYChildren(ytype.toArray());
++    return ygroups.length === normalizedContent.length &&
+       equalAttrs(ytype.getAttributes(), pnode.attrs) &&
+-      ytype.toArray().every((ychild, i) =>
++      ygroups.every((ychild, i) =>
+         equalYTypePNode(ychild, normalizedContent[i])
+       )
+   }
+-  return ytype instanceof Y__namespace.XmlText && pnode instanceof Array &&
++  return ytype instanceof Array && pnode instanceof Array &&
+     equalYTextPText(ytype, pnode)
+ };
+ 
+@@ -1168,7 +1170,7 @@ const mappedIdentity = (mapped, pcontent) =>
+  * @return {{ foundMappedChild: boolean, equalityFactor: number }}
+  */
+ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+-  const yChildren = ytype.toArray();
++  const yChildren = groupYChildren(ytype.toArray());
+   const pChildren = normalizePNodeContent(pnode);
+   const pChildCnt = pChildren.length;
+   const yChildCnt = yChildren.length;
+@@ -1179,7 +1181,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+   for (; left < minCnt; left++) {
+     const leftY = yChildren[left];
+     const leftP = pChildren[left];
+-    if (mappedIdentity(meta.mapping.get(leftY), leftP)) {
++    if (mappedIdentity(meta.mapping.get(yGroupKey(leftY)), leftP)) {
+       foundMappedChild = true; // definite (good) match!
+     } else if (!equalYTypePNode(leftY, leftP)) {
+       break
+@@ -1188,7 +1190,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+   for (; left + right < minCnt; right++) {
+     const rightY = yChildren[yChildCnt - right - 1];
+     const rightP = pChildren[pChildCnt - right - 1];
+-    if (mappedIdentity(meta.mapping.get(rightY), rightP)) {
++    if (mappedIdentity(meta.mapping.get(yGroupKey(rightY)), rightP)) {
+       foundMappedChild = true;
+     } else if (!equalYTypePNode(rightY, rightP)) {
+       break
+@@ -1233,22 +1235,50 @@ const ytextTrans = (ytext) => {
+  * @param {Array<any>} ptexts
+  * @param {BindingMetadata} meta
+  */
+-const updateYText = (ytext, ptexts, meta) => {
+-  meta.mapping.set(ytext, ptexts);
+-  const { nAttrs, str } = ytextTrans(ytext);
++const updateYText = (ytexts, ptexts, meta) => {
++  meta.mapping.set(ytexts[0], ptexts);
++  const trans = ytexts.map(ytextTrans);
+   const content = ptexts.map((p) => ({
+     insert: /** @type {any} */ (p).text,
+-    attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
++    attributes: p.marks
+   }));
++  const spans = [];
++  let spanStart = 0;
++  ytexts.forEach((ytext, i) => {
++    spans.push({ ytext, start: spanStart, end: spanStart + trans[i].str.length });
++    spanStart += trans[i].str.length;
++  });
+   const { insert, remove, index } = diff.simpleDiff(
+-    str,
++    trans.map((t) => t.str).join(''),
+     content.map((c) => c.insert).join('')
+   );
+-  ytext.delete(index, remove);
+-  ytext.insert(index, insert);
+-  ytext.applyDelta(
+-    content.map((c) => ({ retain: c.insert.length, attributes: c.attributes }))
+-  );
++  // Each edit goes to the text that owns its offset, so a peer's concurrent insert into
++  // any of them survives. An insert at a boundary goes left. No text is deleted, only emptied.
++  for (const { ytext, start, end } of spans) {
++    const from = math__namespace.max(index, start);
++    const to = math__namespace.min(index + remove, end);
++    if (to > from) ytext.delete(from - start, to - from);
++  }
++  if (insert.length > 0) {
++    const owner = spans.find((span) => span.end >= index);
++    owner.ytext.insert(index - owner.start, insert);
++  }
++  let c = 0;
++  let cOffset = 0;
++  ytexts.forEach((ytext, i) => {
++    const delta = [];
++    for (let need = ytext.length; need > 0;) {
++      const take = math__namespace.min(need, content[c].insert.length - cOffset);
++      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
++      need -= take;
++      cOffset += take;
++      if (cOffset === content[c].insert.length) {
++        c++;
++        cOffset = 0;
++      }
++    }
++    if (delta.length > 0) ytext.applyDelta(delta);
++  });
+ };
+ 
+ const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
+@@ -1334,19 +1364,22 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+   // update children
+   const pChildren = normalizePNodeContent(pNode);
+   const pChildCnt = pChildren.length;
+-  const yChildren = yDomFragment.toArray();
++  const yChildren = groupYChildren(yDomFragment.toArray());
+   const yChildCnt = yChildren.length;
+   const minCnt = math__namespace.min(pChildCnt, yChildCnt);
+   let left = 0;
+   let right = 0;
++  // Groups to fragment indices: the left side may replace a group of n texts with one node.
++  let leftShift = 0;
++  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + leftShift;
+   // find number of matching elements from left
+   for (; left < minCnt; left++) {
+     const leftY = yChildren[left];
+     const leftP = pChildren[left];
+-    if (!mappedIdentity(meta.mapping.get(leftY), leftP)) {
++    if (!mappedIdentity(meta.mapping.get(yGroupKey(leftY)), leftP)) {
+       if (equalYTypePNode(leftY, leftP)) {
+         // update mapping
+-        meta.mapping.set(leftY, leftP);
++        meta.mapping.set(yGroupKey(leftY), leftP);
+       } else {
+         break
+       }
+@@ -1356,10 +1389,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+   for (; right + left + 1 < minCnt; right++) {
+     const rightY = yChildren[yChildCnt - right - 1];
+     const rightP = pChildren[pChildCnt - right - 1];
+-    if (!mappedIdentity(meta.mapping.get(rightY), rightP)) {
++    if (!mappedIdentity(meta.mapping.get(yGroupKey(rightY)), rightP)) {
+       if (equalYTypePNode(rightY, rightP)) {
+         // update mapping
+-        meta.mapping.set(rightY, rightP);
++        meta.mapping.set(yGroupKey(rightY), rightP);
+       } else {
+         break
+       }
+@@ -1372,7 +1405,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+       const leftP = pChildren[left];
+       const rightY = yChildren[yChildCnt - right - 1];
+       const rightP = pChildren[pChildCnt - right - 1];
+-      if (leftY instanceof Y__namespace.XmlText && leftP instanceof Array) {
++      if (leftY instanceof Array && leftP instanceof Array) {
+         if (!equalYTextPText(leftY, leftP)) {
+           updateYText(leftY, leftP, meta);
+         }
+@@ -1427,33 +1460,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+           );
+           right += 1;
+         } else {
+-          meta.mapping.delete(yDomFragment.get(left));
+-          yDomFragment.delete(left, 1);
+-          yDomFragment.insert(left, [
++          meta.mapping.delete(yGroupKey(leftY));
++          yDomFragment.delete(rawIndex(left), yGroupLength(leftY));
++          yDomFragment.insert(rawIndex(left), [
+             createTypeFromTextOrElementNode(leftP, meta)
+           ]);
++          leftShift += 1 - yGroupLength(leftY);
+           left += 1;
+         }
+       }
+     }
+     const yDelLen = yChildCnt - left - right;
+     if (
+-      yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof Y__namespace.XmlText
++      yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof Array
+     ) {
+-      meta.mapping.delete(yChildren[0]);
++      meta.mapping.delete(yChildren[0][0]);
+       // Edge case handling https://github.com/yjs/y-prosemirror/issues/108
+       // Only delete the content of the Y.Text to retain remote changes on the same Y.Text object
+-      yChildren[0].delete(0, yChildren[0].length);
++      yChildren[0].forEach((ytext) => ytext.delete(0, ytext.length));
+     } else if (yDelLen > 0) {
+-      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
+-      yDomFragment.delete(left, yDelLen);
++      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
++      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - rawIndex(left));
+     }
+     if (left + right < pChildCnt) {
+       const ins = [];
+       for (let i = left; i < pChildCnt - right; i++) {
+         ins.push(createTypeFromTextOrElementNode(pChildren[i], meta));
+       }
+-      yDomFragment.insert(left, ins);
++      yDomFragment.insert(rawIndex(left), ins);
+     }
+   }, ySyncPluginKey);
+ };
+@@ -1797,6 +1831,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -106,7 +385,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2367,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2422,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -156,7 +435,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62
        }
      }
    }
-@@ -2388,6 +2416,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2471,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -165,7 +444,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..e80037e5de66a27531a1e336c70c982a5aa269a4 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a021a7391f 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
 @@ -719,35 +719,14 @@ class ProsemirrorBinding {
@@ -207,7 +486,286 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..e80037e5de66a27531a1e336c70c982a
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager });
-@@ -1763,6 +1742,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -866,20 +845,7 @@ const createNodeFromYElement = (
+         children.push(n);
+       }
+     } else {
+-      // If the next ytext exists and was created by us, move the content to the current ytext.
+-      // This is a fix for #160 -- duplication of characters when two Y.Text exist next to each
+-      // other.
+-      const nextytext = /** @type {Y.ContentType} */ (type._item.right?.content)?.type;
+-      if (nextytext instanceof Y.Text && !nextytext._item.deleted && nextytext._item.id.client === nextytext.doc.clientID) {
+-        type.applyDelta([
+-          { retain: type.length },
+-          ...nextytext.toDelta()
+-        ]);
+-        nextytext.doc.transact(tr => {
+-          nextytext._item.delete(tr);
+-        });
+-      }
+-      // now create the prosemirror text nodes
++      // Adjacent Y.XmlText children are one run of text (see groupYChildren), so there is nothing to merge here.
+       const ns = createTextNodesFromYText(
+         type,
+         schema,
+@@ -1070,11 +1036,46 @@ const normalizePNodeContent = (pnode) => {
+ };
+ 
+ /**
+- * @param {Y.XmlText} ytext
++ * Meridian patch: peers typing into an empty block at once leave several adjacent Y.XmlText
++ * children. They read as one run of text, so every comparison and edit treats them as one.
++ * @param {Array<Y.XmlElement|Y.XmlText|Y.XmlHook>} yChildren
++ * @return {Array<Y.XmlElement|Y.XmlHook|Array<Y.XmlText>>}
++ */
++const groupYChildren = (yChildren) => {
++  const groups = [];
++  for (const child of yChildren) {
++    const last = groups[groups.length - 1];
++    if (!(child instanceof Y.XmlText)) {
++      groups.push(child);
++    } else if (last instanceof Array) {
++      last.push(child);
++    } else {
++      groups.push([child]);
++    }
++  }
++  return groups
++};
++
++/** The mapping key of a group: its first text. */
++const yGroupKey = (group) => group instanceof Array ? group[0] : group;
++
++/** How many fragment children a group covers. */
++const yGroupLength = (group) => group instanceof Array ? group.length : 1;
++
++/**
++ * @param {Array<Y.XmlText>} ytexts
+  * @param {Array<any>} ptexts
+  */
+-const equalYTextPText = (ytext, ptexts) => {
+-  const delta = ytext.toDelta();
++const equalYTextPText = (ytexts, ptexts) => {
++  const delta = [];
++  for (const d of ytexts.flatMap((ytext) => ytext.toDelta())) {
++    const last = delta[delta.length - 1];
++    if (last !== undefined && equalAttrs(last.attributes || {}, d.attributes || {}) && equalAttrs(d.attributes || {}, last.attributes || {})) {
++      last.insert += d.insert;
++    } else {
++      delta.push({ ...d });
++    }
++  }
+   return delta.length === ptexts.length &&
+     delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
+       d.insert === /** @type {any} */ (ptexts[i]).text &&
+@@ -1097,7 +1098,7 @@ const equalYTextPText = (ytext, ptexts) => {
+ };
+ 
+ /**
+- * @param {Y.XmlElement|Y.XmlText|Y.XmlHook} ytype
++ * @param {Y.XmlElement|Array<Y.XmlText>|Y.XmlHook} ytype
+  * @param {any|Array<any>} pnode
+  */
+ const equalYTypePNode = (ytype, pnode) => {
+@@ -1106,13 +1107,14 @@ const equalYTypePNode = (ytype, pnode) => {
+     matchNodeName(ytype, pnode)
+   ) {
+     const normalizedContent = normalizePNodeContent(pnode);
+-    return ytype._length === normalizedContent.length &&
++    const ygroups = groupYChildren(ytype.toArray());
++    return ygroups.length === normalizedContent.length &&
+       equalAttrs(ytype.getAttributes(), pnode.attrs) &&
+-      ytype.toArray().every((ychild, i) =>
++      ygroups.every((ychild, i) =>
+         equalYTypePNode(ychild, normalizedContent[i])
+       )
+   }
+-  return ytype instanceof Y.XmlText && pnode instanceof Array &&
++  return ytype instanceof Array && pnode instanceof Array &&
+     equalYTextPText(ytype, pnode)
+ };
+ 
+@@ -1134,7 +1136,7 @@ const mappedIdentity = (mapped, pcontent) =>
+  * @return {{ foundMappedChild: boolean, equalityFactor: number }}
+  */
+ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+-  const yChildren = ytype.toArray();
++  const yChildren = groupYChildren(ytype.toArray());
+   const pChildren = normalizePNodeContent(pnode);
+   const pChildCnt = pChildren.length;
+   const yChildCnt = yChildren.length;
+@@ -1145,7 +1147,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+   for (; left < minCnt; left++) {
+     const leftY = yChildren[left];
+     const leftP = pChildren[left];
+-    if (mappedIdentity(meta.mapping.get(leftY), leftP)) {
++    if (mappedIdentity(meta.mapping.get(yGroupKey(leftY)), leftP)) {
+       foundMappedChild = true; // definite (good) match!
+     } else if (!equalYTypePNode(leftY, leftP)) {
+       break
+@@ -1154,7 +1156,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+   for (; left + right < minCnt; right++) {
+     const rightY = yChildren[yChildCnt - right - 1];
+     const rightP = pChildren[pChildCnt - right - 1];
+-    if (mappedIdentity(meta.mapping.get(rightY), rightP)) {
++    if (mappedIdentity(meta.mapping.get(yGroupKey(rightY)), rightP)) {
+       foundMappedChild = true;
+     } else if (!equalYTypePNode(rightY, rightP)) {
+       break
+@@ -1199,22 +1201,50 @@ const ytextTrans = (ytext) => {
+  * @param {Array<any>} ptexts
+  * @param {BindingMetadata} meta
+  */
+-const updateYText = (ytext, ptexts, meta) => {
+-  meta.mapping.set(ytext, ptexts);
+-  const { nAttrs, str } = ytextTrans(ytext);
++const updateYText = (ytexts, ptexts, meta) => {
++  meta.mapping.set(ytexts[0], ptexts);
++  const trans = ytexts.map(ytextTrans);
+   const content = ptexts.map((p) => ({
+     insert: /** @type {any} */ (p).text,
+-    attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
++    attributes: p.marks
+   }));
++  const spans = [];
++  let spanStart = 0;
++  ytexts.forEach((ytext, i) => {
++    spans.push({ ytext, start: spanStart, end: spanStart + trans[i].str.length });
++    spanStart += trans[i].str.length;
++  });
+   const { insert, remove, index } = simpleDiff(
+-    str,
++    trans.map((t) => t.str).join(''),
+     content.map((c) => c.insert).join('')
+   );
+-  ytext.delete(index, remove);
+-  ytext.insert(index, insert);
+-  ytext.applyDelta(
+-    content.map((c) => ({ retain: c.insert.length, attributes: c.attributes }))
+-  );
++  // Each edit goes to the text that owns its offset, so a peer's concurrent insert into
++  // any of them survives. An insert at a boundary goes left. No text is deleted, only emptied.
++  for (const { ytext, start, end } of spans) {
++    const from = math.max(index, start);
++    const to = math.min(index + remove, end);
++    if (to > from) ytext.delete(from - start, to - from);
++  }
++  if (insert.length > 0) {
++    const owner = spans.find((span) => span.end >= index);
++    owner.ytext.insert(index - owner.start, insert);
++  }
++  let c = 0;
++  let cOffset = 0;
++  ytexts.forEach((ytext, i) => {
++    const delta = [];
++    for (let need = ytext.length; need > 0;) {
++      const take = math.min(need, content[c].insert.length - cOffset);
++      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
++      need -= take;
++      cOffset += take;
++      if (cOffset === content[c].insert.length) {
++        c++;
++        cOffset = 0;
++      }
++    }
++    if (delta.length > 0) ytext.applyDelta(delta);
++  });
+ };
+ 
+ const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
+@@ -1300,19 +1330,22 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+   // update children
+   const pChildren = normalizePNodeContent(pNode);
+   const pChildCnt = pChildren.length;
+-  const yChildren = yDomFragment.toArray();
++  const yChildren = groupYChildren(yDomFragment.toArray());
+   const yChildCnt = yChildren.length;
+   const minCnt = math.min(pChildCnt, yChildCnt);
+   let left = 0;
+   let right = 0;
++  // Groups to fragment indices: the left side may replace a group of n texts with one node.
++  let leftShift = 0;
++  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + leftShift;
+   // find number of matching elements from left
+   for (; left < minCnt; left++) {
+     const leftY = yChildren[left];
+     const leftP = pChildren[left];
+-    if (!mappedIdentity(meta.mapping.get(leftY), leftP)) {
++    if (!mappedIdentity(meta.mapping.get(yGroupKey(leftY)), leftP)) {
+       if (equalYTypePNode(leftY, leftP)) {
+         // update mapping
+-        meta.mapping.set(leftY, leftP);
++        meta.mapping.set(yGroupKey(leftY), leftP);
+       } else {
+         break
+       }
+@@ -1322,10 +1355,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+   for (; right + left + 1 < minCnt; right++) {
+     const rightY = yChildren[yChildCnt - right - 1];
+     const rightP = pChildren[pChildCnt - right - 1];
+-    if (!mappedIdentity(meta.mapping.get(rightY), rightP)) {
++    if (!mappedIdentity(meta.mapping.get(yGroupKey(rightY)), rightP)) {
+       if (equalYTypePNode(rightY, rightP)) {
+         // update mapping
+-        meta.mapping.set(rightY, rightP);
++        meta.mapping.set(yGroupKey(rightY), rightP);
+       } else {
+         break
+       }
+@@ -1338,7 +1371,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+       const leftP = pChildren[left];
+       const rightY = yChildren[yChildCnt - right - 1];
+       const rightP = pChildren[pChildCnt - right - 1];
+-      if (leftY instanceof Y.XmlText && leftP instanceof Array) {
++      if (leftY instanceof Array && leftP instanceof Array) {
+         if (!equalYTextPText(leftY, leftP)) {
+           updateYText(leftY, leftP, meta);
+         }
+@@ -1393,33 +1426,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+           );
+           right += 1;
+         } else {
+-          meta.mapping.delete(yDomFragment.get(left));
+-          yDomFragment.delete(left, 1);
+-          yDomFragment.insert(left, [
++          meta.mapping.delete(yGroupKey(leftY));
++          yDomFragment.delete(rawIndex(left), yGroupLength(leftY));
++          yDomFragment.insert(rawIndex(left), [
+             createTypeFromTextOrElementNode(leftP, meta)
+           ]);
++          leftShift += 1 - yGroupLength(leftY);
+           left += 1;
+         }
+       }
+     }
+     const yDelLen = yChildCnt - left - right;
+     if (
+-      yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof Y.XmlText
++      yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof Array
+     ) {
+-      meta.mapping.delete(yChildren[0]);
++      meta.mapping.delete(yChildren[0][0]);
+       // Edge case handling https://github.com/yjs/y-prosemirror/issues/108
+       // Only delete the content of the Y.Text to retain remote changes on the same Y.Text object
+-      yChildren[0].delete(0, yChildren[0].length);
++      yChildren[0].forEach((ytext) => ytext.delete(0, ytext.length));
+     } else if (yDelLen > 0) {
+-      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
+-      yDomFragment.delete(left, yDelLen);
++      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
++      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - rawIndex(left));
+     }
+     if (left + right < pChildCnt) {
+       const ins = [];
+       for (let i = left; i < pChildCnt - right; i++) {
+         ins.push(createTypeFromTextOrElementNode(pChildren[i], meta));
+       }
+-      yDomFragment.insert(left, ins);
++      yDomFragment.insert(rawIndex(left), ins);
+     }
+   }, ySyncPluginKey);
+ };
+@@ -1763,6 +1797,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -251,7 +809,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..e80037e5de66a27531a1e336c70c982a
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2333,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2388,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;

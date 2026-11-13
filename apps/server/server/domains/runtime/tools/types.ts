@@ -19,8 +19,8 @@ import type {
   SpawnResult,
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import type { Tool } from "@meridian-flow/gateway";
 import type { z } from "zod";
-import type { Tool } from "../gateway/index.js";
 import type { FrontierLookups } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { DocumentTextPolicy } from "./document-text.js";

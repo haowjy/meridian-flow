@@ -5,9 +5,9 @@
  * - No-op writes retain the current envelope and receipt shape
  */
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { expectOutcome, outcomeText } from "./test-support/assertions.js";

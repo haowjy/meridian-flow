@@ -1,0 +1,214 @@
+/**
+ * Shared provider SDK setup and error mapping: the client options every adapter uses, one
+ * HTTP-status retry policy, the provider's retry headers, and the provider's own status and
+ * message as debug evidence.
+ *
+ * Retry policy: network errors, status-less SDK failures, 408, 429 and 5xx retry. Every
+ * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
+ * model, 413/422 rejected payload); sending it again gets the same answer.
+ */
+import type { ErrorCode, ProviderConfig } from "../domain/index.js";
+import type { ProviderErrorResponse } from "../shapes/index.js";
+
+type MappedProviderError = {
+  code: ErrorCode;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+  providerError?: ProviderErrorResponse;
+};
+
+/** Both matched against the lowercased 400 message. */
+export type ProviderErrorPatterns = {
+  contextOverflow: RegExp;
+  contentFiltered: RegExp;
+};
+
+/** Every provider's context-window and content-filter wording; an adapter overrides only what differs. */
+const DEFAULT_PATTERNS: ProviderErrorPatterns = {
+  contextOverflow:
+    /context[_ ](?:length|window)|exceeds? context limit|prompt is too long|maximum context length|too many (?:input )?tokens|input.*exceeds.*token/,
+  contentFiltered: /content[\s\S]*filter|filter[\s\S]*content/,
+};
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function header(headers: unknown, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
+  const values = record(headers);
+  if (!values) return undefined;
+  const key = Object.keys(values).find((candidate) => candidate.toLowerCase() === name);
+  const value = key ? values[key] : undefined;
+  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+}
+
+function retryAfterMs(headers: unknown, now: number): number | undefined {
+  const milliseconds = header(headers, "retry-after-ms");
+  if (milliseconds !== undefined) {
+    const value = Number(milliseconds);
+    if (Number.isFinite(value) && value >= 0) return Math.round(value);
+  }
+
+  const retryAfter = header(headers, "retry-after");
+  if (retryAfter === undefined) return undefined;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? Math.round(seconds * 1_000) : undefined;
+  const date = Date.parse(retryAfter);
+  return Number.isFinite(date) ? Math.max(0, date - now) : undefined;
+}
+
+function responseHeaders(err: unknown): unknown {
+  const errorRecord = record(err);
+  return errorRecord?.headers ?? record(errorRecord?.response)?.headers;
+}
+
+function httpStatus(err: unknown): number | undefined {
+  const status = record(err)?.status;
+  return typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+    ? status
+    : undefined;
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  const message = record(err)?.message;
+  return message !== undefined ? String(message) : String(err);
+}
+
+// SDKs parse failure bodies and keep only part (OpenAI keeps `body.error`). The
+// SDK error carries the same Headers object as the Response, so it keys the text.
+const failureBodies = new WeakMap<Headers, string>();
+
+/**
+ * `fetch` for provider SDK clients: records each failed response's exact body text, so
+ * the provider's message survives where the SDK's parse drops it (OpenAI's reads a body
+ * without `error` as "402 status code (no body)").
+ */
+export const providerFetch: typeof fetch = async (input, init) => {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    try {
+      failureBodies.set(response.headers, await response.clone().text());
+    } catch {
+      // An unreadable body leaves the SDK's parsed view as the evidence.
+    }
+  }
+  return response;
+};
+
+/**
+ * Constructor options every adapter's SDK client shares. `maxRetries: 0` because the
+ * gateway owns retries (`streamWithRetry`); SDK retries would multiply them.
+ *
+ * Both SDKs fill every option left `undefined` from process environment variables
+ * (`*_BASE_URL`, `*_AUTH_TOKEN`, `*_ORG_ID`, `*_LOG`, ...), which would redirect requests or add
+ * credentials the config never named. So each option is passed explicitly: the adapter
+ * adds the SDK-specific ones with `null` (see `ANTHROPIC_ENV_OPTOUT`, `OPENAI_ENV_OPTOUT`).
+ * The SDKs' `*_CUSTOM_HEADERS` has no opt-out option and still applies.
+ */
+export function providerClientOptions(config: ProviderConfig, defaultBaseUrl: string) {
+  return {
+    // Self-hosted and mock endpoints need no key, but the SDKs require one.
+    apiKey: config.auth?.apiKey || "not-needed",
+    baseURL: config.baseUrl ?? defaultBaseUrl,
+    defaultHeaders: config.auth?.headers,
+    logLevel: "warn" as const,
+    maxRetries: 0,
+    fetch: providerFetch,
+  };
+}
+
+/** Anthropic client options that default from the environment, set to "none". */
+export const ANTHROPIC_ENV_OPTOUT = { authToken: null, webhookKey: null };
+
+/** OpenAI client options that default from the environment, set to "none". */
+export const OPENAI_ENV_OPTOUT = {
+  adminAPIKey: null,
+  organization: null,
+  project: null,
+  webhookSecret: null,
+};
+
+function exactFailureBody(err: unknown): string | undefined {
+  const headers = record(err)?.headers;
+  return headers instanceof Headers ? failureBodies.get(headers) : undefined;
+}
+
+function bodyMessage(body: unknown): string | undefined {
+  const fields = record(body);
+  if (typeof fields?.message === "string") return fields.message;
+  const nested = record(fields?.error)?.message;
+  return typeof nested === "string" ? nested : undefined;
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The provider's status and message, read from the exact body when the client used
+ * `providerFetch`, otherwise from the SDK's parsed view (OpenAI-shaped SDKs keep only
+ * the body's `error`). Absent when the SDK never received a response.
+ */
+function providerErrorOf(err: unknown): ProviderErrorResponse | undefined {
+  const status = httpStatus(err);
+  const exact = exactFailureBody(err);
+  const parsed = exact === undefined ? record(err)?.error : parseJson(exact);
+  if (status === undefined && parsed === undefined && exact === undefined) return undefined;
+  const message = bodyMessage(parsed) ?? (exact?.trim() || errorMessage(err));
+  return { status: status ?? null, message };
+}
+
+export function mapProviderHttpError(
+  err: unknown,
+  overrides: Partial<ProviderErrorPatterns> = {},
+): MappedProviderError {
+  const patterns = { ...DEFAULT_PATTERNS, ...overrides };
+  const status = httpStatus(err);
+  const message = errorMessage(err);
+  const mapped: { code: ErrorCode; message: string; retryable: boolean } = (() => {
+    if (status === 401 || status === 403) {
+      return { code: "auth_error", message, retryable: false };
+    }
+    if (status === 429) return { code: "rate_limited", message, retryable: true };
+    if (status === 408) return { code: "network_error", message, retryable: true };
+    if (status === 400) {
+      const lower = message.toLowerCase();
+      if (patterns.contextOverflow.test(lower)) {
+        return { code: "context_overflow", message, retryable: false };
+      }
+      if (patterns.contentFiltered.test(lower)) {
+        return { code: "content_filtered", message, retryable: false };
+      }
+      return { code: "invalid_request", message, retryable: false };
+    }
+    if (status !== undefined && status >= 500) {
+      return { code: "server_error", message, retryable: true };
+    }
+    if (status !== undefined && status >= 400) {
+      return { code: "provider_error", message, retryable: false };
+    }
+    if (err instanceof TypeError || message.includes("fetch")) {
+      return { code: "network_error", message, retryable: true };
+    }
+    return { code: "provider_error", message, retryable: true };
+  })();
+  const providerError = providerErrorOf(err);
+  const headers = responseHeaders(err);
+  const retryAfter = retryAfterMs(headers, Date.now());
+  const shouldRetry = header(headers, "x-should-retry")?.trim().toLowerCase();
+  return {
+    ...mapped,
+    ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
+    ...(shouldRetry === "false" ? { retryable: false } : {}),
+    ...(providerError ? { providerError } : {}),
+  };
+}

@@ -5,9 +5,9 @@
  */
 
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { ModelInfo, Tool } from "@meridian-flow/gateway";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import type { ModelInfo, Tool } from "../gateway/index.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "../loop/__tests__/scripted-summarizer.js";
 import { createInertGateway } from "../loop/__tests__/test-gateway.js";

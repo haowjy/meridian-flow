@@ -1,6 +1,7 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
+import type { Tool } from "@meridian-flow/gateway";
 import {
   activeCompaction,
   encodeImageInclusionMetadata,
@@ -8,7 +9,6 @@ import {
   isCompactionNotesTurn,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import type { Tool } from "../gateway/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,

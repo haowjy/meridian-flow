@@ -1,6 +1,6 @@
 import type { ParsedContent } from "@meridian/markup";
+import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
-import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
@@ -294,9 +294,12 @@ function slotsOf(leaf: Y.XmlElement): Slot[] {
   return slots;
 }
 
+/** An empty text is zero units wide and shares its unit with the atom after it, so only an atom counts. */
 function atomAt(leaf: Y.XmlElement, unit: number): Y.XmlElement | undefined {
-  const slot = slotsOf(leaf).find((candidate) => candidate.start === unit);
-  return slot?.child instanceof Y.XmlElement ? slot.child : undefined;
+  const slot = slotsOf(leaf).find(
+    (candidate) => candidate.start === unit && candidate.child instanceof Y.XmlElement,
+  );
+  return slot?.child as Y.XmlElement | undefined;
 }
 
 /** Why `op` cannot be applied to `node`, if it cannot. */

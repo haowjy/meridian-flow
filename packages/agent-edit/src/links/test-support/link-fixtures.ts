@@ -2,8 +2,8 @@
 import { type CatalogDocument, documentRef, storedHref } from "@meridian/contracts";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
