@@ -166,7 +166,7 @@ function validateBump(
   }
 }
 
-const history = versionHistory as SchemaShapeHistoryEntry[];
+const history = versionHistory as unknown as SchemaShapeHistoryEntry[];
 const baseline = history[history.length - 1];
 
 if (!baseline) {
