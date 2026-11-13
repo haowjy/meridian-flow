@@ -28,16 +28,23 @@ if (unknown.length)
   throw new Error(`Unknown probe ${unknown.join(", ")}; one of ${available.join(", ")}`);
 const probes = requested.length ? available.filter((name) => requested.includes(name)) : available;
 
-/** Exit status, or "timeout" after killing the probe's whole process group (pnpm, tsx, node). */
+/**
+ * Exit status, or "timeout" after killing the probe. The probe is one node process (no pnpm or
+ * tsx wrapper to leave behind), so killing the child kills everything it started.
+ */
 function runProbe(name: string): Promise<number | "timeout"> {
   return new Promise((resolve) => {
-    const child = spawn("pnpm", ["exec", "tsx", join(probesDir, name, "run.mts")], {
+    const child = spawn(process.execPath, ["--import", "tsx", join(probesDir, name, "run.mts")], {
       stdio: "inherit",
-      detached: true,
     });
-    const pid = child.pid;
+    // An interrupt of the runner alone (a CI cancel, a command timeout) would orphan the probe.
+    const forward = (signal: NodeJS.Signals) => {
+      child.kill(signal);
+      child.once("exit", () => process.exit(1));
+    };
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, forward);
     const timer = setTimeout(() => {
-      if (pid) process.kill(-pid, "SIGKILL");
+      child.kill("SIGKILL");
       resolve("timeout");
     }, PROBE_TIMEOUT_MS);
     child.once("error", () => {
@@ -46,6 +53,8 @@ function runProbe(name: string): Promise<number | "timeout"> {
     });
     child.once("exit", (code) => {
       clearTimeout(timer);
+      for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
+        process.removeListener(signal, forward);
       resolve(code ?? 1);
     });
   });
