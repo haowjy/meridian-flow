@@ -9,9 +9,9 @@
  * - Conservative attribution when Apply evidence is unavailable
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { appendApplyRecord, readApplyRecord } from "./apply-record.js";
 import {
@@ -185,7 +185,7 @@ const listText = (d: Y.Doc) =>
 const bold = (s: string) =>
   schema.nodes.paragraph.create(null, schema.text(s, [schema.marks.strong.create()]));
 const heading = (level: number, s: string) =>
-  schema.nodes.heading.create({ level }, schema.text(s));
+  schema.nodes.paragraph.create({ level }, schema.text(s));
 
 const ROWS: Row[] = [
   {

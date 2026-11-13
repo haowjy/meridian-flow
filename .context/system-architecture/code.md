@@ -1,7 +1,7 @@
 # Code
 
 The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
-not a path, so no arrow is numbered. No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
+not a path, so no arrow is numbered. No package imports an app, and `gateway`, `prosemirror-schema`, `yjs-inspect` and
 `design-tokens` import no workspace code. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
 [system](system.md#mf).
@@ -20,6 +20,7 @@ flowchart TB
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
+  gateway["gateway<br/><small>one port to the model providers</small>"]:::package
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"follows a chat with"| thread-client
   app -->|"keeps documents locally with"| resource-replica
@@ -28,6 +29,8 @@ flowchart TB
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
   database -->|"types its columns with"| contracts
+  contracts -->|"takes usage and mock-script shapes from"| gateway
+  server -->|"calls the models through"| gateway
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
@@ -77,6 +80,16 @@ One schema per HTTP response. A chat's run state is one versioned record, always
 - Kind: package
 - Paths: `packages/contracts/src`
 - Docs: [CONTEXT](../../packages/contracts/.context/CONTEXT.md), [AGENTS](../../packages/contracts/AGENTS.md)
+
+## gateway
+
+The model gateway: one streaming port to Anthropic, OpenAI and OpenAI-compatible providers.
+
+Published to npm as `@meridian-flow/gateway` for other products, so it imports no workspace code, reads no environment variables and takes keys through its provider config. The server builds it from `FLOW_` variables in `lib/gateway/`.
+
+- Kind: package
+- Paths: `packages/gateway/src`
+- Docs: [CONTEXT](../../packages/gateway/.context/CONTEXT.md)
 
 ## database
 

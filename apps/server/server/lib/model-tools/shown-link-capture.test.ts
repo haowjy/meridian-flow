@@ -15,6 +15,7 @@ import type { LinkView } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
+import type { GenerateResult } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
@@ -23,7 +24,6 @@ import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryProjectContextStore,
 } from "../../domains/context/support/in-memory-unified-context-stores.js";
-import type { GenerateResult } from "../../domains/runtime/gateway/index.js";
 import {
   createInMemoryShownLinkStore,
   createInspectionToolRegistrations,

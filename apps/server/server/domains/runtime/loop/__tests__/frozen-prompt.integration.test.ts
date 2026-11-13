@@ -5,6 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { Gateway, Message, ModelInfo, Tool } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
 import {
   createBoundAgentCatalog,
@@ -26,7 +27,6 @@ import {
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
 import { turnGraph } from "../../../threads/ports/turn-graph.js";
-import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";

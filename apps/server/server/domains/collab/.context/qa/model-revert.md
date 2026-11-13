@@ -47,8 +47,8 @@ otherwise. N is the model's first write.
 | Repeated text, original edited | Seed `The night was dark.` and `Lin Feng walked on.`; N inserts a second dark sentence; writer changes the first to cold. | The writer's sentence remains; N's copy is removed. |
 | Repeated text, N's copy edited | Same seed; writer changes N's copy to cold. | `nothing_to_revert` with a numbered skipped-part reason and unchanged text. |
 | Emptied paragraph | N adds a paragraph; writer deletes its text. | `nothing_to_revert` with a numbered skipped-part reason; the empty paragraph remains. |
-| Paragraph rebuilt | N adds a paragraph; writer turns it into a heading. | `nothing_to_revert` with a numbered skipped-part reason; the heading remains. |
-| Existing paragraph rebuilt | N appends to the seed paragraph; writer turns it into a heading. | `nothing_to_revert` with a numbered skipped-part reason; the heading remains. |
+| Paragraph rebuilt | N adds a paragraph; writer wraps it in a quote. | `nothing_to_revert` with a numbered skipped-part reason; the quote remains. |
+| Existing paragraph rebuilt | N appends to the seed paragraph; writer wraps it in a quote. | `nothing_to_revert` with a numbered skipped-part reason; the quote remains. |
 | N deleted a sentence | Seed `AAA went first. BBB stood still. CCC came last.`; N deletes BBB; writer changes first to home and last to early. | Draft: success with both writer changes. Auto-apply: the changed paragraph is skipped. |
 | Revert of a revert | Revert Plain, then revert the handle it prints. | N's sentence returns. |
 | Two parts | N changes the first and third of three paragraphs; writer edits the first. | `reverted: e1 (1 of 2 parts)` plus `not reverted: part 1: edited since`; only the third reverses. |

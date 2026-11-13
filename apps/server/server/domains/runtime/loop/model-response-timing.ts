@@ -1,6 +1,6 @@
 /** Flattens per-attempt gateway timing into the persisted model-response fields. */
 import type { ModelResponseReceivedRow } from "@meridian/contracts/threads";
-import type { GenerateResult } from "../gateway/domain/index.js";
+import type { GenerateResult } from "@meridian-flow/gateway";
 
 export function modelResponseTimingFields(
   result: Pick<GenerateResult, "timing">,

@@ -1,8 +1,8 @@
 // Shown-link facts claim only links the model actually saw: truncation and narrowing never over-claim.
 import { documentRef } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import { expect, it } from "vitest";
-import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { toDocHandle } from "../handles.js";
 import { fullHashForItemId } from "../model/block-hash.js";
@@ -41,7 +41,7 @@ function setup() {
       catalogDocument(P, "manuscript://assets/map.png", { image: true }),
     ],
     blocks: [
-      schema.node("heading", { level: 1 }, [
+      schema.node("paragraph", { level: 1 }, [
         schema.text("Part "),
         schema.text("one", [
           schema.marks.link.create({ href: ch("c"), title: null, ref: documentRef(C) }),

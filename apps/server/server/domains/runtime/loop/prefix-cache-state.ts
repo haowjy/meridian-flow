@@ -9,6 +9,12 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import {
+  type ModelInfo,
+  type PromptCacheDescriptor,
+  type PromptCacheRetention,
+  resolvePromptCacheTtlSeconds,
+} from "@meridian-flow/gateway";
+import {
   bakeIdAt,
   decodeImageInclusionMetadata,
   ForkCutoffOwnerNotFoundError,
@@ -18,12 +24,6 @@ import {
   type ThreadRepository,
   type TurnRepository,
 } from "../../threads/index.js";
-import {
-  type ModelInfo,
-  type PromptCacheDescriptor,
-  type PromptCacheRetention,
-  resolvePromptCacheTtlSeconds,
-} from "../gateway/index.js";
 
 type CacheHistoryThread = Pick<
   Thread,

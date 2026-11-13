@@ -41,12 +41,12 @@ function press(editor: Editor, key: string): boolean {
   );
 }
 
-/** A compact block outline: `heading:2("Chapter")`, `code_block:mermaid()`. */
+/** A compact block outline: `paragraph:2("Chapter")` for a level-2 heading, `code_block:mermaid()`. */
 function outline(editor: Editor): string {
   const blocks: string[] = [];
   editor.state.doc.forEach((node) => {
     const detail =
-      node.type.name === "heading"
+      node.type.name === "paragraph" && node.attrs.level !== null
         ? `:${node.attrs.level}`
         : node.type.name === "code_block"
           ? `:${node.attrs.language ?? "none"}`

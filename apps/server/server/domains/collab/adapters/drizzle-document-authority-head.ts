@@ -1,7 +1,7 @@
 /**
  * The durable document authority head (`document_yjs_heads`), and its one writer; the one
  * deleter besides is the context purge (`releaseDocumentStorage`), which drops a discarded
- * document's storage with its removal. Only
+ * document's storage with its removal. A document's delete takes its head by trigger. Only
  * materialization (a create's transaction, or explicit repair of a living document) makes a
  * head; every later write moves it under the caller's document mutation lock and requires a
  * living document in the same statement, so a removal that won the lock refuses here at no
@@ -19,7 +19,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
@@ -30,12 +30,23 @@ export type DocumentAuthorityHeadGeneration = {
   generation: bigint;
 };
 
-/** A living document's first head, at birth; an existing head (a head-only anomaly) is reused. */
+/**
+ * A living document's first head, at birth; an existing head of a document (a head-only anomaly)
+ * is reused. A head of another kind under this id is a list's, and no document is made of it.
+ */
 export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId): Promise<void> {
-  await db
+  const inserted = await db
     .insert(documentYjsHeads)
     .values({ documentId, schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
+    .onConflictDoNothing({ target: documentYjsHeads.documentId })
+    .returning({ documentId: documentYjsHeads.documentId });
+  if (inserted.length > 0) return;
+  const [existing] = await db
+    .select({ kind: documentYjsHeads.kind })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, documentId));
+  if (existing && existing.kind !== "document")
+    throw new Error(`Document ${documentId} has the id of a ${existing.kind}'s journal`);
 }
 
 /** The generation a head is born with (the column's default). */
@@ -197,7 +208,7 @@ export async function refusedAuthority(
 function living(documentId: string) {
   return and(
     eq(documentYjsHeads.documentId, documentId as DocumentId),
-    livingDocumentSql(documentYjsHeads.documentId),
+    or(eq(documentYjsHeads.kind, "tree_list"), livingDocumentSql(documentYjsHeads.documentId)),
   );
 }
 

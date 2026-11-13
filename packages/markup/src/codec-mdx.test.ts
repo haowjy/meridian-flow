@@ -124,7 +124,7 @@ describe("mdx prose and component round-trip corpus", () => {
 
   it("round-trips the full surviving fiction node set", () => {
     const original = docFrom([
-      schema.node("heading", { level: 1 }, [t("The Ascension Trial")]),
+      schema.node("paragraph", { level: 1 }, [t("The Ascension Trial")]),
       paragraph(
         t("Plain text, then "),
         t("bold", [m("strong")]),

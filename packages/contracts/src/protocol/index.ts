@@ -1,10 +1,15 @@
 export type { ArtifactRef } from "../artifacts/index.js";
+
 /**
  * Purpose: Collects protocol submodules behind the @meridian/contracts/protocol entrypoint.
  * Why independent: Protocol exports are the shared wire-contract surface for clients and server adapters.
  * Barrel: re-exports AG-UI, sequence, HTTP, path, transport, WebSocket, and Yjs protocol helpers.
  */
 
+export * from "@meridian-flow/gateway/mock-script";
+
+/** Route of the dev-only mock-model script queue. */
+export const API_DEBUG_MOCK_MODEL_SCRIPT_PATH = "/api/debug/mock-model/script";
 export type {
   Interrupt,
   MeridianError,
@@ -55,7 +60,6 @@ export * from "./event-seq.js";
 export * from "./file-access.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
-export * from "./mock-model-script.js";
 export * from "./paths.js";
 export * from "./recent-documents.js";
 export * from "./run-boundary.js";

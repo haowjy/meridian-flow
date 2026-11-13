@@ -7,6 +7,7 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { registryTokenRateSource } from "../../../lib/gateway/registry.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   createInMemoryEventJournalWriter,
@@ -67,6 +68,7 @@ describe("handoff brief service", () => {
     };
     const backgroundTasks = createDetachedWorkTracker();
     const service = createHandoffBriefs({
+      rateSource: registryTokenRateSource(),
       shutdown: { started: false },
       backgroundTasks,
       repos: {

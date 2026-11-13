@@ -50,7 +50,7 @@ pnpm test   # non-DB tests; use pnpm test:db from the repo root for DB coverage
 ## Billing
 
 - **Engine:** `credit_lots` (grant, subscription, purchase, debt), FIFO via `consume_credit_lots_fifo`, balances computed directly from `credit_lots`.
-- **Pricing source:** Rates are single-sourced from the gateway's `MODEL_REGISTRY` (see `apps/server/server/domains/runtime/gateway/config/registry.ts`). Every provider uses pinned rates.
+- **Pricing source:** Rates are single-sourced from the gateway's `MODEL_REGISTRY` (see `apps/server/server/lib/gateway/registry.ts`). Every provider uses pinned rates.
 - **Idempotency:** `usage_event_id` is **required** (non-empty); enforced in SQL under advisory lock (no unique index — multi-lot debits per turn).
 - **Overspend:** remainder goes to a single `source_type = 'debt'` lot per user.
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.

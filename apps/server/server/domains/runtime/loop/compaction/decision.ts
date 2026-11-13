@@ -3,13 +3,13 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
+import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
 import {
   type CompactionFailureOutcome,
   type CompactionFailurePhase,
   type CompactionFailureReason,
   compactionFailedCopy,
 } from "../../../threads/index.js";
-import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
 import { type ProjectedActiveHistory, projectCompactedHistory } from "./project.js";

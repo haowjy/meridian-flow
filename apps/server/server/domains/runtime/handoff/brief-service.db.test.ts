@@ -7,6 +7,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { registryTokenRateSource } from "../../../lib/gateway/registry.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -103,6 +104,7 @@ else
         runClaim,
         async wakeIfRunnable() {},
         billingUsage: { canStartTurn: options.canStartTurn ?? (async () => true) },
+        rateSource: registryTokenRateSource(),
         generate:
           options.generate ??
           (async () => ({
@@ -239,6 +241,7 @@ else
       const published: unknown[] = [];
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        rateSource: registryTokenRateSource(),
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos,
@@ -321,6 +324,7 @@ else
       });
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        rateSource: registryTokenRateSource(),
         shutdown: { started: false },
         backgroundTasks,
         repos: fixture.repos,
@@ -478,6 +482,7 @@ else
       let providerSignal: AbortSignal | undefined;
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        rateSource: registryTokenRateSource(),
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos: fixture.repos,

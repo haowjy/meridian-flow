@@ -535,10 +535,18 @@ share against a caller-held lifecycle lock.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
-database Work rows (only through the Works mutation boundary), the branch row,
-sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
-ID order), then draft rows, an
-upstream before its peer, otherwise ID order. No path takes a Work row, a
+database Work rows (only through the Works mutation boundary, in ID order, with the
+lifecycle and grant locks `lockSeamWorks` takes), the branch row, a project's or an
+account's tree list key, then the sorted namespace and document advisory keys
+(`lockDocumentMutation`'s keys in ID order), then draft rows, an
+upstream before its peer, otherwise ID order. The list's key sorts before every
+document and namespace key, not among them by ID: a path that needs a list and
+documents takes the list first (several lists: by list ID). A tree list's write
+(`withList`) takes the seam's Work locks first, so the append under the key takes no lock
+it lacks; a Work's close, archive, restore and delete takes the project's list key
+after its Work row and before its namespaces (`lockProjectTreeList`), so the open Works
+an admission reads under that key are current.
+No path takes a Work row, a
 live lock or a namespace lock after a draft row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set
 first and revalidates. Live mutexes are held around a commit scope (an

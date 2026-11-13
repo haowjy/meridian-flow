@@ -177,7 +177,7 @@ primitives in `server/lib/`:
 ## Model gateway deadlines
 
 Each model attempt has a stall timer and an absolute ceiling, owned by
-`domains/runtime/gateway` ([gateway context](../server/domains/runtime/gateway/.context/CONTEXT.md)).
+`packages/gateway` ([gateway context](../../../packages/gateway/.context/CONTEXT.md)).
 
 ## Observability event sink
 

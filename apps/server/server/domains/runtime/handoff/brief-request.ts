@@ -1,12 +1,12 @@
 /** Read-only source preparation and a single source-shaped summary attempt. */
 import type { Thread, Turn } from "@meridian/contracts/threads";
+import type { GenerateRequest } from "@meridian-flow/gateway";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   type HandoffFailureOutcome,
   HandoffSeedMetadataCodec,
   loadThreadConversationContext,
 } from "../../threads/index.js";
-import type { GenerateRequest } from "../gateway/index.js";
 import { projectActiveHistoryWithBakes } from "../loop/compaction/index.js";
 import { changedDocumentUris } from "../loop/compaction-revisions.js";
 import type { OrchestratorDeps } from "../loop/orchestrator.js";

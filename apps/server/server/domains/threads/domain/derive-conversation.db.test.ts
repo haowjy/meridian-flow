@@ -687,7 +687,7 @@ else
       expect(seed.status).toBe("pending");
       expect(launchRequests).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
 
-      const model: import("../../runtime/gateway/index.js").ModelInfo = {
+      const model: import("@meridian-flow/gateway").ModelInfo = {
         id: "handoff-test-model",
         provider: "test-provider",
         tokenizer: "o200k" as const,
@@ -698,8 +698,8 @@ else
         reasoning: { efforts: ["low", "medium", "high", "max"] },
         capabilities: new Set(),
       };
-      const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];
-      const gateway: import("../../runtime/gateway/index.js").Gateway = {
+      const summaryRequests: import("@meridian-flow/gateway").GenerateRequest[] = [];
+      const gateway: import("@meridian-flow/gateway").Gateway = {
         getDefaultModel: () => model.id,
         listModels: () => [model],
         async *stream(request) {

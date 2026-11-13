@@ -112,8 +112,8 @@ The model providers: Anthropic, OpenAI, DeepSeek and Gemini.
 Called through one gateway, with no fallback between providers. With no provider key, or `MODEL_PROVIDER=mock`, a mock provider runs in process.
 
 - Kind: external
-- Paths: `apps/server/server/domains/runtime/gateway/config/registry.ts`
-- Docs: [runtime CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
+- Paths: `apps/server/server/lib/gateway/registry.ts`
+- Docs: [gateway CONTEXT](../../packages/gateway/.context/CONTEXT.md), [runtime CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 
 ## workos
 

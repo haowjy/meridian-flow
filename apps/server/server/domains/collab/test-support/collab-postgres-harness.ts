@@ -11,9 +11,9 @@ import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
-import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";

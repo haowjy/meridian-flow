@@ -1,6 +1,6 @@
 # Model gateway smoke guide
 
-End-to-end checks for the gateway domain (`apps/server/server/domains/runtime/gateway`) via the smoke mini-server (`tests/smoke/server.ts`).
+End-to-end checks for the gateway (`packages/gateway`, built from env in `apps/server/server/lib/gateway`) via the smoke mini-server (`tests/smoke/server.ts`).
 
 ## Prerequisites
 

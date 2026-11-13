@@ -920,7 +920,7 @@ const doors: DoorCase[] = [
           ]),
           // The same mark on both sides of a paragraph boundary is two runs.
           paragraph(docLink("Target", D, target)),
-          schema.node("heading", { level: 2 }, [schema.text("Head", [linkMark(documentRef(D))])]),
+          schema.node("paragraph", { level: 2 }, [schema.text("Head", [linkMark(documentRef(D))])]),
           schema.node("bullet_list", { tight: true }, [
             schema.node("list_item", null, [
               paragraph({ text: "Web", ref: null, href: "https://example.com" }),

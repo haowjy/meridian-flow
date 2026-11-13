@@ -322,7 +322,7 @@ Terminal record example (command-specific fields follow the reserved keys):
 
 `LIVE_TEST_MODEL=<registry model id>` (for example `deepseek-flash`, with its
 `FLOW_DEEPSEEK_API_KEY` set), given on the command line, in `.env.local`, or in the main checkout's `.env`, sends every model call to that one model, whatever a
-chat, Agent or binding names (if it is a registry id), including models whose provider has no key. `LIVE_TEST_MODEL=` in `.env.local` turns off a main-`.env` setting.
+chat, Agent or binding names (if it is a registry id), including models whose provider has no key. `LIVE_TEST_MODEL=` on the command line (`pnpm dev` passes it to the stack) or in `.env.local` turns off a main-`.env` setting.
 A chat bound to another model predicts a cold cache under the override. Stored
 state keeps the names it has. Restart your stack to change it. Production refuses
 to start with it set; staging allows it.
@@ -484,7 +484,7 @@ The failed reply's `metadata.providerError` is `{ status, message }`, with
 the message capped at 1,000 characters; `status` is null for a failure reported
 inside the stream. Server events keep only `errorCode`, so provider text never
 enters `EventSink`, JSONL, or model context. The retry policy is in the
-[gateway context](../apps/server/server/domains/runtime/gateway/.context/CONTEXT.md#provider-errors).
+[gateway context](../packages/gateway/.context/CONTEXT.md#provider-errors).
 
 ## Debug Gate
 

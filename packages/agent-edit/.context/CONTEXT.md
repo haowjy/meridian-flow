@@ -20,6 +20,16 @@ reconstruction here rather than in app or undo copies. Hosts choose operations,
 supply identity mapping and own transactions; the adapter copies an item's own
 content, never its descendants.
 
+## Text runs
+
+Adjacent `Y.XmlText` children of a block are one run of text, as in the patched
+`@tiptap/y-tiptap` this package shares with the server and the browser (see the editor's
+`.context/CONTEXT.md`). `src/yjs-text-runs.ts` groups them and routes an edit to the
+text that owns its offset. Every walker of a block's children follows it: the writer
+pairs a run, never a text, with a target run, and the model's unit addressing skips
+empty texts, which are zero units wide and share a unit with the atom after them. A
+read never writes to the document.
+
 ## Forward-inverse dependency closure
 
 A forward inverse closes over one Yjs dependency predicate: the selected edit's
