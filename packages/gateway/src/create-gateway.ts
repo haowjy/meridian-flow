@@ -1,6 +1,6 @@
 /**
  * Gateway factory: assembles the provider registry from config, wires the
- * anthropic/openai/openai-compatible adapters, and returns a Gateway that routes
+ * anthropic/openai/openai-compatible/gemini adapters, and returns a Gateway that routes
  * each request to its provider. The gateway's composition root; the per-attempt
  * retry/deadline driver lives in attempt-stream.ts.
  *
@@ -14,8 +14,11 @@
  * 4. Per-attempt timeout policy is resolved through
  *    resolveAttemptTimeouts (gateway config, then the process default) and handed to streamWithRetry.
  */
+
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
 import { assertCacheTtlsOnWire as assertAnthropicCacheTtlsOnWire } from "./adapters/anthropic/request-map.js";
+import { createGeminiAdapter } from "./adapters/gemini/adapter.js";
+import { assertCacheTtlsOnWire as assertGeminiCacheTtlsOnWire } from "./adapters/gemini/request-map.js";
 import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
 import { assertCacheTtlsOnWire as assertOpenAICacheTtlsOnWire } from "./adapters/openai/request-map.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
@@ -44,6 +47,8 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
       return createAnthropicAdapter(config);
     case "openai":
       return createOpenAIResponsesAdapter(config);
+    case "gemini":
+      return createGeminiAdapter(config);
   }
 }
 
@@ -56,6 +61,7 @@ export function assertModelsOnWire(config: Pick<ProviderConfig, "adapter" | "mod
   for (const model of config.models) {
     if (config.adapter === "anthropic") assertAnthropicCacheTtlsOnWire(model);
     else if (config.adapter === "openai") assertOpenAICacheTtlsOnWire(model);
+    else if (config.adapter === "gemini") assertGeminiCacheTtlsOnWire(model);
   }
 }
 

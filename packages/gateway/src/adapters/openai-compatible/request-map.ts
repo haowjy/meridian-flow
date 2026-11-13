@@ -36,6 +36,7 @@ import {
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatContentPart = OpenAI.Chat.Completions.ChatCompletionContentPart;
+type MediaTarget = Pick<ModelInfo, "wire" | "imageLinks">;
 
 function textFromParts(parts: readonly ContentPart[]): string {
   return parts
@@ -44,9 +45,9 @@ function textFromParts(parts: readonly ContentPart[]): string {
     .join("");
 }
 
-/** Images go by link or as a data URL; a PDF is bytes only (`file` with a filename), as Chat Completions has no file URL. */
-function mapMedia(part: MediaPart, wire: ModelInfo["wire"]): ChatContentPart {
-  const media = wireMediaSource({ wire }, part);
+/** Images go by link (where the host fetches them) or as a data URL; a PDF is bytes only (`file` with a filename), as Chat Completions has no file URL. */
+function mapMedia(part: MediaPart, target: MediaTarget): ChatContentPart {
+  const media = wireMediaSource(target, part);
   if (media.kind === "image") {
     const url = "url" in media ? media.url : `data:${media.mediaType};base64,${media.data}`;
     return { type: "image_url", image_url: { url } };
@@ -65,17 +66,14 @@ function mapMedia(part: MediaPart, wire: ModelInfo["wire"]): ChatContentPart {
  * Completions has no native reasoning_part or tool_use_part in user/assistant
  * message content.
  */
-function mapContentParts(
-  parts: ContentPart[],
-  wire: ModelInfo["wire"],
-): string | ChatContentPart[] {
+function mapContentParts(parts: ContentPart[], target: MediaTarget): string | ChatContentPart[] {
   if (!parts.some((p) => p.type === "media")) return textFromParts(parts);
 
   const mapped: ChatContentPart[] = [];
   for (const part of parts) {
     if (part.type === "text" && part.text.length > 0)
       mapped.push({ type: "text", text: part.text });
-    else if (part.type === "media") mapped.push(mapMedia(part, wire));
+    else if (part.type === "media") mapped.push(mapMedia(part, target));
   }
   return mapped;
 }
@@ -108,7 +106,7 @@ function mapToolMessage(message: Message): ChatMessage | null {
 }
 
 /** The user message that carries a run of tool messages' media, or null when they had none. */
-function toolMediaMessage(run: Message[], wire: ModelInfo["wire"]): ChatMessage | null {
+function toolMediaMessage(run: Message[], target: MediaTarget): ChatMessage | null {
   const content: ChatContentPart[] = [];
   for (const message of run) {
     const result = message.content.find((p) => p.type === "tool_result");
@@ -118,17 +116,17 @@ function toolMediaMessage(run: Message[], wire: ModelInfo["wire"]): ChatMessage 
       type: "text",
       text: `Attachments from the result of tool call ${result.toolCallId}:`,
     });
-    for (const part of media) content.push(mapMedia(part, wire));
+    for (const part of media) content.push(mapMedia(part, target));
   }
   return content.length > 0 ? { role: "user", content } : null;
 }
 
 /** Map a message list; a run of tool messages is followed by one user message with their media. */
-function mapMessages(messages: Message[], wire: ModelInfo["wire"]): ChatMessage[] {
+function mapMessages(messages: Message[], target: MediaTarget): ChatMessage[] {
   const mapped: ChatMessage[] = [];
   for (let i = 0; i < messages.length; i++) {
     if (messages[i].role !== "tool") {
-      const next = mapMessage(messages[i], wire);
+      const next = mapMessage(messages[i], target);
       if (next) mapped.push(next);
       continue;
     }
@@ -139,7 +137,7 @@ function mapMessages(messages: Message[], wire: ModelInfo["wire"]): ChatMessage[
       const next = mapToolMessage(message);
       if (next) mapped.push(next);
     }
-    const media = toolMediaMessage(run, wire);
+    const media = toolMediaMessage(run, target);
     if (media) mapped.push(media);
   }
   return mapped;
@@ -153,7 +151,7 @@ function mapMessages(messages: Message[], wire: ModelInfo["wire"]): ChatMessage[
  * other roles pass through directly. Messages with empty content are
  * filtered out (null return).
  */
-function mapMessage(message: Message, wire: ModelInfo["wire"]): ChatMessage | null {
+function mapMessage(message: Message, target: MediaTarget): ChatMessage | null {
   if (message.role === "system") return mapSystemMessage(message);
   if (message.role === "tool") return mapToolMessage(message);
 
@@ -175,7 +173,7 @@ function mapMessage(message: Message, wire: ModelInfo["wire"]): ChatMessage | nu
     }
   }
 
-  const content = mapContentParts(message.content, wire);
+  const content = mapContentParts(message.content, target);
   if (!hasContent(content)) return null;
 
   return {
@@ -218,12 +216,12 @@ function mapReasoningEffort(
  */
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
-  model: Pick<ModelInfo, "id" | "wire">,
+  model: Pick<ModelInfo, "id" | "wire" | "imageLinks">,
   call: ResolvedCall,
 ): OpenAI.Chat.Completions.ChatCompletionCreateParams {
   return {
     model: model.id,
-    messages: mapMessages(request.messages, model.wire),
+    messages: mapMessages(request.messages, model),
     tools: mapTools(request.tools),
     reasoning_effort: mapReasoningEffort(call.reasoning),
     stream: true,

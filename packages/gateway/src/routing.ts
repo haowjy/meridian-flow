@@ -38,7 +38,14 @@ export function buildProviderRegistry(
         });
         continue;
       }
-      registry.set(model.id, { adapter, model: { ...model, wire: config.adapter } });
+      registry.set(model.id, {
+        adapter,
+        model: {
+          ...model,
+          wire: config.adapter,
+          ...(config.imageLinks ? { imageLinks: true as const } : {}),
+        },
+      });
     }
   }
   return registry;

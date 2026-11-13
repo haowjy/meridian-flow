@@ -104,10 +104,12 @@ export interface ModelInfo {
   inputModalities: readonly InputModality[];
   /** Largest file in bytes its provider fetches by link, where the provider documents one. */
   maxLinkBytes?: number;
+  /** The serving host fetches image links on a wire that doesn't by default (`ProviderConfig.imageLinks`). Set by the gateway. */
+  imageLinks?: true;
 }
 
-/** A model as configured on a provider; the gateway adds the provider's wire format. */
-export type ProviderModel = Omit<ModelInfo, "wire">;
+/** A model as configured on a provider; the gateway adds the provider's wire format and link setting. */
+export type ProviderModel = Omit<ModelInfo, "wire" | "imageLinks">;
 
 /**
  * Canonical content part — the building block of every gateway Message.
@@ -116,7 +118,7 @@ export type ProviderModel = Omit<ModelInfo, "wire">;
  * - TextPart: Anthropic `text` block, OpenAI Responses `output_text` item,
  *   OpenAI-Chat `delta.content`.
  * - MediaPart: an image or PDF: Anthropic `image`/`document` block, OpenAI
- *   `input_image`/`input_file` or Chat `image_url`/`file`. Allowed in a user message and
+ *   `input_image`/`input_file` or Chat `image_url`/`file`, Gemini `fileData`/`inlineData`. Allowed in a user message and
  *   inside a tool result.
  * - ReasoningPart: Anthropic `thinking` / OpenAI `reasoning` items.
  *   Provider metadata (signature, encrypted_content) lives in providerOptions.
@@ -374,7 +376,7 @@ export interface ModelCallTiming {
 }
 
 /** The provider adapters createAdapter (create-gateway.ts) can build. */
-export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
+export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "gemini";
 
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory
@@ -389,6 +391,12 @@ export interface ProviderConfig {
     headers?: Record<string, string>;
   };
   baseUrl?: string;
+  /**
+   * The host fetches image links. Whether an OpenAI-compatible host does is its own fact, so
+   * the wire defaults to bytes only (as the Vercel AI SDK does); the other wires decide for
+   * themselves and ignore this.
+   */
+  imageLinks?: true;
   models: ProviderModel[];
 }
 
