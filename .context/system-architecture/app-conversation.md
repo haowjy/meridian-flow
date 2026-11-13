@@ -19,7 +19,6 @@ flowchart LR
   project -->|"shows the chat beside the document"| chat
   chat -->|"renders Markdown with"| shared
   chat -->|"shows Drafted-documents cards from"| documents
-  chat -->|"opens documents and Works in"| project
 ```
 
 ## chat

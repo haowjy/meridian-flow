@@ -15,12 +15,9 @@ flowchart LR
   conversation -->|"1. renders a message with"| rich-content
   rich-content -->|"2. uses the document codec bridge in"| core
   rich-content -->|"3. draws with the primitives in"| components
-  components -->|"reads data through"| client
-  components -->|"draws editor surfaces from"| core
   hooks -->|"uses helpers from"| lib
   lib -->|"keeps optimistic thread state in"| client
   documents -->|"renders text with"| rich-content
-  components -->|"uses helpers from"| lib
 ```
 
 ## components

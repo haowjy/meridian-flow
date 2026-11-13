@@ -30,15 +30,15 @@ flowchart LR
   conversation -->|"6. streams the reply"| browser
   documents -->|"7. pushes the edit to open documents"| browser
   lib -->|"builds the domains for"| routes
-  conversation -->|"saves turns and the event journal"| postgres
   conversation -->|"reads the chat's Work"| workspace
   conversation -->|"charges credits"| account
-  conversation -->|"loads image previews for the model"| files
-  documents -->|"asks which Work owns a draft"| workspace
   workspace -->|"archives and deletes a Work's documents"| documents
   files -->|"writes an imported tree"| documents
   files -->|"stores and reads bytes"| objectstore
-  documents -->|"copies binary bytes"| objectstore
+  note1["The routes get every domain from lib. By the written rule domains do not import lib; the one exception is listed on the dependencies page."]:::note
+  note1 -.- lib
+  note2["A Work is one task's editing context in a project: it groups chats and owns shared drafts. That is why conversation and documents both ask workspace."]:::note
+  note2 -.- workspace
 ```
 
 ## conversation

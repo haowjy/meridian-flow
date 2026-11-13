@@ -25,10 +25,11 @@ flowchart LR
   threads -->|"journals the events"| postgres
   runtime -->|"reads pending notices"| notices
   threads -->|"queues a notice when a chat changes Work"| notices
-  threads -->|"binds the chosen Agent to a new chat"| packages
   runtime -->|"reads the chat's Work"| workspace
   runtime -->|"charges credits for the turn"| account
   runtime -->|"loads image previews for the model"| files
+  note1["A notice is a message for the model, not the writer. runtime reads the queued ones at each model call and adds them to the thread as one trailing system turn."]:::note
+  note1 -.- notices
 ```
 
 ## runtime

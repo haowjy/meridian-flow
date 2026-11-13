@@ -23,12 +23,11 @@ flowchart LR
   server -->|"7. sends the draft edit over the Yjs socket"| core
   documents -->|"8. shows the change from the editor session"| core
   project -->|"opens documents in tabs"| documents
-  project -->|"reads the local replica"| core
   routes -->|"mounts the project list and the pages around it"| library
-  routes -->|"mounts the debug overlay"| debug
-  client -->|"reads the connection and the wire taps"| core
   conversation -->|"renders text and UI with"| shared
-  documents -->|"renders text and UI with"| shared
+  routes -->|"mounts the debug overlay"| debug
+  note1["Steps 7 and 8 do not call each other: the server pushes the edit to core over the Yjs socket, and the editor shows it from its document session."]:::note
+  note1 -.- core
 ```
 
 ## routes

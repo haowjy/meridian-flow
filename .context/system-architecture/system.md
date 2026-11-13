@@ -27,14 +27,16 @@ flowchart LR
   server -->|"4. streams the reply and the edits"| browser
   browser -->|"loads the pages"| app
   app -->|"signs the writer in"| workos
-  server -->|"checks the session"| workos
   app -->|"fetches data while rendering a page"| server
-  browser -->|"uploads and downloads files"| objectstore
   server -->|"stores and fetches bytes"| objectstore
   server <-->|"checkout, payment webhook"| stripe
   www -->|"links to sign-in"| app
-  mf -->|"asks what the app asks"| server
-  ci -->|"applies migrations"| postgres
+  note1["The server, not the app, owns chat, documents and files. The app only serves pages and signs the writer in."]:::note
+  note1 -.- server
+  note1 -.- app
+  note2["mf and ci are tools around the system, not parts a writer meets. mf calls the server the way the app does; ci builds, tests and migrates."]:::note
+  note2 -.- mf
+  note2 -.- ci
 ```
 
 ## browser

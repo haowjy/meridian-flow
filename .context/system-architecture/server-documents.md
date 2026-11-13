@@ -20,13 +20,13 @@ flowchart LR
   collab -->|"5. pushes it to open rooms"| browser
   browser -->|"opens a document"| collab
   file-policy -->|"reads Work facts"| workspace
-  file-policy -->|"reads branch rows"| collab
-  file-policy -->|"reads the file tree"| context
   context -->|"writes whole documents through the collab engine"| collab
-  workspace -->|"archives and deletes a Work's documents"| context
   files -->|"writes an imported tree"| context
-  context -->|"classifies and keeps uploaded files"| files
   context -->|"copies binary bytes"| objectstore
+  note1["Every route, tool, live room and write asks file-policy before it touches a document. The built-in Critic, Continuity-checker and Reader-sim Agents are read-only there."]:::note
+  note1 -.- file-policy
+  note2["Addresses like manuscript:// and scratch:// resolve to documents here. A bare path means manuscript://."]:::note
+  note2 -.- context
 ```
 
 ## collab

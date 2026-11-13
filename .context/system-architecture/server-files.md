@@ -16,13 +16,13 @@ flowchart LR
   import -->|"2. stages the bytes"| storage
   import -->|"3. classifies and makes previews"| file-intake
   import -->|"4. writes the whole tree at once"| documents
-  file-intake -->|"stores previews"| storage
   storage -->|"puts and gets"| objectstore
-  browser -->|"asks for the ZIP"| export
   export -->|"reads the document inventory"| documents
   export -->|"reads file bytes"| storage
   export -->|"streams the ZIP"| browser
   conversation -->|"loads image previews"| file-intake
+  note1["Upload and organizing are two separate phases. When the upload finishes the server marks the import organizing and its own organizer builds the tree; the browser does not drive that half."]:::note
+  note1 -.- import
 ```
 
 ## import

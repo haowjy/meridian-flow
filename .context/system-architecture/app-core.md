@@ -17,10 +17,12 @@ flowchart LR
   core-transport -->|"connects to the server"| server
   server -->|"3. sends updates"| core-transport
   core-transport -->|"4. reports sync status"| core-editor
-  core-resources -->|"opens documents through"| core-editor
   core-resources -->|"catches up with the server through"| client
   core-editor -->|"tracks uploads in"| core-uploads
   core-editor -->|"offers suggestions from"| core-completion
+  core-resources -->|"opens documents through"| core-editor
+  note1["core-transport carries the Yjs socket: it connects when a session asks, passes the server's updates on and reports sync status back (steps 2 to 4)."]:::note
+  note1 -.- core-transport
 ```
 
 ## core-editor

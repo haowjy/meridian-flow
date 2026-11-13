@@ -1,6 +1,6 @@
 # Server: account
 
-The domains about the writer's account and the operator. Paying for credits: the browser starts a checkout (1), `billing` creates a Stripe session (2), Stripe calls the webhook when it is paid (3), and `billing` grants credit lots in Postgres (4). A run consumes those lots first in, first out. `observability` takes events from the other groups and sanitizes them before any sink, which is how writer text stays out of logs. Back to the [server](server.md).
+The domains about the writer's account and the operator. Paying for credits: the browser starts a checkout (1), `billing` creates a Stripe session (2), Stripe calls the webhook when it is paid (3), and `billing` grants credit lots in Postgres (4). A run consumes those lots first in, first out. Back to the [server](server.md).
 
 ```mermaid
 flowchart LR
@@ -11,9 +11,6 @@ flowchart LR
   stripe["stripe<br/><small>payments</small>"]:::context
   postgres["postgres<br/><small>the one database</small>"]:::context
   conversation["conversation<br/><small>chat turns</small>"]:::context
-  documents["documents<br/><small>the writer's documents</small>"]:::context
-  workspace["workspace<br/><small>projects and Works</small>"]:::context
-  files["files<br/><small>import and bytes</small>"]:::context
   browser -->|"1. starts a checkout"| billing
   billing -->|"2. creates a checkout session"| stripe
   stripe -->|"3. calls the webhook when paid"| billing
@@ -22,9 +19,8 @@ flowchart LR
   browser -->|"reads and saves settings"| preferences
   preferences -->|"keeps settings per account"| postgres
   conversation -->|"emits events"| observability
-  documents -->|"emits events"| observability
-  workspace -->|"emits events"| observability
-  files -->|"emits events"| observability
+  note1["Every group sends events here, not only conversation. observability sanitizes them before any log or sink, so writer text stays out of logs."]:::note
+  note1 -.- observability
 ```
 
 ## billing
@@ -91,30 +87,3 @@ The group of `runtime`, `threads`, `notices` and `packages`.
 
 - Kind: context
 - See: [conversation](server.md#conversation)
-
-## documents
-
-The writer's documents.
-
-The group of `collab`, `context` and `file-policy`.
-
-- Kind: context
-- See: [documents](server.md#documents)
-
-## workspace
-
-Projects and Works.
-
-The group of `projects`, `working-set` and `recent-documents`.
-
-- Kind: context
-- See: [workspace](server.md#workspace)
-
-## files
-
-Import, export, uploads and bytes.
-
-The group of `import`, `export`, `file-intake` and `storage`.
-
-- Kind: context
-- See: [files](server.md#files)

@@ -18,10 +18,11 @@ flowchart LR
   server -->|"4. sends live and draft updates"| core
   draft-review -->|"5. opens the draft room"| core
   editor -->|"shows review controls from"| draft-review
-  links -->|"finds link targets in"| core
   editor -->|"follows links with"| links
   conversation -->|"shows Drafted-documents cards from"| draft-review
   editor -->|"renders with"| shared
+  note1["draft-review is where the model's edits become something the writer decides on: Changes it derives from the draft, then Apply, Discard or Undo."]:::note
+  note1 -.- draft-review
 ```
 
 ## editor

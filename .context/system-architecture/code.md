@@ -23,17 +23,15 @@ flowchart TB
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"1. follows a chat with"| thread-client
   app -->|"keeps documents locally with"| resource-replica
-  app -->|"encodes the writer's text with"| markup
   server -->|"2. applies the model's edits with"| agent-edit
   server -->|"3. saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
-  thread-client -->|"reads link rules from"| markup
   markup -->|"builds documents from"| prosemirror-schema
-  app -->|"mirrors the schema of"| prosemirror-schema
   database -->|"types its columns with"| contracts
-  app -->|"takes colours from"| design-tokens
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
+  note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
+  note1 -.- markup
 ```
 
 ## app

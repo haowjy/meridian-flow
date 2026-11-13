@@ -15,12 +15,13 @@ flowchart LR
   browser -->|"1. opens a project"| projects
   browser -->|"2. asks for the open documents"| working-set
   browser -->|"3. asks for recent documents"| recent-documents
-  recent-documents -->|"reads the document catalog"| documents
   projects -->|"archives and deletes a Work's documents"| documents
-  projects -->|"purges a deleted Work's bytes"| objectstore
   conversation -->|"gates each write on the chat's Work"| projects
   projects -->|"keeps projects and Works"| postgres
   working-set -->|"saves a snapshot per account"| postgres
+  projects -->|"purges a deleted Work's bytes"| objectstore
+  note1["Archiving or deleting a Work reaches into the documents group and the object store, which is why projects has arrows out of this group."]:::note
+  note1 -.- projects
 ```
 
 ## projects

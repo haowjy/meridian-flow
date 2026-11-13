@@ -18,14 +18,10 @@ flowchart LR
   home -->|"2. opens the new-project dialog"| creation
   home -->|"3. creates the project through"| client
   client -->|"asks the server to create it"| server
-  routes -->|"mounts the usage page"| billing
-  routes -->|"mounts the import entry"| import
-  home -->|"shows the account menu from"| account
   project -->|"opens the import menu"| import
   project -->|"opens the export dialog"| export
-  import -->|"uploads files through"| client
-  export -->|"asks for the ZIP through"| client
-  billing -->|"reads balances through"| client
+  home -->|"shows the account menu from"| account
+  routes -->|"mounts the usage page"| billing
 ```
 
 ## home
