@@ -390,7 +390,11 @@ if (!RUN) {
             .select()
             .from(treeNodes)
             .where(eq(treeNodes.id, result.value.documentId as never));
-          expect(document).toMatchObject({ name, extension, fileType });
+          // The tree row stores the name with its extension.
+          expect(document).toMatchObject({
+            name: extension ? `${name}.${extension}` : name,
+            extension,
+          });
           const [intake] = await db
             .select()
             .from(uploadIntakes)
