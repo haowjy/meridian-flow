@@ -61,6 +61,15 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
+- A block's adjacent `Y.XmlText` children are one run of text: peers typing into
+  an empty block at once create several. Our `@tiptap/y-tiptap` patch
+  (`patches/@tiptap__y-tiptap@3.0.5.patch`) diffs, compares and edits such a
+  run as one string and writes each change into the `XmlText` that owns the
+  offset, so a peer's concurrent insert and its byline survive. Stock
+  y-tiptap folds the run into its first text and deletes the rest, and
+  folds again on read. Drop that part of the patch when upstream stops doing
+  either (`updateYFragment` and `createNodeFromYElement` in
+  `src/lib/utils`).
 - `EditorMountIdentity` distinguishes live and stable draft review rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
