@@ -166,16 +166,18 @@ export class TreeWriter {
    * entries, and restoring one must not undo the other.
    */
   restoreEntry(view: View, actor: Actor, deleteId: string): RestoreRecord | "unknown" {
-    const entry = viewRecords(this.doc, view).find(
-      (record) =>
-        record.type === "delete" && (record.id === deleteId || record.appliedFrom === deleteId),
-    );
+    const entry = viewRecords(this.doc, view)
+      .filter(
+        (record) =>
+          record.type === "delete" && (record.id === deleteId || record.carries === deleteId),
+      )
+      .pop();
     if (!entry) return "unknown";
     return this.author(
       view,
       actor,
       { type: "restore", node: entry.node },
-      { undoes: entry.id },
+      { undoes: entry.carries ?? entry.id },
     ) as RestoreRecord;
   }
 }

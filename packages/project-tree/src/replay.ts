@@ -59,7 +59,7 @@ export type SkipReason =
 
 /** One delete still in force: a Trash entry, with what it still takes. */
 export type TrashEntry = {
-  /** The delete record's id (an applied copy answers to its drafted record's id too, in `from`). */
+  /** The delete record's id (a record that carries another names it in `from`). */
   id: string;
   from?: string;
   node: string;
@@ -74,8 +74,8 @@ export type TrashEntry = {
  */
 export type Setter<Before> = {
   id: string;
-  /** For a live copy made by Apply: the drafted record it carries, which Undo may also name. */
-  appliedFrom?: string;
+  /** The root original this record carries, which an Undo's `undoes` names. */
+  carries?: string;
   before: Before;
   /** The node's arrival before it, which the opposite record puts back. */
   arrivedBefore: number;
@@ -153,7 +153,7 @@ export function replay(
     if (record.draft === null) return;
     const on = pendingOn.get(record.node) ?? new Set<string>();
     if (record.undoes !== undefined && on.has(record.undoes)) on.delete(record.undoes);
-    else on.add(record.id);
+    else on.add(record.carries ?? record.id);
     pendingOn.set(record.node, on);
   };
 
@@ -185,7 +185,7 @@ export function replay(
     if (
       record.undoes !== undefined &&
       top &&
-      (top.id === record.undoes || top.appliedFrom === record.undoes)
+      (top.id === record.undoes || top.carries === record.undoes)
     ) {
       stack.pop();
       node.arrivedAt = top.arrivedBefore;
@@ -193,7 +193,7 @@ export function replay(
     }
     stack.push({
       id: record.id,
-      ...(record.appliedFrom ? { appliedFrom: record.appliedFrom } : {}),
+      ...(record.carries ? { carries: record.carries } : {}),
       before,
       arrivedBefore: node.arrivedAt,
     });
@@ -307,7 +307,7 @@ export function replay(
         // Two deletes of one node both count: each takes what its author saw.
         deletes.push({
           id: record.id,
-          ...(record.appliedFrom ? { from: record.appliedFrom } : {}),
+          ...(record.carries ? { from: record.carries } : {}),
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
