@@ -1,8 +1,9 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
 import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
-import { replay, type SkipReason } from "./replay.js";
+import { placeIn, replay, type SkipReason, type TreeProjection } from "./replay.js";
 import { fingerprint } from "./shape.js";
+import { writable } from "./validate.js";
 import {
   LIVE,
   lastSettlements,
@@ -238,7 +239,7 @@ export function applyDraft(
     else if (before && copy.type === "move")
       was.set(copy.node, { ...before, parent: copy.parent, rank: copy.rank });
     else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
-    copies.push(copy);
+    copies.push(writable(copy));
   }
   writer.transact(() => {
     recordsOf(doc).push(copies);
@@ -360,23 +361,34 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
 /**
  * Restoring a Discard: a Discard is final, so its records stay discarded and the Work gets fresh
  * pending copies of them, under its own branch, after anything it drafted since (so on a fact
- * both touched, the restored change wins). A copy has a new id and the same node id, and `restores`
- * names the Discard. A record whose node was purged since is left out and returned. Once.
+ * both touched, the restored change wins). A copy has a new id and the same node id; `restores`
+ * names the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
+ * record whose node cannot be acted on once the copies are in (purged, or its create is not in
+ * force and no copy brings it back) is left out and returned. Once.
  */
 export function restoreDiscard(
   writer: TreeWriter,
   discarded: string,
+  by: Actor,
 ): { copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded" {
   const { doc } = writer;
   const { records, restored } = discardedBy(doc, discarded);
   if (restored || records.length === 0) return "superseded";
-  const purged = new Set(
-    listRecords(doc).flatMap((record) => (record.type === "purge" ? [record.node] : [])),
+  // The node a copy acts on stands in its Work's view, or the Discard held its create and the
+  // copy of that brings it back.
+  const views = new Map<string | null, TreeProjection>();
+  const created = new Set(
+    records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
   );
-  const leftOut = records.filter((record) => purged.has(record.node));
-  const copyOf = new Map(
-    records.filter((record) => !purged.has(record.node)).map((record) => [record.id, newId()]),
-  );
+  const copyOf = new Map<string, string>();
+  const leftOut: TreeRecord[] = [];
+  for (const record of records) {
+    const view = views.get(record.draft) ?? writer.view({ draft: record.draft });
+    views.set(record.draft, view);
+    if (created.has(record.node) || placeIn(view.nodes, record.node))
+      copyOf.set(record.id, newId());
+    else leftOut.push(record);
+  }
   const copies = records.flatMap((record) => {
     const id = copyOf.get(record.id);
     if (id === undefined) return [];
@@ -384,12 +396,13 @@ export function restoreDiscard(
     const undoes =
       record.undoes === undefined ? undefined : (copyOf.get(record.undoes) ?? record.undoes);
     return [
-      {
+      writable({
         ...record,
         id,
         restores: discarded,
+        restoredBy: by,
         ...(undoes === undefined ? {} : { undoes }),
-      } as TreeRecord,
+      } as TreeRecord),
     ];
   });
   writer.transact(() => recordsOf(doc).push(copies));

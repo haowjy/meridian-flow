@@ -7,7 +7,6 @@ import {
   isSourceRoot,
   listRoot,
   type MoveRecord,
-  type NodeKind,
   newId,
   type RenameRecord,
   type RestoreRecord,
@@ -20,6 +19,7 @@ import {
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
 import { descendantsOf, nameAmong, rankAt } from "./shape.js";
+import { writable } from "./validate.js";
 import { LIVE, replayView, type View, viewRecords } from "./view.js";
 
 /**
@@ -42,20 +42,34 @@ export class TreeWriter {
     this.doc.transact(change, this.origin);
   }
 
+  /** The record for `input`, read through the reader that will read it back: throws when that would drop it. */
+  prepare(
+    view: View,
+    actor: Actor,
+    input: TreeRecordInput,
+    extra: Partial<TreeRecord> = {},
+  ): TreeRecord {
+    return writable({
+      ...input,
+      id: newId(),
+      actor,
+      draft: view.draft,
+      ...extra,
+    } as TreeRecord);
+  }
+
+  append(record: TreeRecord): void {
+    this.transact(() => recordsOf(this.doc).push([record]));
+  }
+
   author(
     view: View,
     actor: Actor,
     input: TreeRecordInput,
     extra: Partial<TreeRecord> = {},
   ): TreeRecord {
-    const record = {
-      ...input,
-      id: newId(),
-      actor,
-      draft: view.draft,
-      ...extra,
-    } as TreeRecord;
-    this.transact(() => recordsOf(this.doc).push([record]));
+    const record = this.prepare(view, actor, input, extra);
+    this.append(record);
     return record;
   }
 
@@ -74,15 +88,16 @@ export class TreeWriter {
     view: View,
     actor: Actor,
     input: {
-      kind: NodeKind;
       name: string;
       parent: string;
       index?: number;
-      blob?: BlobRef;
       node?: string;
-      filetype?: string;
       provisional?: true;
-    },
+    } & (
+      | { kind: "folder" }
+      | { kind: "document"; filetype: string }
+      | { kind: "file"; blob?: BlobRef }
+    ),
   ): CreateRecord {
     const projection = this.view(view);
     const source = isSourceRoot(input.parent)
@@ -97,9 +112,9 @@ export class TreeWriter {
       parent: input.parent,
       source,
       rank: rankAt(projection, input.parent, input.index ?? Number.MAX_SAFE_INTEGER),
-      ...(input.filetype ? { filetype: input.filetype } : {}),
+      ...(input.kind === "document" ? { filetype: input.filetype } : {}),
       ...(input.provisional ? { provisional: true as const } : {}),
-      ...(input.blob ? { blob: input.blob } : {}),
+      ...(input.kind === "file" && input.blob ? { blob: input.blob } : {}),
     }) as CreateRecord;
   }
 
@@ -188,14 +203,14 @@ export function moveBetweenLists(
     ? sourceIdOf(into.parent)
     : arrives.nodes.get(into.parent)?.source;
   if (source === undefined) throw new Error(`move into unknown parent ${into.parent}`);
-  const left = out.writer.author(LIVE, actor, {
+  const left = out.writer.prepare(LIVE, actor, {
     type: "move",
     node,
     parent: listRoot(into.list),
     rank: was.rank,
     from: { parent: was.parent, rank: was.rank },
   }) as MoveRecord;
-  const entered = into.writer.author(LIVE, actor, {
+  const entered = into.writer.prepare(LIVE, actor, {
     type: "create",
     node,
     kind: was.kind,
@@ -209,5 +224,8 @@ export function moveBetweenLists(
     ...(was.hasProperties ? { hasProperties: true as const } : {}),
     ...(was.blob ? { blob: was.blob } : {}),
   }) as CreateRecord;
+  // Both are built before either is stored, so a move is never left half made.
+  out.writer.append(left);
+  into.writer.append(entered);
   return { left, entered };
 }

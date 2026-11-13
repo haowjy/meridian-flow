@@ -37,9 +37,16 @@ function server() {
     parent: ROOT,
     node: "arc",
   }).node;
-  w.create(LIVE, "system", { kind: "document", name: "Ch1", parent: arc, node: "ch1" });
   w.create(LIVE, "system", {
     kind: "document",
+    filetype: "markdown",
+    name: "Ch1",
+    parent: arc,
+    node: "ch1",
+  });
+  w.create(LIVE, "system", {
+    kind: "document",
+    filetype: "markdown",
     name: "Guide",
     parent: source("skills"),
     node: "guide",
@@ -71,6 +78,7 @@ const record = (over: Record<string, unknown> = {}): TreeRecord => {
       type: "create",
       node: rid(),
       kind: "document",
+      filetype: "markdown",
       name: "New",
       parent: "arc",
       source: "manuscript",
@@ -86,11 +94,15 @@ const record = (over: Record<string, unknown> = {}): TreeRecord => {
     delete: { type: "delete", node: "ch1", cascade: [] },
     restore: { type: "restore", node: "ch1" },
   };
-  return {
+  const made: Record<string, unknown> = {
     ...base,
     ...(shape[(over.type as string) ?? "rename"] ?? { type: over.type, node: "ch1" }),
     ...over,
-  } as unknown as TreeRecord;
+  };
+  // Only a document has a type to state.
+  if (made.kind !== undefined && made.kind !== "document" && !("filetype" in over))
+    made.filetype = undefined;
+  return made as unknown as TreeRecord;
 };
 const push =
   (...ops: unknown[]) =>
@@ -534,7 +546,15 @@ describe("a record is judged against the list it joins", () => {
     const before = state(doc);
     const again = client(
       doc,
-      push(record({ type: "create", node: "ch1", kind: "folder", name: "Hijacked" })),
+      push(
+        record({
+          type: "create",
+          node: "ch1",
+          kind: "folder",
+          filetype: undefined,
+          name: "Hijacked",
+        }),
+      ),
     );
     expect(admit(doc, again.update, connection)).toEqual({
       ok: false,
@@ -585,7 +605,7 @@ describe("a record is judged against the list it joins", () => {
     refusedWhole(push(record({ filetype: "pdf" })));
     refusedWhole(push(record({ type: "create", aliases: ["x"] })));
     refusedWhole(push(record({ type: "create", kind: "folder", filetype: "markdown" })));
-    // Ch1 has no type in this list; a type change on it, or one from a canvas, is marked.
+    // A change from a canvas crosses schemas and is marked; markdown to text does not.
     const bad = record({ id: "to-text", filetype: "text" });
     const ok = record({
       type: "create",
@@ -599,7 +619,6 @@ describe("a record is judged against the list it joins", () => {
     const { update } = client(doc, push(ok, bad, drawn, toText, retyped));
     const verdict = admit(doc, update, connection);
     expect(verdict.ok && verdict.refused).toEqual([
-      { id: "to-text", reason: "a type across schemas" },
       { id: "drawn-to-text", reason: "a type across schemas" },
     ]);
     expect(replayView(doc, LIVE).nodes.get("typed")).toMatchObject({

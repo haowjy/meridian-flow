@@ -20,8 +20,10 @@ it may write, whether a node id is in use) comes in as plain inputs.
 - What a document is (type, provisional name, aliases, properties mark) rides on its `create`
   and `rename`. Which types a client may state, and whether a type change stays in one Yjs
   schema, are the server's facts: they come in through `Connection`.
-- A Discard is final: `restoreDiscard` appends new pending copies (`restores` names the Discard);
-  the discarded records stay discarded.
+- A Discard is final: `restoreDiscard` appends new pending copies (`restores` names the Discard,
+  `restoredBy` who restored it); the discarded records stay discarded.
+- Every record the package writes goes through `writable`, the reader that will read it back, and
+  throws if that would drop it. A document's `create` states its `filetype`.
 - A move between two lists is `moveBetweenLists`: a `move` to `list:<id>` in one list and a
   `create` in the other. Only the server writes it.
 

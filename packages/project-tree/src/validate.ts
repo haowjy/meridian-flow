@@ -1,4 +1,3 @@
-import { generateKeyBetween } from "fractional-indexing";
 import { nameFault } from "./names.js";
 import type { Actor, BlobRef, TreeRecord } from "./record.js";
 
@@ -10,7 +9,7 @@ const MAX_CASCADE = 100_000;
 const MAX_ALIASES = 1_000;
 const BASE = ["id", "node", "actor", "draft", "type", "undoes"];
 /** What only the server writes, on any kind: an applied copy's three fields, and a restored copy's source. */
-const SERVER_BASE = ["appliedFrom", "appliedBy", "fromDraft", "restores"];
+const SERVER_BASE = ["appliedFrom", "appliedBy", "fromDraft", "restores", "restoredBy"];
 /** The five kinds a client may write, with every field a client may set on each. */
 const FIELDS = new Map<string, readonly string[]>([
   ["create", [...BASE, "kind", "name", "parent", "source", "rank", "filetype", "provisional"]],
@@ -30,16 +29,21 @@ export type ReadRecord = { ok: true; record: TreeRecord } | { ok: false; why: st
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 
-/** A rank is one the installed fractional-indexing generator can place a key before and after. */
+const RANK = /^[A-Za-z][0-9A-Za-z]*$/;
+const SMALLEST_RANK = `A${"0".repeat(26)}`;
+
+/**
+ * A rank is a key in the installed fractional-indexing format, exactly: base 62 digits, a head
+ * letter whose case and place fix the integer part's length (`a` is 2 long up to `z` at 27, `Z` is
+ * 2 up to `A` at 27), no trailing zero in the fraction, and not the smallest integer, which has
+ * no key below it. The generator reads a character outside the alphabet as `0` instead of
+ * refusing it, so a key can pass it and still not sort where it was made to.
+ */
 function isRank(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    generateKeyBetween(value, null);
-    generateKeyBetween(null, value);
-    return true;
-  } catch {
-    return false;
-  }
+  if (typeof value !== "string" || !RANK.test(value) || value === SMALLEST_RANK) return false;
+  const head = value.charCodeAt(0);
+  const integerLength = head >= 97 ? head - 97 + 2 : 90 - head + 2;
+  return value.length === integerLength || (value.length > integerLength && !value.endsWith("0"));
 }
 
 /**
@@ -70,6 +74,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
   const optional = <T>(v: unknown, ok: (v: unknown) => v is T): v is T | undefined =>
     v === undefined || ok(v);
   const id = (v: unknown): v is string => matches(v, ID);
+  const who = (v: unknown): v is string => typeof v === "string" && v.length > 0;
   const name = (v: unknown): v is string =>
     typeof v === "string" && nameFault("folder", v) === null;
 
@@ -79,13 +84,14 @@ function read(value: unknown, client: Actor | null): ReadRecord {
   if (client !== null ? actor !== client : typeof actor !== "string" || actor.length === 0)
     return fail("actor");
   if (draft !== null && !id(draft)) return fail("draft");
-  const { undoes, appliedFrom, appliedBy, fromDraft, restores } = value;
+  const { undoes, appliedFrom, appliedBy, fromDraft, restores, restoredBy } = value;
   if (!optional(undoes, id)) return fail("undoes");
   if (
     !optional(appliedFrom, id) ||
     !optional(fromDraft, id) ||
     !optional(restores, id) ||
-    (appliedBy !== undefined && (typeof appliedBy !== "string" || appliedBy.length === 0))
+    !optional(appliedBy, who) ||
+    !optional(restoredBy, who)
   )
     return fail("applied copy");
   const base = {
@@ -98,6 +104,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
     ...(appliedBy === undefined ? {} : { appliedBy }),
     ...(fromDraft === undefined ? {} : { fromDraft }),
     ...(restores === undefined ? {} : { restores }),
+    ...(restoredBy === undefined ? {} : { restoredBy }),
   };
 
   switch (kind) {
@@ -111,14 +118,15 @@ function read(value: unknown, client: Actor | null): ReadRecord {
         !(client === null && nodeKind === "file")
       )
         return fail("kind");
-      if (filetype !== undefined && (nodeKind !== "document" || !matches(filetype, TYPE)))
+      // A document states its type, which decides its editor; a file's is in its blob.
+      if (nodeKind === "document" ? !matches(filetype, TYPE) : filetype !== undefined)
         return fail("filetype");
       if (provisional !== undefined && provisional !== true) return fail("provisional");
-      if (!name(value.name) || !matches(parent, PLACE) || !matches(source, ID) || !isRank(rank))
-        return fail("create");
-      if (parent.startsWith("source:") && parent !== `source:${source}`) return fail("create");
+      if (typeof value.name !== "string") return fail("create");
       const fault = nameFault(nodeKind, value.name);
       if (fault) return fail(`a name with ${fault}`);
+      if (!matches(parent, PLACE) || !matches(source, ID) || !isRank(rank)) return fail("create");
+      if (parent.startsWith("source:") && parent !== `source:${source}`) return fail("create");
       if (
         !optional(replaces, id) ||
         (hasProperties !== undefined && hasProperties !== true) ||
@@ -136,7 +144,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
           parent,
           source,
           rank,
-          ...(filetype === undefined ? {} : { filetype }),
+          ...(typeof filetype === "string" ? { filetype } : {}),
           ...(provisional === undefined ? {} : { provisional }),
           ...(aliases === undefined ? {} : { aliases: [...aliases] }),
           ...(hasProperties === undefined ? {} : { hasProperties }),
@@ -233,4 +241,16 @@ export function readStored(value: unknown): ReadRecord {
   stored.set(value, result);
   if (result.ok) stored.set(result.record, result);
   return result;
+}
+
+/**
+ * A record the package is about to write, through the same reader that will read it back, so
+ * nothing is stored that no view would show. Throws, saying why, when the reader would drop it;
+ * the copy it returns is what to store.
+ */
+export function writable(record: TreeRecord): TreeRecord {
+  const read = readStored(record);
+  if (!read.ok)
+    throw new Error(`a ${record.type} of ${record.node} the list cannot hold: ${read.why}`);
+  return read.record;
 }

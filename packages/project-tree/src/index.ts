@@ -2,9 +2,7 @@ export {
   type Admission,
   admit,
   type Connection,
-  checkUpdate,
   type KeptCreate,
-  keptCreateRecords,
 } from "./admission.js";
 export {
   type ApplyResult,
@@ -70,5 +68,6 @@ export {
   settlementsOf,
   type View,
   viewRecords,
+  viewValues,
 } from "./view.js";
 export { type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";

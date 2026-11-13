@@ -10,9 +10,9 @@ import {
   sourceRoot,
   type TreeRecord,
 } from "./record.js";
-import { placeIn, type TreeProjection } from "./replay.js";
-import { readRecord, readStored } from "./validate.js";
-import { LIVE, replayView } from "./view.js";
+import { placeIn, replay, type TreeProjection } from "./replay.js";
+import { readRecord, readStored, writable } from "./validate.js";
+import { viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** What only the server knows about the connection that sent an update. */
@@ -40,21 +40,23 @@ export type Connection = {
 export type KeptCreate = {
   /** The refused client create. */
   create: string;
-  /** Unfiled's root, or the node of a create kept earlier in the same update. */
-  parent: string;
-  /** Unfiled's source id: where the node ends up either way. */
-  source: string;
+  /**
+   * The create the server appended in its place, directly after the refused one in the list,
+   * under the account's own actor. It carries that create's name, type and provisional mark; the
+   * client's later records on the node replay against it, each judged as usual.
+   */
+  record: CreateRecord;
 };
 
 export type Admission =
   | { ok: false; reason: string }
   | {
       ok: true;
-      /** The records the update adds (not those the server already held), as admission read them. */
+      /** The records the update adds (not those the server already held), in list order. */
       records: TreeRecord[];
       /** Records the account may not make now: settled `refused`, in no view. */
       refused: Array<{ id: string; reason: string }>;
-      /** For each refused create, the create the server appends so the node is never left without a place. */
+      /** For each refused create, the create the server appended so the node is never left without a place. */
       kept: KeptCreate[];
     };
 
@@ -76,53 +78,41 @@ type Struct = {
 };
 
 /**
- * Reads a client's update without applying it, so a refused update never touches the server's
- * copy `doc`. Two kinds of fault (design, section 4):
- *
- *  - Refused whole, nothing stored (`ok: false`): the update does something an honest client's
- *    copy never does.
- *  - Admitted and marked: the update is well formed but a record asks for something the account
- *    may not do now. The client's copy and the server's stay the same document, and the server
- *    settles each such record `refused`. A refused create is kept by a create of the server's own.
- *
- * What the server holds is cut away from each struct first, with Yjs's own offset (a struct may
- * start inside what the server has), so what is read is only what the update would add. The
- * records are read from the update's own bytes, the ones the server applies.
+ * The faults that refuse an update whole, nothing stored: it does something an honest client's
+ * copy never does (design, section 4). The update is read without being applied, so a refused
+ * one never touches the server's copy `doc`. What the server holds is cut away from each struct
+ * first, with Yjs's own offset (a struct may start inside what the server has), so what is read
+ * is only what the update would add. Returns why, or null.
  */
-export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connection): Admission {
+function refuseWhole(doc: Y.Doc, update: Uint8Array, connection: Connection): string | null {
   let decoded: ReturnType<typeof Y.decodeUpdate>;
   try {
     decoded = Y.decodeUpdate(update);
   } catch {
-    return { ok: false, reason: "not an update" };
+    return "not an update";
   }
-  if (decoded.ds.clients.size > 0) return { ok: false, reason: "a deletion" };
+  if (decoded.ds.clients.size > 0) return "a deletion";
   const list = recordsOf(doc);
   const state = (client: number) => Y.getState(doc.store, client);
 
   // Each client's new structs must follow what the server holds from it, with no gap.
   const byClient = new Map<number, Struct[]>();
   for (const item of decoded.structs) {
-    if (!(item instanceof Y.Item)) return { ok: false, reason: "not an item" };
+    if (!(item instanceof Y.Item)) return "not an item";
     const { client, clock } = item.id;
-    if (client < SERVER_CLIENT_IDS) return { ok: false, reason: "a reserved client id" };
+    if (client < SERVER_CLIENT_IDS) return "a reserved client id";
     // Held already, as when two tabs of one browser each forward the same update.
     if (clock + item.length <= state(client)) continue;
     const cut = Math.max(0, state(client) - clock);
     const structs = byClient.get(client) ?? [];
     const last = structs[structs.length - 1];
-    if (clock + cut !== (last ? last.to : state(client)))
-      return { ok: false, reason: "not the next clock" };
-    if (item.parentSub !== null) return { ok: false, reason: "a map entry" };
+    if (clock + cut !== (last ? last.to : state(client))) return "not the next clock";
+    if (item.parentSub !== null) return "a map entry";
     if (!(item.content instanceof Y.ContentAny)) {
       // Anything but plain records: text, a type, a format. Said by where it sits, when it names that.
-      return {
-        ok: false,
-        reason:
-          typeof item.parent === "string" && item.parent !== "ops"
-            ? "not the list"
-            : "not plain records",
-      };
+      return typeof item.parent === "string" && item.parent !== "ops"
+        ? "not the list"
+        : "not plain records";
     }
     structs.push({
       client,
@@ -167,20 +157,20 @@ export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connecti
   for (const structs of byClient.values())
     for (const struct of structs) {
       const why = sitsInList(struct, new Set());
-      if (why) return { ok: false, reason: why };
+      if (why) return why;
       for (const value of struct.values) {
         const read = readRecord(value, connection.user);
-        if (!read.ok) return { ok: false, reason: `a record that is ${read.why}` };
+        if (!read.ok) return `a record that is ${read.why}`;
         const record = read.record;
         if (
           (record.type === "create" || record.type === "rename") &&
           record.filetype !== undefined &&
           !connection.editableTypes.has(record.filetype)
         )
-          return { ok: false, reason: "a type that is not editable" };
+          return "a type that is not editable";
         records.push(record);
       }
-      if (records.length > MAX_RECORDS) return { ok: false, reason: "too many records" };
+      if (records.length > MAX_RECORDS) return "too many records";
     }
 
   // A record is judged against the list it joins. An id already there would let a client
@@ -191,39 +181,46 @@ export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connecti
   const ids = new Set<string>();
   const fresh = new Set<string>();
   for (const record of records) {
-    if (ids.has(record.id)) return { ok: false, reason: "a record id twice" };
+    if (ids.has(record.id)) return "a record id twice";
     ids.add(record.id);
-    if (index.records.has(record.id))
-      return { ok: false, reason: "a record id already in the list" };
+    if (index.records.has(record.id)) return "a record id already in the list";
     if (record.type !== "create") continue;
     if (
       index.nodes.has(record.node) ||
       fresh.has(record.node) ||
       connection.takenElsewhere(record.node)
     )
-      return { ok: false, reason: "a node id already in use" };
+      return "a node id already in use";
     fresh.add(record.node);
   }
-  return { ok: true, records, ...judge(doc, records, connection) };
+  return null;
 }
+
+/** A record the update added, and where it landed in the list. */
+type Added = { record: TreeRecord; at: number };
 
 /**
  * What this account may not do now: a Work that is not theirs or is closed, a node or place in a
  * source they cannot write, a place that is not a folder (or was purged), a source touched as a
- * node, a name a document cannot have. Each record is judged in the view it is written in: live,
- * or live and its Work.
+ * node, a name a document cannot have. Each record is judged in the view it is written in (live,
+ * or live and its Work), as that view stood before the update, plus what the records of the
+ * update before it made. Yjs groups an update by client, not by where the records land, so
+ * `added` is in list order: the order they take effect in, which decides every one of these
+ * judgments (a folder made by one client, a chapter made inside it by another).
  */
-function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connection) {
+function judge(doc: Y.Doc, added: readonly Added[], connection: Connection) {
+  const fresh = new Set(added.map(({ record }) => record.id));
   const views = new Map<string | null, TreeProjection>();
   const viewOf = (draft: string | null) => {
     const cached = views.get(draft);
     if (cached) return cached;
-    const view = replayView(doc, draft === null ? LIVE : { draft });
+    const records = viewRecords(doc, { draft }).filter((record) => !fresh.has(record.id));
+    const view = replay(records, { draft });
     views.set(draft, view);
     return view;
   };
   // Nodes this update creates, as they will stand: where, and what.
-  const created = new Map<string, { source: string; kind: string; filetype?: string }>();
+  const created = new Map<string, { source: string; kind: string }>();
   // The type each node has as the update goes: its view's, a create's, an admitted rename's.
   const types = new Map<string, string | undefined>();
   const typeOf = (id: string, draft: string | null) =>
@@ -236,30 +233,30 @@ function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connectio
       : (viewOf(draft).nodes.get(id)?.source ?? created.get(id)?.source);
   const known = (id: string, draft: string | null) =>
     viewOf(draft).nodes.has(id) || created.has(id);
-  const writable = (id: string, draft: string | null) => {
+  const mayWrite = (id: string, draft: string | null) => {
     const source = sourceOf(id, draft);
     return source !== undefined && connection.writableSources.has(source);
   };
 
   const refused: Array<{ id: string; reason: string }> = [];
-  const kept: KeptCreate[] = [];
+  const kept: Array<KeptCreate & { at: number }> = [];
   const keptNodes = new Set<string>();
-  for (const record of records) {
+  for (const { record, at } of added) {
     const draft = record.draft;
     const into = record.type === "create" || record.type === "move" ? record.parent : null;
     let reason: string | null = null;
     if (draft !== null && !connection.drafts.has(draft)) reason = "not your Work";
     else if (record.type !== "create" && isSourceRoot(record.node)) reason = "a source";
-    else if (record.type !== "create" && known(record.node, draft) && !writable(record.node, draft))
+    else if (record.type !== "create" && known(record.node, draft) && !mayWrite(record.node, draft))
       reason = "a source you cannot change";
     else if (record.type === "create" && !connection.writableSources.has(record.source))
       reason = "a source you cannot change";
     else if (into !== null && !isSourceRoot(into) && kindOf(into, draft) !== "folder")
       reason = "not a folder";
-    else if (into !== null && !writable(into, draft)) reason = "a source you cannot change";
+    else if (into !== null && !mayWrite(into, draft)) reason = "a source you cannot change";
     else if (
       record.type === "delete" &&
-      record.cascade.some((member) => known(member, draft) && !writable(member, draft))
+      record.cascade.some((member) => known(member, draft) && !mayWrite(member, draft))
     )
       reason = "a source you cannot change";
     else if (record.type === "rename") {
@@ -294,75 +291,80 @@ function judge(doc: Y.Doc, records: readonly TreeRecord[], connection: Connectio
     keptNodes.add(record.node);
     created.set(record.node, { source: connection.unfiledSource, kind: record.kind });
     types.set(record.node, record.filetype);
-    kept.push({ create: record.id, parent, source: connection.unfiledSource });
+    kept.push({
+      create: record.id,
+      at,
+      record: writable({
+        type: "create",
+        id: newId(),
+        node: record.node,
+        actor: connection.user,
+        draft: null,
+        kind: record.kind,
+        name: record.name,
+        parent,
+        source: connection.unfiledSource,
+        rank: record.rank,
+        ...(record.filetype ? { filetype: record.filetype } : {}),
+        ...(record.provisional ? { provisional: true as const } : {}),
+        replaces: record.id,
+      }) as CreateRecord,
+    });
   }
   return { refused, kept };
 }
 
-/**
- * The creates the server appends for what it kept, under the account's own actor, each with the
- * refused create it goes directly after in the list. It carries that create's name, type and
- * provisional mark; the client's later records on the node then replay against it, each judged
- * as usual.
- */
-export function keptCreateRecords(
-  records: readonly TreeRecord[],
-  kept: readonly KeptCreate[],
-  account: string,
-): Array<{ after: string; record: CreateRecord }> {
-  const byId = new Map(records.map((record) => [record.id, record]));
-  return kept.map((entry) => {
-    const refused = byId.get(entry.create) as CreateRecord;
-    return {
-      after: refused.id,
-      record: {
-        type: "create",
-        id: newId(),
-        node: refused.node,
-        actor: account,
-        draft: null,
-        kind: refused.kind,
-        name: refused.name,
-        parent: entry.parent,
-        source: entry.source,
-        rank: refused.rank,
-        ...(refused.filetype ? { filetype: refused.filetype } : {}),
-        ...(refused.provisional ? { provisional: true as const } : {}),
-        replaces: refused.id,
-      },
-    };
-  });
+/** The records of the update, inside the Yjs transaction that applies it, with where each lands. */
+function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
+  const list = recordsOf(doc);
+  const added: Added[] = [];
+  const watch = (event: Y.YArrayEvent<TreeRecord>) => {
+    let at = 0;
+    for (const change of event.changes.delta) {
+      at += change.retain ?? 0;
+      for (const value of change.insert ?? []) {
+        const read = readStored(value);
+        if (read.ok) added.push({ record: read.record, at });
+        at += 1;
+      }
+    }
+  };
+  list.observe(watch);
+  try {
+    Y.applyUpdate(doc, update, "client");
+  } finally {
+    list.unobserve(watch);
+  }
+  return added;
 }
 
 /**
- * Admits a checked update to the server's copy: applies it, then appends the server's verdicts
- * (`refused` settlements, and the creates it keeps, each right after the create it replaces) in
- * the same transaction. The caller holds the list's lock and has journaled the update.
+ * Admits an update to the server's copy: refuses it whole when it does something an honest
+ * client never does, else applies it and judges its records in the order they landed in the
+ * list, then appends the server's verdicts (`refused` settlements, and a create kept for each
+ * refused one, right after it) in one transaction. The copy is changed in place, which is safe
+ * under the list's lock: if anything throws, the caller reloads the copy from the journal. The
+ * caller has the update journaled with the verdicts.
  */
 export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
-  const verdict = checkUpdate(server.doc, update, connection);
-  if (!verdict.ok) return verdict;
-  Y.applyUpdate(server.doc, update, "client");
+  const why = refuseWhole(server.doc, update, connection);
+  if (why !== null) return { ok: false, reason: why };
+  const added = integrate(server.doc, update);
+  const { refused, kept } = judge(server.doc, added, connection);
   server.transact(() => {
     const byReason = new Map<string, string[]>();
-    for (const { id, reason } of verdict.refused)
+    for (const { id, reason } of refused)
       byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
     for (const [reason, targets] of byReason)
       server.settle("system", targets, "refused", { reason });
-    const list = recordsOf(server.doc);
-    const keeps = keptCreateRecords(verdict.records, verdict.kept, connection.user);
-    if (keeps.length === 0) return;
     // From the end, so an insert does not move the places of those still to come.
-    const places = new Map(
-      list.toArray().flatMap((value, at) => {
-        const read = readStored(value);
-        return read.ok ? [[read.record.id, at] as const] : [];
-      }),
-    );
-    for (const keep of keeps.sort(
-      (a, b) => (places.get(b.after) as number) - (places.get(a.after) as number),
-    ))
-      list.insert((places.get(keep.after) as number) + 1, [keep.record]);
+    for (const { at, record } of [...kept].sort((a, b) => b.at - a.at))
+      recordsOf(server.doc).insert(at + 1, [record]);
   });
-  return verdict;
+  return {
+    ok: true,
+    records: added.map(({ record }) => record),
+    refused,
+    kept: kept.map(({ create, record }) => ({ create, record })),
+  };
 }

@@ -55,6 +55,8 @@ type RecordBase = {
   undoes?: string;
   /** On a pending copy made by restoring a Discard: that Discard's command. Server only. */
   restores?: string;
+  /** On a pending copy made by restoring a Discard: who restored it. `actor` stays who drafted it. Server only. */
+  restoredBy?: Actor;
 };
 
 export type CreateRecord = RecordBase & {
@@ -66,7 +68,7 @@ export type CreateRecord = RecordBase & {
   /** The source it was made in: where it shows if its folder never existed in a view (rule 6). */
   source: string;
   rank: string;
-  /** A document's type at creation, which decides the editor that opens it. */
+  /** A document states its type at creation, which decides the editor that opens it. A file has none: its type is in the blob. */
   filetype?: string;
   /** The name was given, not chosen ("Untitled"); it ends at the node's first rename by a person. */
   provisional?: true;

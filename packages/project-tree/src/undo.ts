@@ -1,5 +1,5 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
-import type { Setter } from "./replay.js";
+import { placeIn, type Setter } from "./replay.js";
 import { descendantsOf } from "./shape.js";
 import { listRecords, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -16,7 +16,8 @@ const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecor
  * values its fact had just before the record, and is allowed only while the record is still
  * the one that last set it: by history, never by comparing today's value, which a later author
  * may have set to the same. Refused as "superseded" when something later changed the same
- * fact, or when the folder a move would return to is in Trash.
+ * fact, when the folder a move would return to is in Trash, or when the node is gone from the
+ * view (purged, or its create is not in force), where the replay would skip the opposite record.
  */
 export function undoChange(
   writer: TreeWriter,
@@ -27,7 +28,7 @@ export function undoChange(
   const record = listRecords(writer.doc).find((candidate) => candidate.id === recordId);
   if (!record) return "unknown";
   const projection = writer.view(view);
-  const node = projection.nodes.get(record.node);
+  const node = placeIn(projection.nodes, record.node);
   if (!node) return "superseded";
   const extra = { undoes: record.id };
   switch (record.type) {

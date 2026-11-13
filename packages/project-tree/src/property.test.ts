@@ -147,15 +147,16 @@ function runSeed(seed: number): {
     if (action < 0.3 || shown.length === 0) {
       const kind: NodeKind = random() < 0.4 ? "folder" : random() < 0.85 ? "document" : "file";
       const parent = pick(folders);
-      writer.create(view, actor, {
-        kind,
-        name: pick(NAMES),
-        parent,
-        index: Math.floor(random() * 5),
-        ...(kind === "file"
-          ? { blob: { storageKey: `k${step}`, mime: "image/png", size: 1 } }
-          : {}),
-      });
+      const placed = { name: pick(NAMES), parent, index: Math.floor(random() * 5) };
+      if (kind === "file")
+        writer.create(view, actor, {
+          ...placed,
+          kind,
+          blob: { storageKey: `k${step}`, mime: "image/png", size: 1 },
+        });
+      else if (kind === "document")
+        writer.create(view, actor, { ...placed, kind, filetype: "markdown" });
+      else writer.create(view, actor, { ...placed, kind });
     } else if (action < 0.55) {
       const node = pick(shown);
       const inside = new Set([node.id, ...descendantsOf(projection, node.id)]);
@@ -369,10 +370,11 @@ describe("file tree log under random concurrent edits", () => {
         type: "create",
         node: `n${i}`,
         kind: i % 10 === 0 ? "folder" : "document",
+        ...(i % 10 === 0 ? {} : { filetype: "markdown" }),
         name: `N${i}`,
         parent,
         source: "manuscript",
-        rank: `a${i.toString(36).padStart(4, "0")}`,
+        rank: `a${i.toString(36).padStart(4, "0")}1`,
       });
       if (i % 10 === 0) folders.push(op.node);
       nodes.push(`n${i}`);
@@ -383,7 +385,7 @@ describe("file tree log under random concurrent edits", () => {
         type: "move",
         node,
         parent: folders[Math.floor(random() * folders.length)] as string,
-        rank: `b${i.toString(36).padStart(4, "0")}`,
+        rank: `b${i.toString(36).padStart(4, "0")}1`,
         from: { parent: ROOT, rank: "" },
       });
     }

@@ -39,8 +39,18 @@ function partsOf(kind: NodeKind, name: string): { name: string; extension: strin
     : { name, extension: "" };
 }
 
-/** `name` if no shown sibling has it, else the first free numbered copy (design, rule 4). */
+/**
+ * `name` if no shown sibling has it, else the first free numbered copy (design, rule 4). The
+ * numbered name, extension included, stays within the length a name may have: it takes the room
+ * from the end of the base, so a long name can still be numbered.
+ */
 export function freeName(kind: NodeKind, name: string, taken: ReadonlySet<string>): string {
   if (!taken.has(name)) return name;
-  return firstFreeName(partsOf(kind, name), taken).filename;
+  const { name: base, extension } = partsOf(kind, name);
+  const letters = [...base];
+  for (;;) {
+    const { filename } = firstFreeName({ name: letters.join("").trimEnd(), extension }, taken);
+    if (filename.length <= MAX_NAME || letters.length <= 1) return filename;
+    letters.pop();
+  }
 }

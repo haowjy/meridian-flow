@@ -42,7 +42,7 @@ function start() {
   const folder = (name: string, parent = ROOT, view: View = LIVE, actor = WRITER) =>
     w.create(view, actor, { kind: "folder", name, parent }).node;
   const chapter = (name: string, parent = ROOT, view: View = LIVE, actor = WRITER) =>
-    w.create(view, actor, { kind: "document", name, parent }).node;
+    w.create(view, actor, { kind: "document", filetype: "markdown", name, parent }).node;
   const names = (parent: string, view: View = LIVE) =>
     childrenOf(w.view(view), parent).map((node) => node.displayName);
   const at = (node: string, view: View = LIVE) => w.view(view).nodes.get(node);
@@ -615,7 +615,12 @@ describe("a purged node is absent from every view, for placement as for display"
     const kept = t.chapter("Kept");
     t.w.delete(LIVE, "system", old);
     t.w.author(LIVE, "system", { type: "purge", node: old });
-    const made = t.w.create(LIVE, WRITER, { kind: "document", name: "New", parent: old }).node;
+    const made = t.w.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "New",
+      parent: old,
+    }).node;
     const moved = t.w.move(LIVE, WRITER, kept, old);
     const live = t.w.view(LIVE);
     expect(t.at(made)).toMatchObject({ parent: ROOT, trashed: false });
@@ -911,9 +916,9 @@ describe("part 5: what a document is, and a move between two lists", () => {
     const t = start();
     const ch = t.w.create(LIVE, WRITER, {
       kind: "document",
+      filetype: "markdown",
       name: "Untitled",
       parent: ROOT,
-      filetype: "markdown",
       provisional: true,
     }).node;
     t.w.rename(LIVE, CHAT, ch, "Untitled.txt", "text");
@@ -967,9 +972,9 @@ describe("part 5: what a document is, and a move between two lists", () => {
     const there = start();
     const ch = here.w.create(LIVE, WRITER, {
       kind: "document",
+      filetype: "markdown",
       name: "Chapter 1",
       parent: ROOT,
-      filetype: "markdown",
     }).node;
     const out = { writer: here.w, list: "project" };
     const away = { writer: there.w, list: "account" };

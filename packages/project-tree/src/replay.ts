@@ -166,8 +166,8 @@ export function replay(
     return false;
   };
 
-  // A node still in this list that something may be placed under: purged nodes are in no view,
-  // for placement as for display.
+  // A node still in this list that something may be placed under or done to: purged nodes are in
+  // no view, for placement as for display.
   const placeable = (id: string) => placeIn(nodes, id);
 
   // A record sets a fact: it goes on the node's stack of setters, and an Undo's opposite record
@@ -243,13 +243,11 @@ export function replay(
       });
       continue;
     }
-    const node = nodes.get(record.node);
+    // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
+    // restoring a Discard make before they append a record.
+    const node = placeable(record.node);
     if (!node) {
-      skip("missing-node");
-      continue;
-    }
-    if (node.purged) {
-      skip("purged");
+      skip(nodes.has(record.node) ? "purged" : "missing-node");
       continue;
     }
     switch (record.type) {
@@ -346,7 +344,11 @@ export function replay(
   return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued);
 }
 
-/** A node something may be placed under: in this list, and not purged. */
+/**
+ * A node something may be placed under or done to: its create is in force in the view (the node
+ * is in the list), and it was not purged. What Undo and restoring a Discard check before they
+ * append a record for a node, and what the replay checks as it reads one.
+ */
 export function placeIn<Node extends { purged: boolean }>(
   nodes: ReadonlyMap<string, Node>,
   id: string,
