@@ -27,14 +27,14 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
         splitTop(text, ";").map((row) =>
           schema.nodes.table_row.create(
             null,
-            row
-              .split(",")
-              .map((cell) =>
-                schema.nodes.table_cell.create(
-                  null,
-                  schema.nodes.paragraph.create(null, inline(schema, cell)),
-                ),
-              ),
+            row.split(",").map((cell) => {
+              // `alpha^2` is a cell spanning two columns.
+              const [, text, span] = /^(.*?)(?:\^(\d+))?$/.exec(cell) ?? [];
+              return schema.nodes.table_cell.create(
+                { colspan: Number(span ?? 1) },
+                schema.nodes.paragraph.create(null, inline(schema, text)),
+              );
+            }),
           ),
         ),
       );
@@ -116,7 +116,7 @@ export function render(blocks: readonly PMNode[]): string {
         b.forEach((row) => {
           const cells: string[] = [];
           row.forEach((cell) => {
-            cells.push(cell.textContent);
+            cells.push(cell.textContent + (cell.attrs.colspan > 1 ? `^${cell.attrs.colspan}` : ""));
           });
           rows.push(cells.join(","));
         });
@@ -1354,6 +1354,15 @@ export const CASES: Case[] = [
     live: "list:ONE;two | p:c d",
     draft: "p:intro words here | list:one;TWO | p:c d",
     merged: "list:ONE;TWO | p:c d",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "table-merged-cell",
+    base: "table:alpha^2;c,d",
+    live: "table:LIVE^2;c,d",
+    draft: "table:alpha^2;c,DRAFT",
+    merged: "table:LIVE^2;c,DRAFT",
     conflicts: 0,
   },
   {

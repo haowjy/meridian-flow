@@ -117,6 +117,30 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
+/** Whether a table's cells, with their `colspan` and `rowspan`, fill a rectangle with no overlap or hole. */
+function isRectangular(table: PMNode): boolean {
+  const taken = new Set<string>();
+  let width = 0;
+  for (let r = 0; r < table.childCount; r++) {
+    let c = 0;
+    table.child(r).forEach((cell) => {
+      while (taken.has(`${r},${c}`)) c++;
+      const [cs, rs] = [Number(cell.attrs.colspan ?? 1), Number(cell.attrs.rowspan ?? 1)];
+      for (let dr = 0; dr < rs; dr++)
+        for (let dc = 0; dc < cs; dc++) {
+          const at = `${r + dr},${c + dc}`;
+          if (taken.has(at)) width = Number.POSITIVE_INFINITY;
+          taken.add(at);
+        }
+      c += cs;
+      if (Number.isFinite(width)) width = Math.max(width, c);
+    });
+  }
+  if (!Number.isFinite(width)) return false;
+  for (const at of taken) if (Number(at.split(",")[0]) >= table.childCount) return false;
+  return taken.size === width * table.childCount;
+}
+
 interface ContainerMerge {
   merged: MergedTok[];
   overrode: number;
@@ -128,7 +152,7 @@ interface ContainerMerge {
  * Both sides changed a run of containers (lists, quotes, tables) that each side kept as the same
  * number of the same types, so the run merges pairwise by the containers' children instead of
  * as whole-block tokens. Null when the run does not have that shape, or when a merged node would
- * not be a valid container: the caller then keeps today's whole-block clash.
+ * not be a valid container: the caller then keeps the `whole-block-unit` clash.
  */
 function mergeContainers(
   schema: Schema,
@@ -173,9 +197,7 @@ function mergeContainers(
     } catch {
       return null;
     }
-    // A table whose rows end with different cell counts is a table with a hole in it.
-    if (bn.type.name === "table" && new Set(kids(node).map((row) => row.childCount)).size > 1)
-      return null;
+    if (bn.type.name === "table" && !isRectangular(node)) return null;
     out.merged.push({
       tok: { kind: "atom", key: `A${blockKey(node)}`, node },
       origin: DRAFT,
