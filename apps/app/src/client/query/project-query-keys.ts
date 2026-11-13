@@ -95,6 +95,8 @@ export const projectQueryKeys = {
   /** Every item's draft metadata read of one document of an owner. */
   ownerDraftMetadataOf: (projectId: string, owner: string, documentId: string) =>
     ["projects", projectId, "draft-metadata", owner, documentId] as const,
+  contextSources: (projectId: string) => ["projects", projectId, "context-sources"] as const,
+  accountContextSources: () => ["account", "context-sources"] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (

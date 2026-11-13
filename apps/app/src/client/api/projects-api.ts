@@ -11,6 +11,7 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextOperationReceipt,
+  ContextSourcesResult,
   GetDocumentTrashResponse,
   ListDocumentTrashResponse,
   ProjectChatFeedPage,
@@ -18,6 +19,7 @@ import type {
   RestoreContextDocumentsResponse,
 } from "@meridian/contracts/protocol";
 import {
+  API_ACCOUNT_CONTEXT_SOURCES_PATH,
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
   apiProjectContextCatalogPath,
@@ -29,6 +31,7 @@ import {
   apiProjectContextEntryMovePath,
   apiProjectContextLineagePath,
   apiProjectContextOperationPath,
+  apiProjectContextSourcesPath,
   apiProjectDocumentAddressPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
@@ -245,6 +248,19 @@ function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): stri
   if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
   if (scope.kind === "chat") query.set("chatId", scope.chatId);
   return query.toString();
+}
+
+export async function getProjectContextSources(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ContextSourcesResult> {
+  return getJson(apiProjectContextSourcesPath(projectId), { signal });
+}
+
+export async function getAccountContextSources(
+  signal?: AbortSignal,
+): Promise<ContextSourcesResult> {
+  return getJson(API_ACCOUNT_CONTEXT_SOURCES_PATH, { signal });
 }
 
 export async function getContextCatalogSnapshot(

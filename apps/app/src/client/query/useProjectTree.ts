@@ -1,0 +1,216 @@
+/**
+ * The one reader of a project's tree: the replay of its list, a source at a time. A tree is the
+ * list's replay cut to the source its scheme and owner name; the sources query says which source
+ * that is. Whoever reads a name, a path or a place reads it here, so a rename shows in the tree,
+ * the tabs, the identity bar and the pickers at once.
+ */
+import type {
+  ContextSource,
+  ProjectContextTreeScheme,
+  TreeListRef,
+} from "@meridian/contracts/protocol";
+import { LIVE } from "@meridian/project-tree";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { dismissedFailures, useDismissalRevision } from "@/core/project-tree/failure-dismissals";
+import { treeFailures } from "@/core/project-tree/tree-failures";
+import { buildTreeView, type TreeFailure, type TreeView } from "@/core/project-tree/tree-view";
+import type {
+  TreeListSession,
+  TreeListSnapshot,
+  TreeListStatus,
+} from "@/core/tree-list/tree-list-session";
+import {
+  useAccountId,
+  useOptionalTreeLists,
+} from "@/features/project/context/account-feature-context";
+import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
+
+/** Whose source a view reads: a Work or lineage holds Scratch, and a chat holds its uploads. */
+export type TreeOwner = {
+  workId?: string | null;
+  rootThreadId?: string | null;
+  chatId?: string | null;
+};
+
+/**
+ * The list's session and its snapshot, held while the caller is mounted. Null until the account's
+ * lists are open (outside the authenticated shell there are none).
+ */
+export function useTreeList(list: TreeListRef | null): {
+  session: TreeListSession | null;
+  snapshot: TreeListSnapshot | null;
+} {
+  const registry = useOptionalTreeLists();
+  const key = list ? JSON.stringify(list) : null;
+  // The handle is held for the life of the mount: acquired once per list, released with it.
+  const held = useMemo(
+    () => (registry && list ? registry.acquire(list) : null),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the list's identity
+    [registry, key],
+  );
+  useReleaseOnUnmount(held);
+  const session = held?.session ?? null;
+  const subscribe = useCallback(
+    (listener: () => void) => session?.subscribe(listener) ?? (() => undefined),
+    [session],
+  );
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => session?.getSnapshot() ?? null,
+    () => null,
+  );
+  return useMemo(() => ({ session, snapshot }), [session, snapshot]);
+}
+
+function useReleaseOnUnmount(handle: { release(): void } | null) {
+  useEffect(() => () => handle?.release(), [handle]);
+}
+
+/** A source's authority and id for a scheme and owner, or null when the sources do not hold one. */
+export function sourceFor(
+  sources: readonly ContextSource[],
+  scheme: ProjectContextTreeScheme,
+  owner: TreeOwner,
+): ContextSource | null {
+  const owns = (source: ContextSource): boolean => {
+    const by = source.owner;
+    if (by.kind === "project") return true;
+    if (by.kind === "work")
+      return scheme === "scratch" && !owner.rootThreadId && by.workId === owner.workId;
+    if (by.kind === "lineage")
+      return scheme === "scratch" && by.rootThreadId === owner.rootThreadId;
+    return scheme === "uploads" && by.chatId === owner.chatId;
+  };
+  return sources.find((source) => source.scheme === scheme && owns(source)) ?? null;
+}
+
+const READY = new Set<TreeListStatus>(["synced", "read-only", "offline"]);
+
+export type TreeViewResult = {
+  tree: TreeView | null;
+  /** The list has synced or the copy can stand in for it: an address that finds no node is "not there". Otherwise it is "waiting for the list". */
+  isComplete: boolean;
+  /** This account has no access to the list. */
+  isError: boolean;
+};
+
+const seenFailures = new WeakMap<TreeListSession, Map<string, number>>();
+
+/** First sight of a refusal while the copy is still loading is not fresh; one that lands after is. */
+function failureSeenAt(session: TreeListSession, status: TreeListStatus) {
+  let seen = seenFailures.get(session);
+  if (!seen) {
+    seen = new Map();
+    seenFailures.set(session, seen);
+  }
+  const map = seen;
+  return (record: string) => {
+    let at = map.get(record);
+    if (at === undefined) {
+      at = status === "waiting" ? 0 : Date.now();
+      map.set(record, at);
+    }
+    return at;
+  };
+}
+
+/** The trees of the schemes' sources, built from the lists' replays. */
+export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
+  projectId: string,
+  schemes: readonly S[],
+  options: { enabled?: boolean } & TreeOwner,
+): Record<S, TreeViewResult> {
+  const { workId, rootThreadId, chatId } = options;
+  const enabled = (options.enabled ?? true) && Boolean(projectId);
+  const accountId = useAccountId();
+  const wantsAccount = schemes.includes("user" as S);
+  const wantsProject = schemes.some((scheme) => scheme !== "user");
+  const project = useTreeList(enabled && wantsProject ? { kind: "project", projectId } : null);
+  const account = useTreeList(
+    enabled && wantsAccount ? { kind: "account", userId: accountId } : null,
+  );
+  const projectSources = useProjectContextSources(enabled && wantsProject ? projectId : "");
+  const accountSources = useAccountContextSources(enabled && wantsAccount);
+  const dismissals = useDismissalRevision();
+  const actor = `user:${accountId}`;
+
+  const failuresOf = useCallback(
+    (list: { session: TreeListSession | null; snapshot: TreeListSnapshot | null }) => {
+      if (!list.session || !list.snapshot) return undefined;
+      void dismissals;
+      return treeFailures(
+        list.snapshot.doc,
+        actor,
+        dismissedFailures(accountId),
+        failureSeenAt(list.session, list.snapshot.status),
+        LIVE,
+      );
+    },
+    [accountId, actor, dismissals],
+  );
+  const owner = useMemo(() => ({ workId, rootThreadId, chatId }), [workId, rootThreadId, chatId]);
+
+  return useMemo(() => {
+    const results = {} as Record<S, TreeViewResult>;
+    const failureCache = new Map<
+      "project" | "account",
+      ReadonlyMap<string, TreeFailure> | undefined
+    >();
+    for (const scheme of schemes) {
+      const list = scheme === "user" ? account : project;
+      const sources = scheme === "user" ? accountSources : projectSources;
+      const source = sources ? sourceFor(sources, scheme, owner) : null;
+      const snapshot = list.snapshot;
+      const ready = snapshot !== null && READY.has(snapshot.status) && sources !== undefined;
+      const which = scheme === "user" ? "account" : "project";
+      if (!failureCache.has(which)) failureCache.set(which, failuresOf(list));
+      results[scheme] = {
+        tree:
+          list.session && snapshot && sources !== undefined && (source || ready)
+            ? buildTreeView({
+                projection: list.session.replay(),
+                scheme,
+                source,
+                authority: source?.authority ?? { kind: "contextual" },
+                failures: failureCache.get(which),
+              })
+            : null,
+        isComplete: ready,
+        isError: snapshot?.status === "denied",
+      };
+    }
+    return results;
+    // `version` is the replay's input: the copy changing is what rebuilds a view
+  }, [
+    schemes,
+    account,
+    project,
+    account.snapshot?.version,
+    project.snapshot?.version,
+    accountSources,
+    projectSources,
+    owner,
+    failuresOf,
+  ]);
+}
+
+export function useProjectTreeView(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  options: { enabled?: boolean } & TreeOwner,
+): TreeViewResult {
+  const schemes = useMemo(() => [scheme], [scheme]);
+  return useProjectTreeViews(projectId, schemes, options)[scheme];
+}
+
+/** What an address found in a tree: a node, "not there", or "waiting for the list" while the copy has not synced. */
+export type Resolved<T> = { kind: "found"; value: T } | { kind: "absent" } | { kind: "waiting" };
+
+export function resolveIn<T>(
+  result: TreeViewResult,
+  find: (tree: TreeView) => T | null,
+): Resolved<T> {
+  const found = result.tree ? find(result.tree) : null;
+  if (found) return { kind: "found", value: found };
+  return result.isComplete ? { kind: "absent" } : { kind: "waiting" };
+}

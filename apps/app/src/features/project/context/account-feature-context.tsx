@@ -25,6 +25,7 @@ import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
@@ -36,6 +37,7 @@ const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands
 const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
+const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
 
@@ -175,30 +177,37 @@ function AccountFeatureProviders({
   return (
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
-        <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-          <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
-            <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
-              <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-                <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
-                  <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                    <LinkSettlementsProvider value={lifetime.linkSettlements}>
-                      <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                          <PresentedContext.Provider value={lifetime.presented}>
-                            {children}
-                          </PresentedContext.Provider>
-                        </DraftOnlyContext.Provider>
-                      </DraftCommandsContext.Provider>
-                    </LinkSettlementsProvider>
-                  </ProjectDocumentLiveOpenerContext.Provider>
-                </RemovedNoticesAccountContext.Provider>
-              </LiveDocumentRegistryAccountContext.Provider>
-            </ResourceReplicaAccountContext.Provider>
-          </ProjectAvailabilityAccountContext.Provider>
-        </ContextRemovalAccountContext.Provider>
+        <TreeListsAccountContext.Provider value={lifetime.treeLists}>
+          <ContextRemovalAccountContext.Provider value={lifetime.removal}>
+            <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
+              <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
+                <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+                  <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
+                    <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                      <LinkSettlementsProvider value={lifetime.linkSettlements}>
+                        <DraftCommandsContext.Provider value={lifetime.draftCommands}>
+                          <DraftOnlyContext.Provider value={lifetime.draftOnly}>
+                            <PresentedContext.Provider value={lifetime.presented}>
+                              {children}
+                            </PresentedContext.Provider>
+                          </DraftOnlyContext.Provider>
+                        </DraftCommandsContext.Provider>
+                      </LinkSettlementsProvider>
+                    </ProjectDocumentLiveOpenerContext.Provider>
+                  </RemovedNoticesAccountContext.Provider>
+                </LiveDocumentRegistryAccountContext.Provider>
+              </ResourceReplicaAccountContext.Provider>
+            </ProjectAvailabilityAccountContext.Provider>
+          </ContextRemovalAccountContext.Provider>
+        </TreeListsAccountContext.Provider>
       </AccountIdContext.Provider>
     </AccountEpochContext.Provider>
   );
+}
+
+/** The account's open tree lists; null outside the authenticated shell. */
+export function useOptionalTreeLists(): TreeListRegistry | null {
+  return useContext(TreeListsAccountContext);
 }
 
 export function useAccountResourceReplica(): AccountResourceReplica {
