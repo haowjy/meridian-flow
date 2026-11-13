@@ -91,7 +91,8 @@ function workspacePackages(repo, workspaceDirs) {
 }
 
 /**
- * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly }],
+ * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly, spec }],
+ * `spec` the module specifier as written,
  * `to` a repo-relative file when the import resolves to one, else the path it points at; a
  * workspace package import has `to` the package directory. External packages are left out.
  * `workspaceDirs` are the directories of the workspace packages; `aliases` are
@@ -131,7 +132,7 @@ export function readImports(repo, roots, { workspaceDirs, aliases }) {
     const text = readFileSync(join(repo, from), "utf8");
     for (const { spec, typeOnly } of specifiersIn(text, from.endsWith(".css"))) {
       const target = resolve(from, spec);
-      if (target && target.to !== from) imports.push({ from, typeOnly, ...target });
+      if (target && target.to !== from) imports.push({ from, typeOnly, spec, ...target });
     }
   }
   return imports;

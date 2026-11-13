@@ -383,6 +383,7 @@ if (config.stateMachines) {
 // From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
 
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
+const FILE_RULES = (config.dependencies?.rules ?? []).filter((r) => r.files);
 const gitFiles = execFileSync(
   "git",
   ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -397,7 +398,9 @@ const segmentGlobs = [
   ["imports.workspaces", config.imports?.workspaces ?? []],
   [
     "dependencies.rules",
-    (config.dependencies?.rules ?? []).flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)),
+    (config.dependencies?.rules ?? [])
+      .filter((r) => !r.files)
+      .flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)),
   ],
 ];
 for (const [key, globs] of segmentGlobs)
@@ -451,18 +454,20 @@ for (const { glob, needs } of config.coverage ?? []) {
 // ---- Dependencies ----
 // The dependencies page lists the places the code breaks the configured rules, one row per break. The rows and
 // the breaks the check computes from value imports must match one to one; ordinary imports are listed nowhere.
+// A file rule (`files`, `to`) is a second table on the same page, one row per importing file and module, and counts
+// type-only imports too.
 
 const rules = config.dependencies?.rules ?? [];
 const rows = [];
-let tableSeen = false;
-/** One entry per break the code has: key → { rule, from, to, files: the importing files }. Type-only imports are no run-time coupling and don't count. */
+/** One entry per break the code has: key → { rule, from, to, files: the importing files }. For a unit rule, type-only imports are no run-time coupling and don't count. For a file rule, `from` is the importing file and `to` the module. */
 const breaks = new Map();
 let imports = [];
 if (DEPENDENCIES) {
   const workspaceDirs = (config.imports?.workspaces ?? [])
     .flatMap(directoriesMatching)
     .filter((d) => existsSync(join(repo, d, "package.json")));
-  imports = readImports(repo, roots, { workspaceDirs, aliases: config.imports?.aliases ?? [] });
+  imports = readImports(repo, [...roots, ...FILE_RULES.map((r) => r.files)], {
+    workspaceDirs, aliases: config.imports?.aliases ?? [] });
 
   const addBreak = (rule, from, to, file) => {
     const key = `${rule}|${from}|${to}`;
@@ -470,8 +475,13 @@ if (DEPENDENCIES) {
     breaks.get(key).files.add(file);
   };
   const nameOf = (unit) => unit.split("/").at(-1);
+  // A file rule's target is a package or a package subpath (matched on the specifier as written) or a repo path
+  // (matched on where the import resolves to).
+  const reaches = (i, target) =>
+    i.spec === target || i.spec.startsWith(`${target}/`) || under(i.to, target);
   // Breaks name a unit by its last path segment, so two units of one glob with the same one would merge their rows.
-  for (const glob of new Set(rules.flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)))) {
+  const unitRules = rules.filter((r) => !r.files);
+  for (const glob of new Set(unitRules.flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)))) {
     const seen = new Map();
     for (const unit of directoriesMatching(glob)) {
       const other = seen.get(nameOf(unit));
@@ -491,7 +501,15 @@ if (DEPENDENCIES) {
       ? `${b.from} importing ${b.to} inside a cycle`
       : `${b.from} importing ${b.to}`;
   for (const rule of rules) {
-    if (rule.cycle) {
+    if (rule.files) {
+      if (!existsSync(join(repo, rule.files)))
+        fail("config dependencies.rules", `"${rule.rule}": files ${rule.files} doesn't exist.`);
+      for (const i of imports) {
+        if (!under(i.from, rule.files)) continue;
+        for (const target of rule.to)
+          if (reaches(i, target)) addBreak(rule.rule, i.from, target, i.from);
+      }
+    } else if (rule.cycle) {
       const graph = new Map();
       const edgeFiles = new Map();
       for (const i of imports) {
@@ -518,6 +536,12 @@ if (DEPENDENCIES) {
     }
   }
 
+  const TABLES = [
+    { name: "unit", header: ["from", "to", "rule", "example file"], needed: true },
+    { name: "file", header: ["file", "imports", "rule"], needed: FILE_RULES.length > 0 },
+  ];
+  const seen = new Set();
+  let table = null;
   withoutFences(read(`${MAP_DIR}/${DEPENDENCIES}`))
     .split("\n")
     .forEach((text, i) => {
@@ -528,29 +552,33 @@ if (DEPENDENCIES) {
         .split("|")
         .map((c) => c.trim().replaceAll("`", ""));
       if (cells.every((c) => /^:?-+:?$/.test(c))) return;
-      if (cells[0].toLowerCase() === "from") {
-        tableSeen = true;
-        if (cells.map((c) => c.toLowerCase()).join("|") !== "from|to|rule|example file")
+      const header = TABLES.find((t) => t.header[0] === cells[0].toLowerCase());
+      if (header) {
+        table = header;
+        if (cells.map((c) => c.toLowerCase()).join("|") !== header.header.join("|"))
           fail(
             `${DEPENDENCIES}:${i + 1}`,
-            "the table header must be: | from | to | rule | example file |",
+            `the table header must be: | ${header.header.join(" | ")} |`,
           );
+        else seen.add(header.name);
         return;
       }
-      rows.push({ cells, line: i + 1 });
+      rows.push({ cells, line: i + 1, table });
     });
-  if (!tableSeen)
-    fail(DEPENDENCIES, "has no table of broken rules (| from | to | rule | example file |).");
+  for (const t of TABLES)
+    if (t.needed && !seen.has(t.name))
+      fail(DEPENDENCIES, `has no ${t.name} table (| ${t.header.join(" | ")} |).`);
 
-  const known = rules.map((r) => r.rule);
   const matched = new Set();
   for (const row of rows) {
     const where = `${DEPENDENCIES}:${row.line}`;
-    if (row.cells.length !== 4) {
-      fail(where, "a row has four cells: from, to, rule, example file.");
+    const isFile = row.table?.name === "file";
+    const known = rules.filter((r) => Boolean(r.files) === isFile).map((r) => r.rule);
+    if (row.cells.length !== row.table?.header.length) {
+      fail(where, `a row has ${row.table?.header.length ?? 0} cells: ${row.table?.header.join(", ")}.`);
       continue;
     }
-    const [from, to, rule, example] = row.cells;
+    const [from, to, rule, example = from] = isFile ? [row.cells[0], row.cells[1], row.cells[2]] : row.cells;
     if (!known.includes(rule)) {
       fail(where, `rule "${rule}" isn't one of: ${known.join("; ")}.`);
       continue;
@@ -561,7 +589,7 @@ if (DEPENDENCIES) {
     else if (!found)
       fail(
         where,
-        `stale row: ${from} to ${to} is no break of "${rule}" today. Delete the row; \`from\` and \`to\` name the last segment of the directory (a single unit).`,
+        `stale row: ${from} to ${to} is no break of "${rule}" today. Delete the row${isFile ? "" : "; `from` and `to` name the last segment of the directory (a single unit)"}.`,
       );
     else if (!found.files.has(example))
       fail(
@@ -574,7 +602,7 @@ if (DEPENDENCIES) {
     if (!matched.has(key))
       fail(
         DEPENDENCIES,
-        `new break, a regression of "${b.rule}": ${describe(b)} (${[...b.files][0]}). Remove the import first; add a row only if the break is accepted.`,
+        `new break, a regression of "${b.rule}": ${describe(b)}${rules.find((r) => r.rule === b.rule).files ? "" : ` (${[...b.files][0]})`}. Remove the import first; add a row only if the break is accepted.`,
       );
 }
 
