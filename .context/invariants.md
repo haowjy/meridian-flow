@@ -4,7 +4,13 @@ The root `AGENTS.md` states each invariant and why writers rely on it. This page
 how the code keeps it today, what checks it, and where it falls short. The mechanisms
 are current choices; the invariant is what they serve.
 
-## Text converges
+## Text merges through Yjs
+
+The writer and the model edit the same document at once. Their concurrent edits merge the
+way Yjs merges, so every copy that has seen the same edits shows the same text. This is not a
+promise that no edit is ever overwritten: Apply is "later action wins" by design. The rule
+is that an overwrite, a repair or an undo is itself an ordinary edit, which every copy
+receives and the history keeps.
 
 **How.** An edit is appended to the document's journal before it is applied, broadcast
 or acknowledged, under a per-document lock and admission sequence
@@ -22,6 +28,20 @@ Postgres.
 **Gaps.** The convergence test uses the in-memory journal, not Postgres. Nothing checks
 `gc: false`. Five write paths (live, draft, reply save, Apply, import) each have their
 own tests; none spans them. Open: #691 and #680.
+
+Two paths change text on one copy with no edit the others receive:
+
+- **Schema repair while projecting.** `deriveDocument`
+  (`apps/server/server/domains/collab/domain/document-derivations.ts`) and `projectBlocks`
+  (`packages/agent-edit/src/model/y-prosemirror.ts`) drop an element the schema cannot
+  represent from a private copy and append nothing. What the model reads can omit text the
+  stored document still holds.
+- **Checkpoint restore.** `apps/server/server/domains/collab/checkpoints.ts` and
+  `adapters/drizzle-document-authority-head.ts` install a checkpoint's state as a new
+  generation and disconnect the old one. Edits made after that checkpoint are gone, not
+  undone by a recorded edit.
+
+Import seeds a new document as its first checkpoint; that is creation, not an edit.
 
 ## Writer text stays out of logs and diagnostics
 
