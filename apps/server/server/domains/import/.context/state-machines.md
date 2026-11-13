@@ -1,9 +1,9 @@
 # Import state machines
 
-An import brings a folder or files into a project. The browser uploads the bytes. The server
-then converts each file into a staging area that the project's tree does not show, and moves
-the whole staged tree into the project in one transaction, the reveal. It is a durable job
-(`imports.state`) over its entries, one per file (`import_entries.state`). The wire
+An import is a durable job (`imports.state`) over its entries, one per file
+(`import_entries.state`). The server converts each uploaded file into a staging area the
+project's tree does not show, then moves the staged tree into the project in one transaction,
+the reveal. The wire
 states are in `packages/contracts/src/imports.ts`; the lifecycle rules are in
 [CONTEXT.md](CONTEXT.md). How the app shows these states:
 [app import](../../../../../app/src/features/import/.context/state-machines.md).

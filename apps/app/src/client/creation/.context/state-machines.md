@@ -20,9 +20,8 @@ stateDiagram-v2
   server answers.
 - **An unanswered create is looked up before it counts as failed** (`createWithRecovery`): the
   same id is read back, and if the server has it the create succeeded. When the lookup finds
-  nothing, or fails, the original error stands and the record is `failed`. That holds for a
-  refusal and for an unanswered create alike, so `failed` does not prove the server has
-  nothing: an unanswered create can still land.
+  nothing, the original error stands and the record is `failed`, although an unanswered
+  create can still land.
 - **A confirmed record leaves only once the route has data** (`useSettleConfirmedCreation`).
   Removing it from the mutation's success handler can land while the first navigation is still
   loading, leaving the screen with neither the record nor the data.

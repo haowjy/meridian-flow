@@ -4,8 +4,8 @@
 
 What one open document's connection to the server is doing (`DocumentSessionStatus` in
 `document-session.ts`). Apart from `destroyed`, the status is not stored and stepped: it is
-recomputed by `deriveStatus` from the facts below whenever one of them changes. Draw it as a
-machine to see what the writer can observe; change it by changing the derivation.
+recomputed by `deriveStatus` from the facts below whenever one of them changes. To change it,
+change the derivation.
 
 ```mermaid
 stateDiagram-v2
@@ -44,9 +44,9 @@ stateDiagram-v2
 - **`reconnecting` is `syncing`, not `offline`.** `offline` means edits are only being kept
   locally; the pill the writer sees is built on that difference
   ([sync status](../../../features/editor/.context/state-machines.md)).
-- **`synced` does not mean the server has every local edit.** The snapshot's
-  `serverHasLocalChanges` says that: it is true once the server has acknowledged every local
-  update sent on this connection, and false again on the next local edit or a disconnect.
+- **`synced` does not mean the server has every local edit.** That is
+  `serverHasLocalChanges`: true once the server has acknowledged every local update sent on
+  this connection.
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
 - The transport states are `ConnectionState` from
   [thread-client](../../../../../../packages/thread-client/.context/state-machines.md); the
@@ -55,8 +55,7 @@ stateDiagram-v2
 ## Draft room read
 
 Whether a draft's room can be shown and acted on (`DraftRoomState` in `draft-room-read.ts`).
-A draft is a pending version of one document, and its room is the Yjs room `draft:<draftId>`
-that the review screens open instead of the live document's.
+The room is the Yjs room `draft:<draftId>`, which review opens instead of the live document's.
 
 ```mermaid
 stateDiagram-v2
@@ -71,9 +70,8 @@ stateDiagram-v2
   unavailable --> rebuilding: retry
 ```
 
-- **Commands act only on `usable`** (`usable()`). A `fenced` room is one whose document schema
-  this tab's code no longer matches: the editor may still show it, with a notice, but a
-  command on it would write with a schema the server has refused.
+- **Commands act only on `usable`** (`usable()`). The editor may still show a `fenced` room,
+  with a notice, but a command on it would write with a schema the server has refused.
 - **A refused room is rebuilt once per session.** The pool retires the session in the same
   notification, and the `refused` latch stops later snapshots from the retired session from
   starting a second rebuild.

@@ -1,8 +1,7 @@
 # thread-client state machines
 
-The client for a thread (a chat), shared by the app and the `./mf` command-line tool, which
-are its hosts. These are the socket, the per-thread subscription on it, and the commands a
-tab sends beside it. What each
+The client for a thread (a chat), shared by its hosts, the app and `./mf`: the socket, the
+per-thread subscription on it, and the commands a tab sends beside it. What each
 owns is in [CONTEXT.md](CONTEXT.md); these are the states.
 
 ## Thread socket
@@ -81,9 +80,8 @@ stateDiagram-v2
 
 ## Hand-back and Stop commands
 
-Messages sent while a reply is running wait in a queue on the server. A hand-back takes
-them back, so their words return to the message box; Stop ends the run and does the same.
-This machine is one such command (`HandBackOutcome`, `UnresolvedStatus` in
+A hand-back returns queued messages' words to the message box; Stop does the same and ends
+the run. This machine is one such command (`HandBackOutcome`, `UnresolvedStatus` in
 `src/hand-back/operation.ts`). The command is saved to the host's store before it is posted.
 
 ```mermaid

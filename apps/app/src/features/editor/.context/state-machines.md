@@ -22,7 +22,6 @@ stateDiagram-v2
 - **A healthy session never leaves `idle`.** The confirmation exists to answer "did my offline
   edits make it?"; showing it after ordinary typing would flicker on every keystroke. For the
   same reason an edit made while `confirmed` hides the pill instead of returning to `awaiting`.
-- **A stalled adoption counts as an outage.** A document edited before the account's session
-  registry has taken it over is kept in the browser only. While that takeover (adoption) fails
-  or is refused, edits stay local, exactly as when offline.
+- **A stalled adoption counts as an outage.** Until the account's session registry takes a
+  document over (adoption), its edits stay in the browser, as when offline.
 - A refused update (`updatesRefused`) is not a phase. It is checked first and replaces the pill.

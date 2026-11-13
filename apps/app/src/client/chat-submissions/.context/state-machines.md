@@ -1,10 +1,9 @@
 # Chat submission state machine
 
 One message (or write-mode switch) the writer sent, from Send to the server's answer. Send
-writes the message to a journal in the browser's localStorage, kept per account (`store.ts`),
-and `driver.ts` posts it from there, so a reload does not lose a message the server has not
-confirmed. The record has no status field: its state is which of `posted`,
-`state: "rejected"` and `answer` are set. The rules are in [CONTEXT.md](CONTEXT.md).
+writes it to a per-account journal in localStorage (`store.ts`), and `driver.ts` posts it from
+there. The record has no status field: its state is which of `posted`, `state: "rejected"`
+and `answer` are set. The rules are in [CONTEXT.md](CONTEXT.md).
 
 ```mermaid
 stateDiagram-v2
@@ -19,10 +18,8 @@ stateDiagram-v2
   answered --> [*]: pruned after the grace period
 ```
 
-- **`posted` is saved before the first POST.** It records that the server may have the
-  message. A record without it can be deleted locally, because nothing was sent. A record with
-  it is removed only on the server's word: an acceptance, a structured refusal, or the server
-  withdrawing the message.
+- **`posted` is saved before the first POST.** It means the server may have the message, so
+  the record is removed only on the server's word. A record without it can be deleted locally.
 - **Only a structured refusal is a rejection.** A transport error, a timeout, a 5xx, or a
   success body that fails its schema all leave the record `posted`, because the server may
   have taken the message. Calling any of those a rejection lets the writer edit and resend

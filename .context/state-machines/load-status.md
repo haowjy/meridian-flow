@@ -1,8 +1,7 @@
 # Load status
 
-Something fetched or opened once and then shown. It is the smallest machine in the app and the
-most repeated, so it is drawn once here; a page beside the code mentions it only when it adds
-a rule.
+Something fetched or opened once and then shown. It is drawn once here; a page beside the
+code mentions it only when it adds a rule.
 
 ```mermaid
 stateDiagram-v2

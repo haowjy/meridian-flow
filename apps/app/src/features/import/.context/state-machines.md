@@ -1,8 +1,7 @@
 # Import state machines (app)
 
-An import brings a folder or files into a project. The browser uploads the bytes, and the
-server converts them out of sight and then reveals the result: every imported folder and
-document appears in the project's tree at once. The server's import job is the truth:
+The server converts an import's uploaded files out of sight, then reveals them in the
+project's tree all at once. Its import job is the truth:
 [server import](../../../../../server/server/domains/import/.context/state-machines.md). This
 tab adds two things in memory, in `import-coordinator.ts`: whether its create request landed,
 and what its own upload is doing. `importState` in `import-presentation.ts` combines both with

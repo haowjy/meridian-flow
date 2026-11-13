@@ -1,9 +1,8 @@
 # resource-replica state machines
 
-The resource replica is the browser's local copy of a project's documents and folders. A
-document or folder gets its id in the browser first, and the server catches up. Three states
-track that, and they are read together: the server hold and the lifecycle of each document or
-folder, and a namespace intent for each operation the writer asked for. [CONTEXT.md](CONTEXT.md) has the rules in prose; this page draws them.
+The browser's local copy of a project's documents and folders, which get their ids in the
+browser before the server has them. Server hold and lifecycle are recorded per document or
+folder, a namespace intent per operation the writer asked for, and they are read together. [CONTEXT.md](CONTEXT.md) has the rules in prose; this page draws them.
 
 ## Server hold
 
@@ -89,8 +88,7 @@ stateDiagram-v2
 - **Only an unsent `pending` intent can be cancelled.** One with an attempt may have reached
   the server and must be answered or superseded.
 - **A Copy settles its operation record and its roots together.** The roots are the outermost
-  documents and folders the writer copied; each gets an id minted in the browser. Left at
-  `received`, the Copy keeps holding the keys that put operations on the same places in
-  order (`PlacementAdmission.scope`), and blocks later ones.
+  things the writer copied. Left at `received`, the Copy keeps the keys that order operations
+  on the same places (`PlacementAdmission.scope`) and blocks later ones.
 - The app turns the newest intent for an operation into `pending`, `feedback` or `retired`:
   [project context](../../../apps/app/src/features/project/context/.context/state-machines.md).

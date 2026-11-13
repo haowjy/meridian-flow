@@ -3,10 +3,9 @@
 ## Live document binding
 
 One host's hold on an open document (`LiveDocumentBindingState` in
-`use-live-document-binding.ts`). A host is a pane that shows a document, on desktop or on a
-phone. It asks the opener (`ProjectDocumentLiveOpener`) to find the document and admit it,
-then binds the admission. The binding is the live document session plus a `release()`, and
-it is what keeps the document's room open.
+`use-live-document-binding.ts`). A host is a pane that shows a document. It asks the opener
+(`ProjectDocumentLiveOpener`) to admit the document, then binds the admission: the live
+document session plus a `release()`.
 
 ```mermaid
 stateDiagram-v2
@@ -48,10 +47,8 @@ stateDiagram-v2
   candidate --> none: the selection is cleared
 ```
 
-A `candidate` becomes `bound` on one of three proofs: the navigation that led here named the
-document; a lookup answered with exactly that document; or the address carries a review item
-for it. The last holds only for that review address, so the same path without the item
-starts again as a `candidate`.
+Three things prove a `candidate`: the navigation named the document, a lookup answered with
+it, or the address carries a review item for it. The last holds only for that address.
 
 Every change increments `revision`, and work started for an earlier revision is dropped when it
 returns. A `candidate` carries the obligations still pending for it and a guard against

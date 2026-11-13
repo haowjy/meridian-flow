@@ -33,7 +33,5 @@ stateDiagram-v2
   (`stopThreads`) before taking the thread row lock, because stopping takes thread locks
   parents first, each after its ask rows.
 - **Restore is refused** when the thread was deleted by a Work delete (`deletedByWorkId`), or
-  when the Work of its root is deleted; the root is the chat at the top of the chain of forks
-  and subagents the thread came from. Those threads come back only with the Work. When the
-  thread's own Work is unavailable, restore moves it to No Work, the Work every project has
-  for chats outside any task.
+  the Work of its root chat is deleted: those come back only with the Work. When the thread's
+  own Work is unavailable, restore moves it to No Work.

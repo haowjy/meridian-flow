@@ -18,6 +18,5 @@ stateDiagram-v2
   moved more than a few pixels between frames without the transport moving it.
 - **Resume starts where the page is**, not where playback stopped: the time is recomputed from
   the scroll position. At the end of the page, or after `done`, play starts again from the top.
-- The story ends on a question card with a "Send answer" button. The movement that follows a
-  press is a separate flag (`glide.active`), not an autoplay state, and any interruption
-  clears it.
+- The movement after the story's "Send answer" button is a separate flag (`glide.active`),
+  cleared by any interruption.

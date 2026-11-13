@@ -1,20 +1,16 @@
 # State machines
 
-Every state machine in the repository, with a link to the diagram beside its code. A machine
-here is anything with named states and rules for moving between them, whether or not the code
-calls it one: a status column, a reducer, a connection, a lifecycle spread over two fields.
-
-The pages use the product's own words (Work, draft, turn, run, ask). [Product words](../glossary.md)
-says what each means.
-
-Each `state-machines.md` sits in the `.context/` of the directory that owns the transitions.
-It draws the machine as it is in the code now and says what a wrong edit breaks. Change the
-code and the diagram in the same commit.
+Every state machine in the repository: anything with named states and rules for moving
+between them, whether a status column, a reducer, a connection or a lifecycle spread over two
+fields. Each `state-machines.md` sits in the `.context/` beside the code that owns the
+transitions, draws the machine as the code has it and says what a wrong edit breaks. Change
+the code and the diagram in the same commit. Product words are in the
+[glossary](../glossary.md).
 
 ## Patterns
 
-Four shapes recur. Each is drawn once, with its rules, the reason for each rule, and a list
-of the machines that have the shape and where they depart from it:
+Four shapes recur. Each page draws the shape, gives its rules and lists the machines that
+have it:
 
 - [A command that may have landed](command-that-may-have-landed.md): an optimistic action whose
   request can go unanswered.
@@ -84,9 +80,7 @@ of the machines that have the shape and where they depart from it:
 
 ## What is left out
 
-A set of named states is not a machine when no code moves it from one state to the next.
-These are computed from other state each time they are read, and their pages say so where it
-helps: the chat's handoff brief card and compaction divider (from a turn's status), the import
-word the writer sees (from the server's summary and the local phase), undo part state in
-agent-edit (from the document), and the Stop button's status (from the run state). Two-way toggles and one-shot results (a clipboard write,
-a port release) are left out too.
+Named states that no code steps: they are computed from other state on each read. Examples
+are the handoff brief card and compaction divider (from a turn's status), the import word the
+writer sees, undo part state in agent-edit and the Stop button's status. Two-way toggles and
+one-shot results are left out too.

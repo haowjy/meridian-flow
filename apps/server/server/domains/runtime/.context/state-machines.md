@@ -1,9 +1,8 @@
 # Runtime state machines
 
-The durable states a run moves through, and what each transition depends on. A thread is a
-chat and a turn is one entry in it. A run is one stretch of the server working a thread: it
-claims the thread, calls the model and its tools, writes turns and releases the thread. Other
-product words are in [product words](../../../../../../.context/glossary.md). Thread filing
+The durable states a run moves through. A run is one stretch of the server working a thread
+(a chat), and a turn is one entry in the thread; other product words are in the
+[glossary](../../../../../../.context/glossary.md). Thread filing
 (archive, trash) is in [threads](../../threads/.context/state-machines.md); every machine in the
 repository is indexed in [the root index](../../../../../../.context/state-machines/index.md).
 
@@ -44,11 +43,9 @@ stateDiagram-v2
 - **An ask on an unavailable thread becomes a cancel.** When the cause is "asked" but the thread
   is deleted or archived, the finalizer settles the turn `cancelled` and cancels the ask instead
   of opening it.
-- **`pending` covers three kinds of turn.** A reserved reply is the assistant turn created
-  before the model starts generating. A compaction turn, which replaces older history with a
-  summary, is created `pending` and stays there while it runs (`loop/local-turn.ts`). A
-  handoff seed, the first turn of a chat made by handoff, is `pending` while its brief is
-  written.
+- **`pending` covers three kinds of turn**: a reply reserved before the model generates; a
+  compaction turn, `pending` while it summarizes older history (`loop/local-turn.ts`); and a
+  handoff seed, `pending` while its brief is written.
 
 ## Run lease and phase
 
@@ -135,8 +132,8 @@ This is the server half of [a command that may have landed](../../../../../../.c
 
 ## Spawn status
 
-What became of one subagent, a child thread a run starts to do part of its work, as its
-parent sees it (`threads.spawn_status`). It is the
+What became of one subagent (a child thread a run starts), as its parent sees it
+(`threads.spawn_status`). It is the
 outcome of the spawn, not whether the child thread is running now: see [spawn](spawn.md).
 
 ```mermaid

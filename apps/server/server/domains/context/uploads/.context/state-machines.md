@@ -1,8 +1,8 @@
 # Upload intake state machine
 
-One uploaded file, from a reserved address to a file in Context, the project's file tree
-(`upload_intakes.state`; `upload-intake.ts`, `drizzle-upload-intake.ts`). The file is either a
-chat attachment or a file uploaded into the project to become a document. The database checks
+One uploaded file, a chat attachment or a file that becomes a document, from a reserved
+address to a file in Context (`upload_intakes.state`; `upload-intake.ts`,
+`drizzle-upload-intake.ts`). The database checks
 only that the value is one of the four; the order is enforced by the guards below.
 
 ```mermaid

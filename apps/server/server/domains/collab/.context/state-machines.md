@@ -1,11 +1,8 @@
 # Collab state machines
 
-The status columns collab owns. A draft is a pending version of one document. A branch is the
-set of drafts one Work holds, or, for chats outside any Work, one chat and the chats derived
-from it. The model writes into drafts; the writer lands a draft's changes on the live document
-with Apply, or drops them with Discard. Each machine is small; what matters is that none of
-them runs backwards. The model they belong to is in
-[draft-model-and-records.md](draft-model-and-records.md).
+The status columns collab owns. A draft is a pending version of one document, and a branch is
+the set of drafts one owner holds. None of these machines runs backwards. The model they
+belong to is in [draft-model-and-records.md](draft-model-and-records.md).
 
 ## Draft and branch
 

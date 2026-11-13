@@ -1,7 +1,6 @@
 # Work state machines
 
-A Work is a task inside a project: it groups chats and owns the drafts they produce. Its
-availability is two timestamps on its row, changed in
+A Work is a task inside a project. Its availability is two timestamps on its row, changed in
 `adapters/work-repository/drizzle.ts`. Neither is the Work's `status`, which is free text the
 model owns. The lifecycle contracts are in [CONTEXT.md](CONTEXT.md).
 
@@ -29,7 +28,7 @@ stateDiagram-v2
   trashed separately stays trashed
   ([thread trash](../../threads/.context/state-machines.md)).
 - **Branches and drafts outlive the delete** until purge, so restore finds them.
-- No Work, the Work every project has for chats outside any task, is never archived (the
+- No Work, the project's Work for chats outside any task, is never archived (the
   `works_no_work_not_archived` check), and the repository refuses to change it
   (`WorkLockedError`).
 - A caller that finds the Work unavailable gets `WorkLifecycleUnavailableError` with

@@ -1,8 +1,8 @@
 # Chat state machines
 
-The chat feature's own machines. Work, write mode, compaction, fork and handoff are explained
-in [product words](../../../../../../.context/glossary.md). The states a turn and a run go
-through are the server's:
+The chat feature's own machines. Product words are in the
+[glossary](../../../../../../.context/glossary.md). The states a turn and a run go through are
+the server's:
 [runtime](../../../../../server/server/domains/runtime/.context/state-machines.md). The message
 journal is in [chat-submissions](../../../client/chat-submissions/.context/state-machines.md).
 
@@ -35,9 +35,8 @@ stateDiagram-v2
 
 ## Queued control
 
-One compaction request (summarize the older turns) or write-mode switch (send the model's
-writes to a draft, or straight to the live document) that the writer made while a reply was
-running, so it waits in the queue
+One compaction request or write-mode switch the writer made while a reply was running, so
+it waits in the queue
 (`controlsReducer` in `thread-controls/thread-controls.ts`). An entry has two independent
 parts: sending it, and withdrawing it.
 
