@@ -407,6 +407,7 @@
     "packages/gateway/src/adapters/provider-stream.test.ts": 3,
     "packages/gateway/src/attempt-stream.test.ts": 6,
     "packages/gateway/src/deadline.test.ts": 3,
+    "packages/gateway/src/media-placement.test.ts": 6,
     "packages/markup/src/codec-hard-break.test.ts": 10,
     "packages/markup/src/codec-image-size.test.ts": 15,
     "packages/markup/src/codec-markdown.test.ts": 19,

@@ -16,7 +16,13 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
-import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/gateway";
+import {
+  type Gateway,
+  type GenerateRequest,
+  type ModelInfo,
+  placeMedia,
+  type Tool,
+} from "@meridian-flow/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -234,7 +240,9 @@ export async function prepareNextTurnContext(
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
   const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
-  const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
+  const supportsImageInput =
+    resolvedModel !== undefined &&
+    placeMedia(resolvedModel, { mediaType: "image/png" }).transport !== "none";
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,

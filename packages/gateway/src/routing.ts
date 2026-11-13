@@ -38,7 +38,7 @@ export function buildProviderRegistry(
         });
         continue;
       }
-      registry.set(model.id, { adapter, model });
+      registry.set(model.id, { adapter, model: { ...model, wire: config.adapter } });
     }
   }
   return registry;

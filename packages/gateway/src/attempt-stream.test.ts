@@ -24,7 +24,8 @@ const MODEL: ModelInfo = {
   maxOutputTokens: 4_096,
   promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  wire: "openai-compatible",
+  inputModalities: ["text"],
 };
 
 const REQUEST: GenerateRequest = { messages: [], promptCacheRetention: "short" };

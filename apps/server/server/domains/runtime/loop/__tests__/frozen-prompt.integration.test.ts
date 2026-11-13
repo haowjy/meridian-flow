@@ -172,7 +172,8 @@ describe("frozen prompt provider requests", () => {
       maxOutputTokens: 4_096,
       promptCache: { kind: "explicit", shortTtlSeconds: 60 * 60, longTtlSeconds: 60 * 60 },
       reasoning: { efforts: ["low", "medium", "high", "max"] },
-      capabilities: new Set(),
+      wire: "openai",
+      inputModalities: ["text"],
     };
     const tools: Tool[] = [
       {
@@ -239,7 +240,8 @@ describe("frozen prompt provider requests", () => {
               shortTtlSeconds: null,
               longTtlSeconds: null,
             },
-            capabilities: new Set(["image_input" as const]),
+            wire: "openai" as const,
+            inputModalities: ["text" as const, "image" as const],
           },
         ],
       },
@@ -307,7 +309,8 @@ describe("frozen prompt provider requests", () => {
       maxOutputTokens: 4_096,
       promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
       reasoning: { efforts: ["low", "medium", "high", "max"] },
-      capabilities: new Set(["image_input"]),
+      wire: "openai",
+      inputModalities: ["text", "image"],
     };
     const gateway = Object.assign(
       scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
@@ -395,7 +398,7 @@ describe("frozen prompt provider requests", () => {
       gateway.requests
         .at(-1)
         ?.messages.flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
+        .some((part) => part.type === "media"),
     ).toBe(true);
 
     await sendAndRun(firstFork.id, "first fork retains source image", []);
@@ -408,7 +411,7 @@ describe("frozen prompt provider requests", () => {
     expect(
       firstForkRequest?.messages
         .flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
+        .some((part) => part.type === "media"),
     ).toBe(true);
     expect(
       firstForkRequest?.messages

@@ -24,7 +24,8 @@ const model: ModelInfo = {
   maxOutputTokens: 4_096,
   promptCache: { kind: "explicit", shortTtlSeconds: 60, longTtlSeconds: 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  wire: "openai",
+  inputModalities: ["text"],
 };
 
 const bakedTool: Tool = {

@@ -28,7 +28,8 @@ const threadModel: ModelInfo = {
   maxOutputTokens: 1000,
   promptCache: { kind: "explicit", shortTtlSeconds: 60 * 60, longTtlSeconds: 60 * 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  wire: "openai",
+  inputModalities: ["text"],
 };
 const cheapModel = {
   ...threadModel,

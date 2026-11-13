@@ -6,5 +6,6 @@
  * contract without reaching into individual files.
  */
 
+export * from "./media.js";
 export * from "./resolve-call.js";
 export * from "./types.js";

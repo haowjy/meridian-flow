@@ -41,15 +41,18 @@
  *   registry's `cacheWriteUsdPerMillionTokens` pinned rates.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import type {
-  ContentPart,
-  GenerateRequest,
-  Message,
-  ModelInfo,
-  ResolvedCall,
-  Tool,
+import {
+  type ContentPart,
+  type GenerateRequest,
+  type MediaPart,
+  type Message,
+  type ModelInfo,
+  type ResolvedCall,
+  type TextPart,
+  type Tool,
+  type ToolResultPart,
+  wireMediaSource,
 } from "../../domain/index.js";
-import { safeToolOutput } from "../../helpers/serialize.js";
 import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
@@ -76,8 +79,8 @@ export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache
 // Canonical ContentPart → Anthropic content blocks.
 // Extracts the Anthropic content-block union type from the SDK for type-safe
 // block construction. Reasoning parts are only replayed to matching
-// provider/model origins; images use url/base64 sources; tool_use/tool_result
-// map directly.
+// provider/model origins; media is an image or document block with a url/base64
+// source; tool_use/tool_result map directly.
 //
 
 type AnthropicContentBlock = Anthropic.MessageCreateParams["messages"][number] extends {
@@ -97,10 +100,20 @@ function matchesReasoningOrigin(
   return origin?.provider === targetProviderId && origin?.model === targetModelId;
 }
 
+type MapTarget = Pick<ModelInfo, "id" | "provider" | "wire">;
+
+function mapMediaToAnthropicBlock(part: MediaPart, target: MapTarget): AnthropicContentBlock {
+  const media = wireMediaSource(target, part);
+  const source =
+    "url" in media
+      ? { type: "url" as const, url: media.url }
+      : { type: "base64" as const, data: media.data, media_type: media.mediaType };
+  return { type: media.kind === "image" ? "image" : "document", source } as any;
+}
+
 function mapContentPartToAnthropicBlock(
   part: ContentPart,
-  targetProviderId: string,
-  targetModelId: string,
+  target: MapTarget,
 ): AnthropicContentBlock | null {
   switch (part.type) {
     case "text":
@@ -109,23 +122,8 @@ function mapContentPartToAnthropicBlock(
         type: "text" as const,
         text: part.text,
       } as any;
-    case "image": {
-      const data = part.data instanceof URL ? part.data.href : part.data;
-      if (data.startsWith("http://") || data.startsWith("https://")) {
-        return {
-          type: "image" as const,
-          source: { type: "url" as const, url: data },
-        } as any;
-      }
-      return {
-        type: "image" as const,
-        source: {
-          type: "base64" as const,
-          data,
-          media_type: part.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-        },
-      } as any;
-    }
+    case "media":
+      return mapMediaToAnthropicBlock(part, target);
     case "tool_use":
       return {
         type: "tool_use" as const,
@@ -134,14 +132,9 @@ function mapContentPartToAnthropicBlock(
         input: part.input,
       } as any;
     case "tool_result":
-      return {
-        type: "tool_result" as const,
-        tool_use_id: part.toolCallId,
-        content: safeToolOutput(part.output),
-        is_error: part.isError ?? false,
-      } as any;
+      return mapToolResult(part, target);
     case "reasoning": {
-      if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
+      if (!matchesReasoningOrigin(part, target.provider, target.id)) return null;
       const anthropic = part.providerOptions?.anthropic;
       if (anthropic?.redacted === true && typeof anthropic.data === "string") {
         return {
@@ -158,16 +151,38 @@ function mapContentPartToAnthropicBlock(
       }
       return null;
     }
-    default:
-      // file, custom — best effort: pass as text
-      return {
-        type: "text" as const,
-        text:
-          "data" in part && typeof part.data === "string" && part.data.length > 0
-            ? part.data
-            : JSON.stringify(part),
-      } as any;
   }
+}
+
+/**
+ * A tool result with text only keeps the string shorthand. Media goes inside the result, except
+ * an `is_error` result: Anthropic rejects media there, so it carries text only and its media
+ * are returned separately to follow the tool results in the same user message.
+ */
+function mapToolResult(part: ToolResultPart, target: MapTarget): AnthropicContentBlock {
+  const text = part.content
+    .filter((p): p is TextPart => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+  const media = part.content.filter((p): p is MediaPart => p.type === "media");
+  const inside = media.length > 0 && !part.isError;
+  const content = inside
+    ? part.content
+        .map((p) =>
+          p.type === "text"
+            ? p.text.length > 0
+              ? { type: "text" as const, text: p.text }
+              : null
+            : mapMediaToAnthropicBlock(p, target),
+        )
+        .filter((block) => block !== null)
+    : text;
+  return {
+    type: "tool_result" as const,
+    tool_use_id: part.toolCallId,
+    ...(content.length > 0 ? { content } : {}),
+    is_error: part.isError ?? false,
+  } as any;
 }
 
 function textFromParts(parts: ContentPart[]): string {
@@ -197,11 +212,7 @@ function orderedAnthropicBlocks(blocks: AnthropicContentBlock[]): AnthropicConte
   return [...blocks.filter(isThinking), ...blocks.filter((block) => !isThinking(block))];
 }
 
-function mapMessage(
-  message: Message,
-  targetProviderId: string,
-  targetModelId: string,
-): Anthropic.Messages.MessageParam | null {
+function mapMessage(message: Message, target: MapTarget): Anthropic.Messages.MessageParam | null {
   // system messages are extracted separately
   if (message.role === "system") return null;
 
@@ -209,10 +220,15 @@ function mapMessage(
 
   // Tool result messages → user message with tool_result blocks
   if (message.role === "tool") {
-    const blocks = message.content
-      .filter((p) => p.type === "tool_result")
-      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId))
-      .filter((p): p is AnthropicContentBlock => p !== null);
+    const results = message.content.filter((p) => p.type === "tool_result");
+    const blocks = [
+      ...results.map((p) => mapToolResult(p, target)),
+      // An error result's media follow the tool results as ordinary user content.
+      ...results
+        .filter((p) => p.isError)
+        .flatMap((p) => p.content.filter((c) => c.type === "media"))
+        .map((p) => mapMediaToAnthropicBlock(p, target)),
+    ];
     return blocks.length > 0 ? { role: "user", content: blocks as any } : null;
   }
 
@@ -225,7 +241,7 @@ function mapMessage(
   }
 
   const blocks = message.content
-    .map((part) => mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId))
+    .map((part) => mapContentPartToAnthropicBlock(part, target))
     .filter((p): p is AnthropicContentBlock => p !== null);
   return blocks.length > 0 ? { role, content: orderedAnthropicBlocks(blocks) as any } : null;
 }
@@ -374,7 +390,13 @@ export function toAnthropicMessageParams(
   request: GenerateRequest,
   model: Pick<
     ModelInfo,
-    "id" | "provider" | "maxOutputTokens" | "reasoning" | "promptCache" | "projectToolSchema"
+    | "id"
+    | "provider"
+    | "wire"
+    | "maxOutputTokens"
+    | "reasoning"
+    | "promptCache"
+    | "projectToolSchema"
   >,
   call: ResolvedCall,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
@@ -386,7 +408,7 @@ export function toAnthropicMessageParams(
   const tools = mapTools(request.tools, model.projectToolSchema === true);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, model.provider, model.id))
+      .map((message) => mapMessage(message, model))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 

@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { GenerateRequest } from "../../domain/index.js";
 import { resolveReasoning } from "../../domain/index.js";
-import { assistant, system, toolResult, user } from "../../helpers/messages.js";
+import { assistant, system, text, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 
 // DeepSeek's row has a thinking toggle; Claude's has none.
@@ -30,6 +30,7 @@ function toParams(
     {
       ...model,
       provider: providerId,
+      wire: "anthropic" as const,
       ...(providerId === "anthropic" ? { projectToolSchema: true as const } : {}),
       reasoning,
       promptCache: {
@@ -72,10 +73,14 @@ function requestWithToolPair() {
           input: { slug: "creative-writing-modes" },
         },
       ]),
-      toolResult("call_skill_creative_writing_modes", {
-        slug: "creative-writing-modes",
-        body: "modes body.",
-      }),
+      toolResult("call_skill_creative_writing_modes", [
+        text(
+          JSON.stringify({
+            slug: "creative-writing-modes",
+            body: "modes body.",
+          }),
+        ),
+      ]),
     ],
     tools: [skillTool],
   };
@@ -129,7 +134,9 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
               input: { slug: "writing-principles" },
             },
           ]),
-          toolResult("call_1", { slug: "writing-principles", body: "body" }),
+          toolResult("call_1", [
+            text(JSON.stringify({ slug: "writing-principles", body: "body" })),
+          ]),
         ],
         tools: [skillTool],
       },
@@ -159,7 +166,9 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
               input: { slug: "writing-principles" },
             },
           ]),
-          toolResult("call_1", { slug: "writing-principles", body: "body" }),
+          toolResult("call_1", [
+            text(JSON.stringify({ slug: "writing-principles", body: "body" })),
+          ]),
         ],
         tools: [skillTool],
       },
@@ -179,7 +188,7 @@ describe("Anthropic message alternation", () => {
           assistant([
             { type: "tool_use", toolCallId: "call_delivery", toolName: "spawn", input: {} },
           ]),
-          toolResult("call_delivery", { ok: true }),
+          toolResult("call_delivery", [text(JSON.stringify({ ok: true }))]),
           user("<system_update>child finished</system_update>"),
           user("writer message one"),
           user("writer message two"),
@@ -213,11 +222,11 @@ describe("Anthropic prompt-cache marks", () => {
           system("You are Writer."),
           user("first"),
           assistant([{ type: "tool_use", toolCallId: "c1", toolName: "grep", input: {} }]),
-          toolResult("c1", "result", false),
+          toolResult("c1", [text("result")], false),
           assistant([{ type: "text", text: "done" }]),
           user("older"),
           assistant([{ type: "tool_use", toolCallId: "c2", toolName: "grep", input: {} }]),
-          toolResult("c2", "result", false),
+          toolResult("c2", [text("result")], false),
         ],
         tools: [{ type: "function", name: "grep", description: "Search.", inputSchema: {} }],
       },
@@ -255,7 +264,7 @@ describe("Anthropic prompt-cache marks", () => {
             role: "user",
             content: [
               { type: "text", text: "look" },
-              { type: "image", data: "aGk=", mediaType: "image/png" },
+              { type: "media", mediaType: "image/png", source: { data: "aGk=" } },
             ],
           },
         ],

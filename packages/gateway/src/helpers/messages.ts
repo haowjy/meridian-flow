@@ -8,8 +8,13 @@
  * tests.
  */
 
-import type { ContentPart, Message, ProviderOptions, TextPart } from "../domain/index.js";
-import type { JsonValue } from "../shapes/index.js";
+import type {
+  ContentPart,
+  MediaPart,
+  Message,
+  ProviderOptions,
+  TextPart,
+} from "../domain/index.js";
 
 export function user(text: string): Message {
   return { role: "user", content: [{ type: "text", text }] };
@@ -27,9 +32,13 @@ export function assistant(parts: ContentPart[]): Message {
   return { role: "assistant", content: parts };
 }
 
-export function toolResult(toolCallId: string, output: JsonValue, isError?: boolean): Message {
+export function toolResult(
+  toolCallId: string,
+  content: Array<TextPart | MediaPart>,
+  isError?: boolean,
+): Message {
   return {
     role: "tool",
-    content: [{ type: "tool_result", toolCallId, output, isError }],
+    content: [{ type: "tool_result", toolCallId, content, isError }],
   };
 }

@@ -221,7 +221,11 @@ describe("estimateRequestTokens", () => {
                 toolName: "read",
                 input: { chapter: text },
               },
-              { type: "tool_result", toolCallId: "call-1", output: { chapter: text } },
+              {
+                type: "tool_result",
+                toolCallId: "call-1",
+                content: [{ type: "text", text: JSON.stringify({ chapter: text }) }],
+              },
             ],
           },
         ],

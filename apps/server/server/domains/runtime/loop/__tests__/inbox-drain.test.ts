@@ -162,7 +162,11 @@ async function setup(
           maxOutputTokens: 16_384,
           promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
           reasoning: { efforts: ["low", "medium", "high", "max"] },
-          capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
+          wire: "openai" as const,
+          inputModalities:
+            options.supportsImageInput === false
+              ? ["text" as const]
+              : ["text" as const, "image" as const],
         },
       ],
     } satisfies Gateway,
@@ -444,7 +448,7 @@ describe("inbox drain", () => {
     expect(
       required(requests[0])
         .messages.flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
+        .some((part) => part.type === "media"),
     ).toBe(true);
     const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
       (block) => block.blockType === "image",

@@ -3,7 +3,14 @@
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { ContentPart, Message, Tool, ToolUsePart } from "@meridian-flow/gateway";
+import type {
+  ContentPart,
+  MediaPart,
+  Message,
+  TextPart,
+  Tool,
+  ToolUsePart,
+} from "@meridian-flow/gateway";
 import { assistant, system, text, toolResult } from "@meridian-flow/gateway";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -117,7 +124,11 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
         } | null;
         const toolCallId = content?.toolCallId ?? "";
         messages.push(
-          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+          toolResult(
+            toolCallId,
+            toolOutputParts(content?.output ?? block.textContent ?? null),
+            content?.isError,
+          ),
         );
         continue;
       }
@@ -224,11 +235,21 @@ function completeToolResultGroups(
         ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
         : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
     for (const toolCallId of missingResultIds) {
-      completed.push(toolResult(toolCallId, missingResultMessage, true));
+      completed.push(toolResult(toolCallId, toolOutputParts(missingResultMessage), true));
     }
   }
 
   return completed;
+}
+
+/**
+ * A stored tool `output` as the one text part the model sees: strings as they are, anything else
+ * as JSON. Never empty, because providers reject an empty tool result.
+ */
+function toolOutputParts(output: unknown): [TextPart] {
+  if (typeof output === "string" && output.length > 0) return [text(output)];
+  if (typeof output === "string") return [text('""')];
+  return [text(JSON.stringify(output) ?? "null")];
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
@@ -243,7 +264,7 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
 
 /** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
 function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
+  const parts = turnBlocksToContentParts([...blocks], ["text", "image"]);
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -313,12 +334,17 @@ function blockToContentPart(block: Block): ContentPart | null {
         input: content?.input ?? {},
       } satisfies ToolUsePart;
     }
-    case "image":
-    case "file":
-      if (block.content && typeof block.content === "object") {
-        return block.content as unknown as ContentPart;
-      }
-      return null;
+    case "image": {
+      // Only a projected image carries its bytes; the stored reference has none.
+      const image = block.content as { mediaType?: string; data?: string } | null;
+      return image?.mediaType && image.data
+        ? ({
+            type: "media",
+            mediaType: image.mediaType,
+            source: { data: image.data },
+          } satisfies MediaPart)
+        : null;
+    }
     case "custom":
       // Interrupt content stays in its tool input/result to preserve provider ordering.
       return null;

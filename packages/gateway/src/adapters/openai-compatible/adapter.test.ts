@@ -26,8 +26,9 @@ describe("openai-compatible adapter retries", () => {
     queue.enqueue({ steps: [{ error: { status: 500, message: "down" } }] });
     const config = mockProviderConfig(server.baseUrl);
     const adapter = createOpenAICompatibleAdapter(config);
-    const model = config.models[0];
-    if (!model) throw new Error("mock config has no model");
+    const providerModel = config.models[0];
+    if (!providerModel) throw new Error("mock config has no model");
+    const model = { ...providerModel, wire: config.adapter };
 
     const events = [];
     for await (const event of adapter.stream(

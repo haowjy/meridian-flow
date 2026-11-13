@@ -132,7 +132,10 @@ describe("document command recovery through the runtime loop", () => {
     const retryMessage = requests[1]?.messages
       .flatMap((message) => message.content)
       .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");
-    expect(retryMessage).toMatchObject({ output: persistedOutput, isError: true });
+    expect(retryMessage).toMatchObject({
+      content: [{ type: "text", text: persistedOutput }],
+      isError: true,
+    });
     expect(events.some((event) => event.type === "turn.completed")).toBe(true);
   });
 

@@ -26,15 +26,16 @@
  *   default.
  */
 import type OpenAI from "openai";
-import type {
-  ContentPart,
-  GenerateRequest,
-  Message,
-  ModelInfo,
-  ResolvedCall,
-  Tool,
+import {
+  type ContentPart,
+  type GenerateRequest,
+  type MediaPart,
+  type Message,
+  type ModelInfo,
+  type ResolvedCall,
+  type Tool,
+  wireMediaSource,
 } from "../../domain/index.js";
-import { safeToolOutput } from "../../helpers/serialize.js";
 
 /** The `prompt_cache_options.ttl` each supported lifetime, in seconds, is sent as; the 30m default is sent as no parameter. */
 const TTL_WIRE = new Map<number, "12h" | undefined>([
@@ -54,31 +55,39 @@ export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache
 // ── Content parts mapping ─────────────────────────────────────────
 //
 // Canonical ContentPart → OpenAI Responses `input` content items.
-// Images use input_image (URL or base64 data-URI), text uses input_text,
-// files become a text placeholder (Responses has no native file input item).
+// Images use input_image and PDFs input_file, each by link or as bytes in a data URL;
+// text uses input_text. The same items are valid in a user message and in a
+// function_call_output.
 //
 
 type ResponseInputContent = OpenAI.Responses.ResponseInputContent;
 
-function mapContentPartToResponseInput(part: ContentPart): ResponseInputContent | null {
+function mapMediaToResponseInput(part: MediaPart, wire: ModelInfo["wire"]): ResponseInputContent {
+  const media = wireMediaSource({ wire }, part);
+  if (media.kind === "image") {
+    return {
+      type: "input_image",
+      image_url: "url" in media ? media.url : `data:${media.mediaType};base64,${media.data}`,
+    } as any;
+  }
+  return "url" in media
+    ? ({ type: "input_file", file_url: media.url } as any)
+    : ({
+        type: "input_file",
+        filename: media.filename,
+        file_data: `data:${media.mediaType};base64,${media.data}`,
+      } as any);
+}
+
+function mapContentPartToResponseInput(
+  part: ContentPart,
+  wire: ModelInfo["wire"],
+): ResponseInputContent | null {
   switch (part.type) {
     case "text":
       return part.text.length > 0 ? { type: "input_text", text: part.text } : null;
-    case "image": {
-      const data = part.data instanceof URL ? part.data.href : part.data;
-      if (data.startsWith("http://") || data.startsWith("https://")) {
-        return {
-          type: "input_image",
-          image_url: data,
-        } as any;
-      }
-      return {
-        type: "input_image",
-        image_url: `data:${part.mediaType};base64,${data}`,
-      } as any;
-    }
-    case "file":
-      return { type: "input_text", text: `[file: ${part.filename ?? "unknown"}]` };
+    case "media":
+      return mapMediaToResponseInput(part, wire);
     default:
       return null;
   }
@@ -92,9 +101,9 @@ function mapContentPartToResponseInput(part: ContentPart): ResponseInputContent 
 // message/function_call/reasoning items per the Responses input model.
 //
 
-function textFromParts(parts: ContentPart[]): string {
+function textFromParts(parts: readonly { type: string }[]): string {
   return parts
-    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
     .join("");
 }
@@ -130,7 +139,7 @@ function mapReasoningPartToResponseInput(
   } as any;
 }
 
-function mapMessage(message: Message): ResponseInputItem | null {
+function mapMessage(message: Message, wire: ModelInfo["wire"]): ResponseInputItem | null {
   // System messages are handled via `instructions` param
   if (message.role === "system") return null;
 
@@ -138,10 +147,15 @@ function mapMessage(message: Message): ResponseInputItem | null {
   if (message.role === "tool") {
     const result = message.content.find((p) => p.type === "tool_result");
     if (result) {
+      const hasMedia = result.content.some((p) => p.type === "media");
       return {
         type: "function_call_output",
         call_id: result.toolCallId,
-        output: safeToolOutput(result.output),
+        output: hasMedia
+          ? result.content
+              .map((p) => mapContentPartToResponseInput(p, wire))
+              .filter((p) => p !== null)
+          : textFromParts(result.content),
       } as any;
     }
     return null;
@@ -173,7 +187,7 @@ function mapMessage(message: Message): ResponseInputItem | null {
 
   // Mixed content
   const contentParts = message.content
-    .map(mapContentPartToResponseInput)
+    .map((part) => mapContentPartToResponseInput(part, wire))
     .filter((p): p is ResponseInputContent => p !== null);
 
   if (contentParts.length === 0) return null;
@@ -187,8 +201,11 @@ function mapMessage(message: Message): ResponseInputItem | null {
 
 function flattenAssistantToolCalls(
   messages: Message[],
-  targetProviderId: string,
-  targetModelId: string,
+  {
+    provider: targetProviderId,
+    id: targetModelId,
+    wire,
+  }: Pick<ModelInfo, "provider" | "id" | "wire">,
 ): ResponseInputItem[] {
   const items: ResponseInputItem[] = [];
 
@@ -203,10 +220,13 @@ function flattenAssistantToolCalls(
       // Emit message content first (text parts)
       const textContent = message.content.filter((p) => p.type === "text");
       if (textContent.length > 0 || toolUses.length === 0) {
-        const mapped = mapMessage({
-          ...message,
-          content: textContent.length > 0 ? textContent : message.content,
-        });
+        const mapped = mapMessage(
+          {
+            ...message,
+            content: textContent.length > 0 ? textContent : message.content,
+          },
+          wire,
+        );
         if (mapped) items.push(mapped);
       }
 
@@ -222,7 +242,7 @@ function flattenAssistantToolCalls(
         }
       }
     } else {
-      const mapped = mapMessage(message);
+      const mapped = mapMessage(message, wire);
       if (mapped) items.push(mapped);
     }
   }
@@ -292,9 +312,9 @@ export function toOpenAIResponsesParams(
   model: ModelInfo,
   call: ResolvedCall,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
-  const { id: modelId, provider: providerId } = model;
+  const { id: modelId } = model;
   const instructions = extractInstructions(request.messages);
-  const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
+  const input = flattenAssistantToolCalls(request.messages, model);
   const cacheTtl = call.cacheTtlSeconds === null ? undefined : TTL_WIRE.get(call.cacheTtlSeconds);
 
   return {

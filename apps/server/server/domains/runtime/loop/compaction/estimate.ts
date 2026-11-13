@@ -76,7 +76,7 @@ export function estimateModelJsonTokens(value: unknown, tokenizer: TokenizerFami
   );
 }
 
-/** Estimates one model content part; image/file payload bytes are replaced by fixed costs. */
+/** Estimates one model content part; image and media payload bytes are replaced by fixed costs. */
 export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamily): number {
   if (part === null || typeof part !== "object" || Array.isArray(part))
     return estimateModelJsonTokens(part, tokenizer);
@@ -86,18 +86,14 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
     const { data: _payload, ...withoutPayload } = record;
     return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload, tokenizer);
   }
-  if (record.type === "file") {
-    const { data: _payload, ...withoutPayload } = record;
-    const fileTextTokens =
-      typeof record.data === "string"
-        ? estimateModelJsonTokens(record.data, tokenizer)
-        : record.data instanceof URL
-          ? estimateModelJsonTokens(record.data.href, tokenizer)
-          : 0;
-    return (
-      Math.max(FILE_PART_TOKEN_ESTIMATE, fileTextTokens) +
-      estimateModelJsonTokens(withoutPayload, tokenizer)
-    );
+  if (record.type === "media") {
+    const { source, ...rest } = record as { source?: object } & Record<string, unknown>;
+    const { data: _payload, ...sourceWithoutPayload } = (source ?? {}) as Record<string, unknown>;
+    const fixed =
+      typeof record.mediaType === "string" && record.mediaType.startsWith("image/")
+        ? IMAGE_PART_TOKEN_ESTIMATE
+        : FILE_PART_TOKEN_ESTIMATE;
+    return fixed + estimateModelJsonTokens({ ...rest, source: sourceWithoutPayload }, tokenizer);
   }
   return estimateModelJsonTokens(record, tokenizer);
 }
@@ -126,7 +122,6 @@ function blockModelPart(block: Block): unknown {
         text: typeof content.text === "string" ? content.text : (block.textContent ?? ""),
       };
     case "image":
-    case "file":
     case "tool_use":
     case "tool_result":
       return { type: block.blockType, ...content };

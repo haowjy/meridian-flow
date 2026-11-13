@@ -49,7 +49,9 @@ and, per provider offering, pricing and cache descriptor, plus the required toke
 warn during construction rather than silently replacing an entry. Registry model
 facts (limits, prices, modalities, effort ranges) come from
 [models.dev](https://models.dev/api.json); a provider's API docs are only for what
-models.dev lacks, such as per-TTL cache-write rates and wire parameters.
+models.dev lacks, such as per-TTL cache-write rates and wire parameters. Nothing fetches
+models.dev at run time; `pnpm check:models` (network, so outside `pnpm check`) reports a row's
+input modalities, context window or output limit that drifted from it.
 
 `attempt-stream.ts` is the only retry layer. Provider SDK retries are disabled.
 Retry occurs only before committed text or tool output; reasoning-only
@@ -111,6 +113,35 @@ pricing or cache performance.
 Malformed tool-argument JSON is repaired at the gateway helper or surfaced as a
 typed parse refusal. Tool execution still validates the original Zod contract;
 provider advertisement is not argument authority.
+
+## Media
+
+One part, `MediaPart` (`{ type: "media", mediaType, filename?, source }`), carries an image or a
+PDF in a user message and inside a `ToolResultPart`, whose `content` is an array of text and media
+parts. `source` is `{ url }` (https only; a data URL is refused), `{ data }` (base64) or
+`{ reference: { provider, id } }` (a provider's own file id, for the provider that issued it; no
+mapper sends one yet and one reaching a mapper is an error). `mediaType` is required and never
+guessed from a URL. A mapper never downloads a link: a source its wire can't take is an error,
+and the caller decides between link and bytes before building the request, because file bytes
+should not pass through the server on every model request.
+
+Two levels, in `domain/media.ts`. The model says what it takes: `ModelInfo.inputModalities`
+(models.dev's `modalities.input`) and `maxLinkBytes`, the largest file its provider fetches by
+link where documented. The wire (`ModelInfo.wire`, stamped from the provider's adapter when the
+gateway is built) says whether a link works per kind and where a tool result's media goes.
+`placeMedia(model, { mediaType, sizeBytes? })` answers `link`, `bytes` or `none` plus the
+placement; it takes the model, not the wire, so a native Gemini adapter can key placement on the
+model's major version (nested `functionResponse` parts need Gemini 3).
+
+| Wire | Link | Tool result media |
+|---|---|---|
+| `anthropic` (Messages) | image, PDF | inside `tool_result.content` as `image`/`document` blocks; an `is_error` result carries text only (Anthropic rejects media in it) and its media follow the tool results in the same user message |
+| `openai` (Responses) | image, PDF | inside `function_call_output.output` as `input_image`/`input_file` |
+| `openai-compatible` (Chat Completions) | image only | one user message after the run of `tool` messages, each attachment group named by its tool call; a PDF is bytes only (`file` with `file_data`) |
+
+A PDF sent as bytes always has a filename (`document.pdf` by default); one sent by link needs none.
+Provider facts and the studies behind this are in the gateway-and-media work item's
+`findings/` in the docs repository.
 
 ## Cache, limits, and persisted selections
 
@@ -206,7 +237,7 @@ the request, chat binding or Agent names. `createGatewayFromEnv` (in `lib/gatewa
 provider key set), refuses it in production (a staging deploy must set `APP_ENV=staging`),
 and wraps the gateway once (`lib/gateway/live-test-model.ts`). The wrapper rewrites the
 request's model and lists every registry id, keyed or not, with the override's facts,
-because availability checks, compaction, image support and the tokenizer look models up by
+because availability checks, compaction, media placement and the tokenizer look models up by
 the stored id. Stored bindings, Agent files and the catalog still show the model they
 name, and `getDefaultModel()` stays the real default, so seeding never records the
 override. Cache prediction is the exception: a chat bound to another model reads cold

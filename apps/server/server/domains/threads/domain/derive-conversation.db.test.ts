@@ -696,7 +696,8 @@ else
         maxOutputTokens: 4_096,
         promptCache: { kind: "explicit" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] },
-        capabilities: new Set(),
+        wire: "openai",
+        inputModalities: ["text"],
       };
       const summaryRequests: import("@meridian-flow/gateway").GenerateRequest[] = [];
       const gateway: import("@meridian-flow/gateway").Gateway = {

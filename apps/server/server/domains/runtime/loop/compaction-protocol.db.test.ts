@@ -169,8 +169,8 @@ else
     function requestImageData(request: import("@meridian-flow/gateway").GenerateRequest) {
       return request.messages
         .flatMap((message) => message.content)
-        .filter((part) => part.type === "image")
-        .map((part) => part.data);
+        .filter((part) => part.type === "media")
+        .map((part) => ("data" in part.source ? part.source.data : part.source));
     }
 
     async function imageFixture(
@@ -1950,7 +1950,8 @@ else
         maxOutputTokens: 100,
         promptCache: { kind: "automatic" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] as const },
-        capabilities: new Set<import("@meridian-flow/gateway").Capability>(),
+        wire: "openai" as const,
+        inputModalities: ["text" as const],
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
