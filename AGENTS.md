@@ -25,6 +25,11 @@ whatever its size: refactor, delete dead code and simplify without asking. A fou
 large for the PR gets its own PR now; an issue is only for a fix that needs a product decision
 or is a project of its own.
 
+**Fix the root cause.** Gather the problems a probe, a review or the owner finds, trace each to its
+root cause, and fix the cause, not the symptom: no guard, retry or special case where the
+problem showed up. When the cause is the design, redesign it so the case can't happen, even if
+that means a different system. Several problems often share one cause; fix it once.
+
 **One way to do one thing, so the app feels consistent.** The same situation behaves and
 looks the same wherever the writer meets it: an action the server hasn't answered yet, a
 failure, an Undo, a list, a picker. A state machine takes one of the shapes under Patterns in
