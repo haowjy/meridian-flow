@@ -11,7 +11,6 @@ import {
   bulletListCodec,
   codeBlockCodec,
   hardBreakCodec,
-  headingCodec,
   horizontalRuleCodec,
   imageCodec,
   listItemCodec,
@@ -31,7 +30,6 @@ import {
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
   paragraphCodec,
-  headingCodec,
   codeBlockCodec,
   bulletListCodec,
   orderedListCodec,

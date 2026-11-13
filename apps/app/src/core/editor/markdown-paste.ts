@@ -50,7 +50,7 @@ import { clipboardLinkScope } from "./links";
  * and the default paste agree and the default wins.
  */
 export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
-  return blocks.some((block) => block.type.name !== "paragraph" || carriesInlineStructure(block));
+  return blocks.some((block) => !isBodyText(block) || carriesInlineStructure(block));
 }
 
 /**
@@ -83,12 +83,17 @@ export function markdownClipboardParser(
     // One paragraph is inline content wherever the caret is: a bolded phrase
     // pasted mid-sentence must join the sentence, not break it in two.
     const only = meaningful.length === 1 ? meaningful[0] : undefined;
-    if (only?.type.name === "paragraph") return new Slice(Fragment.from(only), 1, 1);
+    if (only && isBodyText(only)) return new Slice(Fragment.from(only), 1, 1);
 
     if (!canHostBlocks($context)) return defaultPlainTextPaste();
 
     return new Slice(Fragment.fromArray([...meaningful]), 0, 0);
   };
+}
+
+/** A paragraph without a level: a heading is the same node with one. */
+function isBodyText(block: PMNode): boolean {
+  return block.type.name === "paragraph" && block.attrs.level == null;
 }
 
 /** A link, an emphasis, an image: structure the literal characters spelled. */
@@ -103,7 +108,7 @@ function carriesInlineStructure(block: PMNode): boolean {
 }
 
 function isMeaningfulBlock(block: PMNode): boolean {
-  return !(block.type.name === "paragraph" && block.childCount === 0);
+  return !(isBodyText(block) && block.childCount === 0);
 }
 
 // Block structure cannot live inside a code fence — its content is the literal

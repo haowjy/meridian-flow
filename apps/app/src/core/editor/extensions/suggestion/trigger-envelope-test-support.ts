@@ -67,7 +67,7 @@ export const SHARED_TRIGGER_ENVELOPE: readonly TriggerEnvelopeRow[] = [
   {
     claim: "opens in a heading",
     opens: true,
-    content: (marker) => [{ type: "heading", attrs: { level: 2 }, content: [text(marker)] }],
+    content: (marker) => [{ type: "paragraph", attrs: { level: 2 }, content: [text(marker)] }],
   },
   {
     claim: "never opens inside a code fence, which is source rather than prose",

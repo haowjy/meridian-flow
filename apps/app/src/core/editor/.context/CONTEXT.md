@@ -211,7 +211,7 @@ identity in anchors or holds.
   lowercased GFM info string (highlighting and the diagram catalog key on it).
   Backspace reverts an inherited transform the last keystroke made. Inherited
   rules must carry the schema's attribute names, not only its type names.
-- Block alignment is an `align` attr on paragraph, heading, and table with only
+- Block alignment is an `align` attr on paragraph (headings included) and table with only
   `null`, `"center"`, and `"right"` (no `"left"` state). `table-operations.ts`
   refuses row/column moves on a table containing spans, and row zero (the GFM
   header) never moves.

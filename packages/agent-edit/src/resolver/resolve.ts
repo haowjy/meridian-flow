@@ -443,7 +443,7 @@ function validateSectionContent(
   if (scope.scope.kind !== "section" || scope.scope.headingLevel === undefined) return { ok: true };
   const sectionLevel = scope.scope.headingLevel;
   const conflicting = parsed.blocks.find(
-    (block) => block.type.name === "heading" && Number(block.attrs.level ?? 1) <= sectionLevel,
+    (block) => block.attrs.level != null && Number(block.attrs.level) <= sectionLevel,
   );
   if (!conflicting) return { ok: true };
   return error(

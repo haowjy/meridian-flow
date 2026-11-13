@@ -103,9 +103,7 @@ export function serializeLayoutBlock(
 }
 
 function isAlignable(node: PMNode): boolean {
-  return (
-    node.type.name === "paragraph" || node.type.name === "heading" || node.type.name === "table"
-  );
+  return node.type.name === "paragraph" || node.type.name === "table";
 }
 
 function parseAlign(value: unknown): LayoutAlign | null {

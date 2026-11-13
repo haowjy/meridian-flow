@@ -161,7 +161,7 @@ function toNode(b: Blk): PMNode {
   const content = pieces.map((p) =>
     schema.text(p.text, schema.marks.strong.isInSet(p.marks) || p.marks.length ? p.marks : []),
   );
-  if (b.type === "h") return schema.nodes.heading.create({ level: 2 }, content);
+  if (b.type === "h") return schema.nodes.paragraph.create({ level: 2 }, content);
   const p = schema.nodes.paragraph.create(null, content);
   return b.type === "list"
     ? schema.nodes.bullet_list.create(null, schema.nodes.list_item.create(null, p))
