@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@meridian/contracts": "workspace:*",
     "fractional-indexing": "^4.0.0",
     "yjs": "13.6.31"
   },

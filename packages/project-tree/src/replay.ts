@@ -1,3 +1,4 @@
+import { freeName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -8,6 +9,7 @@ import {
   sourceRoot,
   type TreeRecord,
 } from "./record.js";
+import { readStored } from "./validate.js";
 
 export type TreeNode = {
   id: string;
@@ -51,7 +53,9 @@ export type SkipReason =
   | "missing-parent"
   | "parent-not-folder"
   | "duplicate"
-  | "purged";
+  | "purged"
+  /** The value is not a record the server writes (decoded from a list that was changed outside the package). */
+  | "unreadable";
 
 /** One delete still in force: a Trash entry, with what it still takes. */
 export type TrashEntry = {
@@ -62,8 +66,28 @@ export type TrashEntry = {
   cascade: string[];
 };
 
+/**
+ * The record that last set a fact of a node, with the fact's values just before it. Undo is
+ * allowed while a record is still the one that last set what it set, and the opposite record
+ * carries these values back; an opposite record takes its target off the top, so the record
+ * before it is the last again.
+ */
+export type Setter<Before> = {
+  id: string;
+  /** For a live copy made by Apply: the drafted record it carries, which Undo may also name. */
+  appliedFrom?: string;
+  before: Before;
+  /** The node's arrival before it, which the opposite record puts back. */
+  arrivedBefore: number;
+};
+export type LabelBefore = { name: string; filetype?: string };
+export type PlaceBefore = { parent: string; rank: string };
+export type NodeSetters = { label?: Setter<LabelBefore>; place?: Setter<PlaceBefore> };
+
 export type TreeProjection = {
   nodes: Map<string, TreeNode>;
+  /** Per node, who last set its name and type (a rename) and its place (a move). */
+  setters: Map<string, NodeSetters>;
   /** Children of a folder or source root, in display order: by rank, then id. Trashed ones included. */
   children: Map<string, TreeNode[]>;
   /** Records the replay skipped, with why: what a review shows as "couldn't apply". */
@@ -93,6 +117,8 @@ type Working = {
   /** Position of the record that last brought it to its parent under its name: who gets a number. */
   arrivedAt: number;
   purged: boolean;
+  label: Array<Setter<LabelBefore>>;
+  place: Array<Setter<PlaceBefore>>;
 };
 
 type DeleteInForce = {
@@ -105,12 +131,14 @@ type DeleteInForce = {
 };
 
 /**
- * Turns records, in replay order, into a tree: the eight rules of the design, section 2.
+ * Turns records, in replay order, into a tree: the eight rules of the design, section 2. Each
+ * value is read through `readStored` and the replay uses the copy that builds; one that is not a
+ * record is skipped as `unreadable`.
  * `of.draft` is the Work whose view this is (null for live); `of.pendingText` the documents it
  * holds pending text of, which the list cannot see.
  */
 export function replay(
-  records: readonly TreeRecord[],
+  values: readonly unknown[],
   of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
 ): TreeProjection {
   const nodes = new Map<string, Working>();
@@ -138,28 +166,56 @@ export function replay(
     return false;
   };
 
-  // An Undo puts back the arrival it reverses, so an undone move or rename shows the names it
-  // showed before, not a numbered copy.
-  const arrivalBefore = new Map<string, number>();
-  const arrival = (node: Working, record: TreeRecord, index: number, changed: boolean) => {
-    arrivalBefore.set(record.id, node.arrivedAt);
-    // A live copy answers to its drafted record's id too, which an opposite drafted after it names.
-    if (record.appliedFrom) arrivalBefore.set(record.appliedFrom, node.arrivedAt);
-    const undone = record.undoes === undefined ? undefined : arrivalBefore.get(record.undoes);
-    if (undone !== undefined) node.arrivedAt = undone;
-    else if (changed) node.arrivedAt = index;
+  // A node still in this list that something may be placed under or done to: purged nodes are in
+  // no view, for placement as for display.
+  const placeable = (id: string) => placeIn(nodes, id);
+
+  // A record sets a fact: it goes on the node's stack of setters, and an Undo's opposite record
+  // takes its target off instead, putting back the arrival it moved (so an undone move or
+  // rename shows the names it showed before, not a numbered copy).
+  const setFact = <Before>(
+    stack: Array<Setter<Before>>,
+    node: Working,
+    record: TreeRecord,
+    index: number,
+    before: Before,
+    changed: boolean,
+  ) => {
+    const top = stack[stack.length - 1];
+    if (
+      record.undoes !== undefined &&
+      top &&
+      (top.id === record.undoes || top.appliedFrom === record.undoes)
+    ) {
+      stack.pop();
+      node.arrivedAt = top.arrivedBefore;
+      return;
+    }
+    stack.push({
+      id: record.id,
+      ...(record.appliedFrom ? { appliedFrom: record.appliedFrom } : {}),
+      before,
+      arrivedBefore: node.arrivedAt,
+    });
+    if (changed) node.arrivedAt = index;
   };
 
-  for (const [index, record] of records.entries()) {
+  for (const [index, value] of values.entries()) {
+    const read = readStored(value);
+    if (!read.ok) {
+      const id = (value as { id?: unknown } | null)?.id;
+      skipped.push({ record: typeof id === "string" ? id : "", reason: "unreadable" });
+      continue;
+    }
+    const record = read.record;
     const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
     if (record.type === "create") {
       if (nodes.has(record.node)) {
         skip("duplicate");
         continue;
       }
-      const parent = nodes.get(record.parent);
       let parentId = record.parent;
-      if (!isSourceRoot(record.parent) && parent?.kind !== "folder") {
+      if (!isSourceRoot(record.parent) && placeable(record.parent)?.kind !== "folder") {
         // Rule 6: the folder it was made in was never created in this view (its create was
         // discarded concurrently), so the node shows at the top of its source.
         parentId = sourceRoot(record.source);
@@ -182,16 +238,16 @@ export function replay(
         createdAt: index,
         arrivedAt: index,
         purged: false,
+        label: [],
+        place: [],
       });
       continue;
     }
-    const node = nodes.get(record.node);
+    // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
+    // restoring a Discard make before they append a record.
+    const node = placeable(record.node);
     if (!node) {
-      skip("missing-node");
-      continue;
-    }
-    if (node.purged) {
-      skip("purged");
+      skip(nodes.has(record.node) ? "purged" : "missing-node");
       continue;
     }
     switch (record.type) {
@@ -202,7 +258,7 @@ export function replay(
           break;
         }
         if (!isSourceRoot(record.parent)) {
-          const parent = nodes.get(record.parent);
+          const parent = placeable(record.parent);
           if (!parent) {
             skip("missing-parent");
             continue;
@@ -218,7 +274,14 @@ export function replay(
           continue;
         }
         pend(record);
-        arrival(node, record, index, node.parent !== record.parent);
+        setFact(
+          node.place,
+          node,
+          record,
+          index,
+          { parent: node.parent, rank: node.rank },
+          node.parent !== record.parent,
+        );
         node.parent = record.parent;
         node.rank = record.rank;
         node.lastChangedBy = record.actor;
@@ -226,7 +289,14 @@ export function replay(
       }
       case "rename":
         pend(record);
-        arrival(node, record, index, node.name !== record.name);
+        setFact(
+          node.label,
+          node,
+          record,
+          index,
+          { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
+          node.name !== record.name,
+        );
         node.name = record.name;
         if (record.filetype) node.filetype = record.filetype;
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
@@ -272,6 +342,19 @@ export function replay(
   }
 
   return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued);
+}
+
+/**
+ * A node something may be placed under or done to: its create is in force in the view (the node
+ * is in the list), and it was not purged. What Undo and restoring a Discard check before they
+ * append a record for a node, and what the replay checks as it reads one.
+ */
+export function placeIn<Node extends { purged: boolean }>(
+  nodes: ReadonlyMap<string, Node>,
+  id: string,
+): Node | undefined {
+  const node = nodes.get(id);
+  return node && !node.purged ? node : undefined;
 }
 
 type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
@@ -361,8 +444,7 @@ function derive(
         .sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt);
       const taken = new Set<string>();
       for (const kid of shown) {
-        let name = kid.name;
-        for (let copy = 2; taken.has(name); copy += 1) name = `${kid.name} (${copy})`;
+        const name = freeName(kid.kind, kid.name, taken);
         taken.add(name);
         displayNames.set(kid.id, name);
       }
@@ -379,7 +461,12 @@ function derive(
   }
 
   const out = new Map<string, TreeNode>();
+  const setters = new Map<string, NodeSetters>();
   for (const node of nodes.values()) {
+    const label = node.label[node.label.length - 1];
+    const place = node.place[node.place.length - 1];
+    if (label || place)
+      setters.set(node.id, { ...(label ? { label } : {}), ...(place ? { place } : {}) });
     const state = standing.get(node.id) as Standing;
     out.set(node.id, {
       id: node.id,
@@ -408,6 +495,7 @@ function derive(
     ordered.set(parent, kids.map((kid) => out.get(kid.id) as TreeNode).sort(byRankThenId));
   return {
     nodes: out,
+    setters,
     children: ordered,
     skipped,
     rescued,

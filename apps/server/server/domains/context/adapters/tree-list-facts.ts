@@ -99,6 +99,9 @@ export async function readConnection(
     writableSources: new Set(writable.map((source) => source.id)),
     unfiledSource: unfiled.id,
     editableTypes,
+    // The database is asked after admission, in the admitting transaction (`claimNodeIds`, which
+    // sees every create the update holds, refused ones included) and a taken id rolls it back.
+    takenElsewhere: () => false,
     sameSchema: (from, to) => {
       const fromSchema = schemaOf(from);
       return fromSchema !== null && fromSchema === schemaOf(to);

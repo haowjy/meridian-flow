@@ -63,10 +63,7 @@ function same(a: ProjectedRow, b: ProjectedRow): boolean {
   );
 }
 
-/**
- * What a Work's tree shows differently from live: each node that differs or exists only in the
- * Work, and each live node the Work's tree lacks, as deleted.
- */
+/** What a Work's tree shows differently from live: each node that differs or exists only in the Work. */
 export function branchRows(
   live: ReadonlyMap<string, ProjectedRow>,
   draft: ReadonlyMap<string, ProjectedRow>,
@@ -77,8 +74,6 @@ export function branchRows(
     if (!base) out.set(row.id, { ...row, existsOnlyInDraft: true });
     else if (!same(base, row)) out.set(row.id, { ...row, existsOnlyInDraft: false });
   }
-  for (const row of live.values())
-    if (!draft.has(row.id)) out.set(row.id, { ...row, deleted: true, existsOnlyInDraft: false });
   return out;
 }
 

@@ -2,17 +2,24 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
+  applyDraft,
   childrenOf,
+  discardDraft,
+  discardedBy,
   fingerprint,
   LIVE,
   recordsOf,
   replayView,
+  restoreDiscard,
   sourceRoot,
   TreeWriter,
   treeViolations,
+  undoChange,
 } from "./index.js";
 
 const ROOT = sourceRoot("manuscript");
+
+const cmd = () => crypto.randomUUID();
 
 const W = "user:writer";
 const A = "agent:thread-1/turn-1";
@@ -62,7 +69,12 @@ describe("file tree as a Yjs operation log", () => {
     const { a, b } = pair();
     const f = a.create(LIVE, W, { kind: "folder", name: "Old", parent: ROOT }).node;
     const keep = a.create(LIVE, W, { kind: "folder", name: "Keep", parent: ROOT }).node;
-    const doc = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: f }).node;
+    const doc = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: f,
+    }).node;
     sync(a, b);
     a.delete(LIVE, W, f); // the writer saw Ch1 inside and deleted it with the folder
     b.move(LIVE, A, doc, keep); // meanwhile the agent moved Ch1 out
@@ -78,7 +90,12 @@ describe("file tree as a Yjs operation log", () => {
     const f = a.create(LIVE, W, { kind: "folder", name: "Arc 2", parent: ROOT }).node;
     sync(a, b);
     a.delete(LIVE, W, f);
-    const made = b.create(LIVE, A, { kind: "document", name: "Ch9", parent: f }).node;
+    const made = b.create(LIVE, A, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch9",
+      parent: f,
+    }).node;
     sync(a, b);
     const live = replayView(b.doc, LIVE);
     expect(treeViolations(live)).toEqual([]);
@@ -89,7 +106,12 @@ describe("file tree as a Yjs operation log", () => {
 
   it("rename against rename: one name wins, the same one everywhere", () => {
     const { a, b } = pair();
-    const n = a.create(LIVE, W, { kind: "document", name: "Draft", parent: ROOT }).node;
+    const n = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Draft",
+      parent: ROOT,
+    }).node;
     sync(a, b);
     a.rename(LIVE, W, n, "Prologue");
     b.rename(LIVE, A, n, "Opening");
@@ -101,8 +123,8 @@ describe("file tree as a Yjs operation log", () => {
 
   it("two creates with one name in one folder: both kept, the later one numbered", () => {
     const { a, b } = pair();
-    a.create(LIVE, W, { kind: "document", name: "Notes", parent: ROOT });
-    b.create(LIVE, A, { kind: "document", name: "Notes", parent: ROOT });
+    a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "Notes", parent: ROOT });
+    b.create(LIVE, A, { kind: "document", filetype: "markdown", name: "Notes", parent: ROOT });
     sync(a, b);
     expect(names(a, ROOT).sort()).toEqual(["Notes", "Notes (2)"]);
     expect(names(a, ROOT)).toEqual(names(b, ROOT));
@@ -111,7 +133,7 @@ describe("file tree as a Yjs operation log", () => {
   it("reorder against reorder: every replica shows one order", () => {
     const { a, b } = pair();
     for (const name of ["1", "2", "3", "4"])
-      a.create(LIVE, W, { kind: "document", name, parent: ROOT });
+      a.create(LIVE, W, { kind: "document", filetype: "markdown", name, parent: ROOT });
     sync(a, b);
     const [one, , , four] = childrenOf(replayView(a.doc, LIVE), ROOT).map((n) => n.id) as string[];
     a.move(LIVE, W, four as string, ROOT, 0);
@@ -124,11 +146,16 @@ describe("file tree as a Yjs operation log", () => {
 
   it("a draft reads as live plus its changes, and sees live changes made after it started", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
     const work = { draft: "work-1" };
     const folder = a.create(work, A, { kind: "folder", name: "Arc 1", parent: ROOT }).node;
     a.move(work, A, ch, folder);
-    a.create(LIVE, W, { kind: "document", name: "Ch2", parent: ROOT });
+    a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "Ch2", parent: ROOT });
     expect(names(a, ROOT)).toEqual(["Ch1", "Ch2"]);
     // Both were appended after Ch1 and got the same rank; the id breaks the tie the same way
     // everywhere, which is not necessarily the order each author saw.
@@ -138,16 +165,21 @@ describe("file tree as a Yjs operation log", () => {
 
   it("a draft applied after live changed under it: live becomes what the draft showed", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
     const work = { draft: "work-1" };
     a.rename(work, A, ch, "Chapter One");
     const arc = a.create(work, A, { kind: "folder", name: "Arc", parent: ROOT }).node;
     a.move(work, A, ch, arc);
     // Live moves on: the writer renames the same document and adds another.
     a.rename(LIVE, W, ch, "Ch 1 (writer)");
-    a.create(LIVE, W, { kind: "document", name: "Ch2", parent: ROOT });
+    a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "Ch2", parent: ROOT });
     const before = replayView(a.doc, work);
-    a.apply("work-1", W);
+    applyDraft(a, "work-1", W, cmd());
     const after = replayView(a.doc, LIVE);
     expect(after.nodes.get(ch)).toMatchObject({
       name: "Chapter One",
@@ -169,7 +201,7 @@ describe("file tree as a Yjs operation log", () => {
     const drafted = a.move(work, A, x, y);
     a.move(LIVE, W, y, x);
     expect(replayView(a.doc, work).skipped).toEqual([{ record: drafted.id, reason: "cycle" }]);
-    a.apply("w", W);
+    applyDraft(a, "w", W, cmd());
     const live = replayView(a.doc, LIVE);
     expect(treeViolations(live)).toEqual([]);
     expect(live.nodes.get(y)?.parent).toBe(x);
@@ -177,19 +209,29 @@ describe("file tree as a Yjs operation log", () => {
 
   it("discard of part of a draft takes what depends on it, and leaves the rest", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
     const work = { draft: "w" };
     const arc = a.create(work, A, { kind: "folder", name: "Arc", parent: ROOT });
-    const inArc = a.create(work, A, { kind: "document", name: "Scene", parent: arc.node });
+    const inArc = a.create(work, A, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Scene",
+      parent: arc.node,
+    });
     const moveIn = a.move(work, A, ch, arc.node);
     const rename = a.rename(work, A, ch, "Chapter 1");
-    const discarded = a.discard("w", [arc.id]);
+    const discarded = discardDraft(a, "w", W, cmd(), [arc.id]);
     expect(new Set(discarded)).toEqual(new Set([arc.id, inArc.id, moveIn.id]));
     const view = replayView(a.doc, work);
     expect(treeViolations(view)).toEqual([]);
     expect(view.nodes.get(ch)).toMatchObject({ parent: ROOT, name: "Chapter 1" });
     expect(view.nodes.has(arc.node)).toBe(false);
-    a.apply("w", W, [rename.id]);
+    applyDraft(a, "w", W, cmd(), [rename.id]);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.name).toBe("Chapter 1");
   });
 
@@ -197,9 +239,14 @@ describe("file tree as a Yjs operation log", () => {
     const a = replica(1);
     const work = { draft: "w" };
     const arc = a.create(work, A, { kind: "folder", name: "Arc", parent: ROOT });
-    const scene = a.create(work, A, { kind: "document", name: "Scene", parent: arc.node });
-    a.create(work, A, { kind: "document", name: "Other", parent: ROOT });
-    a.apply("w", W, [scene.id]);
+    const scene = a.create(work, A, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Scene",
+      parent: arc.node,
+    });
+    a.create(work, A, { kind: "document", filetype: "markdown", name: "Other", parent: ROOT });
+    applyDraft(a, "w", W, cmd(), [scene.id]);
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(scene.node)?.parent).toBe(arc.node);
     expect(names(a, ROOT)).toEqual(["Arc"]);
@@ -210,25 +257,35 @@ describe("file tree as a Yjs operation log", () => {
     const a = replica(1);
     const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
     const g = a.create(LIVE, W, { kind: "folder", name: "G", parent: ROOT }).node;
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: f,
+    }).node;
     const before = replayView(a.doc, LIVE);
     const move = a.move(LIVE, A, ch, g);
-    const inverse = a.undo(LIVE, W, move.id);
+    const inverse = undoChange(a, LIVE, W, move.id);
     expect(inverse).toMatchObject({ undoes: move.id, actor: W });
     const after = replayView(a.doc, LIVE);
     expect(after.nodes.get(ch)).toMatchObject({ parent: f, rank: before.nodes.get(ch)?.rank });
     const again = a.move(LIVE, A, ch, g);
     a.move(LIVE, W, ch, ROOT);
-    expect(a.undo(LIVE, W, again.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, again.id)).toBe("superseded");
   });
 
   it("undo of a folder delete brings back the folder and what it held", () => {
     const a = replica(1);
     const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: f,
+    }).node;
     const del = a.delete(LIVE, A, f);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(true);
-    a.undo(LIVE, W, del.id);
+    undoChange(a, LIVE, W, del.id);
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(f)?.trashed).toBe(false);
     expect(live.nodes.get(ch)?.trashed).toBe(false);
@@ -239,7 +296,12 @@ describe("file tree as a Yjs operation log", () => {
     const blob = { storageKey: "uploads/abc", mime: "image/png", size: 1234 };
     const img = a.create(LIVE, W, { kind: "file", name: "map.png", parent: ROOT, blob }).node;
     expect(replayView(a.doc, LIVE).nodes.get(img)?.blob).toEqual(blob);
-    const doc = a.create(LIVE, W, { kind: "document", name: "Doc", parent: ROOT }).node;
+    const doc = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Doc",
+      parent: ROOT,
+    }).node;
     a.move(LIVE, W, doc, img);
     expect(replayView(a.doc, LIVE).nodes.get(doc)?.parent).toBe(ROOT);
   });
@@ -253,7 +315,12 @@ describe("file tree as a Yjs operation log", () => {
       [2, 1],
     ] as const) {
       const live = replica(liveId);
-      const n = live.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
+      const n = live.create(LIVE, W, {
+        kind: "document",
+        filetype: "markdown",
+        name: "Ch",
+        parent: ROOT,
+      }).node;
       const fork = replica(draftId);
       sync(live, fork);
       fork.rename(LIVE, A, n, "drafted");
@@ -275,9 +342,9 @@ describe("file tree log: cases found in review", () => {
       const a = replica(ia);
       const b = replica(ib);
       const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
-      a.create(LIVE, W, { kind: "document", name: "x", parent: f });
+      a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "x", parent: f });
       sync(a, b);
-      a.create(LIVE, W, { kind: "document", name: "y", parent: f });
+      a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "y", parent: f });
       a.delete(LIVE, W, f);
       b.delete(LIVE, A, f);
       sync(a, b);
@@ -292,11 +359,16 @@ describe("file tree log: cases found in review", () => {
 
   it("applying a later rename alone brings the earlier one, so the draft doesn't go backwards", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: ROOT,
+    }).node;
     const work = { draft: "w" };
     a.rename(work, A, ch, "First");
     const second = a.rename(work, A, ch, "Second");
-    a.apply("w", W, [second.id]);
+    applyDraft(a, "w", W, cmd(), [second.id]);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.name).toBe("Second");
     expect(replayView(a.doc, work).nodes.get(ch)?.name).toBe("Second");
   });
@@ -309,16 +381,26 @@ describe("file tree log: cases found in review", () => {
     a.move(work, A, y, ROOT);
     const dependent = a.move(work, A, x, y);
     const before = fingerprint(replayView(a.doc, work));
-    a.apply("w", W, [dependent.id]);
+    applyDraft(a, "w", W, cmd(), [dependent.id]);
     expect(fingerprint(replayView(a.doc, work))).toBe(before);
     expect(replayView(a.doc, LIVE).nodes.get(x)?.parent).toBe(y);
   });
 
   it("restoring a document doesn't take the name from the one standing there", () => {
     const a = replica(1);
-    const old = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    const old = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
     a.delete(LIVE, W, old);
-    const current = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    const current = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
     a.restore(LIVE, W, old);
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(current)?.displayName).toBe("Ch1");
@@ -328,22 +410,37 @@ describe("file tree log: cases found in review", () => {
   it("undo of a move into a folder deleted since is refused, not a revival", () => {
     const a = replica(1);
     const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: f,
+    }).node;
     const move = a.move(LIVE, A, ch, ROOT);
     a.delete(LIVE, W, f);
-    expect(a.undo(LIVE, W, move.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, move.id)).toBe("superseded");
   });
 
   it("an applied copy names who drafted it and who applied it", () => {
     const a = replica(1);
-    a.create({ draft: "w" }, A, { kind: "document", name: "Ch", parent: ROOT });
-    const [copy] = a.apply("w", W).copies;
+    a.create({ draft: "w" }, A, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: ROOT,
+    });
+    const [copy] = applyDraft(a, "w", W, cmd()).copies;
     expect(copy).toMatchObject({ actor: A, appliedBy: W, draft: null });
   });
 
   it("a purged node is gone for good: later records on it are skipped and it is in no Trash entry", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Old", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Old",
+      parent: ROOT,
+    }).node;
     a.delete(LIVE, W, ch);
     expect(replayView(a.doc, LIVE).trash.map((entry) => entry.node)).toEqual([ch]);
     a.author(LIVE, "system", { type: "purge", node: ch });
@@ -356,15 +453,47 @@ describe("file tree log: cases found in review", () => {
     expect(names(a, ROOT)).toEqual([]);
   });
 
-  it("Undo of a Discard puts back what that command discarded, and a repeat finds nothing", () => {
+  it("restoring a Discard appends new pending copies and leaves the discarded records discarded", () => {
     const a = replica(1);
-    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
-    a.rename({ draft: "w" }, A, ch, "Draft name");
-    a.discard("w", undefined, W, "cmd-1");
-    expect(names(a, ROOT, "w")).toEqual(["Ch"]);
-    expect(a.undoDiscard("cmd-1", W, "cmd-2")).toHaveLength(1);
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: ROOT,
+    }).node;
+    const renamed = a.rename({ draft: "w" }, A, ch, "Draft name");
+    discardDraft(a, "w", W, "cmd-1");
+    a.rename({ draft: "w" }, A, ch, "Newer name");
+    expect(names(a, ROOT, "w")).toEqual(["Newer name"]);
+    const result = restoreDiscard(a, "cmd-1", A);
+    if (result === "superseded") throw new Error("expected copies");
+    expect(result.copies).toHaveLength(1);
+    expect(result.copies[0]).toMatchObject({
+      type: "rename",
+      node: ch,
+      name: "Draft name",
+      restores: "cmd-1",
+      restoredBy: A,
+      actor: A,
+    });
+    expect(result.copies[0]?.id).not.toBe(renamed.id);
+    // The restored change lands after the newer one, so it wins; the discarded record stays discarded.
     expect(names(a, ROOT, "w")).toEqual(["Draft name"]);
-    expect(a.undoDiscard("cmd-1", W, "cmd-3")).toEqual([]);
+    expect(discardedBy(a.doc, "cmd-1")).toMatchObject({
+      records: [{ id: renamed.id }],
+      restored: true,
+    });
+    expect(restoreDiscard(a, "cmd-1", A)).toBe("superseded");
+  });
+
+  it("restoring a Discard leaves out a record whose node was purged, and reports it", () => {
+    const a = replica(1);
+    const arc = a.create(LIVE, A, { kind: "folder", name: "Arc", parent: ROOT }).node;
+    const renamed = a.rename({ draft: "w" }, A, arc, "Act 1");
+    discardDraft(a, "w", W, "cmd-1");
+    a.author(LIVE, "system", { type: "purge", node: arc });
+    const result = restoreDiscard(a, "cmd-1", A);
+    expect(result).toEqual({ copies: [], leftOut: [renamed] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {
@@ -376,6 +505,7 @@ describe("file tree log: cases found in review", () => {
       type: "create",
       node: "n",
       kind: "document",
+      filetype: "markdown",
       name: "Ch",
       parent: ROOT,
       source: "manuscript",

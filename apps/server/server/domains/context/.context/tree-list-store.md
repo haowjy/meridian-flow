@@ -68,8 +68,12 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   `context_source_id`, deferred to the commit: a node's folder is in its own source, and a
   folder purged while a child's row stands fails the transaction. Purge a subtree in one
   submission.
-- **A document made with no type gets the default one** (`DEFAULT_FILETYPE`) in `shownRows`,
-  once, so every comparison and row agrees.
+- **Every document create states its type** (the package requires it), so a document's row
+  has one and no default is filled in here.
+- **Admission claims every create's node id, a refused one included.** The package's
+  `takenElsewhere` answers false because the database is asked after `admit`, in the
+  admitting transaction (`claimNodeIds`); a taken id rolls the whole update back. A refused
+  create's kept create reuses its node, so the records claim it once.
 - **A trashed row's `trash_record` is the first delete in force that took it; `trashed_at` is
   when the server admitted it,** not when the record's author made it.
 - **The `documents` row of a created document is inserted by the admission** from the

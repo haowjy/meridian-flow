@@ -225,23 +225,23 @@ describe("the tree list store (postgres)", () => {
     await send();
     const one = c.writer.create(LIVE, actor, {
       kind: "document",
-      name: `one ${tag}.md`,
+      name: `one ${tag}`,
       parent: folder.node,
       filetype: "markdown",
     });
     const two = c.writer.create(LIVE, actor, {
       kind: "document",
-      name: `two ${tag}.md`,
+      name: `two ${tag}`,
       parent: folder.node,
       filetype: "markdown",
     });
     await send();
-    c.writer.rename(LIVE, actor, one.node, `first ${tag}.md`);
+    c.writer.rename(LIVE, actor, one.node, `first ${tag}`);
     c.writer.move(LIVE, actor, two.node, sourceRoot(UNFILED));
     await send();
     c.writer.create({ draft: BRANCH }, actor, {
       kind: "document",
-      name: `draft ${tag}.md`,
+      name: `draft ${tag}`,
       parent: folder.node,
       filetype: "markdown",
     });
@@ -286,7 +286,8 @@ describe("the tree list store (postgres)", () => {
       stranger.send();
       stranger.writer.create(LIVE, `user:${STRANGER}`, {
         kind: "document",
-        name: "forged.md",
+        filetype: "markdown",
+        name: "forged",
         parent: folder.node,
       });
       const forged = stranger.send();
@@ -297,7 +298,7 @@ describe("the tree list store (postgres)", () => {
         type: "create",
         node: crypto.randomUUID(),
         kind: "document",
-        name: "x.md",
+        name: "x",
         filetype: "markdown",
         parent: folder.node,
         source: MANUSCRIPT,
@@ -323,7 +324,8 @@ describe("the tree list store (postgres)", () => {
       Y.applyUpdate(takeover.doc, Y.encodeStateAsUpdate(honest.doc));
       takeover.writer.create(LIVE, actor, {
         kind: "document",
-        name: "stolen.md",
+        filetype: "markdown",
+        name: "stolen",
         parent: folder.node,
         node: owned,
       });
@@ -357,15 +359,15 @@ describe("the tree list store (postgres)", () => {
       const { store, honest } = await seededList();
       honest.writer.create({ draft: crypto.randomUUID() }, actor, {
         kind: "document",
-        name: "orphan.md",
+        name: "orphan",
         parent: sourceRoot(MANUSCRIPT),
         filetype: "markdown",
       });
       expect(await store.admit({ list, accountId: ACCOUNT, update: honest.send() })).toMatchObject({
         ok: true,
       });
-      const kept = (await storedRows()).live.find((row) => row.name === "orphan.md");
-      expect(kept?.sourceId).toBe(MANUSCRIPT);
+      const kept = (await storedRows()).live.find((row) => row.name === "orphan");
+      expect(kept?.sourceId).toBe(UNFILED);
       await expectRowsEqualReplay();
     });
   });
@@ -434,7 +436,7 @@ describe("the tree list store (postgres)", () => {
       });
       c.writer.create({ draft: BRANCH }, actor, {
         kind: "document",
-        name: "killed draft.md",
+        name: "killed draft",
         parent: folder.node,
         filetype: "markdown",
       });
@@ -508,7 +510,7 @@ describe("the tree list store (postgres)", () => {
       expect(await updateCount()).toBe(1);
       const stored = await storedRows();
       expect(stored.live.map((row) => row.name)).toEqual(["Killed"]);
-      expect(stored.branch.map((row) => row.name)).toEqual(["killed draft.md"]);
+      expect(stored.branch.map((row) => row.name)).toEqual(["killed draft"]);
       await expectRowsEqualReplay();
     });
   });
@@ -519,7 +521,7 @@ describe("the tree list store (postgres)", () => {
         const c = client();
         c.writer.create(LIVE, actor, {
           kind: "document",
-          name: "alias.md",
+          name: "alias",
           parent: sourceRoot(MANUSCRIPT),
           filetype: "markdown",
           node: taken,
@@ -692,7 +694,7 @@ describe("the tree list store (postgres)", () => {
       });
       c.writer.create(LIVE, actor, {
         kind: "document",
-        name: "one.md",
+        name: "one",
         parent: folder.node,
         filetype: "markdown",
       });

@@ -5,7 +5,6 @@
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
 import type { ContextSourceId, DocumentId } from "@meridian/contracts";
-import { DEFAULT_FILETYPE } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeNodes,
@@ -51,14 +50,11 @@ function chunks<T>(items: readonly T[]): T[][] {
 }
 
 /**
- * The rows a replay shows. A purged node is gone for good: it has no row. A document made with
- * no type is a default one, here and not in each reader.
+ * The rows a replay shows. A purged node is gone for good: it has no row.
  */
 function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   const rows = projectedRows(projection);
   for (const node of projection.nodes.values()) if (node.purged) rows.delete(node.id);
-  for (const row of rows.values())
-    if (row.kind === "document" && row.filetype === null) row.filetype = DEFAULT_FILETYPE;
   return rows;
 }
 
@@ -222,7 +218,7 @@ async function insertDocumentRows(
         id: row.id as DocumentId,
         contextSourceId: row.sourceId as ContextSourceId,
         name: row.name,
-        fileType: row.filetype ?? DEFAULT_FILETYPE,
+        fileType: row.filetype as string,
       })),
     );
 }

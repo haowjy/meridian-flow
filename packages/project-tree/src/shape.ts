@@ -1,5 +1,6 @@
 import { generateKeyBetween } from "fractional-indexing";
-import { isSourceRoot } from "./record.js";
+import { freeName } from "./names.js";
+import { isSourceRoot, type NodeKind } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
 
 /** Children in display order (rank, then id). Trashed ones only when asked. */
@@ -23,6 +24,26 @@ export function descendantsOf(projection: TreeProjection, node: string): string[
     }
   }
   return out;
+}
+
+/**
+ * The name a record should carry for a node going under `parent`: `name`, or its numbered copy
+ * when a shown sibling already has it, as the author's own copy shows it (design, section 4).
+ * The replay numbers only the clashes nobody could see.
+ */
+export function nameAmong(
+  projection: TreeProjection,
+  parent: string,
+  kind: NodeKind,
+  name: string,
+  moving?: string,
+): string {
+  const taken = new Set(
+    childrenOf(projection, parent)
+      .filter((node) => node.id !== moving)
+      .map((node) => node.displayName),
+  );
+  return freeName(kind, name, taken);
 }
 
 /** A rank that sorts at `index` among the parent's shown children. */

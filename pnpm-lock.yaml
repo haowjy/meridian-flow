@@ -827,6 +827,9 @@ importers:
 
   packages/project-tree:
     dependencies:
+      '@meridian/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       fractional-indexing:
         specifier: ^4.0.0
         version: 4.0.0

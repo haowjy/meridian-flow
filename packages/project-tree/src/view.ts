@@ -7,6 +7,7 @@ import {
   type TreeRecord,
 } from "./record.js";
 import { replay, type TreeProjection } from "./replay.js";
+import { readStored } from "./validate.js";
 
 /** Live (`draft: null`), or live and then one Work's pending records. */
 export type View = { draft: string | null };
@@ -27,31 +28,64 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
   return new Map([...lastSettlements(doc)].map(([id, settle]) => [id, settle.to]));
 }
 
+/** The list's records in order, each read through `readStored`. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
+export function listRecords(doc: Y.Doc): TreeRecord[] {
+  return recordsOf(doc)
+    .toArray()
+    .flatMap((value) => {
+      const read = readStored(value);
+      return read.ok ? [read.record] : [];
+    });
+}
+
+const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
+
 /**
- * The records a view replays, in replay order: the live ones, then the Work's pending ones. A
- * record id counts once (a client that sends a record again after rebuilding its copy adds
- * nothing). A refused record is in no view, and nor is a live copy whose Apply was taken back.
+ * What a view replays, in replay order: the live records, then the Work's pending ones. A record
+ * id counts once (a client that sends a record again after rebuilding its copy adds nothing). A
+ * refused record is in no view, and nor is a live copy whose Apply was taken back. `settled` is
+ * what each record's last settlement is, for reading the view as a settlement would leave it. A
+ * value that is no record is kept where it stands in the list, in every view, and the replay
+ * reports it as `unreadable`: nobody can tell which Work it belonged to.
  */
-export function viewRecords(doc: Y.Doc, view: View): TreeRecord[] {
+export function viewValues(
+  doc: Y.Doc,
+  view: View,
+  settled: ReadonlyMap<string, Settlement> = settlementsOf(doc),
+): unknown[] {
   const seen = new Set<string>();
-  const all: TreeRecord[] = [];
-  for (const record of recordsOf(doc).toArray()) {
-    if (seen.has(record.id)) continue;
-    seen.add(record.id);
-    all.push(record);
+  const all: unknown[] = [];
+  for (const value of recordsOf(doc).toArray()) {
+    const read = readStored(value);
+    if (!read.ok) all.push(value);
+    else if (!seen.has(read.record.id)) {
+      seen.add(read.record.id);
+      all.push(read.record);
+    }
   }
-  const settled = settlementsOf(doc);
   const live = all.filter(
-    (record) =>
-      record.draft === null &&
-      settled.get(record.id) !== "undone" &&
-      settled.get(record.id) !== "refused",
+    (value) =>
+      !isRecord(value) ||
+      (value.draft === null &&
+        settled.get(value.id) !== "undone" &&
+        settled.get(value.id) !== "refused"),
   );
   if (view.draft === null) return live;
   return [
     ...live,
-    ...all.filter((record) => record.draft === view.draft && !settled.has(record.id)),
+    ...all.filter(
+      (value) => isRecord(value) && value.draft === view.draft && !settled.has(value.id),
+    ),
   ];
+}
+
+/** `viewValues` without the values that are no record. */
+export function viewRecords(
+  doc: Y.Doc,
+  view: View,
+  settled?: ReadonlyMap<string, Settlement>,
+): TreeRecord[] {
+  return viewValues(doc, view, settled).filter(isRecord);
 }
 
 /** The Work's pending records, in order. */
@@ -65,5 +99,5 @@ export function replayView(
   view: View,
   pendingText?: ReadonlySet<string>,
 ): TreeProjection {
-  return replay(viewRecords(doc, view), { draft: view.draft, pendingText });
+  return replay(viewValues(doc, view), { draft: view.draft, pendingText });
 }

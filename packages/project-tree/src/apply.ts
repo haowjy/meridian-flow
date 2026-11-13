@@ -1,11 +1,22 @@
 import * as Y from "yjs";
-import { type Actor, newId, recordsOf, type TreeRecord } from "./record.js";
-import { replay } from "./replay.js";
+import { assertNewCommand } from "./list-index.js";
+import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
+import { placeIn, replay, type SkipReason, type TreeProjection } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { LIVE, lastSettlements, pendingRecords, viewRecords } from "./view.js";
+import { writable } from "./validate.js";
+import {
+  LIVE,
+  lastSettlements,
+  listRecords,
+  pendingRecords,
+  settlementsOf,
+  viewRecords,
+} from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 export type ApplyResult = {
+  /** The command that made it: Undo of this Apply names it. */
+  command: string;
   /** The live copies appended. */
   copies: TreeRecord[];
   /** Pending records still pending, whatever the reason. */
@@ -117,14 +128,15 @@ function keepsView(
  * that could land are tied to one that cannot, such that taking them alone would change what the
  * Work's tree showed, nothing is taken (`blocked`).
  */
-export function applyLanding(
+export function applyDraft(
   writer: TreeWriter,
   draft: string,
   appliedBy: Actor,
-  only: readonly string[] | undefined,
-  command: string | undefined,
+  command: string,
+  only?: readonly string[],
 ): ApplyResult {
   const { doc } = writer;
+  assertNewCommand(doc, command);
   const view = writer.view({ draft });
   const pending = pendingRecords(doc, draft);
   const skipped = new Set(view.skipped.map((skip) => skip.record));
@@ -153,6 +165,7 @@ export function applyLanding(
   const landing = new Set([...wanted].filter((id) => !leftIds.has(id)));
   const cannotLand = pending.filter((record) => leftIds.has(record.id));
   const nothing = (blocked: boolean): ApplyResult => ({
+    command,
     copies: [],
     left: pending,
     cannot: cannotLand,
@@ -187,7 +200,21 @@ export function applyLanding(
   );
   const overridden = new Set(superseded.map((record) => record.id));
 
+  // A copy's `from` is what live had just before it, as the copies before it leave live. And it
+  // carries the name the writer saw: where the Work's tree, as it will read once what can land
+  // has landed, shows the node's name numbered, the clash was visible to the one applying, so
+  // the record that gave the name holds the numbered one (design, section 4) and a later change
+  // to its sibling cannot flip it back.
   const liveNow = writer.view(LIVE);
+  const reads = replay([...live, ...pending.filter((record) => !leftIds.has(record.id))], {
+    draft,
+  });
+  const was = new Map<string, { name: string; parent: string; rank: string }>();
+  const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
+  const lastNamed = new Map<string, string>();
+  for (const record of pending)
+    if (taken.has(record.id) && (record.type === "create" || record.type === "rename"))
+      lastNamed.set(record.node, record.id);
   const copies: TreeRecord[] = [];
   for (const record of pending) {
     if (!taken.has(record.id)) continue;
@@ -199,13 +226,20 @@ export function applyLanding(
       appliedBy,
       fromDraft: draft,
     } as TreeRecord;
-    // The Undo of a live copy returns to where live had it, not where the draft saw it.
-    if (copy.type === "move") {
-      const at = liveNow.nodes.get(copy.node);
-      if (at) copy.from = { parent: at.parent, rank: at.rank };
+    const before = stands(copy.node);
+    if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
+    if (copy.type === "rename" && before) copy.fromName = before.name;
+    if (copy.type === "create" || copy.type === "rename") {
+      const shown = reads.nodes.get(copy.node);
+      if (lastNamed.get(copy.node) === record.id && shown?.name === copy.name)
+        copy.name = shown.displayName;
     }
-    if (copy.type === "rename") copy.fromName = liveNow.nodes.get(copy.node)?.name ?? copy.fromName;
-    copies.push(copy);
+    if (copy.type === "create")
+      was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
+    else if (before && copy.type === "move")
+      was.set(copy.node, { ...before, parent: copy.parent, rank: copy.rank });
+    else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
+    copies.push(writable(copy));
   }
   writer.transact(() => {
     recordsOf(doc).push(copies);
@@ -213,6 +247,7 @@ export function applyLanding(
     writer.settle(appliedBy, [...overridden], "superseded", { command });
   });
   return {
+    command,
     copies,
     left: pending.filter((record) => !taken.has(record.id) && !overridden.has(record.id)),
     cannot: cannotLand.filter((record) => !overridden.has(record.id)),
@@ -223,17 +258,43 @@ export function applyLanding(
 }
 
 /** Discard, whole or in part: the chosen records and every drafted record that stands on them. */
-export function discardPending(
+export function discardDraft(
   writer: TreeWriter,
   draft: string,
-  only: readonly string[] | undefined,
   by: Actor,
-  command: string | undefined,
+  command: string,
+  only?: readonly string[],
 ): string[] {
+  assertNewCommand(writer.doc, command);
   const pending = pendingRecords(writer.doc, draft);
   const chosen = only ? dependents(pending, only) : new Set(pending.map((record) => record.id));
   writer.transact(() => writer.settle(by, [...chosen], "discarded", { command }));
   return [...chosen];
+}
+
+/** Why a restored record would have nothing to act on: what it stands on is gone. */
+const GONE: ReadonlySet<SkipReason> = new Set(["purged", "missing-node", "missing-parent"]);
+
+/**
+ * Whether the records a command settled would still fit if they were pending again, with
+ * `undone` live copies taken out: none of them is left with a node or a folder that is gone.
+ * (One that conflicts with something later, such as a move that would now loop, is pending like
+ * any other the review shows as "couldn't apply".)
+ */
+function stillFit(writer: TreeWriter, restored: ReadonlySet<string>, undone: readonly string[]) {
+  const settled = settlementsOf(writer.doc);
+  for (const id of undone) settled.set(id, "undone");
+  for (const id of restored) settled.delete(id);
+  const drafts = new Set(
+    listRecords(writer.doc).flatMap((record) =>
+      restored.has(record.id) && record.draft ? [record.draft] : [],
+    ),
+  );
+  return [...drafts].every((draft) =>
+    replay(viewRecords(writer.doc, { draft }, settled), { draft }).skipped.every(
+      (skip) => !restored.has(skip.record) || !GONE.has(skip.reason),
+    ),
+  );
 }
 
 /**
@@ -242,48 +303,115 @@ export function discardPending(
  * after the Apply (on the server: the journal's head). A record that lands earlier in the list
  * but was admitted later moves the state vector too, so it counts. Text is not in the list:
  * `writtenSince` holds documents the Apply created that have text written since. Its live copies
- * leave the replay and its drafted records are pending again.
+ * leave the replay and everything its command settled, the superseded records too, is pending
+ * again, unless one of them no longer fits.
  */
-export function undoApplyIfLast(
+export function undoApply(
   writer: TreeWriter,
-  copies: readonly TreeRecord[],
+  applied: string,
   mark: Uint8Array,
   by: Actor,
-  writtenSince: ReadonlySet<string>,
-  command: string | undefined,
-): "undone" | "gone" {
+  command: string,
+  writtenSince: ReadonlySet<string> = new Set(),
+): "undone" | "gone" | "superseded" {
+  assertNewCommand(writer.doc, command);
   const now = Y.encodeStateVector(writer.doc);
   if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
+  const settled = settledBy(writer, applied, "applied", "superseded");
+  const landed = new Set(settled.filter(([, to]) => to === "applied").map(([id]) => id));
+  const copies = listRecords(writer.doc).filter(
+    (record) => record.appliedFrom !== undefined && landed.has(record.appliedFrom),
+  );
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
+  const restored = new Set(settled.map(([id]) => id));
+  const undone = copies.map((copy) => copy.id);
+  if (!stillFit(writer, restored, undone)) return "superseded";
   writer.transact(() => {
-    writer.settle(
-      by,
-      copies.map((copy) => copy.id),
-      "undone",
-      { command },
-    );
-    writer.settle(
-      by,
-      copies.flatMap((copy) => (copy.appliedFrom ? [copy.appliedFrom] : [])),
-      "pending",
-      {
-        command,
-      },
-    );
+    writer.settle(by, undone, "undone", { command });
+    writer.settle(by, [...restored], "pending", { command });
   });
   return "undone";
 }
 
-/** Undo of a Discard: the records that command discarded and nobody has settled since go back to pending. */
-export function undoDiscard(
+/** What one Discard command settled, for Trash to show as an entry. */
+export type DiscardedBy = {
+  /** The records it discarded, in list order. */
+  records: TreeRecord[];
+  /** The nodes those records created. */
+  created: string[];
+  /** Restored already: copies of these records are pending again. */
+  restored: boolean;
+};
+
+/** The records a Discard command settled, with the nodes they created. */
+export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
+  const last = lastSettlements(doc);
+  const all = listRecords(doc);
+  const records = all.filter((record) => {
+    const settle = last.get(record.id);
+    return settle?.to === "discarded" && settle.command === discarded;
+  });
+  return {
+    records,
+    created: records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
+    restored: all.some((record) => record.restores === discarded),
+  };
+}
+
+/**
+ * Restoring a Discard: a Discard is final, so its records stay discarded and the Work gets fresh
+ * pending copies of them, under its own branch, after anything it drafted since (so on a fact
+ * both touched, the restored change wins). A copy has a new id and the same node id; `restores`
+ * names the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
+ * record whose node cannot be acted on once the copies are in (purged, or its create is not in
+ * force and no copy brings it back) is left out and returned. Once.
+ */
+export function restoreDiscard(
   writer: TreeWriter,
   discarded: string,
   by: Actor,
-  command: string | undefined,
-): string[] {
-  const targets = [...lastSettlements(writer.doc)]
-    .filter(([, settle]) => settle.to === "discarded" && settle.command === discarded)
-    .map(([id]) => id);
-  writer.transact(() => writer.settle(by, targets, "pending", { command }));
-  return targets;
+): { copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded" {
+  const { doc } = writer;
+  const { records, restored } = discardedBy(doc, discarded);
+  if (restored || records.length === 0) return "superseded";
+  // The node a copy acts on stands in its Work's view, or the Discard held its create and the
+  // copy of that brings it back.
+  const views = new Map<string | null, TreeProjection>();
+  const created = new Set(
+    records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
+  );
+  const copyOf = new Map<string, string>();
+  const leftOut: TreeRecord[] = [];
+  for (const record of records) {
+    const view = views.get(record.draft) ?? writer.view({ draft: record.draft });
+    views.set(record.draft, view);
+    if (created.has(record.node) || placeIn(view.nodes, record.node))
+      copyOf.set(record.id, newId());
+    else leftOut.push(record);
+  }
+  const copies = records.flatMap((record) => {
+    const id = copyOf.get(record.id);
+    if (id === undefined) return [];
+    // A copy that took back another discarded record takes back that record's copy.
+    const undoes =
+      record.undoes === undefined ? undefined : (copyOf.get(record.undoes) ?? record.undoes);
+    return [
+      writable({
+        ...record,
+        id,
+        restores: discarded,
+        restoredBy: by,
+        ...(undoes === undefined ? {} : { undoes }),
+      } as TreeRecord),
+    ];
+  });
+  writer.transact(() => recordsOf(doc).push(copies));
+  return { copies, leftOut };
+}
+
+/** The records a command settled with one of these, and nothing since has settled again. */
+function settledBy(writer: TreeWriter, command: string, ...to: Settlement[]) {
+  return [...lastSettlements(writer.doc)]
+    .filter(([, settle]) => settle.command === command && to.includes(settle.to))
+    .map(([id, settle]) => [id, settle.to] as const);
 }

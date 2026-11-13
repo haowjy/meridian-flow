@@ -2,7 +2,6 @@ import type { Database } from "@meridian/database";
 import {
   admit,
   type Connection,
-  keptCreateRecords,
   recordsOf,
   settleLogOf,
   type TreeRecord,
@@ -147,10 +146,11 @@ export function createDrizzleTreeListStore(deps: {
     listId: string,
     before: Uint8Array,
     added: readonly TreeRecord[],
+    claimed: readonly TreeRecord[] = added,
   ): Promise<CommittedTreeUpdate | null> {
     if (sameBytes(Y.encodeStateVector(copy.doc), before)) return null;
     copy.pending = tx;
-    await claimNodeIds(tx, listId, added);
+    await claimNodeIds(tx, listId, claimed);
     const update = Y.encodeStateAsUpdate(copy.doc, before);
     // The system path: a person's path would read the whole list under the lock to record an
     // edit, and a list's receipt is the record itself.
@@ -178,13 +178,13 @@ export function createDrizzleTreeListStore(deps: {
           const verdict = admit(copy.writer, update, connection);
           if (!verdict.ok) return verdict;
           const refused = new Set(verdict.refused.map((entry) => entry.id));
-          const added = [
-            ...verdict.records.filter((record) => !refused.has(record.id)),
-            ...keptCreateRecords(verdict.records, verdict.kept, connection.user),
-          ];
+          const kept = verdict.kept.map((entry) => entry.record);
+          const added = [...verdict.records.filter((record) => !refused.has(record.id)), ...kept];
+          // Every create the update holds claims its id, a refused one too (its kept create has
+          // the same node): an id in use refuses the whole update.
           return {
             ok: true as const,
-            committed: await commitChange(tx, list, copy, listId, before, added),
+            committed: await commitChange(tx, list, copy, listId, before, added, verdict.records),
           };
         });
       } catch (cause) {
