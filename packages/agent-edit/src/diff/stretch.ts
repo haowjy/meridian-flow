@@ -20,6 +20,8 @@ interface View {
   image: number[][];
   /** Per slot: 0 unchanged, 1 text changed, 2 split, joined, moved or added, 3 removed. */
   kind: Uint8Array;
+  /** Per slot: a base block cut apart or joined to a neighbour (a split or a join, not a move). */
+  cut: Uint8Array;
   /** A gap inside one change (between the blocks of a join, or of an unsure group). */
   interior: Uint8Array;
   /** The change a node belongs to. */
@@ -39,6 +41,7 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
   const image: number[][] = Array.from({ length: S }, () => []);
   const kind = new Uint8Array(S);
   const interior = new Uint8Array(S);
+  const cut = new Uint8Array(S);
   const changes = new Dsu(S + side.length);
   const item = (x: number) => changes.find(x);
   const link = (a: number, b: number) => changes.union(a, b);
@@ -71,14 +74,16 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
     const j = c.partner[i];
     if (c.oldPiece[i] >= 0) {
       kind[s] = RESTRUCTURED;
+      cut[s] = 1;
       for (let k = 2 * c.oldPiece[i] + 1; k < s; k++) link(k, s);
     } else if (j < 0) kind[s] = REMOVED;
     else if (c.moved.has(i)) {
       kind[s] = RESTRUCTURED;
       for (let k = j; k < side.length && (k === j || c.nextPiece[k] === j); k++) link(S + k, s);
-    } else if (image[s].length > 1 || (i + 1 < base.length && c.oldPiece[i + 1] === i))
+    } else if (image[s].length > 1 || (i + 1 < base.length && c.oldPiece[i + 1] === i)) {
       kind[s] = RESTRUCTURED;
-    else if (blockKey(base[i]) !== blockKey(side[j])) kind[s] = TEXT;
+      cut[s] = 1;
+    } else if (blockKey(base[i]) !== blockKey(side[j])) kind[s] = TEXT;
     if (c.unsureOld[i] >= 0) {
       unsureNode[s] = 1;
       if (!kind[s]) kind[s] = TEXT;
@@ -103,7 +108,7 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
     if (unsureNode[x]) unsure[item(x)] = 1;
     if (x < S && kind[x] && (x % 2 || interior[x])) solid[item(x)] = 1;
   }
-  return { image, kind, interior, item, unsure, solid };
+  return { image, kind, cut, interior, item, unsure, solid };
 }
 
 export interface Stretch {
@@ -121,7 +126,9 @@ export interface Stretch {
  *
  * Two changes clash when they meet at one place and the token merge cannot be trusted with them:
  * - at a base block, when either change is unsure, or one side removed the block and the other
- *   changed it in any way, or both sides restructured it;
+ *   changed it in any way, or both sides restructured it, or one side split or joined a container
+ *   (a list item, a table row) that the other changed: the token merge sees a container as one
+ *   token, so an edit cannot travel into its pieces as it does into a paragraph's;
  * - at a gap inside a join or an unsure group, when the other side has anything there;
  * - at any other gap, when one change is unsure and neither is only blocks added there.
  * Text against text, text against a split, a join or a move of that block (the edit travels with
@@ -159,6 +166,7 @@ export function settleStretches(
         L.unsure[l] ||
         D.unsure[d] ||
         (L.kind[s] >= RESTRUCTURED && D.kind[s] >= RESTRUCTURED) ||
+        ((L.cut[s] || D.cut[s]) && !base[(s - 1) / 2].isTextblock) ||
         L.kind[s] === REMOVED ||
         D.kind[s] === REMOVED
       )

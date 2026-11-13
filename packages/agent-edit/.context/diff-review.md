@@ -170,8 +170,10 @@ Steps, in order: blocks equal in full at the two ends pair; a block whose conten
 children, attributes left out) occurs once on each side pairs, where it is in every longest
 in-order set of such blocks (two that cross are not anchors); then each gap is scored at once,
 same content first (equal attributes break ties), then the share of words in common, in order,
-at least half. A repeated block is never an anchor. Unpaired text blocks beside a pair whose
-words went into or came out of it are the **pieces** of a split or a join; the unit's pair is
+at least half. A repeated block is never an anchor. Unpaired blocks beside a pair whose
+words went into or came out of it are the **pieces** of a split or a join (text blocks of any
+type, or containers of one type: a list's items, a table's rows, so a join of items is owned in
+one place and no move pairs half of it elsewhere); the unit's pair is
 its first block on each side (`partner`), the block Yjs keeps the identity of. A block that is
 left and clearly another's best candidate by a fifth is a move.
 
@@ -200,7 +202,9 @@ cannot be trusted with them:
 
 - at a base block: either change is unsure (certain mode left it unpaired, or in a group of
   blocks that could be each other), or one side removed the block and the other changed it in
-  any way, or both restructured it;
+  any way, or both restructured it, or one side split or joined a container (a list item, a table
+  row) that the other changed: a container is one token to the token merge, so an edit cannot
+  travel into its pieces as it does into a paragraph's;
 - at a gap inside a join or an unsure group: the other side has anything there;
 - at any other gap: one change is unsure and neither is only blocks added there.
 

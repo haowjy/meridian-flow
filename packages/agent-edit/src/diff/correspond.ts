@@ -116,7 +116,7 @@ function scoreWeight(a: PMNode, b: PMNode, floor: number): number {
   return Math.round(sim * 100) * 100 + lead;
 }
 
-const words = (n: PMNode) => (n.isTextblock ? blockWords(n) : []);
+const words = contentWords;
 
 /** Words in common, in order. A block's own word list is the same array each projection, so it is remembered. */
 const commonWords = (x: readonly string[], y: readonly string[]) =>
@@ -383,19 +383,26 @@ function pairLargeGap(
 }
 
 /**
- * Step 3: an unpaired text block beside a pair is a piece when at least half its words are in the
- * pair's other side and the pair reads better with it. A join may take a block from a pair that is
- * out of order, never from one that keeps its order.
+ * Step 3: an unpaired block beside a pair is a piece when at least half its words are in the pair's
+ * other side and the pair reads better with it. Text blocks are pieces of each other whatever their
+ * type; a container's children (a list's items, a table's rows) are pieces of children of the same
+ * type, so a join of items is owned in one place and a move can't pair half of it elsewhere. A join
+ * may take a block from a pair that is out of order, never from one that keeps its order.
  */
+/** Whether two blocks may be halves of one: text blocks of any type, or containers of one type. */
+const piecesOf = (a: PMNode, b: PMNode) =>
+  a.isTextblock ? b.isTextblock : !b.isTextblock && a.type === b.type;
+
 function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspondence) {
   const { partner, back } = c;
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
-    if (j < 0 || !old[i].isTextblock || !next[j].isTextblock) continue;
+    if (j < 0 || !piecesOf(old[i], next[j])) continue;
     let ow = words(old[i]);
     let nw = words(next[j]);
     for (const dir of [-1, 1]) {
       for (let k = i + dir; k >= 0 && k < old.length && c.oldPiece[k] < 0; k += dir) {
+        if (!piecesOf(old[i], old[k])) break;
         // A block paired with one that is not beside this pair, by equal content alone, may be this
         // join's piece instead: the join is the nearer explanation.
         const far =
@@ -416,7 +423,11 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
       }
       for (
         let k = j + dir;
-        k >= 0 && k < next.length && back[k] < 0 && c.nextPiece[k] < 0;
+        k >= 0 &&
+        k < next.length &&
+        back[k] < 0 &&
+        c.nextPiece[k] < 0 &&
+        piecesOf(next[j], next[k]);
         k += dir
       ) {
         const w = words(next[k]);
