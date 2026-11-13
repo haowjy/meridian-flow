@@ -5175,7 +5175,7 @@ msgstr ""
 msgid "Some text was removed"
 msgstr ""
 
-#: src/core/editor/config.ts
+#: src/core/editor/extensions/peer-carets.ts
 msgid "Someone"
 msgstr ""
 
@@ -6633,7 +6633,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/core/editor/config.ts
+#: src/core/editor/extensions/peer-carets.ts
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "You"
 msgstr ""
