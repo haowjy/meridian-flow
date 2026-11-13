@@ -7,7 +7,7 @@ import {
 import { projectResourceDocument } from "@/features/project/context/open-document-from-file";
 import { useIsDraftOnly } from "@/features/project/context/use-is-draft-only";
 import type { OpenDocument } from "../stores";
-import { type Lane, type MainTab, type MainTabKind, mainTabKey, useMainTabs } from "./main-tabs";
+import { type Lane, type MainTabs, mainTabKey, useMainTabs } from "./main-tabs";
 
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
@@ -22,7 +22,7 @@ const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTE
  * document that has no tab.
  */
 export function useLiveTabs(projectId: string): {
-  lanes: Readonly<Record<MainTabKind, Lane>>;
+  lanes: MainTabs;
   project: (document: OpenDocument) => OpenDocument;
 } {
   const lanes = useMainTabs(useAccountId(), projectId);
@@ -43,8 +43,7 @@ export function useLiveTabs(projectId: string): {
   );
   const tabs = useMemo(
     () =>
-      recorded.flatMap((tab): MainTab[] => {
-        if (tab.kind !== "document") return [];
+      recorded.flatMap((tab): Lane<"document">["tabs"][number][] => {
         const { document } = tab;
         const projected = projectResourceDocument(
           document,
@@ -65,7 +64,7 @@ export function useLiveTabs(projectId: string): {
     [recorded, records, placement, isDraftOnly],
   );
   const selected = lanes.document.selected;
-  const live = useMemo<Lane>(
+  const live = useMemo<Lane<"document">>(
     () => ({
       tabs,
       selected: tabs.some((tab) => mainTabKey(tab) === selected) ? selected : null,

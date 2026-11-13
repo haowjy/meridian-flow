@@ -13,14 +13,15 @@
 import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
+import { useLiveTabs } from "@/client/project-shell/live-tabs";
+import { mainTabKey } from "@/client/project-shell/main-tabs";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
-import { useAccountId, useShownDocuments } from "./context/account-feature-context";
+import { useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { TrashedDocument } from "./context/TrashedDocument";
@@ -108,17 +109,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // The newest open tab shown that is off screen stays mounted, hidden: closing a tab lets its
   // editor go. A document moving
   // between main and the side passes through here while main's address loads, so it never
-  // remounts.
-  const accountId = useAccountId();
-  const { tabs } = useMainTabs(accountId, projectId).document;
+  // remounts. A tab the strip leaves out (its document is gone) keeps no host.
+  const { tabs } = useLiveTabs(projectId).lanes.document;
   const keptTab =
     shown.find(
       (tab) =>
         tab.documentId !== mainTab?.documentId &&
         tab.documentId !== sideTab?.documentId &&
-        tabs.some(
-          (open) => open.kind === "document" && open.document.documentId === tab.documentId,
-        ),
+        tabs.some((open) => open.document.documentId === tab.documentId),
     ) ?? null;
 
   const open = props.onOpenContextTarget;
