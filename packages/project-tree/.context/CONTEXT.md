@@ -9,7 +9,9 @@ page says where each part lives and what the code decided where the design left 
 | File | Holds |
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
-| `validate.ts` | `malformedRecord`: whether a value is a record a client may write |
+| `validate.ts` | `readRecord`: builds the record a client's value stands for from its own allowed fields, or says why there is none |
+| `names.ts` | `nameFault`, `freeName`: a name's rules and numbering, from the contracts filename codec |
+| `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 8, then one pass over the nodes for Trash, kept folders and names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
@@ -38,17 +40,40 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   source it was made in, so rule 6 and the admission check know it. A record that names a
   source as its node is admitted and refused; a create cannot name one at all.
 - **`purge`** marks the node `purged`: later records on it are skipped with reason `purged`, and
-  it is in no Trash entry. Descendants are not purged by it; the server purges each node.
+  it is in no Trash entry. Descendants are not purged by it; the server purges each node. A
+  purged node is absent from every view, for placement as for display (`placeIn`): a create into
+  it takes rule 6's outcome, a move into it is skipped (`missing-parent`), and admission judges
+  it "not a folder".
 - **A refused create is kept by a create the server appends** (`keptCreateRecords`), with
-  `replaces` naming the refused record. It goes under the refused record's parent when that is a
-  live folder (or a source) the account can write, or was kept earlier in the same update, else
-  in the project's Unfiled; it takes the last name the node had in the update. A client cannot
-  reuse a node id a refused create holds; only the server's own create does.
+  `replaces` naming the refused record, inserted in the list directly after it so the client's
+  later records on the node replay against it. It goes under its parent only when that parent
+  is itself a kept create of the same update, else in the project's Unfiled: never under a live
+  folder, which would publish what nobody reviewed or the account may not write. It carries the
+  refused create's name, type and provisional mark. A client cannot reuse a node id a refused
+  create holds; only the server's own create does.
 - **Admission judges a record in the view it is written in** (live, or live and its Work), so a
   drafted create into a folder drafted in an earlier update is not refused as "not a folder".
+- **Admission rebuilds each record** from its own allowed fields (plain objects and arrays, five
+  kinds, a rank the installed fractional-indexing generator takes, a name the contracts codec
+  takes) and refuses the update whole otherwise. What the server holds is cut away from each
+  struct with Yjs's offset, so an update that overlaps the held prefix, or carries two client
+  ids, is admitted; a gap, or content outside `ops`, is not.
+- **Undo is by history.** The replay keeps, per node, the record that last set its name and
+  type and the record that last set its place, with the values just before it. Undo of a rename
+  or move is allowed only while that record is still the last, and the opposite record carries
+  those values. Apply's copies take their `from` against the copies before them.
+- **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
+  numbers only the clashes nobody saw.
+- **A repeated command is the caller's to answer.** The package throws when a command id was
+  already used (`assertNewCommand`); the document command table answers a repeat first.
+- **A chat's uploads** are a source the account never writes: leave it out of
+  `writableSources` and every record on one is refused as a source it cannot change.
 - **Undo of an Apply is the simple rule only.** `apply` returns `mark`, the list's state vector
   right after; `undoApply` is `gone` once the state vector moved or text was written in a
-  document the Apply created. On the server `mark` is the journal's head.
+  document the Apply created. On the server `mark` is the journal's head. It puts back
+  everything its command settled, the superseded records too, and refuses as superseded when a
+  record it would restore no longer fits (its node purged, or its folder gone). Undo of a
+  Discard does the same for what it discarded.
 - **Settlements carry `command`** when a command made them, so Undo of a Discard selects by it
   and a repeat finds nothing left to do.
 - **The server's settlement actor is `system`.** Refusals are not any account's act.
@@ -57,7 +82,7 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 
 - Put the server's Yjs copy under one client id below 1,000, and call
   `admit` under the list's lock after journaling the update.
-- Fill `Connection` with `editableTypes` and `sameSchema`: the package knows no file types.
+- Fill `Connection` with `editableTypes`, `sameSchema` and `takenElsewhere`: the package knows no file types or other projects' nodes.
   A rename that fails `sameSchema` is admitted and settled `refused`.
 - Move a document between two lists with `moveBetweenLists`, writing both updates in one
   transaction. In the list it left the node is in no view and in no Trash entry.

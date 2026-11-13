@@ -31,8 +31,14 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
  * The records a view replays, in replay order: the live ones, then the Work's pending ones. A
  * record id counts once (a client that sends a record again after rebuilding its copy adds
  * nothing). A refused record is in no view, and nor is a live copy whose Apply was taken back.
+ * `settled` is what each record's last settlement is, for reading the view as a settlement
+ * would leave it.
  */
-export function viewRecords(doc: Y.Doc, view: View): TreeRecord[] {
+export function viewRecords(
+  doc: Y.Doc,
+  view: View,
+  settled: ReadonlyMap<string, Settlement> = settlementsOf(doc),
+): TreeRecord[] {
   const seen = new Set<string>();
   const all: TreeRecord[] = [];
   for (const record of recordsOf(doc).toArray()) {
@@ -40,7 +46,6 @@ export function viewRecords(doc: Y.Doc, view: View): TreeRecord[] {
     seen.add(record.id);
     all.push(record);
   }
-  const settled = settlementsOf(doc);
   const live = all.filter(
     (record) =>
       record.draft === null &&

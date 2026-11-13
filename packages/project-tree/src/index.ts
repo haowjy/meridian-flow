@@ -6,7 +6,13 @@ export {
   type KeptCreate,
   keptCreateRecords,
 } from "./admission.js";
-export type { ApplyResult } from "./apply.js";
+export {
+  type ApplyResult,
+  applyDraft,
+  discardDraft,
+  undoApply,
+  undoDiscard,
+} from "./apply.js";
 export {
   type Actor,
   type BlobRef,
@@ -32,7 +38,12 @@ export {
   type TreeRecordInput,
 } from "./record.js";
 export {
+  type LabelBefore,
+  type NodeSetters,
+  type PlaceBefore,
+  placeIn,
   replay,
+  type Setter,
   type SkipReason,
   type TrashEntry,
   type TreeNode,
@@ -46,7 +57,8 @@ export {
   projectedRows,
 } from "./rows.js";
 export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";
-export { malformedRecord } from "./validate.js";
+export { undoChange } from "./undo.js";
+export { type ReadRecord, readRecord } from "./validate.js";
 export {
   LIVE,
   lastSettlements,

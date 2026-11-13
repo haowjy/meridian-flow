@@ -23,6 +23,7 @@ const connection: Connection = {
   unfiledSource: "unfiled",
   editableTypes: new Set(["markdown", "text", "canvas"]),
   sameSchema: (from, to) => from === to || (from !== "canvas" && to !== "canvas"),
+  takenElsewhere: () => false,
 };
 
 /** The server's list: two sources the account may write, one it may not, some nodes. */
@@ -165,6 +166,16 @@ describe("an update the server refuses whole, storing nothing", () => {
       [record({ id: "" }), "id"],
       [record({ type: "create", fromName: "x" }), "field fromName"],
       [record({ undoes: { a: 1 } }), "undoes"],
+      [record({ type: "toString" }), "unknown type"],
+      [record({ type: "create", rank: "x" }), "create"],
+      [record({ name: "a/b" }), "rename"],
+      [record({ name: ".." }), "rename"],
+      [
+        JSON.parse(
+          '{"__proto__":{"blob":{}},"type":"restore","id":"p","node":"ch1","actor":"user:me","draft":null}',
+        ),
+        "not a record",
+      ],
     ];
     for (const [op, why] of bad)
       expect(refusedWhole(push(op)), JSON.stringify(op).slice(0, 70)).toBe(
@@ -326,6 +337,35 @@ describe("an update the server admits", () => {
     expect(Y.encodeStateAsUpdate(doc)).toEqual(stored);
   });
 
+  it("an update from two client ids of one browser is admitted, whichever id is higher", () => {
+    for (const [first, second] of [
+      [5000, 9000],
+      [9000, 5000],
+    ]) {
+      const doc = server();
+      const before = Y.encodeStateVector(doc);
+      const a = client(doc, push(record({ id: `a${first}`, name: "First" })), first);
+      const b = new Y.Doc({ gc: false });
+      b.clientID = second;
+      Y.applyUpdate(b, Y.encodeStateAsUpdate(a.copy));
+      b.getArray("ops").push([record({ id: `b${second}`, name: "Second" })]);
+      expect(admit(doc, Y.encodeStateAsUpdate(b, before), connection)).toMatchObject({ ok: true });
+      expect(replayView(doc, LIVE).nodes.get("ch1")?.displayName).toBe("Second");
+    }
+  });
+
+  it("an update that starts inside what the server holds adds only the rest", () => {
+    const doc = server();
+    const before = Y.encodeStateVector(doc);
+    const { copy } = client(doc, push(record({ id: "r1", name: "B" })));
+    expect(admit(doc, Y.encodeStateAsUpdate(copy, before), connection)).toMatchObject({ ok: true });
+    copy.getArray("ops").push([record({ id: "r2", name: "C" })]);
+    const verdict = admit(doc, Y.encodeStateAsUpdate(copy, before), connection);
+    expect(verdict).toMatchObject({ ok: true });
+    expect(verdict.ok && verdict.records.map((r) => r.id)).toEqual(["r2"]);
+    expect(replayView(doc, LIVE).nodes.get("ch1")?.displayName).toBe("C");
+  });
+
   it("a rank as long as 400 moves to one spot make it is still a rank", () => {
     const doc = server();
     const { update } = client(doc, push(record({ type: "move", rank: `a${"V".repeat(400)}` })));
@@ -373,7 +413,7 @@ describe("an update the server admits", () => {
     });
   });
 
-  it("a new document made where the account can no longer write is kept, live, in its own folder, with what is inside it", () => {
+  it("a new document made where the account can no longer write is kept in Unfiled, with what is inside it", () => {
     const doc = server();
     const { copy, update } = client(
       doc,
@@ -423,15 +463,16 @@ describe("an update the server admits", () => {
       "elsewhere",
     ]);
     const live = replayView(doc, LIVE);
-    // The folder goes under the folder it was made in, which is live and writable; the chapter
-    // under the folder kept before it, and with the name it last had in the update.
+    // A live folder is never the place, though the one it was made under is live and writable:
+    // the folder goes to Unfiled and the chapter under the folder kept before it. The rename in
+    // the closed Work is refused, so the chapter keeps the name it was made with.
     expect(live.nodes.get("new-folder")).toMatchObject({
-      parent: "arc",
+      parent: source("unfiled"),
       displayName: "Drafted arc",
     });
     expect(live.nodes.get("new-chapter")).toMatchObject({
       parent: "new-folder",
-      displayName: "The Fall",
+      displayName: "Chapter 50",
       trashed: false,
     });
     expect(live.nodes.get("in-skills")).toMatchObject({ parent: source("unfiled") });

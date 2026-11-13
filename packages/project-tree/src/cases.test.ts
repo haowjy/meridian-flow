@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
+  applyDraft,
   childrenOf,
+  discardDraft,
   fingerprint,
   LIVE,
   recordsOf,
@@ -10,9 +12,13 @@ import {
   sourceRoot,
   TreeWriter,
   treeViolations,
+  undoChange,
+  undoDiscard,
 } from "./index.js";
 
 const ROOT = sourceRoot("manuscript");
+
+const cmd = () => crypto.randomUUID();
 
 const W = "user:writer";
 const A = "agent:thread-1/turn-1";
@@ -147,7 +153,7 @@ describe("file tree as a Yjs operation log", () => {
     a.rename(LIVE, W, ch, "Ch 1 (writer)");
     a.create(LIVE, W, { kind: "document", name: "Ch2", parent: ROOT });
     const before = replayView(a.doc, work);
-    a.apply("work-1", W);
+    applyDraft(a, "work-1", W, cmd());
     const after = replayView(a.doc, LIVE);
     expect(after.nodes.get(ch)).toMatchObject({
       name: "Chapter One",
@@ -169,7 +175,7 @@ describe("file tree as a Yjs operation log", () => {
     const drafted = a.move(work, A, x, y);
     a.move(LIVE, W, y, x);
     expect(replayView(a.doc, work).skipped).toEqual([{ record: drafted.id, reason: "cycle" }]);
-    a.apply("w", W);
+    applyDraft(a, "w", W, cmd());
     const live = replayView(a.doc, LIVE);
     expect(treeViolations(live)).toEqual([]);
     expect(live.nodes.get(y)?.parent).toBe(x);
@@ -183,13 +189,13 @@ describe("file tree as a Yjs operation log", () => {
     const inArc = a.create(work, A, { kind: "document", name: "Scene", parent: arc.node });
     const moveIn = a.move(work, A, ch, arc.node);
     const rename = a.rename(work, A, ch, "Chapter 1");
-    const discarded = a.discard("w", [arc.id]);
+    const discarded = discardDraft(a, "w", W, cmd(), [arc.id]);
     expect(new Set(discarded)).toEqual(new Set([arc.id, inArc.id, moveIn.id]));
     const view = replayView(a.doc, work);
     expect(treeViolations(view)).toEqual([]);
     expect(view.nodes.get(ch)).toMatchObject({ parent: ROOT, name: "Chapter 1" });
     expect(view.nodes.has(arc.node)).toBe(false);
-    a.apply("w", W, [rename.id]);
+    applyDraft(a, "w", W, cmd(), [rename.id]);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.name).toBe("Chapter 1");
   });
 
@@ -199,7 +205,7 @@ describe("file tree as a Yjs operation log", () => {
     const arc = a.create(work, A, { kind: "folder", name: "Arc", parent: ROOT });
     const scene = a.create(work, A, { kind: "document", name: "Scene", parent: arc.node });
     a.create(work, A, { kind: "document", name: "Other", parent: ROOT });
-    a.apply("w", W, [scene.id]);
+    applyDraft(a, "w", W, cmd(), [scene.id]);
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(scene.node)?.parent).toBe(arc.node);
     expect(names(a, ROOT)).toEqual(["Arc"]);
@@ -213,13 +219,13 @@ describe("file tree as a Yjs operation log", () => {
     const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
     const before = replayView(a.doc, LIVE);
     const move = a.move(LIVE, A, ch, g);
-    const inverse = a.undo(LIVE, W, move.id);
+    const inverse = undoChange(a, LIVE, W, move.id);
     expect(inverse).toMatchObject({ undoes: move.id, actor: W });
     const after = replayView(a.doc, LIVE);
     expect(after.nodes.get(ch)).toMatchObject({ parent: f, rank: before.nodes.get(ch)?.rank });
     const again = a.move(LIVE, A, ch, g);
     a.move(LIVE, W, ch, ROOT);
-    expect(a.undo(LIVE, W, again.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, again.id)).toBe("superseded");
   });
 
   it("undo of a folder delete brings back the folder and what it held", () => {
@@ -228,7 +234,7 @@ describe("file tree as a Yjs operation log", () => {
     const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
     const del = a.delete(LIVE, A, f);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(true);
-    a.undo(LIVE, W, del.id);
+    undoChange(a, LIVE, W, del.id);
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(f)?.trashed).toBe(false);
     expect(live.nodes.get(ch)?.trashed).toBe(false);
@@ -296,7 +302,7 @@ describe("file tree log: cases found in review", () => {
     const work = { draft: "w" };
     a.rename(work, A, ch, "First");
     const second = a.rename(work, A, ch, "Second");
-    a.apply("w", W, [second.id]);
+    applyDraft(a, "w", W, cmd(), [second.id]);
     expect(replayView(a.doc, LIVE).nodes.get(ch)?.name).toBe("Second");
     expect(replayView(a.doc, work).nodes.get(ch)?.name).toBe("Second");
   });
@@ -309,7 +315,7 @@ describe("file tree log: cases found in review", () => {
     a.move(work, A, y, ROOT);
     const dependent = a.move(work, A, x, y);
     const before = fingerprint(replayView(a.doc, work));
-    a.apply("w", W, [dependent.id]);
+    applyDraft(a, "w", W, cmd(), [dependent.id]);
     expect(fingerprint(replayView(a.doc, work))).toBe(before);
     expect(replayView(a.doc, LIVE).nodes.get(x)?.parent).toBe(y);
   });
@@ -331,13 +337,13 @@ describe("file tree log: cases found in review", () => {
     const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
     const move = a.move(LIVE, A, ch, ROOT);
     a.delete(LIVE, W, f);
-    expect(a.undo(LIVE, W, move.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, move.id)).toBe("superseded");
   });
 
   it("an applied copy names who drafted it and who applied it", () => {
     const a = replica(1);
     a.create({ draft: "w" }, A, { kind: "document", name: "Ch", parent: ROOT });
-    const [copy] = a.apply("w", W).copies;
+    const [copy] = applyDraft(a, "w", W, cmd()).copies;
     expect(copy).toMatchObject({ actor: A, appliedBy: W, draft: null });
   });
 
@@ -360,11 +366,11 @@ describe("file tree log: cases found in review", () => {
     const a = replica(1);
     const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
     a.rename({ draft: "w" }, A, ch, "Draft name");
-    a.discard("w", undefined, W, "cmd-1");
+    discardDraft(a, "w", W, "cmd-1");
     expect(names(a, ROOT, "w")).toEqual(["Ch"]);
-    expect(a.undoDiscard("cmd-1", W, "cmd-2")).toHaveLength(1);
+    expect(undoDiscard(a, "cmd-1", W, "cmd-2")).toHaveLength(1);
     expect(names(a, ROOT, "w")).toEqual(["Draft name"]);
-    expect(a.undoDiscard("cmd-1", W, "cmd-3")).toEqual([]);
+    expect(undoDiscard(a, "cmd-1", W, "cmd-3")).toEqual([]);
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

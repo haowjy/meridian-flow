@@ -1,12 +1,5 @@
 import type * as Y from "yjs";
 import {
-  type ApplyResult,
-  applyLanding,
-  discardPending,
-  undoApplyIfLast,
-  undoDiscard,
-} from "./apply.js";
-import {
   type Actor,
   type BlobRef,
   type CreateRecord,
@@ -26,8 +19,7 @@ import {
   type TreeRecordInput,
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
-import { descendantsOf, rankAt } from "./shape.js";
-import { undoRecord } from "./undo.js";
+import { descendantsOf, nameAmong, rankAt } from "./shape.js";
 import { LIVE, replayView, type View, viewRecords } from "./view.js";
 
 /**
@@ -101,7 +93,7 @@ export class TreeWriter {
       type: "create",
       node: input.node ?? newId(),
       kind: input.kind,
-      name: input.name,
+      name: nameAmong(projection, input.parent, input.kind, input.name),
       parent: input.parent,
       source,
       rank: rankAt(projection, input.parent, input.index ?? Number.MAX_SAFE_INTEGER),
@@ -130,11 +122,12 @@ export class TreeWriter {
   }
 
   rename(view: View, actor: Actor, node: string, name: string, filetype?: string): RenameRecord {
-    const current = this.view(view).nodes.get(node);
+    const projection = this.view(view);
+    const current = projection.nodes.get(node);
     return this.author(view, actor, {
       type: "rename",
       node,
-      name,
+      name: current ? nameAmong(projection, current.parent, current.kind, name, node) : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),
     }) as RenameRecord;
@@ -169,48 +162,6 @@ export class TreeWriter {
       { type: "restore", node: entry.node },
       { undoes: entry.id },
     ) as RestoreRecord;
-  }
-
-  /** Apply, whole or in part: lands what can land, leaves the rest pending. */
-  apply(draft: string, appliedBy: Actor, only?: readonly string[], command?: string): ApplyResult {
-    return applyLanding(this, draft, appliedBy, only, command);
-  }
-
-  /** Discard, whole or in part: the chosen records and every drafted record that stands on them. */
-  discard(
-    draft: string,
-    only?: readonly string[],
-    by: Actor = "user:w",
-    command?: string,
-  ): string[] {
-    return discardPending(this, draft, only, by, command);
-  }
-
-  /**
-   * Undo of a Discard: puts back to pending every record the Discard `discarded` named. A
-   * repeat finds nothing left and returns an empty list.
-   */
-  undoDiscard(discarded: string, by: Actor, command?: string): string[] {
-    return undoDiscard(this, discarded, by, command);
-  }
-
-  /**
-   * Takes an Apply back, only while nothing has been admitted since (`mark` is the list's state
-   * vector right after the Apply) and no text was written in a document it created.
-   */
-  undoApply(
-    copies: readonly TreeRecord[],
-    mark: Uint8Array,
-    by: Actor = "user:w",
-    writtenSince: ReadonlySet<string> = new Set(),
-    command?: string,
-  ): "undone" | "gone" {
-    return undoApplyIfLast(this, copies, mark, by, writtenSince, command);
-  }
-
-  /** Undo of one change: the opposite record, or "superseded" when something later changed the same fact. */
-  undo(view: View, actor: Actor, recordId: string): TreeRecord | "superseded" | "unknown" {
-    return undoRecord(this, view, actor, recordId);
   }
 }
 
@@ -248,7 +199,7 @@ export function moveBetweenLists(
     type: "create",
     node,
     kind: was.kind,
-    name: was.name,
+    name: nameAmong(arrives, into.parent, was.kind, was.name),
     parent: into.parent,
     source,
     rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),

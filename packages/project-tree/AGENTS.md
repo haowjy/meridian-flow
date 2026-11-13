@@ -13,7 +13,7 @@ it may write, whether a node id is in use) comes in as plain inputs.
   and in a casebook test that fails without it.
 - A client may write five record kinds with its own account as the actor. Everything else
   (applied copies, files, `purge`, settlements, `replaces`) is the server's, and
-  `malformedRecord` refuses a client's update that carries it.
+  `readRecord` refuses a client's update that carries it.
 - Record ids are uuids, so any number of writers may share a copy. The server's Yjs client id is
   below 1,000.
 - What a document is (type, provisional name, aliases, properties mark) rides on its `create`
