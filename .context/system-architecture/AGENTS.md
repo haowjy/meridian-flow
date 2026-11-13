@@ -17,7 +17,10 @@ editing a page. The check passing is not the test.
   panel's collapsed pages); `map.js` and `journeys.js` are the two viewers; `shell.js` is the
   top bar and theme.
 - `map.js` classes Mermaid's nodes by kind and its edges by kind by order (Mermaid draws edges in the
-  order written), and styles them in `styles/page.css` from tokens.
+  order written), and styles them in `styles/page.css` from tokens. Where edge labels would not read
+  at Fit (server, app, code), it lays the diagram out without them, which halves a dense level, and
+  shows a box's edge labels when the box is selected and an edge's when it is hovered.
+- The level list in the top bar is the `## The pages` list in README.md (`levelLinks` in `pages.js`).
 - `styles/tokens.css` mirrors the values it uses from `packages/design-tokens` (the light palette sits
   in a Tailwind `@theme` block a browser ignores). To use another token, add its name to `MIRRORED` in
   `tokens.mjs` and its value to `tokens.css`; `check.mjs` verifies the values.

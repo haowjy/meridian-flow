@@ -41,8 +41,11 @@ function toRgb(css) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-/** Mermaid's theme, drawn from the page's tokens so a diagram matches the page in either theme. */
-function mermaidConfig() {
+/**
+ * Mermaid's theme, drawn from the page's tokens so a diagram matches the page in either theme.
+ * `look` sets the label sizes and spacing: Mermaid lays the diagram out from them, so CSS can't.
+ */
+function mermaidConfig(look = {}) {
   const style = getComputedStyle(document.documentElement);
   const color = (token) => toRgb(style.getPropertyValue(`--color-${token}`).trim());
   return {
@@ -67,19 +70,21 @@ function mermaidConfig() {
       clusterBkg: color("muted"),
       clusterBorder: color("border"),
       titleColor: color("foreground"),
+      ...(look.fontSize && { fontSize: `${look.fontSize}px` }),
     },
+    ...(look.edgeFontSize && { themeCSS: `.edgeLabel, .edgeLabel p, .edgeLabel span { font-size: ${look.edgeFontSize}px; }` }),
     // Natural size: the map pans and zooms it, and the Markdown panels scroll it.
     state: { useMaxWidth: false },
-    flowchart: { useMaxWidth: false, htmlLabels: true },
+    flowchart: { useMaxWidth: false, htmlLabels: true, ...look.flowchart },
   };
 }
 
 let drawn = 0;
 
 /** Draws Mermaid `source` to an SVG string; throws Mermaid's error for a diagram that can't draw. */
-export async function drawDiagram(source) {
+export async function drawDiagram(source, look) {
   const mermaid = await loadMermaid();
-  mermaid.initialize(mermaidConfig());
+  mermaid.initialize(mermaidConfig(look));
   const id = `diagram-${drawn++}`;
   try {
     return (await mermaid.render(id, source)).svg;

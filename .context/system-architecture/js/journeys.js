@@ -1,6 +1,6 @@
 /*
  * The journeys viewer: journeys/index.md lists the journeys, each journey page is a row of
- * step cards (title, a place for a screenshot, Does, Sees). A card opens its links in the
+ * step cards (title, a place for the step's screenshot when it has one, Does, Sees). A card opens its links in the
  * panel: map links go to the map at that box, machine links render in the overlay. The URL
  * hash is `#<journey>` or `#<journey>/<step number>`.
  */
@@ -56,7 +56,7 @@ function card(journey, section, i) {
     { class: "step", id: `${journey.id}/${i + 1}`, tabindex: "0", role: "button", onclick: () => open(journey, i), onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(journey, i)) },
     el("div", { class: "step-no" }, `${i + 1}`),
     el("h3", null, section.id),
-    el("div", { class: "shot", "aria-hidden": "true" }),
+    item(section, "Shot") && el("div", { class: "shot", "aria-hidden": "true" }),
     el("h4", null, "Does"),
     paragraph(field(section, "Does"), journey.path),
     el("h4", null, "Sees"),

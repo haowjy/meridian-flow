@@ -24,7 +24,7 @@ async function main() {
   app.replaceChildren(topBar({ current: null, levels: view.levels, onMachines: () => openDoc(INDEX) }), workspace);
   initDocView(workspace);
   addEventListener("hashchange", route_);
-  onThemeChange(() => view.page && draw());
+  onThemeChange(() => view.page && draw({ keepZoom: true }));
   await route_();
 }
 
@@ -58,20 +58,46 @@ async function route_() {
 
 // ---- The diagram ----
 
+/**
+ * Mermaid sizes boxes and spacing from these. Boxes get a larger font than edge labels so a
+ * dense level still reads at Fit; when the edge labels would not read at Fit, the diagram is
+ * laid out without them (they double a dense level's size) and a box's labels show when it is
+ * selected, an edge's when it is hovered.
+ */
+const LOOK = { fontSize: 24, edgeFontSize: 12, flowchart: { nodeSpacing: 24, rankSpacing: 36, padding: 6, wrappingWidth: 320 } };
+const LEGIBLE_EDGE_LABEL = 7;
+/** Fit never draws box labels larger than 18px. */
+const MAX_SCALE = 18 / LOOK.fontSize;
+/** Fit keeps the diagram below the zoom buttons. */
+const TOOLS_HEIGHT = 44;
+
 const zoom = { x: 0, y: 0, k: 1 };
 let stage = null;
+let labelled = true;
+let hovered = null;
+const tags = el("div", { class: "edge-tags", "aria-hidden": "true" });
 
 function applyZoom() {
   stage.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.k})`;
+  placeTags();
+}
+
+const viewBoxOf = (svg) => {
+  const [, , width, height] = /viewBox="([^"]+)"/.exec(svg)[1].split(/[\s,]+/).map(Number);
+  return { width, height };
+};
+
+function fitScale({ width, height }) {
+  const r = diagram.getBoundingClientRect();
+  return Math.min(r.width / width, (r.height - TOOLS_HEIGHT) / height, MAX_SCALE) * 0.96;
 }
 
 function fit() {
-  const svg = stage.querySelector("svg");
-  const box = svg.viewBox.baseVal;
+  const box = stage.querySelector("svg").viewBox.baseVal;
   const { width, height } = diagram.getBoundingClientRect();
-  zoom.k = Math.min(width / box.width, height / box.height, 1.5) * 0.96;
+  zoom.k = fitScale(box);
   zoom.x = (width - box.width * zoom.k) / 2;
-  zoom.y = (height - box.height * zoom.k) / 2;
+  zoom.y = TOOLS_HEIGHT + (height - TOOLS_HEIGHT - box.height * zoom.k) / 2;
   applyZoom();
 }
 
@@ -91,7 +117,7 @@ function enablePanZoom() {
     zoomBy(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX - r.left, event.clientY - r.top);
   }, { passive: false });
   diagram.addEventListener("pointerdown", (event) => {
-    if (event.button || event.target.closest(".diagram-tools")) return;
+    if (event.button || event.target.closest(".diagram-tools, .legend")) return;
     drag = { x: event.clientX, y: event.clientY, moved: false };
   });
   diagram.addEventListener("pointermove", (event) => {
@@ -114,6 +140,9 @@ function enablePanZoom() {
   };
   diagram.addEventListener("pointerup", end);
   diagram.addEventListener("pointercancel", end);
+  diagram.addEventListener("click", (event) => {
+    if (view.selected && !event.target.closest("g.node, .diagram-tools, .legend")) go(null);
+  });
 }
 
 enablePanZoom();
@@ -137,11 +166,16 @@ const legend = () =>
     el("p", null, "Boxes"),
     el("ul", null, NODE_KINDS.map((kind) => el("li", null, el("span", { class: `swatch kind-${kind}` }), kind))),
     el("p", null, "Arrows (from the side that starts the exchange)"),
-    el("ul", null, EDGE_KINDS.map((kind) => el("li", null, el("span", { class: `line edge-${kind}` }), kind))),
+    el(
+      "ul",
+      null,
+      EDGE_KINDS.map((kind) => el("li", null, el("span", { class: `line edge-${kind}` }), kind)),
+      el("li", null, el("span", { class: "line edge-breaks" }), "breaks a rule"),
+    ),
   );
 
-async function draw() {
-  const keep = stage ? { ...zoom } : null;
+/** Draws the page's diagram. `keepZoom` redraws in place (a theme change); otherwise it fits. */
+async function draw({ keepZoom = false } = {}) {
   const { mermaid } = view.page;
   if (!mermaid) {
     diagram.replaceChildren(el("p", { class: "doc-note" }, `${view.path} has no mermaid block.`));
@@ -149,19 +183,20 @@ async function draw() {
   }
   let svg;
   try {
-    svg = await drawDiagram(mermaid.source);
+    svg = await drawDiagram(mermaid.source, LOOK);
+    labelled = fitScale(viewBoxOf(svg)) * LOOK.edgeFontSize >= LEGIBLE_EDGE_LABEL;
+    if (!labelled) svg = await drawDiagram(mermaid.source.replace(/\|"[^"]*"\| /g, ""), LOOK);
   } catch (error) {
     diagram.replaceChildren(el("p", { class: "doc-note" }, `This diagram didn't draw: ${error.message ?? error}`));
     return;
   }
-  stage = el("div", { class: "stage" });
+  stage = el("div", { class: `stage${labelled ? "" : " is-unlabelled"}` });
   stage.innerHTML = svg;
-  diagram.replaceChildren(stage, tools(), legend());
+  hovered = null;
+  diagram.replaceChildren(stage, tags, tools(), legend());
   annotate();
-  if (keep) {
-    Object.assign(zoom, keep);
-    applyZoom();
-  } else fit();
+  if (keepZoom) applyZoom();
+  else fit();
   markSelected();
 }
 
@@ -181,9 +216,21 @@ function annotate() {
   const paths = stage.querySelectorAll("path.flowchart-link");
   const labels = stage.querySelectorAll("g.edgeLabel");
   edges.forEach((edge, i) => {
-    for (const node of [paths[i], labels[i]]) {
+    const path = paths[i];
+    if (!path) return;
+    // A wide invisible copy of the line, so a thin edge is easy to hover.
+    const hit = path.cloneNode(false);
+    hit.removeAttribute("id");
+    hit.removeAttribute("marker-end");
+    hit.removeAttribute("marker-start");
+    hit.setAttribute("class", "edge-hit");
+    hit.addEventListener("pointerenter", () => hover(i));
+    hit.addEventListener("pointerleave", () => hover(null));
+    path.after(hit);
+    for (const node of [path, labels[i]]) {
       if (!node) continue;
       node.classList.add(`edge-${edge.kind}`);
+      node.dataset.i = i;
       node.dataset.from = edge.from;
       node.dataset.to = edge.to;
       if (edge.label.includes("breaks:")) node.classList.add("edge-breaks");
@@ -192,14 +239,99 @@ function annotate() {
 }
 
 const go = (id) => {
-  location.hash = `${parseHash().page}/${encodeURIComponent(id)}`;
+  const page = parseHash().page;
+  location.hash = id ? `${page}/${encodeURIComponent(id)}` : page;
 };
 
+const isLinked = (edge) => view.selected != null && (edge.from === view.selected || edge.to === view.selected);
+
 function markSelected() {
-  stage?.classList.toggle("has-selection", view.selected != null);
-  for (const g of stage?.querySelectorAll("g.node") ?? []) g.classList.toggle("is-selected", g.dataset.id === view.selected);
-  for (const e of stage?.querySelectorAll("[data-from]") ?? [])
-    e.classList.toggle("is-linked", view.selected != null && (e.dataset.from === view.selected || e.dataset.to === view.selected));
+  if (!stage) return;
+  const { edges } = view.page.mermaid;
+  const neighbours = new Set(edges.filter(isLinked).flatMap((e) => [e.from, e.to]));
+  stage.classList.toggle("has-selection", view.selected != null);
+  for (const g of stage.querySelectorAll("g.node")) {
+    g.classList.toggle("is-selected", g.dataset.id === view.selected);
+    g.classList.toggle("is-linked", neighbours.has(g.dataset.id));
+  }
+  for (const e of stage.querySelectorAll("[data-i]")) e.classList.toggle("is-linked", isLinked(edges[e.dataset.i]));
+  showTags();
+}
+
+function hover(i) {
+  hovered = i;
+  for (const e of stage.querySelectorAll("[data-i]")) e.classList.toggle("is-hovered", Number(e.dataset.i) === i);
+  showTags();
+}
+
+/** Where along a line a tag may sit, in the order tried: the middle first. */
+const ALONG = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88];
+
+/** Stage coordinates of a point given in screen coordinates. */
+function toStage(point) {
+  const r = diagram.getBoundingClientRect();
+  return { x: (point.x - r.left - zoom.x) / zoom.k, y: (point.y - r.top - zoom.y) / zoom.k };
+}
+
+/**
+ * On an unlabelled diagram, the labels of the selected box's edges and of the hovered edge, each
+ * on its own line. The "(breaks: …)" note is left to the tag's colour and the panel.
+ */
+function showTags() {
+  const { edges } = view.page.mermaid;
+  const shown = labelled ? [] : edges.flatMap((edge, i) => (isLinked(edge) || i === hovered ? [i] : []));
+  tags.replaceChildren(
+    ...shown.map((i) => {
+      const edge = edges[i];
+      const breaks = edge.label.includes("breaks:");
+      const tag = el("span", { class: `edge-tag edge-${edge.kind}${breaks ? " edge-breaks" : ""}` }, edge.label.replace(/\s*\(breaks:[^)]*\)$/, ""));
+      tag.i = i;
+      const path = stage.querySelector(`path.flowchart-link[data-i="${i}"]`);
+      const length = path?.getTotalLength();
+      if (length) tag.along = ALONG.map((t) => toStage(path.getPointAtLength(length * t).matrixTransform(path.getScreenCTM())));
+      return tag;
+    }),
+  );
+  placeTags();
+}
+
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Puts each tag on screen at the first point along its line, or just above or below it, where it
+ * covers neither a lit box nor another tag. A tag with no such spot stays hidden (the panel lists
+ * every connection), except the hovered edge's, which goes first and shows wherever it covers least.
+ */
+function placeTags() {
+  const r = diagram.getBoundingClientRect();
+  const edge = view.page.mermaid.edges[hovered];
+  const lit = (g) => g.matches(".is-selected, .is-linked") || g.dataset.id === edge?.from || g.dataset.id === edge?.to;
+  const boxes = [...stage.querySelectorAll("g.node")].filter(lit).map((g) => {
+    const b = g.getBoundingClientRect();
+    return { x: b.left - r.left - 2, y: b.top - r.top - 2, w: b.width + 4, h: b.height + 4 };
+  });
+  const placed = [];
+  const list = [...tags.children].filter((t) => t.along).sort((a, b) => (b.i === hovered) - (a.i === hovered));
+  for (const tag of list) {
+    tag.hidden = false;
+    const w = tag.offsetWidth;
+    const h = tag.offsetHeight;
+    let best = null;
+    search: for (const p of tag.along) {
+      for (const dy of [0, -h / 2 - 3, h / 2 + 3, -h - 4, h + 4]) {
+        const box = { x: zoom.x + p.x * zoom.k - w / 2, y: zoom.y + p.y * zoom.k - h / 2 + dy, w, h };
+        const cost = 10 * boxes.filter((b) => overlaps(box, b)).length + placed.filter((b) => overlaps(box, b)).length;
+        if (!best || cost < best.cost) best = { box, cost };
+        if (!cost) break search;
+      }
+    }
+    if (best.cost && tag.i !== hovered) {
+      tag.hidden = true;
+      continue;
+    }
+    placed.push(best.box);
+    tag.style.transform = `translate(${best.box.x}px, ${best.box.y}px)`;
+  }
 }
 
 // ---- The panel ----
@@ -286,7 +418,7 @@ function connections(id) {
     const other = e.from === id ? e.to : e.from;
     const arrow = e.both ? "↔" : e.from === id ? "→" : "←";
     rows.push(
-      el("li", null, el("span", { class: `edge-kind edge-${e.kind}` }, e.kind), ` ${arrow} `, el("a", { href: `#${parseHash().page}/${encodeURIComponent(other)}` }, label(other)), el("div", { class: "edge-label" }, e.label.replace(/^\w+: ?/, ""))),
+      el("li", null, el("span", { class: `edge-kind edge-${e.kind}` }, e.kind), ` ${arrow} `, el("a", { href: `#${parseHash().page}/${encodeURIComponent(other)}` }, label(other)), el("div", { class: "edge-label" }, e.label)),
     );
   }
   return rows.length ? el("section", null, el("h3", null, "Connections"), el("ul", { class: "edges" }, rows)) : null;

@@ -381,9 +381,10 @@ button {
   --edge-width: 1px;
 }
 
+/* A dense level can have many breaks: quiet until their box is selected, still red. */
 .edge-breaks {
-  --edge: var(--color-destructive);
-  --edge-width: 2px;
+  --edge: color-mix(in oklab, var(--color-destructive) 60%, transparent);
+  --edge-width: 1.25px;
 }
 
 #map-diagram svg path.flowchart-link {
@@ -404,9 +405,57 @@ button {
   font-size: 12px;
 }
 
+#map-diagram svg path.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14px;
+  pointer-events: stroke;
+}
+
+.stage.is-unlabelled g.edgeLabel {
+  display: none;
+}
+
+#map-diagram svg path.flowchart-link.is-linked,
+#map-diagram svg path.flowchart-link.is-hovered {
+  stroke-width: calc(var(--edge-width, 1.5px) + 1px);
+}
+
+.stage.has-selection path.flowchart-link.is-linked.edge-breaks,
+.stage path.flowchart-link.is-hovered.edge-breaks,
+.edge-tag.edge-breaks {
+  --edge: var(--color-destructive);
+}
+
 .stage.has-selection path.flowchart-link:not(.is-linked),
 .stage.has-selection g.edgeLabel:not(.is-linked) {
-  opacity: 0.25;
+  opacity: 0.12;
+}
+
+.stage.has-selection g.node:not(.is-selected):not(.is-linked) {
+  opacity: 0.35;
+}
+
+.edge-tags {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.edge-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 220px;
+  padding: 1px 6px;
+  border: 1px solid var(--edge, var(--color-border));
+  border-radius: 4px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: var(--shadow-card);
 }
 
 .line {

@@ -181,15 +181,14 @@ export function withoutFences(text) {
     .join("\n");
 }
 
-/** The level pages a README links: [{ id, title, href }], in order, fenced examples left out. */
+/** The level pages README.md lists under "## The pages": [{ id, title, href }], in order. */
 export function levelLinks(readme) {
-  const seen = new Set();
   const out = [];
-  for (const { label, href } of linksOf(withoutFences(readme))) {
-    const m = /^([\w-]+)\.md$/.exec(href);
-    if (!m || m[1] === "README" || m[1] === "AGENTS" || seen.has(m[1])) continue;
-    seen.add(m[1]);
-    out.push({ id: m[1], title: label, href });
+  let inList = false;
+  for (const line of withoutFences(readme).split("\n")) {
+    if (line.startsWith("## ")) inList = line.trim() === "## The pages";
+    const m = inList && /^- \[([^\]]*)\]\(([\w-]+)\.md\)/.exec(line);
+    if (m) out.push({ id: m[2], title: m[1], href: `${m[2]}.md` });
   }
   return out;
 }
