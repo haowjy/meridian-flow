@@ -20,7 +20,6 @@ import {
   isDocumentSchemaMajorMismatchError,
 } from "../domains/collab/index.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
-import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type FileAccessChanges,
   FileEditRefusedError,
@@ -69,7 +68,6 @@ export type YjsGatewayConnection = {
 };
 
 export type YjsGatewayServices = {
-  liveDocuments: Pick<TreeReader, "findById">;
   fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "historyAccess">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
@@ -136,13 +134,6 @@ type YjsConnectionContext = {
 
 export function clientSchemaVersionFromRequest(request: Request): CollabSchemaVersion {
   return clientSchemaVersionFromSubprotocolHeader(request.headers.get("sec-websocket-protocol"));
-}
-
-export async function hasLiveDocument(
-  tree: Pick<TreeReader, "findById">,
-  documentId: DocumentId,
-): Promise<boolean> {
-  return (await tree.findById(LIVE_TREE, documentId)).kind === "found";
 }
 
 function permissionDenied(
@@ -346,12 +337,10 @@ async function classifyYjsConnectionAdmission(input: {
 
   if (room.kind === "live") {
     documentId = room.documentId;
-    fileTarget = { kind: "document", documentId };
-    // The file policy denies a removed document; `withRemovalRefusal` answers it.
+    // A document in Trash still takes text until its node is purged, so the room reads
+    // through Trash like a restore; a purged or unplaced document has no facts and is refused.
+    fileTarget = { kind: "restore", documentId };
     admitted = await roomAccess(services, userId, fileTarget);
-    if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
-      throw permissionDenied("permission-denied");
-    }
     // The room's explicit touch: a living document missing its authority is seeded empty
     // before the first generation read, which never creates one.
     await services.documentSync.ensureDocumentAuthority(documentId);
@@ -872,7 +861,6 @@ export type YjsGateway = ReturnType<typeof createYjsGateway>;
 
 export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
   return {
-    liveDocuments: app.liveDocuments,
     fileAccess: app.fileAccess,
     fileAccessChanges: app.fileAccessChanges,
     documentSync: app.documentSync,

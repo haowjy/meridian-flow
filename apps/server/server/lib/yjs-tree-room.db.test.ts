@@ -88,7 +88,6 @@ describe("a tree list's room (postgres)", () => {
     unlisten.push(store.listen());
     const changes = createLocalFileAccessChanges();
     const gateway = createYjsGateway({
-      liveDocuments: { findById: async () => ({ kind: "not_found" }) },
       fileAccess: {},
       fileAccessChanges: changes,
       documentSync: {

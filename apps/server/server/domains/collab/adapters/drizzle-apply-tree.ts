@@ -30,7 +30,7 @@ export function createApplyTreeOperations(input: {
   db: Database;
   treeLists: Pick<TreeListStore, "submit">;
   tree: Pick<TreeReader, "identityStatus">;
-  close: Pick<DraftClose, "closeDrafts" | "registerRemoved">;
+  close: Pick<DraftClose, "closeDrafts">;
   arrivals?: Pick<DocumentArrivals, "settle">;
   onCommitted(documentId: DocumentId): Promise<void>;
 }) {
@@ -110,12 +110,7 @@ export function createApplyTreeOperations(input: {
     const tx = currentDrizzleDb(input.db);
     await lockDocumentMutation(tx, documentId);
     if (item?.change === "deleting") {
-      // Live rooms of a document the Apply took out of live close once this commits.
-      input.close.registerRemoved([documentId], {
-        reason: "deleted",
-        actor: { kind: "user", userId: click.userId, displayName: null },
-        time: new Date().toISOString(),
-      });
+      // Its live room stays open: a document in Trash still takes text until it is purged.
       await input.close.closeDrafts(
         tx,
         { documentIds: [documentId], branchId },

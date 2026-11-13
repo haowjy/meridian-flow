@@ -1,13 +1,13 @@
 import type { DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { treeNodes } from "@meridian/database/schema";
+import { documents, treeNodes } from "@meridian/database/schema";
 import { and, inArray, isNotNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DocumentRemovals } from "../ports/document-removal.js";
 
 /**
- * A document is removed while its node is in Trash. The delete's author lives in the list, which
+ * A document is removed while its node is in Trash, or once its content is purged. The delete's author lives in the list, which
  * this reader does not open, so the record names no actor.
  */
 export function createTrashRemovals(db: Database): DocumentRemovals {
@@ -24,6 +24,16 @@ export function createTrashRemovals(db: Database): DocumentRemovals {
           reason: "deleted",
           actor: null,
           time: (row.trashedAt as Date).toISOString(),
+        });
+      const purged = await currentDrizzleDb(db)
+        .select({ id: documents.id, purgedAt: documents.contentPurgedAt })
+        .from(documents)
+        .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.contentPurgedAt)));
+      for (const row of purged)
+        out.set(row.id, {
+          reason: "deleted",
+          actor: null,
+          time: (row.purgedAt as Date).toISOString(),
         });
       return out;
     },
