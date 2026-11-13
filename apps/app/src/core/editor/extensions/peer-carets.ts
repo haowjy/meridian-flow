@@ -31,6 +31,7 @@ function pannedAway(view: EditorView, pos: number, x: number): boolean {
     element = element.parentElement
   ) {
     if (element.scrollWidth <= element.clientWidth) continue;
+    if (getComputedStyle(element).overflowX === "visible") continue;
     const box = element.getBoundingClientRect();
     if (x < box.left || x > box.right) return true;
   }

@@ -66,10 +66,12 @@ import type { SessionMarkerStore } from "./session-marker-store";
 import { editorSuggestionHost } from "./suggestion-host";
 import { UploadPresenceExtension } from "./upload-presence";
 
-/** Who this client is, published with its caret so a peer can label it. */
+/**
+ * Who this client is, published with its caret: a peer on the same account labels it "You".
+ * No name yet: every peer today is the writer's own tab or device.
+ */
 export type EditorUser = {
   accountId: string;
-  name: string;
 };
 
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
@@ -230,7 +232,6 @@ function createCollaborationExtensions({
 >): Extensions {
   const published = {
     accountId: user?.accountId ?? "",
-    name: user?.name ?? "",
     color: pickCursorColor(presence.peers),
   };
 

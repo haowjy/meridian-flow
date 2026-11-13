@@ -84,9 +84,10 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
 
 /**
  * Scroll to the saved reading line, then restore the selection, without focus or scrollIntoView.
- * A selection the restored viewport doesn't show (the writer scrolled without clicking) is placed
- * at the reading line instead: left off-screen, the first focus or keystroke scrolls back to it,
- * and ProseMirror's own post-focus check does exactly that for a selection at the document start.
+ * A selection the restored viewport doesn't show (the writer scrolled without clicking, or away
+ * from a passage they selected) becomes a caret at the reading line instead: left off-screen, the
+ * first focus or keystroke scrolls back to it, and ProseMirror's own post-focus check does exactly
+ * that for a selection at the document start.
  */
 export function restoreReadingPosition(
   editor: Editor,
@@ -96,6 +97,7 @@ export function restoreReadingPosition(
   if (editor.isDestroyed) return false;
   const runtime = relativePositionRuntimeFromState(editor.state);
   if (!runtime) return false;
+  let scrolled = false;
   try {
     const doc = editor.state.doc;
     const block = resolve(runtime, place.viewport.block);
@@ -112,6 +114,7 @@ export function restoreReadingPosition(
         pane.scrollTop += rect.top - top + place.viewport.offset * rect.height;
       } else pane.scrollTop = 0;
     } else pane.scrollTop = 0;
+    scrolled = true;
 
     const from = resolve(runtime, place.selection.anchor) ?? 0;
     const to = resolve(runtime, place.selection.head) ?? from;
@@ -133,7 +136,7 @@ export function restoreReadingPosition(
     return true;
   } catch {
     // Deleted types, replaced content, and unavailable layout are convenience loss, never a broken editor.
-    pane.scrollTop = 0;
+    if (!scrolled) pane.scrollTop = 0;
     return true;
   }
 }
