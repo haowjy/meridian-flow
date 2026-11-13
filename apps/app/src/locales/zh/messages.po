@@ -4276,7 +4276,6 @@ msgid "Open full screen"
 msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/side/SideHeader.tsx
 msgid "Open in main"
 msgstr ""
 
@@ -5330,6 +5329,10 @@ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Swap with main"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx

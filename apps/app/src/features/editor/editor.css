@@ -324,6 +324,12 @@
   white-space: nowrap;
 }
 
+/* Above the first block the label would slide under the pane's toolbar; it hangs below the caret
+   there instead of taking room from the top of the page. */
+.meridian-editor .ProseMirror > :first-child .meridian-collab-cursor__label {
+  top: calc(100% + 0.125rem);
+}
+
 .meridian-collab-selection {
   opacity: 0.2;
 }
