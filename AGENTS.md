@@ -21,11 +21,10 @@ no longer serves writers, propose the change to the owner as its own step, never
 side effect of getting a task to pass. How the code keeps each one, what checks it and
 where it falls short: [.context/invariants.md](.context/invariants.md).
 
-- **Text converges.** Every copy of a document's text converges, and no accepted edit is
-  lost in the merge: the writer and the model edit the same document at once.
-- **Writer text stays out of logs and diagnostics:** it is unpublished, private work.
-- **Marks and receipts say truthfully who did what:** seeing what changed and taking it
-  back is the writer's protection.
+- **Text merges through Yjs.** Anything else that changes text does it as an ordinary
+  edit every copy receives.
+- **Writer text stays out of logs and diagnostics.**
+- **Marks and receipts say truthfully who did what.**
 
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better.
