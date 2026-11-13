@@ -130,6 +130,9 @@ function sizeToFit(holder) {
 
 const isContextPage = (path) => path.endsWith(".md") && path.split("/").includes(".context");
 
+/** What `route` can produce and the dev server serves: a .context page with no `..`, `.` or empty segment. */
+const isDocPath = (path) => isContextPage(path) && !path.includes("\\") && path.split("/").every((s) => s && s !== "." && s !== "..");
+
 /** Where a link in the page at `path` goes: { href, doc?, external } or null to leave it. */
 export function route(path, href) {
   const { path: target, fragment, url } = resolveHref(path, href);
@@ -245,6 +248,7 @@ function syncOverlay() {
   overlay = null;
   if (!doc) return;
   const [path, fragment] = doc.split("#");
+  if (!isDocPath(path)) return;
   const body = el("article", { class: "md" });
   const title = path.replace(/\/?\.context\/.*$/, "") || "Repository";
   overlay = el(
