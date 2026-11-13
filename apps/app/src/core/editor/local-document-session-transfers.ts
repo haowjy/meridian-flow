@@ -47,6 +47,7 @@ type LocalTransferRegistryPort = {
     leases: Iterable<LiveDocumentSessionLease>,
     options: { detachedDocumentIds?: Iterable<DocumentId> },
   ): void;
+  setHosted(ownerId: string, hosted: boolean): void;
   release(ownerId: string): void;
   attachTransport(session: DocumentSession): void;
 };
@@ -195,6 +196,7 @@ export class LocalDocumentSessionTransfers
                 lease,
                 persistenceGeneration: lease.persistenceGeneration,
                 exactDatabaseName: input.pending.exactDatabaseName,
+                setHosted: (hosted) => this.registry.setHosted(ownerId, hosted),
                 release: () => {
                   if (released) return;
                   released = true;

@@ -40,7 +40,6 @@ beforeEach(() => {
 function createFactory(created: DocumentSession[] = []): LocalDocumentSessionFactory {
   return {
     whenAuthorityReady: async () => undefined,
-    attachTransport: () => undefined,
     createDetached(input) {
       databases.add(input.persistenceKey);
       const session = new DocumentSession({
@@ -83,6 +82,7 @@ function registryOwnership(
     lease: { accountId, projectId, documentId: record.resource.identity.documentId, generation },
     persistenceGeneration: generation,
     exactDatabaseName: exactDatabaseName(record),
+    setHosted: () => undefined,
     release,
   };
 }

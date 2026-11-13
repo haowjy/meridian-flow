@@ -20,7 +20,7 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..0db8312ff579fb583766cb898de2f9b73e9d5303 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62548ab81b 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
 @@ -753,35 +753,14 @@ class ProsemirrorBinding {
@@ -106,7 +106,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..0db8312ff579fb583766cb898de2f9b7
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2367,35 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2367,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -137,6 +137,11 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..0db8312ff579fb583766cb898de2f9b7
 -        // (only for managers we created — see state.init above).
 +        undoManager.off('stack-item-added', onAdded);
 +        undoManager.off('stack-item-popped', onPopped);
++        // meridian patch: a stack item outlives this editor and must not keep its binding alive.
++        if (ystate.binding) {
++          undoManager.undoStack.forEach(item => item.meta.delete(ystate.binding));
++          undoManager.redoStack.forEach(item => item.meta.delete(ystate.binding));
++        }
 +        // meridian patch: only a manager this plugin created (see state.init) is its to destroy.
          const leakedDestroyListeners = undoManager._yTiptapDocDestroyListeners;
 -        if (leakedDestroyListeners && undoManager.doc) {
@@ -151,7 +156,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..0db8312ff579fb583766cb898de2f9b7
        }
      }
    }
-@@ -2388,6 +2411,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2416,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -160,7 +165,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..0db8312ff579fb583766cb898de2f9b7
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..54e06257fec62749f65db26109c934def0c056d9 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..e80037e5de66a27531a1e336c70c982a5aa269a4 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
 @@ -719,35 +719,14 @@ class ProsemirrorBinding {
@@ -246,7 +251,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..54e06257fec62749f65db26109c934de
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2333,39 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2333,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -277,6 +282,11 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..54e06257fec62749f65db26109c934de
 -        // (only for managers we created — see state.init above).
 +        undoManager.off('stack-item-added', onAdded);
 +        undoManager.off('stack-item-popped', onPopped);
++        // meridian patch: a stack item outlives this editor and must not keep its binding alive.
++        if (ystate.binding) {
++          undoManager.undoStack.forEach(item => item.meta.delete(ystate.binding));
++          undoManager.redoStack.forEach(item => item.meta.delete(ystate.binding));
++        }
 +        // meridian patch: only a manager this plugin created (see state.init) is its to destroy.
          const leakedDestroyListeners = undoManager._yTiptapDocDestroyListeners;
 -        if (leakedDestroyListeners && undoManager.doc) {

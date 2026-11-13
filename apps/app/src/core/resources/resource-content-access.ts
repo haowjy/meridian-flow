@@ -516,10 +516,8 @@ export class ResourceContentAccess {
     if (adoptionEligible) {
       entry.leases.set(lease, true);
       entry.adoptionBound = true;
-      // Back on screen: a session whose socket an off-screen tab closed syncs the difference.
-      if (entry.ownership.kind === "registry" && entry.session.getSnapshot().status === "detached")
-        this.sessions.attachTransport(entry.session);
     }
+    this.reportHosted(entry);
     let released = false;
     const openedEntry = entry;
     return {
@@ -658,7 +656,7 @@ export class ResourceContentAccess {
   private releaseLease(id: string, entry: ContentEntry, lease: symbol): void {
     entry.leases.delete(lease);
     if (entry.leases.size > 0) {
-      this.closeOffScreenTransport(entry);
+      this.reportHosted(entry);
       return;
     }
     if (this.entries.get(id) !== entry) return;
@@ -671,13 +669,14 @@ export class ResourceContentAccess {
   }
 
   /**
-   * A session only an open tab keeps (no host holds an adoption-eligible lease) gives up its
-   * socket and keeps its document and undo. Unsent edits keep it on the wire until acknowledged.
+   * Tells the registry whether a host holds the document. It alone decides, with the session's
+   * unsent edits, whether the socket stays open: an open tab keeps the session and its undo, not a socket.
    */
-  private closeOffScreenTransport(entry: ContentEntry): void {
-    if (entry.ownership.kind !== "registry" || [...entry.leases.values()].some(Boolean)) return;
-    if (entry.session.hasUnacknowledgedEdits()) return;
-    void entry.session.detachTransport().catch(reportError);
+  private reportHosted(entry: ContentEntry): void {
+    if (entry.ownership.kind !== "registry") return;
+    const hosted = [...entry.leases.values()].some(Boolean);
+    for (const ownership of entry.ownership.ownershipByProject.values())
+      ownership.setHosted(hosted);
   }
 
   private releaseRegistryOwnership(

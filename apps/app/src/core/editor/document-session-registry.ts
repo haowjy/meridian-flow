@@ -30,6 +30,12 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
     leases: Iterable<LiveDocumentSessionLease>,
     options?: { detachedDocumentIds?: Iterable<DocumentId> },
   ): void;
+  /**
+   * Whether the owner's retained documents have a host on screen. An unhosted document closes
+   * its socket unless some other owner hosts it or it has unsent edits. No-op once the owner is
+   * released or its documents were revoked.
+   */
+  setHosted(ownerId: string, hosted: boolean): void;
   release(ownerId: string): void;
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
@@ -73,7 +79,6 @@ export interface LiveSessionIncarnationPort {
 
 export interface LocalDocumentSessionFactory {
   whenAuthorityReady(): Promise<void>;
-  attachTransport(session: DocumentSession): void;
   createDetached(input: {
     accountId: AccountId;
     projectId: ProjectId;

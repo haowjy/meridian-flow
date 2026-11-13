@@ -59,6 +59,7 @@ type LiveRoomState = {
  */
 const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
+/** `detached`: this owner does not want the socket open. The registry attaches when any owner does. */
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry
@@ -95,8 +96,9 @@ export class DocumentSessionRegistry
     isAdmitting: (documentId) => (this.admissionReservations.get(documentId) ?? 0) > 0,
     liveRoom: (documentId) => this.liveRooms.get(documentId),
     retain: (ownerId, leases, options) => this.retain(ownerId, leases, options),
+    setHosted: (ownerId, hosted) => this.setHosted(ownerId, hosted),
     release: (ownerId) => this.release(ownerId),
-    attachTransport: (session) => this.attachTransport(session),
+    attachTransport: (session) => this.attachSessionTransport(session),
   });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
@@ -266,6 +268,13 @@ export class DocumentSessionRegistry
     this.retainedByOwner.set(ownerId, retained);
     this.reconcileRetainedSessions();
     this.publishRetainedLiveDocuments();
+  }
+
+  setHosted(ownerId: string, hosted: boolean): void {
+    const retained = this.retainedByOwner.get(ownerId);
+    if (!retained) return;
+    for (const owner of retained.values()) owner.detached = !hosted;
+    this.reconcileRetainedSessions();
   }
 
   release(ownerId: string): void {
@@ -638,6 +647,7 @@ export class DocumentSessionRegistry
         this.dropRefusedRoom(session);
         this.reportRemovedRoom(session);
         this.retireDrainedRoom(session);
+        this.settleRetainedTransport(session);
       });
     return session;
   }
@@ -646,10 +656,6 @@ export class DocumentSessionRegistry
     if (this.accountRuntimeState !== "open") {
       throw new Error("Account document session runtime is closing");
     }
-  }
-
-  attachTransport(session: DocumentSession): void {
-    this.attachSessionTransport(session);
   }
 
   private attachSessionTransport(session: DocumentSession): void {
@@ -765,17 +771,47 @@ export class DocumentSessionRegistry
   private reconcileRetainedSessions(): void {
     const keep = new Map<DocumentId, RetainedLiveDocument>();
     for (const retained of this.retainedByOwner.values()) {
-      for (const [documentId, owner] of retained) keep.set(documentId, owner);
+      for (const [documentId, owner] of retained) {
+        const prior = keep.get(documentId);
+        keep.set(documentId, {
+          lease: owner.lease,
+          detached: (prior?.detached ?? true) && owner.detached,
+        });
+      }
     }
     for (const owner of keep.values()) {
       const state = this.requireLease(owner.lease);
-      this.getOrCreateLiveSession(owner.lease, state, !owner.detached);
+      const session = this.getOrCreateLiveSession(owner.lease, state, !owner.detached);
+      if (owner.detached) this.detachUnwantedTransport(session);
     }
     for (const [documentId, state] of this.liveRooms) {
       if (state.session && !keep.has(documentId)) {
         this.scheduleTeardown(documentId);
       }
     }
+  }
+
+  /**
+   * The one place a retained session's socket closes: no owner wants it open and it has no
+   * deliverable unsent edits. Attaching is `getOrCreateLiveSession`'s.
+   */
+  private detachUnwantedTransport(session: DocumentSession): void {
+    if (session.getSnapshot().status === "detached" || this.mustKeepForUnsentEdits(session)) return;
+    void session.detachTransport().catch(() => undefined);
+  }
+
+  /** A session whose unsent edits were acknowledged or became undeliverable no longer needs its socket. */
+  private settleRetainedTransport(session: DocumentSession): void {
+    const documentId = session.documentId as DocumentId;
+    if (this.liveRooms.get(documentId)?.session !== session) return;
+    let retained = false;
+    for (const owners of this.retainedByOwner.values()) {
+      const owner = owners.get(documentId);
+      if (!owner) continue;
+      if (!owner.detached) return;
+      retained = true;
+    }
+    if (retained) this.detachUnwantedTransport(session);
   }
 
   private scheduleTeardown(roomKey: string): void {

@@ -21,7 +21,8 @@ type EditorHistoryAction = {
   redo(): void;
 };
 export type EditorHistoryHandle = {
-  captureApply(action: EditorHistoryAction): void;
+  /** Records an Apply boundary. The remover ends it when its action can no longer run. */
+  captureApply(action: EditorHistoryAction): () => void;
 };
 
 type Entry =
@@ -30,6 +31,7 @@ type Entry =
 
 /** The history each mounted editor is attached to. */
 const histories = new WeakMap<Editor, DocumentHistory>();
+const noop = () => {};
 const HISTORY_META = "meridian-editor-history";
 /** On a stack item: the range selection from just before the change it holds ran. */
 const RANGE_META = "meridian-editor-range";
@@ -89,6 +91,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   private active = true;
   /** The editors showing this document now. */
   private readonly editors = new Set<Editor>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(readonly manager: Y.UndoManager) {
     manager.on("stack-item-added", this.managerAdded);
@@ -118,14 +121,34 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.manager.destroy();
     this.undo.length = 0;
     this.redo.length = 0;
+    this.listeners.clear();
   }
 
-  captureApply(action: EditorHistoryAction): void {
-    if (!this.active) return;
+  captureApply(action: EditorHistoryAction): () => void {
+    if (!this.active) return noop;
     this.manager.stopCapturing();
-    this.undo.push({ kind: "apply", sequence: ++this.sequence, action });
+    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action };
+    this.undo.push(entry);
     this.clearRedo();
     this.changed();
+    return () => {
+      for (const entries of [this.undo, this.redo]) {
+        const index = entries.indexOf(entry);
+        if (index >= 0) entries.splice(index, 1);
+      }
+      this.changed();
+    };
+  }
+
+  /** Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. */
+  hasEntries(): boolean {
+    return this.canUndo() || this.canRedo();
+  }
+
+  /** Calls `listener` after the stacks change. Returns the unsubscribe. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   canUndo(): boolean {
@@ -289,6 +312,7 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (this.rangeBeforeDispatch) stackItem.meta.set(RANGE_META, this.rangeBeforeDispatch);
     this.undo.push(entry);
     this.clearRedo();
+    this.notify();
   };
 
   private readonly managerCleared = ({
@@ -312,6 +336,10 @@ export class DocumentHistory implements EditorHistoryHandle {
     );
   }
 
+  private notify(): void {
+    for (const listener of this.listeners) listener();
+  }
+
   private clearRedo(): void {
     this.redo.length = 0;
     if (this.manager.redoStack.length > 0) {
@@ -327,6 +355,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   /** Tells every attached editor, so a toolbar showing this document refreshes its Undo state. */
   private changed(): void {
     if (!this.active) return;
+    this.notify();
     for (const editor of this.editors)
       if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }

@@ -133,7 +133,7 @@ const connectedTransport: DocumentSessionTransportFactory = () => ({
 
 async function seam(
   seed: "owed" | "reserved" | "committed" = "owed",
-  transportFactory?: DocumentSessionTransportFactory,
+  transportFactory: DocumentSessionTransportFactory = connectedTransport,
 ) {
   const accountId = `adoption-commit-${++sequence}`;
   const metadata = new IndexedDbResourceMetadata(accountId, vi.fn());
@@ -170,7 +170,6 @@ async function seam(
     metadata,
     {
       whenAuthorityReady: async () => undefined,
-      attachTransport: () => undefined,
       createDetached(input) {
         const session = new DocumentSession({
           roomKey: input.documentId,
@@ -408,7 +407,6 @@ function record(): ResourceRecord {
 function factory(created: DocumentSession[]): LocalDocumentSessionFactory {
   return {
     whenAuthorityReady: async () => undefined,
-    attachTransport: () => undefined,
     createDetached(input) {
       const session = new DocumentSession({
         roomKey: input.documentId,
@@ -479,6 +477,7 @@ async function fixture() {
         },
         persistenceGeneration: input.admission,
         exactDatabaseName: databaseName,
+        setHosted: () => undefined,
         release,
       });
       return {

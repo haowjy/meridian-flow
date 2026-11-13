@@ -505,6 +505,7 @@ export class AccountResourceReplica {
       lease,
       persistenceGeneration: incarnation,
       exactDatabaseName: databaseName,
+      setHosted: (hosted: boolean) => this.runtime.registry.setHosted(owner, hosted),
       release: () => {
         if (released) return;
         released = true;
