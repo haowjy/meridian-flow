@@ -104,9 +104,9 @@ function Box({ data, id }) {
   const state = selectedId === null ? "" : id === selectedId ? "is-selected" : linked.has(id) ? "is-linked" : "is-dim";
   return h(
     "div",
-    { className: `card kind-${node.kind} ${state}`, title: node.kind === "group" ? "Opens its own page" : undefined },
+    { className: `card kind-${node.kind} ${state}`, title: data.opens ? "Opens its own page" : undefined },
     ...handles(),
-    h("div", { className: "card-label" }, name, node.kind === "group" ? " ▸" : ""),
+    h("div", { className: "card-label" }, name, data.opens ? " ▸" : ""),
     role ? h("div", { className: "card-sub" }, role) : null,
   );
 }
@@ -167,7 +167,7 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
         id: node.id,
         type: node.kind === "note" ? "note" : "box",
         position: { x: 0, y: 0 },
-        data: { node },
+        data: { node, opens: Boolean(page.sections.find((s) => s.id === node.id)?.items.some((it) => it.key === "Opens")) },
         style: { visibility: "hidden" },
       })),
     [sourceNodes],
@@ -337,10 +337,9 @@ export function createMap(host, { page, path, parent, nav }) {
     return el("details", { class: "legend" }, el("summary", null, "Legend"), el("ul", null, kinds.map((kind) => el("li", null, el("span", { class: `swatch kind-${kind}` }), kind))));
   }
 
-  /** A click on a box: a group opens its page, any other box is selected (and put in the address). */
+  /** A click on a box: a box with Opens goes to that page, any other box is selected (and put in the address). */
   function choose(id) {
-    const node = page.mermaid.nodes.find((n) => n.id === id);
-    const opens = node?.kind === "group" && opensOf(id);
+    const opens = id && opensOf(id);
     if (opens) return nav.go(opens);
     nav.replace(id ? `${location.hash.split("/")[0]}/${encodeURIComponent(id)}` : location.hash.split("/")[0]);
     select(id);
@@ -381,7 +380,7 @@ export function createMap(host, { page, path, parent, nav }) {
           return el(
             "li",
             null,
-            el("button", { type: "button", class: "link-button", onclick: () => choose(n.id) }, plain(n.label), n.kind === "group" ? " ▸" : ""),
+            el("button", { type: "button", class: "link-button", onclick: () => choose(n.id) }, plain(n.label), opensOf(n.id) ? " ▸" : ""),
             section?.paragraphs[0] && paragraph(section.paragraphs[0], "sub-line"),
           );
         }),

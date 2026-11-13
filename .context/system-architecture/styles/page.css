@@ -759,11 +759,9 @@ button {
   color: var(--color-muted-foreground);
 }
 
-.md > :not(.md-diagram):not(table):not(pre) {
-  max-width: 820px;
-}
-
 .md {
+  max-width: 1200px;
+  margin: 0 auto;
   color: var(--color-card-foreground);
   overflow-wrap: break-word;
 }
