@@ -11,6 +11,7 @@ export const prefixCachePredictionReasonSchema = z.enum([
   "model_changed",
   "prompt_epoch",
   "image_eviction",
+  "media_link_window",
   "compaction",
   "ttl_unknown",
   "summary_transcript",

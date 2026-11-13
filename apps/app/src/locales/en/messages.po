@@ -2549,8 +2549,8 @@ msgid "Deleting a Work…"
 msgstr "Deleting a Work…"
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Demo image"
-msgstr "Demo image"
+#~ msgid "Demo image"
+#~ msgstr "Demo image"
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Denied"
@@ -2880,8 +2880,8 @@ msgid "Failed"
 msgstr "Failed"
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Failed to load image"
-msgstr "Failed to load image"
+#~ msgid "Failed to load image"
+#~ msgstr "Failed to load image"
 
 #. placeholder {0}: upload.name
 #: src/components/app/composer/composer-document.ts
@@ -3470,7 +3470,6 @@ msgid "Loading files…"
 msgstr "Loading files…"
 
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "Loading image"
 

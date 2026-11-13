@@ -113,7 +113,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
-import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+import { MediaResolutionError, type MediaResolverPort } from "../ports/media-resolver.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -156,6 +156,7 @@ import {
   readCompactionTrigger,
   reservationTurn,
 } from "./local-turn.js";
+import { requestCarriesMediaLink } from "./media-link-window.js";
 import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
@@ -165,7 +166,11 @@ import {
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
-import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
+import {
+  createPrefixCacheStateService,
+  linkWindowSeconds,
+  type PrefixCacheState,
+} from "./prefix-cache-state.js";
 import {
   loadReferenceReads,
   type ReferenceEvidence,
@@ -290,7 +295,9 @@ export interface OrchestratorDeps {
   handoffBriefs: HandoffBriefStopper;
   /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
-  imageAssets: ImageAssetPort;
+  mediaResolver: MediaResolverPort;
+  /** Test seam: the span a signed media link stays identical for, instead of the cache lifetime. */
+  mediaLinkWindowSeconds?: number;
   /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
@@ -348,7 +355,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       const error =
         input.error instanceof RequestPreparationError ? input.error.original : input.error;
       const contextError = error instanceof ThreadConversationContextError ? error : null;
-      const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
+      const imageResolutionError = error instanceof MediaResolutionError ? error : null;
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
       const failedTurn = await deps.repos.turns.findById(input.turnId);
@@ -2292,6 +2299,15 @@ async function executeLoop({
             model: built.resolvedModel,
             now: Date.now(),
             knownLocalTurns: allTurns,
+            ...(requestCarriesMediaLink(request)
+              ? {
+                  mediaLinkWindowSeconds: linkWindowSeconds(
+                    built.resolvedModel,
+                    thread.kind,
+                    deps.mediaLinkWindowSeconds,
+                  ),
+                }
+              : {}),
           });
         } catch (cause) {
           predictedCacheState = { state: "cold", reason: "facts_unavailable" };
@@ -2760,7 +2776,7 @@ async function executeLoop({
         if (optional && !terminalControl) continue;
       } else if (
         err instanceof RequestPreparationError ||
-        err instanceof ImageAssetResolutionError ||
+        err instanceof MediaResolutionError ||
         err instanceof ThreadConversationContextError
       ) {
         throw err instanceof RequestPreparationError ? err : new RequestPreparationError(err);

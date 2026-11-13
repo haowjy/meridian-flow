@@ -130,6 +130,40 @@ claim the runner would hold, because without it the turn may still be committing
 
 This is the server half of [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
 
+## Media inclusion
+
+Whether one piece of media is in the model request: a picture the writer attached, or a media
+part inside a tool result. The unit is `(blockId, partIndex)`: a picture is part 0 of its block,
+and a tool result's media are the indexes of its `content` parts. `loop/image-context.ts` decides;
+decisions are saved per unit in `thread_image_inclusions`, one row per deciding turn, never
+updated.
+
+```mermaid
+stateDiagram-v2
+  [*] --> undecided: block stored
+  undecided --> included: fits the budget
+  undecided --> excluded: over the file cap or total budget, or the file is gone
+  included --> excluded: evicted for a new arrival, or the file is gone
+  excluded --> included: a compaction re-admits it into free budget
+```
+
+- **Only a decision moves a unit.** A unit with a saved decision keeps it on every later
+  request. Included media own the cached prefix: a new arrival may evict them, a re-admission
+  candidate never does.
+- **Eviction is a chunk.** When a new arrival does not fit, the oldest included media go until
+  half the budget is free, so the next several arrivals fit without moving the cached prefix
+  again. Each eviction writes a removal notice turn, and the notice turn owns the decisions it
+  reports.
+- **A model that can't take the file is not a decision.** The unit becomes a text description
+  (name, type, size) for that request and stays out of the saved decisions, because switching
+  models changes the answer.
+- **Links come last.** Only included units get a signed link (or bytes, where the object store has
+  no link), after every decision is made. A link is identical for every request in the thread's
+  cache window; when the window rolls over the prefix changes once, and
+  `loop/prefix-cache-state.ts` predicts that as one miss.
+- **Access is checked on every request** by the host's resolver; a file the thread can no longer
+  read becomes a first-sight or `asset_unavailable` exclusion, never a link.
+
 ## Spawn status
 
 What became of one subagent (a child thread a run starts), as its parent sees it

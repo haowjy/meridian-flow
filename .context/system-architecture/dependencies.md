@@ -40,7 +40,7 @@ with no row and on a row with no break.
 | `file-policy` | `context` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
 | `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/adapters/work-cascade.ts` |
 | `runtime` | `context` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
-| `runtime` | `file-policy` | domains are acyclic | `apps/server/server/domains/runtime/adapters/context-image-assets.ts` |
+| `runtime` | `file-policy` | domains are acyclic | `apps/server/server/domains/runtime/adapters/context-media-resolver.ts` |
 | `runtime` | `projects` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
 | `runtime` | `threads` | domains are acyclic | `apps/server/server/domains/runtime/adapters/drizzle/permission-grants.ts` |
 | `threads` | `context` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/repositories.ts` |
@@ -68,9 +68,9 @@ imports one of them fails the check.
 
 | file | imports |
 |---|---|
-| `adapters/context-image-assets.ts` | `context` |
-| `adapters/context-image-assets.ts` | `file-policy` |
-| `adapters/context-image-assets.ts` | `storage` |
+| `adapters/context-media-resolver.ts` | `context` |
+| `adapters/context-media-resolver.ts` | `file-policy` |
+| `adapters/context-media-resolver.ts` | `storage` |
 | `adapters/in-memory/observation-frontiers.ts` | `@meridian/agent-edit` |
 | `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |

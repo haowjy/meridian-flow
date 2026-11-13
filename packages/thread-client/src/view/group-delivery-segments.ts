@@ -8,7 +8,7 @@
  */
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 
-import { isImageBlock, isToolDeliveryBlock } from "./block-kind";
+import { isToolDeliveryBlock } from "./block-kind";
 
 export type ToolView = {
   toolCallId: string | null;
@@ -69,7 +69,7 @@ export function groupDeliverySegments(blocks: Block[]): DeliverySegment[] {
     run = [];
   };
   for (const block of blocks) {
-    if (!isToolDeliveryBlock(block) || isImageBlock(block)) {
+    if (!isToolDeliveryBlock(block)) {
       flush();
       segments.push({ kind: "block", block });
     } else {

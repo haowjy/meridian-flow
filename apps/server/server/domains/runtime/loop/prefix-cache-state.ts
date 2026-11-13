@@ -24,6 +24,7 @@ import {
   type ThreadRepository,
   type TurnRepository,
 } from "../../threads/index.js";
+import { linkWindowAt } from "./media-link-window.js";
 
 type CacheHistoryThread = Pick<
   Thread,
@@ -33,6 +34,24 @@ type CacheHistoryThread = Pick<
 /** Primary chats ask for the long cache; subagents are short-lived and take the cheaper short one. */
 export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCacheRetention {
   return threadKind === "subagent" ? "short" : "long";
+}
+
+/** Used when the model publishes no cache lifetime. */
+const DEFAULT_LINK_WINDOW_SECONDS = 3600;
+
+/**
+ * How long a signed media link stays identical: the cache lifetime this thread's requests ask
+ * for, so a link changes (one miss) about when the cache would have expired anyway.
+ */
+export function linkWindowSeconds(
+  model: Pick<ModelInfo, "promptCache"> | null,
+  threadKind: Thread["kind"],
+  override?: number,
+): number {
+  const ttl = model
+    ? resolvePromptCacheTtlSeconds(model.promptCache, promptCacheRetentionFor(threadKind))
+    : null;
+  return override ?? ttl ?? DEFAULT_LINK_WINDOW_SECONDS;
 }
 
 export interface PrefixCacheHistory {
@@ -57,6 +76,12 @@ export interface DerivePrefixCacheStateInput {
   /** Current time in Unix milliseconds, supplied by the caller for purity. */
   nowMs: number;
   history: PrefixCacheHistory;
+  /**
+   * The window length the request's signed media links were pinned to, set only when the request
+   * carries one. A link changes when the window rolls over, so that request misses the cache
+   * even inside the provider's own lifetime.
+   */
+  mediaLinkWindowSeconds?: number;
   /** The owner history for a fork's originTurnId, needed only before its first local response. */
   forkOwner?: PrefixCacheHistory;
 }
@@ -213,6 +238,13 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   }
   const ageMs = Math.max(0, input.nowMs - responseTimeMs);
   if (ageMs >= ttlSeconds * 1_000) return cold("ttl_expired");
+  if (
+    input.mediaLinkWindowSeconds !== undefined &&
+    linkWindowAt(responseTimeMs, input.mediaLinkWindowSeconds).startMs !==
+      linkWindowAt(input.nowMs, input.mediaLinkWindowSeconds).startMs
+  ) {
+    return cold("media_link_window");
+  }
 
   return { state: "warm", reason: "reusable_prefix" };
 }
@@ -232,6 +264,8 @@ export interface PrefixCacheStateRequest {
   model: ModelInfo | null;
   now?: Date | number;
   knownLocalTurns?: readonly Turn[];
+  /** See `DerivePrefixCacheStateInput.mediaLinkWindowSeconds`. */
+  mediaLinkWindowSeconds?: number;
 }
 
 /** Builds the repository-backed cache-state service for any runtime consumer. */
@@ -291,6 +325,9 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       model: input.model.id,
       promptCache: input.model.promptCache,
       nowMs,
+      ...(input.mediaLinkWindowSeconds === undefined
+        ? {}
+        : { mediaLinkWindowSeconds: input.mediaLinkWindowSeconds }),
       history,
       ...(forkOwner ? { forkOwner } : {}),
     };

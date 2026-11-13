@@ -11,8 +11,8 @@
  * - Usage is cumulative on every chunk. Gemini counts thought tokens beside the answer's, and
  *   tool-use prompt tokens beside the prompt's; `Usage` is inclusive, so both are folded in. A file
  *   fetched by link appears only in `totalTokenCount`, so the input is read from that total.
- * - A function call may carry no id; the position-based `call_<n>` stands in, and the mapper
- *   names a result by the call's name, so the id never goes back to Gemini.
+ * - A function call may carry no id (before Gemini 3); the position-based `call_<n>` stands in,
+ *   and the mapper sends an id back only to Gemini 3 and later, which returns real ones.
  */
 import type { GenerateContentResponse, Part } from "@google/genai";
 import type {

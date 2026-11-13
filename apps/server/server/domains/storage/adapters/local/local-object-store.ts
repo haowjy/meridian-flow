@@ -383,6 +383,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     });
   }
 
+  async getProviderReadLink(): Promise<ObjectStoreResult<string | null>> {
+    return ok(null);
+  }
+
   async getSignedUrl(
     key: string,
     options?: ObjectStoreSignedUrlOptions,

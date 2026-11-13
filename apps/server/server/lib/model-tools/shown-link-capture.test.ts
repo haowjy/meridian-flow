@@ -35,6 +35,7 @@ import {
   type ToolRegistration,
   type ToolRegistry,
 } from "../../domains/runtime/index.js";
+import { admitted } from "../../domains/runtime/loop/__tests__/media-test-support.js";
 import { runtimeScenario } from "../../domains/runtime/loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../../domains/runtime/loop/__tests__/test-gateway.js";
 import type { ReferenceReader } from "../../domains/runtime/loop/reference-context.js";
@@ -331,7 +332,7 @@ async function runTurn(
     const run = await rig.orchestrator.prepare({
       threadId: rig.thread.id,
       userText: "Go.",
-      ...(control.userBlocks ? { userBlocks: control.userBlocks } : {}),
+      ...(control.userBlocks ? { userBlocks: admitted(control.userBlocks) } : {}),
       ...(control.signal ? { signal: control.signal } : {}),
     });
     turnId = run.executionTurnId;

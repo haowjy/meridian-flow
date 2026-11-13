@@ -16,13 +16,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
-import {
-  type Gateway,
-  type GenerateRequest,
-  type ModelInfo,
-  placeMedia,
-  type Tool,
-} from "@meridian-flow/gateway";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -36,7 +30,7 @@ import type {
   PromptBakeRepository,
   ThreadImageInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { ImageAssetPort } from "../ports/image-asset.js";
+import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
   resolveThreadModelAvailableSkills,
@@ -56,10 +50,12 @@ import { buildContext } from "./context-builder.js";
 import {
   type CompactionImageProjectionMode,
   type ImageInclusionDecision,
+  mediaUnitKey,
   projectImageBlocksForModel,
 } from "./image-context.js";
+import { linkWindowAt } from "./media-link-window.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
-import { promptCacheRetentionFor } from "./prefix-cache-state.js";
+import { linkWindowSeconds, promptCacheRetentionFor } from "./prefix-cache-state.js";
 import type { WorkContextReader } from "./work-context.js";
 
 /** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
@@ -87,7 +83,9 @@ export interface AssembleNextTurnContextInput {
   threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
-  imageAssets?: ImageAssetPort;
+  mediaResolver?: MediaResolverPort;
+  /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
+  mediaLinkWindowSeconds?: number;
   imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
   imageProjectionMode?: CompactionImageProjectionMode;
   signal?: AbortSignal;
@@ -240,9 +238,6 @@ export async function prepareNextTurnContext(
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
   const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
-  const supportsImageInput =
-    resolvedModel !== undefined &&
-    placeMedia(resolvedModel, { mediaType: "image/png" }).transport !== "none";
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
@@ -253,13 +248,18 @@ export async function prepareNextTurnContext(
   const imageProjection = await projectImageBlocksForModel({
     thread,
     blocks: activeHistory.blocks,
-    inclusions: new Map(savedInclusions.map(({ blockId, included }) => [blockId, included])),
-    supportsImageInput,
-    imageAssets: input.imageAssets ?? {
-      async resolve() {
-        return null;
-      },
-    },
+    inclusions: new Map(
+      savedInclusions.map(({ blockId, partIndex, included }) => [
+        mediaUnitKey(blockId, partIndex),
+        included,
+      ]),
+    ),
+    model: resolvedModel ?? null,
+    media: input.mediaResolver ?? unavailableMediaResolver,
+    window: linkWindowAt(
+      Date.now(),
+      linkWindowSeconds(resolvedModel ?? null, thread.kind, input.mediaLinkWindowSeconds),
+    ),
     mode: input.imageProjectionMode,
     signal: input.signal,
   });

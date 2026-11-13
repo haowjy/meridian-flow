@@ -35,6 +35,7 @@ import {
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
+import { mediaUnitKey, mediaUnits } from "./image-context.js";
 import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
@@ -348,7 +349,9 @@ export async function prepareCompactionSuccessor(args: {
             kind: "compaction",
             candidates: new Set(
               decision.plan.retainedSuffix.flatMap(({ blocks }) =>
-                blocks.filter((block) => block.blockType === "image").map((block) => block.id),
+                blocks.flatMap((block) =>
+                  mediaUnits(block).map((unit) => mediaUnitKey(block.id, unit.partIndex)),
+                ),
               ),
             ),
             decidingTurnId: placeholder.id as TurnId,

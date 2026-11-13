@@ -125,7 +125,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
         }
         const content = block.content as unknown as {
           toolCallId?: string;
-          content: ToolContentPart[];
+          content: (ToolContentPart | MediaPart)[];
           isError?: boolean;
         };
         messages.push(
@@ -248,11 +248,18 @@ function completeToolResultGroups(
 }
 
 /**
- * A stored tool result's parts as the gateway's. A media part is described as text until the
- * request builder resolves stored media to the gateway's part.
+ * A tool result's parts as the gateway's. Request preparation has already turned each stored media
+ * part into the gateway's part or into text; one it never saw (an estimate before projection)
+ * is described as text.
  */
-function storedContentParts(parts: readonly ToolContentPart[]): TextPart[] {
-  return parts.map((part) => text(toolContentPartText(part)));
+function storedContentParts(
+  parts: readonly (ToolContentPart | MediaPart)[],
+): (TextPart | MediaPart)[] {
+  return parts.map((part) =>
+    part.type === "media" && "source" in part
+      ? part
+      : text(toolContentPartText(part as ToolContentPart)),
+  );
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
@@ -338,15 +345,9 @@ function blockToContentPart(block: Block): ContentPart | null {
       } satisfies ToolUsePart;
     }
     case "image": {
-      // Only a projected image carries its bytes; the stored reference has none.
-      const image = block.content as { mediaType?: string; data?: string } | null;
-      return image?.mediaType && image.data
-        ? ({
-            type: "media",
-            mediaType: image.mediaType,
-            source: { data: image.data },
-          } satisfies MediaPart)
-        : null;
+      // Only a projected picture carries a source; the stored part holds identity alone.
+      const image = block.content as Partial<MediaPart> | null;
+      return image?.type === "media" && image.source ? (image as MediaPart) : null;
     }
     case "custom":
       // Interrupt content stays in its tool input/result to preserve provider ordering.

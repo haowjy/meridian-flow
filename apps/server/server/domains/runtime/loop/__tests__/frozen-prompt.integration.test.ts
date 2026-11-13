@@ -27,9 +27,10 @@ import {
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
 import { turnGraph } from "../../../threads/ports/turn-graph.js";
-import type { ImageAssetPort } from "../../ports/image-asset.js";
+import type { MediaResolverPort } from "../../ports/media-resolver.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";
+import { bytesMedia } from "./media-test-support.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
 
@@ -44,7 +45,7 @@ async function fixture(
   onStream?: (call: number) => Promise<void>,
   threadId?: string,
   gatewayOverride?: ReturnType<typeof scriptedGateway> & Pick<Gateway, "listModels">,
-  imageAssets?: ImageAssetPort,
+  mediaResolver?: MediaResolverPort,
 ) {
   const projects = createInMemoryProjectRepository();
   const works = createInMemoryWorkRepository();
@@ -104,7 +105,7 @@ async function fixture(
     gateway,
     workContext,
     accountSkillInstalls,
-    ...(imageAssets ? { imageAssets } : {}),
+    ...(mediaResolver ? { mediaResolver } : {}),
   });
   await rig.creditLedger.grant({
     userId: thread.userId,
@@ -249,7 +250,7 @@ describe("frozen prompt provider requests", () => {
     let assetAvailable = true;
     const rig = await fixture(undefined, undefined, gateway, {
       async resolve() {
-        return assetAvailable ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 } : null;
+        return assetAvailable ? bytesMedia({ data: "aW1hZ2U=", sizeBytes: 5 }) : null;
       },
     });
     const image = {
@@ -318,11 +319,10 @@ describe("frozen prompt provider requests", () => {
     );
     const rig = await fixture(undefined, undefined, gateway, {
       async resolve(_context, reference) {
-        return {
-          mediaType: "image/png",
+        return bytesMedia({
           data: reference.uri,
           sizeBytes: reference.uri.includes("large") ? 10 * 1024 * 1024 : 5,
-        };
+        });
       },
     });
     let imageId = 1;
@@ -453,8 +453,8 @@ describe("frozen prompt provider requests", () => {
     const reverseImage = image("uploads://@c1/reverse-source.png");
     const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
     const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
-      const content = block.content as { uri?: string } | null;
-      return block.blockType === "image" && content?.uri === reverseImage.uri;
+      const content = block.content as { ref?: { uri?: string } } | null;
+      return block.blockType === "image" && content?.ref?.uri === reverseImage.uri;
     });
     if (!reverseImageBlock) throw new Error("Missing reverse-direction source image block");
     const reverseFork = await forkThreadAgent(rig.derive, {

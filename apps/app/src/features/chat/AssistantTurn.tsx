@@ -2,16 +2,9 @@
 
 import { Trans } from "@lingui/react/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import {
-  type AssistantView,
-  isImageBlock,
-  type ViewItem,
-  type ViewRow,
-  type ViewRun,
-} from "@meridian/thread-client";
+import type { AssistantView, ViewItem, ViewRow, ViewRun } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
-import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { AskReceipt } from "./ask/AskReceipt";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
@@ -308,7 +301,7 @@ function runRenderKey(run: ViewRun): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-// A card, image or unknown block the writer sees outside the Thinking fold.
+// A card or unknown block the writer sees outside the Thinking fold.
 function ArtifactItem({
   item,
   threadId,
@@ -317,11 +310,6 @@ function ArtifactItem({
   threadId: string;
 }) {
   const { block, direct: directResult } = item;
-  if (isImageBlock(block)) {
-    const content = parseImageBlockContent(block.content);
-    if (!content) return null;
-    return <ImageBlock content={content} />;
-  }
   if (block.blockType === "custom") {
     return <CustomBlockRenderer block={block} threadId={threadId} directResult={directResult} />;
   }

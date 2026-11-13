@@ -144,6 +144,7 @@ function harness(
     },
     availability,
     threadProject,
+    describeImage: async () => IMAGE_FACTS,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     authorizeActivatedSkills,
     producer: { enqueue: producer },
@@ -159,6 +160,8 @@ function harness(
     captured: () => capturedStart,
   };
 }
+
+const IMAGE_FACTS = { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
 
 describe("UserTurnAdmission", () => {
   it("parses exact ordered occurrences and proves text equivalence", () => {
@@ -442,7 +445,7 @@ describe("UserTurnAdmission", () => {
         documentId,
         uri: "uploads://@c1/moved.png",
       },
-      { type: "image", documentId, uri: "uploads://@c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@c1/moved.png", ...IMAGE_FACTS },
       {
         type: "reference",
         kind: "document",
@@ -450,7 +453,7 @@ describe("UserTurnAdmission", () => {
         documentId,
         uri: "uploads://@c1/moved.png",
       },
-      { type: "image", documentId, uri: "uploads://@c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@c1/moved.png", ...IMAGE_FACTS },
     ]);
     expect(h.captured()?.admission.text).toBe(`see ${moved}${moved}`);
     expect(h.captured()?.references).toEqual([

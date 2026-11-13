@@ -7,6 +7,7 @@ import type {
   AdmissionFingerprint,
   AdmissionLookup,
   AdmissionLookupRequest,
+  AdmittedMessageBlock,
   RetireAdmissionRequest,
   RetireAdmissionResult,
   SubmittedReference,
@@ -15,7 +16,7 @@ import type {
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { JsonValue, StoredMediaPart } from "@meridian/contracts/threads";
 import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { RunClaim } from "../loop/ports.js";
@@ -82,7 +83,7 @@ export interface AdmissionWriterProducer {
   enqueue(input: {
     admission: UserTurnAdmissionInput;
     fingerprint: AdmissionFingerprint;
-    blocks: readonly UserMessageBlock[];
+    blocks: readonly AdmittedMessageBlock[];
     references: readonly AuthorizedReference[];
     /** Hidden turn metadata; never part of the replay fingerprint. */
     userTurnMetadata?: JsonValue | null;
@@ -425,6 +426,10 @@ export function createUserTurnAdmission(deps: {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
+  /** The image's name, type and size as stored; null when the file is no image the server can name. */
+  describeImage(
+    documentId: string,
+  ): Promise<Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name"> | null>;
   /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
   verifyDraftUpload?(
     reference: Extract<SubmittedReference, { kind: "document" }> & { intakeId: string },
@@ -596,6 +601,15 @@ export function createUserTurnAdmission(deps: {
             : { ...block, uri: admittedUri },
         ];
       });
+      const storedBlocks: AdmittedMessageBlock[] = [];
+      for (const block of admittedBlocks) {
+        if (block.type !== "image") {
+          storedBlocks.push(block);
+          continue;
+        }
+        const media = await deps.describeImage(block.documentId);
+        if (media) storedBlocks.push({ ...block, ...media });
+      }
       const admittedText = admittedBlocks
         .filter((block) => block.type !== "image")
         .map((block) => block.text)
@@ -604,7 +618,7 @@ export function createUserTurnAdmission(deps: {
         return await deps.producer.enqueue({
           admission: { ...input, text: admittedText, activatedSkillSlugs },
           fingerprint,
-          blocks: admittedBlocks,
+          blocks: storedBlocks,
           references: admittedReferences,
         });
       } catch (error) {

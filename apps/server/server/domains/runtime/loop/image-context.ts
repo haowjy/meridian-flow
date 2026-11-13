@@ -1,27 +1,39 @@
-/** Stable request-time projection of durable image occurrences into gateway bytes. */
+/**
+ * Stable request-time projection of durable media occurrences: a writer's pictures and the media
+ * in tool results. Each occurrence is a unit, `(blockId, partIndex)`, because one tool result can
+ * hold several. Decisions persist per unit; the gateway's parts are made last, so a unit that is
+ * not sent costs no link and no read.
+ */
 
 import type { TurnId } from "@meridian/contracts/runtime";
-import type { Block, Thread } from "@meridian/contracts/threads";
+import type { Block, StoredMediaPart, Thread, ToolContentPart } from "@meridian/contracts/threads";
+import { type MediaPart, type ModelInfo, placeMedia } from "@meridian-flow/gateway";
 import type { ImageContextBreak } from "../../threads/index.js";
 import {
-  type ImageAssetPort,
-  ImageAssetResolutionError,
-  type PersistedImageReference,
-} from "../ports/image-asset.js";
-
-type ResolvedImage = NonNullable<Awaited<ReturnType<ImageAssetPort["resolve"]>>>;
+  type LinkWindow,
+  MediaResolutionError,
+  type MediaResolverPort,
+  type ResolvedMedia,
+} from "../ports/media-resolver.js";
 
 export const MAX_MODEL_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_CONTEXT_BYTES = 20 * 1024 * 1024;
+/**
+ * When the budget forces eviction, the oldest media go until this much is left, so the next
+ * several arrivals fit without moving the cached prefix again.
+ */
+export const MEDIA_EVICTION_TARGET_BYTES = MAX_MODEL_IMAGE_CONTEXT_BYTES / 2;
 
 export interface ImageInclusionDecision {
   blockId: string;
+  partIndex: number;
   included: boolean;
   decidedByCompaction?: true;
 }
 
 export interface CompactionImageProjectionMode {
   kind: "compaction";
+  /** `mediaUnitKey` of every unit the compaction may re-admit. */
   candidates: ReadonlySet<string>;
   decidingTurnId: TurnId;
 }
@@ -32,225 +44,348 @@ export interface ImageContextProjection {
   breaks: ImageContextBreak[];
 }
 
-function reference(content: Block["content"]): PersistedImageReference | null {
-  if (!content || typeof content !== "object" || Array.isArray(content)) return null;
-  return content.type === "image_reference" &&
-    typeof content.documentId === "string" &&
-    typeof content.uri === "string"
-    ? { type: "image_reference", documentId: content.documentId, uri: content.uri }
+export type MediaModel = Pick<
+  ModelInfo,
+  "id" | "wire" | "inputModalities" | "maxLinkBytes" | "imageLinks"
+>;
+
+export function mediaUnitKey(blockId: string, partIndex: number): string {
+  return `${blockId}\0${partIndex}`;
+}
+
+interface MediaUnit {
+  partIndex: number;
+  part: StoredMediaPart;
+  inToolResult: boolean;
+}
+
+function isStoredMedia(value: unknown): value is StoredMediaPart {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "media" &&
+    "ref" in (value as object)
+  );
+}
+
+function toolResultParts(block: Block): ToolContentPart[] | null {
+  if (block.blockType !== "tool_result") return null;
+  const content = block.content as { content?: unknown } | null;
+  return Array.isArray(content?.content) ? (content.content as ToolContentPart[]) : null;
+}
+
+/** The gateway's part, held in a block's JSON content for the one request it is built for. */
+const asBlockContent = (value: unknown) => value as Block["content"];
+
+/** The media a block holds: a writer's picture is its one unit; a tool result's media are its parts. */
+export function mediaUnits(block: Block): MediaUnit[] {
+  if (block.blockType === "image") {
+    return isStoredMedia(block.content)
+      ? [{ partIndex: 0, part: block.content, inToolResult: false }]
+      : [];
+  }
+  return (toolResultParts(block) ?? []).flatMap((part, partIndex) =>
+    isStoredMedia(part) ? [{ partIndex, part, inToolResult: true }] : [],
+  );
+}
+
+type Chosen = { variant: "original" | "preview"; transport: "link" | "bytes"; sizeBytes: number };
+
+/** What to send for this file to this model, or null when the model can't take it at all. */
+function choose(
+  model: MediaModel | null,
+  file: ResolvedMedia,
+  inToolResult: boolean,
+): Chosen | null {
+  if (!model) return null;
+  const flag = inToolResult ? ({ inToolResult: true } as const) : {};
+  const original = placeMedia(model, {
+    mediaType: file.mediaType,
+    sizeBytes: file.sizeBytes,
+    ...flag,
+  });
+  if (original.transport !== "none") {
+    return { variant: "original", transport: original.transport, sizeBytes: file.sizeBytes };
+  }
+  if (!file.preview) return null;
+  const preview = placeMedia(model, {
+    mediaType: file.preview.mediaType,
+    sizeBytes: file.preview.sizeBytes,
+    ...flag,
+  });
+  return preview.transport !== "none"
+    ? { variant: "preview", transport: preview.transport, sizeBytes: file.preview.sizeBytes }
     : null;
 }
 
+export function describeMedia(part: StoredMediaPart, why: string): string {
+  return `[${part.name}: ${part.mediaType}, ${part.sizeBytes} bytes. ${why}]`;
+}
+
 /**
- * Project stable image decisions and named breaks; a compaction can fill free budget by
- * re-admitting excluded images without changing any existing inclusion.
+ * Project stable media decisions and named breaks; a compaction can fill free budget by
+ * re-admitting excluded media without changing any existing inclusion.
  */
 export async function projectImageBlocksForModel(input: {
   thread: Pick<Thread, "id" | "projectId" | "userId">;
   blocks: readonly Block[];
+  /** Saved decisions by `mediaUnitKey`. */
   inclusions?: ReadonlyMap<string, boolean>;
-  supportsImageInput: boolean;
-  imageAssets: ImageAssetPort;
+  model: MediaModel | null;
+  media: MediaResolverPort;
+  window: LinkWindow;
   mode?: CompactionImageProjectionMode;
   signal?: AbortSignal;
 }): Promise<ImageContextProjection> {
   input.signal?.throwIfAborted();
-  const imageBlocks = input.blocks.filter((block) => block.blockType === "image");
-  if (!input.supportsImageInput) {
-    if (imageBlocks.length > 0) {
-      input.imageAssets.diagnose?.({
-        threadId: input.thread.id,
-        projectId: input.thread.projectId,
-        reason: "model_unsupported",
-      });
-    }
-    return {
-      blocks: input.blocks.filter((block) => block.blockType !== "image"),
-      decisions: [],
-      breaks: [],
-    };
-  }
-
-  const reads = new Map<string, Awaited<ReturnType<ImageAssetPort["resolve"]>>>();
-  const entries: Array<{
+  const context = {
+    threadId: input.thread.id,
+    projectId: input.thread.projectId,
+    actorUserId: input.thread.userId,
+  };
+  const reads = new Map<string, ResolvedMedia | null>();
+  interface Entry {
     index: number;
     block: Block;
-    uri: string;
-    image: ResolvedImage;
+    unit: MediaUnit;
+    file: ResolvedMedia;
+    chosen: Chosen;
     included: boolean;
     reAdmissionCandidate: boolean;
-  }> = [];
-  const decisionById = new Map<string, ImageInclusionDecision>();
-  const reAdmissionDecisionById = new Map<string, ImageInclusionDecision>();
+  }
+  const entries: Entry[] = [];
+  const decisionByKey = new Map<string, ImageInclusionDecision>();
+  const reAdmissionByKey = new Map<string, ImageInclusionDecision>();
+  /** Text that stands in for a unit that is not sent, by unit key. */
+  const descriptions = new Map<string, string>();
+  /** Units whose model can't take them: a picture the writer attached is then described, not dropped. */
+  const cantView = new Set<string>();
   const breaks: ImageContextBreak[] = [];
   let diagnosedOmission = false;
   const unavailableReason = (included: boolean | undefined) =>
     included === true ? "asset_unavailable" : "asset_unavailable_first_sight";
+  const decide = (blockId: string, partIndex: number, included: boolean) =>
+    decisionByKey.set(mediaUnitKey(blockId, partIndex), { blockId, partIndex, included });
 
   for (const [index, block] of input.blocks.entries()) {
-    input.signal?.throwIfAborted();
-    const includedDecision = input.inclusions?.get(block.id);
-    const reAdmissionCandidate =
-      input.mode?.kind === "compaction" &&
-      includedDecision === false &&
-      input.mode.candidates.has(block.id);
-    if (block.blockType !== "image" || (includedDecision === false && !reAdmissionCandidate))
-      continue;
-    const identity = reference(block.content);
-    if (!identity) {
-      if (reAdmissionCandidate) continue;
-      decisionById.set(block.id, { blockId: block.id, included: false });
-      breaks.push({
-        blockId: block.id,
-        uri: block.id,
-        reason: unavailableReason(includedDecision),
-      });
-      diagnosedOmission = true;
-      continue;
-    }
-
-    const key = `${identity.documentId}\0${identity.uri}`;
-    let image = reads.get(key);
-    if (image === undefined) {
-      try {
-        image = await input.imageAssets.resolve(
-          {
-            threadId: input.thread.id,
-            projectId: input.thread.projectId,
-            actorUserId: input.thread.userId,
-          },
-          identity,
-          { maxBytes: MAX_MODEL_IMAGE_BYTES },
-        );
-      } catch (error) {
-        if (!reAdmissionCandidate || !(error instanceof ImageAssetResolutionError)) throw error;
-        input.signal?.throwIfAborted();
-        continue;
-      }
+    for (const unit of mediaUnits(block)) {
       input.signal?.throwIfAborted();
-      reads.set(key, image);
-    }
-
-    if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
-      if (reAdmissionCandidate) {
-        if (image) throw new Error("Image asset resolver returned an invalid size");
+      const key = mediaUnitKey(block.id, unit.partIndex);
+      const includedDecision = input.inclusions?.get(key);
+      const reAdmissionCandidate =
+        input.mode?.kind === "compaction" &&
+        includedDecision === false &&
+        input.mode.candidates.has(key);
+      if (includedDecision === false && !reAdmissionCandidate) {
+        descriptions.set(
+          key,
+          describeMedia(unit.part, "Removed from the request to fit the media budget."),
+        );
         continue;
       }
-      decisionById.set(block.id, { blockId: block.id, included: false });
-      breaks.push({
-        blockId: block.id,
-        uri: identity.uri,
-        reason: unavailableReason(includedDecision),
-      });
-      diagnosedOmission = true;
-      continue;
-    }
-    const resolvedImage = image;
 
-    entries.push({
-      index,
-      block,
-      uri: identity.uri,
-      image: resolvedImage,
-      included: includedDecision === true,
-      reAdmissionCandidate,
-    });
-  }
+      const readKey = `${unit.part.ref.documentId}\0${unit.part.ref.uri}`;
+      let file = reads.get(readKey);
+      if (file === undefined) {
+        try {
+          file = await input.media.resolve(context, unit.part.ref, input.window);
+        } catch (error) {
+          if (!reAdmissionCandidate || !(error instanceof MediaResolutionError)) throw error;
+          input.signal?.throwIfAborted();
+          continue;
+        }
+        input.signal?.throwIfAborted();
+        reads.set(readKey, file);
+      }
 
-  // Previously included bytes own the current prefix. Only a newly carried image may evict them.
-  let usedBytes = entries.reduce(
-    (sum, entry) => sum + (entry.included ? entry.image.sizeBytes : 0),
-    0,
-  );
-  for (const entry of entries) {
-    if (entry.included && entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
-      entry.included = false;
-      usedBytes -= entry.image.sizeBytes;
-      decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
-      breaks.push({ blockId: entry.block.id, uri: entry.uri, reason: "budget_eviction" });
-    }
-  }
-
-  // A new late-arrival image retains the ordinary chronological eviction rule. A
-  // re-admission candidate that did not fit is never allowed through this eviction path.
-  for (const entry of entries) {
-    if (entry.reAdmissionCandidate) continue;
-    if (input.inclusions?.get(entry.block.id) !== true) {
-      if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
-        decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
+      if (!file || !Number.isFinite(file.sizeBytes) || file.sizeBytes < 0) {
+        if (reAdmissionCandidate) {
+          if (file) throw new Error("Media resolver returned an invalid size");
+          continue;
+        }
+        decide(block.id, unit.partIndex, false);
+        descriptions.set(key, describeMedia(unit.part, "No longer available."));
+        breaks.push({
+          blockId: block.id,
+          uri: unit.part.ref.uri,
+          reason: unavailableReason(includedDecision),
+        });
         diagnosedOmission = true;
         continue;
       }
-      let canInclude = true;
-      while (usedBytes + entry.image.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) {
+
+      const chosen = choose(input.model, file, unit.inToolResult);
+      if (!chosen) {
+        // The model can't take this file: say so, and keep it out of the saved decisions, since
+        // switching models changes the answer.
+        descriptions.set(key, describeMedia(unit.part, "This model can't view it."));
+        cantView.add(key);
+        continue;
+      }
+      entries.push({
+        index,
+        block,
+        unit,
+        file,
+        chosen,
+        included: includedDecision === true,
+        reAdmissionCandidate,
+      });
+    }
+  }
+
+  const entryOf = (entry: Entry) => mediaUnitKey(entry.block.id, entry.unit.partIndex);
+
+  // Previously included media own the current prefix. Only newly carried media may evict them.
+  let usedBytes = entries.reduce((sum, e) => sum + (e.included ? e.chosen.sizeBytes : 0), 0);
+  const evict = (entry: Entry) => {
+    entry.included = false;
+    usedBytes -= entry.chosen.sizeBytes;
+    decide(entry.block.id, entry.unit.partIndex, false);
+    descriptions.set(
+      entryOf(entry),
+      describeMedia(entry.unit.part, "Removed from the request to fit the media budget."),
+    );
+    breaks.push({
+      blockId: entry.block.id,
+      uri: entry.unit.part.ref.uri,
+      reason: "budget_eviction",
+    });
+  };
+  for (const entry of entries) {
+    if (entry.included && entry.chosen.sizeBytes > MAX_MODEL_IMAGE_BYTES) evict(entry);
+  }
+
+  // New arrivals keep the chronological eviction rule. A re-admission candidate that did not fit
+  // never evicts anything.
+  for (const entry of entries) {
+    if (entry.reAdmissionCandidate) continue;
+    if (input.inclusions?.get(entryOf(entry)) === true) continue;
+    const omit = () => {
+      decide(entry.block.id, entry.unit.partIndex, false);
+      descriptions.set(
+        entryOf(entry),
+        describeMedia(entry.unit.part, "Not included: it is over the media budget."),
+      );
+      diagnosedOmission = true;
+    };
+    if (entry.chosen.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
+      omit();
+      continue;
+    }
+    if (usedBytes + entry.chosen.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) {
+      // Evict a chunk, not one: every eviction moves the cached prefix.
+      while (usedBytes + entry.chosen.sizeBytes > MEDIA_EVICTION_TARGET_BYTES) {
         const oldest = entries.find(
           (candidate) =>
             candidate.included && !candidate.reAdmissionCandidate && candidate.index < entry.index,
         );
-        if (!oldest) {
-          decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
-          diagnosedOmission = true;
-          canInclude = false;
-          break;
-        }
-        oldest.included = false;
-        usedBytes -= oldest.image.sizeBytes;
-        decisionById.set(oldest.block.id, { blockId: oldest.block.id, included: false });
-        breaks.push({ blockId: oldest.block.id, uri: oldest.uri, reason: "budget_eviction" });
+        if (!oldest) break;
+        evict(oldest);
       }
-      if (!canInclude) continue;
-      entry.included = true;
-      usedBytes += entry.image.sizeBytes;
-      decisionById.set(entry.block.id, { blockId: entry.block.id, included: true });
     }
+    if (usedBytes + entry.chosen.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) {
+      omit();
+      continue;
+    }
+    entry.included = true;
+    usedBytes += entry.chosen.sizeBytes;
+    decide(entry.block.id, entry.unit.partIndex, true);
   }
 
   // Compaction candidates only claim budget left after normal late-arrival handling.
   for (const entry of entries
     .filter((candidate) => candidate.reAdmissionCandidate)
     .sort((left, right) => right.index - left.index)) {
-    if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) continue;
-    if (usedBytes + entry.image.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) continue;
+    if (entry.chosen.sizeBytes > MAX_MODEL_IMAGE_BYTES) continue;
+    if (usedBytes + entry.chosen.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) continue;
     entry.included = true;
-    usedBytes += entry.image.sizeBytes;
-    reAdmissionDecisionById.set(entry.block.id, {
+    usedBytes += entry.chosen.sizeBytes;
+    reAdmissionByKey.set(entryOf(entry), {
       blockId: entry.block.id,
+      partIndex: entry.unit.partIndex,
       included: true,
       decidedByCompaction: true,
     });
   }
-
-  const projected = new Map<number, Block>();
   for (const entry of entries) {
-    if (!entry.included) continue;
-    projected.set(entry.index, {
-      ...entry.block,
-      content: {
-        type: "image",
-        mediaType: entry.image.mediaType,
-        data: entry.image.data instanceof URL ? entry.image.data.href : entry.image.data,
-      },
-    });
+    if (!entry.included) {
+      const key = entryOf(entry);
+      if (!descriptions.has(key))
+        descriptions.set(
+          key,
+          describeMedia(entry.unit.part, "Removed from the request to fit the media budget."),
+        );
+    }
   }
 
+  // Only now is any link signed or any byte read, and only for what is sent.
+  const sent = new Map<string, MediaPart>();
+  await Promise.all(
+    entries
+      .filter((entry) => entry.included)
+      .map(async (entry) => {
+        const source = await entry.file.source(entry.chosen.variant, entry.chosen.transport);
+        input.signal?.throwIfAborted();
+        const mediaType =
+          entry.chosen.variant === "preview" && entry.file.preview
+            ? entry.file.preview.mediaType
+            : entry.file.mediaType;
+        sent.set(entryOf(entry), {
+          type: "media",
+          mediaType,
+          filename: entry.unit.part.name,
+          source,
+        });
+      }),
+  );
+
   if (diagnosedOmission) {
-    input.imageAssets.diagnose?.({
+    input.media.diagnose?.({
       threadId: input.thread.id,
       projectId: input.thread.projectId,
       reason: "unavailable_or_over_budget",
     });
   }
 
+  const blocks = input.blocks.flatMap((block): Block[] => {
+    const units = mediaUnits(block);
+    if (units.length === 0) return [block];
+    if (block.blockType === "image") {
+      const key = mediaUnitKey(block.id, 0);
+      const part = sent.get(key);
+      if (part) return [{ ...block, content: asBlockContent(part) }];
+      // A picture the budget removed has its removal notice already; one the model can't take is described.
+      const description = cantView.has(key) ? descriptions.get(key) : undefined;
+      return description
+        ? [{ ...block, blockType: "text", textContent: description, content: description }]
+        : [];
+    }
+    const parts = toolResultParts(block) ?? [];
+    return [
+      {
+        ...block,
+        content: asBlockContent({
+          ...(block.content as object),
+          content: parts.map((part, partIndex) => {
+            const key = mediaUnitKey(block.id, partIndex);
+            const description = descriptions.get(key);
+            return (
+              sent.get(key) ??
+              (description === undefined ? part : { type: "text", text: description })
+            );
+          }),
+        }),
+      },
+    ];
+  });
+
   return {
-    blocks: input.blocks.flatMap((block, index) => {
-      if (block.blockType !== "image") return [block];
-      const modelBlock = projected.get(index);
-      return modelBlock ? [modelBlock] : [];
-    }),
+    blocks,
     decisions:
       input.mode?.kind === "compaction"
-        ? [...reAdmissionDecisionById.values(), ...decisionById.values()]
-        : [...decisionById.values()],
+        ? [...reAdmissionByKey.values(), ...decisionByKey.values()]
+        : [...decisionByKey.values()],
     breaks,
   };
 }

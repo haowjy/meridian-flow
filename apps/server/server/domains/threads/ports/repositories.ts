@@ -96,12 +96,14 @@ export interface BlockRepository {
 export interface ThreadImageInclusion {
   threadId: ThreadId;
   blockId: string;
+  /** Which media part of the block; 0 for a picture. */
+  partIndex: number;
   decisionTurnId: TurnId;
   included: boolean;
 }
 
 export interface ThreadImageInclusionRepository {
-  /** Latest decision per block, ordered by the deciding turn's transcript position. */
+  /** Latest decision per media part, ordered by the deciding turn's transcript position. */
   findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
   /** Append-only decision history, used to reconstruct forks at their cutoff. */
   listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;

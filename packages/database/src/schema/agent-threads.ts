@@ -515,7 +515,7 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_predicted_cache_reason_valid",
-      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );
@@ -567,6 +567,7 @@ export const threadImageInclusions = pgTable(
       .$type<TurnBlockId>()
       .notNull()
       .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    partIndex: integer("part_index").notNull(),
     decisionTurnId: uuid("decision_turn_id")
       .$type<TurnId>()
       .notNull()
@@ -574,7 +575,11 @@ export const threadImageInclusions = pgTable(
     included: boolean("included").notNull(),
     decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.threadId, table.blockId, table.decisionTurnId] })],
+  (table) => [
+    primaryKey({
+      columns: [table.threadId, table.blockId, table.partIndex, table.decisionTurnId],
+    }),
+  ],
 );
 
 export const threadExecutionReports = pgTable(

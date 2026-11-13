@@ -23,6 +23,7 @@ import type {
   ObjectStoreGetOptions,
   ObjectStoreHead,
   ObjectStorePort,
+  ObjectStoreProviderLinkOptions,
   ObjectStoreResult,
   ObjectStoreSignedPut,
   ObjectStoreSignedPutOptions,
@@ -327,6 +328,24 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
         { expiresIn: this.signedUrlTtlSeconds },
       );
       return ok(url);
+    } catch (error) {
+      return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
+    }
+  }
+
+  async getProviderReadLink(
+    key: string,
+    options: ObjectStoreProviderLinkOptions,
+  ): Promise<ObjectStoreResult<string | null>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+    try {
+      const url = await getSignedUrl(
+        this.presignClient,
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        { expiresIn: options.expiresInSeconds, signingDate: options.signedAt },
+      );
+      // A provider only fetches https; a plain-http dev endpoint has no link to give.
+      return ok(url.startsWith("https://") ? url : null);
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
     }

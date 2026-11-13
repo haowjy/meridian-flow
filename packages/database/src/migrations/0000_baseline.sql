@@ -132,7 +132,7 @@ CREATE TABLE "model_responses" (
 	"completed_at" timestamp with time zone,
 	CONSTRAINT "model_responses_price_source_valid" CHECK ("model_responses"."price_source" IN ('computed', 'unknown')),
 	CONSTRAINT "model_responses_predicted_cache_state_valid" CHECK ("model_responses"."predicted_cache_state" IN ('warm', 'cold')),
-	CONSTRAINT "model_responses_predicted_cache_reason_valid" CHECK ("model_responses"."predicted_cache_reason" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable'))
+	CONSTRAINT "model_responses_predicted_cache_reason_valid" CHECK ("model_responses"."predicted_cache_reason" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable'))
 );
 --> statement-breakpoint
 CREATE TABLE "observation_frontiers" (
@@ -224,10 +224,11 @@ CREATE TABLE "thread_hand_backs" (
 CREATE TABLE "thread_image_inclusions" (
 	"thread_id" uuid NOT NULL,
 	"block_id" uuid NOT NULL,
+	"part_index" integer NOT NULL,
 	"decision_turn_id" uuid NOT NULL,
 	"included" boolean NOT NULL,
 	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","decision_turn_id")
+	CONSTRAINT "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","part_index","decision_turn_id")
 );
 --> statement-breakpoint
 CREATE TABLE "thread_inbox_messages" (

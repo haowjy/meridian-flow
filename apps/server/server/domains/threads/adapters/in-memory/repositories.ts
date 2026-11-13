@@ -1382,7 +1382,7 @@ export function createInMemoryRepositories(
             (turns.get(left.decisionTurnId)?.position ?? 0) -
             (turns.get(right.decisionTurnId)?.position ?? 0),
         );
-      for (const row of history) latest.set(row.blockId, row);
+      for (const row of history) latest.set(`${row.blockId}\0${row.partIndex}`, row);
       return [...latest.values()].map((row) => ({ ...row }));
     },
     async listByThread(threadId) {
@@ -1391,9 +1391,12 @@ export function createInMemoryRepositories(
         .map((row) => ({ ...row }));
     },
     async set(input) {
-      imageInclusions.set(`${input.threadId}\0${input.blockId}\0${input.decisionTurnId}`, {
-        ...input,
-      });
+      imageInclusions.set(
+        `${input.threadId}\0${input.blockId}\0${input.partIndex}\0${input.decisionTurnId}`,
+        {
+          ...input,
+        },
+      );
     },
   };
 

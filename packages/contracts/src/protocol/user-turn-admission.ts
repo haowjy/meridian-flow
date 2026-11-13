@@ -4,7 +4,7 @@ import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, FolderId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
-import type { JsonObject, JsonValue } from "../threads/index.js";
+import type { JsonObject, JsonValue, StoredMediaPart } from "../threads/index.js";
 
 export type ReferenceOccurrence =
   | {
@@ -30,6 +30,7 @@ export type SkillOccurrence = {
   description: string;
 };
 
+/** What the writer submits and what hand-back returns: a picture is its identity only. */
 export type UserMessageBlock =
   | { type: "text"; text: string }
   | ReferenceOccurrence
@@ -37,11 +38,20 @@ export type UserMessageBlock =
   | { type: "image"; documentId: DocumentId; uri: CanonicalContextUri };
 
 /**
+ * A message block after admission: the picture also carries the file's name, type and size as the
+ * server read them, so the stored block is the media part a tool result carries too.
+ */
+export type AdmittedMessageBlock =
+  | Exclude<UserMessageBlock, { type: "image" }>
+  | (Extract<UserMessageBlock, { type: "image" }> &
+      Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name">);
+
+/**
  * The durable turn block a submitted message block becomes. Server persistence
  * and the client's optimistic writer row both use it, so the row the writer
  * sees before admission carries the same occurrences the snapshot will.
  */
-export function userMessageTurnBlock(block: UserMessageBlock): {
+export function userMessageTurnBlock(block: AdmittedMessageBlock): {
   blockType: "text" | "image";
   content: JsonValue;
 } {
@@ -51,7 +61,13 @@ export function userMessageTurnBlock(block: UserMessageBlock): {
     case "image":
       return {
         blockType: "image",
-        content: { type: "image_reference", documentId: block.documentId, uri: block.uri },
+        content: {
+          type: "media",
+          ref: { documentId: block.documentId, uri: block.uri },
+          mediaType: block.mediaType,
+          sizeBytes: block.sizeBytes,
+          name: block.name,
+        } satisfies StoredMediaPart,
       };
     default:
       return { blockType: "text", content: { ...block } };

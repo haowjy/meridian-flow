@@ -13,6 +13,7 @@ export function createDrizzleThreadImageInclusionRepository(
         .select({
           threadId: schema.threadImageInclusions.threadId,
           blockId: schema.threadImageInclusions.blockId,
+          partIndex: schema.threadImageInclusions.partIndex,
           decisionTurnId: schema.threadImageInclusions.decisionTurnId,
           included: schema.threadImageInclusions.included,
           position: schema.turns.position,
@@ -22,7 +23,7 @@ export function createDrizzleThreadImageInclusionRepository(
         .where(eq(schema.threadImageInclusions.threadId, threadId))
         .orderBy(asc(schema.turns.position));
       const latest = new Map<string, (typeof rows)[number]>();
-      for (const row of rows) latest.set(row.blockId, row);
+      for (const row of rows) latest.set(`${row.blockId}\0${row.partIndex}`, row);
       return [...latest.values()].map(({ position: _position, ...decision }) => decision);
     },
     async listByThread(threadId) {
@@ -30,6 +31,7 @@ export function createDrizzleThreadImageInclusionRepository(
         .select({
           threadId: schema.threadImageInclusions.threadId,
           blockId: schema.threadImageInclusions.blockId,
+          partIndex: schema.threadImageInclusions.partIndex,
           decisionTurnId: schema.threadImageInclusions.decisionTurnId,
           included: schema.threadImageInclusions.included,
         })
@@ -45,6 +47,7 @@ export function createDrizzleThreadImageInclusionRepository(
           target: [
             schema.threadImageInclusions.threadId,
             schema.threadImageInclusions.blockId,
+            schema.threadImageInclusions.partIndex,
             schema.threadImageInclusions.decisionTurnId,
           ],
         });

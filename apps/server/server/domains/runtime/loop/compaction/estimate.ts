@@ -86,9 +86,14 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
     const { data: _payload, ...withoutPayload } = record;
     return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload, tokenizer);
   }
-  if (record.type === "media") {
+  // A stored media part is identity, not payload: a link or bytes exist only in a built request.
+  if (record.type === "media" && !("ref" in record)) {
     const { source, ...rest } = record as { source?: object } & Record<string, unknown>;
-    const { data: _payload, ...sourceWithoutPayload } = (source ?? {}) as Record<string, unknown>;
+    const {
+      data: _payload,
+      url: _link,
+      ...sourceWithoutPayload
+    } = (source ?? {}) as Record<string, unknown>;
     const fixed =
       typeof record.mediaType === "string" && record.mediaType.startsWith("image/")
         ? IMAGE_PART_TOKEN_ESTIMATE

@@ -19,6 +19,8 @@ interface WireMedia {
   link: Record<MediaKind, boolean>;
   /** The image types the wire accepts, from each provider's docs. */
   imageTypes: readonly string[];
+  /** The image types the wire accepts inside a tool result, when narrower than `imageTypes`. */
+  toolResultImageTypes?: readonly string[];
   /**
    * `inside`: in the tool result itself. `after`: in a user message right after the tool results.
    * `none`: the model can't take media in a tool result.
@@ -50,6 +52,8 @@ const WIRES: Record<BuiltinAdapter, WireMedia> = {
   gemini: {
     link: { image: true, pdf: true },
     imageTypes: ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"],
+    // Google lists only these inside a function response.
+    toolResultImageTypes: ["image/png", "image/jpeg", "image/webp"],
     toolResult: (model) => ((geminiMajorVersion(model.id) ?? 0) >= 3 ? "inside" : "none"),
   },
 };
@@ -96,6 +100,13 @@ export function placeMedia(
   const kind = mediaKind(media.mediaType);
   if (kind === null || !model.inputModalities.includes(kind)) return { transport: "none" };
   if (!wireAccepts(model.wire, kind, media.mediaType)) return { transport: "none" };
+  const inToolResultTypes = WIRES[model.wire].toolResultImageTypes;
+  if (
+    media.inToolResult &&
+    kind === "image" &&
+    inToolResultTypes?.includes(media.mediaType) === false
+  )
+    return { transport: "none" };
   const toolResult = WIRES[model.wire].toolResult(model);
   if (toolResult === "none" && media.inToolResult) return { transport: "none" };
   if (!linksWork(model, kind)) return { transport: "bytes", toolResult };

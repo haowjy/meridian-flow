@@ -16,7 +16,7 @@ import {
   skillBodyMetadata,
 } from "../../../threads/index.js";
 import { createInMemoryRunClaim } from "../../adapters/in-memory/loop-ports.js";
-import { ImageAssetResolutionError } from "../../ports/image-asset.js";
+import { MediaResolutionError } from "../../ports/media-resolver.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
@@ -26,6 +26,7 @@ import {
 import { failCompactionSuccessor } from "../compaction-successor.js";
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
+import { bytesMedia } from "./media-test-support.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
@@ -137,7 +138,7 @@ async function setup(
     child?: boolean;
     realSpawnTools?: boolean;
     supportsImageInput?: boolean;
-    imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
+    mediaResolver?: import("../../ports/media-resolver.js").MediaResolverPort;
     notices?: ReturnType<typeof createTestNoticePort>;
   } = {},
 ) {
@@ -175,7 +176,7 @@ async function setup(
       ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
       : {}),
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
-    ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
+    ...(options.mediaResolver ? { mediaResolver: options.mediaResolver } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
     agentRevisions: createTestAgentBinding("gpt-5.6-luna", "", () => [
       thread.id,
@@ -401,12 +402,11 @@ describe("inbox drain", () => {
     };
     let resolutions = 0;
     const { thread, requests, orchestrator, repos, send, inbox, journal } = await setup({
-      imageAssets: {
+      mediaResolver: {
         async resolve() {
           resolutions += 1;
-          if (resolutions === 1)
-            throw new ImageAssetResolutionError("temporary object-store timeout");
-          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+          if (resolutions === 1) throw new MediaResolutionError("temporary object-store timeout");
+          return bytesMedia({ data: "aW1hZ2U=", sizeBytes: 5 });
         },
       },
     });
@@ -473,14 +473,14 @@ describe("inbox drain", () => {
     let blockFirstResolution = true;
     let rig: Awaited<ReturnType<typeof setup>>;
     rig = await setup({
-      imageAssets: {
+      mediaResolver: {
         async resolve(_context, reference) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
             await release.promise;
           }
-          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
         },
       },
       onStream: async (call) => {
@@ -542,9 +542,9 @@ describe("inbox drain", () => {
     let steerTurnId: string | undefined;
     rig = await setup({
       notices,
-      imageAssets: {
+      mediaResolver: {
         async resolve() {
-          throw new ImageAssetResolutionError("temporary object-store timeout");
+          throw new MediaResolutionError("temporary object-store timeout");
         },
       },
       onStream: async (call) => {
@@ -606,14 +606,14 @@ describe("inbox drain", () => {
     let rig: Awaited<ReturnType<typeof setup>>;
     rig = await setup({
       notices,
-      imageAssets: {
+      mediaResolver: {
         async resolve(_context, reference) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
             await release.promise;
           }
-          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
         },
       },
       onStream: async (call) => {

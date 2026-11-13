@@ -1,7 +1,7 @@
 /** Diagnostic errors shared by preparation and its atomic failed-reply landing. */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { ThreadConversationContextError } from "../../threads/index.js";
-import { ImageAssetResolutionError } from "../ports/image-asset.js";
+import { MediaResolutionError } from "../ports/media-resolver.js";
 import {
   CompactionFailureError,
   CompactionPreparationError,
@@ -23,7 +23,7 @@ export function preparationFailureError(error: Error): ReturnType<typeof meridia
       "This chat's fork history couldn't be loaded.",
     );
   }
-  if (error instanceof ImageAssetResolutionError) {
+  if (error instanceof MediaResolutionError) {
     return meridianErrorFromSystem(
       "image_resolution_failed",
       "An image in this message couldn't be loaded. Try again.",

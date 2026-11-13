@@ -1320,7 +1320,7 @@
         },
         "model_responses_predicted_cache_reason_valid": {
           "name": "model_responses_predicted_cache_reason_valid",
-          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
+          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'media_link_window', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
         }
       },
       "isRLSEnabled": false
@@ -2068,6 +2068,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "part_index": {
+          "name": "part_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "decision_turn_id": {
           "name": "decision_turn_id",
           "type": "uuid",
@@ -2131,11 +2137,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk": {
-          "name": "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk",
+        "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk": {
+          "name": "thread_image_inclusions_thread_id_block_id_part_index_decision_turn_id_pk",
           "columns": [
             "thread_id",
             "block_id",
+            "part_index",
             "decision_turn_id"
           ]
         }

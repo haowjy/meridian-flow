@@ -6,7 +6,7 @@
  * - Roles are `user` and `model`; a tool result is a `functionResponse` part in a user turn, so
  *   adjacent messages of one role merge into one turn (parallel results must share a turn).
  *   `functionResponse` names its function, which the canonical result lacks: the name comes from
- *   the earlier `tool_use` with the same call id.
+ *   the earlier `tool_use` with the same call id. Gemini 3 also gets the id on both sides.
  * - Media: a link is `fileData` (`https` only, a mapper never downloads), bytes are
  *   `inlineData`. A tool result's media nest in `functionResponse.parts`, Gemini 3 and later
  *   only; for an older or unknown model that is an error here and `placeMedia` answers none.
@@ -66,6 +66,14 @@ function functionResponsePart(part: MediaPart, target: Target): FunctionResponse
     : { inlineData: { data: inlineData?.data, mimeType: inlineData?.mimeType } };
 }
 
+/**
+ * Gemini 3 returns an id on each function call and pairs a result by it, so parallel calls to
+ * one tool stay distinct; an older model has none and pairs by name and order.
+ */
+function callId(toolCallId: string, target: Target): { id?: string } {
+  return (geminiMajorVersion(target.id) ?? 0) >= 3 ? { id: toolCallId } : {};
+}
+
 function textOf(parts: ReadonlyArray<TextPart | { type: string }>): string {
   return parts
     .filter((p): p is TextPart => p.type === "text")
@@ -112,7 +120,7 @@ function modelParts(message: Message, target: Target): Part[] {
           ? SKIP_SIGNATURE_VALIDATION
           : undefined);
       parts.push({
-        functionCall: { name: part.toolName, args: part.input },
+        functionCall: { ...callId(part.toolCallId, target), name: part.toolName, args: part.input },
         ...(signature ? { thoughtSignature: signature } : {}),
       });
       firstCall = false;
@@ -137,6 +145,7 @@ function toolResultParts(message: Message, names: Map<string, string>, target: T
     }
     const text = textOf(result.content);
     const functionResponse: FunctionResponse = {
+      ...callId(result.toolCallId, target),
       name,
       response: result.isError ? { error: text } : { output: text },
       ...(media.length > 0 ? { parts: media.map((p) => functionResponsePart(p, target)) } : {}),

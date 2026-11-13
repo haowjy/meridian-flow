@@ -139,7 +139,8 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     threads: input.deps.repos.threads,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
-    imageAssets: input.deps.imageAssets,
+    mediaResolver: input.deps.mediaResolver,
+    mediaLinkWindowSeconds: input.deps.mediaLinkWindowSeconds,
     imageInclusions: input.deps.repos.imageInclusions,
     imageProjectionMode: input.imageProjectionMode,
     signal: input.signal,
@@ -356,7 +357,7 @@ function buildImageProjectionEvents(input: {
   if (input.decisions.length > 0 && !decisionTurnId) {
     throw new Error("Image inclusion decisions require a deciding turn");
   }
-  for (const { blockId, included, decidedByCompaction } of input.decisions) {
+  for (const { blockId, partIndex, included, decidedByCompaction } of input.decisions) {
     const decidingTurnId = decidedByCompaction
       ? input.imageProjectionMode?.decidingTurnId
       : decisionTurnId;
@@ -365,6 +366,7 @@ function buildImageProjectionEvents(input: {
       type: "image.inclusion_decided",
       threadId: input.threadId,
       blockId,
+      partIndex,
       decisionTurnId: decidingTurnId as TurnId,
       included,
     });

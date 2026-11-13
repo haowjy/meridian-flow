@@ -185,6 +185,9 @@ if (!RUN) {
             };
           },
         } as never,
+        async describeImage() {
+          return { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
+        },
         async threadProject() {
           return PROJECT;
         },
@@ -521,6 +524,9 @@ if (!RUN) {
           async serializeCreate() {
             throw new Error("Recovery entered create effects");
           },
+        },
+        async describeImage() {
+          return { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
         },
         async threadProject() {
           throw new Error("Recovery entered project resolution");

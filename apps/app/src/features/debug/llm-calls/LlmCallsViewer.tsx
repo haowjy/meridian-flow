@@ -431,6 +431,7 @@ function predictionReasonLabel(
     model_changed: "Model changed",
     prompt_epoch: "Prompt changed",
     image_eviction: "Image prefix changed",
+    media_link_window: "Media link renewed",
     compaction: "Compaction boundary",
     ttl_unknown: "Cache lifetime unknown",
     summary_transcript: "Separate summary transcript",

@@ -2549,8 +2549,8 @@ msgid "Deleting a Work…"
 msgstr ""
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Demo image"
-msgstr "演示图片"
+#~ msgid "Demo image"
+#~ msgstr "演示图片"
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Denied"
@@ -2880,8 +2880,8 @@ msgid "Failed"
 msgstr "失败"
 
 #: src/rich-content/ImageBlock.tsx
-msgid "Failed to load image"
-msgstr "图片加载失败"
+#~ msgid "Failed to load image"
+#~ msgstr "图片加载失败"
 
 #. placeholder {0}: upload.name
 #: src/components/app/composer/composer-document.ts
@@ -3470,7 +3470,6 @@ msgid "Loading files…"
 msgstr ""
 
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
 

@@ -53,6 +53,7 @@ describe("Gemini request mapping", () => {
       parts: [
         {
           functionResponse: {
+            id: "c1",
             name: "read",
             response: { output: "saw it" },
             parts: [
@@ -61,7 +62,7 @@ describe("Gemini request mapping", () => {
             ],
           },
         },
-        { functionResponse: { name: "list", response: { error: "boom" } } },
+        { functionResponse: { id: "c2", name: "list", response: { error: "boom" } } },
       ],
     });
   });
@@ -94,15 +95,15 @@ describe("Gemini request mapping", () => {
       toGeminiParams(request(providerOptions), target(model), CALL).contents[1]?.parts;
     expect(parts(issued)).toEqual([
       { text: "thinking", thought: true, thoughtSignature: "sig" },
-      { functionCall: { name: "read", args: {} }, thoughtSignature: "sig" },
-      { functionCall: { name: "read", args: {} } },
+      { functionCall: { id: "c1", name: "read", args: {} }, thoughtSignature: "sig" },
+      { functionCall: { id: "c2", name: "read", args: {} } },
     ]);
     expect(parts(issued, "gemini-3-y")).toEqual([
       {
-        functionCall: { name: "read", args: {} },
+        functionCall: { id: "c1", name: "read", args: {} },
         thoughtSignature: "skip_thought_signature_validator",
       },
-      { functionCall: { name: "read", args: {} } },
+      { functionCall: { id: "c2", name: "read", args: {} } },
     ]);
   });
 });

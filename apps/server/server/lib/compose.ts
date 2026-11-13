@@ -179,7 +179,7 @@ import {
 import {
   createChildRunCoordinator,
   createChildRunDriver,
-  createContextImageAssetPort,
+  createContextMediaResolver,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
@@ -1024,7 +1024,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     expireAsks: () => asks.expireDue(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
-  const imageAssets = createContextImageAssetPort({
+  const mediaResolver = createContextMediaResolver({
     fileAccess: ports.fileAccess,
     identities: ports.uploadIdentity,
     availability: ports.projectContextAvailability,
@@ -1059,6 +1059,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
+    },
+    async describeImage(documentId) {
+      const identity = await ports.uploadIdentity.lookupDocument(documentId);
+      const mediaType = identity?.mimeType?.split(";")[0]?.trim().toLowerCase();
+      return identity?.sizeBytes != null && mediaType?.startsWith("image/")
+        ? { mediaType, sizeBytes: identity.sizeBytes, name: identity.name }
+        : null;
     },
     verifyDraftUpload: createDraftUploadVerifier({
       identities: ports.uploadIdentity,
@@ -1183,7 +1190,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
-    imageAssets,
+    mediaResolver,
+    mediaLinkWindowSeconds: Number(process.env.MEDIA_LINK_WINDOW_SECONDS) || undefined,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;

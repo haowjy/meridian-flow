@@ -17,11 +17,12 @@ import {
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
-import { ImageAssetResolutionError } from "../ports/image-asset.js";
+import { MediaResolutionError } from "../ports/media-resolver.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { grepDocumentText, readDocumentText, writeDocumentText } from "../tools/document-text.js";
 import { jsonContent } from "../tools/tool-content.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
+import { bytesMedia } from "./__tests__/media-test-support.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
@@ -106,7 +107,13 @@ else
             turnId: userTurn.id,
             blockType: "image",
             sequence: sequence + 1,
-            content: { type: "image_reference", documentId, uri },
+            content: {
+              type: "media",
+              ref: { documentId, uri },
+              mediaType: "image/png",
+              sizeBytes: 5,
+              name: `${key}.png`,
+            },
             status: "complete",
           });
           return { block, documentId, uri };
@@ -142,26 +149,26 @@ else
         await rig.repos.imageInclusions.set({
           threadId: rig.threadId,
           blockId: block.id,
+          partIndex: 0,
           decisionTurnId: images[index]?.included ? userTurn.id : exclusionTurnId,
           included: images[index]?.included ?? false,
         });
       }
       const assets = new Map(images.map((image) => [`image-${image.key}`, image]));
       const resolutionCounts = new Map<string, number>();
-      rig.deps.imageAssets = {
+      rig.deps.mediaResolver = {
         async resolve(_context, reference) {
           resolutionCounts.set(
             reference.documentId,
             (resolutionCounts.get(reference.documentId) ?? 0) + 1,
           );
           const asset = assets.get(reference.documentId);
-          if (asset?.key === "transient") throw new ImageAssetResolutionError("retry later");
+          if (asset?.key === "transient") throw new MediaResolutionError("retry later");
           if (!asset) return null;
-          return {
-            mediaType: "image/png",
+          return bytesMedia({
             data: `data:image/png;base64,${asset.key}`,
             sizeBytes: asset.sizeBytes,
-          };
+          });
         },
       };
       return { userTurn, savedImages, assets, resolutionCounts };
@@ -595,6 +602,7 @@ else
         {
           threadId: rig.threadId,
           blockId: savedImages[0]?.block.id,
+          partIndex: 0,
           decisionTurnId: compaction.id,
           included: true,
         },
@@ -623,7 +631,7 @@ else
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,
-        imageAssets: rig.deps.imageAssets,
+        mediaResolver: rig.deps.mediaResolver,
         imageInclusions: rig.repos.imageInclusions,
         promptBakes: rig.repos.promptBakes,
         workContext: rig.deps.workContext,

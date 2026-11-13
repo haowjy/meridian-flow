@@ -6,8 +6,22 @@
  */
 import type { Block, Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
-import { MAX_MODEL_IMAGE_CONTEXT_BYTES, projectImageBlocksForModel } from "./image-context.js";
+import { MediaResolutionError, type MediaResolverPort } from "../ports/media-resolver.js";
+import { bytesMedia } from "./__tests__/media-test-support.js";
+import {
+  MAX_MODEL_IMAGE_CONTEXT_BYTES,
+  type MediaModel,
+  mediaUnitKey,
+  projectImageBlocksForModel,
+} from "./image-context.js";
+
+const MODEL: MediaModel = {
+  id: "gpt-5.6-luna",
+  wire: "openai",
+  inputModalities: ["text", "image"],
+};
+const WINDOW = { startMs: 0, lengthSeconds: 3600 };
+const unit = (blockId: string) => mediaUnitKey(blockId, 0);
 
 const thread: Pick<Thread, "id" | "projectId" | "userId"> = {
   id: "thread-1",
@@ -22,9 +36,11 @@ const imageBlock: Block = {
   blockType: "image",
   sequence: 0,
   content: {
-    type: "image_reference",
-    documentId: "document-1",
-    uri: "scratch://image.png",
+    type: "media",
+    ref: { documentId: "document-1", uri: "scratch://image.png" },
+    mediaType: "image/png",
+    sizeBytes: 5,
+    name: "image.png",
   },
   createdAt: "2026-09-27T12:00:00.000Z",
 };
@@ -34,19 +50,21 @@ function image(id: string): Block {
     ...imageBlock,
     id,
     content: {
-      type: "image_reference",
-      documentId: `document-${id}`,
-      uri: `scratch://${id}.png`,
+      type: "media",
+      ref: { documentId: `document-${id}`, uri: `scratch://${id}.png` },
+      mediaType: "image/png",
+      sizeBytes: 5,
+      name: `${id}.png`,
     },
   };
 }
 
-function assets(sizes: ReadonlyMap<string, number>): ImageAssetPort {
+function assets(sizes: ReadonlyMap<string, number>): MediaResolverPort {
   return {
     async resolve(_context, identity) {
       const sizeBytes = sizes.get(identity.documentId);
       if (sizeBytes === undefined) return null;
-      return { mediaType: "image/png", data: identity.uri, sizeBytes };
+      return bytesMedia({ data: identity.uri, sizeBytes });
     },
   };
 }
@@ -62,9 +80,10 @@ describe("projectImageBlocksForModel", () => {
     const projection = await projectImageBlocksForModel({
       thread,
       blocks: candidates,
-      inclusions: new Map(candidates.map((block) => [block.id, false])),
-      supportsImageInput: true,
-      imageAssets: assets(
+      inclusions: new Map(candidates.map((block) => [unit(block.id), false])),
+      model: MODEL,
+      window: WINDOW,
+      media: assets(
         new Map(
           candidates.map((block) => [
             `document-${block.id}`,
@@ -74,15 +93,15 @@ describe("projectImageBlocksForModel", () => {
       ),
       mode: {
         kind: "compaction",
-        candidates: new Set(candidates.map((block) => block.id)),
+        candidates: new Set(candidates.map((block) => unit(block.id))),
         decidingTurnId: "turn-c",
       },
     });
 
     expect(imageIds(projection.blocks)).toEqual(["middle", "new"]);
     expect(projection.decisions).toEqual([
-      { blockId: "new", included: true, decidedByCompaction: true },
-      { blockId: "middle", included: true, decidedByCompaction: true },
+      { blockId: "new", partIndex: 0, included: true, decidedByCompaction: true },
+      { blockId: "middle", partIndex: 0, included: true, decidedByCompaction: true },
     ]);
     expect(17 * mib).toBeLessThanOrEqual(MAX_MODEL_IMAGE_CONTEXT_BYTES);
   });
@@ -96,12 +115,13 @@ describe("projectImageBlocksForModel", () => {
       thread,
       blocks: [protectedImage, protectedImage2, blockedCandidate],
       inclusions: new Map([
-        [protectedImage.id, true],
-        [protectedImage2.id, true],
-        [blockedCandidate.id, false],
+        [unit(protectedImage.id), true],
+        [unit(protectedImage2.id), true],
+        [unit(blockedCandidate.id), false],
       ]),
-      supportsImageInput: true,
-      imageAssets: assets(
+      model: MODEL,
+      window: WINDOW,
+      media: assets(
         new Map([
           [`document-${protectedImage.id}`, 8 * mib],
           [`document-${protectedImage2.id}`, 8 * mib],
@@ -110,7 +130,7 @@ describe("projectImageBlocksForModel", () => {
       ),
       mode: {
         kind: "compaction",
-        candidates: new Set([blockedCandidate.id]),
+        candidates: new Set([unit(blockedCandidate.id)]),
         decidingTurnId: "turn-c",
       },
     });
@@ -128,12 +148,13 @@ describe("projectImageBlocksForModel", () => {
       thread,
       blocks,
       inclusions: new Map([
-        [included.id, true],
-        [included2.id, true],
-        [candidate.id, false],
+        [unit(included.id), true],
+        [unit(included2.id), true],
+        [unit(candidate.id), false],
       ]),
-      supportsImageInput: true,
-      imageAssets: assets(
+      model: MODEL,
+      window: WINDOW,
+      media: assets(
         new Map([
           [`document-${included.id}`, 10 * mib],
           [`document-${included2.id}`, 6 * mib],
@@ -143,18 +164,19 @@ describe("projectImageBlocksForModel", () => {
       ),
       mode: {
         kind: "compaction",
-        candidates: new Set([candidate.id]),
+        candidates: new Set([unit(candidate.id)]),
         decidingTurnId: "turn-c",
       },
     });
 
-    // The late image applies ordinary eviction first. The candidate then fills the
-    // remaining budget without being able to evict the remaining included image.
-    expect(imageIds(projection.blocks)).toEqual(["included-2", "candidate", "late"]);
+    // The late image evicts a chunk, oldest first, down to half the budget, so the next arrivals
+    // fit without moving the cached prefix again. The candidate then fills the remaining budget.
+    expect(imageIds(projection.blocks)).toEqual(["candidate", "late"]);
     expect(projection.decisions).toEqual([
-      { blockId: "candidate", included: true, decidedByCompaction: true },
-      { blockId: "included", included: false },
-      { blockId: "late", included: true },
+      { blockId: "candidate", partIndex: 0, included: true, decidedByCompaction: true },
+      { blockId: "included", partIndex: 0, included: false },
+      { blockId: "included-2", partIndex: 0, included: false },
+      { blockId: "late", partIndex: 0, included: true },
     ]);
   });
 
@@ -164,17 +186,18 @@ describe("projectImageBlocksForModel", () => {
     const projection = await projectImageBlocksForModel({
       thread,
       blocks: [candidate],
-      inclusions: new Map([[candidate.id, false]]),
-      supportsImageInput: true,
-      imageAssets: {
+      inclusions: new Map([[unit(candidate.id), false]]),
+      model: MODEL,
+      window: WINDOW,
+      media: {
         async resolve() {
           attempts++;
-          throw new ImageAssetResolutionError("object store timed out");
+          throw new MediaResolutionError("object store timed out");
         },
       },
       mode: {
         kind: "compaction",
-        candidates: new Set([candidate.id]),
+        candidates: new Set([unit(candidate.id)]),
         decidingTurnId: "turn-c",
       },
     });
@@ -196,20 +219,21 @@ describe("projectImageBlocksForModel", () => {
         thread,
         blocks: [first, second],
         inclusions: new Map([
-          [first.id, false],
-          [second.id, false],
+          [unit(first.id), false],
+          [unit(second.id), false],
         ]),
-        supportsImageInput: true,
-        imageAssets: {
+        model: MODEL,
+        window: WINDOW,
+        media: {
           async resolve() {
             attempts++;
             controller.abort();
-            throw new ImageAssetResolutionError("object store timed out");
+            throw new MediaResolutionError("object store timed out");
           },
         },
         mode: {
           kind: "compaction",
-          candidates: new Set([first.id, second.id]),
+          candidates: new Set([unit(first.id), unit(second.id)]),
           decidingTurnId: "turn-c",
         },
         signal: controller.signal,

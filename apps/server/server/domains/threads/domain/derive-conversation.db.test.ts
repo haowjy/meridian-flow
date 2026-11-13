@@ -217,15 +217,18 @@ else
         blockType: "image",
         sequence: 0,
         content: {
-          type: "image_reference",
-          documentId: crypto.randomUUID(),
-          uri: "scratch://fork-history.png",
+          type: "media",
+          ref: { documentId: crypto.randomUUID(), uri: "scratch://fork-history.png" },
+          mediaType: "image/png",
+          sizeBytes: 5,
+          name: "fork-history.png",
         },
         status: "complete",
       });
       await repos.imageInclusions.set({
         threadId: fixture.source.id,
         blockId: image.id,
+        partIndex: 0,
         decisionTurnId: fixture.firstTurn.id,
         included: false,
       });
@@ -246,6 +249,7 @@ else
       await repos.imageInclusions.set({
         threadId: fixture.source.id,
         blockId: image.id,
+        partIndex: 0,
         decisionTurnId: compaction.id,
         included: true,
       });
@@ -257,6 +261,7 @@ else
         {
           threadId: beforeCompaction.thread.id,
           blockId: image.id,
+          partIndex: 0,
           decisionTurnId: fixture.firstTurn.id,
           included: false,
         },

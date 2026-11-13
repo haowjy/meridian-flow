@@ -120,6 +120,10 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
     return ok(`/memory-object-store/${encodeURIComponent(key)}`);
   }
 
+  async getProviderReadLink(): Promise<ObjectStoreResult<string | null>> {
+    return ok(null);
+  }
+
   async delete(key: string): Promise<ObjectStoreResult<void>> {
     this.objects.delete(key);
     return ok(undefined);

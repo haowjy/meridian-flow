@@ -1195,14 +1195,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         blockType: "image",
         status: "complete",
         content: {
-          type: "image_reference",
-          documentId: crypto.randomUUID(),
-          uri: "uploads://reference.png",
+          type: "media",
+          ref: { documentId: crypto.randomUUID(), uri: "uploads://reference.png" },
+          mediaType: "image/png",
+          sizeBytes: 5,
+          name: "reference.png",
         },
       });
       await db.insert(schema.threadImageInclusions).values({
         threadId: THREAD_ID,
         blockId,
+        partIndex: 0,
         decisionTurnId: compactionId,
         included: true,
       });

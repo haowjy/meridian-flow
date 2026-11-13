@@ -269,6 +269,7 @@ export async function forkThreadAgent(
         type: "image.inclusion_decided" as const,
         threadId: target.id,
         blockId: decision.blockId,
+        partIndex: decision.partIndex,
         decisionTurnId: decision.decisionTurnId,
         included: decision.included,
       };
