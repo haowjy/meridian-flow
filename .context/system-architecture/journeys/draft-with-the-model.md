@@ -66,7 +66,7 @@ Does: presses Apply (the filled green button) or Discard (quiet text).
 Sees: after Apply, the live page has the model's text. After Discard, the draft is gone and the live page is unchanged; discarding a text draft does not ask first, and a notice reads "Draft of … discarded." with Undo.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
-- Machines: [Apply click command](../../../apps/app/src/features/draft-review/.context/state-machines.md), [Branch command](../../../apps/server/server/domains/collab/.context/state-machines.md)
+- Machines: [Apply click command](../../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## Undo
 

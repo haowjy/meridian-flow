@@ -15,7 +15,7 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { treeChangeFault } from "../domain/tree-inverse.js";
 
@@ -26,6 +26,7 @@ export interface ReceiptWrite {
   turnId?: TurnId | null;
   responseId?: string | null;
   editScopeId?: string | null;
+  commandId?: string;
   toolCallId?: string | null;
   actor: "agent" | "human" | "system";
   /** Reserved once by the logical model edit; never allocated at capture. */
@@ -54,6 +55,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       turnId: input.turnId,
       responseId: input.responseId,
       editScopeId: input.editScopeId,
+      commandId: input.commandId,
       toolCallId: input.toolCallId,
       actor: input.actor,
       actorUserId: input.actorUserId,
@@ -122,4 +124,25 @@ export function captureReceiptRows(
     origin: rows[i].origin,
     held: receipt.held,
   }));
+}
+
+/** Names the command on the receipts of the live updates it appended (rows already recorded). */
+export async function stampLiveEditsWithCommand(
+  db: Db,
+  commandId: string,
+  seqs: readonly number[],
+): Promise<void> {
+  if (!seqs.length) return;
+  await db
+    .update(documentEdits)
+    .set({ commandId })
+    .where(
+      inArray(
+        documentEdits.id,
+        db
+          .select({ id: documentYjsUpdates.editId })
+          .from(documentYjsUpdates)
+          .where(inArray(documentYjsUpdates.id, [...seqs])),
+      ),
+    );
 }

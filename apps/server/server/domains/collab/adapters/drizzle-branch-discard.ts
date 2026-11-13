@@ -34,7 +34,6 @@ import {
   type TreeScopeRequest,
 } from "../../context/tree/mutation-scope.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardDraftChangedError,
@@ -42,11 +41,12 @@ import {
   type BranchDiscardStore,
   type DiscardKernelInput,
   type DiscardKernelResult,
+  type DiscardRefusal,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
-import { claimCommandWithinTx, settleCommandWithinTx } from "./drizzle-branch-commands.js";
+import { runCommandWithinTx } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
@@ -230,38 +230,50 @@ export function createDrizzleBranchDiscard(
           { branches: [input.branchId] },
           async () => {
             // Claims follow the Work boundary for every command, including conflicting deliveries.
-            // The claim is pending until the kernel says what it ended, in this transaction.
-            if (command && !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope))) {
-              throw new BranchCommandExistsError(command.envelope.commandId);
-            }
-            const settle = async (ended: DiscardKernelResult | null) => {
-              if (command)
-                await settleCommandWithinTx(
-                  currentDrizzleDb(db),
-                  command.envelope.commandId,
-                  command.result(ended),
-                );
-              return ended;
+            const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = {
+              ended: null,
             };
-            if (!(await deps.branches.lockActive(input.branchId))) return settle(null);
-            const items = input.selection.kind === "items" ? input.selection.items : null;
-            const itemIds = items?.map((item) => item.documentId);
-            await acquireScope(db, input.branchId, {
-              branches: [
-                {
-                  branchId: input.branchId,
-                  ...(itemIds ? { documentIds: itemIds } : {}),
-                },
-              ],
-              documentIds: itemIds ?? [],
-            });
-            return settle(await kernel(input));
+            await runCommandWithinTx(
+              db,
+              command.envelope,
+              async () => {
+                if (await deps.branches.lockActive(input.branchId)) {
+                  const items = input.selection.kind === "items" ? input.selection.items : null;
+                  const itemIds = items?.map((item) => item.documentId);
+                  await acquireScope(db, input.branchId, {
+                    branches: [
+                      {
+                        branchId: input.branchId,
+                        ...(itemIds ? { documentIds: itemIds } : {}),
+                      },
+                    ],
+                    documentIds: itemIds ?? [],
+                  });
+                  settled.ended = await kernel(input);
+                }
+                return command.result(settled.ended);
+              },
+              (cause) => {
+                const refused = discardRefusal(cause);
+                if (!refused) return undefined;
+                settled.ended = refused;
+                return command.result(refused);
+              },
+            );
+            return settled.ended;
           },
           { seam: true, requireActive: true, allowFrozenLineage: true },
         );
       });
     },
   };
+}
+
+/** The kernel's final refusals: the branch's state no longer allows this item's Discard. */
+function discardRefusal(cause: unknown): DiscardRefusal | undefined {
+  if (cause instanceof BranchDiscardApplicableStateChangedError) return { refused: "stale" };
+  if (cause instanceof BranchDiscardDraftChangedError) return { refused: "draft_changed" };
+  return undefined;
 }
 
 /** Purge transactions run again when a branch's tree scope moved under them. */

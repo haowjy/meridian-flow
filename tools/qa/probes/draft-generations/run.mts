@@ -130,6 +130,7 @@ try {
   await runInDrizzleTransaction(h.db, async () => {
     await discard.discardLocked({
       kernel: { branchId: work.branchId, selection: { kind: "whole" } },
+      command: h.discardCommand(work.branchId),
     });
     assert.equal(closes.length, 0, "close must not escape before root commit");
   });

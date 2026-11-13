@@ -52,7 +52,6 @@ import {
 import { createDrizzleApplyClick, measureApplyAppend } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
-import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
 import {
   createDrizzleBranchDiscard,
   createDrizzleWorkBranchDisposal,
@@ -64,6 +63,7 @@ import {
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
+import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
@@ -489,7 +489,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attemptScope,
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
-  const commands = createDrizzleBranchCommands(deps.db);
+  const commands = createDrizzleDocumentCommands(deps.db);
   const applyCommands = createApplyClickService({
     identity,
     commands,

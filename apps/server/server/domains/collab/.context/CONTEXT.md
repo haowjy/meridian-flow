@@ -47,7 +47,7 @@ certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
-record and terminal command outcome atomically. A stored result
+record and the command's outcome atomically. A stored outcome
 wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
 for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery
@@ -71,9 +71,9 @@ Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decide
 the kernel compares it under the draft's row lock and refuses `draft_changed` when the
 draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
 `revision` is the fence because content-free folds keep it. The answer's `itemClosed`
-is what the kernel ended, and the command row is claimed pending and settled with that
-answer in the kernel's transaction. Nothing left to end answers `stale` without changing
-text or claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
+is what the kernel ended. Its command row is claimed first in the kernel's transaction and
+holds the answer when it commits; `stale` and `draft_changed` are stored answers too.
+Work Discard all and purge keep the shared close/end-use kernel.
 
 ## Revision and review authority
 

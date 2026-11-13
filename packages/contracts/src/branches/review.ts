@@ -8,11 +8,11 @@
  */
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
-import type { BranchCommandId, BranchId, DraftItemKey } from "../ids.js";
+import type { BranchId, DocumentCommandId, DraftItemKey } from "../ids.js";
 import type { DraftOwnerKey } from "./owner.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
-export const BranchCommandIdSchema = z.string().uuid();
+export const DocumentCommandIdSchema = z.string().uuid();
 
 /** JSON form of the kernel's SpanPatch; PM nodes cross the wire as node JSON. */
 export type ApplySpanPatch = {
@@ -23,7 +23,7 @@ export type ApplySpanPatch = {
 
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
-  commandId: BranchCommandId;
+  commandId: DocumentCommandId;
   /** Stable room identity; omitted only for a no-room creation reveal. */
   draftId?: string;
   /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
@@ -72,7 +72,7 @@ export type AppliedReviewItem = {
 export type ApplyClickResult =
   | {
       status: "applied";
-      commandId: BranchCommandId;
+      commandId: DocumentCommandId;
       /** Every item whose tree or text this click applied, dependency-first. */
       applied: AppliedReviewItem[];
       overrode?: number;
@@ -86,43 +86,46 @@ export type ApplyClickResult =
       textEffect?: true;
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
-  | { status: "changed"; commandId: BranchCommandId }
+  | { status: "changed"; commandId: DocumentCommandId }
   /**
    * The document is deleted from the manuscript and the click did not carry `restore`: the
    * writer's view did not know (a delete landed after it read the item, or after an Apply
    * all's confirmation named its documents). Nothing changed and the draft stays pending;
    * the client asks the writer, then sends a new click with `restore`.
    */
-  | { status: "needs_restore"; commandId: BranchCommandId }
-  | { status: "closed"; commandId: BranchCommandId }
-  | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
+  | { status: "needs_restore"; commandId: DocumentCommandId }
+  | { status: "closed"; commandId: DocumentCommandId }
+  | { status: "refused"; commandId: DocumentCommandId; reason: ApplyClickRefusalReason };
 
 export type ApplyClickAnswer =
   | ApplyClickResult
-  | { status: "pending" | "conflict"; commandId: BranchCommandId };
+  | { status: "conflict"; commandId: DocumentCommandId };
 export type ApplyClickObservation =
   | ApplyClickAnswer
-  | { status: "none"; commandId: BranchCommandId };
+  | { status: "none"; commandId: DocumentCommandId };
 
 /** Reverse the surviving text groups of one Apply. Tree effects are intentionally absent. */
 export type UnapplyClick = {
-  commandId: BranchCommandId;
-  applyCommandId: BranchCommandId;
+  commandId: DocumentCommandId;
+  applyCommandId: DocumentCommandId;
 };
 export type UnapplyClickResult =
   | {
       status: "unapplied";
-      commandId: BranchCommandId;
+      commandId: DocumentCommandId;
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }
-  | { status: "closed" | "refused"; commandId: BranchCommandId };
+  | { status: "closed" | "refused"; commandId: DocumentCommandId };
 export type UnapplyClickAnswer =
   | UnapplyClickResult
-  | { status: "pending" | "conflict"; commandId: BranchCommandId };
+  | { status: "conflict"; commandId: DocumentCommandId };
 
-/** Stored writer-command outcomes. */
-export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult | UnapplyClickResult;
+/** What one kind's effect answered, as stored in a command's outcome. */
+export type StoredDocumentCommandResult =
+  | DiscardCommandResult
+  | ApplyClickResult
+  | UnapplyClickResult;
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -209,27 +212,29 @@ export type DraftMetadataResponse =
 
 // --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------
 //
-// Discard commands replay their stored outcome by command id; pending claims answer 202.
-// Frozen Apply clicks have their own answer/observation contract below.
+// A stored outcome answers every resend of its command id. Frozen Apply clicks have their own
+// answer contract above.
 
-/** Which writer command a `commandId` was recorded for. */
-export const BRANCH_COMMAND_KINDS = [
-  "apply_click",
-  "unapply_click",
-  "discard_items",
-  "discard_branch",
-] as const;
-export type BranchCommandKind = (typeof BRANCH_COMMAND_KINDS)[number];
+/** Which kind of command a `commandId` was recorded for. */
+export const DOCUMENT_COMMAND_KINDS = ["apply", "unapply", "discard"] as const;
+export type DocumentCommandKind = (typeof DOCUMENT_COMMAND_KINDS)[number];
 
 /** HTTP 409 code: the `commandId` was already used for a different command. */
-export const BRANCH_COMMAND_CONFLICT_CODE = "command_conflict";
-/** HTTP 404 code on observation: nothing committed under this `commandId`, so the client resends. */
-export const BRANCH_COMMAND_UNKNOWN_CODE = "unknown_command";
+export const DOCUMENT_COMMAND_CONFLICT_CODE = "command_conflict";
 
-/** A claim is pending; observe its command id for the committed result. */
-export type BranchCommandPending = { status: "pending"; branchId: BranchId };
-/** 202: a command claim exists but has not yet supplied its result. */
-export type BranchCommandPendingResponse = BranchCommandPending & { commandId: BranchCommandId };
+/**
+ * The outcome a command's transaction commits. `done`: the effect committed. `refused`: the
+ * effect was turned away after the claim and nothing of it committed. `never`: the id was
+ * claimed so that no attempt under it can take effect.
+ */
+export type DocumentCommandOutcome =
+  | { status: "done" | "refused"; result: StoredDocumentCommandResult }
+  | { status: "never" };
+
+/** `GET /api/document-commands/:id`: the stored outcome, or `none` (also for another account's id). */
+export type DocumentCommandLookupResponse =
+  | { status: "none" }
+  | { status: "stored"; kind: DocumentCommandKind; outcome: DocumentCommandOutcome };
 
 /** Whether a settled item left review, and how (applied if anything reached live). */
 export type DraftItemSettlement = {
@@ -264,13 +269,13 @@ export type DraftDiscardResponse =
 export type DraftDiscardRequest = {
   branchId: BranchId;
   itemKey: DraftItemKey;
-  commandId: BranchCommandId;
+  commandId: DocumentCommandId;
 } & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
 export const BranchDiscardAllRequestSchema = z.object({
   /** A `branches` row id, never a per-document draft id. */
   branchId: z.string().uuid(),
-  commandId: BranchCommandIdSchema,
+  commandId: DocumentCommandIdSchema,
 });
 export type BranchDiscardAllRequest = z.infer<typeof BranchDiscardAllRequestSchema>;
 /** `discarded` closes the branch (the only wire signal of closure); `gone` names one that is not the Work's active branch. */
@@ -278,14 +283,5 @@ export type BranchDiscardAllResponse =
   | { status: "discarded"; branchId: BranchId }
   | { status: "gone"; branchId: BranchId };
 
-// Observing a command: `GET …/works/:w/branches/commands/:commandId`.
-
-/** The terminal body of a command, exactly what its 200 carried. */
-export type BranchCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;
-/**
- * `pending` keeps the claim; `done` returns the committed result. A missing command answers
- * 404 `unknown_command`: nothing committed, so the client resends.
- */
-export type BranchCommandObservation =
-  | { state: "pending" }
-  | { state: "done"; result: BranchCommandResult };
+/** A Discard's terminal body, exactly what its 200 carries. */
+export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;

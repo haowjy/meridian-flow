@@ -4,8 +4,10 @@ import type {
   ApplyClick,
   ApplyClickAnswer,
   ApplyClickObservation,
+  ApplyClickResult,
   BranchDiscardAllRequest,
   BranchDiscardAllResponse,
+  DocumentCommandLookupResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
   DraftDiscardResponse,
@@ -15,7 +17,7 @@ import type {
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import {
-  apiProjectBranchCommandPath,
+  apiDocumentCommandPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
   apiProjectBranchDocumentDraftDiscardPath,
@@ -64,15 +66,15 @@ export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
     { signal: AbortSignal.timeout(10_000) },
   );
 }
-export function observeDraftClick(
-  draft: DraftAddress,
-  body: ApplyClick,
-): Promise<ApplyClickObservation> {
-  // Only the typed `none` answer proves absence. A 404 may be lost Work access, not an unclaimed id.
-  return getJson<ApplyClickObservation>(
-    apiProjectBranchCommandPath(draft.projectId, branchOf(draft.itemKey), body.commandId),
+export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObservation> {
+  // Only the typed `none` answer proves absence. A 404 may be a stale route, not an unclaimed id.
+  const found = await getJson<DocumentCommandLookupResponse>(
+    apiDocumentCommandPath(body.commandId),
     { signal: AbortSignal.timeout(10_000) },
   );
+  if (found.status === "none" || found.outcome.status === "never")
+    return { status: "none", commandId: body.commandId };
+  return found.outcome.result as ApplyClickResult;
 }
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
   return postJson<UnapplyClickAnswer>(

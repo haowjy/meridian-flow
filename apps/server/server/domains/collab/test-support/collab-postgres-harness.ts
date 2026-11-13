@@ -23,13 +23,13 @@ import { createTestWorkProjectionMutation } from "../../../test-support/work-pro
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createRemovalRecords } from "../../context/tree/removal.js";
 import type { FileGrant } from "../../file-policy/index.js";
-import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
+import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
 import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
@@ -570,7 +570,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       holdRetirement: draftClose.holdRetirement,
       releaseObjects: async () => {},
     }),
-    commands: createDrizzleBranchCommands(db),
+    commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
   // Tests mint a destination grant without a target; a write's grant names its document.

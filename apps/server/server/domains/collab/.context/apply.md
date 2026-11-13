@@ -20,9 +20,21 @@ commits after the route resolved the item, its authorization or the transaction'
 grant confirmation refuses the live grant, nothing is claimed, and the route runs the
 click once more, which resolves the item as deleted.
 
-Editor Undo sends an `unapply_click` command for the original Apply command. This path
+Editor Undo sends an `unapply` command for the original Apply command. This path
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
+
+Every Apply, Un-Apply and Discard is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
+The effect transaction inserts it first and `runCommandWithinTx` runs the effect in a savepoint under
+the claim. A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
+append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
+outcome, so a resend under the same id gets the same refusal and "Try again" needs a new id. A miss
+the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
+`BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
+turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
+authorises through the effect's draft: `apply_command_effects.draft_id` names the draft whose
+branch must be the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
+account that sent it.
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta

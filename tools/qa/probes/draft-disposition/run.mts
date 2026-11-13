@@ -196,6 +196,7 @@ try {
   });
   await discard.discardLocked({
     kernel: { branchId: work.branchId, selection: { kind: "whole" } },
+    command: h.discardCommand(work.branchId),
   });
   const closed =
     await h.raw`select id,status,closed_cause from document_drafts where branch_id=${work.branchId} order by id`;

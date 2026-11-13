@@ -148,6 +148,17 @@ export async function openHarness(
     db,
     raw,
     ids,
+    /** A Discard-all command for the probe's account: what `discardLocked` takes. */
+    discardCommand: (branchId: string) => ({
+      envelope: {
+        commandId: randomUUID(),
+        accountId: ids.user,
+        projectId: ids.project,
+        kind: "discard" as const,
+        digest: `probe-${branchId}`,
+      },
+      result: () => ({ status: "discarded" as const, branchId }),
+    }),
     projection,
     branches,
     persistence,
