@@ -2,8 +2,8 @@
 
 `apps/server/server`: the Nitro server. Routes are thin; each domain holds one area's logic, behind
 a public `index.ts` and ports; `lib/` is the composition root that builds the domains into
-`AppServices`. The root `CONTEXT.md` says domains are acyclic and do not import `lib/`. **Neither is
-true today**: six domains import each other in a cycle (drawn in the box below, every edge marked
+`AppServices`. The root `CONTEXT.md` means domains to be acyclic and not to import `lib/`. **Neither holds
+today**: six domains import each other in a cycle (drawn in the box below, every edge marked
 `breaks`), and `runtime` imports `lib/`. The diagram draws these and each domain's imports of other
 domains. `lib` imports every domain except `file-intake` to wire it, and routes also import the domains' public indexes
 directly, and domains import `shared/` and `@meridian/contracts`; those edges are left out because
@@ -114,7 +114,7 @@ The composition root: builds every domain into `AppServices`.
 - Paths: `apps/server/server/lib`
 - Docs: [lib CONTEXT](../../apps/server/server/lib/.context/CONTEXT.md)
 - Machines: [lib](../../apps/server/server/lib/.context/state-machines.md)
-- Drift: The root CONTEXT.md says domains do not import `lib/`; `runtime` does (marked on the edge). `apps/server/.context/CONTEXT.md` lists 11 of the 17 domains in "Cross-module links" and omits `export`, `file-intake`, `file-policy`, `import`, `notices` and `recent-documents`.
+- Drift: The root CONTEXT.md says domains do not import `lib/`; `runtime` does (marked on the edge).
 
 ## plugins
 
@@ -147,7 +147,7 @@ Takes a writer message (or a subagent report, a Work change, a queued control), 
 - Paths: `apps/server/server/domains/runtime`
 - Docs: [CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 - Machines: [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic. Also `gateway/config/create-from-env.ts` imports `lib/production-env.ts`, which the root CONTEXT.md forbids. It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. Also `gateway/config/create-from-env.ts` imports `lib/production-env.ts`, which the root CONTEXT.md forbids. It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
 
 ## threads
 
@@ -159,7 +159,7 @@ Owns `ThreadEventHub`, the projector to AG-UI events and `thread_works` membersh
 - Paths: `apps/server/server/domains/threads`
 - Docs: [CONTEXT](../../apps/server/server/domains/threads/.context/CONTEXT.md)
 - Machines: [threads](../../apps/server/server/domains/threads/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic. It also imports `projects/adapters/work-projection-mutation.ts` directly.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `projects/adapters/work-projection-mutation.ts` directly.
 
 ## projects
 
@@ -171,7 +171,7 @@ Projects and Works: ownership gates, bootstrap and the Work lifecycle.
 - Paths: `apps/server/server/domains/projects`
 - Docs: [CONTEXT](../../apps/server/server/domains/projects/.context/CONTEXT.md)
 - Machines: [projects](../../apps/server/server/domains/projects/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic. It also reaches into `context/adapters/context-fs/document-locations.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also reaches into `context/adapters/context-fs/document-locations.ts`.
 
 ## context
 
@@ -183,7 +183,7 @@ Catalog views, the tree, copy, uploads, links and arrivals. `skills://` exists f
 - Paths: `apps/server/server/domains/context`
 - Docs: [CONTEXT](../../apps/server/server/domains/context/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/context/AGENTS.md)
 - Machines: [context uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
 
 ## collab
 
@@ -195,7 +195,7 @@ Hocuspocus rooms for live documents and Work drafts, plus the journal, the inver
 - Paths: `apps/server/server/domains/collab`
 - Docs: [CONTEXT](../../apps/server/server/domains/collab/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/collab/AGENTS.md)
 - Machines: [collab](../../apps/server/server/domains/collab/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic.
 
 ## file-policy
 
@@ -206,7 +206,7 @@ Answers who may read or write a document and why not: `permission_denied` reason
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`
 - Docs: [CONTEXT](../../apps/server/server/domains/file-policy/.context/CONTEXT.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md says domains are acyclic. It also imports `collab/adapters/drizzle-branches.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `collab/adapters/drizzle-branches.ts`.
 
 ## import
 

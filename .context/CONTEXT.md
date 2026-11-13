@@ -3,13 +3,16 @@
 Cross-cutting design lives in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
 Server composition and transport: [apps/server](../apps/server/.context/CONTEXT.md).
 Every state machine, with its diagram: [state-machines](state-machines/index.md).
-The boxes and their dependencies, clickable, with those diagrams on the page:
-[architecture map](system-architecture/AGENTS.md).
+The running system, the code's boxes and their dependencies, and the writer journeys:
+[architecture map](system-architecture/README.md).
 
-- **Domains are acyclic.** Threads reference project and Work ownership, never
-  the reverse; the only projects↔threads imports are test fixtures.
+- **Domains are meant to be acyclic, and today are not.** Threads reference
+  project and Work ownership, never the reverse. But runtime, threads, projects,
+  file-policy, context and collab import each other in a cycle, and
+  `runtime/gateway/config` imports `lib/`; the [server map](system-architecture/server.md)
+  marks each such import, and `pnpm check:architecture` fails on a new one it doesn't mark.
   `apps/server/server/lib/` is the composition root and may wire every domain;
-  domains do not import `lib/`.
+  a new domain import of `lib/` or a new cycle edge is a regression.
 - **Ports.** JSON-natural shared DTOs live in `@meridian/contracts`; behavioral
   ports live in the domain that owns them. Provider-specific types stay inside
   adapters.

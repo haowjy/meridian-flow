@@ -184,4 +184,3 @@ No export may return writer text. A canary test is the only check that writer te
 - Kind: package
 - Paths: `packages/yjs-inspect/src`
 - Docs: [CONTEXT](../../packages/yjs-inspect/.context/CONTEXT.md), [AGENTS](../../packages/yjs-inspect/AGENTS.md)
-- Drift: the README's "Shared packages" lists 4 of these 9 packages.
