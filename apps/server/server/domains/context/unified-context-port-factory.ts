@@ -112,7 +112,7 @@ interface AdapterAssembly {
   thread?: ThreadContextView;
   /** Resolves a draft-mode thread's branch; the adapters' tree writes go through `treeLists`. */
   branches: Pick<Branches, "viewForOwner">;
-  treeLists: Pick<TreeListStore, "submit">;
+  treeLists: Pick<TreeListStore, "submit" | "read">;
   db: Database;
   arrivals?: DocumentArrivals;
   drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
@@ -394,7 +394,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     DocumentCreationAggregate &
     Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** The project's tree lists: every create, move and delete is a `submit` on one. */
-  treeLists: Pick<TreeListStore, "submit">;
+  treeLists: Pick<TreeListStore, "submit" | "read">;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
   /** The one branches resolver: draft placements read and write through it (§2.3). */

@@ -5,7 +5,7 @@
  * leaves no record and no row.
  */
 
-import type { TreeRecord, TreeWriter } from "@meridian/project-tree";
+import type { ListEnd } from "@meridian/project-tree";
 
 /**
  * A list is one project's, or one account's (`user://`). Its journal id is the owner's
@@ -13,13 +13,29 @@ import type { TreeRecord, TreeWriter } from "@meridian/project-tree";
  */
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
+/** One list's copy handed to a change or a read: the writer on it, and the list's journal id. */
+export type ListWriter = ListEnd;
+
 /**
- * What the server's own change makes, in the list's copy under its lock: the writer makes the
- * records (names numbered, ranks placed against the copy's own view, settlements appended) and
- * `make` returns the records it made, with whatever the caller reads back from the copy's replay
- * (the names a node ended at, what a delete took).
+ * What the server's own change makes, in the lists' copies under their locks: each writer makes
+ * its list's records (names numbered, ranks placed against the copy's own view, settlements
+ * appended), in the order of the `lists` the caller named, and `make` returns whatever the
+ * caller reads back from the replay (the names a node ended at, what a delete took). The store
+ * derives the new nodes from what the copies gained. `make` is synchronous: a copy is never
+ * half-changed across an await.
  */
-export type ServerChange<T> = (writer: TreeWriter) => { records: readonly TreeRecord[]; result: T };
+export type ServerChange<T> = (lists: readonly ListWriter[]) => T;
+
+/**
+ * Thrown by a `make` that decides, after reading the copy, that it cannot go ahead (a name
+ * taken, a stale address). Nothing it made is stored and the copies are reloaded; the store
+ * rethrows it for the caller to answer. `reason` is the caller's own to type.
+ */
+export class TreeRefusal<R = unknown> extends Error {
+  constructor(readonly reason: R) {
+    super("The tree change was refused");
+  }
+}
 
 /** What a commit added to the list: the update every other copy of it needs. */
 export type CommittedTreeUpdate = {
@@ -62,16 +78,34 @@ export interface TreeListStore {
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
   /**
-   * Makes records the server wants in the list, in the caller's transaction when there is one (a
-   * document command's), else in one of its own. The records join the list and the rows follow
-   * with them; the update reaches `onCommitted` after the outermost commit. `make` runs under
-   * the list's lock on a copy at the journal's head, so it holds no document or namespace key
-   * and does no I/O.
+   * Makes records the server wants in one or several lists, in the caller's transaction when
+   * there is one (a document command's), else in one of its own. The lists' keys are taken in
+   * one order (by list id) whatever order the caller names them, so no two paths on the same
+   * lists deadlock. The records join the lists and the rows follow with them; the updates reach
+   * `onCommitted` after the outermost commit. `make` runs under the keys on copies at the
+   * journal's head, holds no document or namespace key and does no I/O. `committed` has an entry
+   * per list, in the caller's order, null where the list gained nothing.
+   *
+   * A move between two lists is `moveBetweenLists` over both writers: the node's claim follows it.
    */
   submit<T>(input: {
-    list: TreeList;
+    lists: readonly TreeList[];
     make: ServerChange<T>;
-  }): Promise<{ committed: CommittedTreeUpdate | null; result: T }>;
+  }): Promise<{ committed: readonly (CommittedTreeUpdate | null)[]; result: T }>;
+  /**
+   * Reads the lists' replays at the journal's head without a key: every row a commit made is
+   * there, and a change in this process that has not committed is not. `view` changes nothing.
+   * Hold the lists' keys through `submit` when the answer must not change before the transaction
+   * ends.
+   */
+  read<T>(input: { lists: readonly TreeList[]; view: ServerChange<T> }): Promise<T>;
+  /**
+   * Brings the rows of the lists to their replay, under their keys, when something the rows
+   * read changes outside the list: a Work's branch ends, or a draft gains its first text or
+   * loses its last. Call it in the transaction that changed it, holding the keys already or
+   * taking them before any document key.
+   */
+  resync(lists: readonly TreeList[]): Promise<void>;
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */
   onCommitted(listener: (committed: CommittedTreeUpdate) => void): () => void;
   /**

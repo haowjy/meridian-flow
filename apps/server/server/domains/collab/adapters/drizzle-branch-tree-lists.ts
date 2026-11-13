@@ -1,18 +1,17 @@
 /**
  * Which tree lists a Work's tree spans, and the Work's pending records in them. A Work's drafted
  * records are in the list of the source they were made in: its project's list, or the account's
- * for `user://`. The list is read the one way it is changed, through `submit`'s copy at the
- * journal's head under the list's lock (a read makes no records, so nothing is journaled).
+ * for `user://`. The lists are read through the store's `read`, at the journal's head.
  */
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { pendingRecords, type TreeRecord } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 
 /** The lists a Work's branch can hold records in: its project's, and its owner's account list. */
-export async function treeListsOfBranch(db: Database, branchId: BranchId): Promise<TreeList[]> {
+export async function treeListsOfBranch(db: DrizzleDb, branchId: BranchId): Promise<TreeList[]> {
   const [row] = await currentDrizzleDb(db).execute<{ project_id: string; user_id: string }>(sql`
     SELECT b.project_id::text AS project_id, p.user_id::text AS user_id
     FROM branches b JOIN projects p ON p.id = b.project_id WHERE b.id = ${branchId}::uuid`);
@@ -45,18 +44,20 @@ export type PendingTreeRecord = { list: TreeList; record: TreeRecord };
 /** The Work's pending tree records in every list it spans, each list in list order. */
 export async function readPendingTreeRecords(
   db: Database,
-  store: Pick<TreeListStore, "submit">,
+  store: Pick<TreeListStore, "read">,
   branchId: BranchId,
 ): Promise<PendingTreeRecord[]> {
-  const out: PendingTreeRecord[] = [];
-  for (const list of await treeListsOfBranch(db, branchId)) {
-    const { result } = await store.submit({
-      list,
-      make: (writer) => ({ records: [], result: pendingRecords(writer.doc, branchId) }),
-    });
-    for (const record of result) out.push({ list, record });
-  }
-  return out;
+  const lists = await treeListsOfBranch(db, branchId);
+  return store.read({
+    lists,
+    view: (copies) =>
+      copies.flatMap(({ writer }, at) =>
+        pendingRecords(writer.doc, branchId).map((record) => ({
+          list: lists[at] as TreeList,
+          record,
+        })),
+      ),
+  });
 }
 
 /**

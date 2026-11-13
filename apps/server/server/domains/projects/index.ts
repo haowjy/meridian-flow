@@ -201,19 +201,16 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     const created = await deps.documents.createDocumentAtomically({
       persistIdentity: async () => {
         await deps.treeLists.submit({
-          list: await treeListOfSource(tx as unknown as Database, contextSourceId),
-          make: (writer) => ({
-            records: [
-              writer.create(LIVE, "system", {
-                kind: "document",
-                filetype: "markdown",
-                name: "Chapter 1",
-                parent: sourceRoot(contextSourceId),
-                node: documentId,
-              }),
-            ],
-            result: undefined,
-          }),
+          lists: [await treeListOfSource(tx as unknown as Database, contextSourceId)],
+          make: ([{ writer }]) => {
+            writer.create(LIVE, "system", {
+              kind: "document",
+              filetype: "markdown",
+              name: "Chapter 1",
+              parent: sourceRoot(contextSourceId),
+              node: documentId,
+            });
+          },
         });
         return documentId;
       },

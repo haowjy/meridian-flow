@@ -67,10 +67,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** Changes the source's live tree with the writer, as a record any actor could make. */
     async function change(sourceId: string, edit: (writer: TreeWriter) => void) {
       await treeSeeder(database.current).store.submit({
-        list: await treeListOfSource(database.current, sourceId),
-        make: (writer) => {
+        lists: [await treeListOfSource(database.current, sourceId)],
+        make: ([{ writer }]) => {
           edit(writer);
-          return { records: [], result: null };
         },
       });
     }

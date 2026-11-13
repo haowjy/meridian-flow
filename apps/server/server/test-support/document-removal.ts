@@ -9,9 +9,10 @@ import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-
 import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
 
 export function createTestRemovalDeps(db: Database) {
+  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
   return {
-    draftClose: createDraftClose(),
-    treeLists: createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) }),
+    draftClose: createDraftClose({ treeLists }),
+    treeLists,
     removals: createTrashRemovals(db),
   };
 }

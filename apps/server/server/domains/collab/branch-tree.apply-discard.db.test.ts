@@ -126,8 +126,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     /** A server change to the project's list: what the writer or another Work did. */
     async function submit<T>(make: (writer: TreeWriter) => T): Promise<T> {
       const { result } = await treeLists.submit({
-        list: await treeListOfSource(db, SOURCE),
-        make: (writer) => ({ records: [], result: make(writer) }),
+        lists: [await treeListOfSource(db, SOURCE)],
+        make: ([{ writer }]) => make(writer),
       });
       return result;
     }

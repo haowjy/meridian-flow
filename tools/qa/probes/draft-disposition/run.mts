@@ -8,7 +8,6 @@ import {
   captureReceiptRows,
   recordDocumentEdit,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
@@ -181,7 +180,7 @@ try {
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
   const journalBefore = await h.raw`select id,status from draft_write_journal order by id`;
-  const close = createDraftClose();
+  const close = createTestRemovalDeps(h.db).draftClose;
   const discard = createDrizzleBranchDiscard(h.db, {
     close,
     branches: h.branches,

@@ -116,10 +116,9 @@ if (!RUN) {
 
       // Delete and recreate the address: the compare-and-set must not move the target.
       await treeSeeder(database).store.submit({
-        list: await treeListOfSource(database, SOURCE),
-        make: (writer) => {
+        lists: [await treeListOfSource(database, SOURCE)],
+        make: ([{ writer }]) => {
           writer.delete(LIVE, "system", DOCUMENT);
-          return { records: [], result: null };
         },
       });
       await insertDocument(database, "manuscript", DOCUMENT_2);

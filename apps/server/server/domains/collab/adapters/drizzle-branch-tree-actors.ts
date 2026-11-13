@@ -11,7 +11,7 @@ import { readPendingTreeRecords, recordsOfItem } from "./drizzle-branch-tree-lis
  */
 export function createDrizzleBranchTreeActors(
   db: Database,
-  treeLists: Pick<TreeListStore, "submit">,
+  treeLists: Pick<TreeListStore, "read">,
 ) {
   return async function treeActors(
     branchId: BranchId,

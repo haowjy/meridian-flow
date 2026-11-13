@@ -18,13 +18,13 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
-import { createDraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
@@ -42,7 +42,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const store = createDrizzleDraftStore(db, {
-    close: createDraftClose(),
+    close: createTestRemovalDeps(db).draftClose,
     workProjection: createTestWorkProjectionMutation(db),
     live: { journal: persistence.journal },
     branches,

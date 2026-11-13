@@ -7,7 +7,6 @@ import {
   readDocumentAuthorityHead,
   replaceGeneration,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-authority-head.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDraftRetirement } from "../../../../apps/server/server/domains/collab/domain/draft-retirement.ts";
 import { closeDraftRooms } from "../../../../apps/server/server/domains/collab/hocuspocus-rooms.ts";
 import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
@@ -109,7 +108,7 @@ try {
     socketId: "other-tab",
   };
   room.addConnection(connection as never);
-  const close = createDraftClose();
+  const close = createTestRemovalDeps(h.db).draftClose;
   close.bindRetirement(
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),

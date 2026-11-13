@@ -575,15 +575,15 @@ export async function createProductionAppPorts(input: {
   // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
   // thread peers) exists only once the collab domain does, which binds it; nothing retires
   // before a commit, so the late binding is never observed unbound in production.
-  const draftClose = createDraftClose();
+  // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
+  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+  const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
     availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
   });
-  // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
-  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
   const documentSync = createCollabDomain({
     db,
     backgroundTasks,
@@ -1538,6 +1538,12 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("Tree lists are unavailable in memory");
       },
       async submit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async read() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async resync() {
         throw new Error("Tree lists are unavailable in memory");
       },
       onCommitted: () => () => {},

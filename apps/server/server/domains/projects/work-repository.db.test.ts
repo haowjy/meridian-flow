@@ -479,10 +479,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const separatelyDeleted = await seed.document(source.id, "separately-deleted");
       await seed.folder(source.id, "Notes");
       await seed.store.submit({
-        list: await treeListOfSource(db, source.id),
-        make: (writer) => {
+        lists: [await treeListOfSource(db, source.id)],
+        make: ([{ writer }]) => {
           writer.delete(LIVE, "system", separatelyDeleted);
-          return { records: [], result: null };
         },
       });
 

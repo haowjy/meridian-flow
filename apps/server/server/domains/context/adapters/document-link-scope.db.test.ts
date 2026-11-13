@@ -112,10 +112,9 @@ if (!RUN) {
 
     const renameTarget = async (name: string, filetype?: string) =>
       treeSeeder(db).store.submit({
-        list: await treeListOfSource(db, SOURCE),
-        make: (writer) => {
+        lists: [await treeListOfSource(db, SOURCE)],
+        make: ([{ writer }]) => {
           writer.rename(TREE_LIVE, "system", TARGET, name, filetype);
-          return { records: [], result: null };
         },
       });
 
@@ -161,10 +160,9 @@ if (!RUN) {
       const seed = treeSeeder(db);
       const trash = async (sourceId: string, ...ids: string[]) =>
         seed.store.submit({
-          list: await treeListOfSource(db, sourceId),
-          make: (writer) => {
+          lists: [await treeListOfSource(db, sourceId)],
+          make: ([{ writer }]) => {
             for (const id of ids) writer.delete(TREE_LIVE, "system", id);
-            return { records: [], result: null };
           },
         });
       await seed.document(SOURCE, "part1/holder", { id: HOLDER });

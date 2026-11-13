@@ -64,7 +64,6 @@ function ensureDir(
   actor: string,
   sourceId: string,
   dir: readonly string[],
-  made: TreeRecord[],
 ): string {
   let parent = sourceRoot(sourceId);
   for (const name of dir) {
@@ -76,7 +75,6 @@ function ensureDir(
       continue;
     }
     const created = writer.create(view, actor, { kind: "folder", name, parent });
-    made.push(created);
     parent = created.node;
   }
   return parent;
@@ -88,12 +86,12 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
   async function submitIn<T>(
     sourceId: string,
     options: SeedOptions,
-    make: (writer: TreeWriter, view: View, actor: string) => { records: TreeRecord[]; result: T },
+    make: (writer: TreeWriter, view: View, actor: string) => T,
   ): Promise<T> {
     const store = options.store ?? defaultStore;
     const { result } = await store.submit({
-      list: await treeListOfSource(db, sourceId),
-      make: (writer) => make(writer, options.view ?? LIVE, options.actor ?? "system"),
+      lists: [await treeListOfSource(db, sourceId)],
+      make: ([{ writer }]) => make(writer, options.view ?? LIVE, options.actor ?? "system"),
     });
     return result;
   }
@@ -101,9 +99,8 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
   /** The folder at `path` (every folder on the way made if absent); returns the leaf's id. */
   async function folder(sourceId: string, path: string, options: SeedOptions = {}) {
     return submitIn(sourceId, options, (writer, view, actor) => {
-      const made: TreeRecord[] = [];
-      const id = ensureDir(writer, view, actor, sourceId, segmentsOf(path), made);
-      return { records: made, result: id };
+      const id = ensureDir(writer, view, actor, sourceId, segmentsOf(path));
+      return id;
     });
   }
 
@@ -115,8 +112,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     const parsed = parseDocumentFilename(leaf);
     if (!parsed.ok) throw new Error(`Seed name ${leaf}: ${parsed.error.message}`);
     const id = await submitIn(sourceId, options, (writer, view, actor) => {
-      const made: TreeRecord[] = [];
-      const parent = ensureDir(writer, view, actor, sourceId, segments, made);
+      const parent = ensureDir(writer, view, actor, sourceId, segments);
       const created = writer.create(view, actor, {
         kind: "document",
         name: renderFilename(parsed.value.name, parsed.value.extension),
@@ -125,8 +121,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
         ...(options.id ? { node: options.id } : {}),
         ...(options.provisional ? { provisional: true as const } : {}),
       });
-      made.push(created);
-      return { records: made, result: created.node };
+      return created.node;
     });
     if (options.text !== undefined) {
       const sync = deps.documentSync;
@@ -150,8 +145,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     const leaf = segments.pop();
     if (!leaf) throw new Error("A seeded file needs a name");
     return submitIn(sourceId, options, (writer, view, actor) => {
-      const made: TreeRecord[] = [];
-      const parent = ensureDir(writer, view, actor, sourceId, segments, made);
+      const parent = ensureDir(writer, view, actor, sourceId, segments);
       const created = writer.create(view, actor, {
         kind: "file",
         name: leaf,
@@ -159,8 +153,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
         blob,
         ...(options.id ? { node: options.id } : {}),
       });
-      made.push(created);
-      return { records: made, result: created.node };
+      return created.node;
     });
   }
 

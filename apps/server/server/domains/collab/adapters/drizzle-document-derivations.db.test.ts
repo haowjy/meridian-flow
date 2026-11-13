@@ -88,8 +88,8 @@ describe("durable document derivations", () => {
   /** A live edit of the tree (move, rename, delete) through the list store, as a person's would be. */
   async function liveEdit(edit: (writer: TreeWriter) => unknown) {
     await seeder.store.submit({
-      list: await treeListOfSource(db, sourceId),
-      make: (writer) => ({ records: [], result: edit(writer) }),
+      lists: [await treeListOfSource(db, sourceId)],
+      make: ([{ writer }]) => edit(writer),
     });
   }
   // The document's prose is one block: these cases are about cuts and certification, not blocks.

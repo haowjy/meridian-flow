@@ -120,10 +120,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const list = await treeListOfSource(db, source);
       const trash = (...ids: string[]) =>
         seed.store.submit({
-          list,
-          make: (writer) => {
+          lists: [list],
+          make: ([{ writer }]) => {
             for (const id of ids) writer.delete(LIVE, "system", id);
-            return { records: [], result: null };
           },
         });
       const folder = await seed.folder(source, "hidden");
@@ -193,10 +192,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       expect((await settlements()).get(deletedAhead)).toBeNull();
       expect((await settlements()).get(hiddenAhead)).toBeNull();
       await seed.store.submit({
-        list,
-        make: (writer) => {
+        lists: [list],
+        make: ([{ writer }]) => {
           writer.rename(LIVE, "system", note, "moved.toml");
-          return { records: [], result: null };
         },
       });
       const replacement = crypto.randomUUID();

@@ -67,13 +67,13 @@ export function createApplyTreeOperations(input: {
     const before = (await input.tree.identityStatus(LIVE_TREE, [documentId])).get(documentId);
 
     const { result } = await input.treeLists.submit({
-      list,
-      make: (writer) => {
+      lists: [list],
+      make: ([{ writer }]) => {
         const trashed = writer.view(LIVE).nodes.get(documentId)?.trashed === true;
         if (restoring && trashed) writer.restore(LIVE, actor, documentId);
-        if (!landing) return { records: [], result: "restored" as const };
+        if (!landing) return "restored" as const;
         const chosen = recordsOfItem(pendingRecords(writer.doc, branchId), documentId);
-        if (chosen.length === 0) return { records: [], result: "changed" as const };
+        if (chosen.length === 0) return "changed" as const;
         const applied = applyDraft(
           writer,
           branchId,
@@ -85,7 +85,7 @@ export function createApplyTreeOperations(input: {
         // lands nothing of this item: the click is refused and the draft stays pending.
         if (recordsOfItem(applied.copies, documentId).length === 0)
           throw new ApplyClickRefused("ancestor_taken");
-        return { records: [], result: "applied" as const };
+        return "applied" as const;
       },
     });
     if (result === "changed") return { kind: "changed" };

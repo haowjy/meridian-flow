@@ -8,10 +8,10 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestRemovalDeps } from "../../../../test-support/document-removal.js";
 import { treeSeeder } from "../../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { commitDraftRows } from "../../test-support/draft-update-writes.js";
-import { createDraftClose } from "../drizzle-draft-close.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -130,7 +130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let livePersistence = createDrizzleCollabPersistence(db);
     function createDraftStore() {
       return createDrizzleDraftStore(db, {
-        close: createDraftClose(),
+        close: createTestRemovalDeps(db).draftClose,
         workProjection: createTestWorkProjectionMutation(db),
         live: { journal: livePersistence.journal },
         branches: createDrizzleBranchStore(db),
@@ -270,7 +270,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftOwnerHints: { publishDraftOwnerHints: () => {} },
       });
       const measuredStore = createDrizzleDraftStore(db, {
-        close: createDraftClose(),
+        close: createTestRemovalDeps(db).draftClose,
         live: { journal: livePersistence.journal },
         workProjection: projection,
         branches: createDrizzleBranchStore(db),

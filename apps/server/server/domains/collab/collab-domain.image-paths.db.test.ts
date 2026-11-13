@@ -62,8 +62,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** A live edit of the tree (rename, delete), as a person's would be. */
     async function liveEdit(edit: (writer: TreeWriter) => unknown) {
       await seeder.store.submit({
-        list: await treeListOfSource(db, SOURCE_ID),
-        make: (writer) => ({ records: [], result: edit(writer) }),
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => edit(writer),
       });
     }
     /** A chapter showing `assets/map.png`, and the model's grant in this project. */

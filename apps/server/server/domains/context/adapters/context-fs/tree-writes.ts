@@ -25,11 +25,12 @@ import {
   descendantsOf,
   isSourceRoot,
   LIVE,
+  moveBetweenLists,
   pendingRecords,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
-  type TreeRecord,
+  type TreeRecordInput,
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
@@ -40,7 +41,12 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { DocumentCreationMetadata } from "../../document-metadata.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type { WriteProvenance } from "../../ports/context-port.js";
-import type { TreeListStore } from "../../ports/tree-list-store.js";
+import {
+  type ListWriter,
+  type TreeList,
+  type TreeListStore,
+  TreeRefusal,
+} from "../../ports/tree-list-store.js";
 import { treeListOfSource } from "../tree-list-facts.js";
 
 /** Who makes a record: `agent:<chat>/<turn>` for the model, `user:<id>` for a person, else the server. */
@@ -95,14 +101,13 @@ function extensionOf(node: TreeNode): string {
 
 /**
  * Folders along `dir` from the source's top, made where missing. A document or file on the way
- * refuses with the occupant's kind. `made` collects the records that create new nodes.
+ * refuses with the occupant's kind.
  */
 function ensureFolders(
   writer: TreeWriter,
   target: TreeWriteTarget,
   sourceId: string,
   dir: readonly string[],
-  made: TreeRecord[],
 ): Result<string, AdapterFault> {
   let parent = sourceRoot(sourceId);
   for (const name of dir) {
@@ -112,9 +117,7 @@ function ensureFolders(
       parent = existing.id;
       continue;
     }
-    const created = writer.create(target.view, target.actor, { kind: "folder", name, parent });
-    made.push(created);
-    parent = created.node;
+    parent = writer.create(target.view, target.actor, { kind: "folder", name, parent }).node;
   }
   return Ok(parent);
 }
@@ -333,11 +336,36 @@ export interface SourceTree {
 }
 
 export function createSourceTree(deps: {
-  store: Pick<TreeListStore, "submit">;
+  store: Pick<TreeListStore, "submit" | "read">;
   db: Database;
   sourceId(): Promise<string>;
 }): SourceTree {
   const list = async () => treeListOfSource(deps.db, await deps.sourceId());
+
+  /**
+   * One write on these lists whose answer is a `Result`: an `Err` aborts it, so nothing the
+   * maker did to the copies is stored and they reload (a refusal after folders were made must
+   * not leave them behind).
+   */
+  async function write<T>(
+    lists: readonly TreeList[],
+    make: (copies: readonly ListWriter[]) => Result<T, AdapterFault>,
+  ): Promise<Result<T, AdapterFault>> {
+    try {
+      const { result } = await deps.store.submit({
+        lists,
+        make: (copies) => {
+          const made = make(copies);
+          if (!made.ok) throw new TreeRefusal(made.error);
+          return made;
+        },
+      });
+      return result;
+    } catch (cause) {
+      if (cause instanceof TreeRefusal) return Err(cause.reason as AdapterFault);
+      throw cause;
+    }
+  }
 
   /** The Work's view beside live, when the view is a Work's. */
   const factsOf = (writer: TreeWriter, view: View, node: string) =>
@@ -363,37 +391,29 @@ export function createSourceTree(deps: {
 
     async create(target, input) {
       const sourceId = await deps.sourceId();
-      const { result } = await deps.store.submit<Result<CreatedNode, AdapterFault>>({
-        list: await list(),
-        make: (writer) => {
-          const made: TreeRecord[] = [];
-          const parent = ensureFolders(writer, target, sourceId, input.dir, made);
-          if (!parent.ok) return { records: [], result: parent };
-          const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
-          if (occupant) return { records: [], result: Err(conflict(occupantKindOf(occupant))) };
-          const index = indexAt(writer.view(target.view), parent.value, input.position);
-          const created = writer.create(target.view, target.actor, {
-            kind: input.kind,
-            name: input.filename,
-            parent: parent.value,
-            index,
-            ...(input.id ? { node: input.id } : {}),
-            ...(input.provisional ? { provisional: true as const } : {}),
-            ...(input.kind === "document"
-              ? { filetype: input.filetype as Filetype }
-              : { blob: input.blob }),
-          } as Parameters<TreeWriter["create"]>[2]);
-          made.push(created);
-          const shown = writer.view(target.view);
-          return {
-            records: made,
-            result: Ok({
-              id: created.node,
-              name: shown.nodes.get(created.node)?.displayName ?? input.filename,
-              path: pathOf(shown, created.node),
-            }),
-          };
-        },
+      const result = await write<CreatedNode>([await list()], ([{ writer }]) => {
+        const parent = ensureFolders(writer, target, sourceId, input.dir);
+        if (!parent.ok) return parent;
+        const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
+        if (occupant) return Err(conflict(occupantKindOf(occupant)));
+        const index = indexAt(writer.view(target.view), parent.value, input.position);
+        const created = writer.create(target.view, target.actor, {
+          kind: input.kind,
+          name: input.filename,
+          parent: parent.value,
+          index,
+          ...(input.id ? { node: input.id } : {}),
+          ...(input.provisional ? { provisional: true as const } : {}),
+          ...(input.kind === "document"
+            ? { filetype: input.filetype as Filetype }
+            : { blob: input.blob }),
+        } as Parameters<TreeWriter["create"]>[2]);
+        const shown = writer.view(target.view);
+        return Ok({
+          id: created.node,
+          name: shown.nodes.get(created.node)?.displayName ?? input.filename,
+          path: pathOf(shown, created.node),
+        });
       });
       if (result.ok && (input.metadata || input.hasPreview))
         await currentDrizzleDb(deps.db)
@@ -408,169 +428,157 @@ export function createSourceTree(deps: {
 
     async find(target, dir, filename) {
       const sourceId = await deps.sourceId();
-      const { result } = await deps.store.submit<{
-        id: string;
-        kind: "document" | "file" | "folder";
-      } | null>({
-        list: await list(),
-        make: (writer) => {
+      return deps.store.read({
+        lists: [await list()],
+        view: ([{ writer }]) => {
           const projection = writer.view(target.view);
           const parent = findFolder(projection, sourceId, dir);
           const found = parent === null ? undefined : childNamed(projection, parent, filename);
-          return { records: [], result: found ? { id: found.id, kind: found.kind } : null };
+          return found ? { id: found.id, kind: found.kind } : null;
         },
       });
-      return result;
     },
 
     async move(target, input) {
       const sourceId = await deps.sourceId();
       const here = await list();
       const from = await treeListOfSource(deps.db, input.fromSourceId);
-      if (JSON.stringify(from) !== JSON.stringify(here))
-        return Err({
-          code: "invalid_operation",
-          message: "A move between a project's files and the account's files is not available",
+      const crossing = JSON.stringify(from) !== JSON.stringify(here);
+      return write<MovedNode>(crossing ? [here, from] : [here], ([dest, origin = dest]) => {
+        const { writer } = dest;
+        const node = origin.writer.view(target.view).nodes.get(input.node);
+        const wanted = input.kind === "folder" ? "folder" : undefined;
+        if (!node || node.trashed || node.purged || (wanted && node.kind !== wanted))
+          return Err({ code: "not_found" } as AdapterFault);
+        if ((input.kind === "file") !== (node.kind !== "folder"))
+          return Err({ code: "not_found" } as AdapterFault);
+        if (node.source !== input.fromSourceId)
+          return Err({ code: "stale_source" } as AdapterFault);
+        if (
+          input.onlyAt !== undefined &&
+          pathOf(origin.writer.view(target.view), node.id).join("/") !== input.onlyAt
+        )
+          return Err({ code: "stale_target" } as AdapterFault);
+        // Between a project's files and the account's, only a document or file moves, and
+        // only in live: a folder stays, and a Work's draft has no pair of records for it.
+        if (crossing && (node.kind === "folder" || target.view.draft !== null))
+          return Err({
+            code: "invalid_operation",
+            message:
+              "A folder, or a change in a Work's draft, cannot move between a project's files and the account's files",
+          } as AdapterFault);
+        let projection = writer.view(target.view);
+        let parent = crossing ? sourceRoot(sourceId) : node.parent;
+        if (input.dir !== null) {
+          const ensured = ensureFolders(writer, target, sourceId, input.dir);
+          if (!ensured.ok) return ensured;
+          parent = ensured.value;
+          projection = writer.view(target.view);
+        }
+        if (
+          node.kind === "folder" &&
+          (parent === node.id || descendantsOf(projection, node.id).includes(parent))
+        )
+          return Err({ code: "invalid_operation" } as AdapterFault);
+
+        // The name the node lands under: the writer's typed one through the name codec, else its own.
+        let filename = node.displayName;
+        let filetype: Filetype | null = null;
+        if (input.leaf !== undefined) {
+          if (node.kind === "folder") filename = input.leaf;
+          else {
+            const parsed = storedFilename(input.leaf, {
+              extension: extensionOf(node),
+              editable: node.kind === "document",
+            });
+            if (!parsed.ok) return Err(parsed.error);
+            filename = parsed.name;
+            filetype = parsed.filename.filetype;
+            const refused = typeConversion(node, filename, filetype);
+            if (refused) return Err(refused);
+          }
+        }
+        const occupant = childNamed(projection, parent, filename);
+        if (occupant && occupant.id !== node.id) return Err(conflict(occupantKindOf(occupant)));
+
+        const sameParent = !crossing && node.parent === parent;
+        const renamed = filename !== node.displayName;
+        if (sameParent && !renamed && !input.position)
+          return Ok({ moved: false, documentIds: [], path: pathOf(projection, node.id) });
+
+        const before = factsOf(origin.writer, target.view, node.id);
+        if (crossing)
+          moveBetweenLists(
+            origin,
+            { ...dest, parent, index: indexAt(projection, parent, input.position, node.id) },
+            target.actor,
+            node.id,
+          );
+        else if (!sameParent || input.position)
+          writer.move(
+            target.view,
+            target.actor,
+            node.id,
+            parent,
+            indexAt(projection, parent, input.position, node.id),
+          );
+        if (renamed)
+          writer.rename(
+            target.view,
+            target.actor,
+            node.id,
+            filename,
+            filetype && filetype !== node.filetype ? filetype : undefined,
+          );
+        const after = factsOf(writer, target.view, node.id);
+        return Ok({
+          moved: true,
+          documentIds: [node.id, ...descendantsOf(projection, node.id)].filter(
+            (id) => projection.nodes.get(id)?.kind !== "folder",
+          ),
+          path: pathOf(writer.view(target.view), node.id),
+          ...(before && after ? { facts: { before, after } } : {}),
         });
-      const { result } = await deps.store.submit<Result<MovedNode, AdapterFault>>({
-        list: here,
-        make: (writer) => {
-          let projection = writer.view(target.view);
-          const node = projection.nodes.get(input.node);
-          const wanted = input.kind === "folder" ? "folder" : undefined;
-          if (!node || node.trashed || node.purged || (wanted && node.kind !== wanted))
-            return { records: [], result: Err({ code: "not_found" } as AdapterFault) };
-          if ((input.kind === "file") !== (node.kind !== "folder"))
-            return { records: [], result: Err({ code: "not_found" } as AdapterFault) };
-          if (node.source !== input.fromSourceId)
-            return { records: [], result: Err({ code: "stale_source" } as AdapterFault) };
-          if (input.onlyAt !== undefined && pathOf(projection, node.id).join("/") !== input.onlyAt)
-            return { records: [], result: Err({ code: "stale_target" } as AdapterFault) };
-          const made: TreeRecord[] = [];
-          let parent = node.parent;
-          if (input.dir !== null) {
-            const ensured = ensureFolders(writer, target, sourceId, input.dir, made);
-            if (!ensured.ok) return { records: [], result: ensured };
-            parent = ensured.value;
-            projection = writer.view(target.view);
-          }
-          if (
-            node.kind === "folder" &&
-            (parent === node.id || descendantsOf(projection, node.id).includes(parent))
-          )
-            return { records: [], result: Err({ code: "invalid_operation" } as AdapterFault) };
-
-          // The name the node lands under: the writer's typed one through the name codec, else its own.
-          let filename = node.displayName;
-          let filetype: Filetype | null = null;
-          if (input.leaf !== undefined) {
-            if (node.kind === "folder") filename = input.leaf;
-            else {
-              const parsed = storedFilename(input.leaf, {
-                extension: extensionOf(node),
-                editable: node.kind === "document",
-              });
-              if (!parsed.ok) return { records: [], result: Err(parsed.error) };
-              filename = parsed.name;
-              filetype = parsed.filename.filetype;
-              const refused = typeConversion(node, filename, filetype);
-              if (refused) return { records: [], result: Err(refused) };
-            }
-          }
-          const occupant = childNamed(projection, parent, filename);
-          if (occupant && occupant.id !== node.id)
-            return { records: [], result: Err(conflict(occupantKindOf(occupant))) };
-
-          const sameParent = node.parent === parent;
-          const renamed = filename !== node.displayName;
-          if (sameParent && !renamed && !input.position)
-            return {
-              records: [],
-              result: Ok({ moved: false, documentIds: [], path: pathOf(projection, node.id) }),
-            };
-
-          const before = factsOf(writer, target.view, node.id);
-          if (!sameParent || input.position)
-            writer.move(
-              target.view,
-              target.actor,
-              node.id,
-              parent,
-              indexAt(projection, parent, input.position, node.id),
-            );
-          if (renamed)
-            writer.rename(
-              target.view,
-              target.actor,
-              node.id,
-              filename,
-              filetype && filetype !== node.filetype ? filetype : undefined,
-            );
-          const after = factsOf(writer, target.view, node.id);
-          return {
-            records: made,
-            result: Ok({
-              moved: true,
-              documentIds: [node.id, ...descendantsOf(projection, node.id)].filter(
-                (id) => projection.nodes.get(id)?.kind !== "folder",
-              ),
-              path: pathOf(writer.view(target.view), node.id),
-              ...(before && after ? { facts: { before, after } } : {}),
-            }),
-          };
-        },
       });
-      return result;
     },
 
     async delete(target, input) {
-      const { result } = await deps.store.submit<Result<DeletedNode, AdapterFault>>({
-        list: await list(),
-        make: (writer) => {
-          const projection = writer.view(target.view);
-          const node = projection.nodes.get(input.node);
-          if (!node || node.trashed || node.purged)
-            return { records: [], result: Err({ code: "not_found" } as AdapterFault) };
-          if ((input.kind === "file") !== (node.kind !== "folder"))
-            return { records: [], result: Err({ code: "not_found" } as AdapterFault) };
-          if (node.source !== input.fromSourceId)
-            return { records: [], result: Err({ code: "stale_source" } as AdapterFault) };
-          const path = pathOf(projection, node.id);
-          if (input.onlyAt !== undefined && path.join("/") !== input.onlyAt)
-            return { records: [], result: Err({ code: "stale_target" } as AdapterFault) };
-          const before = factsOf(writer, target.view, node.id);
-          const record = writer.delete(target.view, target.actor, node.id);
-          const taken = [node.id, ...record.cascade].flatMap((id) => {
-            const taken = projection.nodes.get(id);
-            return taken && taken.kind !== "folder" ? [id] : [];
-          });
-          const after = factsOf(writer, target.view, node.id);
-          return {
-            records: [],
-            result: Ok({
-              documentIds: taken,
-              path,
-              ...(before && after ? { facts: { before, after } } : {}),
-            }),
-          };
-        },
+      return write<DeletedNode>([await list()], ([{ writer }]) => {
+        const projection = writer.view(target.view);
+        const node = projection.nodes.get(input.node);
+        if (!node || node.trashed || node.purged) return Err({ code: "not_found" } as AdapterFault);
+        if ((input.kind === "file") !== (node.kind !== "folder"))
+          return Err({ code: "not_found" } as AdapterFault);
+        if (node.source !== input.fromSourceId)
+          return Err({ code: "stale_source" } as AdapterFault);
+        const path = pathOf(projection, node.id);
+        if (input.onlyAt !== undefined && path.join("/") !== input.onlyAt)
+          return Err({ code: "stale_target" } as AdapterFault);
+        const before = factsOf(writer, target.view, node.id);
+        const record = writer.delete(target.view, target.actor, node.id);
+        const taken = [node.id, ...record.cascade].flatMap((id) => {
+          const taken = projection.nodes.get(id);
+          return taken && taken.kind !== "folder" ? [id] : [];
+        });
+        const after = factsOf(writer, target.view, node.id);
+        return Ok({
+          documentIds: taken,
+          path,
+          ...(before && after ? { facts: { before, after } } : {}),
+        });
       });
-      return result;
     },
 
     async insertTree(target, input) {
       const sourceId = await deps.sourceId();
-      const { result } = await deps.store.submit<
-        Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>
-      >({
-        list: await list(),
-        make: (writer) => {
-          const made: TreeRecord[] = [];
-          const parent = ensureFolders(writer, target, sourceId, input.dir, made);
-          if (!parent.ok) return { records: [], result: parent };
+      const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
+        [await list()],
+        ([{ writer }]) => {
+          const parent = ensureFolders(writer, target, sourceId, input.dir);
+          if (!parent.ok) return parent;
           const projection = writer.view(target.view);
           if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))
-            return { records: [], result: Ok({ kind: "replan" as const }) };
+            return Ok({ kind: "replan" as const });
           // Ranks are minted once per level: a create's own replay per node would cost a
           // replay of the whole list each.
           const at = indexAt(projection, parent.value, input.position);
@@ -581,22 +589,17 @@ export function createSourceTree(deps: {
             input.roots.length,
           );
           const put = (node: NewNode, parentId: string, rank: string) => {
-            const base = {
+            writer.author(target.view, target.actor, {
+              type: "create",
+              kind: node.kind,
               node: node.id,
               name: node.filename,
               parent: parentId,
               source: sourceId,
               rank,
-            };
-            const record = writer.prepare(target.view, target.actor, {
-              type: "create",
-              kind: node.kind,
-              ...base,
               ...(node.kind === "document" ? { filetype: node.filetype } : {}),
               ...(node.kind === "file" ? { blob: node.blob } : {}),
-            }) as TreeRecord;
-            writer.append(record);
-            made.push(record);
+            } as TreeRecordInput);
             if (node.kind !== "folder") return;
             const ranks = generateNKeysBetween(null, null, node.children.length);
             for (const [index, child] of node.children.entries())
@@ -604,22 +607,21 @@ export function createSourceTree(deps: {
           };
           for (const [index, root] of input.roots.entries())
             put(root, parent.value, rootRanks[index] as string);
-          return { records: made, result: Ok({ kind: "inserted" as const }) };
+          return Ok({ kind: "inserted" as const });
         },
-      });
+      );
       if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
       return result;
     },
 
     async discardDraftedCreate(target, node) {
       await deps.store.submit({
-        list: await list(),
-        make: (writer) => {
+        lists: [await list()],
+        make: ([{ writer }]) => {
           const ids = pendingRecords(writer.doc, target.view.draft)
             .filter((record) => record.node === node)
             .map((record) => record.id);
           writer.transact(() => writer.settle(target.actor, ids, "discarded"));
-          return { records: [], result: undefined };
         },
       });
     },

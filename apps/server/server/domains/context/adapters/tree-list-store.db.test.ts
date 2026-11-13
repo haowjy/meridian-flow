@@ -623,17 +623,14 @@ describe("the tree list store (postgres)", () => {
     const stores = [newStore(), newStore()];
     for (let at = 0; at < 6; at++) {
       await stores[at % 2]?.submit({
-        list,
-        make: (writer) => ({
-          records: [
-            writer.create(LIVE, actor, {
-              kind: "folder",
-              name: `Made ${at}`,
-              parent: sourceRoot(MANUSCRIPT),
-            }),
-          ],
-          result: null,
-        }),
+        lists: [list],
+        make: ([{ writer }]) => {
+          writer.create(LIVE, actor, {
+            kind: "folder",
+            name: `Made ${at}`,
+            parent: sourceRoot(MANUSCRIPT),
+          });
+        },
       });
     }
     const doc = new Y.Doc({ gc: false });
@@ -665,24 +662,21 @@ describe("the tree list store (postgres)", () => {
           return row?.n;
         })
         .toBeGreaterThan(0);
-      return other.submit({ list, make: () => ({ records: [], result: null }) });
+      return other.submit({ lists: [list], make: () => {} });
     });
     await held;
     const a = runWithEditConfirmation(
       { workIds: [WORK], lineageRootIds: [], confirm: async () => {}, covers: async () => true },
       () =>
         store.submit({
-          list,
-          make: (writer) => ({
-            records: [
-              writer.create(LIVE, actor, {
-                kind: "folder",
-                name: "Bound",
-                parent: sourceRoot(MANUSCRIPT),
-              }),
-            ],
-            result: null,
-          }),
+          lists: [list],
+          make: ([{ writer }]) => {
+            writer.create(LIVE, actor, {
+              kind: "folder",
+              name: "Bound",
+              parent: sourceRoot(MANUSCRIPT),
+            });
+          },
         }),
     );
     expect((await Promise.allSettled([a, b])).map((result) => result.status)).toEqual([
@@ -719,17 +713,14 @@ describe("the tree list store (postgres)", () => {
       });
       await expect(
         store.submit({
-          list,
-          make: (writer) => ({
-            records: [
-              writer.create(LIVE, actor, {
-                kind: "folder",
-                name: "Refused",
-                parent: sourceRoot(MANUSCRIPT),
-              }),
-            ],
-            result: null,
-          }),
+          lists: [list],
+          make: ([{ writer }]) => {
+            writer.create(LIVE, actor, {
+              kind: "folder",
+              name: "Refused",
+              parent: sourceRoot(MANUSCRIPT),
+            });
+          },
         }),
       ).rejects.toThrow();
       remove();

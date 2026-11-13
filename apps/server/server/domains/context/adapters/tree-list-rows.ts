@@ -34,7 +34,7 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
-import { openBranches, projectOfList } from "./tree-list-facts.js";
+import { keptBranches, projectOfList } from "./tree-list-facts.js";
 
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
@@ -209,6 +209,28 @@ export async function claimNodeIds(
       UNION ALL SELECT 1 FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
     if (used.length > 0) throw new NodeIdRefusedError("a node id already in use");
   }
+}
+
+/**
+ * Moves the claims of nodes that arrived from another list to this one, with their documents'
+ * project (an account's list is its personal project's). The list they left has written its
+ * rows already, so no row stands on the old claim.
+ */
+export async function arriveNodes(
+  tx: DrizzleDb,
+  list: TreeList,
+  listId: string,
+  ids: ReadonlySet<string>,
+): Promise<void> {
+  if (ids.size === 0) return;
+  const nodes = sql.join(
+    [...ids].map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  await tx.execute(sql`UPDATE tree_node_ids SET list_id = ${listId}::uuid WHERE id IN (${nodes})`);
+  await tx.execute(
+    sql`UPDATE documents SET project_id = ${await projectOfList(tx, list)}::uuid WHERE id IN (${nodes})`,
+  );
 }
 
 /**
@@ -444,10 +466,10 @@ export async function syncRows(
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
 
-  const open = [...(await openBranches(tx, list))];
-  const text = await pendingText(tx, open);
+  const kept = [...(await keptBranches(tx, list))];
+  const text = await pendingText(tx, kept);
   const drafted = new Map<string, Map<string, ProjectedRow>>();
-  for (const branchId of open)
+  for (const branchId of kept)
     if (text.has(branchId) || pendingRecords(doc, branchId).length > 0)
       drafted.set(branchId, shownRows(replayView(doc, { draft: branchId }, text.get(branchId))));
   await dropEndedSources(tx, [liveRows, ...drafted.values()]);
@@ -455,12 +477,13 @@ export async function syncRows(
     [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
   );
 
-  await insertDocumentRows(
-    tx,
-    await projectOfList(tx, list),
-    added,
-    (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
-  );
+  if (added.length > 0)
+    await insertDocumentRows(
+      tx,
+      await projectOfList(tx, list),
+      added,
+      (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
+    );
   const changed = await writeLive(tx, listId, liveRows, trashRecords(live));
   await testHook("treeList.afterLiveRows");
 

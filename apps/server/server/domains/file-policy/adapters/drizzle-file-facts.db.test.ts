@@ -133,10 +133,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reads lifecycle through Trash and Works", async () => {
       const db = database.current;
       await treeSeeder(db).store.submit({
-        list: await treeListOfSource(db, manuscript),
-        make: (writer) => {
+        lists: [await treeListOfSource(db, manuscript)],
+        make: ([{ writer }]) => {
           writer.delete(LIVE, "system", chapters);
-          return { records: [], result: null };
         },
       });
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));

@@ -72,8 +72,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** A live edit of a source's tree (move, rename), as a person's would be. */
     async function liveEdit(sourceId: string, edit: (writer: TreeWriter) => unknown) {
       await seeder.store.submit({
-        list: await treeListOfSource(db, sourceId),
-        make: (writer) => ({ records: [], result: edit(writer) }),
+        lists: [await treeListOfSource(db, sourceId)],
+        make: ([{ writer }]) => edit(writer),
       });
     }
     // A backend in this database blocked on a row lock (the save behind the archive).

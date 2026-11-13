@@ -18,7 +18,6 @@ import { createDrizzleBranchCommands } from "../../../../apps/server/server/doma
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
 import { createDrizzleBranchTreeActors } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-actors.ts";
 import { createDrizzleBranchTreeState } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-state.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
@@ -88,7 +87,7 @@ const fileAccess = createFileAccess({
   readAgentChain: async () => [],
 });
 const commands = createDrizzleBranchCommands(h.db);
-const { treeLists, removals } = createTestRemovalDeps(h.db);
+const { treeLists, removals, draftClose } = createTestRemovalDeps(h.db);
 const treeReader = createTreeReader(h.db);
 const branchTree = createDrizzleBranchTreeState(h.db, treeReader);
 
@@ -143,7 +142,7 @@ async function fixture(
     treeLists,
     tree: treeReader,
     branchTree,
-    close: createDraftClose(),
+    close: draftClose,
     onCommitted: async () => {},
     measured: (m) => measure.push(m),
   });
@@ -512,7 +511,7 @@ try {
     const discard = createDrizzleBranchDiscard(h.db, {
       workProjection: h.projection,
       branches: h.branches,
-      close: createDraftClose(),
+      close: draftClose,
       treeLists,
     });
     await discard.discardLocked({
@@ -735,10 +734,9 @@ try {
   /** Deletes the fixture's document live, as the tree's delete does: it goes to Trash. */
   async function deleteLive(f: Awaited<ReturnType<typeof fixture>>) {
     await treeLists.submit({
-      list: await treeListOfSource(h.db, h.ids.source),
-      make: (writer) => {
+      lists: [await treeListOfSource(h.db, h.ids.source)],
+      make: ([{ writer }]) => {
         writer.delete(LIVE, `user:${h.ids.user}`, f.documentId);
-        return { records: [], result: undefined };
       },
     });
   }

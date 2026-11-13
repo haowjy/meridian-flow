@@ -1,19 +1,12 @@
 /**
- * The import's reveal: one `submit` of `create` records for every planned node, in the
- * transaction that marks the import finished. The texts are already in the journal under the
+ * The import's reveal: one `submit` of `create` records for every planned node, named against
+ * the list as it stands at the reveal, in the transaction that marks the import finished. The texts are already in the journal under the
  * ids the nodes carry; the `documents` rows are written by the admission, like any create's.
  */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  type CreateRecord,
-  childrenOf,
-  LIVE,
-  sourceRoot,
-  type TreeRecordInput,
-} from "@meridian/project-tree";
+import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
-import { generateKeyBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { ensureProjectContextSource } from "../context-source-provisioning.js";
 import type { ContextImportReveal, ImportRevealNode } from "../ports/context-import-reveal.js";
@@ -54,30 +47,16 @@ export function createDrizzleContextImportReveal(deps: {
       }
 
       const { result: created } = await deps.tree.submit({
-        list: { kind: "project", projectId },
-        make(writer) {
-          const view = writer.view(LIVE);
-          const records: CreateRecord[] = [];
-          // A parent's record comes before its children's; the top level arrives after what the
-          // folder already holds, and a new folder's children rank in name order.
-          const place = (
-            kids: ImportRevealNode[],
-            parent: string,
-            source: string,
-            after: string | null,
-          ) => {
-            let last = after;
+        lists: [{ kind: "project", projectId }],
+        make: ([{ writer }]) => {
+          const inputs: CreateInput[] = [];
+          // A parent comes before its children; the top level arrives after what the folder
+          // already holds, a new folder's children in name order. The writer numbers each name
+          // against the list as it stands now, so a name taken since the plan is renumbered.
+          const place = (kids: ImportRevealNode[], parent: string, source: string) => {
             for (const node of kids.sort(byName)) {
-              last = generateKeyBetween(last, null);
-              const base = {
-                type: "create",
-                node: node.id,
-                name: node.name,
-                parent,
-                source,
-                rank: last,
-              } as const;
-              const input: TreeRecordInput =
+              const base = { node: node.id, name: node.name, parent };
+              inputs.push(
                 node.kind === "folder"
                   ? { ...base, kind: "folder" }
                   : node.kind === "file"
@@ -88,18 +67,17 @@ export function createDrizzleContextImportReveal(deps: {
                         filetype: node.filetype,
                         ...(node.aliases.length > 0 ? { aliases: node.aliases } : {}),
                         ...(node.properties ? { hasProperties: true as const } : {}),
-                      };
-              records.push(writer.author(LIVE, "system", input) as CreateRecord);
-              if (node.kind === "folder") place(inside.get(node.id) ?? [], node.id, source, null);
+                      },
+              );
+              if (node.kind === "folder") place(inside.get(node.id) ?? [], node.id, source);
             }
           };
           for (const [key, kids] of tops) {
             const [area, parentId] = JSON.parse(key) as [string, string | null];
             const source = sourceOf.get(area) as string;
-            const parent = parentId ?? sourceRoot(source);
-            place(kids, parent, source, childrenOf(view, parent).at(-1)?.rank ?? null);
+            place(kids, parentId ?? sourceRoot(source), source);
           }
-          return { records, result: records.map((record) => record.node) };
+          return writer.createAll(LIVE, "system", inputs).map((record) => record.node);
         },
       });
 

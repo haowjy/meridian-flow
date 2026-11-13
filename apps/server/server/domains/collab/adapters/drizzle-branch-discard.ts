@@ -42,7 +42,7 @@ import type { DraftClose } from "./drizzle-draft-close.js";
 type KernelDeps = {
   close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
-  treeLists: Pick<TreeListStore, "submit">;
+  treeLists: Pick<TreeListStore, "submit" | "resync">;
 };
 
 /**
@@ -63,10 +63,10 @@ async function discardTreeRecords(
   const had = new Set<DocumentId>();
   const created = new Set<DocumentId>();
   const by = input.userId ? `user:${input.userId}` : "system";
-  for (const list of await treeListsOfBranch(db, input.branchId)) {
-    const { result } = await deps.treeLists.submit({
-      list,
-      make: (writer) => {
+  const { result } = await deps.treeLists.submit({
+    lists: await treeListsOfBranch(db, input.branchId),
+    make: (copies) =>
+      copies.flatMap(({ writer }) => {
         const pending = pendingRecords(writer.doc, input.branchId);
         const items = input.documents;
         const only = items
@@ -86,17 +86,13 @@ async function discardTreeRecords(
             items ? only.map((r) => r.id) : undefined,
           ),
         );
-        return {
-          records: [],
-          result: pending.filter((record) => discarded.has(record.id)),
-        };
-      },
-    });
-    for (const record of result) {
-      had.add(record.node as DocumentId);
-      if (record.type === "create") created.add(record.node as DocumentId);
-      if (record.type === "delete") for (const id of record.cascade) had.add(id as DocumentId);
-    }
+        return pending.filter((record) => discarded.has(record.id));
+      }),
+  });
+  for (const record of result) {
+    had.add(record.node as DocumentId);
+    if (record.type === "create") created.add(record.node as DocumentId);
+    if (record.type === "delete") for (const id of record.cascade) had.add(id as DocumentId);
   }
   return { had, created };
 }
@@ -133,6 +129,8 @@ async function discardWholeLocked(
   await discardTreeRecords(db, deps, { ...input, commandId: input.commandId ?? newId() });
   await closeBranchDrafts(db, deps, input.branchId, "branch_closed");
   await deps.branches.close(input.branchId, new Date());
+  // The branch ended and its drafts closed: the rows of its view go.
+  await deps.treeLists.resync(await treeListsOfBranch(db, input.branchId));
   return { closed: [] };
 }
 

@@ -16,14 +16,14 @@ import {
 import { descendantsOf, LIVE, listRecords, settlementsOf } from "@meridian/project-tree";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import type * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
-import type { TreeList, TreeListStore } from "../ports/tree-list-store.js";
-import { pendingDocuments } from "./pending-documents.js";
+import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
 import { releaseDocumentContent } from "./release-document-content.js";
+import { retentionHolds } from "./retention-holds.js";
 import { loadDocumentAddresses } from "./tree-addresses.js";
 
 /** Documents released in one run: bounds how long one run holds the database. */
@@ -39,8 +39,17 @@ function projectTrashMember() {
       AND ${eq(sourceProjects.userId, requestProjects.userId)}))`;
 }
 
-/** A Work still has a change on the purge's nodes: the purge waits and its records are not kept. */
-class PurgeWaits extends Error {}
+/** An unsettled drafted record on one of the nodes, or one that creates or moves under them. */
+function unsettledOn(doc: Y.Doc, nodes: ReadonlySet<string>): boolean {
+  const settled = settlementsOf(doc);
+  return listRecords(doc).some(
+    (record) =>
+      record.draft !== null &&
+      !settled.has(record.id) &&
+      (nodes.has(record.node) ||
+        ((record.type === "create" || record.type === "move") && nodes.has(record.parent))),
+  );
+}
 
 type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
@@ -108,13 +117,11 @@ export function createDrizzleDocumentTrash(deps: {
       const pending = await tx.execute<{ document_id: string; id: string; name: string }>(sql`
         SELECT DISTINCT p.document_id::text,
                coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
-        FROM (${pendingDocuments(
-          sql`SELECT ${branches.id} FROM ${branches} WHERE ${branches.status} = 'active'`,
-        )}) p
+        FROM (${retentionHolds(ids)}) p
         JOIN ${branches} b ON b.id = p.branch_id
         LEFT JOIN ${works} w ON w.id = b.origin_work_id
         LEFT JOIN ${threads} t ON t.id = b.origin_root_thread_id
-        WHERE p.document_id IN (${sql.join(ids, sql`, `)}) AND (w.id IS NOT NULL OR t.id IS NOT NULL)
+        WHERE (w.id IS NOT NULL OR t.id IS NOT NULL)
         ORDER BY p.document_id::text, 3, 2
       `);
       for (const row of pending) {
@@ -186,48 +193,48 @@ export function createDrizzleDocumentTrash(deps: {
    * Empties one Trash entry: a `purge` record naming the delete, then the content of the
    * documents it took. The whole subtree goes in one submission (a folder purged while a child's
    * row stands fails the deferred foreign key). Null when the entry is not there, a node outside
-   * it stands inside it, or a Work still has a change on it: retention waits.
+   * it stands inside it, or a Work can still bring it back: retention waits.
+   *
+   * What holds a document is asked before the purge, under the list's key: the purge removes the
+   * rows the question reads. The first submission makes nothing (a read under the key, which the
+   * transaction keeps), the second purges.
    */
   async function purgeEntry(list: TreeList, deleteId: string): Promise<Released | null> {
     try {
       return await runInDrizzleTransaction(deps.db, async () => {
-        const { result } = await deps.tree.submit({
-          list,
-          make(writer) {
+        const { result: taken } = await deps.tree.submit({
+          lists: [list],
+          make: ([{ writer }]) => {
             const view = writer.view(LIVE);
             const entry = view.trash.find((each) => each.id === deleteId || each.from === deleteId);
-            if (!entry) return { records: [], result: null };
-            const taken = new Set([entry.node, ...entry.cascade]);
-            const standing = [...taken].some((id) =>
+            if (!entry) throw new TreeRefusal("gone");
+            const nodes = new Set([entry.node, ...entry.cascade]);
+            const standing = [...nodes].some((id) =>
               descendantsOf(view, id).some(
-                (below) => !taken.has(below) && !view.nodes.get(below)?.purged,
+                (below) => !nodes.has(below) && !view.nodes.get(below)?.purged,
               ),
             );
-            const settled = settlementsOf(writer.doc);
-            const changing = listRecords(writer.doc).some(
-              (record) =>
-                record.draft !== null &&
-                !settled.has(record.id) &&
-                (taken.has(record.node) ||
-                  ((record.type === "create" || record.type === "move") &&
-                    taken.has(record.parent))),
-            );
-            if (standing || changing) return { records: [], result: null };
-            writer.purge("system", { id: entry.id, node: entry.node });
+            if (standing || unsettledOn(writer.doc, nodes)) throw new TreeRefusal("held");
             return {
-              records: [],
-              result: [...taken].filter(
+              entry: { id: entry.id, node: entry.node },
+              documentIds: [...nodes].filter(
                 (id) => view.nodes.get(id)?.kind !== "folder",
               ) as DocumentId[],
             };
           },
         });
-        if (result === null) return null;
-        if ((await deps.drafts.settle(result)) === "pending") throw new PurgeWaits();
-        return release(result);
+        if ((await deps.drafts.settle(taken.documentIds)) === "pending")
+          throw new TreeRefusal("held");
+        await deps.tree.submit({
+          lists: [list],
+          make: ([{ writer }]) => {
+            writer.purge("system", taken.entry);
+          },
+        });
+        return release(taken.documentIds);
       });
     } catch (cause) {
-      if (cause instanceof PurgeWaits) return null;
+      if (cause instanceof TreeRefusal) return null;
       throw cause;
     }
   }
@@ -269,23 +276,37 @@ export function createDrizzleDocumentTrash(deps: {
    */
   async function purgeUnviewed(documentId: DocumentId, cutoff: Date): Promise<Released | null> {
     const tx = () => currentDrizzleDb(deps.db);
-    return runInDrizzleTransaction(deps.db, async () => {
-      const [owner] = await tx().execute<{ project: string; account: string }>(sql`
-        SELECT p.tree_list_id::text AS project, u.tree_list_id::text AS account
-        FROM documents d JOIN projects p ON p.id = d.project_id JOIN users u ON u.id = p.user_id
-        WHERE d.id = ${documentId}::uuid`);
-      if (!owner) return null;
-      for (const list of [...new Set([owner.project, owner.account])].sort())
-        await lockDocumentMutation(tx(), list);
-      const [still] = await tx()
-        .select({ id: documents.id })
-        .from(documents)
-        .where(and(eq(documents.id, documentId), unviewedBefore(cutoff)))
-        .limit(1);
-      if (!still) return null;
-      if ((await deps.drafts.settle([documentId])) === "pending") return null;
-      return release([documentId]);
-    });
+    try {
+      return await runInDrizzleTransaction(deps.db, async () => {
+        const [owner] = await tx().execute<{ project: string; user: string }>(sql`
+          SELECT p.id::text AS project, p.user_id::text AS "user"
+          FROM documents d JOIN projects p ON p.id = d.project_id
+          WHERE d.id = ${documentId}::uuid`);
+        if (!owner) return null;
+        // Both lists that can reshow it, under their keys: a read of what is still unsettled.
+        await deps.tree.submit({
+          lists: [
+            { kind: "project", projectId: owner.project },
+            { kind: "account", userId: owner.user },
+          ],
+          make: (copies) => {
+            if (copies.some(({ writer }) => unsettledOn(writer.doc, new Set([documentId]))))
+              throw new TreeRefusal("held");
+          },
+        });
+        const [still] = await tx()
+          .select({ id: documents.id })
+          .from(documents)
+          .where(and(eq(documents.id, documentId), unviewedBefore(cutoff)))
+          .limit(1);
+        if (!still) return null;
+        if ((await deps.drafts.settle([documentId])) === "pending") return null;
+        return release([documentId]);
+      });
+    } catch (cause) {
+      if (cause instanceof TreeRefusal) return null;
+      throw cause;
+    }
   }
 
   function unviewedBefore(cutoff: Date) {

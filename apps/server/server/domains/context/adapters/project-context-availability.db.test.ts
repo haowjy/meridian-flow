@@ -111,10 +111,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** Puts the nodes in Trash through the one writer of the tree. */
     async function trash(db: Database, sourceId: string, ...ids: string[]) {
       await treeSeeder(db).store.submit({
-        list: await treeListOfSource(db, sourceId),
-        make: (writer) => {
+        lists: [await treeListOfSource(db, sourceId)],
+        make: ([{ writer }]) => {
           for (const id of ids) writer.delete(LIVE, "system", id);
-          return { records: [], result: null };
         },
       });
     }

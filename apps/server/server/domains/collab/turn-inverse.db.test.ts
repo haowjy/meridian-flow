@@ -61,8 +61,8 @@ it("a document in no view (deleted after its edit) does not stop another documen
     await harness.commit(responseId);
     // BETA leaves every view; its edit rows stay.
     await treeSeeder(db).store.submit({
-      list: await treeListOfSource(db, SOURCE_ID),
-      make: (writer) => ({ records: [], result: writer.delete(LIVE, "system", BETA_ID) }),
+      lists: [await treeListOfSource(db, SOURCE_ID)],
+      make: ([{ writer }]) => writer.delete(LIVE, "system", BETA_ID),
     });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",

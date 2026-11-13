@@ -58,8 +58,8 @@ import { readResolvedDraft } from "./test-support/draft-store-seam.js";
 /** A live edit of the tree (rename, delete), as a person's would be. */
 async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
   await treeSeeder(db).store.submit({
-    list: await treeListOfSource(db, SOURCE_ID),
-    make: (writer) => ({ records: [], result: edit(writer) }),
+    lists: [await treeListOfSource(db, SOURCE_ID)],
+    make: ([{ writer }]) => edit(writer),
   });
 }
 
