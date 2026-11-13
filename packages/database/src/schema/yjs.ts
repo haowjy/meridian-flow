@@ -364,7 +364,7 @@ export const branchCommands = pgTable(
   (table) => [
     check(
       "branch_commands_kind_valid",
-      sql`${table.kind} IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
+      sql`${table.kind} IN ('apply_click', 'unapply_click', 'discard_items', 'discard_branch')`,
     ),
     check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
     check(

@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   // freshly migrated template. CI clones them from the database its workflow
   // already migrated, on the runner's own Postgres; 3 rather than 4 because a
   // 4-core runner also hosts Postgres, and 4 workers peaked near the 4GB
-  // memory ceiling. A clone costs under 0.1s against ~2s for the migration chain.
+  // memory ceiling. A clone costs under 0.1s against ~2s for the baseline.
   const ci = !local && isCiRunnerPostgres(databaseUrl);
   const workerCount = Number(process.env.DB_TEST_WORKERS ?? (local ? "4" : ci ? "3" : "1"));
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {

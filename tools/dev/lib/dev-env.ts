@@ -9,13 +9,10 @@ export interface DevDatabase {
   readonly envVar: string;
   readonly migrateScript: string;
   readonly label: string;
-  readonly extensions?: readonly string[];
   /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
   readonly migrationsDir?: string;
   /** Command shown when the DB can catch up by applying unapplied migrations. */
   readonly catchUpHint?: string;
-  /** Command shown when applied migrations diverged from the repo baseline. */
-  readonly resetHint?: string;
 }
 
 /**
@@ -29,10 +26,8 @@ export const DEV_DATABASES: readonly DevDatabase[] = [
     envVar: "DATABASE_URL",
     migrateScript: "pnpm db:migrate",
     label: "Meridian local Postgres",
-    extensions: ["pg_trgm"],
     migrationsDir: "packages/database/src/migrations",
     catchUpHint: "pnpm db:migrate",
-    resetHint: "pnpm db:reset",
   },
 ];
 
@@ -91,11 +86,7 @@ function databaseNameFromUrl(databaseUrl: string): string {
 
 /** Build the per-worktree Postgres database name from the main-checkout base name. */
 export function resolveWorktreeDatabaseName(baseDbName: string, slug: string): string {
-  if (
-    slug.startsWith("test-run-") ||
-    slug.startsWith("test-manual-") ||
-    slug.startsWith("migrations_")
-  ) {
+  if (slug.startsWith("test-run-") || slug.startsWith("test-manual-")) {
     throw new Error(`Worktree database slug uses a reserved test namespace: ${slug}`);
   }
   const name = `${baseDbName}_${slug}`;

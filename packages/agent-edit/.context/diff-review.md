@@ -2,7 +2,7 @@
 
 `src/diff/` is the pure text model behind draft review, content Apply, local Discard
 and the live rebase. It depends on ProseMirror and Yjs only, so the browser, server
-and migrations import the same functions and agree on what a draft has changed. The
+import the same functions and agree on what a draft has changed. The
 product rules are in [diff-based review][review], [change authors][authors] and
 [review cost][cost]; this page holds the mechanics they don't state.
 

@@ -54,8 +54,6 @@ export type UserId = string;
 export const asUserId = (s: string) => s as UserId;
 export type DocumentRestorePointId = string;
 export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePointId;
-export type TurnDocumentTouchId = string;
-export const asTurnDocumentTouchId = (s: string) => s as TurnDocumentTouchId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
 /** Identity held by one durable document authority head across its fenced generations. */

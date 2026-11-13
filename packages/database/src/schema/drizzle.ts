@@ -13,7 +13,6 @@ export * from "./context-operation-receipts";
 export * from "./context-staging";
 export * from "./document-edits";
 export * from "./imports";
-export * from "./provenance";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";

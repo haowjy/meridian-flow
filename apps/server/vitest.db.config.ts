@@ -67,7 +67,6 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
   "apps/server/server/domains/context/tree/folder-normalization.db.test.ts",
-  "apps/server/server/domains/context/tree/ordered-folders-migration.db.test.ts",
   "apps/server/server/domains/context/tree/hidden-nodes.db.test.ts",
   "apps/server/server/domains/context/tree/live-identity-observations.db.test.ts",
   "apps/server/server/domains/context/tree/live-surfaces.db.test.ts",
@@ -132,8 +131,6 @@ const expectedSuites = [
   "apps/server/server/shared/drizzle-transaction.db.test.ts",
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
-  "packages/database/src/migrations/0107_grep_tool_rename.db.test.ts",
-  "packages/database/src/fresh-migrations.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {

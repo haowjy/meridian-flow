@@ -81,7 +81,7 @@ import type {
 } from "../../ports/context-tree-mutation-store.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
-import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
+import { BoundWrites, binaryTrackedWriteFault } from "./bound-writes.js";
 import { createContextFsCopyAdapter } from "./copy-adapter.js";
 import {
   AMBIGUOUS_PATH_FAULT,
@@ -700,11 +700,9 @@ export class ContextFS implements ContextSchemeAdapter {
         continue;
       }
       const doc = sibling.document;
-      const trackedSchema =
-        doc.fileType === null
-          ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
-          : null;
-      if (trackedSchema && !trackedSchema.ok) return trackedSchema;
+      const ref = fileRefOf(doc, joinPath(path, renderFilename(doc.name, doc.extension)));
+      if (!ref.ok) return ref;
+      const file = ref.value;
       entries.push({
         path: joinPath(path, renderFilename(doc.name, doc.extension)),
         kind: "file",
@@ -712,19 +710,19 @@ export class ContextFS implements ContextSchemeAdapter {
         sizeBytes: doc.sizeBytes ?? undefined,
         updatedAt: doc.updatedAt,
         provisionalName: doc.provisionalName,
-        ...(doc.fileType === null
+        ...(file.kind === "tracked"
           ? {
               editable: true as const,
-              filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType: trackedSchema?.value ?? "document",
+              filetype: file.filetype,
+              schemaType: file.schemaType,
               ...(wordCounts.has(doc.id as DocumentId)
                 ? { wordCount: wordCounts.get(doc.id as DocumentId) }
                 : {}),
             }
           : {
               editable: false as const,
-              fileType: doc.fileType,
-              mimeType: doc.mimeType ?? undefined,
+              fileType: file.fileType,
+              mimeType: file.mimeType,
             }),
       });
     }

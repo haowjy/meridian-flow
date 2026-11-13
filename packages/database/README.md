@@ -2,16 +2,17 @@
 
 Drizzle schema and migrations for the v3 Meridian Postgres database (Docker container in dev: `postgres:16` plus pg_bigm, `tools/postgres/Dockerfile`).
 
-**Schema spec:** v3-fullstack-rebuild work dir `schema/` + `specs/` (see `meridian work current`; repo mirror at `.meridian/context/orange-channel-vale/work/v3-fullstack-rebuild/`).
+Schema definitions live in [src/schema](src/schema); behavior crossing the schema
+and adapters is documented in [the database contract](.context/CONTEXT.md).
 
 ## Commands
 
-From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
+From repo root. Follow [development setup](../../DEVELOPMENT.md) for the main
+`.env` and checkout-scoped database; `db:generate` itself needs no database connection:
 
 ```bash
-pnpm db:migrate          # apply pending migrations and sync SQL functions
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ after editing functions
-pnpm db:generate         # drizzle-kit generate (review output)
+pnpm db:migrate          # install the baseline (refuses a different installed baseline)
+pnpm db:generate         # regenerate the baseline from schema and SQL inputs
 pnpm db:studio
 ```
 
@@ -23,10 +24,10 @@ From this package:
 
 ```bash
 pnpm typecheck
-pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
+pnpm test   # non-DB tests; use pnpm test:db from the repo root for DB coverage
 ```
 
-**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then migrate + apply functions).
+**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then install baseline).
 
 ## Auth boundary
 
@@ -40,7 +41,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 |--------|------|
 | `input_tokens` / `output_tokens` | Headline totals (queryable) |
 | `usage_breakdown` | Nullable JSONB with DB default `'{}'`; omit only when usage is unknown |
-| `response_metadata` | Audit only; rows from before the `provider_request_id` drop (0113) may carry `providerRequestId`, the provider's generation ID |
+| `response_metadata` | Audit metadata from the provider |
 | `price_source` | `computed` or `unknown` (usage missing); default `computed` |
 | `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
@@ -49,10 +50,10 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ## Billing
 
 - **Engine:** `credit_lots` (grant, subscription, purchase, debt), FIFO via `consume_credit_lots_fifo`, balances computed directly from `credit_lots`.
-- **Pricing source:** Rates are single-sourced from the gateway's `MODEL_REGISTRY` (see `apps/server/server/domains/runtime/gateway/config/registry.ts`). The flat `MODEL_TOKEN_RATES` table is **deleted**. Every provider uses pinned rates.
+- **Pricing source:** Rates are single-sourced from the gateway's `MODEL_REGISTRY` (see `apps/server/server/domains/runtime/gateway/config/registry.ts`). Every provider uses pinned rates.
 - **Idempotency:** `usage_event_id` is **required** (non-empty); enforced in SQL under advisory lock (no unique index — multi-lot debits per turn).
-- **Overspend:** remainder goes to a single `source_type = 'debt'` lot per user (never `grant` + `overspend_debt`).
+- **Overspend:** remainder goes to a single `source_type = 'debt'` lot per user.
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
-- **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
+- **Tests:** `pnpm test:db` creates owned temporary databases, runs the DB suites and cleans them up. It never uses your dev database as a fixture.
 
-Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` reapplies functions after migrations, and `db:apply-functions` keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.
+Schema changes before the first deploy with retained data follow [the baseline rule](AGENTS.md).

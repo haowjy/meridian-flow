@@ -1,1 +1,0 @@
-ALTER TABLE "thread_run_leases" ADD COLUMN "current_tool" jsonb;

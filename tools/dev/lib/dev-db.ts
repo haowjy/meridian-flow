@@ -1,5 +1,4 @@
 import postgres from "postgres";
-import { readAppliedMigrations as readAppliedMigrationsWithSql } from "./migration-history";
 
 /** Host port mapped in tools/dev/docker-compose.yml (tools/postgres image → 54422). */
 export const LOCAL_DEV_POSTGRES_PORT = 54422;
@@ -46,12 +45,6 @@ export function isReservedDatabase(name: string, mainDbNames: Iterable<string>):
   return false;
 }
 
-function validateExtensionName(name: string): void {
-  if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
-    throw new Error(`Refusing to create extension with unsafe name: ${name || "<empty>"}`);
-  }
-}
-
 function parsePostgresPort(databaseUrl: string): number {
   const port = new URL(databaseUrl).port;
   return port ? Number.parseInt(port, 10) : 5432;
@@ -91,22 +84,6 @@ export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
   try {
     await sql`SELECT 1`;
-  } finally {
-    await sql.end();
-  }
-}
-
-/**
- * Read applied drizzle migration identities (oldest first). Returns `null` when the
- * `drizzle.__drizzle_migrations` table does not exist, i.e. the database was
- * never migrated — callers distinguish that from an up-to-date empty result.
- */
-export async function readAppliedMigrations(
-  databaseUrl: string,
-): ReturnType<typeof readAppliedMigrationsWithSql> {
-  const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
-  try {
-    return await readAppliedMigrationsWithSql(sql);
   } finally {
     await sql.end();
   }
@@ -221,7 +198,7 @@ export function isCiRunnerPostgres(databaseUrl: string): boolean {
   }
 }
 
-/** Clone a migrated test database without replaying the migration chain. */
+/** Clone a migrated test database without replaying the baseline. */
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
@@ -244,22 +221,6 @@ export async function cloneDatabaseForUrl(
     return { targetDb: target.targetDb };
   } finally {
     await adminSql.end();
-  }
-}
-
-export async function ensureExtensionsForUrl(
-  databaseUrl: string,
-  extensions: readonly string[],
-): Promise<void> {
-  if (extensions.length === 0) return;
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    for (const extension of extensions) {
-      validateExtensionName(extension);
-      await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS "${extension}"`);
-    }
-  } finally {
-    await sql.end();
   }
 }
 

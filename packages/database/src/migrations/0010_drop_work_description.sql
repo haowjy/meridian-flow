@@ -1,1 +1,0 @@
-ALTER TABLE "works" DROP COLUMN "description"; -- migration-lint: skip DROP_COLUMN (no deployed data; every read removed in the same change)

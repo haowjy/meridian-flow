@@ -372,6 +372,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "pdf",
           fileType: "pdf",
           storageUrl: "s3://binary",
+          mimeType: "application/pdf",
         },
         {
           id: customId,

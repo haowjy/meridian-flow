@@ -87,7 +87,7 @@ export async function handleContextReadRequest(
       throw createError({ statusCode: 404, message: "Context path not found" });
     throw createError({ statusCode: 502, message: "Failed to resolve context file URL" });
   }
-  const mimeType = ref.value.mimeType ?? "application/octet-stream";
+  const mimeType = ref.value.mimeType;
   const drawKey = drawObjectKey({ key, mimeType, hasPreview: ref.value.hasPreview ?? false });
   // A missing or unsignable preview leaves the file card, which the original's URL still serves.
   const drawUrl =

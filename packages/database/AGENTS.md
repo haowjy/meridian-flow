@@ -1,30 +1,33 @@
 # @meridian/database
 
-The Drizzle schema, migrations, SQL functions and Postgres connection factory.
-No business logic and no ambient transaction context: domain persistence and
-transaction propagation live in the server.
+The Drizzle schema, baseline SQL and Postgres connection factory. Domain persistence
+and transaction propagation live in the server, not here.
 
-## Rules
+## Before the first deploy with retained data
 
-- The schema stays ordinary Postgres. Identity is the app-owned `public.users`,
-  keyed by WorkOS `external_id`; provider-specific auth stays at the adapter
-  and composition boundary.
-- Schema-shaped DDL comes from `db:generate`; write a migration by hand only for
-  behavior Drizzle cannot model. Keep journals and snapshots tracked.
-- Until the first deploy with data worth keeping, no stored data is kept. Write a migration
-  for empty tables: no backfills, no repairs of old rows, no `NOT VALID` or concurrent
-  steps, no readers kept for old shapes; dev data is wiped with `pnpm db:reset`. The
-  migration history check still refuses edits to merged migrations, so append one until all
-  of them are replaced by one baseline; after that a schema change edits the baseline. The
-  first deploy brings back frozen history and migrations written for populated tables.
-- `db:migrate` owns migration application and function sync; run the guarded
-  `db:apply-functions` alone only when function sync is the whole operation.
-  Divergent applied history is a refusal, not a skip.
-- Reset only the current checkout's own database.
-- Application repositories and projectors maintain rollup columns; the thread
-  activity projection is the one trigger-maintained rollup. Triggers on draft
-  journal and edit-receipt inserts run inside a writer keystroke's row lock:
-  keep them cheap, with JIT off.
+No stored data is kept until the first deploy with data worth keeping, so a schema
+change never carries a backfill or a repair of old rows.
 
-Yjs head and checkpoint relationships, immutable edit storage and the trigger
-details: [`.context/CONTEXT.md`](.context/CONTEXT.md).
+- There is one migration: `src/migrations/0000_baseline.sql`. Edit
+  `src/schema/` and regenerate with `pnpm db:generate`; never edit generated SQL,
+  its journal or snapshot by hand. SQL Drizzle cannot model lives in
+  `src/schema/sql/`; reusable function definitions live in `src/functions/`.
+  The generator includes both in the baseline.
+- When parallel branches change the schema, resolve the schema files, discard
+  conflicts in the three generated migration files, and run `pnpm db:generate`
+  again. Do not combine migration SQL. A second generation must leave no diff.
+- Run `pnpm db:reset` to wipe and rebuild this checkout's dev database.
+  Clear this app origin's browser storage too: old IndexedDB state can restore
+  documents from before the reset. Never reset another checkout or a deployment.
+- At the first deploy with data worth keeping, freeze the baseline and restore
+  append-only migration generation, history checks and populated-table migration
+  lint before the next schema change. The deployment owner follows
+  [the deployment transition](../../docs/deploy/README.md).
+
+Identity is app-owned `public.users`, keyed by WorkOS `external_id`.
+Provider-specific auth stays at the adapter and composition boundary.
+Application repositories maintain rollups except for thread activity, which is
+trigger-maintained.
+
+Yjs storage, immutable receipts and other contracts:
+[`.context/CONTEXT.md`](.context/CONTEXT.md).

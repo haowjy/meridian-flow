@@ -81,7 +81,7 @@ One schema per HTTP response. A chat's run state is one versioned record, always
 
 The Drizzle schema and the migrations.
 
-Plain Postgres with no business logic. Merged migrations are frozen: append, never edit or renumber.
+Plain Postgres with no business logic. Before the first deploy with retained data, regenerate one baseline from schema and custom SQL; reset local data after schema changes.
 
 - Kind: package
 - Paths: `packages/database/src`
