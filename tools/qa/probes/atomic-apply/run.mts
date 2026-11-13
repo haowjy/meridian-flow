@@ -1,6 +1,7 @@
 /** Apply API-core probes over a scratch Postgres and the production command/append adapters. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type { BranchId } from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -168,6 +169,8 @@ async function fixture(
         applyClick: service.apply,
         unapplyClick: service.unapply,
         resolveItemByDocument: identity.resolveReviewItemByDocument,
+        resolveItemInBranch: identity.resolveReviewItemInBranch,
+        branchOwner: (branchId: BranchId) => h.branches.ownerOf(branchId),
         lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
       },
       roomRemoval: async ({ documentId }: { documentId: string }) => {
@@ -986,14 +989,15 @@ try {
     const click = f.click();
     assert.equal(click.request.groupIds.length, 2);
     await applied(f, click);
-    await f.liveWrite(["The very big cat sat.", "The small dog slept."]);
+    // Text typed after the applied text depends on it; text typed before it does not (#1309).
+    await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     if (answer.status === "unapplied") {
       assert.equal(answer.reversedGroupIds.length, 1);
       assert.equal(answer.skippedGroupIds.length, 1);
     }
-    assert.deepEqual(await f.liveText(), ["The very big cat sat.", "The dog slept."]);
+    assert.deepEqual(await f.liveText(), ["The big very cat sat.", "The dog slept."]);
     const durable = await f.durable();
     assert.equal(readApplyRecord(durable).length, 1);
     durable.destroy();

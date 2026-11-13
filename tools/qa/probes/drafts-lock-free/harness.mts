@@ -26,11 +26,7 @@ import { createWorkProjectionMutation } from "../../../../apps/server/server/dom
 import { createDrizzleWorkRepository } from "../../../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { runInDrizzleSavepoint } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.js";
-import {
-  dropDatabaseForUrl,
-  ensureDatabaseForUrl,
-  LOCAL_DEV_POSTGRES_PORT,
-} from "../../../dev/lib/dev-db.ts";
+import { isCiRunnerPostgres, LOCAL_DEV_POSTGRES_PORT } from "../../../dev/lib/dev-db.ts";
 import { resolveCurrentRepoRoot } from "../../../dev/lib/dev-env.ts";
 import { runMigrations } from "../../../dev/lib/migration-runner.ts";
 
@@ -52,16 +48,43 @@ export type Probe = {
 
 export type Harness = Awaited<ReturnType<typeof openHarness>>;
 
-/** A scratch database on the local dev Postgres: created, migrated, and dropped by `drop`. */
+/**
+ * A scratch database: created, migrated, and dropped by `drop`. It lives on a CI runner's own
+ * Postgres (`DATABASE_URL`) or else the local dev one. The `lfd_probe_` prefix is the only guard
+ * on what the drop touches.
+ */
 export async function createScratchDatabase(): Promise<{ url: string; drop(): Promise<void> }> {
+  const { DATABASE_URL } = process.env;
+  const server = new URL(
+    DATABASE_URL && isCiRunnerPostgres(DATABASE_URL)
+      ? DATABASE_URL
+      : `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/postgres`,
+  );
   const name = `${SCRATCH_PREFIX}${process.pid}_${Date.now().toString(36)}`;
-  const url = `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/${name}`;
-  await ensureDatabaseForUrl(url);
-  await runMigrations({
-    databaseUrl: url,
-    migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
-  });
-  return { url, drop: () => dropDatabaseForUrl(url, []).then(() => undefined) };
+  const admin = postgres(server.href, { max: 1 });
+  const url = new URL(server);
+  url.pathname = `/${name}`;
+  try {
+    await admin.unsafe(`CREATE DATABASE "${name}"`);
+    await runMigrations({
+      databaseUrl: url.href,
+      migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
+    });
+  } catch (error) {
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    await admin.end();
+    throw error;
+  }
+  return {
+    url: url.href,
+    drop: async () => {
+      try {
+        await admin.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      } finally {
+        await admin.end();
+      }
+    },
+  };
 }
 
 /** The production adapters over `url`, with the project-level rows every probe shares. */

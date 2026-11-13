@@ -3,7 +3,8 @@
 These probes keep the failure seams of [lock-free drafts][lock-free]
 reproducible. Each runs production collab and Work adapters against a scratch
 database, drives one exact PostgreSQL interleaving, and asserts the durable
-outcome and observed locks. They are not part of `pnpm test:all`.
+outcome and observed locks. CI runs them after the DB suite (`pnpm test:probes`, see
+[the probe index](../../../../../../docs/qa/README.md#script-backed-checks)); they are not part of `pnpm test:all`.
 
 ## Run
 
@@ -12,7 +13,7 @@ pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts
 pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts f1-inverse-grant d23-archived-draft-rebases
 ```
 
-The runner creates `lfd_probe_<pid>_<stamp>` on local dev Postgres, applies the
+The runner creates `lfd_probe_<pid>_<stamp>` on local dev Postgres (or a CI runner's own), applies the
 committed migrations, runs probes in order, and drops the database. `--keep`
 leaves it for inspection; `--db <url>` reuses a migrated `lfd_probe_*` database.
 Each probe prints its observations and `PASS` or `FAIL`; the exit code is the
@@ -42,9 +43,9 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `append-novelty` | Novelty, receipts, and authorship are judged under the row lock. | Run contained, resend, prefix-missing, restoration, empty-part, transient-delete, and `4207` arms through the coordinator and gateway. |
 | `append-rollback-scope` | A contained or prefix-missing append rolls back only its savepoint. | Resend at the root and inside an ambient transaction, then try an unknown-clock delete. |
 | `archive-in-flight-append` | Only a key whose post-lock read preceded Archive can land. | Hold a frame while Archive runs, queue a second frame, then send a post-Archive frame. |
-| `effect-projection` | The pending badge follows appends through the projection job. | Type, delete all, stage Apply, type again, and type from two processes during one debounce. |
+| `effect-projection` | The pending badge follows appends through the projection job. | Type, delete all, type from two processes during one debounce, and close a draft under `lockWorks` alone. A key after Apply staging is no longer an arm: frozen Apply left no row status to flip membership under an unchanged `has_effect`. |
 | `effect-watermark-sweep` | The watermark repairs stale judgements in a finite sweep. | Sweep an unjobbed key, a compaction, and 51 stale drafts while one Work is held. |
-| `client-resync` | A draft tab reconnects without terminal resync failure. | Drop sockets around a held append, partial acknowledgement, server restart, offline reload, and a raw dependent update. |
+| `client-resync` | A draft tab reconnects without terminal resync failure. | Drop sockets around a held append, partial acknowledgement, server restart, offline reload, and a raw dependent update built from the draft's own durable state (a draft's seed is not under live's client id). |
 
 The former Work-first pull and pull-recapture probes are retired: Work rebases
 are unfenced server appends. Work-draft fixtures persist live edits through the

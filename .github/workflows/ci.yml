@@ -179,6 +179,9 @@ jobs:
         run: pnpm db:check-extensions
       - name: Run required DB suites
         run: pnpm test:db
+      # Self-contained probes (tools/qa/probes/*/run.mts): they make and drop their own database.
+      - name: Run database probes
+        run: pnpm test:probes
 
   app-dev-transform:
     name: app-dev-transform
