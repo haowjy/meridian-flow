@@ -216,10 +216,7 @@ export type DraftMetadataResponse =
 export const BRANCH_COMMAND_KINDS = [
   "apply_click",
   "unapply_click",
-  "apply_items",
-  "apply_changes",
   "discard_items",
-  "discard_changes",
   "discard_branch",
 ] as const;
 export type BranchCommandKind = (typeof BRANCH_COMMAND_KINDS)[number];

@@ -225,7 +225,7 @@ export type BinaryFileEntry = BaseListEntry & {
   kind: "file";
   editable: false;
   fileType: DocumentFileType;
-  mimeType?: string;
+  mimeType: string;
 };
 
 export type DirectoryEntry = BaseListEntry & { kind: "directory" };
@@ -277,8 +277,8 @@ export interface BinaryFileRef extends BaseFileRef {
   extension: string;
   /** Stable object-store reference for storage-backed files. */
   storageUrl: string;
-  /** Persisted MIME type for the stored object, when known. */
-  mimeType?: string;
+  /** Persisted MIME type for the stored object. */
+  mimeType: string;
   /** A browser-drawable preview is stored beside the object (`previewObjectKey`). */
   hasPreview?: boolean;
 }

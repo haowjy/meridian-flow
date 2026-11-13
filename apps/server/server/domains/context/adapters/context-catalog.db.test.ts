@@ -262,6 +262,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "note",
           fileType: "notebook",
           storageUrl: "s3://research",
+          mimeType: "application/x-ipynb+json",
         },
       ]);
       const catalog = createDrizzleContextCatalog(db);

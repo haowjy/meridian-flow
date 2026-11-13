@@ -60,7 +60,6 @@ export * from "./event-seq.js";
 export * from "./file-access.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
-export * from "./legacy-namespace-names.js";
 export * from "./paths.js";
 export * from "./recent-documents.js";
 export * from "./run-boundary.js";

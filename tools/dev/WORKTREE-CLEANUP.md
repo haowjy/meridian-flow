@@ -16,7 +16,7 @@ bare force override.
   nothing left contains the commit, and the branch had no PR of its own.
   Squashing discards the ancestor relationship entirely, for every branch that
   fed it.
-- The branch merged before this repo's migration-history guard or some other
+- The branch merged before a required check was added or some other
   check existed, leaving no CI record.
 - Any other case where you can reconstruct the merge from history, but the
   tool's two proof paths don't reach it.

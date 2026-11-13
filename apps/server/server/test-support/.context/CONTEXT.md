@@ -16,15 +16,6 @@ own work through `collab.lifecycle.dispose`, which a harness awaits before
 resetting rows, so running work cannot deadlock against the reset's locks. See
 [collab's CONTEXT.md](../../domains/collab/.context/CONTEXT.md).
 
-## Populated-upgrade proofs
-
-The proof (seed the old schema, run the new migration, check the data) is a
-recipe in `docs/qa/`, such as `document-removal-records.md`.
-`packages/database/src/fresh-migrations.db.test.ts` replays a few migrations
-(0113, 0114, 0131). The TypeScript that reads rows is not frozen: see
-`../../domains/threads/adapters/drizzle/turn-position.db.test.ts` for a
-current-schema case over an old-shaped row.
-
 ## Branch-tree suites
 
 One world per case. `branch-tree-seeds.ts` writes rows the way the product leaves

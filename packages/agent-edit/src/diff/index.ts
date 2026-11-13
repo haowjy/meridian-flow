@@ -28,11 +28,7 @@ export {
   type SpanPatchError,
   validateSpanPatches,
 } from "./compose.js";
-export {
-  convertLegacyDraft,
-  DRAFT_SERVER_CLIENT_ID,
-  type LegacyDraftConversion,
-} from "./draft-base.js";
+export { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
 export { blocksEqual } from "./equal.js";
 export { REVIEW_BASE_FRAGMENT, readBlocks } from "./fragments.js";
 export { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";

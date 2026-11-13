@@ -12,7 +12,6 @@ export type {
   ThreadId,
   TurnBlockId as BlockId,
   TurnBlockId,
-  TurnDocumentTouchId,
   TurnId,
   UserId,
   UserSubscriptionId,

@@ -33,8 +33,5 @@ DB suites share a worker module cache and an owned database clone. Depth:
   notification that proves it ran.
 - Hoist an immutable large fixture to `beforeAll` only when each case restores its
   mutations. Keep query-plan fixtures large enough for their stated plan contract.
-- After a migration merges, `pnpm db:migration-history` refuses edits to it, so add
-  no test that replays it over populated data. The one-time populated-upgrade
-  proof runs before the merge, as a recipe in `docs/qa/`. When a migration leaves
-  old rows in a state new rows never reach, keep a current-schema DB case that
-  seeds such a row and asserts what the reader returns.
+- Before the first deploy, fixtures use the current baseline. Do not replay
+  retired migrations or keep fixtures for data no current writer can create.

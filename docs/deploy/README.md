@@ -49,16 +49,14 @@ Auth is WorkOS AuthKit with `public.users` as the identity table.
 
 ```bash
 pnpm --filter @meridian/database db:migrate
-pnpm --filter @meridian/database db:apply-functions
 ```
 
 ### Production Postgres needs the pg_bigm image
 
 Writer project search ([#1173](https://github.com/haowjy/meridian-flow/issues/1173)) indexes
 block text with the pg_bigm extension, which stock `postgres:16` and Railway's default Postgres
-lack. The release whose migration runs `CREATE EXTENSION pg_bigm` fails on a host without it,
-so switch the production Postgres service to an image built from `tools/postgres/Dockerfile`
-before that release deploys. Releases before it run on either image.
+lack. The baseline requires it. Before installing any release, use an image built
+from `tools/postgres/Dockerfile` and confirm the extensions below are available.
 
 1. **Back up first.** Take a dump or a platform snapshot of the database you can restore from.
 2. **Build and publish the image.** Railway pulls a database image from a registry, so push
@@ -78,16 +76,18 @@ Dev and CI already run pg_bigm: dev builds the same Dockerfile (`pnpm dev:infra:
 an existing dev container onto it), and CI installs it on the runner's Postgres.
 `pnpm db:check-extensions` checks that an index on it is used.
 
-Some migrations require every application writer stopped while they run. Their
-header comment says so, and `packages/database/.context/CONTEXT.md` explains
-why. For those releases: stop all app servers and workers, let open transactions
-drain, run both commands above, then start the new release. If a migration fails,
-fix the cause and rerun it with writers still stopped; never restart the old
-release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
-(draft review conversion), 0082–0083 (owner handles), 0090–0092 (branch
-tree ownership), 0111–0112 (multi-question asks), 0113–0114 (unused pricing fields:
-the old release reads and writes the dropped column), 0125–0126 (folder document alias; upload intake columns), 0129 (`push_lineage` and
-connector columns), 0130 (ordered folders) and 0131 (No Work branches).
+Before the first deploy with retained data, the baseline builds only an empty
+database. It refuses an older or different installed baseline; it never wipes
+data. If an existing deployment has a different baseline, stop and ask the owner
+whether its data must be retained. A reset destroys every app row, including
+documents and chats; it is allowed only with the owner's explicit approval. At the first deploy
+with data worth keeping, freeze the baseline and restore incremental migration
+generation, history checks and populated-table lint before any later schema
+change. “Freeze” means no deployed SQL or metadata may be rewritten: generation
+must append a new migration and CI must reject edits to applied history.
+The deployment owner makes that transition and proves an incremental upgrade
+against a populated fixture before accepting data worth keeping. See
+[database guidance](../../packages/database/AGENTS.md).
 
 ## Environment variables
 

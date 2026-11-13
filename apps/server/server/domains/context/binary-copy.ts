@@ -44,8 +44,14 @@ export interface PreparedBinaryCopy {
 /** Duplicate a binary's stored bytes for a destination that does not exist yet. */
 export async function prepareBinaryCopy(input: {
   objectStore: ObjectStorePort;
-  source: Pick<BinaryFileRef, "uri" | "storageUrl" | "mimeType" | "hasPreview">;
+  source: Pick<BinaryFileRef, "uri" | "hasPreview"> & {
+    storageUrl: string | null;
+    mimeType: string | null;
+  };
 }): Promise<Result<PreparedBinaryCopy, ContextError>> {
+  if (!input.source.storageUrl || !input.source.mimeType) {
+    return ioError(input.source.uri, "The source file has no stored object or MIME type.");
+  }
   const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
   if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
   const key = `copies/${crypto.randomUUID()}`;
@@ -60,7 +66,7 @@ export async function prepareBinaryCopy(input: {
     value: {
       storageUrl: copy.value.storageUrl,
       key,
-      mimeType: input.source.mimeType ?? copy.value.mimeType,
+      mimeType: input.source.mimeType,
       sizeBytes: copy.value.sizeBytes,
       hasPreview,
     },

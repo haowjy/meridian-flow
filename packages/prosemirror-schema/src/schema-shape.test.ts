@@ -18,7 +18,6 @@ import versionHistory from "./schema-shape.history.json";
 
 const POLICY = "packages/prosemirror-schema/AGENTS.md#schema-version-bump-policy";
 const HISTORY_PATH = "packages/prosemirror-schema/src/schema-shape.history.json";
-const PREDECESSOR_PATH = "packages/prosemirror-schema/src/schema-shape.snapshot.json";
 
 type AttributeSurface = {
   hasDefault: boolean;
@@ -183,29 +182,13 @@ function git(...args: string[]): string {
 
 function historyAt(reference: string): SchemaShapeHistoryEntry[] | null {
   try {
-    return JSON.parse(git("show", `${reference}:${HISTORY_PATH}`)) as SchemaShapeHistoryEntry[];
+    const recorded = JSON.parse(
+      git("show", `${reference}:${HISTORY_PATH}`),
+    ) as SchemaShapeHistoryEntry[];
+    // Bases older than the pre-deploy reset include discarded pre-1.0 history.
+    return recorded.filter((entry) => entry.version.major >= 1);
   } catch {
     return null;
-  }
-}
-
-function predecessorSnapshot(): SchemaShapeHistoryEntry {
-  const deletion = git(
-    "log",
-    "--full-history",
-    "-1",
-    "--format=%H",
-    "--diff-filter=D",
-    "--",
-    `:(top)${PREDECESSOR_PATH}`,
-  );
-  if (!deletion) {
-    throw new Error(`Cannot locate the immutable predecessor ${PREDECESSOR_PATH}.`);
-  }
-  try {
-    return JSON.parse(git("show", `${deletion}^:${PREDECESSOR_PATH}`)) as SchemaShapeHistoryEntry;
-  } catch {
-    throw new Error(`Cannot read the immutable predecessor ${PREDECESSOR_PATH}.`);
   }
 }
 
@@ -234,12 +217,7 @@ describe("collaboration schema shape", () => {
       throw new Error(`Cannot read committed collaboration schema history from ${HISTORY_PATH}.`);
     }
     const base = baseReference();
-    if (!base || base === git("rev-parse", "HEAD")) return;
-    if (!expectHistoryPrefix(base)) {
-      expect(history[0], "The initial history entry must match its immutable predecessor.").toEqual(
-        predecessorSnapshot(),
-      );
-    }
+    if (base) expectHistoryPrefix(base);
   });
 
   it("preserves valid transitions in the append-only version history", () => {

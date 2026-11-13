@@ -723,9 +723,6 @@ importers:
 
   packages/database:
     dependencies:
-      '@meridian/agent-edit':
-        specifier: workspace:*
-        version: link:../agent-edit
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -735,9 +732,6 @@ importers:
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(postgres@3.4.9)
-      fractional-indexing:
-        specifier: ^4.0.0
-        version: 4.0.0
       postgres:
         specifier: 'catalog:'
         version: 3.4.9
