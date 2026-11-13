@@ -19,7 +19,8 @@ not authorization for the requested document.
 - **Stable document ID:** `ProjectDocumentNavigationAdapter` opens known initialized content through
   the resource owner and commits main's address. Every door opens in main, a chat's included. A
   cancelled decision publishes nothing.
-- **Uploads** have no editor address. No door opens them in main.
+- **Uploads** have no editor address. Every door opens one in `UploadViewerDialog`, not in main
+  or the side.
 - **Pending local Unfiled writing:** an exact local identity in `/editor` history state selects the
   durable resource and session. Acknowledgement or remint preserves the resource handle and editor
   session while the address adopts the current Document ID. See

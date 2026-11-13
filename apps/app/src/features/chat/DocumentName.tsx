@@ -1,10 +1,7 @@
 /** Renders transcript document names and their navigation affordance. */
 import { t } from "@lingui/core/macro";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
-import {
-  canOpenReference,
-  useProjectDocumentNavigationProjectId,
-} from "@/features/project/context/open-project-document";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
@@ -20,7 +17,7 @@ export type DocumentNameProps = {
   name?: string;
   /**
    * The file's identity, for one the result names exactly: a binary has no address a route
-   * follows, but its document opens like a mention in a message does. An upload has no door.
+   * follows, but its document opens like a mention in a message does.
    */
   documentId?: string;
 };
@@ -41,7 +38,7 @@ export function DocumentName({
   // Bare paths (`chapter.md`) are what `write` input carries most of the time;
   // the route predicate requires a scheme, so normalize before asking.
   const uri = contextUriFromWritePath(path);
-  const byIdentity = documentId !== undefined && projectId !== null && canOpenReference(path);
+  const byIdentity = documentId !== undefined && projectId !== null;
   const isDoor =
     byIdentity ||
     (uri !== null && !insideDoor && openContextUri !== null && canOpenContextUri?.(uri) === true);

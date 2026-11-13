@@ -15,7 +15,6 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
-import { canOpenReference } from "@/features/project/context/open-project-document";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
@@ -146,7 +145,6 @@ export function CreationComposer({
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
-          if (!canOpenReference(reference.uri)) return;
           void openDocument(reference.documentId);
         }}
         uploadPort={chatUploadPort}
