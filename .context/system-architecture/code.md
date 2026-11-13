@@ -38,9 +38,9 @@ flowchart LR
   www -->|"import: colours"| design-tokens
   mf -->|"import: shared shapes"| contracts
   mf -->|"import: thread socket"| thread-client
-  database -->|"import: migrations"| agent-edit
-  database -->|"import: migrations"| contracts
-  database -->|"import: migrations"| prosemirror-schema
+  database -->|"import: one migration"| agent-edit
+  database -->|"import: column types"| contracts
+  database -->|"import: schema, one migration"| prosemirror-schema
   agent-edit -->|"import: wire types"| contracts
   agent-edit -->|"import: document codec"| markup
   agent-edit -->|"import: schema"| prosemirror-schema
@@ -66,7 +66,7 @@ TanStack Start on Nitro. It holds the routes, the editor, the chat transcript an
 
 `apps/server`: the HTTP and WebSocket server and every domain's logic.
 
-Routes are thin; domains hold the logic and `lib/` composes them. It imports the most packages, and `database` is imported only here. Its layers are on the next level.
+Routes are thin; domains hold the logic and `lib/` composes them. It imports the most packages, and it is the only app that imports `database` (scripts under `tools/` do too). Its layers are on the next level.
 
 - Kind: module
 - Paths: `apps/server/server`
@@ -107,7 +107,7 @@ One schema per HTTP response, shared by the app and `./mf`. A run's state travel
 
 The Drizzle schema and the migrations.
 
-The schema stays ordinary Postgres and holds no business logic. Migrations merged to `main` or `staging` are frozen: append, never edit or renumber. Migrations import `agent-edit`, `contracts` and `prosemirror-schema`.
+The schema stays ordinary Postgres and holds no business logic. Migrations merged to `main` or `staging` are frozen: append, never edit or renumber. The schema files take their column types from `contracts`; one migration imports `agent-edit`, and `prosemirror-schema` is imported by one schema file and one migration.
 
 - Kind: package
 - Paths: `packages/database/src`

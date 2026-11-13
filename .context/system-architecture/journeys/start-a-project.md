@@ -29,12 +29,12 @@ Source: code (`projects` bootstrap).
 
 Does: presses "Create a project" ("Create a project for your first book, series, or story world.") and then "Create project".
 
-Sees: the new project opens at once. The browser mints the project id and journals the creation, so the app navigates before the server has answered; a pending note, a failure, Retry and Discard appear on the new project.
+Sees: the new project opens at once. The browser mints the project id and keeps a creation record in memory, so the app navigates before the server has answered; a pending note, a failure, Retry and Discard appear on the new project. A reload before the server answers forgets the record.
 
 Source: code (the catalog strings and the creation record).
 
-- Map: [creation](../app.md#creation), [client](../app.md#client), [projects](../server.md#projects), [resource-replica](../code.md#resource-replica)
-- Machines: [Creation record](../../../apps/app/src/client/creation/.context/state-machines.md), [Namespace intent](../../../packages/resource-replica/.context/state-machines.md)
+- Map: [creation](../app.md#creation), [client](../app.md#client), [projects](../server.md#projects)
+- Machines: [Creation record](../../../apps/app/src/client/creation/.context/state-machines.md)
 
 ## Open the import menu
 
@@ -54,8 +54,8 @@ Sees: upload progress. The server then reveals the whole tree at once. The ends 
 
 Source: code (the strings and the import coordinator).
 
-- Map: [import (app)](../app.md#import), [core-uploads](../app.md#core-uploads), [import (server)](../server.md#import), [context](../server.md#context), [objectstore](../system.md#objectstore)
-- Machines: [Import and import entry](../../../apps/server/server/domains/import/.context/state-machines.md), [Upload intake](../../../apps/server/server/domains/context/uploads/.context/state-machines.md), [Import creation and upload phase](../../../apps/app/src/features/import/.context/state-machines.md)
+- Map: [import (app)](../app.md#import), [import (server)](../server.md#import), [context](../server.md#context), [objectstore](../system.md#objectstore)
+- Machines: [Import and import entry](../../../apps/server/server/domains/import/.context/state-machines.md), [Import creation and upload phase](../../../apps/app/src/features/import/.context/state-machines.md)
 
 ## Open a chapter
 

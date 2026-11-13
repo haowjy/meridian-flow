@@ -48,7 +48,7 @@ Sees: tool and helper (subagent) cards appear where the turn started them. A rep
 Source: code for the "Drafted" strings; PR body for the helper cards' placement.
 
 - Map: [server](../system.md#server), [threads](../server.md#threads), [runtime](../server.md#runtime), [thread-client](../code.md#thread-client)
-- Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md)
+- Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md), [Response](../../../packages/agent-edit/.context/state-machines.md)
 
 ## Find the changes
 
@@ -85,11 +85,11 @@ Source: code for the notice string; PR body for the missing confirmation and the
 
 ## Undo
 
-Does: presses Undo on the reply's receipt row after an apply (and Redo to put it back).
+Does: presses Undo on the reply's receipt (and Redo to put it back). The receipt lists every document the reply wrote, in a draft or live, and is there as soon as the reply finishes: Apply and Discard do not create or change it.
 
-Sees: the document returns to what it was. The receipt says truthfully who did what, which is the writer's protection.
+Sees: what the reply wrote is reversed, wherever it now is. The receipt stays, and says truthfully who did what, which is the writer's protection.
 
-Source: code for the "Undo" and "Redo" strings; PR body for the receipt row.
+Source: code for the "Undo" and "Redo" strings; what the receipt records is from `apps/app/src/features/chat/.context/turn-edit-receipts.md` on `main`; PR body for where the receipt sits.
 
-- Map: [collab](../server.md#collab), [agent-edit](../code.md#agent-edit)
-- Machines: [Response](../../../packages/agent-edit/.context/state-machines.md)
+- Map: [chat](../app.md#chat), [collab](../server.md#collab), [agent-edit](../code.md#agent-edit)
+- Machines: [Draft write journal row](../../../apps/server/server/domains/collab/.context/state-machines.md)

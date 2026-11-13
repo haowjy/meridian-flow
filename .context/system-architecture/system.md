@@ -44,9 +44,9 @@ flowchart LR
 
 ## browser
 
-The writer's browser: the app's JavaScript, local replicas in IndexedDB, two sockets.
+The writer's browser: the app's JavaScript, local replicas in IndexedDB, a send journal in localStorage, two sockets.
 
-It runs the React app that the `app` process serves. IndexedDB holds the local replicas and the journal of first sends, so a message survives a reload before the server confirms it. One WebSocket carries chat events and commands, another carries document sync.
+It runs the React app that the `app` process serves. IndexedDB holds the local replicas of documents and folders. Sent messages are journaled in localStorage before they are posted, so a message survives a reload before the server confirms it. One WebSocket carries chat events and commands, another carries document sync.
 
 - Kind: client
 - Paths: `apps/app/src/router.tsx`, `apps/app/src/routes/__root.tsx`
@@ -112,7 +112,7 @@ Two adapters: `local` (disk, with signed URLs served under `/api/object-store/lo
 
 The model providers: Anthropic, OpenAI, DeepSeek and Gemini.
 
-The runtime calls them through one gateway, with keys from `FLOW_<PROVIDER>_API_KEY` and no fallback between providers. Dev defaults to a mock provider, and live dev runs go to `deepseek-flash`.
+The runtime calls them through one gateway, with keys from `FLOW_<PROVIDER>_API_KEY` and no fallback between providers. With no provider key set, or `MODEL_PROVIDER=mock`, it starts an in-process mock provider; live dev runs go to `deepseek-flash`.
 
 - Kind: external
 - Paths: `apps/server/server/domains/runtime/gateway/config/registry.ts`

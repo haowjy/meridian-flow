@@ -54,7 +54,7 @@ flowchart LR
   routes -->|"import: import entry"| import
   client -->|"import: banners, shared UI"| components
   client -->|"import: helpers"| lib
-  client -->|"import: thread and document sockets"| core-transport
+  client -->|"import: connectivity hints, dev transport, wire tap"| core-transport
   client -->|"import: open-document intents"| project
   components -->|"import: data hooks"| client
   components -->|"import: utils, i18n"| lib
@@ -93,7 +93,7 @@ flowchart LR
   editor -->|"import: tabs, routing"| project
   editor -->|"import: editor core"| core-editor
   links -->|"import: link targets"| core-editor
-  debug -->|"import: server feed"| core-transport
+  debug -->|"import: wire taps for trace capture"| core-transport
 ```
 
 ## routes
@@ -190,7 +190,7 @@ The TipTap schema and the Yjs document session.
 - Paths: `apps/app/src/core/editor`
 - Docs: [CONTEXT](../../apps/app/src/core/editor/.context/CONTEXT.md), [AGENTS](../../apps/app/src/core/editor/AGENTS.md)
 - Machines: [editor core](../../apps/app/src/core/editor/.context/state-machines.md)
-- Drift: `core/editor` and `core/transport` import each other (editor to transport 3 files, transport to editor 1).
+- Drift: `core/editor` and `core/transport` import each other (editor to transport 2 files, transport to editor 1).
 
 ## core-resources
 
@@ -204,9 +204,9 @@ Sits on `@meridian/resource-replica`: documents and folders get a local identity
 
 ## core-transport
 
-The Hocuspocus document transport and the connectivity hint.
+The Hocuspocus document transport, connectivity hints and the wire taps the debug overlay reads.
 
-A dev transport exists for local use.
+A dev transport exists for local use. The thread socket is not here: it is `@meridian/thread-client`, wired in `client`.
 
 - Kind: module
 - Paths: `apps/app/src/core/transport`
@@ -348,10 +348,10 @@ Resolves links from the local project index first and asks the server in batches
 
 The workspace shell: panes, sidebar, tabs, Works and routing.
 
-The largest feature, and the one every other feature imports or is imported by. Its state machines cover live document binding, route selection during removal, and rename and move feedback.
+The largest feature. Every other feature except `billing` imports it or is imported by it. Its state machines cover live document binding, route selection during removal, and rename and move feedback.
 
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
 - Machines: [project](../../apps/app/src/features/project/context/.context/state-machines.md)
-- Drift: Features import each other freely: `project` to `draft-review` in 61 files, `chat` to `project` in 36, `project` to `chat` in 30, `editor` to `draft-review` in 27. No rule forbids it.
+- Drift: Features import each other freely: `project` imports `draft-review` from 25 files, `project` imports `chat` from 20, `chat` imports `project` from 16, `editor` imports `draft-review` from 8 (tests left out). No rule forbids it.

@@ -119,7 +119,7 @@ The composition root: builds every domain into `AppServices`.
 
 Startup, request observability and CORS.
 
-The startup plugin boots the process and, in a built server, ends it on a boot failure (Nitro does not await plugins; under `nitro dev` it does not, so per-request auth rules still refuse). It also runs the recovery sweep for durable delivery outboxes every second. The startup plugin imports `routes/ws/yjs`, so plugins depend on routes.
+The startup plugin boots the process and, in a built server, ends it on a boot failure (Nitro does not await plugins; under `nitro dev` it does not, so per-request auth rules still refuse). The one-second recovery sweep for durable delivery outboxes is not started here: `lib/app.ts` starts it (`recovery-scheduler.ts`) when the app composes. The startup plugin imports `routes/ws/yjs`, so plugins depend on routes.
 
 - Kind: module
 - Paths: `apps/server/server/plugins`, `apps/server/server/middleware`
@@ -243,7 +243,7 @@ Results are tagged ok or error and never throw. It has no domain meaning: which 
 
 Classifies uploaded files and makes image previews.
 
-HEIC, BMP and TIFF become WebP through `sharp` in a worker thread. `sharp` is a native dependency, so build on the target platform.
+HEIC, BMP and TIFF become WebP previews on a small worker pool: `sharp` decodes TIFF, `heic-decode` (WASM) decodes HEIC and `bmp-ts` decodes BMP. `sharp` is a native dependency, so build on the target platform.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/file-intake`
