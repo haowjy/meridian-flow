@@ -32,7 +32,7 @@ const STATEMENTS = [
   // import "x"
   /\bimport\s*["']([^"']+)["']/g,
   // import("x"), require("x")
-  /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g,
+  /\b(?:import|require)\s*\(\s*["'`]([^"'`]+)["'`]\s*\)/g,
 ];
 // @import "x" in a stylesheet
 const CSS_IMPORT = /@import\s+["']([^"']+)["']/g;
@@ -81,7 +81,7 @@ function sourceFiles(repo, path, out) {
 }
 
 /** Package name → directory, for the workspace directories that hold a package.json. */
-function workspacePackages(repo, workspaceDirs) {
+export function workspacePackages(repo, workspaceDirs) {
   return new Map(
     workspaceDirs.map((dir) => [
       JSON.parse(readFileSync(join(repo, dir, "package.json"), "utf8")).name,
@@ -91,7 +91,8 @@ function workspacePackages(repo, workspaceDirs) {
 }
 
 /**
- * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly }],
+ * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly, spec }],
+ * `spec` the module specifier as written,
  * `to` a repo-relative file when the import resolves to one, else the path it points at; a
  * workspace package import has `to` the package directory. External packages are left out.
  * `workspaceDirs` are the directories of the workspace packages; `aliases` are
@@ -131,7 +132,7 @@ export function readImports(repo, roots, { workspaceDirs, aliases }) {
     const text = readFileSync(join(repo, from), "utf8");
     for (const { spec, typeOnly } of specifiersIn(text, from.endsWith(".css"))) {
       const target = resolve(from, spec);
-      if (target && target.to !== from) imports.push({ from, typeOnly, ...target });
+      if (target && target.to !== from) imports.push({ from, typeOnly, spec, ...target });
     }
   }
   return imports;
