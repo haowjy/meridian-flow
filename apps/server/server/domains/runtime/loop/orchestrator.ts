@@ -66,6 +66,7 @@ import type {
   GenerateResult,
   Gateway as LlmGateway,
 } from "@meridian-flow/gateway";
+import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
@@ -91,7 +92,6 @@ import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
 import type { ModelTokenRateSource } from "../costing/pricing.js";
-import type { DetachedWorkTracker } from "../detached-work.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { DocumentEvidence } from "../ports/document-evidence.js";

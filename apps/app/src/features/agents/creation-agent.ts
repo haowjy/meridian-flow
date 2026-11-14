@@ -18,3 +18,20 @@ export function pickableAgents(agents: readonly AgentCatalogItem[]): PickableAge
       agent.selection !== null && agent.unavailableReasons.length === 0,
   );
 }
+
+/** The Agent a started chat is bound to: its revision when known, else only its name. */
+export type BoundAgent = { name: string | null; definitionRevisionId: string | null };
+
+/** The bound Agent's catalog row: its own revision, else its Agent by name. */
+export function boundAgentRow(
+  agents: readonly PickableAgent[],
+  bound: BoundAgent,
+): CreationAgent | null {
+  const row =
+    agents.find(
+      (agent) =>
+        bound.definitionRevisionId !== null &&
+        agent.selection.definitionRevisionId === bound.definitionRevisionId,
+    ) ?? agents.find((agent) => bound.name !== null && agent.name === bound.name);
+  return row ? { selection: row.selection, slug: row.slug, name: row.name } : null;
+}

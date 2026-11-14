@@ -23,8 +23,9 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
 import {
+  type BoundAgent,
+  boundAgentRow,
   type CreationAgent,
-  type PickableAgent,
   pickableAgents,
 } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
@@ -33,7 +34,7 @@ import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 export type TurnDerivation = {
   projectId: string;
   /** The Agent the source chat is bound to, for the picker's default. */
-  sourceAgent: { name: string | null; definitionRevisionId: string | null };
+  sourceAgent: BoundAgent;
   fork: (turnId: string) => void;
   handoff: (turnId: string, agent: CreationAgent) => void;
 };
@@ -57,22 +58,6 @@ export function canDeriveFrom(input: {
   canOpen: boolean;
 }): boolean {
   return input.kind === "primary" && !input.pendingCreation && input.canOpen;
-}
-
-/** The picker's default: the source's own revision, else its Agent by name. */
-export function defaultHandoffAgent(
-  agents: readonly PickableAgent[],
-  source: TurnDerivation["sourceAgent"],
-): PickableAgent | null {
-  return (
-    agents.find(
-      (agent) =>
-        source.definitionRevisionId !== null &&
-        agent.selection.definitionRevisionId === source.definitionRevisionId,
-    ) ??
-    agents.find((agent) => source.name !== null && agent.name === source.name) ??
-    null
-  );
 }
 
 export function DeriveTurnActions({ turnId }: { turnId: string }) {
@@ -126,10 +111,7 @@ function HandoffPicker({
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const agents = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
-  const fallback = defaultHandoffAgent(agents, derivation.sourceAgent);
-  const selected: CreationAgent | null = fallback
-    ? { selection: fallback.selection, slug: fallback.slug, name: fallback.name }
-    : null;
+  const selected = boundAgentRow(agents, derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;
   // Land on the source's Agent so Enter hands off to it. The catalog may load

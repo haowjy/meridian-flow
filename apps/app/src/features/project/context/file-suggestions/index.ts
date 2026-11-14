@@ -3,7 +3,7 @@ export {
   FileSuggestionList,
   type FileSuggestionListHandle,
 } from "./FileSuggestionList";
-export type { FileSuggestion, FileSuggestionKind } from "./file-suggestions";
+export type { FileSuggestion } from "./file-suggestions";
 export {
   folderChildren,
   matchFileSuggestions,

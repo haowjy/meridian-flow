@@ -10,6 +10,7 @@ import {
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
+import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
@@ -30,7 +31,7 @@ type ChatComposerProps = {
   chatId: string;
   active: boolean;
   activeWork: Work | null;
-  agentName: string;
+  agent: ComposerAgentControlProps;
   running: boolean;
   stopStatus: ChatStop["status"];
   generating: boolean;
@@ -55,7 +56,7 @@ function ChatComposerComponent({
   chatId,
   active,
   activeWork,
-  agentName,
+  agent,
   running,
   stopStatus,
   generating,
@@ -126,7 +127,7 @@ function ChatComposerComponent({
               projectId={projectId}
               threadId={threadId}
               work={activeWork}
-              agentName={agentName}
+              agent={agent}
               writeMode={writeMode}
               onWriteModeChange={onWriteModeChange}
             />

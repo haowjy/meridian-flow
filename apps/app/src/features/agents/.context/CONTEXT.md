@@ -8,7 +8,8 @@ revisions.
 | Surface | Behavior |
 |---|---|
 | New-chat composer | Interactive picker until creation is reserved. |
-| Existing conversation, including zero turns | Readonly bound-Agent status. |
+| Started chat | The same picker with the bound Agent current. Picking another hands off to it from the last complete turn, a writer message included, so during a running reply the cut is the message it answers. Picking the bound Agent changes nothing (the picker under a turn hands off to it instead). Busy while the server has yet to accept the first send. |
+| Chat with nothing to hand off from (no complete turn, a subagent's) | Readonly bound-Agent status. |
 | Results provenance | Inert attribution from the producing conversation's retained definition, inside the producing-thread link. |
 | Agents tab (sidebar) | `.agents/` and `~/.agents/` as trees, built-ins as rows that open read-only. A row says only what keeps a file from use: Unavailable, or Hidden. |
 | Open Agent or skill file | `AgentFileNotice` under the path bar: its level, available or Mars's reasons, what it hides or what hides it. |

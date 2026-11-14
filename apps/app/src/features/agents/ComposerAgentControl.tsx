@@ -1,4 +1,7 @@
-/** Composer Agent adapter: explicit interactive panel or readonly status topology. */
+/**
+ * Composer Agent control. A new chat picks its Agent; a started chat is bound to one, so
+ * picking another hands off to it; a subagent's chat only shows its Agent.
+ */
 import { t } from "@lingui/core/macro";
 import { useRef } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -7,9 +10,15 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
+import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { AgentPickerPanel } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
-import { type CreationAgent, pickableAgents } from "./creation-agent";
+import {
+  type BoundAgent,
+  boundAgentRow,
+  type CreationAgent,
+  pickableAgents,
+} from "./creation-agent";
 
 export type ComposerAgentControlProps =
   | {
@@ -18,23 +27,39 @@ export type ComposerAgentControlProps =
       selectedAgent: CreationAgent | null;
       onSelectedAgentChange: (agent: CreationAgent) => void;
     }
+  | {
+      mode: "handoff";
+      projectId: string;
+      bound: BoundAgent;
+      /** Null until the server has a turn to hand off from. */
+      onHandoff: ((agent: CreationAgent) => void) | null;
+    }
   | { mode: "readonly"; name: string };
 
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
 ): ComposerToolbarControl {
   const catalog = useAgentCatalog(
-    props.mode === "interactive",
-    props.mode === "interactive" ? props.projectId : undefined,
+    props.mode !== "readonly",
+    props.mode === "readonly" ? undefined : props.projectId,
   );
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
-  const selectedAgent = props.mode === "interactive" ? props.selectedAgent : null;
-  const agent = {
-    name: props.mode === "readonly" ? props.name : (selectedAgent?.name ?? DEFAULT_AGENT_NAME),
-  };
-  const item = { ariaLabel: t`Agent: ${agent.name}`, label: t`Agent`, value: agent.name };
+  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
+  const selectedAgent =
+    props.mode === "interactive"
+      ? props.selectedAgent
+      : props.mode === "handoff"
+        ? boundAgentRow(selectable, props.bound)
+        : null;
+  const name =
+    props.mode === "readonly"
+      ? props.name
+      : props.mode === "handoff"
+        ? (props.bound.name ?? DEFAULT_AGENT_NAME)
+        : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
+  const item = { ariaLabel: t`Agent: ${name}`, label: t`Agent`, value: name };
   if (props.mode === "readonly")
     return {
       kind: "status",
@@ -44,14 +69,13 @@ export function useComposerAgentToolbarControl(
       inline: ({ controlRef }) => (
         <ComposerCurrentValueStatus
           ref={controlRef}
-          ariaLabel={t`Agent: ${agent.name}`}
-          tooltip={t`This chat uses ${agent.name}.`}
+          ariaLabel={t`Agent: ${name}`}
+          tooltip={t`This chat uses ${name}.`}
         >
-          {agent.name}
+          {name}
         </ComposerCurrentValueStatus>
       ),
     };
-  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
   const focusableIds = selectable.map((agent) => agent.selection.slug);
   const pageId =
     catalog.status === "error"
@@ -61,19 +85,23 @@ export function useComposerAgentToolbarControl(
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
+  const choose = (next: CreationAgent) => {
+    if (props.mode === "interactive") props.onSelectedAgentChange(next);
+    else if (next.selection.slug !== selectedAgent?.selection.slug) props.onHandoff?.(next);
+  };
   return {
     kind: "panel",
     id: "agent",
     priority: 300,
-    interaction: "enabled",
-    item: { ...item, ariaLabel: t`Choose agent, currently ${agent.name}` },
+    interaction: props.mode === "handoff" && !props.onHandoff ? "busy" : "enabled",
+    item: { ...item, ariaLabel: t`Choose agent, currently ${name}` },
     inline: ({ trigger }) => (
-      <ComposerCurrentValueTrigger binding={trigger} ariaLabel={t`Agent: ${agent.name}`}>
-        {agent.name}
+      <ComposerCurrentValueTrigger binding={trigger} ariaLabel={t`Agent: ${name}`}>
+        {name}
       </ComposerCurrentValueTrigger>
     ),
     panel: {
-      ariaLabel: t`Choose agent`,
+      ariaLabel: props.mode === "handoff" ? t`Hand off to an Agent` : t`Choose agent`,
       size: "identity",
       focus: {
         pageId,
@@ -93,16 +121,21 @@ export function useComposerAgentToolbarControl(
         fallback: "content",
       },
       render: ({ terminalClose }) => (
-        <AgentPickerPanel
-          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-          status={catalog}
-          agents={selectable}
-          selectedAgent={selectedAgent}
-          onSelect={(next) => {
-            props.onSelectedAgentChange(next);
-            terminalClose();
-          }}
-        />
+        <>
+          {props.mode === "handoff" ? (
+            <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
+          ) : null}
+          <AgentPickerPanel
+            focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+            status={catalog}
+            agents={selectable}
+            selectedAgent={selectedAgent}
+            onSelect={(next) => {
+              choose(next);
+              terminalClose();
+            }}
+          />
+        </>
       ),
     },
   };
