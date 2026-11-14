@@ -64,11 +64,11 @@ export class ImportCoordinator {
   private polling: AbortSignal | null = null;
   private mutations = 0;
   private rootMemory = new Map<string, PendingRootMemory>();
-  observeRoot(summary: ImportSummary, catalogHolds: boolean, reading: boolean) {
+  observeRoot(summary: ImportSummary, treeHolds: boolean, reading: boolean) {
     const result = pendingRoot(
       summary,
       this.rootMemory.get(summary.importId) ?? { seen: false, drawn: false },
-      catalogHolds,
+      treeHolds,
       Date.now(),
       reading,
     );

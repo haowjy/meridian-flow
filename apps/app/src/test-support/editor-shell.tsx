@@ -1,9 +1,8 @@
 /** Explicit neutral shell seams for real EditorView tests; room and paint policy stay with the caller. */
 
-import { createResourcePlacement } from "@meridian/resource-replica";
 import { vi } from "vitest";
-import * as catalog from "@/client/query/useContextCatalog";
 import * as threads from "@/client/query/useProjectThreads";
+import * as trees from "@/client/query/useProjectTrees";
 import * as works from "@/client/query/useWorks";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -24,12 +23,12 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const seams = [
     vi.spyOn(account, "useAccountId").mockReturnValue("writer"),
     vi.spyOn(account, "useAccountEpochSignal").mockReturnValue(epoch.signal),
-    vi.spyOn(catalog, "useContextCatalogView").mockReturnValue({
-      catalog: null,
+    vi.spyOn(trees, "useProjectTrees").mockReturnValue({
       isComplete: false,
       isError: false,
-      isFetching: false,
-      refetch: vi.fn(),
+      sources: [],
+      tree: () => null,
+      find: () => null,
     }),
     vi
       .spyOn(threads, "useProjectThreads")
@@ -48,15 +47,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     }),
     vi.spyOn(phoneShell, "usePhoneShell").mockReturnValue(false),
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
-    vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(null),
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
-    vi.spyOn(account, "useAccountResourceProjection").mockReturnValue({
-      snapshot: null,
-      folders: [],
-      records: [],
-      placement: createResourcePlacement("project", [], []),
-      error: null,
-    }),
     vi
       .spyOn(links, "useLinkableDocuments")
       .mockReturnValue({ documents: [], folders: [], revision: "", complete: false }),

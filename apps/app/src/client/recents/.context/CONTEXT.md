@@ -13,6 +13,8 @@
 - A local handle isn't watched; a document locator is. Never-admitted
   `not-visible` is already a non-removal in the availability coordinator, so this
   record keeps no admission flag. Focus, online and the existing poll cover the
-  watch, so don't recheck every recent on a catalog cache write.
-- The record stores the document locator, not a second catalog. Project slugs are
-  read from their catalogs at navigation time.
+  watch, so don't recheck every recent on a tree change.
+- The record stores the document locator, not a second tree. Project slugs are
+  read from the sources' trees at navigation time. A stored `local` address (a document
+  known only by a device handle, from before a node's handle was its document id) is
+  dropped when read.

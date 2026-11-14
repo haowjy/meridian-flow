@@ -1,19 +1,19 @@
-/** Adds only pending folder roots; catalogs remain the sole owner of every real node. */
+/** Adds only pending folder roots; the source's tree remains the sole owner of every real node. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import type { TreeView } from "@/core/project-tree/tree-view";
 import { useImportsSnapshot, useOptionalImports } from "./ImportProvider";
 import { type ImportedTree, type PendingRow, plainTree, withPendingRoots } from "./tree-rows";
 export function useImportedTree(
-  catalog: CatalogContextView | null,
+  source: TreeView | null,
   scheme: ProjectContextTreeScheme,
   projectId: string,
 ): ImportedTree | null {
   const coordinator = useOptionalImports()?.coordinator;
   const snapshot = useImportsSnapshot(coordinator ?? null);
   return useMemo(() => {
-    if (!catalog) return null;
-    const tree = plainTree(catalog);
+    if (!source) return null;
+    const tree = plainTree(source);
     const pending = new Map<string, PendingRow[]>();
     for (const { importId, summary, local } of snapshot.imports) {
       if (
@@ -24,11 +24,11 @@ export function useImportedTree(
         continue;
       const draw = coordinator?.observeRoot(
         summary,
-        catalog.normalized.entries.has(summary.root.id),
+        source.entry(summary.root.id) !== null,
         local.phase === "reading",
       );
       if (!draw) continue;
-      const parentId = summary.destination.folderId ?? catalog.root.entryId;
+      const parentId = summary.destination.folderId ?? source.root.entryId;
       const rows = pending.get(parentId) ?? [];
       rows.push({
         origin: "import",
@@ -47,5 +47,5 @@ export function useImportedTree(
         return roots ? withPendingRoots(tree.rows(parentId), roots) : tree.rows(parentId);
       },
     };
-  }, [catalog, scheme, projectId, snapshot, coordinator]);
+  }, [source, scheme, projectId, snapshot, coordinator]);
 }

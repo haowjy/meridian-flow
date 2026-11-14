@@ -41,7 +41,6 @@ it("projects unique owned uploads in occurrence order without changing the submi
     intakeId: "intake-1",
     documentId: "doc-1",
     uri: "kb://notes.md",
-    locationRevision: "rev-1",
   };
   const reference = {
     kind: "document",

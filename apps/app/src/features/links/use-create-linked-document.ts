@@ -8,24 +8,31 @@
  * made from a Work's Files tab or by the AI, and Uploads are files a writer
  * brings, so neither is creatable here.
  *
- * Built on the reservation, which carries the link's address as its destination and commits locally
- * and syncs in the background. Missing folders are a suffix beneath the deepest
- * existing identity anchor, created atomically by the server move.
- * A later sync failure lands on the document itself. Nothing about the link
- * changes on creation: the project now holds a document at that address, which
- * is a new catalog revision, and every resolution scope keyed on it asks again.
+ * The records go into the list's copy at once: the missing folders, then the document in the
+ * deepest one that exists. The document is there to open before the server has seen it. A sync
+ * failure lands on the document itself. Nothing about the link changes on creation: the project
+ * now holds a document at that address, which is a new tree revision, and every resolution
+ * scope keyed on it asks again.
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { useCallback, useRef, useState } from "react";
-
+import { useCallback, useState } from "react";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
+import { useTreeActions } from "@/client/query/useTreeActions";
 import {
   type CreatableLinkScheme,
   isCreatableLinkScheme,
   linkedDocumentName,
 } from "@/core/editor/links";
-import { useAccountResourceReplica } from "@/features/project/context/account-feature-context";
+import type { TreeActions } from "@/core/project-tree/tree-actions";
+import type { TreeView } from "@/core/project-tree/tree-view";
+
+const CREATABLE_LINK_SCHEMES = [
+  "manuscript",
+  "kb",
+  "user",
+] as const satisfies readonly CreatableLinkScheme[];
 
 export type LinkCreationTarget = {
   scheme: CreatableLinkScheme;
@@ -51,62 +58,50 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
 
 export type CreateLinkedDocument = {
   /** The new document's id, or null when it could not be created. */
-  create(target: LinkCreationTarget): Promise<string | null>;
-  creating: boolean;
+  create(target: LinkCreationTarget): string | null;
   failed: boolean;
 };
 
 export function useCreateLinkedDocument(projectId: string | null): CreateLinkedDocument {
-  const resources = useAccountResourceReplica();
-  const [creating, setCreating] = useState(false);
+  const trees = useProjectTreeViews(projectId ?? "", CREATABLE_LINK_SCHEMES, {
+    enabled: projectId !== null,
+  });
+  const projectActions = useTreeActions({ kind: "project", projectId });
+  const accountActions = useTreeActions({ kind: "account" });
   const [failed, setFailed] = useState(false);
-  // State lands a render late; a second press in the same tick must not
-  // reserve a second document.
-  const inFlight = useRef(false);
 
   const create = useCallback(
-    async (target: LinkCreationTarget) => {
-      if (!projectId || inFlight.current) return null;
-      inFlight.current = true;
-      setFailed(false);
-      setCreating(true);
-      let documentId: string | null = null;
-      try {
-        const folders = target.folderPath.split("/").filter(Boolean);
-        const createFolders: string[] = [];
-        let parent = null;
-        while (!parent) {
-          parent = await resources.findParentAtLocation(projectId, {
-            scheme: target.scheme,
-            path: folders.length ? `/${folders.join("/")}` : "",
-            name: "",
-            workId: null,
-          });
-          if (parent) break;
-          const segment = folders.pop();
-          if (!segment) throw new Error("Destination area is unavailable");
-          createFolders.unshift(segment);
-        }
-        const reservation = await resources.reserveDocument(projectId, "", {
-          parent,
-          ...(createFolders.length ? { createFolders } : {}),
-          name: target.name,
-        });
-        if (reservation.content.kind !== "opened")
-          throw new Error("Local document content is unavailable");
-        documentId = reservation.content.handle.documentId;
-        reservation.content.handle.release();
-      } catch {
-        documentId = null;
-      } finally {
-        inFlight.current = false;
-        setCreating(false);
-      }
-      if (!documentId) setFailed(true);
+    (target: LinkCreationTarget) => {
+      const tree = trees[target.scheme].tree;
+      const actions = target.scheme === "user" ? accountActions : projectActions;
+      const documentId = tree ? createAt(tree, actions, target) : null;
+      setFailed(documentId === null);
       return documentId;
     },
-    [projectId, resources],
+    [accountActions, projectActions, trees],
   );
 
-  return { create, creating, failed };
+  return { create, failed };
+}
+
+/** The deepest folder of the address that exists holds the missing ones, then the document. */
+function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarget): string | null {
+  const folders = target.folderPath.split("/").filter(Boolean);
+  const missing: string[] = [];
+  let parentId = tree.root.entryId;
+  while (folders.length) {
+    const found = tree.findPath(`/${folders.join("/")}`);
+    if (found?.kind === "dir") {
+      parentId = found.entryId;
+      break;
+    }
+    missing.unshift(folders.pop() as string);
+  }
+  for (const name of missing) {
+    const made = actions.create({ parentId, name, kind: "folder" });
+    if (!made.ok) return null;
+    parentId = made.node;
+  }
+  const made = actions.create({ parentId, name: target.name, kind: "document" });
+  return made.ok ? made.node : null;
 }

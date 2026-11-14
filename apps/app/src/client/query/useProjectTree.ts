@@ -86,6 +86,9 @@ export function sourceFor(
 
 const READY = new Set<TreeListStatus>(["synced", "read-only", "offline"]);
 
+/** The copy has synced or can stand in for the list: an address that finds no node is "not there". */
+export const listIsComplete = (status: TreeListStatus): boolean => READY.has(status);
+
 export type TreeViewResult = {
   tree: TreeView | null;
   /** The list has synced or the copy can stand in for it: an address that finds no node is "not there". Otherwise it is "waiting for the list". */
@@ -161,7 +164,7 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
       const sources = scheme === "user" ? accountSources : projectSources;
       const source = sources ? sourceFor(sources, scheme, owner) : null;
       const snapshot = list.snapshot;
-      const ready = snapshot !== null && READY.has(snapshot.status) && sources !== undefined;
+      const ready = snapshot !== null && listIsComplete(snapshot.status) && sources !== undefined;
       const which = scheme === "user" ? "account" : "project";
       if (!failureCache.has(which)) failureCache.set(which, failuresOf(list));
       results[scheme] = {

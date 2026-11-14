@@ -1,15 +1,15 @@
-/** The five pending-root rules. Historical creation is not evidence of current catalog liveness. */
+/** The five pending-root rules. Historical creation is not evidence of current liveness in the tree. */
 import type { ImportSummary } from "@meridian/contracts";
 export type PendingRootMemory = { seen: boolean; drawn: boolean; deadline?: number };
 export function pendingRoot(
   summary: ImportSummary,
   memory: PendingRootMemory,
-  catalogHolds: boolean,
+  treeHolds: boolean,
   now: number,
   reading = false,
 ) {
   if (!summary.root) return { draw: false, memory };
-  if (catalogHolds) return { draw: false, memory: { ...memory, seen: true } };
+  if (treeHolds) return { draw: false, memory: { ...memory, seen: true } };
   if (memory.seen) return { draw: false, memory };
   if (
     !summary.root.created &&
