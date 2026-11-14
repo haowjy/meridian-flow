@@ -39,6 +39,8 @@ export {
 export {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
+  provisionProjectSources,
+  provisionWorkScratch,
 } from "./context-source-provisioning.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";

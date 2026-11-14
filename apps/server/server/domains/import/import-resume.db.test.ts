@@ -28,11 +28,11 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
-import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import {
   createDrizzleContextImportRead,
   createDrizzleContextImportReveal,
+  provisionProjectSources,
 } from "../context/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
@@ -63,6 +63,7 @@ describe.runIf(enabled)("import resume", () => {
     const projectId = randomUUID();
     await db.insert(users).values(conformanceUserValues(userId, "import-resume"));
     await db.insert(projects).values({ id: projectId, userId, name: "Resume", slug: "resume" });
+    await provisionProjectSources(db, projectId, { personal: false });
     const objects = createInMemoryObjectStore();
     const repository = createDrizzleImportRepository(db);
     const service = createImportUploadService({
@@ -120,7 +121,6 @@ describe.runIf(enabled)("import resume", () => {
       db,
       tree: treeSeeder(db).store,
       ahead: ports.linkAheadRegistry,
-      hints: NO_PROJECT_HINTS,
       arrivals: ports.documentArrivals,
     });
     const expireLease = () =>

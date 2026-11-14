@@ -377,10 +377,10 @@ function createProductionStoreResolvers(
       return createChatContextDocumentStore(db, projectId, chatId, scheme, hints);
     },
     resolveProjectStore(projectId, userId, scheme) {
-      return createProjectContextDocumentStore(db, projectId, scheme, userId, hints);
+      return createProjectContextDocumentStore(db, projectId, scheme, userId);
     },
     resolveWorkStore(workId, scheme) {
-      return createWorkContextDocumentStore(db, workId, scheme, hints);
+      return createWorkContextDocumentStore(db, workId, scheme);
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);

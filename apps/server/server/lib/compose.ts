@@ -823,7 +823,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       tree: ports.treeLists,
       ahead: ports.linkAheadRegistry,
       arrivals: ports.documentArrivals,
-      hints: createProjectHints(ports.projectWakeHub),
     }),
   });
   const workContext = createWorkContextReader({

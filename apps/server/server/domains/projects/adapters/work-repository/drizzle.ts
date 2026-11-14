@@ -18,7 +18,7 @@ import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { lockProjectTreeList } from "../../../../shared/tree-list-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
-import type { LineageScratchLifecycle } from "../../../context/index.js";
+import { type LineageScratchLifecycle, provisionWorkScratch } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
@@ -197,6 +197,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           throw cause;
         }
         if (!row) throw new Error("Failed to create work");
+        await provisionWorkScratch(db, row.id);
         return mapWork(row);
       });
     },

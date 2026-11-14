@@ -8,7 +8,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
-import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createTreeReader, LIVE_TREE } from "../context/tree/tree-view.js";
@@ -29,10 +28,6 @@ else
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
-    const { createProjectContextDocumentStore } = await import(
-      "../context/context-source-provisioning.js"
-    );
-    const { runInDrizzleTransaction } = await import("../../shared/drizzle-transaction.js");
     const USER_ID = "00000000-0000-4000-8000-000000000751";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
@@ -127,7 +122,15 @@ else
         })
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
-      expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
+      expect(manuscript.map((source) => source.slug).sort()).toEqual([
+        "kb",
+        "manuscript",
+        "unfiled",
+        "user",
+      ]);
+      expect(
+        manuscript.every((source) => source.workId === null && source.scope === "project"),
+      ).toBe(true);
       expect(workSources).toEqual([]);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
@@ -138,38 +141,6 @@ else
         document: { name: "Chapter 1", extension: "", fileType: "markdown" },
       });
       expect(first.uri).toBe("manuscript://Chapter 1");
-    });
-
-    it("rolls project source provisioning back with its ambient transaction", async () => {
-      const projectId = crypto.randomUUID();
-      await db.insert(schema.projects).values({
-        id: projectId,
-        userId: USER_ID,
-        name: "Ambient source",
-        slug: `ambient-${projectId}`,
-      });
-      const store = createProjectContextDocumentStore(
-        db,
-        projectId,
-        "manuscript",
-        USER_ID,
-        NO_PROJECT_HINTS,
-      );
-      await expect(
-        runInDrizzleTransaction(db, () =>
-          store.transaction(async () => {
-            await store.contextSourceId();
-            throw new Error("rollback");
-          }),
-        ),
-      ).rejects.toThrow("rollback");
-      await expect(
-        db
-          .select()
-          .from(schema.contextSources)
-          .where(eq(schema.contextSources.projectId, projectId)),
-      ).resolves.toEqual([]);
-      await expect(store.contextSourceId()).resolves.toBeDefined();
     });
 
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {

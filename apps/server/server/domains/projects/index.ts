@@ -13,10 +13,11 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
 import { treeListOfSource } from "../context/adapters/tree-list-facts.js";
+import { provisionProjectSources } from "../context/context-source-provisioning.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
-import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
+import { nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
@@ -239,7 +240,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const _noWorkId = await ensureLockedNoWork(tx, projectId, userId);
-      const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
+      const manuscriptSourceId = await provisionProjectSources(db, projectId, { personal: true });
       const documentId = await ensureDocument(tx, manuscriptSourceId);
 
       const result = {

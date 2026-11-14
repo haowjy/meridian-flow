@@ -38,6 +38,7 @@ import {
 } from "../domains/collab/adapters/drizzle-branches.js";
 import { type Branches, createBranches } from "../domains/collab/domain/branches.js";
 import type { Branch } from "../domains/collab/domain/ports/branch-store.js";
+import { provisionWorkScratch } from "../domains/context/context-source-provisioning.js";
 import { treeSeeder } from "./tree-seed.js";
 import { createTestWorkProjectionMutation } from "./work-projection.js";
 export type ScenarioSource = "manuscript" | "kb" | "unfiled" | "user";
@@ -238,6 +239,7 @@ export function branchTreeWorldOver(
         .values({ projectId, createdByUserId: userId, name, handle, defaultAiWriteMode: mode })
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
+      await provisionWorkScratch(db, work.id);
       // As a chat made with an explicit mode: it writes that way and seeds the Work's default.
       const { threadId, turnId } = await insertThread(name, work.id, mode);
       madeWorks.push(work.id);

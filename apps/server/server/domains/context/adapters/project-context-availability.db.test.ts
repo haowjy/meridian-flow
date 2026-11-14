@@ -15,7 +15,6 @@ import { LIVE } from "@meridian/project-tree";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
@@ -316,13 +315,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await userDocuments()).toContain(DOCS[3]);
 
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PERSONAL));
-      const provisioned = createProjectContextDocumentStore(
-        db,
-        PROJECT,
-        "user",
-        USER,
-        NO_PROJECT_HINTS,
-      );
+      const provisioned = createProjectContextDocumentStore(db, PROJECT, "user", USER);
 
       await expect(provisioned.existingContextSourceId()).resolves.toBeNull();
       await expect(
