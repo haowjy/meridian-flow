@@ -11,10 +11,12 @@
  * - recovery runs inside the takeover's thread-lock hold and waits there on a held key
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import {
   dropRunClaim,
   insertCall,
   type ModelEditCase,
+  namePath,
   runCases,
   seedCase,
   seedWorkWithChats,
@@ -187,10 +189,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "two-chats", "direct", 2);
       const doc = await h.seedDocument("two-chats", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const [one, two] = work.threadIds as [string, string];
       const first = await start();
       await first.arm("command.afterLock", "hold");
@@ -221,10 +220,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "one-dies", "direct", 2);
       const doc = await h.seedDocument("one-dies", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const [dying, living] = work.threadIds as [string, string];
       const first = await start();
       await first.arm("command.beforeCommit", "kill");
@@ -247,6 +243,40 @@ const cases: ModelEditCase[] = [
       const other = await state(h, living, doc.documentId);
       assert.deepEqual(other.results, ["call-b:committed"]);
       assert.deepEqual(other.edits, ["call-b"]);
+    },
+  },
+  {
+    name: "a chat card's Undo sent twice after a kill between its commit and its answer",
+    expected:
+      "the stored outcome answers the resend (reversed, not nothing to undo); the document is restored once",
+    async run({ h, start }) {
+      const { thread, documentId, path } = await seedCase(h, "reverse-resend", "direct");
+      const first = await start();
+      await first.script([{ toolCalls: [insertCall("call-1", path, "Added.")] }, reply]);
+      await send(first, h, thread);
+      await waitForAssistantTurn(h, thread);
+      const [turn] = await h.raw<{ id: string }[]>`
+        select id from turns where thread_id=${thread} and role='assistant'`;
+      const undo = {
+        op: "reverse",
+        threadId: thread,
+        userId: h.ids.user,
+        turnId: turn?.id,
+        commandId: randomUUID(),
+        direction: "undo",
+      };
+      // The first call's own model edit was the command's first commit; the Undo is the second.
+      await first.arm("command.afterCommit", "kill", 1);
+      first.post(undo);
+      assert.equal(await first.died(), "SIGKILL");
+      assert.deepEqual((await state(h, thread, documentId)).doc, ["Live seed."]);
+      const second = await start();
+      const answers = [await second.call(undo), await second.call(undo)] as { status: string }[];
+      assert.deepEqual(
+        answers.map((answer) => answer.status),
+        ["reversed", "reversed"],
+      );
+      assert.deepEqual((await state(h, thread, documentId)).doc, ["Live seed."]);
     },
   },
 ];

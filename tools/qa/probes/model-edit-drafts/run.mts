@@ -19,6 +19,7 @@ import {
   drafts,
   insertCall,
   type ModelEditCase,
+  namePath,
   runCases,
   seedCase,
   seedWorkWithChats,
@@ -219,10 +220,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "discard-between", "draft");
       const doc = await h.seedDocument("discard-between", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const thread = work.threadIds[0] as string;
       const child = await start();
       await child.arm("block.afterStore", "hold");
@@ -254,10 +252,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "write-after-discard", "draft");
       const doc = await h.seedDocument("write-after-discard", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const thread = work.threadIds[0] as string;
       const child = await start();
       await child.script([
@@ -299,10 +294,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "new-draft", "draft", 2);
       const doc = await h.seedDocument("new-draft", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const [one, two] = work.threadIds as [string, string];
       const child = await start();
       await child.script([
@@ -333,10 +325,7 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "shared-draft", "draft", 2);
       const doc = await h.seedDocument("shared-draft", "Live seed.");
-      const [{ name }] = await h.raw<
-        { name: string }[]
-      >`select name from documents where id=${doc.documentId}`;
-      const path = `manuscript://${name}`;
+      const path = await namePath(h, doc.documentId);
       const [one, two] = work.threadIds as [string, string];
       const child = await start();
       await child.script([

@@ -190,8 +190,7 @@ const cases: ModelEditCase[] = [
   },
   {
     name: "a duplicate tool-call id in one response",
-    expected:
-      "the response is refused when stored or the second call is answered from the first: one edit",
+    expected: "the response is refused when stored: no call runs, the turn errors",
     async run({ h, start }) {
       const tag = `t${Math.random().toString(36).slice(2, 8)}`;
       const { thread, documentId, path } = await seedCase(h, tag, "direct");
@@ -205,9 +204,13 @@ const cases: ModelEditCase[] = [
       await send(child, h, thread);
       await waitForAssistantTurn(h, thread);
       const after = await state(h, thread, documentId);
-      console.log(`  (stored as ${JSON.stringify(after)})`);
-      assert.ok(after.doc.filter((paragraph) => paragraph === "Added.").length <= 1);
-      assert.ok(after.edits.length <= 1);
+      assert.deepEqual(after, {
+        doc: ["Live seed."],
+        turns: ["error"],
+        results: [],
+        edits: [],
+        commands: [],
+      });
     },
   },
   {
@@ -240,7 +243,7 @@ const cases: ModelEditCase[] = [
       const after = await state(h, thread, documentId);
       assert.deepEqual(after.results, ["call-1:timeout"]);
       assert.deepEqual(after.commands, ["never"]);
-      assert.deepEqual(await documentsNamed(h, `${tag}-aborted`), []);
+      assert.equal((await documentsNamed(h, `${tag}-aborted`)).length, 0);
     },
   },
 ];

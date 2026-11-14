@@ -150,7 +150,7 @@ export class Child {
   }
 
   /** Waits for the child to die, as the case's kill point should make it; fails if it does not. */
-  async died(timeoutMs = 30_000): Promise<string> {
+  async died(timeoutMs = 15_000): Promise<string> {
     const outcome = await Promise.race([
       this.exited,
       new Promise<string>((done) => setTimeout(() => done("still running"), timeoutMs)),
@@ -205,10 +205,17 @@ export async function seedWorkWithChats(
   return { ...seeded, threadIds };
 }
 
-/** The drafts harness over `url`, its source named `manuscript` so a model's `manuscript://` paths resolve. */
+/**
+ * The drafts harness over `url`, shaped like a project the app made: the source is named
+ * `manuscript` so a model's `manuscript://` paths resolve, and the project has its "no Work" row
+ * (a model's `undo` reads it).
+ */
 export async function openModelEditHarness(url: string) {
   const h = await openHarness(url);
   await h.raw`update context_sources set slug='manuscript' where id=${h.ids.source}`;
+  await h.raw`
+    insert into works(project_id,created_by_user_id,name,handle,is_no_work)
+    values (${h.ids.project},${h.ids.user},'No Work',null,true)`;
   return h;
 }
 
@@ -221,7 +228,7 @@ type Harness = Awaited<ReturnType<typeof openModelEditHarness>>;
 export async function waitForAssistantTurn(
   h: Harness,
   threadId: string,
-  { count = 1, timeoutMs = 30_000 } = {},
+  { count = 1, timeoutMs = 15_000 } = {},
 ) {
   const until = Date.now() + timeoutMs;
   for (;;) {
@@ -250,17 +257,23 @@ function resultLabel(content: { result?: Record<string, unknown>; content?: unkn
 }
 
 /**
- * The seam for part 3: the evidence a result block commits with it (the model's observation
- * frontiers) is read here and nowhere else. Part 3 moves those rows to the document side and
- * changes this one function; a frontier case asserts on `frontiers(h, thread)` beside `state`.
- * `thread_shown_links` joins here the same way.
+ * What the model was shown, from collab's evidence rows: the source block id of each of the
+ * chat's observation frontiers, oldest first. This one function reads them, so a change to
+ * where the evidence lives changes it alone; `model-edit-evidence` asserts on it.
  */
-export async function frontiers(h: Harness, threadId: string) {
-  const [found] = await h.raw<{ n: number }[]>`
-    select count(*)::int as n from observation_frontiers f
-    join turn_blocks b on b.id=f.source_block_id join turns t on t.id=b.turn_id
-    where t.thread_id=${threadId}`;
-  return (found as { n: number }).n;
+export async function frontierSources(h: Harness, threadId: string) {
+  const found = await h.raw<{ source: string }[]>`
+    select source_block_id as source from observation_frontiers
+    where thread_id=${threadId} order by recorded_seq`;
+  return found.map((row) => row.source);
+}
+
+/** The ids of the chat's `tool_result` blocks, in order. */
+export async function resultBlockIds(h: Harness, threadId: string) {
+  const found = await h.raw<{ id: string }[]>`
+    select b.id from turn_blocks b join turns t on t.id=b.turn_id
+    where t.thread_id=${threadId} and b.block_type='tool_result' order by t.position, b.sequence`;
+  return found.map((row) => row.id);
 }
 
 /**
@@ -286,7 +299,7 @@ async function commandStatuses(h: Harness, threadId: string) {
 /**
  * What a case asserts on, from stored rows only: the live document's paragraphs, the assistant
  * turns' statuses, each result block's outcome in call order, the edit receipts' call ids and
- * the model-edit command rows' statuses. Frontiers are read separately (`frontiers`).
+ * the model-edit command rows' statuses.
  */
 export async function state(h: Harness, threadId: string, documentId: string) {
   const results = await h.raw<{ call: string; content: Parameters<typeof resultLabel>[0] }[]>`
@@ -428,6 +441,13 @@ export async function runCases(probe: string, cases: readonly ModelEditCase[]): 
   process.exit(failed);
 }
 
+/** Names the document the way the app does, without the harness's `.md`; returns its `manuscript://` path. */
+export async function namePath(h: Harness, documentId: string) {
+  const [{ name }] = await h.raw<{ name: string }[]>`
+    update documents set name=regexp_replace(name,'\\.md$','') where id=${documentId} returning name`;
+  return `manuscript://${name}`;
+}
+
 /** A Work with one chat and a live document holding `text`, for one case. */
 export async function seedCase(
   h: Harness,
@@ -437,10 +457,7 @@ export async function seedCase(
 ) {
   const work = await seedWorkWithChats(h, label, mode);
   const doc = await h.seedDocument(label, text);
-  const [{ name }] = await h.raw<
-    { name: string }[]
-  >`select name from documents where id=${doc.documentId}`;
-  const path = `manuscript://${name}`;
+  const path = await namePath(h, doc.documentId);
   return { work, thread: work.threadIds[0] as string, documentId: doc.documentId as string, path };
 }
 
