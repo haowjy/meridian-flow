@@ -19,29 +19,16 @@ import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edi
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
-import { mutationMode } from "./interaction-mode.js";
+import type { DocumentSave } from "./document-save.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { type ListingSource, recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
-import type { ResponseCommitter, RoomCallInput, RoomCopy } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
+import { openRoom, type RoomCallInput, type RoomCopy } from "./room.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import { errorResponse, mutationMeta, parseFileAddress, readSuccess } from "./write-helpers.js";
-import { scopedToolUseId } from "./write-idempotency.js";
-
-/** Name the rejected logical write, not its model-facing ordinal. */
-function stagedWriteDescription(command: WriteCommand): string {
-  const before = "find" in command ? JSON.stringify(command.find) : command.command;
-  const after =
-    "content" in command
-      ? JSON.stringify(command.content)
-      : command.command === "remove"
-        ? '""'
-        : undefined;
-  return [before, after].filter(Boolean).join(" → ");
-}
 
 export function createWriteCommands(deps: {
   options: Pick<
@@ -58,10 +45,9 @@ export function createWriteCommands(deps: {
   autoTurnIdNonce: string;
   renderer: DocumentRenderer;
   journal: CreateWriteToolOptions["journal"];
-  responseCommitter: ResponseCommitter;
+  documentSave: DocumentSave;
 }) {
-  const { options, autoTurnCounter, autoTurnIdNonce, renderer, journal } = deps;
-  const { responseCommitter } = deps;
+  const { options, autoTurnCounter, autoTurnIdNonce, renderer, journal, documentSave } = deps;
 
   return {
     read: (command: ReadCommand, session: ActorSession, context: WriteContext) =>
@@ -95,18 +81,12 @@ export function createWriteCommands(deps: {
 
   /** The call's room copy, disposed when `use` settles; a door that can't read answers its result. */
   async function withRoom(
-    input: Omit<RoomCallInput, "threadId" | "interactionContext" | "responseId" | "workDraftId"> & {
-      session: ActorSession;
-      context: WriteContext;
-    },
+    input: Omit<RoomCallInput, "workDraftId"> & { context: WriteContext },
     use: (room: RoomCopy) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    const { session, context, ...call } = input;
-    const room = await responseCommitter.openRoom({
+    const { context, ...call } = input;
+    const room = await openRoom(options.coordinator, {
       ...call,
-      responseId: context.responseIdentity?.editScopeId,
-      threadId: session.threadId,
-      interactionContext: context.interactionContext,
       ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
     });
     if (isInternalWriteResult(room)) return room;
@@ -119,47 +99,44 @@ export function createWriteCommands(deps: {
 
   async function read(
     command: ReadCommand,
-    session: ActorSession,
+    _session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    return withRoom(
-      { docId: address.documentId, commandName: "read", session, context },
-      async (room) => {
-        const links = await openCommandLinks(options, {
-          documentId: address.documentId,
-          docs: [room.doc],
-          context,
-        });
-        const selection = renderer.selectReadBlocks(toDocHandle(room.doc), command, address);
-        if (!selection.ok)
-          return errorResponse(
-            selection.code,
-            selection.message,
-            address.filePath,
-            selection.documentBlocks,
-          );
-        return withEvidence(
-          links,
-          room,
-          address.documentId,
-          context,
-          {
-            ...readSuccess(
-              renderer.renderRead(
-                selection,
-                links.codec,
-                command.format === "outline" ? "outline" : "full",
-              ),
-            ),
-            revision: options.links.revision(room.doc, links.scope),
-            ...(context.includeNodes ? selectedCut(selection.selected, links.scope) : {}),
-          },
-          { projected: selection.projected },
+    return withRoom({ docId: address.documentId, commandName: "read", context }, async (room) => {
+      const links = await openCommandLinks(options, {
+        documentId: address.documentId,
+        docs: [room.doc],
+        context,
+      });
+      const selection = renderer.selectReadBlocks(toDocHandle(room.doc), command, address);
+      if (!selection.ok)
+        return errorResponse(
+          selection.code,
+          selection.message,
+          address.filePath,
+          selection.documentBlocks,
         );
-      },
-    );
+      return withEvidence(
+        links,
+        room,
+        address.documentId,
+        context,
+        {
+          ...readSuccess(
+            renderer.renderRead(
+              selection,
+              links.codec,
+              command.format === "outline" ? "outline" : "full",
+            ),
+          ),
+          revision: options.links.revision(room.doc, links.scope),
+          ...(context.includeNodes ? selectedCut(selection.selected, links.scope) : {}),
+        },
+        { projected: selection.projected },
+      );
+    });
   }
 
   /**
@@ -190,10 +167,7 @@ export function createWriteCommands(deps: {
     const snapshot = usable ?? (created ? Y.emptySnapshot : null);
     const view =
       snapshot &&
-      createPlanningView(room.doc, snapshot, [
-        ...(lookups.reply?.updates(docId) ?? []),
-        ...responseCommitter.stagedUpdates(context.responseIdentity?.editScopeId, docId),
-      ]);
+      createPlanningView(room.doc, snapshot, [...(lookups.reply?.updates(docId) ?? [])]);
     try {
       return await use(view ?? room.doc);
     } finally {
@@ -232,15 +206,6 @@ export function createWriteCommands(deps: {
     const content = command.command === "create" ? (command.content ?? "") : "";
     // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
     const boundNodes = command.command === "create" ? context.boundNodes : undefined;
-    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
-      responseCommitter.assertCanStage({
-        responseId: context.responseIdentity?.editScopeId,
-        docId: address.documentId,
-        session,
-        turnId: context.turnId,
-        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
-      });
-    }
 
     const given = copiedNodes ?? boundNodes;
     const parsed: ParseForCommandResult = given
@@ -248,15 +213,6 @@ export function createWriteCommands(deps: {
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const responseStagedCreate =
-      context.responseIdentity?.editScopeId !== undefined && actor.kind === "agent";
-    if (responseStagedCreate && context.createdDocument === undefined) {
-      return status(
-        "invalid_write",
-        "Staged create requires host-resolved createdDocument ownership metadata.",
-      );
-    }
-    const createdByThisReply = responseStagedCreate && context.createdDocument === true;
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
@@ -265,16 +221,10 @@ export function createWriteCommands(deps: {
       {
         docId: address.documentId,
         commandName: command.command,
-        session,
         context,
       },
       async (room) => {
-        const responseId = context.responseIdentity?.editScopeId;
-        // The host already materialized this create; its first write owns the empty copy.
-        const overwriting =
-          command.overwrite === true ||
-          (createdByThisReply &&
-            !(responseId && responseCommitter.hasScopeCut(responseId, address.documentId)));
+        const overwriting = command.overwrite === true;
         const existing = options.model.getBlocks(toDocHandle(room.doc)).length > 0;
         if (existing && !overwriting) return alreadyExists;
         // Creating a document or initializing an empty one plans on the room copy, exempt;
@@ -377,10 +327,7 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
-      creation: {
-        createdDocument: context.createdDocument === true,
-        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
-      },
+      ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
       ...(copiedNodes
         ? { copy: { from: command.command === "copy" ? command.from.path : "", edges: false } }
         : {}),
@@ -394,15 +341,6 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    if (context.responseIdentity?.editScopeId) {
-      responseCommitter.assertCanStage({
-        responseId: context.responseIdentity?.editScopeId,
-        docId: address.documentId,
-        session,
-        turnId: context.turnId,
-        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
-      });
-    }
     const from = command.command === "remove" ? undefined : command.from;
     const copiedNodes = from ? context.copiedNodes : undefined;
     if (from && !copiedNodes) return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
@@ -411,87 +349,85 @@ export function createWriteCommands(deps: {
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(session, address.documentId, context);
-    return withRoom(
-      { docId: address.documentId, commandName: command.command, session, context },
-      (room) =>
-        withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
-          const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
-          const links = await openCommandLinks(options, {
+    return withRoom({ docId: address.documentId, commandName: command.command, context }, (room) =>
+      withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
+        const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
+        const links = await openCommandLinks(options, {
+          documentId: address.documentId,
+          docs: planDocs(planDoc, room),
+          ...(copiedNodes ? { stored: copiedNodes } : {}),
+          shown,
+          context,
+        });
+        // Planning fixes scope, matches and a find's reconstructed groups; what
+        // ref assignment will see is only known then, so it loads before assignment runs.
+        const plan = planWrite(
+          {
+            doc: toDocHandle(planDoc),
+            model: options.model,
+            codec: links.codec,
+          },
+          {
+            ...selectors,
+            documentAddress: address,
+            ...(copiedNodes ? { blocks: copiedNodes } : {}),
+          },
+        );
+        if (plan.ok && plan.written.length > 0) {
+          await options.links.prepare({
             documentId: address.documentId,
-            docs: planDocs(planDoc, room),
-            ...(copiedNodes ? { stored: copiedNodes } : {}),
-            shown,
+            docs: [],
+            written: plan.written,
             context,
           });
-          // Planning fixes scope, matches and a find's reconstructed groups; what
-          // ref assignment will see is only known then, so it loads before assignment runs.
-          const plan = planWrite(
-            {
-              doc: toDocHandle(planDoc),
-              model: options.model,
-              codec: links.codec,
-            },
+        }
+        let assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+        let resolved = plan.ok ? plan.assign(assigner) : plan;
+        let appliedPlanDoc = planDoc;
+        if (
+          resolved.ok &&
+          planDoc !== room.doc &&
+          hasMissingTarget(resolved.edits, room.doc) &&
+          "find" in command &&
+          command.in === undefined
+        ) {
+          const currentPlan = planWrite(
+            { doc: toDocHandle(room.doc), model: options.model, codec: links.codec },
             {
               ...selectors,
               documentAddress: address,
               ...(copiedNodes ? { blocks: copiedNodes } : {}),
             },
           );
-          if (plan.ok && plan.written.length > 0) {
-            await options.links.prepare({
-              documentId: address.documentId,
-              docs: [],
-              written: plan.written,
-              context,
-            });
-          }
-          let assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-          let resolved = plan.ok ? plan.assign(assigner) : plan;
-          let appliedPlanDoc = planDoc;
-          if (
-            resolved.ok &&
-            planDoc !== room.doc &&
-            hasMissingTarget(resolved.edits, room.doc) &&
-            "find" in command &&
-            command.in === undefined
-          ) {
-            const currentPlan = planWrite(
-              { doc: toDocHandle(room.doc), model: options.model, codec: links.codec },
-              {
-                ...selectors,
-                documentAddress: address,
-                ...(copiedNodes ? { blocks: copiedNodes } : {}),
-              },
-            );
-            assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-            resolved = currentPlan.ok ? currentPlan.assign(assigner) : currentPlan;
-            appliedPlanDoc = room.doc;
-          }
-          if (!resolved.ok) {
-            return errorResponse(
-              resolved.error.code,
-              resolved.error.message,
-              address.filePath,
-              documentBlocksDetail(resolved.error.details),
-            );
-          }
-          validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-          if (resolved.edits.length === 0) return formatUnchangedSuccess();
-          return finishPreparedEdit({
-            command,
-            session,
-            context,
-            room,
-            planDoc: appliedPlanDoc,
-            assigner,
-            links,
-            actor,
-            docId: address.documentId,
-            filePath: address.filePath,
-            plan: { edits: resolved.edits, ir: resolved.ir },
-            ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
-          });
-        }),
+          assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+          resolved = currentPlan.ok ? currentPlan.assign(assigner) : currentPlan;
+          appliedPlanDoc = room.doc;
+        }
+        if (!resolved.ok) {
+          return errorResponse(
+            resolved.error.code,
+            resolved.error.message,
+            address.filePath,
+            documentBlocksDetail(resolved.error.details),
+          );
+        }
+        validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
+        if (resolved.edits.length === 0) return formatUnchangedSuccess();
+        return finishPreparedEdit({
+          command,
+          session,
+          context,
+          room,
+          planDoc: appliedPlanDoc,
+          assigner,
+          links,
+          actor,
+          docId: address.documentId,
+          filePath: address.filePath,
+          plan: { edits: resolved.edits, ir: resolved.ir },
+          ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
+        });
+      }),
     );
   }
 
@@ -510,7 +446,7 @@ export function createWriteCommands(deps: {
     docId: string;
     filePath: string;
     plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
-    creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
+    refuseUnlessEmpty?: InternalWriteResult;
     copy?: { from: string; edges: boolean };
   }
 
@@ -524,14 +460,7 @@ export function createWriteCommands(deps: {
       registerMinted(edit.assigner, docId, context),
       nextWriteIdentity(docId, session, context, command.tool_use_id),
     ]);
-    const editScopeId = context.responseIdentity?.editScopeId;
-    const staged = Boolean(editScopeId) && actor.kind === "agent";
-    // A save's first entry keeps the room's cut: reconcile reads what retired since.
-    const cut =
-      staged && editScopeId && responseCommitter.hasScopeCut(editScopeId, docId)
-        ? undefined
-        : { snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) };
-    const preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
+    const _preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
     // The echo compares with what the model planned on, as the settled receipt does: a block
     // the writer changed since the view shows in full beside the write.
     const planned = snapshotBlocks(toDocHandle(planDoc), options.model, links.codec);
@@ -581,92 +510,43 @@ export function createWriteCommands(deps: {
     const copied = edit.copy
       ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
       : undefined;
-    const interactionContext = context.interactionContext;
     const meta = mutationMeta(actor);
     const turnId = actor.kind === "agent" ? actor.turnId : null;
-    let phase: "staged" | "committed",
-      revision: string | null = null;
-    let awarenessDegraded = false;
-    if (staged && editScopeId && actor.kind === "agent") {
-      const rejected = responseCommitter.stageUpdate({
-        responseId: editScopeId,
+    const saved = await documentSave.save({
+      docId,
+      links,
+      entry: {
         docId,
-        session,
-        room,
-        cut,
-        commandName: command.command,
-        documentLabel: command.file,
-        description: stagedWriteDescription(command),
         update,
-        editParts: parts,
         meta,
-        actor,
-        turnId: actor.turnId,
-        writeId: identity.handle,
-        writeOrdinal: identity.ordinal,
-        durableWriteId: identity.durableId,
-        toolCallId: identity.toolCallId,
-        createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
-        touchedBlocks,
-        deletedBlocks,
-        preOwnSnapshot,
-        semanticEditIr,
-        copied,
-        interactionContext,
-        ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
-      });
-      if (rejected) return rejected;
-      phase = "staged";
-    } else {
-      if (!cut) throw new Error(`A write outside a reply on ${docId} took no room cut`);
-      const saved = await responseCommitter.saveNow({
-        docId,
-        cut,
-        links,
-        entry: {
-          docId,
-          update,
-          meta,
-          mutation: {
-            editParts: parts,
-            threadId: session.threadId,
-            turnId,
-            ...(actor.kind === "agent"
-              ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
-              : {}),
-            actorKind: actor.kind,
-            ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-            ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-            writeId: identity.durableId,
-            wId: identity.ordinal,
-            toolCallId: identity.toolCallId,
-            semanticEditIr,
-            ...mutationMode(interactionContext),
-          },
+        mutation: {
+          editParts: parts,
+          threadId: session.threadId,
+          turnId,
+          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+          actorKind: actor.kind,
+          ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+          ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+          writeId: identity.durableId,
+          wId: identity.ordinal,
+          toolCallId: identity.toolCallId,
+          semanticEditIr,
         },
-        actor,
-        preOwnSnapshot,
-        refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
-        interactionContext,
-      });
-      if (isInternalWriteResult(saved)) return saved;
-      // The echo and frontier show the room as the save left it, as a reply's receipt does.
-      Y.applyUpdate(room.doc, saved.afterState);
-      room.position = saved.position;
-      context.frontiers?.reply?.append(docId, [update]);
-      revision = saved.revision;
-      awarenessDegraded = Boolean(saved.awarenessDegraded);
-      phase = "committed";
-    }
+      },
+      refuseUnlessEmpty: edit.refuseUnlessEmpty,
+      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
+    });
+    if (isInternalWriteResult(saved)) return saved;
+    // The echo and frontier show the room as the save left it.
+    Y.applyUpdate(room.doc, saved.afterState);
+    room.position = saved.position;
+    context.frontiers?.reply?.append(docId, [update]);
     const outcome = {
-      phase,
-      revision,
+      phase: "committed" as const,
+      revision: saved.revision,
       writeId: identity.handle,
-      ...(phase === "staged" ? { settlementId: identity.durableId } : {}),
-      awarenessDegraded,
+      awarenessDegraded: Boolean(saved.awarenessDegraded),
     };
-    // A staged echo records nothing: the reply's save replaces it before the model's next request.
-    const recorded = phase === "staged" ? { ...context, frontiers: undefined } : context;
     const ownRemoved = new Set(deletedBlocks.map((block) => `${block.clientID}:${block.clock}`));
     try {
       const echoProjected = options.model.projectBlocks(toDocHandle(room.doc));
@@ -674,7 +554,7 @@ export function createWriteCommands(deps: {
         links,
         room,
         docId,
-        recorded,
+        context,
         renderReceipt(
           {
             commandName: command.command,
@@ -695,7 +575,7 @@ export function createWriteCommands(deps: {
         links,
         room,
         docId,
-        recorded,
+        context,
         formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
         { ownRemoved },
       );
@@ -717,7 +597,6 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const written = [
       ...(context.frontiers?.reply?.updates(documentId) ?? []),
-      ...responseCommitter.stagedUpdates(context.responseIdentity?.editScopeId, documentId),
       ...(own?.written ?? []),
     ];
     return recordObservation(
@@ -741,11 +620,7 @@ export function createWriteCommands(deps: {
                   after,
                   through,
                   ...(attributionBridge ? { attributionBridge } : {}),
-                  ...(context.interactionContext?.mode === "threadPeer"
-                    ? { access: { pinnedDraftId: context.interactionContext.peerDraftId } }
-                    : context.workDraftId
-                      ? { access: { workDraftId: context.workDraftId } }
-                      : {}),
+                  ...(context.workDraftId ? { access: { workDraftId: context.workDraftId } } : {}),
                 }) ?? Promise.resolve([]),
             }
           : {}),
@@ -836,11 +711,12 @@ export function createWriteCommands(deps: {
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
     const ordinal = await journal.reserveWriteOrdinal(docId, session.threadId);
+    const toolCallId = commandToolUseId ?? context.tool_use_id;
+    // Scoped to the turn so the same tool-call id in another turn is another write.
     const durableId =
-      scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
+      (toolCallId && context.turnId ? `turn:${context.turnId}:tool:${toolCallId}` : toolCallId) ??
       globalThis.crypto?.randomUUID?.() ??
       `${session.threadId}:${docId}:write-${ordinal}`;
-    const toolCallId = commandToolUseId ?? context.tool_use_id;
     return {
       durableId,
       ordinal,
@@ -866,8 +742,7 @@ export function createWriteCommands(deps: {
       kind: "agent",
       turnId,
       threadId: session.threadId,
-      responseId: context.responseIdentity?.providerResponseId,
-      editScopeId: context.responseIdentity?.editScopeId,
+      responseId: context.responseIdentity?.modelResponseId,
     };
   }
 

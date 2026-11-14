@@ -6,11 +6,11 @@ import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 
 export function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {
-    case "operation_mismatch":
+    case "command_conflict":
       return throwHttpInterrupt(
         meridianErrorFromSystem(
-          "operation_mismatch",
-          "Operation ID already names a different command",
+          "command_conflict",
+          "Command ID already names a different command",
           false,
         ),
         409,

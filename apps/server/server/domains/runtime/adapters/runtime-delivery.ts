@@ -869,6 +869,7 @@ export function createDeliveryAdapter(
       return result.value;
     },
     ackWithResponse: settlement.ackWithResponse,
+    storeUnderLease: settlement.storeUnderLease,
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;

@@ -5,6 +5,7 @@ export * from "./billing";
 export * from "./branches";
 export * from "./content";
 export * from "./imports";
+export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
@@ -23,6 +24,7 @@ import * as branches from "./branches";
 import * as content from "./content";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
+import * as modelEvidence from "./model-evidence";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as threadAsks from "./thread-asks";
@@ -52,6 +54,7 @@ export const schema = {
   ...workingSets,
   ...yjs,
   ...documentEdits,
+  ...modelEvidence,
 };
 
 export * from "./document-edits";

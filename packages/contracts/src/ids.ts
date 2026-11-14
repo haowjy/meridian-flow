@@ -32,8 +32,8 @@ export function parseDraftItemKey(
     ? { branchId, documentId }
     : null;
 }
-/** A client-generated UUID naming one writer Apply or Discard command; resends reuse it. */
-export type BranchCommandId = string;
+/** A client-generated UUID naming one document command; resends reuse it. */
+export type DocumentCommandId = string;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;

@@ -478,10 +478,6 @@ msgstr "{label}…"
 msgid "{landedName} is now in {0}."
 msgstr "{landedName} is now in {0}."
 
-#: src/features/project/context/LinkUpdateNote.tsx
-#~ msgid "{links, plural, one {Updated # link} other {Updated # links}}"
-#~ msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
@@ -579,24 +575,20 @@ msgid "{name} source"
 msgstr "{name} source"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted before this reply saved its change."
-msgstr "{name} was deleted before this reply saved its change."
+msgid "{name} was deleted before this change could be made."
+msgstr "{name} was deleted before this change could be made."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted with the Work {work} before this reply saved its change."
-msgstr "{name} was deleted with the Work {work} before this reply saved its change."
+msgid "{name} was deleted with the Work {work} before this change could be made."
+msgstr "{name} was deleted with the Work {work} before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was discarded from the draft before this reply saved its change."
-msgstr "{name} was discarded from the draft before this reply saved its change."
-
-#: src/features/chat/tool-renderers.tsx
-msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
-msgstr "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+msgid "{name} was discarded from the draft before this change could be made."
+msgstr "{name} was discarded from the draft before this change could be made."
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
@@ -666,10 +658,6 @@ msgid "{skipped, plural, one {# skipped} other {# skipped}}"
 msgstr "{skipped, plural, one {# skipped} other {# skipped}}"
 
 #: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "{source} is a folder. Only documents can be moved or deleted."
-#~ msgstr "{source} is a folder. Only documents can be moved or deleted."
-
-#: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is already at {place}."
 msgstr "{source} is already at {place}."
 
@@ -709,10 +697,6 @@ msgstr "{title} was deleted."
 msgid "{title} was discarded from the draft."
 msgstr "{title} was discarded from the draft."
 
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was removed when the reply that created it didn't finish."
-msgstr "{title} was removed when the reply that created it didn't finish."
-
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{toReview} to review"
 msgstr "{toReview} to review"
@@ -722,20 +706,20 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} deleted {name} before this reply saved its change."
-msgstr "{who} deleted {name} before this reply saved its change."
+msgid "{who} deleted {name} before this change could be made."
+msgstr "{who} deleted {name} before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} deleted this document before this reply saved its change."
-msgstr "{who} deleted this document before this reply saved its change."
+msgid "{who} deleted this document before this change could be made."
+msgstr "{who} deleted this document before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded {name} from the draft before this reply saved its change."
-msgstr "{who} discarded {name} from the draft before this reply saved its change."
+msgid "{who} discarded {name} from the draft before this change could be made."
+msgstr "{who} discarded {name} from the draft before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded this document from the draft before this reply saved its change."
-msgstr "{who} discarded this document from the draft before this reply saved its change."
+msgid "{who} discarded this document from the draft before this change could be made."
+msgstr "{who} discarded this document from the draft before this change could be made."
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -875,11 +859,6 @@ msgstr "A picture cannot go there."
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr "A source is no longer there."
-
-#: src/features/project/context/entry-drag/copy-refusal.ts
-#: src/features/project/context/entry-drag/entry-failure.ts
-#~ msgid "A source or the destination is no longer there."
-#~ msgstr "A source or the destination is no longer there."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -1300,14 +1279,6 @@ msgstr "Calls"
 msgid "Can't copy these"
 msgstr "Can't copy these"
 
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't delete {source} from this location."
-#~ msgstr "Can't delete {source} from this location."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't delete {source}: it changed during the delete."
-#~ msgstr "Can't delete {source}: it changed during the delete."
-
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
@@ -1326,40 +1297,8 @@ msgid "Can’t mention that here"
 msgstr "Can’t mention that here"
 
 #: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source} to that location."
-#~ msgstr "Can't move {source} to that location."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: {place} is already taken."
-#~ msgstr "Can't move {source}: {place} is already taken."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: it or its destination changed during the move."
-#~ msgstr "Can't move {source}: it or its destination changed during the move."
-
-#: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: it would go inside itself."
 msgstr "Can't move {source}: it would go inside itself."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: renaming it can't change its file type."
-#~ msgstr "Can't move {source}: renaming it can't change its file type."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: that extension needs a different kind of document."
-#~ msgstr "Can't move {source}: that extension needs a different kind of document."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: that folder doesn't exist."
-#~ msgstr "Can't move {source}: that folder doesn't exist."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: that location is already taken."
-#~ msgstr "Can't move {source}: that location is already taken."
-
-#: src/features/chat/namespace-refusal-copy.ts
-#~ msgid "Can't move {source}: the folder for {place} doesn't exist."
-#~ msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
 #: src/features/draft-review/tree-groups.ts
 msgid "Can't move into {into}: it is inside this now."
@@ -2018,18 +1957,6 @@ msgstr "Couldn't create a Work"
 msgid "Couldn't create this document. Try another place."
 msgstr "Couldn't create this document. Try another place."
 
-#: src/features/project/context/use-create-entry-form.ts
-#~ msgid "Couldn't create this file."
-#~ msgstr "Couldn't create this file."
-
-#: src/features/project/context/use-create-entry-form.ts
-#~ msgid "Couldn't create this folder."
-#~ msgstr "Couldn't create this folder."
-
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't create this folder. Try another place."
-#~ msgstr "Couldn't create this folder. Try another place."
-
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't create this fork."
 msgstr "Couldn't create this fork."
@@ -2063,10 +1990,6 @@ msgstr "Couldn't delete this chat"
 msgid "Couldn't delete this document."
 msgstr "Couldn't delete this document."
 
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't delete this document. Try again."
-#~ msgstr "Couldn't delete this document. Try again."
-
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr "Couldn’t delete this file. Try again."
@@ -2074,10 +1997,6 @@ msgstr "Couldn’t delete this file. Try again."
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't delete this folder."
 msgstr "Couldn't delete this folder."
-
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't delete this folder. Try again."
-#~ msgstr "Couldn't delete this folder. Try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
@@ -2125,10 +2044,6 @@ msgstr "Couldn't load chats."
 #: src/features/project/side/DocumentChoices.tsx
 msgid "Couldn't load documents."
 msgstr "Couldn't load documents."
-
-#: src/features/project/context/ContextTreePanel.tsx
-#~ msgid "Couldn't load files."
-#~ msgstr "Couldn't load files."
 
 #: src/features/project/chat/RecentChatsLanding.tsx
 msgid "Couldn't load more chats."
@@ -2210,10 +2125,6 @@ msgstr "Couldn't move {0}."
 msgid "Couldn't move this entry."
 msgstr "Couldn't move this entry."
 
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't move this entry. Try again."
-#~ msgstr "Couldn't move this entry. Try again."
-
 #: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
 msgstr "Couldn't move to {failedFolder}. Try again or pick another folder."
@@ -2277,10 +2188,6 @@ msgstr "Couldn’t rename this chat. Try again."
 msgid "Couldn't rename this document."
 msgstr "Couldn't rename this document."
 
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't rename this document. Try again."
-#~ msgstr "Couldn't rename this document. Try again."
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
@@ -2288,10 +2195,6 @@ msgstr "Couldn't rename this document. Try another name."
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't rename this folder."
 msgstr "Couldn't rename this folder."
-
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Couldn't rename this folder. Try again."
-#~ msgstr "Couldn't rename this folder. Try again."
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
@@ -2314,22 +2217,6 @@ msgstr "Couldn't restore {0}. Try again."
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore {name}"
 msgstr "Couldn’t restore {name}"
-
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Couldn't restore {name}."
-#~ msgstr "Couldn't restore {name}."
-
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Couldn't restore {name}. A file is in the way."
-#~ msgstr "Couldn't restore {name}. A file is in the way."
-
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Couldn't restore {name}. That folder is no longer available."
-#~ msgstr "Couldn't restore {name}. That folder is no longer available."
-
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Couldn't restore {name}. Try again."
-#~ msgstr "Couldn't restore {name}. Try again."
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -2665,10 +2552,6 @@ msgstr "Deleting"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
 msgstr "Deleting a Work…"
-
-#: src/rich-content/ImageBlock.tsx
-#~ msgid "Demo image"
-#~ msgstr "Demo image"
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Denied"
@@ -3010,10 +2893,6 @@ msgstr "Extra usage"
 msgid "Failed"
 msgstr "Failed"
 
-#: src/rich-content/ImageBlock.tsx
-#~ msgid "Failed to load image"
-#~ msgstr "Failed to load image"
-
 #. placeholder {0}: upload.name
 #: src/components/app/composer/composer-document.ts
 msgid "Failed upload: {0}"
@@ -3099,10 +2978,6 @@ msgstr "Find a document"
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Find in {0}"
 msgstr "Find in {0}"
-
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Find in Scratch"
-#~ msgstr "Find in Scratch"
 
 #: src/features/project/side/SideHeader.tsx
 msgid "Finding a document…"
@@ -4681,10 +4556,6 @@ msgstr "Remove link"
 msgid "Remove reference"
 msgstr "Remove reference"
 
-#: src/features/project/context/TrashedDocument.tsx
-msgid "Removed from {place} on {deleted}, when the reply that created it didn't finish."
-msgstr "Removed from {place} on {deleted}, when the reply that created it didn't finish."
-
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -4791,35 +4662,15 @@ msgstr "Restore before {sibling}"
 msgid "Restore to {destinationName}"
 msgstr "Restore to {destinationName}"
 
-#. placeholder {0}: landed.length
-#. placeholder {1}: entries.length
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Restored {0} of {1} files."
-#~ msgstr "Restored {0} of {1} files."
-
-#. placeholder {0}: restored.length
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Restored {0} of {requested} items to {destinationName}."
-#~ msgstr "Restored {0} of {requested} items to {destinationName}."
-
 #. placeholder {0}: only.name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored {0} to {destinationName}."
 msgstr "Restored {0} to {destinationName}."
 
-#. placeholder {0}: document.name
-#: src/features/project/context/TrashedDocument.tsx
-#~ msgid "Restored {0}, but couldn't open it. Try again from the file list."
-#~ msgstr "Restored {0}, but couldn't open it. Try again from the file list."
-
 #. placeholder {0}: entries[0].name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored {0}."
 msgstr "Restored {0}."
-
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Restored {name} to {destinationName}."
-#~ msgstr "Restored {name} to {destinationName}."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Restored {name}, but couldn't open it. Try again from the file list."
@@ -4829,11 +4680,6 @@ msgstr "Restored {name}, but couldn't open it. Try again from the file list."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Restored as {0}."
 msgstr "Restored as {0}."
-
-#. placeholder {0}: documentLocationName(only)
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
-#~ msgid "Restored at {0}."
-#~ msgstr "Restored at {0}."
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
@@ -4899,10 +4745,6 @@ msgstr "Returned from the billing portal."
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
 msgstr "Right"
-
-#: src/features/chat/turn-receipt-copy.ts
-msgid "Rolled back"
-msgstr "Rolled back"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Row"
@@ -5631,8 +5473,8 @@ msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "The AI in {chat} deleted {count} documents ({names})."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in {chat} deleted {name} before this reply saved its change."
-msgstr "The AI in {chat} deleted {name} before this reply saved its change."
+msgid "The AI in {chat} deleted {name} before this change could be made."
+msgstr "The AI in {chat} deleted {name} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
@@ -5643,8 +5485,8 @@ msgid "The AI in {chat} deleted {title}."
 msgstr "The AI in {chat} deleted {title}."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in {chat} deleted this document before this reply saved its change."
-msgstr "The AI in {chat} deleted this document before this reply saved its change."
+msgid "The AI in {chat} deleted this document before this change could be made."
+msgstr "The AI in {chat} deleted this document before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted this document."
@@ -5655,8 +5497,8 @@ msgid "The AI in a chat deleted {count} documents ({names})."
 msgstr "The AI in a chat deleted {count} documents ({names})."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in a chat deleted {name} before this reply saved its change."
-msgstr "The AI in a chat deleted {name} before this reply saved its change."
+msgid "The AI in a chat deleted {name} before this change could be made."
+msgstr "The AI in a chat deleted {name} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
@@ -5667,8 +5509,8 @@ msgid "The AI in a chat deleted {title}."
 msgstr "The AI in a chat deleted {title}."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in a chat deleted this document before this reply saved its change."
-msgstr "The AI in a chat deleted this document before this reply saved its change."
+msgid "The AI in a chat deleted this document before this change could be made."
+msgstr "The AI in a chat deleted this document before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document."
@@ -6018,8 +5860,8 @@ msgid "This document was deleted"
 msgstr "This document was deleted"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted before this reply saved its change."
-msgstr "This document was deleted before this reply saved its change."
+msgid "This document was deleted before this change could be made."
+msgstr "This document was deleted before this change could be made."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This document was deleted from the manuscript. Apply again to bring it back."
@@ -6030,8 +5872,8 @@ msgid "This document was deleted with the Work {name}."
 msgstr "This document was deleted with the Work {name}."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted with the Work {work} before this reply saved its change."
-msgstr "This document was deleted with the Work {work} before this reply saved its change."
+msgid "This document was deleted with the Work {work} before this change could be made."
+msgstr "This document was deleted with the Work {work} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."
@@ -6042,20 +5884,12 @@ msgid "This document was discarded from the draft"
 msgstr "This document was discarded from the draft"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was discarded from the draft before this reply saved its change."
-msgstr "This document was discarded from the draft before this reply saved its change."
+msgid "This document was discarded from the draft before this change could be made."
+msgstr "This document was discarded from the draft before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
 msgstr "This document was discarded from the draft."
-
-#: src/features/chat/tool-renderers.tsx
-msgid "This document was removed when the reply that created it didn't finish, so this change wasn't made."
-msgstr "This document was removed when the reply that created it didn't finish, so this change wasn't made."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was removed when the reply that created it didn't finish."
-msgstr "This document was removed when the reply that created it didn't finish."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
@@ -6101,10 +5935,6 @@ msgstr "This file is binary, so this change can't be reversed."
 msgid "This file is no longer there. Refresh and try again."
 msgstr "This file is no longer there. Refresh and try again."
 
-#: src/features/project/context/use-rename-entry-form.ts
-#~ msgid "This file is unavailable. Refresh and try again."
-#~ msgstr "This file is unavailable. Refresh and try again."
-
 #: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
 msgstr "This filename contains unsupported characters. Rename the file and try again."
@@ -6120,10 +5950,6 @@ msgstr "This folder is no longer available."
 #: src/features/project/context/tree-action-message.ts
 msgid "This folder is no longer there. Refresh and try again."
 msgstr "This folder is no longer there. Refresh and try again."
-
-#: src/features/project/context/use-rename-entry-form.ts
-#~ msgid "This folder is unavailable. Refresh and try again."
-#~ msgstr "This folder is unavailable. Refresh and try again."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 msgid "This fork continues here"

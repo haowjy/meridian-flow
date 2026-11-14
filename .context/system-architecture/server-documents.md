@@ -1,6 +1,6 @@
 # Server: documents
 
-The domains that hold a writer's text and decide who may change it. When the model writes, the call resolves the path to a document in `context` (1), asks `file-policy` whether this chat may edit it (2), writes through `collab` under that grant (3), `collab` journals the edit at the reply's save (4) and pushes it to the browsers that have the document open (5). A writer opening a document connects to `collab` over the Yjs socket; the same `file-policy` check admits the connection. Back to the [server](server.md).
+The domains that hold a writer's text and decide who may change it. When the model writes, the call resolves the path to a document in `context` (1), asks `file-policy` whether this chat may edit it (2), writes through `collab` under that grant (3), `collab` journals the edit with the call's command (4) and pushes it to the browsers that have the document open (5). A writer opening a document connects to `collab` over the Yjs socket; the same `file-policy` check admits the connection. Back to the [server](server.md).
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,7 @@ flowchart LR
   conversation -->|"1. resolves the path to a document"| context
   conversation -->|"2. asks if the chat may edit it"| file-policy
   conversation -->|"3. writes under that grant"| collab
-  collab -->|"4. journals the edit at the reply's save"| postgres
+  collab -->|"4. journals the edit with the call's command"| postgres
   collab -->|"5. pushes it to open rooms"| browser
   browser -->|"opens a document"| collab
   file-policy -->|"reads Work facts"| workspace

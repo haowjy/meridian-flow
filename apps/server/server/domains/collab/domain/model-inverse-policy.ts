@@ -150,8 +150,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               documentId: document.documentId,
               threadId: query.threadId,
               turnId: query.turnId ?? null,
-              responseId: query.responseIdentity?.providerResponseId ?? null,
-              editScopeId: query.responseIdentity?.editScopeId ?? null,
+              responseId: query.responseIdentity?.modelResponseId ?? null,
               toolCallId: query.toolCallId ?? null,
               actor: "agent",
               wId: null,
@@ -512,29 +511,27 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             applied = entry.parts.filter(
               (part) => part.origin.kind === "pending" && part.disposition === "applied",
             ).length;
-          const state = entry.parts.every((part) => inspection.rolledBack(part))
-            ? "rolled back"
-            : fullyUndone
-              ? undos.some((undo) =>
-                  undo.parts.some(
-                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-                  ),
-                )
-                ? "undone by the user"
-                : "undone"
-              : applied
-                ? applied === entry.parts.length
-                  ? "applied"
-                  : `partly applied (${applied} of ${entry.parts.length})`
-                : entry.parts.every((part) => part.disposition === "discarded")
-                  ? "discarded"
-                  : states.every((state) => state.state === "undone")
-                    ? "undone"
-                    : states.some((state) => state.state === "changed")
-                      ? "changed"
-                      : entry.parts.some((part) => part.origin.kind === "pending")
-                        ? "pending"
-                        : "live";
+          const state = fullyUndone
+            ? undos.some((undo) =>
+                undo.parts.some(
+                  (part) => part.actor !== "agent" || part.threadId !== query.threadId,
+                ),
+              )
+              ? "undone by the user"
+              : "undone"
+            : applied
+              ? applied === entry.parts.length
+                ? "applied"
+                : `partly applied (${applied} of ${entry.parts.length})`
+              : entry.parts.every((part) => part.disposition === "discarded")
+                ? "discarded"
+                : states.every((state) => state.state === "undone")
+                  ? "undone"
+                  : states.some((state) => state.state === "changed")
+                    ? "changed"
+                    : entry.parts.some((part) => part.origin.kind === "pending")
+                      ? "pending"
+                      : "live";
           let command = "none";
           const revertPlan = policy.textPlan(entry, "revert", (destination) =>
             destination.kind === "draft" && destination.state === "gone"

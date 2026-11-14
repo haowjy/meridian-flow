@@ -361,15 +361,10 @@ function classify(method: string, path: string): RouteKind {
 /** Routes whose answer is the same fixed fact in every scenario. */
 function staticRoute(route: string, path: string): [number, unknown, boolean?] {
   if (route === "GET /api/threads") return [200, { threads: [thread()] }, true];
-  if (route === "POST /api/projects/bootstrap-default")
+  if (route === "GET /api/projects")
     return [
-      201,
-      {
-        projectId: PROJECT_ID,
-        documentId: DOCUMENT_ID,
-        manuscriptSourceId: "source",
-        uri: "manuscript://Manuscript",
-      },
+      200,
+      { projects: [{ id: PROJECT_ID, isPersonal: true, slug: "my-serial", title: "My Serial" }] },
     ];
   if (route === "POST /api/threads") return [201, thread(), true];
   if (route === `GET /api/threads/${THREAD_ID}/skills`)

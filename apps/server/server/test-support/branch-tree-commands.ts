@@ -14,11 +14,7 @@ import {
   draftOwnerKey,
   type WorkId,
 } from "@meridian/contracts";
-import type {
-  BranchCommandPendingResponse,
-  BranchCommandResult,
-  ThreadDraftListItem,
-} from "@meridian/contracts/branches";
+import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -39,19 +35,17 @@ import {
 } from "../lib/branch-review-route.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
-import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
+import type { useComposedRuntimes } from "./composed-runtime.js";
 import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
 import { treeSeeder } from "./tree-seed.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
 
-/** One model reply on a Work's thread: tool calls staged until `save` or `rollback`. */
+/** One model reply on a Work's thread: its tool calls, each committed as it runs. */
 export interface ScenarioReply {
   responseId: string;
   call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
-  save(): Promise<unknown>;
-  rollback(): Promise<unknown>;
 }
 
 export interface ScenarioModel {
@@ -123,11 +117,7 @@ export interface BranchTreeCommands {
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
     options?: { branchId?: string },
-  ): Promise<
-    | BranchCommandResult
-    | BranchCommandPendingResponse
-    | (BranchCommandResult | BranchCommandPendingResponse)[]
-  >;
+  ): Promise<DiscardCommandResult | DiscardCommandResult[]>;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -237,22 +227,7 @@ export function branchTreeCommands(
       const { runtime, runtimes } = composed();
       const thread = { threadId: work.threadId, turnId: work.turnId };
       const { responseId, call } = await runtimes.script(runtime, thread).begin();
-      // The runtime loop's own lifecycle: its save and rollback retract staged creates.
-      const lifecycle = runtime.app.responseWrites;
-      return {
-        responseId,
-        call,
-        save: () =>
-          lifecycle.commitResponse(
-            { providerResponseId: responseId, editScopeId: responseId },
-            thread,
-          ),
-        rollback: () =>
-          lifecycle.rollbackResponse(
-            { providerResponseId: responseId, editScopeId: responseId },
-            thread,
-          ),
-      };
+      return { responseId, call };
     }
     async function succeed(result: ToolExecutionResult) {
       if (result.isError) throw new Error(`model call failed: ${JSON.stringify(result.content)}`);
@@ -261,19 +236,15 @@ export function branchTreeCommands(
     return {
       reply,
       async now(name, args) {
-        const { runtime } = composed();
-        await bindEditAgent(runtime, work.threadId);
-        return runtime.app.toolExecutor.executeTool(
-          { id: randomUUID(), name, arguments: args },
-          { threadId: work.threadId, turnId: work.turnId, agentSlug: null },
-        );
+        const { runtime, runtimes } = composed();
+        const { call } = await runtimes.script(runtime, work).begin();
+        return call(name, args);
       },
       async create(path, text) {
         const turn = await reply();
         const created = await succeed(
           await turn.call("write", { command: "create", path: uri(path), content: text }),
         );
-        await turn.save();
         const documentId = (created.metadata as { documentId?: unknown } | undefined)?.documentId;
         if (typeof documentId === "string") return documentId as DocumentId;
         const stat = await view(work).stat(path);
@@ -285,7 +256,6 @@ export function branchTreeCommands(
         const copied = await succeed(
           await turn.call("write", { command: "copy", from: { path: uri(from) }, path: uri(to) }),
         );
-        await turn.save();
         return copied;
       },
       async edit(path, find, content) {
@@ -294,7 +264,6 @@ export function branchTreeCommands(
         await succeed(
           await turn.call("write", { command: "replace", path: uri(path), find, content }),
         );
-        await turn.save();
       },
     };
   }
@@ -484,7 +453,7 @@ export function branchTreeCommands(
         })
       ).body;
     }
-    const results: (BranchCommandResult | BranchCommandPendingResponse)[] = [];
+    const results: DiscardCommandResult[] = [];
     await eachItem(work, items, "discard", async ({ documentId, branchId, itemKey }) => {
       results.push(
         (

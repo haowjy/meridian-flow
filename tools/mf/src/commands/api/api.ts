@@ -33,7 +33,7 @@ export const apiCommand: CommandSpec = {
   },
   examples: [
     "./mf api GET /api/threads",
-    "./mf api POST /api/projects/bootstrap-default",
+    "./mf api GET /api/projects",
     `./mf api PATCH /api/threads/<id>/title --data '{"title":"Chapter 3 notes"}'`,
   ],
   async run(ctx) {

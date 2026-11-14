@@ -10,7 +10,6 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
-  ContextOperationReceipt,
   ContextSourcesResult,
   DocumentTrashEntry,
   ListDocumentTrashResponse,
@@ -28,7 +27,6 @@ import {
   apiProjectContextEntryDeletePath,
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
-  apiProjectContextOperationPath,
   apiProjectContextSourcesPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
@@ -356,18 +354,6 @@ export async function copyContextEntries(
     headers: init?.headers,
     signal: init?.signal,
   });
-}
-
-export async function getContextOperationReceipt(
-  projectId: string,
-  operationId: string,
-  init?: RequestInitOptions,
-): Promise<ContextOperationReceipt | null> {
-  const result = await getJson<{ receipt: ContextOperationReceipt | null }>(
-    urlFor(apiProjectContextOperationPath(projectId, operationId), init),
-    { headers: init?.headers, signal: init?.signal },
-  );
-  return result.receipt;
 }
 
 export function restoreContextDocuments(

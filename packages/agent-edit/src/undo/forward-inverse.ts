@@ -41,7 +41,7 @@ export interface EditTarget {
   ordinal: number;
   direction: "invert" | "reapply";
 }
-export type EditKind = "write" | "undo" | "redo" | "revert" | "rollback";
+export type EditKind = "write" | "undo" | "redo" | "revert";
 export interface InversePart {
   id: number;
   editId: string;
@@ -54,7 +54,7 @@ export interface InversePart {
   aliases: EditAlias[];
   targets: EditTarget[];
 }
-export type PartState = "active" | "undone" | "rolled_back" | "changed" | "excluded";
+export type PartState = "active" | "undone" | "changed" | "excluded";
 export interface PartClassification {
   part: InversePart;
   state: PartState;
@@ -186,7 +186,6 @@ class Lineage {
   readonly backward = new Map<Key, Key>();
   readonly owners = new Map<Key, InversePart>();
   readonly inverseRestorations = new Set<Key>();
-  readonly rollbackTargets = new Set<string>();
   readonly ordered: InversePart[];
   private readonly roots = new Map<Key, Key>();
   private readonly families = new Map<Key, Key[]>();
@@ -219,7 +218,6 @@ class Lineage {
       this.backward = base.backward;
       this.owners = base.owners;
       this.inverseRestorations = base.inverseRestorations;
-      this.rollbackTargets = base.rollbackTargets;
       this.roots = base.roots;
       this.families = base.families;
       this.effectRoots = base.effectRoots;
@@ -231,13 +229,9 @@ class Lineage {
       this.backward = new Map(base.backward);
       this.owners = new Map(base.owners);
       this.inverseRestorations = new Set(base.inverseRestorations);
-      this.rollbackTargets = new Set(base.rollbackTargets);
       this.roots = new Map(base.roots);
     }
     for (const p of added ? [added] : this.ordered) {
-      if (p.kind === "rollback")
-        for (const target of p.targets)
-          this.rollbackTargets.add(`${target.editId}:${target.ordinal}`);
       for (const k of clocks(p.effect.deleted)) if (!this.owners.has(k)) this.owners.set(k, p);
       for (const alias of p.aliases)
         for (let n = 0; n < alias.len; n++) {
@@ -400,10 +394,7 @@ function classify(index: Lineage, part: InversePart): PartClassification {
       del.every((k) => isVisible(k) && index.restored(k));
     if (active) return { part, state: "active", reasons: [] };
     if (undone) {
-      // Only rollback of this selected part is terminal. Rolling back a later
-      // inverse restores this part's previous state, not its authorship lifetime.
-      const terminal = index.rollbackTargets.has(`${part.editId}:${part.ordinal}`);
-      return { part, state: terminal ? "rolled_back" : "undone", reasons: [] };
+      return { part, state: "undone", reasons: [] };
     }
     return changed("items changed since");
   } catch (error) {

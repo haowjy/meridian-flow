@@ -9,16 +9,12 @@ import { openCommandLinks } from "./command-links.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
-import type { ResponseCommitter } from "./response-committer.js";
 import { status } from "./response-format.js";
 import type { ReadCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import { parseFileAddress } from "./write-helpers.js";
 
-export function createDocumentEditCommands(deps: {
-  options: CreateWriteToolOptions;
-  committer: ResponseCommitter;
-}) {
+export function createDocumentEditCommands(deps: { options: CreateWriteToolOptions }) {
   return async (
     command: ReadCommand | ModelInverseCommand,
     session: ActorSession,
@@ -26,11 +22,6 @@ export function createDocumentEditCommands(deps: {
   ): Promise<InternalWriteResult> => {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    if (
-      context.responseIdentity?.editScopeId &&
-      deps.committer.hasBufferedWrites(context.responseIdentity?.editScopeId)
-    )
-      throw new Error("Immutable edit commands require the reply save boundary");
     const port = deps.options.documentEdits;
     if (!port) return status("invalid_write", "This host has no immutable edit history.");
     // The inverse plans against the host's locked authority, never against a call's room copy.

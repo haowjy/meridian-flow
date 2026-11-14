@@ -18,8 +18,6 @@ export interface UpdateMeta {
   author?: string;
   /** Successful model response that authored this update. */
   authoringResponseId?: string;
-  /** Prepared scope used for save and rollback selection, never a provider FK. */
-  editScopeId?: string;
   /** Monotonic sequence within the document. */
   seq: number;
 }

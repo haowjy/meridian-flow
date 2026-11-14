@@ -10,7 +10,6 @@ import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import type { ShownLinkStore } from "./ports/shown-links.js";
 import {
   type ShownLinksCheck,
   shownLink,
@@ -31,7 +30,9 @@ if (!RUN_DB_TESTS || !url) {
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { createCompactionFixture } = await import("./loop/__tests__/compaction-db-fixture.js");
-    const { createDrizzleShownLinkStore } = await import("./adapters/drizzle/shown-links.js");
+    const { createDrizzleModelEvidence } = await import(
+      "../collab/adapters/drizzle-model-evidence.js"
+    );
     const { createDrizzleRepositoriesForTest } = await import(
       "../threads/adapters/drizzle/repositories.js"
     );
@@ -100,19 +101,18 @@ if (!RUN_DB_TESTS || !url) {
     async function rig(scene: "store" | "compaction") {
       const { repos, threadId, childId, documentId, compaction } =
         scene === "compaction" ? await compactionScene() : await storeScene();
-      const store: ShownLinkStore = createDrizzleShownLinkStore(db);
+      const store = createDrizzleModelEvidence(db);
       const transaction = <T>(operation: () => Promise<T>) => repos.transaction(operation);
       const turns = await repos.turns.listByThread(threadId as ThreadId);
       const answer = turns.at(-1) as Turn;
       const source = (await repos.threads.findById(threadId as ThreadId)) as Thread;
       const show = (threadId: string, turn: Turn, links: SpelledLinkFact[]) =>
-        store.record({
+        store.resultStored({
+          projectId: source.projectId as ProjectId,
           threadId,
           turnId: turn.id,
-          documentId,
-          holderUri: "kb://chapter.md",
-          view: { kind: "live" },
-          links,
+          shown: [{ documentId, holderUri: "kb://chapter.md", view: { kind: "live" }, links }],
+          frontiers: [],
         });
       const seen = async (threadId: string) =>
         (await store.forDocument(threadId, documentId))

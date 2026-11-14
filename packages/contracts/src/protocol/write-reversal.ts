@@ -76,7 +76,6 @@ export type TurnInverseSkipCause =
   | TreeReversalFault
   /** The destination refused a restore for another reason. */
   | "refused"
-  | "rolled_back"
   | "applied"
   | "discarded"
   | "already_undone"

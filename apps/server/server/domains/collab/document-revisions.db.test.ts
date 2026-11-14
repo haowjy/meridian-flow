@@ -13,10 +13,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import {
-  runInDrizzleTransaction,
-  runOutsideDrizzleTransaction,
-} from "../../shared/drizzle-transaction.js";
+import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -36,7 +33,6 @@ import { createBranches } from "./domain/branches.js";
 import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
-import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -73,7 +69,7 @@ function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
 }
 
 const identity = (responseId: string) => ({
-  providerResponseId: responseId,
+  modelResponseId: responseId,
   editScopeId: responseId,
 });
 
@@ -202,7 +198,7 @@ async function fixture(
         overwrite: true,
         content: "Agent revision.",
       },
-      { ...context, responseIdentity: identity(responseId), createdDocument: false },
+      { ...context, responseIdentity: identity(responseId) },
     );
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
@@ -222,14 +218,13 @@ describe("document revisions (postgres and collab)", () => {
   afterAll(() => closeDatabase(db));
 
   for (const mode of ["direct", "draft"] as const) {
-    it(`response-end write and staged read equal current in ${mode}; the earlier read does not`, async () => {
+    it(`a write's receipt and the next read equal current in ${mode}; the earlier read does not`, async () => {
       const f = await fixture(db, harnesses, mode);
       const before = await f.read();
-      await f.stage("00000000-0000-4000-8000-000000000892");
-      const stagedRead = await f.read("00000000-0000-4000-8000-000000000892");
-      const settled = await f.core.commitResponse("00000000-0000-4000-8000-000000000892");
-      const revision = settled.documents[0]?.receipts[0]?.revision;
-      expect(revision).toBe(stagedRead.revision);
+      const written = await f.stage("00000000-0000-4000-8000-000000000892");
+      const afterRead = await f.read("00000000-0000-4000-8000-000000000892");
+      const revision = written.revision;
+      expect(revision).toBe(afterRead.revision);
       expect(revision).toBe(await f.current());
       expect(before.revision).not.toBe(revision);
     });
@@ -291,30 +286,10 @@ describe("document revisions (postgres and collab)", () => {
       .toEqual([hashlines.value.revision, hashlines.value.revision]);
   });
 
-  it("captures the apply token before a writer edit and receipt rewrite", async () => {
-    const f = await fixture(db, harnesses, "direct");
-    await f.read();
-    await f.stage("00000000-0000-4000-8000-000000000893");
-    let injected = false;
-    // The live apply runs on a private copy inside the save transaction;
-    // a writer edit after it and before commit must not move the receipt.
-    const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893", {
-      beforeTransactionCommit: async () => {
-        injected = true;
-        await f.writerDelete();
-      },
-    });
-    expect(injected).toBe(true);
-    const receipt = committed.documents[0]?.receipts[0];
-    expect(receipt?.revision).toMatch(/^y2:/);
-    expect(receipt?.revision).not.toBe(await f.current());
-  });
-
   it("resolves a new Work source after rebind when its text differs", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000894");
-    await f.core.commitResponse("00000000-0000-4000-8000-000000000894");
     const before = await f.read();
     const workB = "00000000-0000-4000-8000-000000000890" as WorkId;
     await db.insert(schema.works).values({
@@ -444,44 +419,6 @@ describe("document revisions (postgres and collab)", () => {
       release.resolve();
       await Promise.allSettled(started);
     }
-  });
-
-  it("keeps a root-committed ensure even when its caller response aborts", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await f.read();
-    await f.writerDelete();
-    const branch = await f.branches.ensureActiveForWrite({
-      owner: { kind: "work", workId: WORK_ID },
-      projectId: PROJECT_ID as never,
-      threadId: THREAD_ID,
-      userId: USER_ID as never,
-    });
-    await expect(
-      runResponseTransaction(
-        (operation) => runInDrizzleTransaction(db, operation),
-        async () => {
-          await f.draftPulls.ensureThreadPeer({
-            documentId: ALPHA_ID,
-            threadId: THREAD_ID,
-            branchId: branch.id,
-          });
-          throw new Error("response aborted");
-        },
-      ),
-    ).rejects.toThrow("response aborted");
-    // The ensure commits the peer identity and fresh Work draft under its own root.
-    const peer = await readResolvedDraft(
-      f.draftStore,
-      await f.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID),
-    );
-    expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(1);
-    const workDraft = await readResolvedDraft(
-      f.draftStore,
-      await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID),
-    );
-    expect(f.model.getBlocks(toDocHandle(workDraft.doc))).toHaveLength(1);
-    workDraft.doc.destroy();
-    peer.doc.destroy();
   });
 });
 

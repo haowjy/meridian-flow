@@ -87,8 +87,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       | "already_removed"
       | "edited_since"
       | "draft_archived"
-      | "discarded"
-      | "rolled_back";
+      | "discarded";
   };
   function refusal(
     part: StoredInversePart,
@@ -165,7 +164,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     inspectAt: (destination: InverseDestination) => Inspection,
     options: {
       inverseParts?: readonly StoredInversePart[];
-      actionKind?: "undo" | "redo" | "revert" | "rollback";
+      actionKind?: "undo" | "redo" | "revert";
     } = {},
   ) {
     const destinationParts = direction === "redo" ? (options.inverseParts ?? []) : entry.parts;
@@ -217,7 +216,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   function turnTextPlan(
     entry: Entry,
     direction: "undo" | "redo",
-    kind: "undo" | "redo" | "rollback",
     turn: TurnInverseQuery,
     inverseParts: readonly StoredInversePart[] = [],
   ) {
@@ -241,13 +239,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
       );
     const actionKind =
-      kind === "rollback"
-        ? "rollback"
-        : direction === "redo"
-          ? "redo"
-          : poppableForTurn(turn, false).has(entry.id)
-            ? "undo"
-            : "revert";
+      direction === "redo" ? "redo" : poppableForTurn(turn).has(entry.id) ? "undo" : "revert";
     return {
       destination,
       actionKind,
@@ -259,9 +251,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       ),
     };
   }
-  function poppableForTurn(turn: TurnInverseQuery, rollback: boolean) {
+  function poppableForTurn(turn: TurnInverseQuery) {
     const poppable = new Set<string>();
-    if (rollback) return poppable;
     const turnKey = `${turn.threadId}:${turn.turnId ?? ""}`;
     const cached = poppableByTurn.get(turnKey);
     if (cached) return cached;
@@ -287,13 +278,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"
-          : inspection.rolledBack(part)
-            ? "rolled_back"
-            : state?.state === "active"
-              ? null
-              : part.disposition === "discarded"
-                ? "discarded"
-                : kernelCause(state);
+          : state?.state === "active"
+            ? null
+            : part.disposition === "discarded"
+              ? "discarded"
+              : kernelCause(state);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push({ part, direction: "invert" });
     }

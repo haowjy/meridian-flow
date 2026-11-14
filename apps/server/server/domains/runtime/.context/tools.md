@@ -138,8 +138,9 @@ Document inverse commands use `write undo/redo` and `write revert`; model-only
 handles select edits, and the command is all-or-nothing. The tree commands
 (`write move`, `delete`, `restore`, and `create` of a folder) are host commands
 (`lib/model-tools/tree-commands.ts`, the core in `domains/context/tree/tree-commands.ts`).
-Each call is its own command with its records admitted at the call; nothing waits for the
-reply's save, and a failed reply leaves what its calls did. A path resolves through the
+Each call is one document command (`document_commands`, `collab/.context/model-edits.md`) with
+its records admitted at the call; nothing waits for the reply's save, and a failed reply leaves
+what its calls did. A path resolves through the
 names the model was shown: `ls` and every tree result record, per chat, which name meant
 which node (host-only evidence, `observation_frontiers` room `tree`, never shown to the
 model), so a stale path reaches the node the model meant and a name reused for another
@@ -147,8 +148,10 @@ document is refused as `path_changed`. Every tool that prints a path
 records exactly the names it printed, from the nodes that produced them (`printedDelta`), and
 a name shown in the other view still means its node in this one. The call keeps a receipt
 (`tree_edit_receipts` and one row per node it changed, `collab/.context/reversal.md`); `undo`,
-`redo` and `revert` choose from the node's one history across text and tree edits. A command
-that refuses stores nothing (`SourceTree.run` drops what `make` wrote). In a draft-mode chat the
+`redo` and `revert` choose from the node's one history across text and tree edits, and a call
+that takes both back is one command, so a refusal of its text half takes the tree half back
+with it. A command that refuses stores nothing (the effect's savepoint rolls back, and
+`SourceTree.run` drops what `make` wrote). In a draft-mode chat the
 records are the Work's branch's and live is untouched until the user applies them; Scratch
 and upload content stays live while its placement can be drafted
 (`collab/.context/apply.md`). Skills retain Mars

@@ -1,14 +1,13 @@
 /**
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
- * differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`, `retractCreate`, and the
+ * differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`, and the
  * refusals a draft placement makes (a draft never seeds live Yjs). A drafted write is a record
  * of the Work's branch (`{ draft: branchId }`), which the command transaction ensures and
  * locks; a live one is a live record.
  */
 
 import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contracts";
-import type { RetractionCause } from "@meridian/contracts/protocol";
 import { renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
@@ -65,12 +64,6 @@ export interface CreatePlacement {
     path: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<{ documentId: string; placement: ContextPlacement["kind"] }, AdapterFault>>;
-  /** Reverse a create whose write failed: a live one goes to Trash, a drafted one is discarded. */
-  retract(
-    documentId: string,
-    path: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
   /** The branch a drafted move or delete is made in, or null where this adapter has none. */
   readonly branchOwner: BranchCommandOwner | null;
 }
@@ -80,7 +73,7 @@ export interface CreatePlacementDeps {
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
   documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces">;
   liveCreate: LiveCreate;
 }
@@ -135,7 +128,7 @@ function livePlacement(
   placement: Extract<ContextPlacement, { kind: "live" }>,
   deps: CreatePlacementDeps,
 ): CreatePlacement {
-  const { executor, tree } = deps;
+  const { executor } = deps;
   return {
     kind: "live",
     readView: (version) =>
@@ -178,17 +171,6 @@ function livePlacement(
         // after the list's.
         await deps.liveCreate.arrive([created.value.documentId as DocumentId]);
         return Ok({ documentId: created.value.documentId, placement: "live" as const });
-      });
-    },
-    async retract(documentId, path) {
-      return executor.run(async () => {
-        const sourceId = await deps.tree.sourceId();
-        // The writer may have moved or renamed it since: then it survives.
-        await tree.delete(
-          { view: LIVE, actor: "system" },
-          { node: documentId, kind: "file", fromSourceId: sourceId, onlyAt: path },
-        );
-        return Ok({ placement: "live" as const });
       });
     },
     branchOwner: placement.branch ? branchOwnerOf(placement.branch) : null,
@@ -262,27 +244,6 @@ function draftPlacement(
           ? Ok({ documentId: created.value.documentId, placement: "draft" as const })
           : created;
       });
-    },
-    retract(documentId, _path, _cause) {
-      return executor.run(
-        async ({ branch }) => {
-          // No active branch: a whole Discard already ended every use.
-          if (branch) {
-            const retracted = await deps.drafts.retractCreatedDocumentDraft({
-              documentId: documentId as DocumentId,
-              branchId: branch.id,
-            });
-            if (retracted === "retracted")
-              await tree.discardDraftedCreate(
-                { view: { draft: branch.id }, actor: "system" },
-                documentId,
-              );
-          }
-          return Ok({ placement: "draft" as const });
-        },
-        undefined,
-        { branch: { ...owner, mode: "existing" } },
-      );
     },
     branchOwner: owner,
   };

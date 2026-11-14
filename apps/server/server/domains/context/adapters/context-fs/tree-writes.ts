@@ -26,7 +26,6 @@ import {
   LIVE,
   type MoveRecord,
   moveBetweenLists,
-  pendingRecords,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
@@ -300,11 +299,6 @@ export interface SourceTree {
   ): Promise<T>;
   /** What this source's tree shows in `view`, at the journal's head. */
   read<T>(view: View, read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T): Promise<T>;
-  /** Ends a drafted create's pending records, for a create whose write failed. */
-  discardDraftedCreate(
-    target: TreeWriteTarget & { view: { draft: string } },
-    node: string,
-  ): Promise<void>;
 }
 
 export function createSourceTree(deps: {
@@ -569,18 +563,6 @@ export function createSourceTree(deps: {
       return deps.store.read({
         lists: [await list()],
         view: ([{ writer }]) => read({ writer, view, root }),
-      });
-    },
-
-    async discardDraftedCreate(target, node) {
-      await deps.store.submit({
-        lists: [await list()],
-        make: ([{ writer }]) => {
-          const ids = pendingRecords(writer.doc, target.view.draft)
-            .filter((record) => record.node === node)
-            .map((record) => record.id);
-          writer.transact(() => writer.settle(target.actor, ids, "discarded"));
-        },
       });
     },
   };

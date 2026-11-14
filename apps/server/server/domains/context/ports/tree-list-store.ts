@@ -100,10 +100,17 @@ export interface TreeListStore {
    */
   read<T>(input: { lists: readonly TreeList[]; view: ServerChange<T> }): Promise<T>;
   /**
-   * Brings the rows of the lists to their replay, under their keys, when something the rows
-   * read changes outside the list: a Work's branch ends, or a draft gains its first text or
-   * loses its last. Call it in the transaction that changed it, holding the keys already or
-   * taking them before any document key.
+   * Takes the lists' keys in list-id order and nothing else: the list step of a command that
+   * takes document keys. Every list the command will write or resync is locked here, before
+   * its first document key; `submit` and `resync` then wait on nothing. Idempotent.
+   */
+  lock(lists: readonly TreeList[]): Promise<void>;
+  /**
+   * Brings the rows of the lists to their replay when something the rows read changes outside
+   * the list: a Work's branch ends, or a draft gains its first text or loses its last. Call it
+   * in the transaction that changed it. It takes no key: the transaction must hold the lists'
+   * keys already (`lock`, `submit`), and throws when it does not, since a key taken after a
+   * document key can deadlock.
    */
   resync(lists: readonly TreeList[]): Promise<void>;
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */

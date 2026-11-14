@@ -5,17 +5,13 @@ import type { StoredInversePart } from "./turn-inverse-service.js";
 export const partKey = (part: { editId: string; ordinal: number }) =>
   `${part.editId}:${part.ordinal}`;
 
-/** Consumption is per accepted part, and a rolled-back action has no stack effect. */
+/** Consumption is per accepted part. */
 export function effectiveActionIndex(
   history: readonly StoredInversePart[],
   keys: ReadonlySet<string>,
 ) {
-  const rolledBack = new Set(
-    history.filter((part) => part.kind === "rollback").flatMap((part) => part.targets.map(partKey)),
-  );
-  const effective = history.filter((part) => !rolledBack.has(partKey(part)));
   const grouped = new Map<string, StoredInversePart[]>();
-  for (const part of effective) {
+  for (const part of history) {
     if (
       (part.kind !== "undo" && !(part.kind === "revert" && part.actor === "human")) ||
       !part.actionId ||
@@ -27,7 +23,7 @@ export function effectiveActionIndex(
     grouped.set(part.actionId, parts);
   }
   const consumption = new Map<string, Set<string>>();
-  for (const part of effective) {
+  for (const part of history) {
     if (part.kind !== "redo") continue;
     for (const id of part.consumes) {
       const targets = consumption.get(id) ?? new Set<string>();
@@ -54,5 +50,5 @@ export function effectiveActionIndex(
       accepted.push(action);
       byPart.set(target, accepted);
     }
-  return { actions, byPart, rolledBack };
+  return { actions, byPart };
 }

@@ -8,7 +8,7 @@
  * A drafted create then is in no view, and its document and text stay until retention purges
  * them; nothing here releases a document.
  *
- * Lock order (§14), after the live scopes an item Discard holds: the Work (purge: threads,
+ * Lock order (`collab/.context/CONTEXT.md`), after the command's claim: the Work (purge: threads,
  * then the Work), the branch, the list's lock (inside `submit`), the item documents' mutexes
  * in ID order, then draft rows as the kernel writes them.
  *
@@ -22,27 +22,27 @@ import { documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords } from "@meridian/project-tree";
 import { and, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardDraftChangedError,
   type BranchDiscardStore,
   type DiscardKernelInput,
   type DiscardKernelResult,
+  type DiscardRefusal,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
-import { claimCommandWithinTx, settleCommandWithinTx } from "./drizzle-branch-commands.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { runCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
   close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
-  treeLists: Pick<TreeListStore, "submit" | "resync">;
+  treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
 };
 
 /**
@@ -174,6 +174,10 @@ export function createDrizzleBranchDiscard(
       return discardWholeLocked(db, deps, { branchId, userId: input.userId, commandId });
     const { items } = input.selection;
     const documents = items.map((item) => item.documentId);
+    // The Work's lists' keys, then the documents', before the records are written: the rows
+    // they write are the ones derivation locks under a document's key.
+    await deps.treeLists.lock(await treeListsOfBranch(db, branchId));
+    for (const id of [...documents].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
     // The Work's records on these documents settle discarded, in the list that holds them. A
     // created document is then in no view; it and its text stay until retention purges them.
     const { had, created } = await discardTreeRecords(db, deps, {
@@ -182,7 +186,6 @@ export function createDrizzleBranchDiscard(
       commandId,
       documents,
     });
-    for (const id of [...documents].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
     const drafts = await lockActiveDrafts(db, branchId, documents);
     for (const item of items)
       if (
@@ -222,38 +225,40 @@ export function createDrizzleBranchDiscard(
   return {
     kernel,
     async discardLocked({ kernel: input, command }) {
-      return runInDrizzleTransaction(db, async () => {
-        // The branch's owner enters the Work boundary before the branch row and the list's lock.
-        return deps.workProjection.mutate(
-          { branches: [input.branchId] },
-          async () => {
-            // Claims follow the Work boundary for every command, including conflicting deliveries.
-            // The claim is pending until the kernel says what it ended, in this transaction.
-            if (command && !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope))) {
-              throw new BranchCommandExistsError(command.envelope.commandId);
-            }
-            const settle = async (ended: DiscardKernelResult | null) => {
-              if (command)
-                await settleCommandWithinTx(
-                  currentDrizzleDb(db),
-                  command.envelope.commandId,
-                  command.result(ended),
-                );
-              return ended;
-            };
-            if (!(await deps.branches.lockActive(input.branchId))) return settle(null);
-            return settle(
-              await kernel({
-                ...input,
-                ...(command ? { commandId: command.envelope.commandId } : {}),
-              }),
-            );
-          },
-          { seam: true, requireActive: true, allowFrozenLineage: true },
-        );
-      });
+      const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = { ended: null };
+      await runCommand(
+        db,
+        command.envelope,
+        // The branch's owner enters the Work boundary after the claim, before the branch row
+        // and the list's lock.
+        () =>
+          deps.workProjection.mutate(
+            { branches: [input.branchId] },
+            async () => {
+              settled.ended = null;
+              if (await deps.branches.lockActive(input.branchId))
+                settled.ended = await kernel(input);
+              return command.result(settled.ended);
+            },
+            { seam: true, requireActive: true, allowFrozenLineage: true },
+          ),
+        (cause) => {
+          const refused = discardRefusal(cause);
+          if (!refused) return undefined;
+          settled.ended = refused;
+          return command.result(refused);
+        },
+      );
+      return settled.ended;
     },
   };
+}
+
+/** The kernel's final refusals: the branch's state no longer allows this item's Discard. */
+function discardRefusal(cause: unknown): DiscardRefusal | undefined {
+  if (cause instanceof BranchDiscardApplicableStateChangedError) return { refused: "stale" };
+  if (cause instanceof BranchDiscardDraftChangedError) return { refused: "draft_changed" };
+  return undefined;
 }
 
 /**

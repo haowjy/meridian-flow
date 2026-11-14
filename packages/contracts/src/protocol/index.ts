@@ -54,7 +54,6 @@ export * from "./document-links.js";
 export type {
   DocumentRemovalCause,
   DocumentRemovalRecord,
-  RetractionCause,
 } from "./document-removal.js";
 export * from "./document-revision.js";
 export * from "./event-seq.js";

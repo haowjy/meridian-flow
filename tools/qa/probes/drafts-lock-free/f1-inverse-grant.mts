@@ -93,6 +93,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     notices: { record: async () => {} },
     workProjection: harness.projection,
     removals: createTestRemovalDeps(harness.db).removals,
+    treeLists: createTestRemovalDeps(harness.db).treeLists,
   });
   const undo = () =>
     inverse.modelInverse(

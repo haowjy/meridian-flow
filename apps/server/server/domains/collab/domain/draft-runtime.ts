@@ -12,7 +12,6 @@ import {
   type SavePrecondition,
   SavePreconditionRefused,
 } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
 import {
   buildDocumentSchema,
   createCollabYDoc,
@@ -286,7 +285,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       throw new DraftCorruptError({
         draftId: documentDraft.draftId,
         documentId: documentDraft.documentId,
-        threadId: documentDraft.threadId ?? ("" as ThreadId),
         cause,
       });
     }

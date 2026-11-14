@@ -5,17 +5,15 @@ import { DocumentNotFoundError, isDocumentNotFoundError } from "../ports/documen
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import { createDocumentSave } from "./document-save.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
-import { settledReceipt } from "./receipt.js";
-import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
+import { openRoom } from "./room.js";
 import type {
   DocumentCommandName,
   ReadFunction,
-  ResponseCommitSuccessResult,
-  ResponseRollbackResult,
   WriteContext,
   WriteFunction,
   WriteOutcome,
@@ -29,66 +27,30 @@ import {
   writeError,
   writeSchemaError,
 } from "./write-helpers.js";
-import { createWriteIdempotencyCache, scopedToolUseId } from "./write-idempotency.js";
 
 export type { CreateWriteToolOptions } from "./write-deps.js";
 export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
-  /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
-  commitResponse(
-    editScopeId: string,
-    options?: import("./response-committer.js").ResponseCommitOptions,
-  ): Promise<ResponseCommitSuccessResult>;
-  prepareResponse: ResponseCommitter["prepareResponse"];
-  rollbackResponse(
-    editScopeId: string,
-    options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
-  ): Promise<ResponseRollbackResult>;
-  hasResponseDocument: ResponseCommitter["hasResponseDocument"];
   /**
-   * A host's read of the document a call would see: the room copy with the reply's
-   * surviving staged entries. The caller disposes it.
+   * A host's read of the document a call would see: the room copy. The caller disposes it.
    */
   readRoom(
     docId: string,
-    scope: { threadId: string; responseId?: string; workDraftId?: string },
+    scope: { workDraftId?: string },
   ): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
-  responseDocuments: ResponseCommitter["responseDocuments"];
-  /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
-  refuseStaged(
-    responseId: string,
-    documentId: string,
-    reason: import("../ports/document-coordinator.js").StagedWriteRejectionReason,
-    peerDraftId?: string,
-  ): void;
-  retirePeer(input: {
-    documentId: string;
-    threadId: string;
-    peerDraftId: string;
-    reason: import("../ports/document-coordinator.js").RetiredWriteReason;
-  }): void;
-  /** Drop one thread's staged writes to a document: a save fence denied them. */
-  dropStaged(docId: string, threadId: string): void;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const localSessions = new Map<string, ActorSession>();
-  const idempotencyCache = createWriteIdempotencyCache(options);
   const autoTurnIdNonce = createAutoTurnIdNonce();
   const autoTurnCounter = { value: 0 };
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const journal = options.journal;
-  const responseCommitter = createResponseCommitter({
+  const documentSave = createDocumentSave({
     coordinator: options.coordinator,
     model: options.model,
-    codec: options.codec,
     links: options.links,
-    onLifecycleError: options.onResponseLifecycleError,
-    onClaimDiscarded: options.onResponseClaimDiscarded,
-    onTransition: options.onResponseCommitterTransition,
-    closedResponseTombstoneCap: options.closedResponseTombstoneCap,
-    onObservationFailed: options.onObservationFailed,
   });
   const commands = createWriteCommands({
     options: {
@@ -104,9 +66,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     autoTurnIdNonce,
     renderer,
     journal,
-    responseCommitter,
+    documentSave,
   });
-  const documentEdits = createDocumentEditCommands({ options, committer: responseCommitter });
+  const documentEdits = createDocumentEditCommands({ options });
   const dispatch = createWriteDispatch({ commands, documentEdits });
 
   const read: ReadFunction = async (command, context = {}) => {
@@ -141,18 +103,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<WriteOutcome> {
     const session = await resolveSession(context);
     const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
-    const cacheKey = idempotencyCache.cacheKeyForToolUse(session, context, toolUseId);
-    if (cacheKey) {
-      const cached = idempotencyCache.get(cacheKey);
-      if (
-        cached !== undefined &&
-        responseScopedStagedCacheStillValid(cached, context, session, toolUseId, responseCommitter)
-      ) {
-        idempotencyCache.notifyHit(session, context, toolUseId, cached);
-        return withNotices(cached, context);
-      }
-    }
-
     let result: InternalWriteResult;
     try {
       result = await run(validCommand, session);
@@ -167,8 +117,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             sessionId: session.id,
             threadId: session.threadId,
             ...(context.turnId ? { turnId: context.turnId } : {}),
-            ...(context.responseIdentity?.editScopeId
-              ? { responseId: context.responseIdentity?.editScopeId }
+            ...(context.responseIdentity?.modelResponseId
+              ? { responseId: context.responseIdentity.modelResponseId }
               : {}),
             ...(toolUseId ? { toolUseId } : {}),
           });
@@ -177,38 +127,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
       result = writeError(cause, commandName);
     }
-    const outcome = toOutcome(commandName, result, validCommand.file);
-    if (
-      commandName === "undo" ||
-      commandName === "redo" ||
-      commandName === "revert" ||
-      ("format" in validCommand && validCommand.format === "edits")
-    ) {
-      const receipt = settledReceipt(
-        { commandName, writeId: result.writeId ?? "", durableWriteId: result.settlementId ?? "" },
-        result.revision ?? null,
-        result,
-      );
-      outcome.result = { ...receipt.result, path: validCommand.file };
-    }
-    if (cacheKey && outcome.status !== "internal_error")
-      idempotencyCache.remember(cacheKey, outcome);
-    return withNotices(outcome, context);
-  }
-
-  function withNotices(outcome: WriteOutcome, context: WriteContext): WriteOutcome {
-    const notices = context.responseIdentity?.editScopeId
-      ? responseCommitter.drainNotices(context.responseIdentity?.editScopeId)
-      : [];
-    return notices.length
-      ? {
-          ...outcome,
-          result: {
-            ...outcome.result,
-            message: [outcome.result.message, ...notices].filter(Boolean).join("\n"),
-          },
-        }
-      : outcome;
+    return toOutcome(commandName, result, validCommand.file);
   }
 
   async function resolveSession(context: WriteContext): Promise<ActorSession> {
@@ -232,58 +151,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
-    commitResponse: responseCommitter.commitResponse,
-    prepareResponse: responseCommitter.prepareResponse,
-    rollbackResponse: responseCommitter.rollbackResponse,
-    hasResponseDocument: responseCommitter.hasResponseDocument,
-    async readRoom(docId, { threadId, responseId, workDraftId }) {
-      const room = await responseCommitter.openRoom({
+    async readRoom(docId, { workDraftId }) {
+      const room = await openRoom(options.coordinator, {
         docId,
-        threadId,
         commandName: "read",
-        ...(responseId ? { responseId } : {}),
         ...(workDraftId ? { workDraftId } : {}),
       });
       if (isInternalWriteResult(room)) throw new DocumentNotFoundError(docId);
       return room;
     },
-    responseDocuments: responseCommitter.responseDocuments,
-    refuseStaged: responseCommitter.refuseStaged,
-    retirePeer(input) {
-      if (!input.documentId || !input.threadId || !input.peerDraftId)
-        throw new Error("Retirement requires a document, thread and peer");
-      responseCommitter.retirePeer(input);
-    },
-    dropStaged(docId, threadId) {
-      if (!docId || !threadId) throw new Error("dropStaged names one document and one thread");
-      responseCommitter.dropStaged(docId, threadId);
-    },
   };
-}
-
-function responseScopedStagedCacheStillValid(
-  cached: WriteOutcome,
-  context: WriteContext,
-  session: ActorSession,
-  toolUseId: string | undefined,
-  responseCommitter: import("./response-committer.js").ResponseCommitter,
-): boolean {
-  if (
-    !context.responseIdentity?.editScopeId ||
-    cached.status !== "success" ||
-    cached.phase !== "staged"
-  ) {
-    return true;
-  }
-  try {
-    responseCommitter.assertCanStage({
-      responseId: context.responseIdentity?.editScopeId,
-      session,
-      turnId: context.turnId,
-      writeId: scopedToolUseId(context, toolUseId),
-    });
-    return true;
-  } catch {
-    return false;
-  }
 }

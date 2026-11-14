@@ -5,7 +5,7 @@ import type { DocumentId, EditOrigin } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
-  branchCommands,
+  documentCommands,
   documentDrafts,
   documentEditParts,
   documentEdits,
@@ -76,7 +76,7 @@ export async function loadPreparedUnapply(
   const tx = currentDrizzleDb(db);
   const rows = await tx
     .select({
-      branchId: branchCommands.branchId,
+      branchId: documentDrafts.branchId,
       ordinal: applyCommandEffects.ordinal,
       groupId: applyCommandEffects.groupId,
       draftId: applyCommandEffects.draftId,
@@ -87,15 +87,15 @@ export async function loadPreparedUnapply(
       unappliedBy: applyCommandEffects.unappliedBy,
     })
     .from(applyCommandEffects)
-    .innerJoin(branchCommands, eq(branchCommands.id, applyCommandEffects.commandId))
+    .innerJoin(documentCommands, eq(documentCommands.id, applyCommandEffects.commandId))
+    .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
     .where(
       and(
         eq(applyCommandEffects.commandId, command.request.applyCommandId),
         eq(applyCommandEffects.documentId, command.documentId),
-        eq(branchCommands.branchId, command.branchId),
-        eq(branchCommands.accountId, command.envelope.accountId),
-        eq(branchCommands.kind, "apply_click"),
-        eq(branchCommands.state, "done"),
+        eq(documentDrafts.branchId, command.branchId),
+        eq(documentCommands.accountId, command.envelope.accountId),
+        eq(documentCommands.kind, "apply"),
       ),
     )
     .orderBy(applyCommandEffects.ordinal);

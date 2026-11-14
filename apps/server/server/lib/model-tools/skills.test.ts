@@ -65,6 +65,11 @@ async function criticTools() {
   } as unknown as ToolWiringDeps;
   const executor = createToolExecutor(
     createToolRegistry({ registrations: createModelToolRegistrations(deps) }),
+    {
+      async resolveCommand() {
+        throw new Error("a refused write opens no command");
+      },
+    },
   );
   return async (name: string, input: Record<string, unknown>) =>
     toolContentText(
@@ -72,6 +77,8 @@ async function criticTools() {
         await executor.executeTool({ id: "call-1", name, arguments: input }, {
           threadId: THREAD_ID,
           turnId: "turn-1",
+          responseIdentity: { modelResponseId: "response-1" },
+          commandOwner: { accountId: "user-1", projectId: "project-1" },
         } as never)
       ).content,
     );

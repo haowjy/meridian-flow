@@ -58,8 +58,7 @@ export function textOmission(
       | "already_removed"
       | "edited_since"
       | "draft_archived"
-      | "discarded"
-      | "rolled_back";
+      | "discarded";
   },
 ) {
   const words = {
@@ -68,7 +67,6 @@ export function textOmission(
     edited_since: "edited since",
     draft_archived: "draft archived",
     discarded: "discarded",
-    rolled_back: "rolled back",
   } as const;
   const fact = `part ${omission.ordinal + 1}: ${words[omission.cause]}`;
   return direction === "revert" ? fact : `${handle} ${fact}`;

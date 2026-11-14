@@ -21,9 +21,21 @@ commits after the route resolved the item, its authorization or the transaction'
 grant confirmation refuses the live grant, nothing is claimed, and the route runs the
 click once more, which resolves the item as deleted.
 
-Editor Undo sends an `unapply_click` command for the original Apply command. This path
+Editor Undo sends an `unapply` command for the original Apply command. This path
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
+
+Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
+`runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
+enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
+append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
+outcome, so a resend under the same id gets the same refusal and "Try again" needs a new id. A miss
+the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
+`BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
+turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
+authorises through the effect's draft: `apply_command_effects.draft_id` names the draft whose
+branch must be the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
+account that sent it.
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta
@@ -51,8 +63,11 @@ a move of what live has in Trash) lands nothing of the item: the click is `refus
 `ancestor_taken` and the draft stays pending. A text-only click leaves a pending move or delete
 pending, except for a creation only the Work shows, which lands whole.
 
-Lock order inside the click: Work, branch, the list (inside `submit`), then the document's mutex
-for the text half, then draft rows. Nothing takes a document mutex before the list's lock.
+Lock order inside the click: Work, branch, the list's key (`treeLists.lock`), the document's
+mutex, then the writes: the list's records and rows (`submit`), the closed draft's resync, draft
+rows. The rows are written under the document's key because derivation certification takes that
+key and then the document's `tree_nodes` row. Nothing takes a document mutex before the list's
+lock.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

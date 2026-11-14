@@ -477,7 +477,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       admitted = execution;
       await bindAdmittedInvocationCard({
         transcript: options.transcript,
-        delivery: deps.delivery,
         card: runCard,
         props: cardProps,
         execution,

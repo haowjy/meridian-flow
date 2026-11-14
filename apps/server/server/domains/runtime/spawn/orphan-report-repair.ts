@@ -3,11 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  EventJournalWriter,
-  LiveEventWriter,
-  ThreadRepositories,
-} from "../../threads/index.js";
+import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
@@ -20,6 +16,7 @@ export function createOrphanReportRepair(deps: {
   retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: LiveEventWriter;
+  recoverCommands: Parameters<typeof finalizeExecution>[0]["recoverCommands"];
   authority: RunClaim;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;

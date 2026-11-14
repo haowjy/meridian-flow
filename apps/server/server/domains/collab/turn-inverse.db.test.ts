@@ -30,7 +30,7 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it("a document in no view (deleted after its edit) does not stop another document's receipt from offering Undo", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     const betaContext = {
       ...context,
@@ -39,6 +39,7 @@ it("a document in no view (deleted after its edit) does not stop another documen
         BETA_ID,
       ),
     };
+    await view.provisionDraft(BETA_ID);
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },
       {
@@ -58,7 +59,6 @@ it("a document in no view (deleted after its edit) does not stop another documen
             ctx,
           ),
       ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     // BETA leaves every view; its edit rows stay.
     await treeSeeder(db).store.submit({
       lists: [await treeListOfSource(db, SOURCE_ID)],
@@ -73,7 +73,7 @@ it("a document in no view (deleted after its edit) does not stop another documen
 });
 
 it("typing inside restored text leaves Redo unavailable and does not delete the writer's word", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     expect(
       await view.collab.agentEdit().write(
@@ -88,7 +88,6 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,

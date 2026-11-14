@@ -1,16 +1,15 @@
 import type {
-  BranchCommandId,
-  BranchCommandKind,
   BranchId,
   DocumentAuthorityId,
+  DocumentCommandId,
   DocumentId,
   ModelResponseId,
   ProjectId,
-  StoredBranchCommandResult,
   ThreadId,
   TurnId,
   UserId,
 } from "@meridian/contracts";
+import type { DocumentCommandKind, DocumentCommandOutcome } from "@meridian/contracts/branches";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
@@ -36,10 +35,9 @@ import { documents, projects } from "./content";
 import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
-type DocumentDraftKind = "work_draft" | "thread_peer";
+type DocumentDraftKind = "work_draft";
 type DocumentDraftStatus = "active" | "closed";
 type DraftWriteJournalSource = "agent" | "writer" | "server";
-type DraftWriteJournalStatus = "active" | "rollback_pending";
 
 export const documentDrafts = pgTable(
   "document_drafts",
@@ -50,20 +48,11 @@ export const documentDrafts = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     kind: text("kind").$type<DocumentDraftKind>().notNull(),
-    upstreamDraftId: text("upstream_draft_id").references((): AnyPgColumn => documentDrafts.id, {
-      onDelete: "set null",
-    }),
-    /**
-     * The branch this document draft belongs to. A thread peer shares its upstream
-     * document draft's branch.
-     */
+    /** The branch this document draft belongs to. */
     branchId: uuid("branch_id")
       .$type<BranchId>()
       .notNull()
       .references(() => branches.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .references(() => threads.id, { onDelete: "cascade" }),
     status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
     closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
     state: byteaColumn("state").notNull(),
@@ -105,10 +94,7 @@ export const documentDrafts = pgTable(
     index("document_drafts_active_work_draft_by_branch")
       .on(table.branchId, table.id)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    uniqueIndex("document_drafts_active_thread_peer")
-      .on(table.documentId, table.threadId)
-      .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
-    check("document_drafts_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
+    check("document_drafts_kind_valid", sql`${table.kind} = 'work_draft'`),
     check(
       "document_drafts_closed_cause_presence",
       sql`(${table.status} = 'closed') = (${table.closedCause} IS NOT NULL)`,
@@ -121,10 +107,6 @@ export const documentDrafts = pgTable(
     check(
       "document_drafts_seed_record_shape",
       sql`((${table.seedOrigins} IS NULL AND ${table.seedLiveRoom} IS NULL AND ${table.seedLiveSnapshot} IS NULL AND ${table.seedDraftSnapshot} IS NULL) OR (${table.kind} = 'work_draft' AND ${table.seedOrigins} IS NOT NULL AND ${table.seedLiveRoom} IS NOT NULL AND ${table.seedLiveSnapshot} IS NOT NULL AND ${table.seedDraftSnapshot} IS NOT NULL)) AND ((${table.seedLiveState} IS NULL AND ${table.seedLivePosition} IS NULL) OR (${table.seedLiveState} IS NOT NULL AND ${table.seedLivePosition} IS NOT NULL))`,
-    ),
-    check(
-      "document_drafts_owner_shape",
-      sql`(${table.kind} = 'work_draft' AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
     ),
   ],
 );
@@ -151,22 +133,14 @@ export const draftWriteJournal = pgTable(
       .references(() => users.id, { onDelete: "set null" }),
     updateData: byteaColumn("update_data").notNull(),
     updateMeta: jsonb("update_meta"),
-    status: text("status").$type<DraftWriteJournalStatus>().notNull().default("active"),
     createdAt: createdAt(),
   },
   (table) => [
     index("draft_write_journal_draft").on(table.draftId, table.id),
     index("draft_write_journal_thread_turn").on(table.draftId, table.threadId, table.turnId),
-    index("draft_write_journal_active")
-      .on(table.draftId, table.status)
-      .where(sql`${table.status} = 'active'`),
     check(
       "draft_write_journal_source_valid",
       sql`${table.source} IN ('agent', 'writer', 'server')`,
-    ),
-    check(
-      "draft_write_journal_status_valid",
-      sql`${table.status} IN ('active', 'rollback_pending')`,
     ),
   ],
 );
@@ -361,37 +335,38 @@ export const documentBlocks = pgTable(
 );
 
 /**
- * The record of one writer Apply or Discard, keyed by the client's command id so a resend
- * answers the first command's outcome.
+ * One row per command sent as a request, keyed by the sender's id, so a resend answers the
+ * first command's outcome. The row is the effect transaction's first write and holds its final
+ * outcome when it commits.
  */
-export const branchCommands = pgTable(
-  "branch_commands",
+export const documentCommands = pgTable(
+  "document_commands",
   {
-    id: uuid("id").$type<BranchCommandId>().primaryKey(),
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .references(() => branches.id, { onDelete: "cascade" }),
+    id: uuid("id").$type<DocumentCommandId>().primaryKey(),
+    kind: text("kind").$type<DocumentCommandKind>().notNull(),
     accountId: uuid("account_id")
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<BranchCommandKind>().notNull(),
-    /** Hash of the canonical command envelope; another digest under this id is a conflict. */
+    /** Null for a command on account-level documents. */
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * The chat of a `model_edit` command, so a purge of the chat deletes its stored tool results.
+     * Plain, no foreign key, like the evidence tables.
+     */
+    threadId: uuid("thread_id").$type<ThreadId>(),
+    /** Hash of the canonical request; another digest under this id is a conflict. */
     requestDigest: text("request_digest").notNull(),
-    state: text("state").$type<"pending" | "done">().notNull().default("pending"),
-    result: jsonb("result").$type<StoredBranchCommandResult>(),
+    outcome: jsonb("outcome").$type<DocumentCommandOutcome>().notNull(),
     createdAt: createdAt(),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
+    index("document_commands_thread").on(table.threadId),
     check(
-      "branch_commands_kind_valid",
-      sql`${table.kind} IN ('apply_click', 'unapply_click', 'discard_items', 'discard_branch')`,
-    ),
-    check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
-    check(
-      "branch_commands_done_shape",
-      sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
+      "document_commands_kind_valid",
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')`,
     ),
   ],
 );
@@ -401,9 +376,9 @@ export const applyCommandEffects = pgTable(
   "apply_command_effects",
   {
     commandId: uuid("command_id")
-      .$type<BranchCommandId>()
+      .$type<DocumentCommandId>()
       .notNull()
-      .references(() => branchCommands.id, { onDelete: "cascade" }),
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     groupId: text("group_id").notNull(),
     documentId: uuid("document_id")
@@ -417,7 +392,7 @@ export const applyCommandEffects = pgTable(
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
-    unappliedBy: uuid("unapplied_by").$type<BranchCommandId>(),
+    unappliedBy: uuid("unapplied_by").$type<DocumentCommandId>(),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),

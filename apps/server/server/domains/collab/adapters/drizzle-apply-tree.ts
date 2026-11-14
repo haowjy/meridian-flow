@@ -2,8 +2,9 @@
  * Tree half of Apply: one document's drafted records become live copies in the list that holds
  * them (`applyDraft`), in the click's transaction. Text Apply and Un-Apply never enter this module.
  *
- * Lock order: the caller holds the Work and the branch. The list's lock comes inside `submit`; the
- * document's mutex only after it, as the order in `collab/.context/CONTEXT.md` says.
+ * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the branch;
+ * the list's key comes next, then the document's, and only then the writes (`submit`, the closed
+ * drafts' resync) that touch the rows derivation locks under that document key.
  */
 
 import type { BranchId, DocumentId, UserId } from "@meridian/contracts";
@@ -28,7 +29,7 @@ export type TreeApplyOutcome =
 
 export function createApplyTreeOperations(input: {
   db: Database;
-  treeLists: Pick<TreeListStore, "submit">;
+  treeLists: Pick<TreeListStore, "lock" | "submit">;
   tree: Pick<TreeReader, "identityStatus">;
   close: Pick<DraftClose, "closeDrafts">;
   arrivals?: Pick<DocumentArrivals, "settle">;
@@ -63,17 +64,25 @@ export function createApplyTreeOperations(input: {
     const list = await treeListOfNode(input.db, documentId);
     if (!list) throw new ApplyClickRefused("not_found");
     const actor = `user:${click.userId}`;
+    // The list's key, then the document's, before anything writes: the list's rows and the
+    // closed draft's resync below are written under both.
+    await input.treeLists.lock([list]);
+    const tx = currentDrizzleDb(input.db);
+    await lockDocumentMutation(tx, documentId);
     // Where the document is in live now, to say where the Apply moved it.
     const before = (await input.tree.identityStatus(LIVE_TREE, [documentId])).get(documentId);
 
     const { result } = await input.treeLists.submit({
       lists: [list],
       make: ([{ writer }]) => {
+        // Nothing is written before the answer is known: a "changed" click stores no restore.
+        const chosen = landing
+          ? recordsOfItem(pendingRecords(writer.doc, branchId), documentId)
+          : [];
+        if (landing && chosen.length === 0) return "changed" as const;
         const trashed = writer.view(LIVE).nodes.get(documentId)?.trashed === true;
         if (restoring && trashed) writer.restore(LIVE, actor, documentId);
         if (!landing) return "restored" as const;
-        const chosen = recordsOfItem(pendingRecords(writer.doc, branchId), documentId);
-        if (chosen.length === 0) return "changed" as const;
         const applied = applyDraft(
           writer,
           branchId,
@@ -106,9 +115,6 @@ export function createApplyTreeOperations(input: {
       },
     ];
 
-    // The text half takes the document's mutex next; draft rows come after it.
-    const tx = currentDrizzleDb(input.db);
-    await lockDocumentMutation(tx, documentId);
     if (item?.change === "deleting") {
       // Its live room stays open: a document in Trash still takes text until it is purged.
       await input.close.closeDrafts(

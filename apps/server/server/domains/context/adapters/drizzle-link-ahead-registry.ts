@@ -94,12 +94,14 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       resolved.push({
         aheadId,
         requested: registration.address,
-        address: await resolveCanonicalAddress(this.db, registration).catch((cause: unknown) => {
-          if (!(cause instanceof UnresolvableAddressError)) throw cause;
-          throw new UnregistrableAheadRefError(aheadId, registration.address, cause.message, {
-            cause,
-          });
-        }),
+        address: await resolveCanonicalAddress(currentDrizzleDb(this.db), registration).catch(
+          (cause: unknown) => {
+            if (!(cause instanceof UnresolvableAddressError)) throw cause;
+            throw new UnregistrableAheadRefError(aheadId, registration.address, cause.message, {
+              cause,
+            });
+          },
+        ),
       });
     }
     return resolved;
@@ -150,15 +152,24 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
     if (registrations.length === 0) return;
     await runOutsideWrite(() =>
-      runInRootDrizzleTransaction(this.db, async () => {
-        const resolved = await this.resolveRegistrations(registrations);
-        await lockNamespaceKeys(
-          this.db,
-          resolved.map(({ address }) => ({ ...address, workId: address.lockWorkId })),
-        );
-        await this.registerResolved(resolved);
-      }),
+      runInRootDrizzleTransaction(this.db, () => this.lockAndRegister(registrations)),
     );
+  }
+
+  async registerInCommand(registrations: readonly AheadRegistration[]): Promise<void> {
+    if (!isInDrizzleTransaction())
+      throw new Error("registerInCommand requires a command transaction");
+    if (registrations.length === 0) return;
+    await this.lockAndRegister(registrations);
+  }
+
+  private async lockAndRegister(registrations: readonly AheadRegistration[]): Promise<void> {
+    const resolved = await this.resolveRegistrations(registrations);
+    await lockNamespaceKeys(
+      this.db,
+      resolved.map(({ address }) => ({ ...address, workId: address.lockWorkId })),
+    );
+    await this.registerResolved(resolved);
   }
 
   async registerWithinTransaction(registrations: readonly AheadRegistration[]): Promise<void> {
