@@ -12,6 +12,7 @@ import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-del
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
 import { createOrphanReportRepair } from "../../spawn/orphan-report-repair.js";
+import { noCommandRecovery } from "../execution-finalizer.js";
 import { writeModeSwitchNotice } from "../write-mode-switch.js";
 import { createTestNoticePort } from "./runtime-fixtures.js";
 export function createTestDrizzleDelivery(
@@ -30,6 +31,7 @@ export function createTestDrizzleDelivery(
     notices: createTestNoticePort(),
     runClaim: createDrizzleRunClaim(db),
     runStarter: { async start() {} },
+    recoverCommands: noCommandRecovery,
     async publishFinalizedReports() {},
     writeModeSwitch: {
       async renderNotice(_threadId, mode) {
@@ -52,7 +54,10 @@ export function createTestOrphanRepair(
   {
     publishStatus,
     ...deps
-  }: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution"> & {
+  }: Omit<
+    Parameters<typeof createOrphanReportRepair>[0],
+    "settleStaleExecution" | "recoverCommands"
+  > & {
     publishStatus?(threadId: ThreadId): Promise<void>;
   },
 ) {
@@ -69,6 +74,7 @@ export function createTestOrphanRepair(
   });
   return createOrphanReportRepair({
     ...deps,
+    recoverCommands: noCommandRecovery,
     retireOrphanedReply: deps.retireOrphanedReply ?? delivery.retireOrphanedReply,
     clearOrphanedTurn: deps.clearOrphanedTurn ?? delivery.clearOrphanedTurn,
     settleStaleExecution: delivery.settleStaleExecution,

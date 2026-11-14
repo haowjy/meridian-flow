@@ -15,9 +15,24 @@ by the dead run remain queued. A crashed child publishes one failure report and
 is not restarted for its retired parent message.
 
 Once the session claim proves the prior owner is gone, `settleStaleExecution`
-repairs while the stale row still holds the dead reply's turn and
-adopted-message IDs, then ends that execution and deletes the row before any
-new lease is inserted ([run identity](delivery.md#run-identity)). Compaction
+does one thread-lock hold: lock the row, repair while it still holds the dead
+reply's turn and adopted-message IDs, check every
+turn of the execution is terminal, delete the row; reports publish after the
+lock. The new lease row is inserted afterwards
+([run identity](delivery.md#run-identity)).
+
+`finalizeExecution` takes a required `recoverCommands` dependency and calls it
+for an assistant turn before the turn becomes terminal, inside the same thread
+lock and under the caller's session claim (no lease check). Every path that ends
+an assistant turn recovers: the run's close, the orphan repair, and the spawn
+report repair. Production composes `noCommandRecovery` until the loop resolves
+commands.
+
+Every write a running run makes to the transcript (a model response, a tool
+result block) goes through `storeUnderLease` or `ackWithResponse`: thread lock,
+then a check that the run's own lease row exists. A process that lost its run
+gets `LostRunError`, its write rolls back and the loop exits without closing
+the turn, so nothing it stores can land after recovery read the transcript. Compaction
 uses `finalizeExecution`; handoff uses `completeHandoffSeed` to write an
 unavailable card, interrupted metadata, and history read line. A durable failed
 reply acknowledges its adopted messages and is not restarted by the periodic

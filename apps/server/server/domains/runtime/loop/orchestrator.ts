@@ -165,7 +165,7 @@ import {
 } from "./partial-tool-activity.js";
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { RunClaim, ThreadPhase } from "./ports.js";
+import type { Lease, RunClaim, ThreadPhase } from "./ports.js";
 import {
   createPrefixCacheStateService,
   linkWindowSeconds,
@@ -189,7 +189,12 @@ import {
   type PreparedLoop,
   type RunLoopInput,
 } from "./run-turn-port.js";
-import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
+import {
+  type AdoptedBatch,
+  type DeliveryBoundary,
+  LostRunError,
+  type RuntimeDelivery,
+} from "./runtime-delivery.js";
 import { settleSummaryResponses } from "./settle-summary-responses.js";
 import {
   collectToolCalls,
@@ -1158,6 +1163,7 @@ async function settleCancelledResponse(input: {
 
 async function persistToolOutcome(input: {
   deps: OrchestratorDeps;
+  lease: Lease;
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
@@ -1187,34 +1193,36 @@ async function persistToolOutcome(input: {
           },
         ]
       : [];
-  const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const block = contentForBlockInput({
-      turnId: input.turn.id,
-      blockType: "tool_result",
-      sequence: blockSeq++,
-      content: {
-        toolCallId: input.call.id,
-        content,
-        result,
-        isError: denied,
-      },
-      status: "complete",
-    });
-    return {
-      result: localBlockFromEvent(block),
-      events: [
-        { type: "block.upserted", block },
-        ...extraEvents,
-        {
-          type: "tool.result",
+  const persistedRejection = await input.deps.delivery.storeUnderLease(input.lease, () =>
+    persistAndAppendEvents(input.deps, input.threadId, async () => {
+      const block = contentForBlockInput({
+        turnId: input.turn.id,
+        blockType: "tool_result",
+        sequence: blockSeq++,
+        content: {
           toolCallId: input.call.id,
           content,
           result,
           isError: denied,
         },
-      ],
-    };
-  });
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [
+          { type: "block.upserted", block },
+          ...extraEvents,
+          {
+            type: "tool.result",
+            toolCallId: input.call.id,
+            content,
+            result,
+            isError: denied,
+          },
+        ],
+      };
+    }),
+  );
   return {
     block: persistedRejection.result,
     nextBlockSeq: blockSeq,
@@ -2606,6 +2614,7 @@ async function executeLoop({
                 if (!withinBudget || !isScratchCall(call)) {
                   const held = await persistToolOutcome({
                     deps,
+                    lease: input.lease,
                     threadId: input.threadId,
                     turn: currentTurn,
                     call,
@@ -2632,6 +2641,7 @@ async function executeLoop({
               if (!built.policy.has(call.name)) {
                 const persistedRejection = await persistToolOutcome({
                   deps,
+                  lease: input.lease,
                   threadId: input.threadId,
                   turn: currentTurn,
                   call,
@@ -2652,6 +2662,7 @@ async function executeLoop({
                   childRunCoordinator: deps.childRunCoordinator,
                   eventSink,
                   persistenceDeps: deps,
+                  delivery: deps.delivery,
                   executionReports: deps.repos.executionReports,
                   readSnapshot: deps.repos.readSnapshot,
                   runClaim: deps.runClaim,
@@ -2744,6 +2755,11 @@ async function executeLoop({
         // Keep the original turn failure visible. rollbackResponse invalidates
         // staged runtimes before surfacing cleanup failures, so a second failure
         // here should not hide the error that broke the response.
+      }
+      if (err instanceof LostRunError) {
+        // Another process took the run over and settled its turns: nothing here may write.
+        currentTurn = (await deps.repos.turns.findById(currentTurn.id)) ?? currentTurn;
+        return currentTurn;
       }
       // The execution's own row, whatever its expiry: Stop cancels an expired lease that is still held.
       const owned = await deps.runClaim.readOwned(input.lease);

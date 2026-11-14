@@ -47,6 +47,8 @@ export interface ToolDispatchDeps {
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
+  /** Every result block of a running run is stored through this, so a lost lease refuses it. */
+  delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "storeUnderLease">;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
@@ -387,12 +389,15 @@ export async function dispatchToolCall(
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
   if (execResult.returnResult) {
-    const settled = await persistReturnResult(transcript, {
-      toolCallId: execResult.toolCallId,
-      outcome: execResult.returnResult,
-      capture: returnResultCapture,
-      executionReports: deps.executionReports,
-    });
+    const returned = execResult.returnResult;
+    const settled = await deps.delivery.storeUnderLease(ctx.lease, () =>
+      persistReturnResult(transcript, {
+        toolCallId: execResult.toolCallId,
+        outcome: returned,
+        capture: returnResultCapture,
+        executionReports: deps.executionReports,
+      }),
+    );
     return {
       kind: "completed",
       block: settled.block,
@@ -404,52 +409,54 @@ export async function dispatchToolCall(
   const persistedMetadata = execResult.metadata;
   const persistedResult = execResult.result;
 
-  const persistedToolResult = await persistAndAppendEvents(
-    deps.persistenceDeps,
-    ctx.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        turnId: ctx.currentTurn.id,
-        ...(stagedWrite ? { responseId: ctx.responseId } : {}),
-        blockType: "tool_result",
-        sequence: ctx.blockSeqRef.value++,
-        content: {
-          toolCallId: execResult.toolCallId,
-          content: persistedContent,
-          result: persistedResult,
-          ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
-          ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
-        },
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [
-          { type: "block.upserted", block },
-          {
-            type: "tool.result",
+  const persistedToolResult = await deps.delivery.storeUnderLease(ctx.lease, () =>
+    persistAndAppendEvents(
+      deps.persistenceDeps,
+      ctx.threadId,
+      async () => {
+        const block = contentForBlockInput({
+          turnId: ctx.currentTurn.id,
+          ...(stagedWrite ? { responseId: ctx.responseId } : {}),
+          blockType: "tool_result",
+          sequence: ctx.blockSeqRef.value++,
+          content: {
             toolCallId: execResult.toolCallId,
             content: persistedContent,
             result: persistedResult,
-            isError: persistedIsError,
+            ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
-        ],
-      };
-    },
-    {
-      // The model is shown exactly the result persisted here, so its evidence commits with
-      // it, after the block row exists (the frontier references it); a cancelled or timed-out
-      // call never reaches this point.
-      afterEvents: async (block) => {
-        const evidence = execResult.evidence;
-        if (!evidence) return;
-        const owner = { threadId: ctx.threadId, turnId: block.turnId };
-        for (const showing of evidence.shown)
-          await deps.shownLinks.record({ ...showing, ...owner });
-        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+          status: "complete",
+        });
+        return {
+          result: localBlockFromEvent(block),
+          events: [
+            { type: "block.upserted", block },
+            {
+              type: "tool.result",
+              toolCallId: execResult.toolCallId,
+              content: persistedContent,
+              result: persistedResult,
+              isError: persistedIsError,
+              ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
+            },
+          ],
+        };
       },
-    },
+      {
+        // The model is shown exactly the result persisted here, so its evidence commits with
+        // it, after the block row exists (the frontier references it); a cancelled or timed-out
+        // call never reaches this point.
+        afterEvents: async (block) => {
+          const evidence = execResult.evidence;
+          if (!evidence) return;
+          const owner = { threadId: ctx.threadId, turnId: block.turnId };
+          for (const showing of evidence.shown)
+            await deps.shownLinks.record({ ...showing, ...owner });
+          if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+        },
+      },
+    ),
   );
   ctx.allBlocks.push(persistedToolResult.result);
   ctx.credited.add(persistedToolResult.result.id);
