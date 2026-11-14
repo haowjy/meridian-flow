@@ -184,9 +184,8 @@ export const effectWatermarkSweep: Probe = {
         try {
           await p.projection().sweep();
           const firstPass = [...pages];
-          // The holder is released only after this wait, so the idle Work's draft landing at all
-          // proves the pass did not starve it; the milliseconds are reported, not bounded to 2 s
-          // (a loaded runner took 1.9-2.0 s here while green).
+          // The holder is released only after this wait, so starvation never lands the draft. Its
+          // latency is reported, not bounded: it is about one lock_timeout per held draft.
           const oldest = await within(
             30_000,
             () => draftRow(harness, first),
@@ -223,6 +222,12 @@ export const effectWatermarkSweep: Probe = {
           assert.deepEqual(firstPass, [50, 1], "one pass, two pages");
           assert.ok(secondPass.length <= 2, "the next tick is a new finite pass");
           assert.ok(contendedWhileHeld > 0, "the held Work's drafts answer contended");
+          assert.ok(
+            // The idle draft is queued ahead of every retry: each held draft is tried about once
+            // first (+ the runners' in-flight second tries).
+            contendedWhileHeld <= rest.length + 4,
+            `the idle draft waited behind retries: ${contendedWhileHeld} contended answers first`,
+          );
           assert.ok(
             // Slack for a loaded runner; an unbounded wait lasts until the holder releases.
             maxWaitMs <= LOCK_TIMEOUT_MS + 1_000,
