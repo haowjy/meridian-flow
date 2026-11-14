@@ -1,159 +1,11 @@
 /**
- * Block pairing and paragraph order for the content rebase. Pairs base blocks with the blocks of live
- * and of the draft (equal, edited in place, or moved), decides one paragraph order for the three
- * documents, and lays each out in it, so the token merge afterwards sees edits and no moves.
+ * Paragraph order for the content rebase. Takes each side's block correspondence with the base
+ * (equal, edited in place, or moved), decides one paragraph order for the three documents, and lays
+ * each out in it, so the token merge afterwards sees edits and no moves.
  */
-import { DIFF_EQUAL } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
-import { weightedOrderedMatches } from "../ordered-matching.js";
-import type { Alignment } from "./align.js";
-import { blockWords, diffKeys, type Side, similarity } from "./tokens.js";
-
-// A paragraph that moved should take the other side's edits with it. Blocks pair three ways: equal
-// blocks the block-level diff kept, similar blocks inside one gap (an edit in place), and similar
-// blocks in different gaps (a move, possibly edited too). Similarity is word overlap; it picks which
-// paragraph an edit lands in, as diff alignment always does, and never touches Yjs identity.
-const PAIR_SIMILARITY = 0.5;
-const MAX_PAIR_CELLS = 40_000;
-const MAX_MATCH_WORK = 4_000_000;
-
-interface Pairing {
-  /** Base block to the side block it stayed as (equal or edited in place), else -1. */
-  stayed: Int32Array;
-  /** Base blocks that moved, with the side block each moved to, in side order. */
-  moves: Array<{ baseBlock: number; sideBlock: number }>;
-}
-
-/** Share of `piece`'s words that come from `whole`. */
-export function containment(piece: PMNode, whole: PMNode): number {
-  const pieceWords = blockWords(piece);
-  if (!pieceWords.length || !piece.isTextblock || !whole.isTextblock) return 0;
-  let common = 0;
-  for (const [op, n] of diffKeys(pieceWords, blockWords(whole))) if (op === DIFF_EQUAL) common += n;
-  return common / pieceWords.length;
-}
-
-/** Blocks the diff left unmatched, grouped by how many matched blocks precede them (their gap). */
-function unmatchedByGap(
-  base: Side,
-  side: Side,
-  stayed: Int32Array,
-  sideMatched: Int32Array,
-  alignment: Alignment,
-): Map<number, { base: number[]; side: number[] }> {
-  const gaps = new Map<number, { base: number[]; side: number[] }>();
-  const gap = (g: number) => {
-    let entry = gaps.get(g);
-    if (!entry) {
-      entry = { base: [], side: [] };
-      gaps.set(g, entry);
-    }
-    return entry;
-  };
-  let seen = 0;
-  for (let i = 0; i < base.blocks.length; i++) {
-    if (alignment.baseToSide[i] >= 0) seen++;
-    else if (stayed[i] < 0) gap(seen).base.push(i);
-  }
-  seen = 0;
-  for (let j = 0; j < side.blocks.length; j++) {
-    if (alignment.sideToBase[j] >= 0) seen++;
-    else if (sideMatched[j] < 0) gap(seen).side.push(j);
-  }
-  return gaps;
-}
-
-/** Bag-of-words similarity, with a bonus for sharing the paragraph's opening words. */
-function inGapWeight(baseBlock: PMNode, sideBlock: PMNode): number {
-  const sim = similarity(baseBlock, sideBlock, true, PAIR_SIMILARITY);
-  if (sim < PAIR_SIMILARITY) return 0;
-  const baseWords = blockWords(baseBlock);
-  const sideWords = blockWords(sideBlock);
-  let lead = 0;
-  while (
-    lead < 63 &&
-    lead < baseWords.length &&
-    lead < sideWords.length &&
-    baseWords[lead] === sideWords[lead]
-  )
-    lead++;
-  return Math.round(sim * 100) * 64 + lead;
-}
-
-/** A moved paragraph may also have been merged with another: count containment of 3+ words too. */
-function crossGapSimilarity(baseBlock: PMNode, sideBlock: PMNode): number {
-  const sim = similarity(baseBlock, sideBlock, false, PAIR_SIMILARITY);
-  if (sim >= PAIR_SIMILARITY) return sim;
-  const smaller = Math.min(blockWords(baseBlock).length, blockWords(sideBlock).length);
-  const contained = smaller >= 3 ? similarity(baseBlock, sideBlock, true, 0.8) : 0;
-  return smaller >= 3 && contained >= 0.8 ? PAIR_SIMILARITY : sim;
-}
-
-/** Index of the unique maximum, or -1 when the maximum is tied. */
-function uniqueBest(values: number[]): number {
-  let best = -1;
-  let tie = false;
-  values.forEach((v, k) => {
-    if (best < 0 || v > values[best]) {
-      best = k;
-      tie = false;
-    } else if (v === values[best]) tie = true;
-  });
-  return tie ? -1 : best;
-}
-
-function pairBlocks(base: Side, side: Side, alignment: Alignment): Pairing {
-  const stayed = new Int32Array(base.blocks.length).fill(-1);
-  const sideMatched = new Int32Array(side.blocks.length).fill(-1);
-  for (let i = 0; i < base.blocks.length; i++) {
-    const j = alignment.baseToSide[i];
-    if (j >= 0) {
-      stayed[i] = j;
-      sideMatched[j] = i;
-    }
-  }
-
-  // In-gap pairs: blocks edited in place.
-  const gaps = unmatchedByGap(base, side, stayed, sideMatched, alignment);
-  for (const { base: gapBase, side: gapSide } of gaps.values()) {
-    if (!gapBase.length || !gapSide.length || gapBase.length * gapSide.length > MAX_PAIR_CELLS)
-      continue;
-    // Ties (a merged paragraph contains both originals) go to the block it starts with.
-    const weight = (x: number, y: number) =>
-      inGapWeight(base.blocks[gapBase[x]], side.blocks[gapSide[y]]);
-    const matches =
-      weightedOrderedMatches(weight, 0, gapBase.length, 0, gapSide.length, MAX_MATCH_WORK) ?? [];
-    for (const [x, y] of matches) {
-      stayed[gapBase[x]] = gapSide[y];
-      sideMatched[gapSide[y]] = gapBase[x];
-    }
-  }
-
-  // Cross-gap pairs: moves. Mutual best match, unique, and similar enough. Same-gap pairs left over
-  // cross each other (a swap inside one gap), so they count as moves too.
-  const baseLeft = base.blocks.map((_, i) => i).filter((i) => stayed[i] < 0);
-  const sideLeft = side.blocks.map((_, j) => j).filter((j) => sideMatched[j] < 0);
-  const moves: Pairing["moves"] = [];
-  if (baseLeft.length && sideLeft.length && baseLeft.length * sideLeft.length <= MAX_PAIR_CELLS) {
-    const sims = baseLeft.map((i) =>
-      sideLeft.map((j) => crossGapSimilarity(base.blocks[i], side.blocks[j])),
-    );
-    baseLeft.forEach((baseBlock, r) => {
-      const a = uniqueBest(sims[r]);
-      if (a < 0 || sims[r][a] < PAIR_SIMILARITY) return;
-      if (uniqueBest(baseLeft.map((_, rr) => sims[rr][a])) !== r) return;
-      moves.push({ baseBlock, sideBlock: sideLeft[a] });
-    });
-  }
-  return { stayed, moves: moves.sort((x, y) => x.sideBlock - y.sideBlock) };
-}
-
-/** Base block to its block in the side, whether it stayed or moved; -1 when the side dropped it. */
-function partnerOf(pairing: Pairing): Int32Array {
-  const partner = Int32Array.from(pairing.stayed);
-  for (const move of pairing.moves) partner[move.baseBlock] = move.sideBlock;
-  return partner;
-}
+import type { Correspondence } from "./correspond.js";
+import type { Side } from "./tokens.js";
 
 /**
  * The blocks of `blocks` a side moved: those outside its longest run still in base order. `favored`
@@ -288,65 +140,46 @@ function withRemovedBlocks(
 }
 
 /**
- * Lay a side's blocks out in `order`. New blocks stay attached to the paired block before them, or
- * to the one after if they are a split-off piece of it.
+ * Lay a side's blocks out in `order`. A piece stays with its unit; any other new block stays behind
+ * the block before it.
  */
-function layOut(base: Side, side: Side, partner: Int32Array, order: number[]): number[] {
+function layOut(side: Side, c: Correspondence, order: number[]): number[] {
   const owner = new Int32Array(side.blocks.length).fill(-1);
-  for (const i of order) if (partner[i] >= 0) owner[partner[i]] = i;
+  for (const i of order) if (c.partner[i] >= 0) owner[c.partner[i]] = i;
 
-  const attachedBefore = new Map<number, number[]>(); // base block -> side blocks placed before it
-  const attachedAfter = new Map<number, number[]>();
+  const attachedAfter = new Map<number, number[]>(); // base block -> side blocks placed after it
   const leading: number[] = [];
-  let j = 0;
-  while (j < side.blocks.length) {
+  let prev = -1;
+  for (let j = 0; j < side.blocks.length; j++) {
     if (owner[j] >= 0) {
-      j++;
+      prev = owner[j];
       continue;
     }
-    let runEnd = j;
-    while (runEnd < side.blocks.length && owner[runEnd] < 0) runEnd++;
-    const prev = j > 0 ? owner[j - 1] : -1;
-    const next = runEnd < side.blocks.length ? owner[runEnd] : -1;
-    let split = runEnd;
-    while (
-      next >= 0 &&
-      split > j &&
-      containment(side.blocks[split - 1], base.blocks[next]) >= PAIR_SIMILARITY
-    )
-      split--;
-    const behind = Array.from({ length: split - j }, (_, t) => j + t);
-    const ahead = Array.from({ length: runEnd - split }, (_, t) => split + t);
-    if (prev >= 0) attachedAfter.set(prev, behind);
-    else leading.push(...behind);
-    if (ahead.length) attachedBefore.set(next, ahead);
-    j = runEnd;
+    const host = c.nextPiece[j] >= 0 ? c.back[c.nextPiece[j]] : prev;
+    if (host < 0) leading.push(j);
+    else attachedAfter.set(host, [...(attachedAfter.get(host) ?? []), j]);
   }
-
   const out: number[] = [...leading];
   for (const i of order) {
-    for (const x of attachedBefore.get(i) ?? []) out.push(x);
-    if (partner[i] >= 0) out.push(partner[i]);
+    if (c.partner[i] >= 0) out.push(c.partner[i]);
     for (const x of attachedAfter.get(i) ?? []) out.push(x);
   }
   return out;
 }
 
 /**
- * Block order, merged on its own: pair base blocks with live and draft blocks, decide each pair of
- * base blocks' order, then lay base, live and draft out in that one order. The token merge then
- * sees no moves, only edits.
+ * Block order, merged on its own: decide each pair of base blocks' order, then lay base, live and
+ * draft out in that one order. The token merge then sees no moves, only edits.
  */
 export function mergeOrder(sides: {
   base: Side;
   live: Side;
   draft: Side;
-  liveAlignment: Alignment;
-  draftAlignment: Alignment;
+  inLive: Correspondence;
+  inDraft: Correspondence;
 }): OrderMerge {
   const { base, live, draft } = sides;
-  const inLive = partnerOf(pairBlocks(base, live, sides.liveAlignment));
-  const inDraft = partnerOf(pairBlocks(base, draft, sides.draftAlignment));
+  const [inLive, inDraft] = [sides.inLive.partner, sides.inDraft.partner];
   const kept = base.blocks.map((_, i) => i).filter((i) => inLive[i] >= 0 || inDraft[i] >= 0);
 
   const keepsBaseOrder = (partner: Int32Array) => {
@@ -363,8 +196,8 @@ export function mergeOrder(sides: {
 
   const placement = placeBlocks(kept, inLive, inDraft);
   const baseOrder = withRemovedBlocks(placement.order, base.blocks.length, inLive, inDraft);
-  const liveOrder = layOut(base, live, inLive, baseOrder);
-  const draftOrder = layOut(base, draft, inDraft, baseOrder);
+  const liveOrder = layOut(live, sides.inLive, baseOrder);
+  const draftOrder = layOut(draft, sides.inDraft, baseOrder);
   return {
     inLive,
     inDraft,

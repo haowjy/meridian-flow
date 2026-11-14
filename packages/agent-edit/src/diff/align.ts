@@ -1,178 +1,79 @@
 /**
- * Align by retained paragraph identity: equal paragraphs anchor the diff; changed paragraphs and
- * small split/join runs are cached units. A new node re-diffs only its unit, while the paragraph pass
- * relocates every cached result. A deterministic size cap guards an oversized unit, never the chapter.
+ * Align two block sequences by their correspondence: each pair, with its split and join pieces, is a
+ * unit, and only a unit is token-diffed. Units are cached, so a new node re-diffs only its unit
+ * while the paragraph pass relocates every cached result. A deterministic size cap guards an
+ * oversized unit, never the chapter.
  *
  * Within a unit, words align before punctuation, and paragraph starts follow their first matched word.
  * That keeps a small split or join reading as one edit instead of unrelated paragraph replacements.
+ * Blocks between units are a removed run, an added run, or one replacement marked `unpaired`.
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
-import type { Node as PMNode } from "prosemirror-model";
-import { equalOrderedMatches, weightedOrderedMatches } from "../ordered-matching.js";
+import { equalOrderedMatches } from "../ordered-matching.js";
+import type { Correspondence } from "./correspond.js";
 import { type Hunk, posMap } from "./hunks.js";
 import {
   blockKey,
-  blockWords,
   buildSide,
   coreKey,
   diffKeys,
   isBlockTok,
   type Side,
-  similarity,
   type Tok,
 } from "./tokens.js";
 
 export interface Alignment {
   hunks: Hunk[];
   baseToSide: Int32Array; // base block -> equal side block, else -1
-  sideToBase: Int32Array;
   pos: Int32Array; // base token -> side token outside hunks, else -1
 }
 
-export function align(B: Side, S: Side): Alignment {
+export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
-  const sideToBase = new Int32Array(S.blocks.length).fill(-1);
   const hunks: Hunk[] = [];
-  let bi = 0;
-  let si = 0;
-  let gb = 0;
-  let gs = 0;
-  const gap = () => {
-    if (gb === bi && gs === si) return;
-    for (const [b0, b1, s0, s1] of anchorGap(B, gb, bi, S, gs, si)) {
-      if (b0 === b1 && s0 === s1) continue;
-      boundedGap(B, b0, b1, S, s0, s1, hunks);
-    }
+  let pb = 0;
+  let ps = 0;
+  const between = (b1: number, s1: number) => {
+    if (pb < b1 || ps < s1)
+      hunks.push({
+        from: B.starts[pb],
+        to: B.starts[b1],
+        sfrom: S.starts[ps],
+        sto: S.starts[s1],
+        ins: S.toks.slice(S.starts[ps], S.starts[s1]),
+        ...(pb < b1 && ps < s1 ? { unpaired: true } : {}),
+      });
   };
-  for (const [op, n] of diffKeys(B.blocks.map(blockKey), S.blocks.map(blockKey))) {
-    if (op === DIFF_EQUAL) {
-      gap();
-      for (let k = 0; k < n; k++) {
-        baseToSide[bi + k] = si + k;
-        sideToBase[si + k] = bi + k;
-      }
-      bi += n;
-      si += n;
-      gb = bi;
-      gs = si;
-    } else if (op === DIFF_DELETE) bi += n;
-    else if (op === DIFF_INSERT) si += n;
+  for (let i = 0; i < B.blocks.length; i++) {
+    const j = corr.partner[i];
+    // Unpaired or moved: left as removed and added.
+    if (j < 0 || corr.moved.has(i) || j < ps || i < pb) continue;
+    let [u0, u1, v0, v1] = [i, i + 1, j, j + 1];
+    while (u0 > pb && corr.oldPiece[u0 - 1] === i) u0--;
+    while (u1 < B.blocks.length && corr.oldPiece[u1] === i) u1++;
+    while (v0 > ps && corr.nextPiece[v0 - 1] === j) v0--;
+    while (v1 < S.blocks.length && corr.nextPiece[v1] === j) v1++;
+    between(u0, v0);
+    if (u1 - u0 === 1 && v1 - v0 === 1 && blockKey(B.blocks[i]) === blockKey(S.blocks[j]))
+      baseToSide[i] = j;
+    else unitHunks(B, u0, u1, S, v0, v1, hunks);
+    pb = u1;
+    ps = v1;
   }
-  gap();
-  canonicalize(B.toks, S.toks, hunks);
-  return { hunks, baseToSide, sideToBase, pos: posMap(B.toks.length, hunks) };
+  between(B.blocks.length, S.blocks.length);
+  // One side's insertions at one point are one insertion.
+  for (let k = hunks.length - 1; k > 0; k--) {
+    const [a, b] = [hunks[k - 1], hunks[k]];
+    if (a.from === a.to && b.from === b.to && a.from === b.from && a.sto === b.sfrom)
+      hunks.splice(k - 1, 2, { ...a, sto: b.sto, ins: [...a.ins, ...b.ins] });
+  }
+  return { hunks, baseToSide, pos: posMap(B.toks.length, hunks) };
 }
 
-/**
- * A large gap (most paragraphs changed) would make one token diff over thousands of tokens. Split it
- * at paragraphs that are clearly the same paragraph edited in place (80% of words shared, in order,
- * near the same position), so each token diff stays paragraph-sized. Small gaps stay whole: the
- * content-first diff over a gap is what reads a split or a join as one.
- */
-// 1,000 tokens preserves ordinary split/join gaps while capping Myers' quadratic search.
+// 1,000 tokens preserves ordinary split/join units while capping Myers' quadratic search.
 // Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
-// Chapter-sized rewrites pair paragraphs instead, and oversized paragraphs stay whole replacements.
+// Oversized paragraphs stay whole replacements.
 const ANCHOR_GAP_TOKENS = 1000;
-const ANCHOR_SIMILAR = 0.8;
-const ANCHOR_BAND = 40;
-
-// Repeated recomputes over retained nodes ask the same pairs again; nodes are immutable.
-const similarityMemo = new WeakMap<PMNode, WeakMap<PMNode, number>>();
-function cachedSimilarity(a: PMNode, b: PMNode): number {
-  if (blockWords(a).length > ANCHOR_GAP_TOKENS || blockWords(b).length > ANCHOR_GAP_TOKENS)
-    return 0;
-  let row = similarityMemo.get(a);
-  if (!row) {
-    row = new WeakMap();
-    similarityMemo.set(a, row);
-  }
-  let v = row.get(b);
-  if (v === undefined) {
-    v = similarity(a, b);
-    row.set(b, v);
-  }
-  return v;
-}
-const wordSets = new WeakMap<PMNode, Set<string>>();
-const wordOverlaps = new WeakMap<PMNode, WeakMap<PMNode, number>>();
-function cachedWordOverlap(a: PMNode, b: PMNode): number {
-  let row = wordOverlaps.get(a);
-  if (!row) {
-    row = new WeakMap();
-    wordOverlaps.set(a, row);
-  }
-  let overlap = row.get(b);
-  if (overlap === undefined) {
-    const words = (node: PMNode) => {
-      let set = wordSets.get(node);
-      if (!set) {
-        set = new Set(blockWords(node));
-        wordSets.set(node, set);
-      }
-      return set;
-    };
-    const sa = words(a);
-    const sb = words(b);
-    let common = 0;
-    for (const word of sa) if (sb.has(word)) common++;
-    overlap = sa.size || sb.size ? common / Math.max(sa.size, sb.size) : 1;
-    row.set(b, overlap);
-  }
-  return overlap;
-}
-
-function anchorGap(
-  B: Side,
-  gb: number,
-  bi: number,
-  S: Side,
-  gs: number,
-  si: number,
-  threshold = ANCHOR_SIMILAR,
-): Array<[number, number, number, number]> {
-  const whole: Array<[number, number, number, number]> = [[gb, bi, gs, si]];
-  if (
-    B.starts[bi] - B.starts[gb] <= ANCHOR_GAP_TOKENS &&
-    S.starts[si] - S.starts[gs] <= ANCHOR_GAP_TOKENS
-  )
-    return whole;
-  if (bi - gb < 2 || si - gs < 2) return whole;
-  // Dense in-place edits need no quadratic paragraph search. This is the same maximal matching
-  // the ordered matcher returns when every diagonal pair qualifies.
-  if (
-    bi - gb === si - gs &&
-    B.blocks
-      .slice(gb, bi)
-      .every(
-        (a, k) =>
-          a.type === S.blocks[gs + k].type &&
-          a.isTextblock &&
-          cachedSimilarity(a, S.blocks[gs + k]) >= threshold,
-      )
-  )
-    return Array.from({ length: bi - gb }, (_, k) => [gb + k, gb + k + 1, gs + k, gs + k + 1]);
-  const ratio = (si - gs) / (bi - gb);
-  const w = (x: number, y: number) => {
-    if (Math.abs(y - gs - (x - gb) * ratio) > ANCHOR_BAND) return 0;
-    const a = B.blocks[x];
-    const b = S.blocks[y];
-    if (a.type !== b.type || !a.isTextblock) return 0;
-    if (cachedWordOverlap(a, b) < threshold) return 0;
-    return cachedSimilarity(a, b) >= threshold ? 1 : 0;
-  };
-  const m = weightedOrderedMatches(w, gb, bi, gs, si, 4_000_000);
-  if (!m?.length) return whole;
-  const out: Array<[number, number, number, number]> = [];
-  let pb = gb;
-  let ps = gs;
-  for (const [x, y] of m) {
-    out.push([pb, x, ps, y], [x, x + 1, y, y + 1]);
-    pb = x + 1;
-    ps = y + 1;
-  }
-  out.push([pb, bi, ps, si]);
-  return out;
-}
 
 type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: Hunk[] };
 const units: UnitMemo = { next: new WeakMap() };
@@ -201,15 +102,23 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     const draft = buildSide(S.blocks.slice(s0, s1));
     const hunks: Hunk[] = [];
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
-      hunks.push({ from: 0, to: base.toks.length, sfrom: 0, ins: draft.toks });
+      hunks.push({
+        from: 0,
+        to: base.toks.length,
+        sfrom: 0,
+        sto: draft.toks.length,
+        ins: draft.toks,
+      });
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
     memo.hunks = separateBlocks(base, draft, refine(base.toks, hunks));
+    canonicalize(base.toks, draft.toks, memo.hunks);
   }
   const relocate = (h: Hunk): Hunk => ({
     ...h,
     from: h.from + B.starts[b0],
     to: h.to + B.starts[b0],
     sfrom: h.sfrom + S.starts[s0],
+    sto: h.sto + S.starts[s0],
   });
   for (const h of memo.hunks) out.push(relocate(h));
 }
@@ -239,9 +148,8 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
       out.push(h);
       continue;
     }
-    const sto = h.sfrom + h.ins.length;
     const [b0, b1] = complete(B, h.from, h.to);
-    const [s0, s1] = complete(S, h.sfrom, sto);
+    const [s0, s1] = complete(S, h.sfrom, h.sto);
     if (b0 === b1 && s0 === s1) {
       out.push(h);
       continue;
@@ -256,7 +164,7 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
       [b0, s0],
       [bp, sp],
       [b1, s1],
-      [h.to, sto],
+      [h.to, h.sto],
     ]) {
       if (to > b || send > s) {
         const prev = out.length > start ? out.at(-1) : undefined;
@@ -264,45 +172,15 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
         // an added block plus a split's new paragraph start must not become competing insertions.
         if (prev && ((prev.from === prev.to && b === to) || (!prev.ins.length && s === send))) {
           prev.to = to;
+          prev.sto = send;
           prev.ins = S.toks.slice(prev.sfrom, send);
-        } else out.push({ from: b, to, sfrom: s, ins: S.toks.slice(s, send) });
+        } else out.push({ from: b, to, sfrom: s, sto: send, ins: S.toks.slice(s, send) });
       }
       b = to;
       s = send;
     }
   }
   return out;
-}
-
-/** Keep small split/join gaps whole. Large unmatched runs pair in order, not by token search. */
-function boundedGap(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
-  if (b1 - b0 === 1 && s1 - s0 === 1) {
-    unitHunks(B, b0, b1, S, s0, s1, out);
-    return;
-  }
-  if (
-    B.starts[b1] - B.starts[b0] <= ANCHOR_GAP_TOKENS &&
-    S.starts[s1] - S.starts[s0] <= ANCHOR_GAP_TOKENS
-  ) {
-    unitHunks(B, b0, b1, S, s0, s1, out);
-    return;
-  }
-  if (b1 - b0 !== s1 - s0) {
-    const paired = anchorGap(B, b0, b1, S, s0, s1, 0.4);
-    if (paired.length > 1) {
-      for (const [b, be, s, se] of paired)
-        if (b < be || s < se) boundedGap(B, b, be, S, s, se, out);
-      return;
-    }
-  }
-  // No strong anchors survived. Position is only a boundary for work, not evidence of equal text:
-  // every token still participates in either a bounded diff or a whole-paragraph replacement.
-  while (b0 < b1 && s0 < s1) {
-    unitHunks(B, b0, b0 + 1, S, s0, s0 + 1, out);
-    b0++;
-    s0++;
-  }
-  if (b0 < b1 || s0 < s1) unitHunks(B, b0, b1, S, s0, s1, out);
 }
 
 /**
@@ -315,7 +193,7 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   const bt = B.toks;
   const st = S.toks;
   if (b0 === b1 || s0 === s1) {
-    out.push({ from: b0, to: b1, sfrom: s0, ins: st.slice(s0, s1) });
+    out.push({ from: b0, to: b1, sfrom: s0, sto: s1, ins: st.slice(s0, s1) });
     return;
   }
   const content = (ts: Tok[], i: number, j: number) => {
@@ -325,6 +203,10 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   };
   const bc = content(bt, b0, b1);
   const sc = content(st, s0, s1);
+  // Blocks with the same id are the same block: their starts pair, and no word match may cross them.
+  const idPairs = blockIdPairs(bt, b0, b1, st, s0, s1);
+  const crossesPair = (b: number, s: number) =>
+    idPairs.some(([pb, ps]) => (b < pb && s > ps) || (b > pb && s < ps));
   // Words first (they rarely repeat nearby), then punctuation between matched words, so a full stop
   // can't anchor a word to the wrong sentence.
   const strong = (t: Tok) => t.kind !== "text" || t.word;
@@ -352,7 +234,7 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
     bc.filter((k) => strong(bt[k])),
     sc.filter((k) => strong(st[k])),
     coreKey,
-  );
+  ).filter(([b, s]) => !crossesPair(b, s));
   const matches: Array<[number, number]> = [];
   // Punctuation indices once per side, then monotone cursors: each matched word's span is a slice.
   const weakB = bc.filter((k) => !strong(bt[k]));
@@ -368,7 +250,11 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
     let es = cs;
     while (eb < weakB.length && weakB[eb] < pair[0]) eb++;
     while (es < weakS.length && weakS[es] < pair[1]) es++;
-    matches.push(...diffIdx(weakB.slice(cb, eb), weakS.slice(cs, es), (t) => t.key));
+    matches.push(
+      ...diffIdx(weakB.slice(cb, eb), weakS.slice(cs, es), (t) => t.key).filter(
+        ([b, s]) => !crossesPair(b, s),
+      ),
+    );
     cb = eb;
     cs = es;
     if (pair[0] < b1) matches.push(pair);
@@ -378,14 +264,21 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   const all: Array<[number, number]> = [];
   let mi = 0;
   let lastSide = s0 - 1;
+  const claimed = new Set(idPairs.map(([, sp]) => sp));
   for (let i = b0; i < b1; i++) {
     if (bt[i].kind === "block") {
+      const byId = idPairs.find(([pb]) => pb === i);
+      if (byId) {
+        all.push(byId);
+        lastSide = byId[1];
+        continue;
+      }
       const end = B.starts[B.blockOf[i] + 1];
       let k = mi;
       while (k < matches.length && matches[k][0] < i) k++;
       if (k < matches.length && matches[k][0] < end) {
         const sp = S.starts[S.blockOf[matches[k][1]]];
-        if (sp > lastSide && sp >= s0 && st[sp].kind === "block") {
+        if (sp > lastSide && sp >= s0 && st[sp].kind === "block" && !claimed.has(sp)) {
           all.push([i, sp]);
           lastSide = sp;
         }
@@ -393,7 +286,11 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
         // An empty paragraph pairs with the next unclaimed empty side paragraph before the next match.
         const limit = k < matches.length ? matches[k][1] : s1;
         for (let sp = lastSide + 1; sp < limit; sp++)
-          if (st[sp].key === bt[i].key && S.starts[S.blockOf[sp] + 1] === sp + 1) {
+          if (
+            st[sp].key === bt[i].key &&
+            !claimed.has(sp) &&
+            S.starts[S.blockOf[sp] + 1] === sp + 1
+          ) {
             all.push([i, sp]);
             lastSide = sp;
             break;
@@ -412,12 +309,37 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   let pb = b0;
   let ps = s0;
   for (const [mx, my] of [...all, [b1, s1] as [number, number]]) {
-    if (mx > pb || my > ps) out.push({ from: pb, to: mx, sfrom: ps, ins: st.slice(ps, my) });
+    if (mx > pb || my > ps)
+      out.push({ from: pb, to: mx, sfrom: ps, sto: my, ins: st.slice(ps, my) });
     if (mx < b1 && bt[mx].key !== st[my].key)
-      out.push({ from: mx, to: mx + 1, sfrom: my, ins: [st[my]] });
+      out.push({ from: mx, to: mx + 1, sfrom: my, sto: my + 1, ins: [st[my]] });
     pb = mx + 1;
     ps = my + 1;
   }
+}
+
+/**
+ * The block starts of the two ranges that carry the same id, in order (a later one that would cross
+ * an earlier is left out). Both ranges are one unit, so an id repeats at most by mistake: the first
+ * block with it pairs.
+ */
+function blockIdPairs(bt: Tok[], b0: number, b1: number, st: Tok[], s0: number, s1: number) {
+  const idAt = (t: Tok) => (t.kind === "block" ? (t.node.attrs.id as string | null) : null);
+  const side = new Map<string, number>();
+  for (let k = s0; k < s1; k++) {
+    const id = idAt(st[k]);
+    if (id != null && !side.has(id)) side.set(id, k);
+  }
+  const pairs: Array<[number, number]> = [];
+  const seen = new Set<string>();
+  for (let k = b0; k < b1; k++) {
+    const id = idAt(bt[k]);
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    const sp = side.get(id);
+    if (sp !== undefined && sp > (pairs.at(-1)?.[1] ?? s0 - 1)) pairs.push([k, sp]);
+  }
+  return pairs;
 }
 
 /**
@@ -447,6 +369,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
       const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands[0];
       h.from = h.to = best[0];
       h.sfrom = best[1];
+      h.sto = best[1] + n;
       h.ins = st.slice(best[1], best[1] + n);
     } else if (!h.ins.length && h.from < h.to) {
       const n = h.to - h.from;
@@ -465,7 +388,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
       const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands[0];
       h.from = best[0];
       h.to = best[0] + n;
-      h.sfrom = best[1];
+      h.sfrom = h.sto = best[1];
     }
   }
 }
@@ -500,13 +423,20 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
           from: h.from + i,
           to: h.from + toI,
           sfrom: h.sfrom + j,
+          sto: h.sfrom + toJ,
           ins: h.ins.slice(j, toJ),
         });
     };
     for (const [mi, mj] of matches) {
       gap(mi, mj);
       if (bt[h.from + mi].key !== h.ins[mj].key)
-        out.push({ from: h.from + mi, to: h.from + mi + 1, sfrom: h.sfrom + mj, ins: [h.ins[mj]] });
+        out.push({
+          from: h.from + mi,
+          to: h.from + mi + 1,
+          sfrom: h.sfrom + mj,
+          sto: h.sfrom + mj + 1,
+          ins: [h.ins[mj]],
+        });
       i = mi + 1;
       j = mj + 1;
     }

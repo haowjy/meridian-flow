@@ -28,18 +28,20 @@ ranges, identity and composition never expand.
 
 ## Only diff the units whose nodes changed
 
-Equal paragraphs anchor the diff. Each changed paragraph, or small run of adjacent
-changed paragraphs needed to read a split or join, is one **unit**. A weak trie keyed by
-the ordered retained base nodes, a side boundary and the ordered retained draft nodes
-caches a unit's hunks and their refinement, so a keystroke or AI write re-diffs only the
-unit whose nodes changed. Caches change cost, never output.
+`correspond` (`src/diff/correspond.ts`) decides which block of one version is which block of the
+other. `align` walks its pairs: each pair, with the pieces a split or a join left beside it, is
+one **unit**, and an equal one-to-one unit has no hunks. Blocks between units are a removed run,
+an added run, or one replacement marked `unpaired`. A weak trie keyed by the ordered retained
+base nodes, a side boundary and the ordered retained draft nodes caches a unit's hunks and
+their refinement, so a keystroke or AI write re-diffs only the unit whose nodes changed. Caches
+change cost, never output.
 
 Order matters within a unit:
 
 1. Word and mark refinement runs before boundary separation, because retaining a
    leading block token can turn a complete replacement into a partial edge.
 2. Separation splits partial edge blocks from complete consumed blocks, pairs complete
-   replacement blocks in order, and detaches excess blocks. Adjacent pure fragments from
+   replacement blocks in order, and detaches excess blocks (inside one unit only). Adjacent pure fragments from
    one separated replacement stay one edit, preserving split/join composition and
    identical concurrent-change collapse. Intervals with no complete consumed block keep
    their split/join structure.
@@ -155,6 +157,90 @@ same function plans a content Apply's live update, with the patch as the draft s
 insertions at either edge of an adjacent replacement peel off before clustering, so
 `The → A big black` and `+big black` keep one copy.
 
+A list, quote or table is one token to `align`, so a cluster in which both sides changed
+containers is merged over their children (`mergeContainers`), pairwise when each side replaced
+a run of the same containers, and at every depth. It falls back to a clash of the whole block
+(`whole-block-unit`) when the types or counts differ, when the merged node fails `check()`, or when a merged table's
+cells, with their `colspan` and `rowspan`, do not fill a rectangle. The merge and review pair
+blocks with the same function (`correspond`), so they agree on which block is which.
+
+### Block correspondence
+
+Steps, in order: blocks equal in full at the two ends pair; a block whose content (type and
+children, attributes left out) occurs once on each side pairs, where it is in every longest
+in-order set of such blocks (two that cross are not anchors); then each gap is scored at once,
+same content first (equal attributes break ties), then the share of words in common, in order,
+at least half. A repeated block is never an anchor. Unpaired blocks beside a pair whose
+words went into or came out of it are the **pieces** of a split or a join (text blocks of any
+type, or containers of one type: a list's items, a table's rows, so a join of items is owned in
+one place and no move pairs half of it elsewhere); the unit's pair is
+its first block on each side (`partner`), the block Yjs keeps the identity of. A block that is
+left and clearly another's best candidate by a fifth is a move.
+
+The merge asks in **certain** mode: a pair that another reading of the run explains nearly as
+well (the total score falls by less than a fifth without it) is not made. Review asks in
+**guess** mode, where an unmade pair costs a coarser picture and a wrong one costs nothing the
+merge acts on. A gap over 40,000 block pairs pairs in place when it has as many blocks on each
+side and each pair is nearly the same text, and otherwise searches a band round the diagonal at
+0.8 similarity; blocks it leaves stay unpaired (`coarse-diff`).
+
+A removal of several blocks is one removal per block in the merge, so one side's removal of a
+run meets the other side's edit or removal of each block separately. A shared edge of two
+replacements is kept once only inside one block (`shared-edge-kept-once`): two paragraphs that
+end in the same word do not share it. A hunk keeps the side range it came from (`sfrom`..`sto`);
+a filter such as moved-text dropping changes its payload and `sidx`, never its range.
+
+### Stretches: `draft-wins-stretch`
+
+When the merge cannot tell which block is which, the draft's version of that stretch stands as
+one counted clash, and the merge never combines, doubles or silently drops words.
+`settleStretches` (`src/diff/stretch.ts`) runs before any token merges. It lays each side's
+correspondence over the base: every block of a side sits in a base block's place or in a gap, and
+the places it changed are text (paired in place, differs), removed, or restructured (split,
+joined, moved, or added in a gap). Two sides' changes clash where they meet and the token merge
+cannot be trusted with them:
+
+- at a base block: either change is unsure (certain mode left it unpaired, or in a group of
+  blocks that could be each other), or one side removed the block and the other changed it in
+  any way, or both restructured it, or one side split or joined a container (a list item, a table
+  row) that the other changed: a container is one token to the token merge, so an edit cannot
+  travel into its pieces as it does into a paragraph's;
+- at a gap inside a join or an unsure group: the other side has anything there;
+- at any other gap: one change is unsure and neither is only blocks added there.
+
+Text against text, text against a split, a join or a move of that block (the edit travels with
+the block), additions by both sides at one gap, and removals of different blocks are left to the
+token merge. A stretch is the changes joined by clashes; where both sides hold the same blocks
+in it in the same places (a moved base block's place is the order merge's), it is no clash. Otherwise the draft's blocks stand, live is handed on with its changes to
+the stretch undone (the base's blocks in place), one conflict is recorded with the base blocks it
+covers, and live's words the draft lacks count under `overrode`. Live is set back to the base
+rather than to the draft's blocks: copying the draft's blocks in doubled them when the sides
+also disagreed about order.
+
+Which blocks could be one block decides the unsure groups. Blocks left in one gap are one group
+whatever their words: position vouches for them. Two blocks in different places have only their
+words (`couldBeOneAcross`): half the smaller block's words in the other, in order, and then three
+of them however short the blocks, or all of them when the two have the same words ("Yes." and
+"Yes." is one block that moved), or all of the smaller's when it has an equal twin on its own side
+("Yes." twice, one edited: which one is the ambiguity an unsure group answers). Without the floor a
+short line ("No.") linked to any paragraph containing its word, the stretch covered both places,
+and live's change far from the draft's was reverted, silently on Apply. Two blocks added at one gap, where no base block vouches for either,
+need half the smaller's words and three of them too, or all of a smaller block's
+(`couldBeSameAddition`): without that, "Live lore." and "Pending lore." read as one paragraph typed
+on both sides. A live paragraph that could be one of the draft's new paragraphs, and is not equal
+to it, is the draft's, one clash; equal ones are kept once and unrelated ones both kept. Measured on
+real text (this repo's fiction fixtures, its Markdown and the markup tests' strings, 20,000
+generated merges): unrelated paragraphs pass the half-words test in 1 to 5 percent of pairs when
+they have 4 to 12 words, and in up to 2 percent below that; the floor cuts the short ones by about
+two thirds and leaves longer ones. Unrelated paragraphs added at one gap and linked: 2 of 20,000
+generated merges.
+
+Known limit: a run of one or two words live carries out of a block into an otherwise new
+paragraph in another place, beside the draft's version of the source block, can appear twice (the
+restructuring run's 3,000 generated merges, whose paragraphs average three words: 17 of them). The new paragraph shares under half its words with
+the source, so by the rule it is new text, and `moved-text-dropped` has the same floor. Treating
+any shared word as evidence would link unrelated paragraphs through common words.
+
 Move-text matching checks whether the other side touched a source or pasted the same text
 only after selecting the globally longest run. Filtering sources first would change the
 winner and can silently lose moved words. Both the modifying and report-only passes use this
@@ -172,15 +258,12 @@ first-match lookup rather than changing admission.
 awaited receipt I/O: it keeps the append's new spans and drops stale backspaces against
 remembered typing.
 
-## Merge correspondence
+## What the merge returns
 
-`rebase` returns `correspondence`, naming each output block's original base, live and draft
-block indices (`output: null` records removed inputs), and `overrode`, the live words actually
-replaced in contested text. No caller should rediff the result to recover the merge's pairing.
-
-`composeHunks` optionally reports each selected hunk's block support in the final composed
-side, for joining host ownership. A whole-block deletion has empty output support, so callers
-keep its removed base support separately.
+`rebase` returns the merged `blocks`, the `conflicts` (where both sides changed the same text or
+blocks; the draft's version is in `blocks`), `overrode` (the live words the draft actually
+replaced in contested text) and `orderConflict`. `diffBlocks` returns its `correspondence`, which
+blocks of the draft are which base blocks, so no caller rediffs to recover review's pairing.
 
 [review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
 [authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#who-wrote-a-change

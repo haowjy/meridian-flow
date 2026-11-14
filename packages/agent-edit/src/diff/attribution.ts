@@ -777,12 +777,12 @@ class Classifier {
       split = new Map();
       let r = 0;
       for (const cleaned of hunks) {
-        const end = cleaned.sfrom + cleaned.ins.length;
+        const end = cleaned.sto;
         const mine: Hunk[] = [];
         while (r < raw.length) {
           const piece = raw[r++];
           mine.push(piece);
-          if (piece.to === cleaned.to && piece.sfrom + piece.ins.length === end) break;
+          if (piece.to === cleaned.to && piece.sto === end) break;
         }
         split.set(cleaned, mine);
       }
@@ -795,7 +795,7 @@ class Classifier {
   private hunk(boundaries: Boundaries, h: Hunk) {
     const { base: B, draft: D } = this.projection.diff;
     const q0 = h.sfrom;
-    const q1 = q0 + h.ins.length;
+    const q1 = h.sto;
     const sr = segments(B.toks, h.from, h.to);
     const si = segments(D.toks, q0, q1);
     let removed = 0;

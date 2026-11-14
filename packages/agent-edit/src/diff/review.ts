@@ -11,6 +11,7 @@
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { type ComposeMode, composeHunks, type SpanPatch } from "./compose.js";
+import { Dsu } from "./dsu.js";
 import type { BlockDiff, Hunk, HunkKind } from "./hunks.js";
 import { hunkKind } from "./hunks.js";
 import { blockKey, isBlockTok, isWordTok, type Side, similarity, type Tok } from "./tokens.js";
@@ -59,23 +60,6 @@ export interface ReviewProjection {
 }
 
 const isStart = (s: Side, p: number) => p >= s.toks.length || isBlockTok(s.toks[p]);
-
-class Dsu {
-  private parent: number[];
-  constructor(n: number) {
-    this.parent = Array.from({ length: n }, (_, i) => i);
-  }
-  find(x: number): number {
-    while (this.parent[x] !== x) {
-      this.parent[x] = this.parent[this.parent[x]];
-      x = this.parent[x];
-    }
-    return x;
-  }
-  union(a: number, b: number) {
-    this.parent[this.find(a)] = this.find(b);
-  }
-}
 
 export function projectReview(diff: BlockDiff): ReviewProjection {
   const { hunks, base: B, draft: D } = diff;
@@ -259,7 +243,7 @@ function groupSpans(diff: BlockDiff, members: number[], clusterOf: number[]): Re
     const bFrom = first.from;
     const bTo = last.to;
     const dFrom = first.sfrom;
-    const dTo = last.sfrom + last.ins.length;
+    const dTo = last.sto;
     const baseInline = bTo > bFrom && !isBlockTok(B.toks[bFrom]);
     const draftInline = dTo > dFrom && !isBlockTok(D.toks[dFrom]);
     spans.push({
@@ -378,7 +362,7 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
   };
   const base = range(diff.base, h.from, h.to);
   keys.push(contentBoundary);
-  const draft = range(diff.draft, h.sfrom, h.sfrom + h.ins.length);
+  const draft = range(diff.draft, h.sfrom, h.sto);
   const memo = descend(hunkContents, keys);
   memo.value ??= new Map();
   const ranges = formattingRanges(diff, h);
@@ -411,7 +395,7 @@ function reviewHunk(
   content: HunkContent,
 ): ReviewHunk {
   const h = diff.hunks[index];
-  const end = h.sfrom + h.ins.length;
+  const end = h.sto;
   const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
   const context = content.context;
   // A whole-node highlight would also wrap another hunk's red widget, including a deletion gap.
@@ -458,7 +442,7 @@ function formattingRanges(
   if (h.from === h.to || !h.ins.length) return undefined;
   const { base: B, draft: D } = diff;
   const baseBlock = B.blockOf[h.to - 1];
-  const draftBlock = D.blockOf[h.sfrom + h.ins.length - 1];
+  const draftBlock = D.blockOf[h.sto - 1];
   const bStart = B.starts[baseBlock];
   const dStart = D.starts[draftBlock];
   const before = B.toks[bStart];

@@ -287,7 +287,9 @@ export function createDrizzleApplyClick(
               const inverse = computeInverse(
                 live,
                 history,
-                targeted.map(({ part }) => ({ part, direction: "invert" as const })),
+                // Latest group first: a group's live update builds on the earlier groups' items, so the
+                // earlier group is intact only once the later one is out.
+                [...targeted].reverse().map(({ part }) => ({ part, direction: "invert" as const })),
                 { actionId: commandId, allocateClient: allocateDocumentClient },
               );
               const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
@@ -682,20 +684,16 @@ export function createDrizzleApplyClick(
                     };
                     live.on("update", capture);
                     try {
-                      const merged = rebase(
-                        schema,
-                        click.optimistic,
-                        readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-                        click.patched,
-                      );
+                      let overrode = 0;
                       const liveEffects: { groupId: string; seq: number | null }[] = [];
                       for (const group of click.groups) {
                         const groupMerge = rebase(
                           schema,
-                          click.optimistic,
+                          group.before,
                           readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
                           group.patched,
                         );
+                        overrode += groupMerge.overrode;
                         update = undefined;
                         live.transact(
                           () =>
@@ -735,12 +733,7 @@ export function createDrizzleApplyClick(
                               row = undefined;
                               const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
                               const before = readBlocks(fragment, schema);
-                              const after = applyBase(
-                                schema,
-                                before,
-                                click.optimistic,
-                                group.patched,
-                              );
+                              const after = applyBase(schema, before, group.before, group.patched);
                               prefix.transact(() => {
                                 writeBlocks(fragment, schema, after);
                                 appendApplyRecord(prefix, group.record);
@@ -792,7 +785,6 @@ export function createDrizzleApplyClick(
                           };
                         }),
                       );
-                      const overrode = merged.overrode;
                       const answer: ApplyClickResult = {
                         status: "applied",
                         commandId: command.envelope.commandId,
