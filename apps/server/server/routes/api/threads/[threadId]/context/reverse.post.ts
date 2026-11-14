@@ -1,9 +1,6 @@
 /** Authenticated whole-turn card Undo/Redo transport. */
 
-import {
-  DOCUMENT_COMMAND_CONFLICT_CODE,
-  DocumentCommandIdSchema,
-} from "@meridian/contracts/branches";
+import { COMMAND_CONFLICT_CODE, CommandIdSchema } from "@meridian/contracts/commands";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
@@ -14,16 +11,17 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { z } from "zod";
-import { DocumentCommandConflictError } from "../../../../../domains/collab/domain/document-commands.js";
+import { ReversalOwnersMoved } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 import { reverseTurnCard } from "../../../../../lib/work-receipt-reversal.js";
+import { CommandConflictError } from "../../../../../shared/commands/command-record.js";
 import { throwHttpInterrupt } from "../../../../../shared/interrupt-boundary.js";
 
 const reverseBodySchema = z.strictObject({
   direction: z.enum(["undo", "redo"], { error: "direction must be undo or redo" }),
   scope: z.literal("turn"),
-  commandId: DocumentCommandIdSchema,
+  commandId: CommandIdSchema,
   target: z.string({ error: "target must be a string" }).min(1),
 });
 
@@ -50,10 +48,17 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 200);
     return outcome;
   } catch (cause) {
-    if (!(cause instanceof DocumentCommandConflictError)) throw cause;
+    // The Works kept changing under the click's locks: nothing was stored, the same request may resend.
+    if (cause instanceof ReversalOwnersMoved)
+      throw createError({
+        statusCode: 503,
+        message: cause.message,
+        headers: { "Retry-After": "1" },
+      });
+    if (!(cause instanceof CommandConflictError)) throw cause;
     return throwHttpInterrupt(
       meridianErrorFromSystem(
-        DOCUMENT_COMMAND_CONFLICT_CODE,
+        COMMAND_CONFLICT_CODE,
         "That command id was used for a different command",
         false,
       ),

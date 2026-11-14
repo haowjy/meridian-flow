@@ -58,8 +58,12 @@ export async function seedProjectFixture(
 
   // The product's own routes provision the project (with its No Work row), the Work and the
   // thread; only the knowledge-base source below has no route.
-  await postJson(request, "/api/projects", { id: projectId, title });
-  await postJson(request, `/api/projects/${projectId}/works`, { id: workId, name: "Main Arc" });
+  await postJson(request, "/api/projects", { commandId: randomUUID(), id: projectId, title });
+  await postJson(request, `/api/projects/${projectId}/works`, {
+    commandId: randomUUID(),
+    id: workId,
+    name: "Main Arc",
+  });
   const agentsResponse = await request.get(`/api/agents?projectId=${projectId}&limit=100`);
   if (!agentsResponse.ok()) {
     throw new Error(

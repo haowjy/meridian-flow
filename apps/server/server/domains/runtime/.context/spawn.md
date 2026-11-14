@@ -75,6 +75,8 @@ another process cancels its own pending ask when it closes.
 **Lock order.** A thread lock takes its thread's held ask rows (live asks and owed
 continuations) before its advisory lock (`shared/thread-work-lock.ts`,
 `lockThreadAsks`), so no ask transition under a thread lock waits on an ask row.
+A transaction that locks thread rows before it calls `stopThreads` (a card reversal's early
+locks) takes them in this order too (`lockThreadAsRuntime`), so the cancellation's locks re-enter.
 Lineage cancellation is the only transaction that takes more than one thread's lock
 (`asMultiThreadLocker`); outside production the Postgres thread lock throws on a
 second thread's lock anywhere else. After a transaction's first thread lock,

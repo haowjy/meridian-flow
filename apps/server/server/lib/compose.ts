@@ -276,6 +276,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
@@ -302,6 +303,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The command record every kind of request claims its id in. */
+  commands: CommandStore;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
@@ -1223,6 +1226,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    commands: createCommandStore(ports.db),
     treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
@@ -1565,6 +1569,17 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    commands: {
+      async lookup() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async resolve() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async run() {
+        throw new Error("The command record requires durable persistence");
+      },
+    },
     treeLists: {
       async open() {
         throw new Error("Tree lists are unavailable in memory");
@@ -1717,6 +1732,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1801,6 +1817,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },
