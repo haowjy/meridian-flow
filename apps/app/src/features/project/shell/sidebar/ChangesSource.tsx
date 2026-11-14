@@ -3,7 +3,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { pendingRecords } from "@meridian/project-tree";
-import { Folder as FolderIcon, ListChecks } from "lucide-react";
+import { Folder as FolderIcon, Layers } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -677,7 +677,7 @@ function FolderGroupRow({
   );
 }
 
-/** "Split Arc 2 has 3 documents to review": switches the sidebar's pick to it. */
+/** Another Work with changes, named with its count: picking it switches the sidebar to it. */
 function ElsewhereLink({
   projectId,
   work,
@@ -688,18 +688,12 @@ function ElsewhereLink({
   count: number;
 }) {
   const { setWorkId } = useWorkScope(projectId);
-  const name = work.name;
   return (
     <ListRow
-      icon={ListChecks}
+      icon={Layers}
       onOpen={() => setWorkId(work.id)}
-      title={
-        <Plural
-          value={count}
-          one={`${name} has # document to review`}
-          other={`${name} has # documents to review`}
-        />
-      }
+      title={work.name}
+      detail={<Plural value={count} one="# document to review" other="# documents to review" />}
     />
   );
 }

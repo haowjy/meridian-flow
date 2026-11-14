@@ -50,7 +50,7 @@ A dev transport exists for local use. The thread socket is not here: it is `@mer
 
 The browser's copy of a project's tree list, beside the document sessions.
 
-A Yjs document in `y-indexeddb` shared by the tabs, one tab owning the connection, with a sync status. No screen reads it yet.
+A Yjs document in `y-indexeddb` shared by the tabs, one tab owning the connection, with a sync status. Every name and place on screen is read from its replay, live or a Work's view (the sidebar's Live/Draft toggle), and the sidebar's Undo stack is kept per copy (`core/project-tree/tree-undo.ts`).
 
 - Kind: module
 - Paths: `apps/app/src/core/tree-list`
