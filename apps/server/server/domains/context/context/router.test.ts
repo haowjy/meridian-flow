@@ -5,7 +5,6 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../shared/result.js";
-import { moveTo } from "../../../test-support/entry-ref.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import {
@@ -30,9 +29,6 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
     list: vi.fn(async () => Ok([])),
     tree: {
       sourceId: vi.fn(async () => `${scheme}-source`),
-      move: vi.fn(async (input: { leaf?: string }) =>
-        Ok({ moved: true, path: input.leaf ?? "old" }),
-      ),
       delete: vi.fn(async () => Ok({ path: "old", documentIds: ["document-old"] })),
     },
   } as unknown as ContextSchemeAdapter;
@@ -205,32 +201,6 @@ describe("context router scheme creation capabilities", () => {
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
     });
-  });
-
-  it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
-    const { port, uploads } = createPort();
-    const oldDocument = { kind: "file" as const, nodeId: "document-old" };
-
-    await expect(
-      moveTo(port, `scratch://@w7/old.md`, `uploads://old.md`, {
-        expected: oldDocument,
-      }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@c12/" },
-    });
-    await expect(
-      moveTo(port, `uploads://old.md`, `uploads://renamed.md`, {
-        expected: oldDocument,
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        destinationUri: "uploads://@c12/renamed.md",
-        moved: true,
-      },
-    });
-    expect(uploads.tree?.move).toHaveBeenCalledOnce();
   });
 });
 

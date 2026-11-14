@@ -5,7 +5,6 @@
  * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
 
-import type { BranchId, BranchTreeFacts } from "@meridian/contracts";
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   ContextEntryRef,
@@ -113,13 +112,6 @@ export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 
 export type AdapterLocatedDocument = { documentId: string; path: string; name: string };
 
-/** A drafted tree write's branch and the node's facts in it on either side, for the edit history. */
-export type AdapterDraftedChange = {
-  branchId: BranchId;
-  before: BranchTreeFacts;
-  after: BranchTreeFacts;
-};
-
 /** One list's copy handed to a tree command: the writer on it, the view it acts in, and the source's top. */
 export type TreeScope = {
   writer: import("@meridian/project-tree").TreeWriter;
@@ -140,12 +132,14 @@ export type TreeReadInput<T> = {
   read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T;
 };
 
-export type AdapterMoved = {
-  /** False when the node already stood there: nothing was written. */
-  moved: boolean;
-  /** Source-relative path it stands at. */
+/** A document that crossed lists: the two records, one in each list, and where it stands now. */
+export type AdapterMovedAcrossLists = {
+  /** Source-relative path it stands at in the list it entered. */
   path: string;
-  drafted?: AdapterDraftedChange;
+  /** The ids of the move in the list it left and the create in the list it entered. */
+  records: { left: string; entered: string };
+  /** The node moved: a document or file. */
+  node: string;
 };
 
 export type AdapterDeleted = {
@@ -153,12 +147,10 @@ export type AdapterDeleted = {
   path: string;
   /** The documents and files the delete took. */
   documentIds: string[];
-  drafted?: AdapterDraftedChange;
 };
 
 /**
- * Moves and deletes in one source: records of the project's list, live or (`drafted`) of the
- * Work's branch, which the command transaction ensures and locks. `afterWrite` runs inside the
+ * Tree writes in one source: records of the source's list. `afterWrite` runs inside the
  * command's transaction once the records are made, so a caller's own entry commits with them.
  */
 export interface ContextTreeAdapter {
@@ -174,26 +166,31 @@ export interface ContextTreeAdapter {
   command<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>>;
   /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
   read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
-  /** Moves and renames into `dir` of this adapter's source; null keeps the node's own folder. */
-  move(input: {
+  /**
+   * A document or file from another list (a project's and the account's `user://`) into `dir` of
+   * this source, live: one transaction on both lists. Fails `invalid_operation` for a folder, a
+   * Work's draft or a node in this source's own list.
+   */
+  moveAcrossLists(input: {
     node: ContextEntryRef;
     /** The source the caller found the node in. */
     fromSourceId: string;
-    dir: readonly string[] | null;
+    dir: readonly string[];
     /** The name the writer typed; omitted keeps the node's own. */
     leaf?: string;
     position?: ContextSiblingPosition;
+    /** Only while the node stands at this source-relative path. */
+    onlyAt?: string;
     origin?: WriteProvenance;
-    drafted?: boolean;
-    afterWrite?: (moved: AdapterMoved) => Promise<void>;
-  }): Promise<Result<AdapterMoved, AdapterFault>>;
+    afterWrite?: (moved: AdapterMovedAcrossLists) => Promise<void>;
+  }): Promise<Result<AdapterMovedAcrossLists, AdapterFault>>;
+  /** Deletes the node and what is inside it, live: one Trash entry. */
   delete(input: {
     node: ContextEntryRef;
     fromSourceId: string;
     /** Only while the node stands at this source-relative path. */
     onlyAt?: string;
     origin?: WriteProvenance;
-    drafted?: boolean;
     afterWrite?: (deleted: AdapterDeleted) => Promise<void>;
   }): Promise<Result<AdapterDeleted, AdapterFault>>;
 }

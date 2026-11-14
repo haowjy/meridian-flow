@@ -234,11 +234,12 @@ export type ListEnd = { writer: TreeWriter; list: string };
  * A move between two lists (a project's and the account's `user://`), as the pair the server
  * appends in one transaction: a `move` in the list the node leaves, whose parent names the
  * other list, and a `create` for the same node id in the list it enters, under `parent` there.
- * Moving back is the same pair the other way. A folder stays: what is inside it has no pair.
+ * `name` and `filetype` are what it is called and typed as where it enters, when that differs.
+ * Moving back is the same pair the other way (`undoMoveBetweenLists`). A folder stays: what is inside it has no pair.
  */
 export function moveBetweenLists(
   out: ListEnd,
-  into: ListEnd & { parent: string; index?: number },
+  into: ListEnd & { parent: string; index?: number; name?: string; filetype?: string },
   actor: Actor,
   node: string,
 ): { left: MoveRecord; entered: CreateRecord } {
@@ -261,11 +262,11 @@ export function moveBetweenLists(
     type: "create",
     node,
     kind: was.kind,
-    name: nameAmong(arrives, into.parent, was.kind, was.name),
+    name: nameAmong(arrives, into.parent, was.kind, into.name ?? was.name),
     parent: into.parent,
     source,
     rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),
-    ...(was.filetype ? { filetype: was.filetype } : {}),
+    ...((into.filetype ?? was.filetype) ? { filetype: into.filetype ?? was.filetype } : {}),
     ...(was.provisional ? { provisional: true as const } : {}),
     ...(was.aliases ? { aliases: was.aliases } : {}),
     ...(was.hasProperties ? { hasProperties: true as const } : {}),

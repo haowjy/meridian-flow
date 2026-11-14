@@ -3,7 +3,7 @@
  * overlapping it keeps one document identity.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - rename-as-name-change rejection and alias-only rename no-ops (kb/wiki/architecture/documents/placement-and-naming.md#a-document-has-one-canonical-name)
+ * - alias-only rename no-ops (kb/wiki/architecture/documents/placement-and-naming.md#a-document-has-one-canonical-name)
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documents, projects, treeNodes, users } from "@meridian/database/schema";
@@ -14,6 +14,7 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { moveInScope } from "../../../../test-support/entry-ref.js";
 import { treeSeeder } from "../../../../test-support/tree-seed.js";
 import { createDrizzleJournal } from "../../../collab/adapters/drizzle-journal.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
@@ -99,14 +100,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await hook();
           };
         },
-        /** A rename or move to `destination`, as the router's move commits it. */
+        /** A rename or move to `destination`, as the records a tree command makes. */
         move: (nodeId: string, destination: string) => {
           const parts = destination.split("/");
-          return context.tree.move({
-            node: { kind: "file", nodeId },
-            fromSourceId: SOURCE_ID,
-            dir: parts.slice(0, -1),
-            leaf: parts.at(-1),
+          return context.tree.command({
+            make: (scope) => ({
+              result: undefined,
+              arrived: moveInScope(scope, nodeId, parts.slice(0, -1), parts.at(-1)).arrived,
+            }),
           });
         },
       };
@@ -122,33 +123,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .from(treeNodes)
         .where(eq(treeNodes.kind, "document"));
-
-    it("refuses a rename that changes the document's type or storage model", async () => {
-      const { context, move, seeds } = createContextHarness();
-      const chapter = await seeds.document(SOURCE_ID, "chapter");
-      const script = await seeds.document(SOURCE_ID, "script.py");
-      const cover = await seeds.file(SOURCE_ID, "cover.png", {
-        storageKey: "s3://bucket/cover.png",
-        mime: "image/png",
-        size: 42,
-      });
-
-      await expect(move(chapter, "chapter.py")).resolves.toMatchObject({
-        ok: false,
-        error: { code: "invalid_operation", message: expect.stringMatching(/schema/i) },
-      });
-      await expect(move(script, "script.png")).resolves.toMatchObject({
-        ok: false,
-        error: { code: "invalid_operation", message: expect.stringMatching(/storage|binary/i) },
-      });
-      await expect(move(cover, "cover.txt")).resolves.toMatchObject({
-        ok: false,
-        error: { code: "invalid_operation", message: expect.stringMatching(/storage|tracked/i) },
-      });
-      await expect(context.stat("chapter")).resolves.toMatchObject({ ok: true });
-      await expect(context.stat("script.py")).resolves.toMatchObject({ ok: true });
-      await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
-    });
 
     it("keeps one document identity when a write and a rename overlap", async () => {
       const { context, move, pauseNextWrite, seeds } = createContextHarness();

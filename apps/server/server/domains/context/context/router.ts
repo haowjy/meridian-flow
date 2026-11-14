@@ -31,8 +31,8 @@ import type {
   ContextError,
   ContextListing,
   ContextListOptions,
-  ContextLocationChange,
-  ContextMoved,
+  ContextMoveAcrossListsChange,
+  ContextMovedAcrossLists,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -458,15 +458,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   }
 
   /**
-   * Move or rename `node`: the destination adapter writes it, wherever the node is by then,
-   * and the command is refused when it no longer stands in the area the caller named.
+   * Move `node` from the list of `source` into the destination's: the destination adapter
+   * writes both lists, wherever the node is by then, and the command is refused when it no
+   * longer stands in the area the caller named.
    */
-  async function moveNode(
+  async function moveNodeAcrossLists(
     node: ContextEntryRef,
     source: Dispatch,
     destination: Dispatch,
-    change: ContextLocationChange,
-  ): Promise<Result<ContextMoved, ContextError>> {
+    change: ContextMoveAcrossListsChange,
+  ): Promise<Result<ContextMovedAcrossLists, ContextError>> {
     let leaf: string | undefined;
     if (change.name !== undefined) {
       const named = validateContextEntryName(change.name);
@@ -479,31 +480,28 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     const tree = adapter.tree;
     const sourceTree = source.adapter.tree;
     if (!sourceTree) return Err({ code: "permission_denied", uri: source.canonical });
-    const dir =
-      change.destination.kind === "keep" ? null : destination.path.split("/").filter(Boolean);
     const moved = await callAdapter(destination.canonical, async () =>
-      tree.move({
+      tree.moveAcrossLists({
         node,
         fromSourceId: await sourceTree.sourceId(),
-        dir,
+        dir: destination.path.split("/").filter(Boolean),
         ...(leaf !== undefined ? { leaf } : {}),
         ...(change.position ? { position: change.position } : {}),
+        ...(change.onlyAt !== undefined ? { onlyAt: change.onlyAt } : {}),
         ...(change.origin ? { origin: change.origin } : {}),
-        ...(change.drafted ? { drafted: true } : {}),
-        afterWrite: async (written) => {
-          await change.inTransaction?.({
+        afterWrite: (written) =>
+          change.inTransaction?.({
             destinationUri: uriFor(destination.scheme, written.path, destination.authority),
-            moved: true,
-            ...(written.drafted ? { drafted: written.drafted } : {}),
-          });
-        },
+            node: written.node,
+            records: written.records,
+          }) ?? Promise.resolve(),
       }),
     );
     if (!moved.ok) return moved;
     return Ok({
       destinationUri: uriFor(destination.scheme, moved.value.path, destination.authority),
-      moved: moved.value.moved,
-      ...(moved.value.drafted ? { drafted: moved.value.drafted } : {}),
+      node: moved.value.node,
+      records: moved.value.records,
     });
   }
 
@@ -640,18 +638,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
-    async move(node, area, change) {
+    async moveAcrossLists(node, area, change) {
       const source = await resolve(area);
       if (!source.ok) return source;
-      let destination: Dispatch = source.value;
-      if (change.destination.kind === "at") {
-        const folder = await resolveMutation(change.destination.folderUri);
-        if (!folder.ok) return folder;
-        const denied = moveCreationDenied(source.value, folder.value);
-        if (denied) return denied;
-        destination = folder.value;
-      }
-      return moveNode(node, source.value, destination, change);
+      const folder = await resolveMutation(change.folderUri);
+      if (!folder.ok) return folder;
+      const denied = moveCreationDenied(source.value, folder.value);
+      if (denied) return denied;
+      return moveNodeAcrossLists(node, source.value, folder.value, change);
     },
 
     async retractCreate(uri, options): Promise<Result<void, ContextError>> {
@@ -678,12 +672,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           fromSourceId: await tree.sourceId(),
           ...(options.onlyAt !== undefined ? { onlyAt: options.onlyAt } : {}),
           ...(options.origin ? { origin: options.origin } : {}),
-          ...(options.drafted ? { drafted: true } : {}),
           afterWrite: async (written) => {
             await options.inTransaction?.({
               uri: uriFor(r.value.scheme, written.path, r.value.authority),
               documentIds: written.documentIds,
-              ...(written.drafted ? { drafted: written.drafted } : {}),
             });
           },
         }),
@@ -692,7 +684,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Ok({
         uri: uriFor(r.value.scheme, deleted.value.path, r.value.authority),
         documentIds: deleted.value.documentIds,
-        ...(deleted.value.drafted ? { drafted: deleted.value.drafted } : {}),
       });
     },
 

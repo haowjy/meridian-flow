@@ -14,6 +14,7 @@ export {
   restoreDiscard,
   undoApply,
 } from "./apply.js";
+export { undoMoveBetweenLists } from "./between-lists.js";
 export {
   type Actor,
   type BlobRef,
