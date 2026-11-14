@@ -38,6 +38,7 @@ No instance follows every rule. Before copying one, check what it does:
 
 | Instance | Survives a reload | Retries by itself | Retry after a refusal |
 |---|---|---|---|
+| Command driver (Work commands) | Yes, in the account's IndexedDB journal | Yes, backoff, from the one tab holding the lock | Same record, new send id |
 | Chat submission | Yes, in the account's journal | Yes, the driver replays | New submission id |
 | Creation record | No, memory only | No; one lookup, then `failed` | Same id |
 | Import creation | No, memory only | No | Same import id |
@@ -56,6 +57,7 @@ id.
 
 | Machine | Where | What it calls the unanswered state |
 |---|---|---|
+| [Command driver](../../packages/command-driver/.context/state-machines.md) | package | `sending`, delivered until the server's stored outcome is known |
 | [Chat submission](../../apps/app/src/client/chat-submissions/.context/state-machines.md) | App | `posted`, with no answer |
 | [Creation record](../../apps/app/src/client/creation/.context/state-machines.md) | App | resolved inside the request by `createWithRecovery` |
 | [Import creation](../../apps/app/src/features/import/.context/state-machines.md) | App | `uncertain` |

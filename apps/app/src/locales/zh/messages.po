@@ -1550,6 +1550,10 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#: src/components/app/NotSentYet.tsx
+msgid "Changes are waiting to be sent. They go out on their own."
+msgstr ""
+
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr ""
@@ -4193,6 +4197,10 @@ msgstr "未报告"
 
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent"
 msgstr ""
 
 #. placeholder {0}: answer.text

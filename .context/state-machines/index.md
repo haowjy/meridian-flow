@@ -44,6 +44,7 @@ have it:
 
 | Machine | State of | Page |
 |---|---|---|
+| Command | One command the server may not have received, from the journal to its stored outcome (Work commands today) | [command-driver](../../packages/command-driver/.context/state-machines.md) |
 | Thread socket | The shared WebSocket and its handshake | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Thread subscription, client half | One thread's subscription and replay | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Hand-back and Stop commands | One Stop press, or one request to take queued messages back | [thread-client](../../packages/thread-client/.context/state-machines.md) |

@@ -1550,6 +1550,10 @@ msgstr "Changed the position of {source}"
 msgid "Changes"
 msgstr "Changes"
 
+#: src/components/app/NotSentYet.tsx
+msgid "Changes are waiting to be sent. They go out on their own."
+msgstr "Changes are waiting to be sent. They go out on their own."
+
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr "Changes couldn’t load"
@@ -4194,6 +4198,10 @@ msgstr "Not reported"
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
 msgstr "Not run before compaction"
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent"
+msgstr "Not sent"
 
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
