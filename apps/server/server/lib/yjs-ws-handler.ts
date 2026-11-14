@@ -340,7 +340,15 @@ async function classifyYjsConnectionAdmission(input: {
     // A document in Trash still takes text until its node is purged, so the room reads
     // through Trash like a restore; a purged or unplaced document has no facts and is refused.
     fileTarget = { kind: "restore", documentId };
-    admitted = await roomAccess(services, userId, fileTarget);
+    const found = await findRoomAccess(services, userId, fileTarget);
+    if (!found) {
+      // A browser connects as soon as it appends a document's `create`, which the server may not
+      // have admitted yet: it retries. A purged document is refused for good.
+      if (await services.documentSync.roomRemoval({ documentId }))
+        throw permissionDenied("permission-denied");
+      refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
+    }
+    admitted = found;
     // The room's explicit touch: a living document missing its authority is seeded empty
     // before the first generation read, which never creates one.
     await services.documentSync.ensureDocumentAuthority(documentId);

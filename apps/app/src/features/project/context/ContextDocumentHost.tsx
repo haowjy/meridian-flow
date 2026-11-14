@@ -30,14 +30,13 @@ import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewB
 import { EditorView } from "@/features/editor/EditorView";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
-  useAccountResourceProjection,
   useAccountResourceReplica,
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
-import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
+import { OpenDocumentSessionBoundary } from "./open-document-session";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
@@ -71,12 +70,7 @@ export function ContextDocumentHost({
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
-  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
-  const availabilityRevision = resourceAvailabilityRevision(
-    resourceProjection,
-    document.documentId,
-  );
   // The host's own review: the one it has open, else the draft its view paints. While the paint
   // is held (the pinned owner's list is loading) the pin already names the item, so the live
   // text stays covered rather than painting Live first.
@@ -232,8 +226,6 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      resourceHandle={document.resourceHandle}
-      availabilityRevision={availabilityRevision}
       liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}
     >

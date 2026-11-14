@@ -215,8 +215,8 @@ export async function runDelete(
         : [],
     ),
   ]);
-  const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
-  const kept = await Promise.all(
+  removal?.beginOwnRemoval(projectId, covered.flat());
+  await Promise.all(
     entries.map(async ({ name, ...entry }, index) => {
       try {
         if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
@@ -237,7 +237,6 @@ export async function runDelete(
       }
     }),
   );
-  settleMark?.(kept.flat());
 }
 
 function rowFailure(

@@ -1,11 +1,7 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
-import type {
-  LiveDocumentSessionAuthority,
-  ProjectContextTreeScheme,
-  WorkingSetRoute,
-} from "@meridian/contracts/protocol";
-import type { OpenDocument, ServerOpenDocument } from "@/client/stores";
+import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
+import type { OpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
   readRecentRoutes,
@@ -13,6 +9,7 @@ import {
   replaceRecentRoutes,
   workingSetRouteEquals,
 } from "@/client/working-set";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type {
   NavigationSettlement,
   PreparedWorkspaceNavigation,
@@ -23,12 +20,8 @@ import {
   type ContextRouteRequest,
   contextRouteMatchesSearch,
   type ProjectSearch,
-  projectSearchEquals,
 } from "../routing/project-route";
-import {
-  type ContextAvailabilityLocalBatchPlan,
-  planContextAvailabilityBatch,
-} from "./context-availability-effect-planner";
+import { planContextRemovalBatch } from "./context-removal-batch-planner";
 import {
   type ContextRemovalOutcome,
   type ContextRouteIdentity,
@@ -55,8 +48,7 @@ import {
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 import { PresentedDocuments } from "./presented-documents";
-import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
-import type { RemovedNoticeStore, SettleOwnRemoval } from "./removed-notice-store";
+import type { RemovedNoticeStore } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -161,10 +153,7 @@ export type ContextRouteActivation = {
 };
 
 /** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
-export type RemovedPresentationPort = Pick<
-  RemovedNoticeStore,
-  "presentedRemoved" | "markOwnRemoval" | "ownRemovalEnded"
->;
+export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -185,34 +174,15 @@ export type ContextRemovalProjectSnapshot = Pick<
   "activeWorkId" | "selection" | "admitted" | "removalFence" | "transitionRevision" | "live"
 >;
 
-export type AppliedAvailabilityCommand = Readonly<{
-  generation: string;
-  commandId: string;
-  kind: ProjectDocumentAvailabilityCommand["kind"];
+/**
+ * What the list says changed for a document in a project: it left the live tree (deleted, purged
+ * or never there), or it is in the tree again (a restore).
+ */
+export type RemovalCommand = Readonly<{
+  kind: "gone" | "back";
+  projectId: string;
+  documentId: string;
 }>;
-
-export type ContextAvailabilitySessionEffectResult =
-  | Readonly<{
-      commandId: string;
-      operation: "revoke-document" | "revoke-access";
-      status: "fulfilled";
-    }>
-  | Readonly<{
-      commandId: string;
-      operation: "revoke-document" | "revoke-access";
-      status: "rejected";
-      reason: unknown;
-    }>;
-
-export type ContextAvailabilityEffectReceipt = Readonly<{
-  committedCommandIds: readonly string[];
-  replayedCommandIds: readonly string[];
-  staleCommandIds: readonly string[];
-  localSettlement: Promise<void>;
-  sessionSettlement: Promise<readonly ContextAvailabilitySessionEffectResult[]>;
-}>;
-
-type PendingSessionAvailabilityEffect = ContextAvailabilityLocalBatchPlan["sessionEffects"][number];
 
 export type ContextRemovalLifetimeLease = {
   suspend(): void;
@@ -241,19 +211,14 @@ export class ContextRemovalCoordinator {
   private readonly fallbackRoute: ContextRemovalRoutePort | null;
   private readonly presented: PresentedPort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
-  private readonly sessions: LiveDocumentSessionAuthority | null;
+  private readonly copies: Pick<LiveDocumentSessionRegistry, "clearLocalCopy"> | null;
   private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
   private readonly addresses: AddressAnswersPort | null;
   private readonly tabs: ClosedTabsPort | null;
-  private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
-  private readonly terminalAvailability = new Map<string, ProjectDocumentAvailabilityCommand>();
-  private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
-  private readonly sessionEffectRuns = new Map<
-    string,
-    Promise<ContextAvailabilitySessionEffectResult>
-  >();
+  /** The documents the list has taken out of the live tree and has not given back, by `projectId/documentId`. */
+  private readonly gone = new Set<string>();
   private disposed = false;
   private suspended = false;
 
@@ -266,7 +231,7 @@ export class ContextRemovalCoordinator {
           presented?: PresentedPort;
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
-          sessions?: LiveDocumentSessionAuthority;
+          copies?: Pick<LiveDocumentSessionRegistry, "clearLocalCopy">;
           notices?: RemovedPresentationPort;
           drafts?: BoundDraftsPort;
           draftOnly?: DraftOnlyPort;
@@ -278,7 +243,7 @@ export class ContextRemovalCoordinator {
       presented?: PresentedPort;
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
-      sessions?: LiveDocumentSessionAuthority;
+      copies?: Pick<LiveDocumentSessionRegistry, "clearLocalCopy">;
       notices?: RemovedPresentationPort;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
@@ -294,7 +259,7 @@ export class ContextRemovalCoordinator {
     this.presented = dependencies.presented ?? new PresentedDocuments();
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
-    this.sessions = dependencies.sessions ?? null;
+    this.copies = dependencies.copies ?? null;
     this.notices = dependencies.notices ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
@@ -601,275 +566,92 @@ export class ContextRemovalCoordinator {
     return this.projects.get(projectId)?.snapshot ?? EMPTY_PROJECT_SNAPSHOT;
   }
 
-  /** One logical project-final batch across workspace, route, recent-route, selection, and sessions. */
-  reconcileDocumentAvailability(
-    commands: readonly ProjectDocumentAvailabilityCommand[],
-  ): ContextAvailabilityEffectReceipt {
-    return this.applyDocumentAvailability(commands, new Set());
+  /** The documents of the project a removal can touch: the ones views present and recent routes name. */
+  watchedDocumentIds(projectId: string): string[] {
+    const ids = new Set(this.presented.documents(projectId).map((tab) => tab.documentId));
+    for (const route of this.workingSet.readRecentRoutes(projectId))
+      if (route.documentId) ids.add(route.documentId);
+    return [...ids];
   }
 
   /**
-   * A view can present a document after the terminal command that raced its route. Reapply that
-   * exact command to the newly presented document instead of leaving it outside the command's
-   * already-settled batch.
+   * What the list says changed, as one batch across workspace, route, recent routes and
+   * selection. A document already gone stays gone: the batch repeats nothing.
+   */
+  applyRemovals(commands: readonly RemovalCommand[]): void {
+    if (this.unavailable()) return;
+    for (const projectId of new Set(commands.map((command) => command.projectId))) {
+      const mine = commands.filter((command) => command.projectId === projectId);
+      const key = (command: RemovalCommand) => `${projectId}/${command.documentId}`;
+      const removed = mine.filter(
+        (command) => command.kind === "gone" && !this.gone.has(key(command)),
+      );
+      const restored = mine.filter(
+        (command) => command.kind === "back" && this.gone.delete(key(command)),
+      );
+      if (removed.length > 0)
+        this.applyGone(
+          projectId,
+          removed.map((command) => command.documentId),
+        );
+      if (restored.length > 0) {
+        // The documents are in the tree again: their holds end and every cached address is read afresh.
+        for (const command of restored) this.draftOnly?.promote(projectId, command.documentId);
+        this.addresses?.available(projectId);
+      }
+    }
+  }
+
+  /**
+   * A view can present a document after the removal that raced its route. Apply the removal again
+   * to the newly presented document instead of leaving it outside the batch already settled.
    */
   reconcileInstalledTab(projectId: string, tab: OpenDocument): void {
-    const key = `${projectId}/${tab.documentId}`;
-    const command = this.terminalAvailability.get(key);
-    if (command?.kind !== "terminal-remove") return;
-    void this.applyDocumentAvailability([command], new Set([tab.documentId])).localSettlement.catch(
-      (error: unknown) => reportError(error),
-    );
+    if (tab.kind === "new" || !this.gone.has(`${projectId}/${tab.documentId}`)) return;
+    this.applyGone(projectId, [tab.documentId]);
   }
 
-  private applyDocumentAvailability(
-    commands: readonly ProjectDocumentAvailabilityCommand[],
-    reapplyDocumentIds: ReadonlySet<string>,
-  ): ContextAvailabilityEffectReceipt {
-    const normalized = this.normalizeAvailabilityCommands(commands);
-    if (normalized.length === 0) return this.emptyAvailabilityReceipt();
-    if (this.unavailable()) throw new Error("Context removal authority is unavailable");
-
-    const committed: ProjectDocumentAvailabilityCommand[] = [];
-    const replayed: ProjectDocumentAvailabilityCommand[] = [];
-    const staleCommandIds: string[] = [];
-    for (const command of normalized) {
-      const id = availabilityDocumentId(command);
-      const key = `${command.projectId}/${id}`;
-      const previous = this.appliedAvailability.get(key);
-      if (!previous) {
-        committed.push(command);
-        continue;
-      }
-      const comparison = BigInt(command.generation) - BigInt(previous.generation);
-      if (comparison < 0n) {
-        staleCommandIds.push(command.commandId);
-      } else if (comparison === 0n) {
-        if (previous.commandId !== command.commandId || previous.kind !== command.kind) {
-          throw new Error(`Availability command collision for ${key}`);
-        }
-        if (reapplyDocumentIds.has(id)) committed.push(command);
-        else replayed.push(command);
-      } else {
-        committed.push(command);
-      }
-    }
-
-    const projectId = normalized[0]?.projectId as string;
+  private applyGone(projectId: string, documentIds: readonly string[]): void {
+    for (const documentId of documentIds) this.gone.add(`${projectId}/${documentId}`);
     const state = this.project(projectId);
-    let plan: ContextAvailabilityLocalBatchPlan | null = null;
-    if (committed.length > 0) {
-      const held = this.heldByDrafts(
-        projectId,
-        committed.flatMap((command) =>
-          command.kind === "terminal-remove" ? [command.documentId] : [],
-        ),
-      );
-      for (const command of committed) {
-        const documentId = availabilityDocumentId(command);
-        if (command.kind !== "available" && this.draftOnly?.isDraftOnly(projectId, documentId))
-          held.add(documentId);
-      }
-      const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-      const routeSearch = route?.readSearch(projectId) ?? null;
-      const presented = this.presented.documents(projectId);
-      plan = planContextAvailabilityBatch({
-        commands: committed,
-        project: state.snapshot,
-        tabs: presented,
-        mainDocumentId: this.presented.mainDocumentId(projectId),
-        recentRoutes: this.workingSet.readRecentRoutes(projectId),
-        routeSearch,
-        appliedGenerations: this.appliedAvailability,
-        held,
-      });
-
-      const settledPlan = plan;
-      const settleLocal = () => {
-        this.workingSet.replaceRecentRoutes(projectId, settledPlan.recentRoutes);
-        state.selection = settledPlan.selection;
-        state.admitted = settledPlan.admitted;
-        state.removalFence = settledPlan.removalFence;
-        state.transitionRevision = settledPlan.transitionRevision;
-        for (const record of settledPlan.generationRecords) {
-          this.appliedAvailability.set(`${projectId}/${record.documentId}`, {
-            generation: record.generation,
-            commandId: record.commandId,
-            kind: record.kind,
-          });
-        }
-        const gone = committed.flatMap((command) => {
-          const id = availabilityDocumentId(command);
-          return command.kind === "available" || held.has(id) ? [] : [id];
-        });
-        this.forget(projectId, gone);
-        if (gone.length > 0) this.addresses?.removed(projectId, gone);
-        if (committed.some((command) => command.kind === "available"))
-          this.addresses?.available(projectId);
-        for (const command of committed) {
-          const key = `${projectId}/${availabilityDocumentId(command)}`;
-          if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
-          else this.terminalAvailability.delete(key);
-          // Live has the document again (a restore, or an Apply that brought it back): its holds end.
-          if (command.kind === "available")
-            this.draftOnly?.promote(projectId, availabilityDocumentId(command));
-        }
-        if (route && routeSearch && settledPlan.routeSearch) {
-          const nextRouteSearch = settledPlan.routeSearch;
-          route.updateSearch(
-            projectId,
-            (latest) => (projectSearchEquals(latest, routeSearch) ? nextRouteSearch : latest),
-            settledPlan.relocatedRouteDocumentId
-              ? { documentId: settledPlan.relocatedRouteDocumentId }
-              : undefined,
-          );
-        }
-        this.notices?.presentedRemoved(
-          projectId,
-          committed.flatMap((command) => {
-            if (command.kind !== "terminal-remove") return [];
-            const id = command.documentId;
-            const tab = presented.find(
-              (candidate): candidate is ServerOpenDocument =>
-                candidate.kind !== "new" && candidate.documentId === id,
-            );
-            return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
-              ? [tab]
-              : [];
-          }),
-        );
-        this.notices?.ownRemovalEnded(
-          projectId,
-          committed.flatMap((command) =>
-            command.kind === "terminal-remove" && !held.has(command.documentId)
-              ? [command.documentId]
-              : [],
-          ),
-        );
-        this.publish(state);
-        return settledPlan.sessionEffects;
-      };
-
-      const replayEffects = replayed.flatMap((command) => availabilitySessionEffect(command));
-      const settleEffects = (plannedEffects: typeof settledPlan.sessionEffects) => {
-        const effects = [...plannedEffects, ...replayEffects].map((effect) => {
-          const pending = this.pendingSessionEffects.get(effect.commandId);
-          if (pending) return pending;
-          this.pendingSessionEffects.set(effect.commandId, effect);
-          return effect;
-        });
-        return Promise.all(effects.map((effect) => this.startSessionEffect(effect)));
-      };
-      const sessionSettlement = settleEffects(settleLocal());
-      return {
-        committedCommandIds: committed.map((command) => command.commandId),
-        replayedCommandIds: replayed.map((command) => command.commandId),
-        staleCommandIds,
-        localSettlement: Promise.resolve(),
-        sessionSettlement,
-      };
-    }
-
-    const replayEffects = replayed.flatMap((command) => availabilitySessionEffect(command));
-    const effects = replayEffects.map((effect) => {
-      const pending = this.pendingSessionEffects.get(effect.commandId);
-      if (pending) return pending;
-      this.pendingSessionEffects.set(effect.commandId, effect);
-      return effect;
+    const held = this.heldByDrafts(projectId, documentIds);
+    for (const documentId of documentIds)
+      if (this.draftOnly?.isDraftOnly(projectId, documentId)) held.add(documentId);
+    const presented = this.presented.documents(projectId);
+    const plan = planContextRemovalBatch({
+      documentIds,
+      project: state.snapshot,
+      tabs: presented,
+      mainDocumentId: this.presented.mainDocumentId(projectId),
+      recentRoutes: this.workingSet.readRecentRoutes(projectId),
+      held,
     });
-    const runs = effects.map((effect) => this.startSessionEffect(effect));
-    return {
-      committedCommandIds: committed.map((command) => command.commandId),
-      replayedCommandIds: replayed.map((command) => command.commandId),
-      staleCommandIds,
-      localSettlement: Promise.resolve(),
-      sessionSettlement: Promise.all(runs),
-    };
-  }
-
-  retryPendingSessionEffects(): Promise<readonly ContextAvailabilitySessionEffectResult[]> {
-    const effects = [...this.pendingSessionEffects.values()].sort((left, right) =>
-      left.commandId.localeCompare(right.commandId),
-    );
-    return Promise.all(effects.map((effect) => this.startSessionEffect(effect)));
-  }
-
-  private normalizeAvailabilityCommands(
-    commands: readonly ProjectDocumentAvailabilityCommand[],
-  ): ProjectDocumentAvailabilityCommand[] {
-    const projectId = commands[0]?.projectId;
-    const byDocument = new Map<string, ProjectDocumentAvailabilityCommand>();
-    for (const command of commands) {
-      if (command.projectId !== projectId) throw new Error("Availability batch mixes projects");
-      const id = availabilityDocumentId(command);
-      const previous = byDocument.get(id);
-      if (!previous) {
-        byDocument.set(id, command);
-      } else if (JSON.stringify(previous) !== JSON.stringify(command)) {
-        throw new Error(`Availability batch conflicts for document ${id}`);
-      }
-    }
-    return [...byDocument.values()].sort((left, right) =>
-      left.commandId.localeCompare(right.commandId),
-    );
-  }
-
-  private startSessionEffect(
-    effect: PendingSessionAvailabilityEffect,
-  ): Promise<ContextAvailabilitySessionEffectResult> {
-    const existing = this.sessionEffectRuns.get(effect.commandId);
-    if (existing) return existing;
-    let operation: Promise<unknown>;
-    try {
-      operation =
-        effect.operation === "revoke-document"
-          ? (this.sessions?.revokeDocument(
-              effect.projectId,
-              effect.documentId,
-              effect.generation,
-              effect.commandId,
-              effect.deletionVersion,
-            ) ?? Promise.resolve())
-          : (this.sessions?.revokeAccess(
-              effect.projectId,
-              effect.documentId,
-              effect.generation,
-              effect.commandId,
-            ) ?? Promise.resolve());
-    } catch (reason) {
-      operation = Promise.reject(reason);
-    }
-    const run = operation.then(
-      (): ContextAvailabilitySessionEffectResult => {
-        if (this.pendingSessionEffects.get(effect.commandId) === effect) {
-          this.pendingSessionEffects.delete(effect.commandId);
-        }
-        return { commandId: effect.commandId, operation: effect.operation, status: "fulfilled" };
-      },
-      (reason: unknown): ContextAvailabilitySessionEffectResult => ({
-        commandId: effect.commandId,
-        operation: effect.operation,
-        status: "rejected",
-        reason,
+    this.workingSet.replaceRecentRoutes(projectId, plan.recentRoutes);
+    state.selection = plan.selection;
+    state.admitted = plan.admitted;
+    state.removalFence = plan.removalFence;
+    state.transitionRevision = plan.transitionRevision;
+    const leaving = documentIds.filter((id) => !held.has(id));
+    this.forget(projectId, leaving);
+    if (leaving.length > 0) this.addresses?.removed(projectId, leaving);
+    this.notices?.presentedRemoved(
+      projectId,
+      documentIds.flatMap((id) => {
+        const tab = presented.find(
+          (candidate) => candidate.kind !== "new" && candidate.documentId === id,
+        );
+        return tab && !plan.tabs.some((candidate) => candidate.documentId === id) ? [tab] : [];
       }),
     );
-    this.sessionEffectRuns.set(effect.commandId, run);
-    void run.finally(() => {
-      if (this.sessionEffectRuns.get(effect.commandId) === run) {
-        this.sessionEffectRuns.delete(effect.commandId);
-      }
-    });
-    return run;
+    this.publish(state);
   }
 
-  private emptyAvailabilityReceipt(): ContextAvailabilityEffectReceipt {
-    return {
-      committedCommandIds: [],
-      replayedCommandIds: [],
-      staleCommandIds: [],
-      localSettlement: Promise.resolve(),
-      sessionSettlement: Promise.resolve([]),
-    };
+  /**
+   * These documents' local copies can no longer come back to this account (their nodes were
+   * purged): each session closes and its copy is deleted.
+   */
+  clearLocalCopies(documentIds: readonly string[]): Promise<unknown> {
+    return Promise.all(documentIds.map((id) => this.copies?.clearLocalCopy(id as never)));
   }
 
   /**
@@ -950,18 +732,17 @@ export class ContextRemovalCoordinator {
   /**
    * The writer is deleting or Discarding these documents: their removal says nothing, and main,
    * if it shows one of them, goes at once to the document it showed before, else to Recently
-   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says. `landed`
+   * opened. Call before the removal. `landed`
    * hears where main went, or null when it did not move; nothing when main did not show them.
    */
   beginOwnRemoval(
     projectId: string,
     documentIds: readonly string[],
     landed?: (landing: MainLanding | null) => void,
-  ): SettleOwnRemoval {
-    const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
+  ): void {
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return settle;
+    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return;
     const goingBack = this.project(projectId).goingBack;
     goingBack.add(shown);
     void route
@@ -973,12 +754,11 @@ export class ContextRemovalCoordinator {
       )
       .finally(() => goingBack.delete(shown))
       .then((landing) => landed?.(landing));
-    return settle;
   }
 
   /**
    * The catalog no longer places a mounted document. A presented one's notice says why once
-   * availability proves a removal; the address stays where it is, so the view shows the removal
+   * the list shows a removal; the address stays where it is, so the view shows the removal
    * in place. A kept one, off screen, just goes.
    */
   closeVanished(projectId: string, tab: OpenDocument): ContextRemovalOutcome {
@@ -1195,24 +975,4 @@ export class ContextRemovalCoordinator {
 
 function locatorKey(locator: ContextRouteRequest): string {
   return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId ?? ""}\u0000${locator.rootThreadId ?? ""}`;
-}
-
-function availabilityDocumentId(command: ProjectDocumentAvailabilityCommand): string {
-  return command.kind === "available" ? command.document.entryId : command.documentId;
-}
-
-function availabilitySessionEffect(
-  command: ProjectDocumentAvailabilityCommand,
-): PendingSessionAvailabilityEffect[] {
-  if (command.kind === "available") return [];
-  return [
-    {
-      commandId: command.commandId,
-      operation: command.kind === "terminal-remove" ? "revoke-document" : "revoke-access",
-      projectId: command.projectId,
-      documentId: command.documentId,
-      generation: command.generation,
-      deletionVersion: command.kind === "terminal-remove" ? command.deletionVersion : null,
-    },
-  ];
 }

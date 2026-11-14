@@ -16,7 +16,6 @@ import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,
   usePresentedDocuments,
-  useProjectContextAvailabilityCoordinator,
   useShownDocuments,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
@@ -47,7 +46,6 @@ export function useFollowOpenDocumentPlacement(input: {
   );
   const resourceProjection = useAccountResourceProjection(input.projectId);
   const contextRemoval = useContextRemovalCoordinator();
-  const availability = useProjectContextAvailabilityCoordinator();
   const isDraftOnly = useIsDraftOnly(input.projectId);
   // A removal is said once per document: the document stays presented in its removed state.
   const removed = useRef(new Set<string>());
@@ -82,15 +80,6 @@ export function useFollowOpenDocumentPlacement(input: {
         removed.current.add(tab.documentId);
         // closeVanished keeps a document a live draft still holds, and says the rest went.
         contextRemoval.closeVanished(input.projectId, tab);
-        if (projection.kind === "terminal")
-          void availability
-            .acceptCommittedDelete({
-              projectId: input.projectId,
-              deletedDocumentIds: projection.documentIds,
-              generation: projection.generation,
-              deletionVersion: projection.deletionVersion,
-            })
-            .catch((error: unknown) => reportError(error));
         continue;
       }
       // A route is the document's only while the selection is bound to it there; a URL the
@@ -129,7 +118,6 @@ export function useFollowOpenDocumentPlacement(input: {
     input.onOpenContextTarget,
     input.projectId,
     input.selection,
-    availability,
     contextRemoval,
     isDraftOnly,
     resourceProjection.records,

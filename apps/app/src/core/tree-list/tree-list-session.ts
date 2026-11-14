@@ -5,7 +5,7 @@
  * immutable snapshot.
  */
 import { type TreeListRef, treeRoomName, yjsWsPath } from "@meridian/contracts/protocol";
-import type { TreeRecord } from "@meridian/project-tree";
+import { LIVE, replayView, type TreeProjection, type TreeRecord } from "@meridian/project-tree";
 import { connectTreeList, type ListSyncState } from "@meridian/tree-list-sync";
 import type * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
@@ -35,6 +35,8 @@ export type TreeListStatus =
 export type TreeListSnapshot = {
   /** The copy. A rebuild replaces it with a new document: read it from the snapshot each time. */
   readonly doc: Y.Doc;
+  /** Counts the changes to `doc` (records appended here, in another tab or by the server) and its replacements: what a reader of the replay recomputes on. */
+  readonly version: number;
   readonly status: TreeListStatus;
   /** Whether this tab holds the list's connection or follows the tab that does. */
   readonly role: "owner" | "follower";
@@ -67,9 +69,36 @@ export class TreeListSession {
       },
       () => this.ownStatus,
     );
-    this.current = { doc: this.copy.doc, status: "waiting", role: "follower", rejected: [] };
-    this.copy.subscribe(() => this.publish({ doc: this.copy.doc }));
+    this.current = {
+      doc: this.copy.doc,
+      version: 0,
+      status: "waiting",
+      role: "follower",
+      rejected: [],
+    };
+    this.observe(this.copy.doc);
+    this.copy.subscribe(() => {
+      this.observe(this.copy.doc);
+      this.publish({ doc: this.copy.doc, version: this.current.version + 1 });
+    });
     void this.copy.loaded.then(() => this.becomeOwnerWhenFree(key, locks));
+  }
+
+  private observed: Y.Doc | null = null;
+  private changed = false;
+
+  /** Publishes a new version for each burst of changes to the copy, not for each update of it. */
+  private observe(doc: Y.Doc) {
+    if (this.observed === doc) return;
+    this.observed = doc;
+    doc.on("update", () => {
+      if (this.changed || doc !== this.copy.doc) return;
+      this.changed = true;
+      queueMicrotask(() => {
+        this.changed = false;
+        this.publish({ version: this.current.version + 1 });
+      });
+    });
   }
 
   private becomeOwnerWhenFree(key: string, locks: CrossContextLockManager | null) {
@@ -114,6 +143,7 @@ export class TreeListSession {
     const next = { ...this.current, ...change };
     if (
       next.doc === this.current.doc &&
+      next.version === this.current.version &&
       next.status === this.current.status &&
       next.role === this.current.role &&
       next.rejected === this.current.rejected
@@ -124,6 +154,16 @@ export class TreeListSession {
   }
 
   getSnapshot = (): TreeListSnapshot => this.current;
+
+  private replayed: { version: number; projection: TreeProjection } | null = null;
+
+  /** The live replay of the copy as `getSnapshot()` stands: one replay per version however many views read it. */
+  replay(): TreeProjection {
+    const { doc, version } = this.current;
+    if (this.replayed?.version !== version)
+      this.replayed = { version, projection: replayView(doc, LIVE) };
+    return this.replayed.projection;
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);

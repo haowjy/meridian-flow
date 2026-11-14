@@ -1,8 +1,6 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
-  AvailabilityGeneration,
   CatalogFileEntry,
-  LiveDocumentSessionLease,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
@@ -12,10 +10,14 @@ import {
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
+import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type {
+  LiveDocumentSessionLease,
+  LiveDocumentSessionRegistry,
+} from "@/core/editor/document-session-registry";
 import { contextRouteRequest } from "../routing/project-route";
+import type { ProjectStandings } from "./project-standings";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
@@ -62,7 +64,6 @@ import { useProjectDocumentLiveOpener } from "./project-document-live-opener-con
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
-  readonly generation: AvailabilityGeneration;
   readonly session: DocumentSession;
   readonly local?: true;
   release(): void;
@@ -71,28 +72,19 @@ export interface LiveDocumentBinding {
 export interface AdmittedLiveDocument {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
-  readonly generation: AvailabilityGeneration;
   bind(ownerId: string): Promise<LiveDocumentBinding>;
 }
 
 export type ProjectDocumentLiveOpenResult =
-  | { kind: "opened"; document: CatalogFileEntry; admission: AdmittedLiveDocument }
+  | { kind: "opened"; admission: AdmittedLiveDocument }
   | { kind: "cancelled" }
-  | { kind: "not-editable"; document: CatalogFileEntry }
+  | { kind: "not-editable" }
   | {
       kind: "unavailable";
-      reason:
-        | "deleted"
-        | "authority-unavailable"
-        | "not-visible"
-        | "indeterminate"
-        | "failed"
-        // The registry's own refusal, kept so the cause is not folded into "failed".
-        | DocumentSessionAuthorityError["kind"];
+      reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
     };
 
 export type ProjectDocumentLiveOpenRequest = {
-  source: "server";
   projectId: ProjectId;
   documentId: DocumentId;
   signal?: AbortSignal;
@@ -111,13 +103,11 @@ export class ProjectDocumentLiveOpener {
   >();
   constructor(
     private readonly dependencies: {
-      availability: {
-        resolveForOpen(projectId: ProjectId, documentId: DocumentId): Promise<ExactOpenResolution>;
-      };
       registry: Pick<
         LiveDocumentSessionRegistry,
         "admit" | "retain" | "get" | "release" | "restartUnavailableRoom"
       >;
+      standings: Pick<ProjectStandings, "standing" | "whenReadable">;
       epochSignal: AbortSignal;
     },
   ) {
@@ -131,7 +121,11 @@ export class ProjectDocumentLiveOpener {
     documentId: DocumentId,
   ): Promise<ExactOpenResolution> {
     try {
-      return await this.dependencies.availability.resolveForOpen(projectId, documentId);
+      const answer = await lookupProjectContextAvailability(projectId, [documentId]);
+      const [resolution] = answer.resolutions;
+      return answer.resolutions.length === 1 && resolution?.documentId === documentId
+        ? resolution
+        : { kind: "malformed" };
     } catch {
       return { kind: "failed" };
     }
@@ -173,55 +167,43 @@ export class ProjectDocumentLiveOpener {
     }
   }
 
-  async open(
-    input: ProjectDocumentLiveOpenRequest & {
-      attempt?: "first" | "retry";
-      resolution?: AvailableOpenResolution;
-    },
-  ): Promise<ProjectDocumentLiveOpenResult> {
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    const resolution =
-      input.attempt !== "retry" && input.resolution
-        ? input.resolution
-        : await this.resolveIdentity(input.projectId, input.documentId);
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    if (resolution.kind !== "available") {
-      const reason =
-        resolution.kind === "malformed" || resolution.kind === "failed"
-          ? "failed"
-          : resolution.kind;
-      return { kind: "unavailable", reason };
+  /**
+   * Admits the document the project's list has in its tree. The list says whether it is there, so
+   * a document made here opens at once, before the server has heard of it: its session paints
+   * from the local copy and its room connects when the server has the create.
+   */
+  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
+    const { projectId, documentId, signal } = input;
+    const cancelled = () => signal?.aborted || this.dependencies.epochSignal.aborted;
+    if (cancelled()) return { kind: "cancelled" };
+    let standing = this.dependencies.standings.standing(projectId, documentId);
+    if (standing.kind === "waiting") {
+      try {
+        await this.dependencies.standings.whenReadable(projectId, signal);
+      } catch {
+        return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
+      }
+      standing = this.dependencies.standings.standing(projectId, documentId);
     }
-    if (resolution.documentId !== input.documentId)
-      return { kind: "unavailable", reason: "failed" };
-    if (!resolution.entry.editable) return { kind: "not-editable", document: resolution.entry };
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-
-    let lease: LiveDocumentSessionLease;
+    if (cancelled()) return { kind: "cancelled" };
+    switch (standing.kind) {
+      case "in-trash":
+      case "purged":
+        return { kind: "unavailable", reason: "deleted" };
+      case "not-in-list":
+      case "waiting":
+        return { kind: "unavailable", reason: "not-visible" };
+      case "in-tree":
+        if (standing.node.kind !== "document") return { kind: "not-editable" };
+    }
     try {
-      lease = await this.dependencies.registry.admit(
-        input.projectId,
-        input.documentId,
-        resolution.generation,
-      );
-    } catch (error) {
-      if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-        return { kind: "cancelled" };
       return {
-        kind: "unavailable",
-        reason: error instanceof DocumentSessionAuthorityError ? error.kind : "failed",
+        kind: "opened",
+        admission: this.capability(this.dependencies.registry.admit(projectId, documentId)),
       };
+    } catch {
+      return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
     }
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    return {
-      kind: "opened",
-      document: resolution.entry,
-      admission: this.capability(lease),
-    };
   }
 
   private capability(lease: LiveDocumentSessionLease): AdmittedLiveDocument {
@@ -229,7 +211,6 @@ export class ProjectDocumentLiveOpener {
     return Object.freeze({
       projectId: lease.projectId,
       documentId: lease.documentId,
-      generation: lease.generation,
       async bind(ownerId: string): Promise<LiveDocumentBinding> {
         registry.retain(ownerId, [lease]);
         try {
@@ -248,7 +229,6 @@ export class ProjectDocumentLiveOpener {
           return Object.freeze({
             projectId: lease.projectId,
             documentId: lease.documentId,
-            generation: lease.generation,
             session,
             release() {
               if (released) return;

@@ -7,7 +7,6 @@
  * commands are not threaded as props: leaves read them from `useChatNavigation()`.
  */
 
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,17 +19,8 @@ import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
-import {
-  patchAccountRecentsFromDocuments,
-  readAccountRecents,
-  subscribeAccountRecents,
-} from "@/client/recents";
-import type { OpenDocument } from "@/client/stores";
-import {
-  readRecentRoutes,
-  retryWorkingSetHydration,
-  type WorkingSetHydrationPlan,
-} from "@/client/working-set";
+import { patchAccountRecentsFromDocuments } from "@/client/recents";
+import { retryWorkingSetHydration, type WorkingSetHydrationPlan } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
@@ -43,17 +33,14 @@ import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
   useAccountId,
-  useContextRemovalCoordinator,
   useDraftCommandOwner,
   useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
-  useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
-import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import type { AddressedDocument } from "./context/route-document-owner";
@@ -82,16 +69,7 @@ import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
-function availabilityWatchRecord(
-  value: Pick<Exclude<OpenDocument, { kind: "new" }>, "documentId" | "scheme"> & {
-    workId?: string | null;
-  },
-): AvailabilityWatchRecord {
-  return {
-    documentId: value.documentId,
-    ...(isWorkScopedScheme(value.scheme) && value.workId ? { sourceWorkId: value.workId } : {}),
-  };
-}
+const ignoreColdScope = () => undefined;
 
 export type ProjectViewProps = {
   projectId: string;
@@ -155,16 +133,8 @@ export function ProjectView(props: ProjectViewProps) {
   const projectTitle = cachedProject?.title ?? props.project.title;
   const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
-  const availability = useProjectContextAvailabilityCoordinator();
-  const removal = useContextRemovalCoordinator();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
-  const repairColdWork = useCallback(
-    (workId: string) => {
-      void availability.coldScopeHint(props.projectId, workId);
-    },
-    [availability, props.projectId],
-  );
-  useContextCatalogWake(props.projectId, repairColdWork);
+  useContextCatalogWake(props.projectId, ignoreColdScope);
   // The removed-documents notice sits in main's band; a navigation in main ends it.
   useRemovedNoticeLifetime(props.projectId, {
     key: JSON.stringify([
@@ -177,36 +147,11 @@ export function ProjectView(props: ProjectViewProps) {
   });
   const presented = useOptionalPresentedDocuments();
   useEffect(() => {
-    const lease = availability.attachProject(props.projectId);
-    const reportWatches = () => {
-      const shown = presented?.documents(props.projectId) ?? [];
-      lease.watch(
-        "presented",
-        shown
-          .filter((tab): tab is Exclude<OpenDocument, { kind: "new" }> => tab.kind !== "new")
-          .map(availabilityWatchRecord),
-      );
-      const selection = removal.getProjectSnapshot(props.projectId).selection;
-      lease.watch(
-        "route-selection",
-        selection.status === "bound" && selection.identity.kind === "server"
-          ? [
-              availabilityWatchRecord({
-                documentId: selection.identity.documentId,
-                scheme: selection.locator.scheme,
-                workId: selection.locator.workId,
-              }),
-            ]
-          : [],
-      );
-      lease.watch(
-        "recent-routes",
-        readRecentRoutes(props.projectId).slice(0, 64).map(availabilityWatchRecord),
-      );
+    const patchRecents = () => {
       patchAccountRecentsFromDocuments(
         accountId,
         props.projectId,
-        shown.flatMap((tab) => {
+        (presented?.documents(props.projectId) ?? []).flatMap((tab) => {
           const address = recentAddressFromTab(
             tab,
             draftOnlyDocuments?.isDraftOnly(props.projectId, tab.documentId) ?? false,
@@ -214,43 +159,17 @@ export function ProjectView(props: ProjectViewProps) {
           return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
-      lease.watch(
-        "account-recents",
-        readAccountRecents(props.projectId).flatMap((item) =>
-          item.address.kind === "document"
-            ? [
-                availabilityWatchRecord({
-                  documentId: item.documentId,
-                  scheme: item.address.scheme,
-                }),
-              ]
-            : [],
-        ),
-      );
     };
-    reportWatches();
-    const stopPresented = presented?.subscribe(reportWatches);
-    const stopSelection = removal.subscribe(props.projectId, reportWatches);
-    const stopRecents = subscribeAccountRecents(reportWatches);
-    const stopDraftOnly = draftOnlyDocuments?.subscribe(reportWatches);
+    patchRecents();
+    const stopPresented = presented?.subscribe(patchRecents);
+    const stopDraftOnly = draftOnlyDocuments?.subscribe(patchRecents);
     const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
     return () => {
       stopPresented?.();
-      stopSelection();
-      stopRecents();
       stopDraftOnly?.();
       stopWorksObservation();
-      lease.release();
     };
-  }, [
-    accountId,
-    availability,
-    draftOnlyDocuments,
-    presented,
-    props.projectId,
-    queryClient,
-    removal,
-  ]);
+  }, [accountId, draftOnlyDocuments, presented, props.projectId, queryClient]);
   // A retry answers the entry plan it retried; new route data brings a new one.
   const [retriedHydration, setRetriedHydration] = useState<{
     entry: WorkingSetHydrationPlan;

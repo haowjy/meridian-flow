@@ -177,9 +177,7 @@ export class DraftCommandOwner {
       resolveGone?(
         ref: DraftRef,
       ): Promise<{ disposition: "closed" | "removed"; liveUri?: string } | null>;
-      removed?(ref: DraftRef): void;
       closeCreated?(ref: DraftRef): void;
-      markOwnRemoval?(ref: DraftRef): (removed: boolean) => void;
     } = {},
   ) {}
   subscribe = (listener: () => void) => {
@@ -513,7 +511,6 @@ export class DraftCommandOwner {
       disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
-    if (disposition === "removed") this.lifecycle.removed?.(ref);
     this.setState(
       ref.itemKey,
       {
@@ -858,7 +855,6 @@ export class DraftCommandOwner {
     frozen: boolean,
   ): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
-    const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
     this.setState(
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
@@ -874,7 +870,6 @@ export class DraftCommandOwner {
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
-        settleOwn?.(true);
         // State held under the item key itself (no draft room ever bound, as for a picture)
         // would hide the document's next item in this branch too; the caller drops the row.
         const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
@@ -884,7 +879,6 @@ export class DraftCommandOwner {
         );
         return { kind: "done" };
       }
-      settleOwn?.(false);
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
@@ -892,7 +886,6 @@ export class DraftCommandOwner {
       });
       return { kind: "change-refused", code: result.status };
     } catch {
-      settleOwn?.(false);
       if (this.active)
         this.setState(ref.itemKey, {
           hidden: false,

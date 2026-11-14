@@ -125,7 +125,7 @@ export type DocumentSessionResetReason =
 
 /**
  * How a terminal room reset treats its unacknowledged writer updates.
- * `removed`: the server says the document is gone, so nothing reconnects,
+ * `removed`: the server closed the room because the document was purged, so nothing reconnects,
  * rebuilds or replays on its own; the session stays read-only until its owner
  * closes it, or an exact open proves the document present and restarts it.
  */
@@ -767,9 +767,7 @@ export class DocumentSession {
   destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
     const closed =
-      this.transportState?.kind === "reset" &&
-      (this.transportState.disposition === "closed" ||
-        this.transportState.disposition === "removed");
+      this.transportState?.kind === "reset" && this.transportState.disposition === "closed";
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();

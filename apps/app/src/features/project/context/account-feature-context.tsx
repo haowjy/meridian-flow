@@ -28,8 +28,8 @@ import type { AccountResourceReplica } from "@/core/resources/account-resource-r
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
+import type { ProjectStandings } from "./project-standings";
 import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
@@ -40,8 +40,7 @@ const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
-const ProjectAvailabilityAccountContext =
-  createContext<ProjectContextAvailabilityCoordinator | null>(null);
+const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
 const ResourceReplicaAccountContext = createContext<AccountResourceReplica | null>(null);
 const RemovedNoticesAccountContext = createContext<RemovedNoticeStore | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
@@ -126,57 +125,13 @@ function AccountFeatureProviders({
 
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();
-    const retainedLeases = new Map<
-      string,
-      { lease: ReturnType<typeof lifetime.availability.attachProject>; documentIds: string[] }
-    >();
-    const stopRetained = lifetime.registry.observeRetainedLiveDocuments((snapshot) => {
-      const byProject = new Map<string, string[]>();
-      for (const reference of snapshot) {
-        const ids = byProject.get(reference.projectId) ?? [];
-        ids.push(reference.documentId);
-        byProject.set(reference.projectId, ids);
-      }
-      for (const [projectId, retained] of retainedLeases) {
-        if (byProject.has(projectId)) continue;
-        retained.lease.release();
-        retainedLeases.delete(projectId);
-      }
-      for (const [projectId, documentIds] of byProject) {
-        let retained = retainedLeases.get(projectId);
-        if (!retained) {
-          retained = { lease: lifetime.availability.attachProject(projectId), documentIds: [] };
-          retainedLeases.set(projectId, retained);
-        }
-        retained.documentIds = documentIds;
-        retained.lease.watch(
-          "retained-sessions",
-          documentIds.map((documentId) => ({ documentId })),
-        );
-      }
-    });
-    const repair = () =>
-      void Promise.all([
-        lifetime.availability.recheckWatchedProjects(),
-        lifetime.removal.retryPendingSessionEffects(),
-      ]);
-    window.addEventListener("focus", repair);
-    window.addEventListener("online", repair);
-    const poll = window.setInterval(repair, 60_000);
-    return () => {
-      window.clearInterval(poll);
-      window.removeEventListener("focus", repair);
-      window.removeEventListener("online", repair);
-      stopRetained();
-      for (const retained of retainedLeases.values()) retained.lease.release();
-      lifetime.suspendFeatureLease();
-    };
+    return () => lifetime.suspendFeatureLease();
   }, [lifetime]);
   return (
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
         <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-          <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
+          <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
             <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
               <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
                 <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
@@ -194,7 +149,7 @@ function AccountFeatureProviders({
                 </RemovedNoticesAccountContext.Provider>
               </LiveDocumentRegistryAccountContext.Provider>
             </ResourceReplicaAccountContext.Provider>
-          </ProjectAvailabilityAccountContext.Provider>
+          </ProjectStandingsAccountContext.Provider>
         </ContextRemovalAccountContext.Provider>
       </AccountIdContext.Provider>
     </AccountEpochContext.Provider>
@@ -277,10 +232,10 @@ export function useObservedResourceProjection(
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
-export function useProjectContextAvailabilityCoordinator(): ProjectContextAvailabilityCoordinator {
-  const coordinator = useContext(ProjectAvailabilityAccountContext);
-  if (!coordinator) throw new Error("AccountFeatureComposition is required");
-  return coordinator;
+export function useProjectStandings(): ProjectStandings {
+  const standings = useContext(ProjectStandingsAccountContext);
+  if (!standings) throw new Error("AccountFeatureComposition is required");
+  return standings;
 }
 
 export function useContextRemovalCoordinator(): ContextRemovalCoordinator {
@@ -299,8 +254,8 @@ export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["regist
   return registry;
 }
 
-export function useOptionalProjectContextAvailabilityCoordinator(): ProjectContextAvailabilityCoordinator | null {
-  return useContext(ProjectAvailabilityAccountContext);
+export function useOptionalProjectStandings(): ProjectStandings | null {
+  return useContext(ProjectStandingsAccountContext);
 }
 
 /** Immediate account-close fence, including the render-before-unmount transition. */

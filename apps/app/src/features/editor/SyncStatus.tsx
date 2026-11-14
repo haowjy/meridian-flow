@@ -37,8 +37,8 @@ import {
   type DocumentSessionSnapshot,
   updatesRefused,
 } from "@/core/editor/document-session";
-import type { RemovalAnswer } from "@/features/project/context/project-context-availability-coordinator";
 import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
+import type { RemovalAnswer } from "@/features/project/context/removal-answer";
 
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 

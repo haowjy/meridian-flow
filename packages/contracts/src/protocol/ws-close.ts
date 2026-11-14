@@ -11,6 +11,12 @@ export const WS_CLOSE = {
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
    */
   DRAFT_PREFIX_MISSING: { code: 4207, reason: "draft-prefix-missing" },
+  /**
+   * The server has no such document yet: a browser makes a document's id and connects its text
+   * room as soon as it appends the `create`, which the server may not have admitted yet. Not
+   * terminal: the provider reconnects until the create is admitted.
+   */
+  DOCUMENT_UNKNOWN: { code: 4211, reason: "document-unknown" },
   /** Terminal: the document was removed. Never reconnect. */
   DOCUMENT_DELETED: { code: 4208, reason: "document-deleted" },
   /**

@@ -1,9 +1,8 @@
 /** Settles every draft-only document the project's hosts present, one owner's drafts at a time. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
+import { useEffect, useReducer, useSyncExternalStore } from "react";
 import {
   type DraftPin,
   setDocumentView,
@@ -24,8 +23,8 @@ import {
   useOptionalAccountResourceReplica,
   useOptionalContextRemovalCoordinator,
   useOptionalDraftOnlyPresentations,
-  useOptionalProjectContextAvailabilityCoordinator,
   useOptionalRemovedNotices,
+  useProjectStandings,
 } from "@/features/project/context/account-feature-context";
 import { useOptionalChatOnScreen } from "@/features/project/side/SideView";
 import { useScopeDraftOwner } from "@/features/project/use-work-scope";
@@ -99,12 +98,12 @@ function OwnerSettlement({
   const queryClient = useQueryClient();
   const accountId = useAccountId();
   const resources = useOptionalAccountResourceReplica();
-  const availability = useOptionalProjectContextAvailabilityCoordinator();
+  const standings = useProjectStandings();
   const removal = useOptionalContextRemovalCoordinator();
   const notices = useOptionalRemovedNotices();
   const drafts = useOwnerDrafts(projectId, ownerKey);
   const views = useDocumentViews(accountId, projectId);
-  const projection = useObservedResourceProjection(resources, projectId);
+  const _projection = useObservedResourceProjection(resources, projectId);
   const presentations = () =>
     registry.presentations(projectId).filter((draft) => draft.ownerKey === ownerKey);
   // The pending list omits a draft with no effect (and one inside the `has_effect` lag), so
@@ -189,69 +188,19 @@ function OwnerSettlement({
     views,
   ]);
 
-  // The replica placing a presented document (by its current id or an alias: a join, New file, a
-  // link's Create, a restore) makes it live for every host. Availability can apply a live delete
-  // before the replica hears of it, so while availability says the document is removed the
-  // placement may be stale: the answer is followed, not remembered. A placement asks once for a
-  // fresh answer; a failed lookup is retried by availability's watch, and whatever answers next
-  // re-runs this effect. Only `available` (or no answer at all) promotes.
-  const [answers, answered] = useReducer((count: number) => count + 1, 0);
-  const asked = useRef(new Set<string>());
-  // Held across runs: releasing the last ask forgets an `unresolved` answer, which reads as none.
-  const watched = useRef(new Map<string, () => void>());
+  // The list placing a presented document in the live tree makes it live for every host: a join,
+  // New file, a link's Create, a restore, an Apply. While it shows the document in Trash or not
+  // yet, the placement is not followed.
+  const [, answered] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => standings.watch(projectId, answered), [standings, projectId]);
   useEffect(() => {
     if (drafts.status !== "ready") return;
-    const identities = resourceIdentityIndex(projection.records);
-    const waiting = new Set<string>();
     for (const draft of presentations()) {
       const listed = drafts.drafts?.some((row) => row.itemKey === draft.itemKey);
-      const record = identities.byDocumentId(draft.documentId);
-      const sighting = `${draft.token}|${draft.documentId}`;
-      const placed =
-        !!record &&
-        record.resource.lifecycle.kind !== "terminal" &&
-        !!projection.placement.resourceLocation(record);
-      if (!placed) {
-        asked.current.delete(sighting);
-        continue;
-      }
-      if (!listed) continue;
-      const handle = availability?.removalRecord(projectId, draft.documentId);
-      const answer = handle?.get()?.kind;
-      if (!availability || !handle || (answer !== "removed" && answer !== "unresolved")) {
+      if (listed && standings.standing(projectId, draft.documentId).kind === "in-tree")
         registry.promote(projectId, draft.documentId);
-        continue;
-      }
-      waiting.add(draft.documentId);
-      if (!watched.current.has(draft.documentId))
-        watched.current.set(draft.documentId, handle.subscribe(answered));
-      if (answer === "removed" && !asked.current.has(sighting)) {
-        asked.current.add(sighting);
-        availability.removalOutdated(projectId, draft.documentId);
-      }
     }
-    for (const [documentId, release] of watched.current) {
-      if (waiting.has(documentId)) continue;
-      watched.current.delete(documentId);
-      release();
-    }
-  }, [
-    membership,
-    drafts.drafts,
-    drafts.status,
-    projection.records,
-    projection.placement,
-    projectId,
-    availability,
-    answers,
-  ]);
-  useEffect(
-    () => () => {
-      for (const release of watched.current.values()) release();
-      watched.current.clear();
-    },
-    [],
-  );
+  });
 
   return null;
 }

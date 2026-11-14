@@ -1,10 +1,5 @@
 /** Structural, lease-qualified session-registry surfaces. */
-import type {
-  AccountId,
-  AvailabilityGeneration,
-  LiveDocumentSessionAuthority,
-  LiveDocumentSessionLease,
-} from "@meridian/contracts/protocol";
+import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 
@@ -13,14 +8,30 @@ export type RetainedLiveDocumentReference = Readonly<{
   documentId: DocumentId;
 }>;
 
-export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
+/** The account's right to hold one document's live session; `get` and `retain` take it. */
+export type LiveDocumentSessionLease = Readonly<{
+  accountId: AccountId;
+  projectId: ProjectId;
+  documentId: DocumentId;
+}>;
+
+export interface LiveDocumentSessionRegistry {
+  admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
+  /**
+   * The document's local copy can no longer come back to this account (its node was purged, or
+   * its project, Work or chat was deleted for good, or the account left the project): the
+   * session closes and the copy is deleted, unless another tab holds it open, which clears it
+   * itself. Resolves once this tab is done.
+   */
+  clearLocalCopy(documentId: DocumentId): Promise<void>;
+  /** The documents this browser still holds a copy of for the account, open or not. */
+  localCopies(): Promise<DocumentId[]>;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   /**
    * The registry drops a live room whose pending edits the server refused
-   * (4409): it revokes each lease's access, which tears the session down and
-   * clears its local copy, so the next open loads the server's state instead
-   * of replaying them. This is that drop while it runs, so a host can unbind
+   * (4409): it tears the session down and clears its local copy, so the next open
+   * loads the server's state instead of replaying them. This is that drop while it runs, so a host can unbind
    * and reopen after; `null` before a refusal and once the drop has settled,
    * whether or not it removed the session. Never rejects.
    */
@@ -33,27 +44,13 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   /**
    * Whether the owner's retained documents have a host on screen. An unhosted document closes
    * its socket unless some other owner hosts it or it has unsent edits. No-op once the owner is
-   * released or its documents were revoked.
+   * released.
    */
   setHosted(ownerId: string, hosted: boolean): void;
   release(ownerId: string): void;
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
-  /**
-   * Each live room the server closed because its document was removed (4208),
-   * once per close, whether or not an editor holds it. Draft rooms name no document here;
-   * their review owner reports them.
-   */
-  observeRemovedRooms(
-    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
-  ): () => void;
-  /**
-   * Reconnects a live room closed as removed once an exact lookup proved its
-   * document present (a restore won the race); false when it is no longer the
-   * room's current session or no longer removed.
-   */
-  restartRemovedRoom(session: DocumentSession): Promise<boolean>;
   closeDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
@@ -65,25 +62,4 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
   retainDraftRooms(ownerId: string, rooms: readonly string[]): void;
   releaseDraftRooms(ownerId: string): void;
-}
-
-/**
- * Private to resource acquisition: the exact persistence incarnation behind a
- * live registry session. A lease carries only the admission, which can be newer
- * than the room the cache lives in.
- */
-export interface LiveSessionIncarnationPort {
-  /** `null` when `session` is not the registry's current live room. */
-  incarnationOf(session: DocumentSession): AvailabilityGeneration | null;
-}
-
-export interface LocalDocumentSessionFactory {
-  whenAuthorityReady(): Promise<void>;
-  createDetached(input: {
-    accountId: AccountId;
-    projectId: ProjectId;
-    documentId: DocumentId;
-    persistenceKey: string;
-    fresh?: boolean;
-  }): DocumentSession;
 }

@@ -1,14 +1,19 @@
 /** Live project removal host; mounted only after Work/bootstrap readiness. */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
-import { useContextRemovalCoordinator } from "./account-feature-context";
+import {
+  useContextRemovalCoordinator,
+  useLiveDocumentSessionRegistry,
+  useProjectStandings,
+} from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 import { selectionAtRoute } from "./context-removal-protocol";
+import { observeListRemovals } from "./list-removal-observer";
 import { useOpenProjectDocument } from "./open-project-document";
 import { openRecent } from "./RecentDocumentsLanding";
 import { useContextRemovalProject } from "./use-context-removal-project";
@@ -41,6 +46,8 @@ export function ProjectContextRemovalController({
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
+  const standings = useProjectStandings();
+  const registry = useLiveDocumentSessionRegistry();
   const recent = useRecentDocuments(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
@@ -78,6 +85,11 @@ export function ProjectContextRemovalController({
       },
     }),
     [],
+  );
+
+  useEffect(
+    () => observeListRemovals({ projectId, standings, removal: coordinator, registry }),
+    [coordinator, projectId, registry, standings],
   );
 
   useLayoutEffect(() => {

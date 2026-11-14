@@ -38,7 +38,7 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
   usePresentedDocuments,
-  useProjectContextAvailabilityCoordinator,
+  useProjectDocumentLiveOpener,
 } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { routeSelectionDocumentId, selectionAtRoute } from "../context/context-removal-protocol";
@@ -320,7 +320,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       : null;
   const closeMetadata = useDraftMetadata(closingRef ? [closingRef] : [])[0];
   const draftCommands = useDraftCommandOwner();
-  const availability = useProjectContextAvailabilityCoordinator();
+  const opener = useProjectDocumentLiveOpener();
   const closeSnapshot = () => {
     const state = draftCommands.state(address.itemKey ?? "");
     return JSON.stringify([state.closed, state.removed, state.checkingClose, state.liveUri]);
@@ -462,7 +462,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           ...locatorOwner,
         }),
       );
-    void availability.resolveForOpen(projectId, boundDocumentId).then((answer) => {
+    void opener.resolveIdentity(projectId, boundDocumentId).then((answer) => {
       const located = answer.kind === "available" ? parseContextUri(answer.entry.uri) : null;
       if (!located) return unbind();
       if (!current()) return;
