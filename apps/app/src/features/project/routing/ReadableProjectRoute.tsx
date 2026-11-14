@@ -679,8 +679,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
                   ? "loading"
                   : editorIssue,
               removed:
-                removedDestination?.kind === "removed"
-                  ? { title: removedTitle, record: removedDestination.record }
+                removedDestination?.kind === "removed" && removedDocumentId
+                  ? {
+                      documentId: removedDocumentId,
+                      title: removedTitle,
+                      record: removedDestination.record,
+                    }
                   : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}

@@ -57,6 +57,16 @@ export function useDocumentNotice(
   );
 }
 
+/** The Discard notice that can bring `documentId` back (`DraftNotices.discarding`). */
+export function useDiscardingNotice(documentId: string | null): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => (documentId ? notices.discarding(documentId) : null),
+    () => null,
+  );
+}
+
 export function CommandNotice({
   notice,
   question = null,

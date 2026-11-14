@@ -119,6 +119,13 @@ export class DraftNotices {
     return null;
   }
 
+  /** The Discard notice whose Undo brings this document back, wherever it was made. */
+  discarding(documentId: string): DraftNotice | null {
+    for (const notice of this.notices.values())
+      if (notice.kind === "discarded" && notice.documentIds.includes(documentId)) return notice;
+    return null;
+  }
+
   /** Replaces the owner's notice: an Apply or a Discard with no Undo shows nothing in its place. */
   end(ownerKey: string) {
     const notice = this.notices.get(ownerKey);

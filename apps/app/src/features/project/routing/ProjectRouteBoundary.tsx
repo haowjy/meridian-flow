@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
+import { DraftNoticeLine, useDiscardingNotice } from "@/features/draft-review/CommandNotice";
 import { type Removal, RemovedDocumentSentence } from "../context/RemovedDocumentNotice";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
@@ -26,8 +27,11 @@ export type ProjectRouteMask = {
   destinationKey?: string;
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
-  /** An unavailable destination whose document was removed says who removed it. */
-  removed?: Removal;
+  /**
+   * An unavailable destination whose document was removed says who removed it, or shows the
+   * Discard's notice, with its Undo, while one can bring it back.
+   */
+  removed?: Removal & { documentId: string };
 };
 
 export function ProjectRouteBoundary({
@@ -74,9 +78,7 @@ export function ProjectRouteBoundary({
             ) : issue === "error" ? (
               <Trans>This destination couldn’t load.</Trans>
             ) : removed ? (
-              <p className="max-w-md break-words">
-                <RemovedDocumentSentence documents={[removed]} />
-              </p>
+              <RemovedDestination removed={removed} />
             ) : (
               <Trans>This destination is unavailable.</Trans>
             )}
@@ -84,5 +86,16 @@ export function ProjectRouteBoundary({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function RemovedDestination({ removed }: { removed: Removal & { documentId: string } }) {
+  const discarded = useDiscardingNotice(removed.documentId);
+  return discarded ? (
+    <DraftNoticeLine notice={discarded} className="max-w-md" />
+  ) : (
+    <p className="max-w-md break-words">
+      <RemovedDocumentSentence documents={[removed]} />
+    </p>
   );
 }
