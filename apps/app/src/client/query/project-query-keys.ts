@@ -27,9 +27,6 @@ export const projectQueryKeys = {
     ["projects", projectId, "documents", documentId, "properties"] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   documentTrash: (projectId: string) => ["projects", projectId, "document-trash"] as const,
-  /** Where a folder is now, by its entry id: what a folder chip's menu opens inside. */
-  folderIdentity: (projectId: string, folderId: string) =>
-    ["projects", projectId, "folder-identity", folderId] as const,
   trashedDocument: (projectId: string, documentId: string) =>
     [...projectQueryKeys.documentTrash(projectId), documentId] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,

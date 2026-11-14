@@ -2,8 +2,8 @@
  * Doing a planned move: one `move` record per row, appended to the browser's copy of the list the
  * row's tree belongs to. The row shows in its new place at once; a server refusal comes back as a
  * `refused` settlement and lands on the row as its failure mark with Move… to repair. A name that
- * clashes is numbered by the replay, so the move needs no name; `renamesOnArrival` only predicts
- * it, for the warning shown before the drop. Results are data; selection belongs to the caller.
+ * clashes is numbered by the writer and recorded with the move; `renamesOnArrival` predicts it,
+ * for the warning shown before the drop. Results are data; selection belongs to the caller.
  */
 
 import { allocateContextEntryArrivalName } from "../context-entry-name";
@@ -54,15 +54,22 @@ export function renamesOnArrival(rows: readonly MoveRow[]): { name: string; as: 
   });
 }
 
-/** Move… and a drop both move rows here. */
+/** Move… and a drop both move rows here: one gesture per list, so each row is placed among the siblings the rows before it left. */
 export function moveRows(rows: readonly MoveRow[], actions: EntryActions): MoveResult {
   const moved: EntryRef[] = [];
   const failed: { entry: EntryRef; name: string }[] = [];
-  for (const row of rows) {
-    const list = isAccountArea(row.area) ? actions.account : actions.project;
-    const result = list.move(row.entry.id, row.to.parentId, row.to.index);
-    if (result.ok) moved.push(row.entry);
-    else failed.push({ entry: row.entry, name: row.name });
+  for (const list of [actions.account, actions.project]) {
+    const mine = rows.filter(
+      (row) => (isAccountArea(row.area) ? actions.account : actions.project) === list,
+    );
+    if (mine.length === 0) continue;
+    const result = list.moveAll(
+      mine.map((row) => ({ node: row.entry.id, parentId: row.to.parentId, index: row.to.index })),
+    );
+    for (const row of mine) {
+      if (result.ok) moved.push(row.entry);
+      else failed.push({ entry: row.entry, name: row.name });
+    }
   }
   return { moved, failed };
 }

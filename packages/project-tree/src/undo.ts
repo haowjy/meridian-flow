@@ -45,18 +45,37 @@ export function undoChange(
       const { parent, rank } = last.before;
       const back = projection.nodes.get(parent);
       if (back?.trashed || (!back && !isSourceRoot(parent))) return "superseded";
-      return writer.author(
-        view,
-        actor,
-        {
-          type: "move",
-          node: record.node,
-          parent,
-          rank,
-          from: { parent: node.parent, rank: node.rank },
-        },
-        extra,
-      );
+      // A move that numbered its arrival name has the rename that recorded it right after it
+      // (`TreeWriter.moveAll`); taking the move back takes the number back with it.
+      const records = viewRecords(writer.doc, view);
+      const next = records[records.findIndex((other) => other.id === record.id) + 1];
+      const named =
+        next?.type === "rename" && next.node === record.node && next.actor === record.actor
+          ? lastSetBy(projection.setters.get(record.node)?.label, next)
+          : undefined;
+      let undone: TreeRecord | undefined;
+      writer.transact(() => {
+        undone = writer.author(
+          view,
+          actor,
+          {
+            type: "move",
+            node: record.node,
+            parent,
+            rank,
+            from: { parent: node.parent, rank: node.rank },
+          },
+          extra,
+        );
+        if (named && next)
+          writer.author(
+            view,
+            actor,
+            { type: "rename", node: record.node, name: named.before.name, fromName: node.name },
+            { undoes: next.carries ?? next.id },
+          );
+      });
+      return undone as TreeRecord;
     }
     case "rename": {
       const last = lastSetBy(projection.setters.get(record.node)?.label, record);

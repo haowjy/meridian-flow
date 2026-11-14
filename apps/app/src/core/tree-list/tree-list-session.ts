@@ -86,12 +86,15 @@ export class TreeListSession {
 
   private observed: Y.Doc | null = null;
   private changed = false;
+  /** Counts updates to any copy as they land: `version` publishes a microtask later, and a record appended in this one must be in the next replay. */
+  private edits = 0;
 
   /** Publishes a new version for each burst of changes to the copy, not for each update of it. */
   private observe(doc: Y.Doc) {
     if (this.observed === doc) return;
     this.observed = doc;
     doc.on("update", () => {
+      this.edits += 1;
       if (this.changed || doc !== this.copy.doc) return;
       this.changed = true;
       queueMicrotask(() => {
@@ -155,13 +158,13 @@ export class TreeListSession {
 
   getSnapshot = (): TreeListSnapshot => this.current;
 
-  private replayed: { version: number; projection: TreeProjection } | null = null;
+  private replayed: { doc: Y.Doc; edits: number; projection: TreeProjection } | null = null;
 
-  /** The live replay of the copy as `getSnapshot()` stands: one replay per version however many views read it. */
+  /** The live replay of the copy as it stands, records appended a moment ago included: one replay per change however many views and writers read it. */
   replay(): TreeProjection {
-    const { doc, version } = this.current;
-    if (this.replayed?.version !== version)
-      this.replayed = { version, projection: replayView(doc, LIVE) };
+    const { doc } = this.current;
+    if (this.replayed?.doc !== doc || this.replayed.edits !== this.edits)
+      this.replayed = { doc, edits: this.edits, projection: replayView(doc, LIVE) };
     return this.replayed.projection;
   }
 

@@ -104,9 +104,9 @@ export type TreeViewResult = {
   isError: boolean;
 };
 
-const seenFailures = new WeakMap<TreeListSession, Map<string, number>>();
+const seenFailures = new WeakMap<TreeListSession, Map<string, number | null>>();
 
-/** First sight of a refusal while the copy is still loading is not fresh; one that lands after is. */
+/** First sight of a refusal while the copy is still loading is not fresh (undefined); one that lands after is. */
 function failureSeenAt(session: TreeListSession, status: TreeListStatus) {
   let seen = seenFailures.get(session);
   if (!seen) {
@@ -117,11 +117,36 @@ function failureSeenAt(session: TreeListSession, status: TreeListStatus) {
   return (record: string) => {
     let at = map.get(record);
     if (at === undefined) {
-      at = status === "waiting" ? 0 : Date.now();
+      at = status === "waiting" ? null : Date.now();
       map.set(record, at);
     }
-    return at;
+    return at ?? undefined;
   };
+}
+
+const failuresOfSnapshot = new WeakMap<
+  TreeListSnapshot,
+  { dismissals: number; failures: ReadonlyMap<string, TreeFailure> }
+>();
+
+/** The writer's refusals as the list stands, read once per version for every view that shows them. */
+function failuresOf(
+  session: TreeListSession,
+  snapshot: TreeListSnapshot,
+  accountId: string,
+  dismissals: number,
+): ReadonlyMap<string, TreeFailure> {
+  const held = failuresOfSnapshot.get(snapshot);
+  if (held?.dismissals === dismissals) return held.failures;
+  const failures = treeFailures(
+    snapshot.doc,
+    `user:${accountId}`,
+    dismissedFailures(accountId),
+    failureSeenAt(session, snapshot.status),
+    LIVE,
+  );
+  failuresOfSnapshot.set(snapshot, { dismissals, failures });
+  return failures;
 }
 
 /** The trees of the schemes' sources, built from the lists' replays. */
@@ -142,47 +167,26 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   const projectSources = useProjectContextSources(enabled && wantsProject ? projectId : "");
   const accountSources = useAccountContextSources(enabled && wantsAccount);
   const dismissals = useDismissalRevision();
-  const actor = `user:${accountId}`;
 
-  const failuresOf = useCallback(
-    (list: { session: TreeListSession | null; snapshot: TreeListSnapshot | null }) => {
-      if (!list.session || !list.snapshot) return undefined;
-      void dismissals;
-      return treeFailures(
-        list.snapshot.doc,
-        actor,
-        dismissedFailures(accountId),
-        failureSeenAt(list.session, list.snapshot.status),
-        LIVE,
-      );
-    },
-    [accountId, actor, dismissals],
-  );
   const owner = useMemo(() => ({ workId, rootThreadId, chatId }), [workId, rootThreadId, chatId]);
 
   return useMemo(() => {
     const results = {} as Record<S, TreeViewResult>;
-    const failureCache = new Map<
-      "project" | "account",
-      ReadonlyMap<string, TreeFailure> | undefined
-    >();
     for (const scheme of schemes) {
       const list = scheme === "user" ? account : project;
       const sources = scheme === "user" ? accountSources : projectSources;
       const source = sources ? sourceFor(sources, scheme, owner) : null;
       const snapshot = list.snapshot;
       const ready = snapshot !== null && listIsComplete(snapshot.status) && sources !== undefined;
-      const which = scheme === "user" ? "account" : "project";
-      if (!failureCache.has(which)) failureCache.set(which, failuresOf(list));
       results[scheme] = {
         tree:
-          list.session && snapshot && sources !== undefined && (source || ready)
+          list.session && snapshot && source
             ? buildTreeView({
                 projection: list.session.replay(),
                 scheme,
                 source,
-                authority: source?.authority ?? { kind: "contextual" },
-                failures: failureCache.get(which),
+                authority: source.authority,
+                failures: failuresOf(list.session, snapshot, accountId, dismissals),
               })
             : null,
         isComplete: ready,
@@ -200,7 +204,8 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
     accountSources,
     projectSources,
     owner,
-    failuresOf,
+    accountId,
+    dismissals,
   ]);
 }
 

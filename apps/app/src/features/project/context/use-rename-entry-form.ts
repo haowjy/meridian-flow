@@ -21,6 +21,7 @@ import {
 } from "./context-entry-name";
 import { describeRenames } from "./entry-drag/drop-choice";
 import { useEntryActions } from "./entry-drag/entry-actions";
+import { treeActionMessage } from "./tree-action-message";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
@@ -66,11 +67,7 @@ export function useRenameEntryForm({
       .holding(entryId)
       .list.rename(entryId, stored?.name ?? typed, stored?.filename.filetype ?? undefined);
     if (!result.ok)
-      throw new Error(
-        kind === "folder"
-          ? t`This folder is unavailable. Refresh and try again.`
-          : t`This file is unavailable. Refresh and try again.`,
-      );
+      throw new Error(treeActionMessage(result.reason, kind === "folder" ? "folder" : "file"));
   };
 
   // Another entry may have a codec-equivalent name; only this identity is excluded.

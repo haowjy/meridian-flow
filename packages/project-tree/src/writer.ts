@@ -30,13 +30,19 @@ import { inForce, LIVE, replayView, type View } from "./view.js";
  * records on a copy at the journal's head, and sends the Yjs update the copy emits.
  */
 export class TreeWriter {
+  /**
+   * `known` answers a view from a projection the caller already holds, current with `doc`, or
+   * null for a view it does not hold: the browser's session replays once per change, and a
+   * writer that replayed again would pay the whole list for each record.
+   */
   constructor(
     readonly doc: Y.Doc,
     private readonly origin: string = "local",
+    private readonly known?: (view: View) => TreeProjection | null,
   ) {}
 
   view(view: View): TreeProjection {
-    return replayView(this.doc, view);
+    return this.known?.(view) ?? replayView(this.doc, view);
   }
 
   /** Runs `change` as one Yjs transaction, so its records and settlements travel as one update. */
@@ -143,6 +149,7 @@ export class TreeWriter {
     return out;
   }
 
+  /** One move: `moveAll` of one. */
   move(
     view: View,
     actor: Actor,
@@ -150,15 +157,70 @@ export class TreeWriter {
     parent: string,
     index = Number.MAX_SAFE_INTEGER,
   ): MoveRecord {
+    return this.moveAll(view, actor, [{ node, parent, index }])[0] as MoveRecord;
+  }
+
+  /**
+   * Moves, in order, against one replay of the view: a rank is placed among the siblings as the
+   * earlier moves left them, and a name taken there is numbered and recorded with the move, as
+   * a `rename` in the same update, so the number stays when the other node is renamed. A move
+   * record carries no name. Two nodes moved into one folder under one name are numbered in turn.
+   */
+  moveAll(
+    view: View,
+    actor: Actor,
+    moves: readonly { node: string; parent: string; index?: number }[],
+  ): MoveRecord[] {
     const projection = this.view(view);
-    const current = projection.nodes.get(node);
-    return this.author(view, actor, {
-      type: "move",
-      node,
-      parent,
-      rank: rankAt(projection, parent, index, node),
-      from: { parent: current?.parent ?? parent, rank: current?.rank ?? "" },
-    }) as MoveRecord;
+    const siblings = new Map<string, { id: string; name: string; rank: string }[]>();
+    const kidsOf = (parent: string) => {
+      let kids = siblings.get(parent);
+      if (!kids) {
+        kids = childrenOf(projection, parent).map((child) => ({
+          id: child.id,
+          name: child.displayName,
+          rank: child.rank,
+        }));
+        siblings.set(parent, kids);
+      }
+      return kids;
+    };
+    const placed = new Map<string, string>();
+    const out: MoveRecord[] = [];
+    this.transact(() => {
+      for (const { node, parent, index = Number.MAX_SAFE_INTEGER } of moves) {
+        const current = projection.nodes.get(node);
+        const was = placed.get(node) ?? current?.parent;
+        if (was !== undefined) {
+          const left = kidsOf(was);
+          const at = left.findIndex((kid) => kid.id === node);
+          if (at >= 0) left.splice(at, 1);
+        }
+        const kids = kidsOf(parent);
+        const name = current
+          ? freeName(current.kind, current.name, new Set(kids.map((kid) => kid.name)))
+          : "";
+        const at = Math.max(0, Math.min(index, kids.length));
+        const rank = rankAmong(
+          kids.map((kid) => kid.rank),
+          at,
+        );
+        kids.splice(at, 0, { id: node, name: current ? name : "", rank });
+        placed.set(node, parent);
+        out.push(
+          this.author(view, actor, {
+            type: "move",
+            node,
+            parent,
+            rank,
+            from: { parent: current?.parent ?? parent, rank: current?.rank ?? "" },
+          }) as MoveRecord,
+        );
+        if (current && name !== current.name)
+          this.author(view, actor, { type: "rename", node, name, fromName: current.name });
+      }
+    });
+    return out;
   }
 
   rename(view: View, actor: Actor, node: string, name: string, filetype?: string): RenameRecord {
@@ -173,12 +235,32 @@ export class TreeWriter {
     }) as RenameRecord;
   }
 
+  /** One delete: `deleteAll` of one. */
   delete(view: View, actor: Actor, node: string): DeleteRecord {
+    return this.deleteAll(view, actor, [node])[0] as DeleteRecord;
+  }
+
+  /**
+   * Deletes, against one replay of the view. A node an earlier delete of this call already took
+   * with its folder gets no record of its own, and a folder's cascade leaves out what the call
+   * deleted before it.
+   */
+  deleteAll(view: View, actor: Actor, nodes: readonly string[]): DeleteRecord[] {
     const projection = this.view(view);
-    const cascade = descendantsOf(projection, node).filter(
-      (id) => !projection.nodes.get(id)?.trashed,
-    );
-    return this.author(view, actor, { type: "delete", node, cascade }) as DeleteRecord;
+    const gone = new Set<string>();
+    const out: DeleteRecord[] = [];
+    this.transact(() => {
+      for (const node of nodes) {
+        if (gone.has(node)) continue;
+        const cascade = descendantsOf(projection, node).filter(
+          (id) => !projection.nodes.get(id)?.trashed && !gone.has(id),
+        );
+        gone.add(node);
+        for (const id of cascade) gone.add(id);
+        out.push(this.author(view, actor, { type: "delete", node, cascade }) as DeleteRecord);
+      }
+    });
+    return out;
   }
 
   restore(view: View, actor: Actor, node: string): RestoreRecord {

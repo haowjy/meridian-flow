@@ -18,6 +18,7 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { useEntryActions } from "./entry-drag/entry-actions";
+import { treeActionMessage } from "./tree-action-message";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
@@ -60,14 +61,12 @@ export function useCreateEntryForm({
   // server comes back on its row.
   const handleSubmit = useCallback(
     (typed: string) => {
-      const unavailable = () =>
-        new Error(
-          kind === "folder" ? t`Couldn't create this folder.` : t`Couldn't create this file.`,
-        );
+      const what = kind === "folder" ? "folder" : "file";
       const stored = kind === "file" ? storedFilename(typed) : null;
       if (stored && !stored.ok) throw new Error(stored.message);
       const filetype = stored?.filename.filetype ?? "markdown";
-      if (stored && classifyFiletype(filetype).kind !== "tracked") throw unavailable();
+      if (stored && classifyFiletype(filetype).kind !== "tracked")
+        throw new Error(treeActionMessage("name", what));
       const made = (scheme === "user" ? actions.account : actions.project).create({
         parentId,
         name: stored?.name ?? typed,
@@ -75,7 +74,7 @@ export function useCreateEntryForm({
           ? { kind: "folder" as const }
           : { kind: "document" as const, filetype }),
       });
-      if (!made.ok) throw unavailable();
+      if (!made.ok) throw new Error(treeActionMessage(made.reason, what));
       onCreated?.(joinContextEntryPath(parent, made.name));
     },
     [actions, scheme, kind, parentId, parent, onCreated],

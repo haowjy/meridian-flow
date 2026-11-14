@@ -1,12 +1,13 @@
 import { newId } from "@meridian/project-tree";
 import { useCallback } from "react";
 import { useProjectContextSources } from "@/client/query/useContextSources";
-import { sourceFor } from "@/client/query/useProjectTree";
+import { sourceFor, useTreeList } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "../routing/ProjectNavigationContext";
+import { treeActionMessage } from "./tree-action-message";
 
 /**
  * New document: an Untitled document in Unfiled, opened in main with the caret. The writer mints
@@ -19,6 +20,7 @@ export function useNewDocument(
 ): (() => void) | undefined {
   const captureNavigation = useCaptureProjectNavigation();
   const actions = useTreeActions({ kind: "project", projectId });
+  const { session } = useTreeList({ kind: "project", projectId });
   const unfiled = useProjectContextSources(projectId);
   const unfiledId = unfiled ? sourceFor(unfiled, "unfiled", {})?.id : undefined;
   const create = useCallback(async () => {
@@ -32,9 +34,11 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
-    if (!made.ok) throw new Error("Couldn't create a document.");
+    if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
+    // The replay's name for the node, at the top of Unfiled: its address.
+    const name = session?.replay().nodes.get(documentId)?.displayName ?? made.name;
     const result = await open(
-      { scheme: "unfiled", path: "", documentId },
+      { scheme: "unfiled", path: name, documentId },
       {
         isCurrent,
         focus: true,
@@ -42,7 +46,7 @@ export function useNewDocument(
       },
     );
     if (result.kind === "failed") throw result.error;
-  }, [actions, open, captureNavigation, unfiledId]);
+  }, [actions, open, captureNavigation, session, unfiledId]);
   return open && unfiledId
     ? () => void create().catch((error: unknown) => reportError(error))
     : undefined;

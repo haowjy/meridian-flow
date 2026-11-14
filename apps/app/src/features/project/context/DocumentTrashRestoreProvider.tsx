@@ -1,8 +1,7 @@
 /** One project-lifetime owner for Trash restore progress and outcomes. */
 import { plural, t } from "@lingui/core/macro";
-import type { DocumentTrashEntry, ListDocumentTrashResponse } from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { lastSettlements, listRecords } from "@meridian/project-tree";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -13,7 +12,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { useAccountId, useOptionalContextRemovalCoordinator } from "./account-feature-context";
@@ -47,9 +45,6 @@ type RestoredNotice = {
   undo?: () => void;
 };
 
-/** A restore the list has taken and the server has not answered: its record, and what to put back if it refuses. */
-type Awaiting = { entry: DocumentTrashEntry; place: number };
-
 const RESTORED_MARK_MS = 10_000;
 
 const RestoreContext = createContext<RestoreContextValue | null>(null);
@@ -61,7 +56,6 @@ export function DocumentTrashRestoreProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const queryClient = useQueryClient();
   const removal = useOptionalContextRemovalCoordinator();
   const actions = useEntryActions(projectId);
   const accountId = useAccountId();
@@ -69,7 +63,8 @@ export function DocumentTrashRestoreProvider({
   const accountList = useTreeList({ kind: "account", userId: accountId });
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
-  const awaiting = useRef(new Map<string, Awaiting>());
+  // A restore the list has taken and the server has not answered, by its record's id.
+  const awaiting = useRef(new Map<string, DocumentTrashEntry>());
 
   const setState = useCallback((documentId: string, state: TrashRestoreState | null) => {
     setStates((current) => {
@@ -101,8 +96,7 @@ export function DocumentTrashRestoreProvider({
   );
 
   const fail = useCallback(
-    (entry: DocumentTrashEntry, place: number, reason?: string) => {
-      putBackInTrash(queryClient, projectId, entry, place);
+    (entry: DocumentTrashEntry, reason?: string) => {
       setState(entry.documentId, {
         kind: "failed",
         message: reason
@@ -110,7 +104,7 @@ export function DocumentTrashRestoreProvider({
           : t`Couldn't restore ${entry.name}. Try again.`,
       });
     },
-    [projectId, queryClient, setState],
+    [setState],
   );
 
   // A refusal comes back as a settlement on the `restore` record; until then the entry is restored.
@@ -119,11 +113,11 @@ export function DocumentTrashRestoreProvider({
       for (const session of [projectList.session, accountList.session]) {
         if (!session) continue;
         const settled = lastSettlements(session.getSnapshot().doc);
-        for (const [record, { entry, place }] of awaiting.current) {
+        for (const [record, entry] of awaiting.current) {
           const settlement = settled.get(record);
           if (!settlement) continue;
           awaiting.current.delete(record);
-          if (settlement.to === "refused") fail(entry, place, settlement.reason);
+          if (settlement.to === "refused") fail(entry, settlement.reason);
         }
       }
     };
@@ -137,11 +131,7 @@ export function DocumentTrashRestoreProvider({
 
   /** Appends the entries' `restore` records, one update per list; returns whether the lists took them. */
   const append = useCallback(
-    (
-      entries: readonly DocumentTrashEntry[],
-      listed: readonly DocumentTrashEntry[],
-      destination?: TreeDestination,
-    ) => {
+    (entries: readonly DocumentTrashEntry[], destination?: TreeDestination) => {
       const held = entries.map((entry) => ({ entry, ...actions.holding(entry.documentId) }));
       for (const list of new Set(held.map((item) => item.list))) {
         const mine = held.filter((item) => item.list === list);
@@ -159,7 +149,7 @@ export function DocumentTrashRestoreProvider({
           const made = records
             .filter((record) => record.type === "restore" && record.node === entry.documentId)
             .at(-1);
-          if (made) awaiting.current.set(made.id, { entry, place: indexIn(listed, entry) });
+          if (made) awaiting.current.set(made.id, entry);
         }
       }
       return true;
@@ -172,17 +162,11 @@ export function DocumentTrashRestoreProvider({
       const entries = requested;
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ documentId }) => ({ kind: "file", id: documentId })));
-      const listed = trashEntries(queryClient, projectId);
-      if (!append(entries, listed)) {
-        for (const entry of entries) fail(entry, indexIn(listed, entry));
+      if (!append(entries)) {
+        for (const entry of entries) fail(entry);
         return;
       }
       markRestored(entries.map(({ documentId }) => documentId));
-      removeFromTrash(
-        queryClient,
-        projectId,
-        entries.map(({ documentId }) => documentId),
-      );
       setNotice({
         id: Date.now(),
         text:
@@ -191,7 +175,7 @@ export function DocumentTrashRestoreProvider({
             : plural(entries.length, { one: "Restored # file.", other: "Restored # files." }),
       });
     },
-    [append, fail, markRestored, projectId, queryClient],
+    [append, fail, markRestored],
   );
 
   const restoreInto = useCallback(
@@ -204,13 +188,11 @@ export function DocumentTrashRestoreProvider({
       if (entries.length === 0) return;
       const ids = entries.map(({ documentId }) => documentId);
       leaveSelections(ids.map((id) => ({ kind: "file", id })));
-      const listed = trashEntries(queryClient, projectId);
-      if (!append(entries, listed, destination)) {
-        for (const entry of entries) fail(entry, indexIn(listed, entry));
+      if (!append(entries, destination)) {
+        for (const entry of entries) fail(entry);
         return;
       }
       markRestored(ids);
-      removeFromTrash(queryClient, projectId, ids);
       setNotice({
         id: Date.now(),
         text: restoredText(entries, destinationName),
@@ -225,7 +207,7 @@ export function DocumentTrashRestoreProvider({
           ),
       });
     },
-    [actions, append, fail, markRestored, projectId, queryClient, removal],
+    [actions, append, fail, markRestored, projectId, removal],
   );
 
   const value = useMemo(() => ({ states, restore, restoreInto }), [states, restore, restoreInto]);
@@ -241,49 +223,6 @@ export function useDocumentTrashRestore(): RestoreContextValue {
   const value = useContext(RestoreContext);
   if (!value) throw new Error("Document Trash restore requires its project provider");
   return value;
-}
-
-function trashEntries(queryClient: QueryClient, projectId: string): DocumentTrashEntry[] {
-  return (
-    queryClient.getQueryData<ListDocumentTrashResponse>(projectQueryKeys.documentTrash(projectId))
-      ?.documents ?? []
-  );
-}
-
-function indexIn(listed: readonly DocumentTrashEntry[], entry: DocumentTrashEntry): number {
-  return Math.max(
-    0,
-    listed.findIndex(({ documentId }) => documentId === entry.documentId),
-  );
-}
-
-function removeFromTrash(queryClient: QueryClient, projectId: string, ids: readonly string[]) {
-  queryClient.setQueryData<ListDocumentTrashResponse>(
-    projectQueryKeys.documentTrash(projectId),
-    (current) =>
-      current
-        ? { documents: current.documents.filter(({ documentId }) => !ids.includes(documentId)) }
-        : current,
-  );
-}
-
-/** A refused entry returns to the place it left, so its failure shows where the writer dragged it from. */
-function putBackInTrash(
-  queryClient: QueryClient,
-  projectId: string,
-  entry: DocumentTrashEntry,
-  index: number,
-) {
-  queryClient.setQueryData<ListDocumentTrashResponse>(
-    projectQueryKeys.documentTrash(projectId),
-    (current) => {
-      if (!current || current.documents.some(({ documentId }) => documentId === entry.documentId))
-        return current;
-      const documents = [...current.documents];
-      documents.splice(index, 0, entry);
-      return { documents };
-    },
-  );
 }
 
 function restoredText(restored: readonly DocumentTrashEntry[], destinationName: string): string {

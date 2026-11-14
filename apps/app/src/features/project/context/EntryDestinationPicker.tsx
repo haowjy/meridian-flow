@@ -32,6 +32,7 @@ import { copyRows } from "./entry-drag/execute-copy";
 import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { moveRepairTrail } from "./move-repair-trail";
+import { treeActionMessage } from "./tree-action-message";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
@@ -205,13 +206,18 @@ function OpenPicker({
     const at =
       index ??
       (!several && repairMove?.parentId === destination.entryId ? repairMove.index : undefined);
-    const moved: EntryRef[] = [];
-    for (const { row, at: here } of placed) {
-      if (!here || (several && here.entry.parentId === destination.entryId)) continue;
-      const result = actions.move(row.ref.id, destination.entryId, at);
-      if (!result.ok) return setError(unavailable);
-      moved.push(row.ref);
-    }
+    const moving = placed.filter(
+      ({ at: here }) => here && !(several && here.entry.parentId === destination.entryId),
+    );
+    const result = actions.moveAll(
+      moving.map(({ row }) => ({
+        node: row.ref.id,
+        parentId: destination.entryId,
+        ...(at === undefined ? {} : { index: at }),
+      })),
+    );
+    if (!result.ok) return setError(treeActionMessage(result.reason, "folder"));
+    const moved = moving.map(({ row }) => row.ref);
     selectRows(selection, moved);
     revealFolder(destination.entryId);
     movedSeveral.current = several;

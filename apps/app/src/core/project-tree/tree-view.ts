@@ -158,13 +158,12 @@ function classification(node: TreeNode) {
 export function buildTreeView(input: {
   projection: TreeProjection;
   scheme: ProjectContextTreeScheme;
-  /** Null while the sources are not known: an empty tree with a placeholder root. */
-  source: Pick<ContextSource, "id"> | null;
+  source: Pick<ContextSource, "id">;
   authority: CanonicalContextAuthority;
   failures?: ReadonlyMap<string, TreeFailure>;
 }): TreeView {
   const { projection, scheme, source, authority, failures } = input;
-  const sourceId = source?.id ?? `missing:${scheme}`;
+  const sourceId = source.id;
   const uriOf = (path: string) => canonicalContextUri(scheme, path, authority);
   const root: TreeDirectory = {
     kind: "dir",
