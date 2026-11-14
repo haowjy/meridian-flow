@@ -42,7 +42,12 @@ ProseMirror's commands run over every range.
   refuses to become a heading and takes bold, which matters most for a selected table. Availability comes from
   `editor.can().setMark`, so the matrix can't advertise what dispatch refuses.
 
-`turnIntoBlockType` is a true toggle: choosing the checked type returns the block to a paragraph.
+`turnIntoBlockType` is a true toggle: choosing the current type returns the block to a paragraph. Heading levels
+are the schema's `HEADING_LEVELS`; Turn into, the toolbar's heading menu and slash all run the paragraph's
+`toggleHeadingLevel`, which changes only paragraphs, in every selection range, through `block-type.ts`, so each
+keeps its id and Yjs element and a fence under the selection is never a heading. Paragraph runs `setParagraph`, which
+also leaves a fence. The heading menu
+marks its current row by level alone, so a heading inside a list or quote still shows its level.
 
 Alignment has no fence: a select-all centers the chapter. A caret in a table cell aligns the table, because
 `alignableBlocksInSelection` stops at the table; per-column alignment belongs to the grips.
@@ -55,7 +60,7 @@ type is one edit here.
 
 ## Closing a surface returns the caret
 
-The alignment menu overrides Radix's `onCloseAutoFocus` and focuses the editor. Radix restores focus to the trigger, which
+The heading and alignment menus (`ToolbarMenuControl`) open through `EditorMenu`, which overrides Radix's `onCloseAutoFocus` and focuses the editor. Radix restores focus to the trigger, which
 is wrong for a manuscript: the next Space has to be a space, not a control being re-activated.
 
 ## Why greying, not disabling

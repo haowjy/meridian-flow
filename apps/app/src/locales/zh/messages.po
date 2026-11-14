@@ -2444,8 +2444,8 @@ msgid "Creating project…"
 msgstr ""
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
-msgid "Current block type"
-msgstr ""
+#~ msgid "Current block type"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
@@ -3085,16 +3085,16 @@ msgid "grid"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-msgid "h1"
-msgstr ""
+#~ msgid "h1"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-msgid "h2"
-msgstr ""
+#~ msgid "h2"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-msgid "h3"
-msgstr ""
+#~ msgid "h3"
+#~ msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off from here"
@@ -3129,20 +3129,24 @@ msgstr ""
 msgid "Heading"
 msgstr ""
 
-#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Heading 1"
+msgid "Heading {level}"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Heading 2"
-msgstr ""
+#~ msgid "Heading 1"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Heading 3"
-msgstr ""
+#~ msgid "Heading 2"
+#~ msgstr ""
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+#~ msgid "Heading 3"
+#~ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."

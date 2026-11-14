@@ -44,14 +44,15 @@ const layoutAlignAttr = {
   },
 };
 
+/** The heading levels a paragraph's `level` may hold; every surface that offers a level reads this. */
+export const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
+export type HeadingLevel = (typeof HEADING_LEVELS)[number];
+
 const paragraphLevelAttr = {
   default: null,
   validate(value: unknown) {
-    if (
-      value !== null &&
-      !(Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 6)
-    ) {
-      throw new RangeError("level must be null or an integer from 1 to 6");
+    if (value !== null && !HEADING_LEVELS.includes(value as HeadingLevel)) {
+      throw new RangeError(`level must be null or one of ${HEADING_LEVELS.join(", ")}`);
     }
   },
 };

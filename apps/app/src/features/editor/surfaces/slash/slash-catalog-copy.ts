@@ -9,10 +9,37 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 
 import type { EditorAnchor } from "@/core/editor/anchors";
 import { defaultDiagramProvider } from "@/core/editor/diagrams";
-import type { SlashCommandCatalog } from "@/core/editor/extensions/slash";
+import type { SlashCommandCatalog, SlashCommandItem } from "@/core/editor/extensions/slash";
+import { blockTypeLabel } from "../toolbar";
+
+/** What the writer's verbs call the diagram this row makes. Never localized. */
+function diagramName(): string {
+  return defaultDiagramProvider().name;
+}
+
+/** The levels the unfiltered menu lists; the deeper ones appear once typed (`h4`, `heading 5`). */
+const UNFILTERED_HEADING_LEVELS = 3;
+
+/** What a writer may type for a level besides `h1`..`h6`. */
+function headingAliases(level: HeadingLevel): string[] {
+  if (level === 1) return [t`title`, t`section`];
+  if (level === 2) return [t`subsection`];
+  return [];
+}
+
+function headingItem(level: HeadingLevel): SlashCommandItem {
+  return {
+    id: `heading-${level}`,
+    group: "text",
+    label: blockTypeLabel(`heading${level}`),
+    aliases: [`h${level}`, ...headingAliases(level)],
+    onlyWhenSearched: level > UNFILTERED_HEADING_LEVELS,
+  };
+}
 
 /**
  * The rows, in the order a writer meets them (§5.7): retype this block first,
@@ -22,11 +49,6 @@ import type { SlashCommandCatalog } from "@/core/editor/extensions/slash";
  * resolve against whatever locale is active when the menu OPENS — a locale
  * switch has to relabel the menu without touching the editor's lifetime.
  */
-/** What the writer's verbs call the diagram this row makes. Never localized. */
-function diagramName(): string {
-  return defaultDiagramProvider().name;
-}
-
 export function documentSlashCatalog(
   requestImageUpload: (at: EditorAnchor) => void,
 ): SlashCommandCatalog {
@@ -35,14 +57,7 @@ export function documentSlashCatalog(
     groupLabels: { text: t`Text`, insert: t`Insert` },
     requestImageUpload,
     items: [
-      {
-        id: "heading-1",
-        group: "text",
-        label: t`Heading 1`,
-        aliases: [t`title`, t`h1`, t`section`],
-      },
-      { id: "heading-2", group: "text", label: t`Heading 2`, aliases: [t`h2`, t`subsection`] },
-      { id: "heading-3", group: "text", label: t`Heading 3`, aliases: [t`h3`] },
+      ...HEADING_LEVELS.map(headingItem),
       { id: "bullet-list", group: "text", label: t`Bulleted list`, aliases: [t`list`, t`ul`] },
       { id: "numbered-list", group: "text", label: t`Numbered list`, aliases: [t`ordered`, t`ol`] },
       {
