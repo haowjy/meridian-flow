@@ -61,6 +61,8 @@ export type DraftNotice =
       restored: readonly string[];
       renamed: readonly string[];
       alsoApplied: readonly string[];
+      /** Documents the Apply put in a new place, a new one included: where each went now. */
+      landed: readonly { documentId: string; uri: string }[];
       dismiss(): void;
     });
 

@@ -24,6 +24,8 @@ import { useOptionalMainItem } from "./views";
 
 export type ShellTreeVersion = {
   version: TreeVersion;
+  /** The Work's tree whichever way the toggle stands, for review; null with no branch. */
+  draftVersion: TreeVersion | null;
   showing: "live" | "draft";
   /** The Work has pending changes: the toggle is offered. */
   offered: boolean;
@@ -75,11 +77,11 @@ export function TreeVersionProvider({
     () => new Set(rows?.filter((row) => row.hasDraft).map((row) => row.documentId)),
     [rows],
   );
-  const version = useMemo<TreeVersion>(
-    () =>
-      showing === "draft" && branchId ? { view: { draft: branchId }, pendingText } : LIVE_VERSION,
-    [showing, branchId, pendingText],
+  const draftVersion = useMemo<TreeVersion | null>(
+    () => (branchId ? { view: { draft: branchId }, pendingText } : null),
+    [branchId, pendingText],
   );
+  const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
   const main = useOptionalMainItem()?.item;
   const mainDocument = main?.kind === "document" ? main.documentId : null;
@@ -99,8 +101,8 @@ export function TreeVersionProvider({
   }, [showing, accountId, projectId, mainDocument, fileForDocument, isDraftOnly, ownerKey]);
 
   const state = useMemo<ShellTreeVersion>(
-    () => ({ version, showing, offered, ownerKey, draftOf: fileForDocument, flip }),
-    [version, showing, offered, ownerKey, fileForDocument, flip],
+    () => ({ version, draftVersion, showing, offered, ownerKey, draftOf: fileForDocument, flip }),
+    [version, draftVersion, showing, offered, ownerKey, fileForDocument, flip],
   );
   return (
     <ShellTreeVersionContext.Provider value={state}>

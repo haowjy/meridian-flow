@@ -123,10 +123,24 @@ export function useWorkBranchCommands({
       const held = notices.appliedFacts(ownerKey);
       const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
       const restored = [...(held?.restored ?? []), ...(outcome.restored && title ? [title] : [])];
+      // A document the Apply put somewhere new says where: a new one would look lost otherwise.
+      const moved = (outcome.applied ?? []).filter(
+        (appliedItem) =>
+          appliedItem.itemKey === item?.itemKey &&
+          appliedItem.transition?.to &&
+          folderOf(appliedItem.transition.from) !== folderOf(appliedItem.transition.to),
+      );
+      const landed = [
+        ...(held?.landed ?? []),
+        ...moved.flatMap(({ transition }) =>
+          transition?.to ? [{ documentId: draft.documentId, uri: transition.to }] : [],
+        ),
+      ];
       const renamed = [
         ...(held?.renamed ?? []),
-        ...(outcome.applied ?? []).flatMap(({ renamed: path }) => {
-          if (!path) return [];
+        ...(outcome.applied ?? []).flatMap(({ renamed: path, itemKey }) => {
+          // A new place names the document under the name it landed with.
+          if (!path || moved.some((landing) => landing.itemKey === itemKey)) return [];
           const name = documentBasename(path);
           return name ? [name] : [];
         }),
@@ -140,7 +154,7 @@ export function useWorkBranchCommands({
           return from && to ? [`${from} → ${to}`] : [];
         }),
       ];
-      if (restored.length || renamed.length || alsoApplied.length)
+      if (restored.length || renamed.length || alsoApplied.length || landed.length)
         notices.showApplied({
           projectId,
           ownerKey,
@@ -148,6 +162,7 @@ export function useWorkBranchCommands({
           restored,
           renamed,
           alsoApplied,
+          landed,
         });
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
@@ -491,3 +506,7 @@ export function useBoundWorkBranchCommands(): WorkBranchCommands {
   if (!commands) throw new Error("Work commands require a WorkBranchCommandsBoundary");
   return commands;
 }
+
+/** The folder part of a document's address; null for none. */
+const folderOf = (uri: string | null | undefined) =>
+  uri ? uri.slice(0, uri.lastIndexOf("/") + 1) : null;

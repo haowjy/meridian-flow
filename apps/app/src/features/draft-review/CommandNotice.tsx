@@ -10,11 +10,13 @@ import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { ActionNotice } from "@/components/app/ActionNotice";
+import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import type { DraftNotice } from "./draft-notices";
 
@@ -113,12 +115,35 @@ export function DraftNoticeLine({
   const presented = useOptionalPresentedDocuments();
   const accountId = useAccountId();
   const { openReviewFile } = useAiDraftLauncher();
+  const openDocument = useOpenProjectDocument(notice.projectId);
   if (notice.kind === "applied") {
-    const sentence = appliedSentence(notice.restored, notice.renamed, notice.alsoApplied);
+    const [only] = notice.landed;
+    const single = only && notice.landed.length === 1;
+    const name = only ? documentDisplayName(only.uri) : "";
+    // One landing names the document on its Open; the line says where it went.
+    const sentence = [
+      ...(single
+        ? [t`Now in ${placeOf(only.uri)}.`]
+        : notice.landed.map(({ uri }) => {
+            const landedName = documentDisplayName(uri);
+            return t`${landedName} is now in ${placeOf(uri)}.`;
+          })),
+      appliedSentence(notice.restored, notice.renamed, notice.alsoApplied),
+    ]
+      .filter(Boolean)
+      .join(" ");
     return (
       <ActionNotice
         data-command-notice="applied"
         sentence={sentence}
+        action={
+          single
+            ? {
+                label: <Trans>Open {name}</Trans>,
+                onClick: () => void openDocument({ documentId: only.documentId }),
+              }
+            : undefined
+        }
         onDismiss={notice.dismiss}
         className={className}
       />
@@ -210,6 +235,12 @@ export function restoredSentence(titles: readonly string[]): string {
   return titles.length === 1
     ? t`${names} is back in the manuscript.`
     : t`${names} are back in the manuscript.`;
+}
+
+/** "Manuscript/Arc 3": the source and folder a document is in. */
+function placeOf(uri: string): string {
+  const whole = documentLocationName(uri);
+  return whole.slice(0, whole.lastIndexOf("/")) || whole;
 }
 
 export function appliedSentence(
