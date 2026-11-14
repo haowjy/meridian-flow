@@ -15,10 +15,6 @@
   ([#91](https://github.com/haowjy/meridian-flow/issues/91)). Whether `figure`
   should exist at all, or caption and label should be attributes of `image` in a
   block context (`packages/prosemirror-schema`).
-- `e2e/support/e2e-db.ts` `resetUserProjects` deletes turns before document Yjs
-  updates release their model-response references. With existing authored
-  documents, setup can fail on
-  `document_yjs_updates_authoring_response_id_model_responses_id_f`.
 - Primary buttons show their own drop shadow under keyboard focus instead of the
   `focus-ring` box-shadow, so focus looks absent. The variant's `shadow-*` class
   overrides the utility (`components/ui/button.tsx`). Make the focus ring win for

@@ -10972,19 +10972,6 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "document_yjs_updates_authoring_response_id_model_responses_id_fk": {
-          "name": "document_yjs_updates_authoring_response_id_model_responses_id_fk",
-          "tableFrom": "document_yjs_updates",
-          "tableTo": "model_responses",
-          "columnsFrom": [
-            "authoring_response_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
