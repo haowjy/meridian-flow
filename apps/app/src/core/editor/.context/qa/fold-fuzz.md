@@ -13,6 +13,8 @@ After a full sync, a run fails when:
   characters typed into a block someone moved are not counted, because Yjs has no move and a
   dragged block is re-created;
 - a character's Yjs item no longer belongs to the client that typed it (its byline moved);
+- a character sits in a block other than the one it was typed into, by block `id`;
+- two blocks share an `id`;
 - a server `writeBlocks` call inserted or deleted a block instead of editing it in place;
 - the Yjs docs, or the editors' ProseMirror docs, disagree.
 
@@ -27,8 +29,9 @@ FUZZ_SEEDS=600 pnpm exec vitest run --config src/core/editor/.context/qa/fold-fu
 ```
 
 `FUZZ_SEEDS` (default 100) sets the number of runs and `FUZZ_STEPS` (default 120) the edits
-per run. It prints one JSON line of totals with the first 20 failing seeds. A seed replays the
-same run, so `FUZZ_SEEDS=<n>` plus a log line in `run()` gives a failing case to trace.
+per run. It prints one JSON line of totals with the first 20 failing seeds. The seed also sets
+the Yjs client ids and the block ids, so a seed replays the same run: `FUZZ_SEEDS=<n>` plus a
+log line in `run()` gives a failing case to trace.
 
 The probe's own mistakes look like binding bugs, so check these first:
 
@@ -43,8 +46,9 @@ The probe's own mistakes look like binding bugs, so check these first:
 
 ## Last run: 2026-11-14, on `origin/main` 0bed6546c3 and this branch
 
-- This branch, 600 seeds × 120 steps, 36,060 typed characters: 0 lost, 0 duplicated, 0 moved
-  bylines, 0 rebuilt blocks, 0 diverged runs. About 50 s.
-- `main`, same probe: 28 lost characters, 1 doubled, 1,603 moved bylines, 182 rebuilt blocks.
-  `main`'s binding pairs elements by position, so a paragraph inserted or moved beside another
-  takes over that block's element.
+- This branch, 600 seeds × 120 steps, 36,027 typed characters: 0 lost, 0 duplicated, 0 moved
+  bylines, 0 in the wrong block, 0 shared ids, 0 rebuilt blocks, 0 diverged runs. About 50 s.
+- `main`, same probe: 379 of 600 runs fail, with 30 lost characters, 1 doubled, 1,609 moved
+  bylines, 2,786 in the wrong block, 20 shared ids and 188 rebuilt blocks. `main`'s binding
+  pairs elements by position, so a paragraph inserted or moved beside another takes over that
+  block's element.

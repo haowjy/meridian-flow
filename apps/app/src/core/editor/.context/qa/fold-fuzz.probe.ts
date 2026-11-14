@@ -42,24 +42,32 @@ function rng(seed: number) {
   };
 }
 
-/** Each character's Yjs client: the byline the merge must keep with the character. */
-function owners(doc: Y.Doc): Map<string, number> {
-  const out = new Map<string, number>();
-  const walk = (t: unknown) => {
+/** Each character's Yjs client (the byline the merge must keep with it) and its block's id. */
+function owners(doc: Y.Doc): Map<string, { client: number; block: unknown }> {
+  const out = new Map<string, { client: number; block: unknown }>();
+  const walk = (t: unknown, block: unknown) => {
     if (t instanceof Y.XmlText) {
       for (let n = t._start; n; n = n.right)
         if (!n.deleted && n.content instanceof Y.ContentString)
-          for (const ch of n.content.str) out.set(ch, n.id.client);
-    } else if (t instanceof Y.XmlElement || t instanceof Y.XmlFragment) t.forEach(walk);
+          for (const ch of n.content.str) out.set(ch, { client: n.id.client, block });
+    } else if (t instanceof Y.XmlElement) t.forEach((c) => walk(c, t.getAttribute("id")));
   };
-  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).forEach(walk);
+  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).forEach((b) => walk(b, null));
   return out;
 }
 
 function run(seed: number, editorCount: number) {
   const r = rng(seed);
+  // Client ids and block ids come from the seed, so a seed replays the same run.
+  const ids = rng(seed + 1_000_003);
+  vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(array: T) => {
+    const bytes = array as unknown as Uint8Array;
+    for (let k = 0; k < bytes.length; k++) bytes[k] = Math.floor(ids() * 256);
+    return array;
+  });
   const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)] as T;
   const seedDoc = new Y.Doc({ gc: false });
+  seedDoc.clientID = seed * 10;
   const first = new Y.XmlElement("paragraph");
   first.setAttribute("id", "seed");
   seedDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [first]);
@@ -69,6 +77,7 @@ function run(seed: number, editorCount: number) {
   const peerEditors: Editor[] = [];
   for (let i = 0; i < editorCount; i++) {
     const doc = new Y.Doc({ gc: false });
+    doc.clientID = seed * 10 + 1 + i;
     Y.applyUpdate(doc, base);
     const editor = new Editor({
       element: document.createElement("div"),
@@ -84,6 +93,7 @@ function run(seed: number, editorCount: number) {
     peerEditors.push(editor);
   }
   const server = new Y.Doc({ gc: false });
+  server.clientID = seed * 10 + 9;
   Y.applyUpdate(server, base);
   docs.push(server);
   const schema = peerEditors[0]!.state.schema;
@@ -223,29 +233,37 @@ function run(seed: number, editorCount: number) {
   let lost = 0;
   let duplicated = 0;
   let bylineMoved = 0;
+  let misplaced = 0;
   for (const [c, who] of typedBy) {
     if (moved.has(typedIn.get(c))) continue;
     const count = present.split(c).length - 1;
     if (count === 0 && !deleted.has(c)) lost++;
     if (count > 1) duplicated++;
-    if (count === 1 && byChar.get(c) !== docs[who]!.clientID) bylineMoved++;
+    if (count === 1 && byChar.get(c)?.client !== docs[who]!.clientID) bylineMoved++;
+    if (count === 1 && byChar.get(c)?.block !== typedIn.get(c)) misplaced++;
   }
+  const blockIds = docs[0]!.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray().map((b) => (b as Y.XmlElement).getAttribute("id"));
+  const sharedIds = blockIds.length - new Set(blockIds).size;
   for (const e of peerEditors) e.destroy();
-  return { lost, duplicated, bylineMoved, rebuilt, diverged, typed: typedBy.size };
+  vi.restoreAllMocks();
+  return { lost, duplicated, bylineMoved, misplaced, sharedIds, rebuilt, diverged, typed: typedBy.size };
 }
 
 it(`fold fuzz: ${SEEDS} seeds x ${STEPS} steps`, () => {
-  const total = { lost: 0, duplicated: 0, bylineMoved: 0, rebuilt: 0, diverged: 0, typed: 0 };
+  const total = { lost: 0, duplicated: 0, bylineMoved: 0, misplaced: 0, sharedIds: 0, rebuilt: 0, diverged: 0, typed: 0 };
   const failing: number[] = [];
   for (let seed = 1; seed <= SEEDS; seed++) {
     const res = run(seed, 2 + (seed % 2));
     total.lost += res.lost;
     total.duplicated += res.duplicated;
     total.bylineMoved += res.bylineMoved;
+    total.misplaced += res.misplaced;
+    total.sharedIds += res.sharedIds;
     total.rebuilt += res.rebuilt;
     total.typed += res.typed;
     if (res.diverged) total.diverged++;
-    if (res.lost || res.duplicated || res.bylineMoved || res.rebuilt || res.diverged) failing.push(seed);
+    if (res.lost || res.duplicated || res.bylineMoved || res.misplaced || res.sharedIds || res.rebuilt || res.diverged)
+      failing.push(seed);
   }
   process.stdout.write(`${JSON.stringify({ seeds: SEEDS, steps: STEPS, ...total, failingSeeds: failing.slice(0, 20) })}\n`);
   expect(failing).toEqual([]);
