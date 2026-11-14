@@ -7,10 +7,10 @@ import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { genScenario, Rng, resetWords, show, toPM } from "../content-merge/merge.fixtures.js";
+import { contentMerge } from "../content-merge/merge.js";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
-import { genScenario, Rng, resetWords, show, toPM } from "./merge.fixtures.js";
-import { rebase } from "./merge.js";
 import { pmToY, writeBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
@@ -91,7 +91,7 @@ describe("minimal Yjs writer", () => {
       resetWords();
       const sc = genScenario(new Rng(seed), {});
       const [B, L, D] = [toPM(schema, sc.base), toPM(schema, sc.live), toPM(schema, sc.draft)];
-      const blocks = rebase(schema, B, L, D).blocks;
+      const blocks = contentMerge(schema, B, L, D).blocks;
       const doc = seeded(D);
       doc.transact(() => writeBlocks(doc.getXmlFragment(FRAG), schema, blocks));
       if (!blocksEqual(readBlocks(doc.getXmlFragment(FRAG), schema), blocks))

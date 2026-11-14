@@ -3,9 +3,10 @@
  * before each merged word. Both work on `MergedTok`s and know nothing about hunks or blocks.
  */
 import type { Mark } from "prosemirror-model";
+import { coreKey, isBlockTok, isWordTok, type Tok } from "../diff/tokens.js";
 import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
-import { coreKey, isBlockTok, isWordTok, type Tok } from "./tokens.js";
+import type { Fire } from "./rules.js";
 
 /** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
@@ -39,12 +40,13 @@ function splitParagraphs(run: MergedTok[]): { inline: MergedTok[]; paragraphs: M
 }
 
 /**
- * Both sides inserted at one point. Text before any new paragraph merges word by word (a shared
+ * Both sides inserted at one point (`insertions-kept-both`). Text before any new paragraph merges word by word (a shared
  * word is kept once, in the draft's form). New paragraphs merge whole: an identical paragraph is kept
  * once, different ones are both kept (live's first). A live paragraph that could be one of the
  * draft's, and is not equal to it, never gets here: `settleStretches` dropped it as a clash.
  */
-export function unionInsertions(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
+export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fire): MergedTok[] {
+  fire("insertions-kept-both");
   if (isSubsequence(live, draft)) return draft;
   if (isSubsequence(draft, live)) return live;
   const { inline: liveInline, paragraphs: liveParagraphs } = splitParagraphs(live);
@@ -102,6 +104,7 @@ export function settleWhitespace(
   docs: { base: Tok[]; live: Tok[]; draft: Tok[] },
   baseToLive: Int32Array,
   baseToDraft: Int32Array,
+  fire: Fire,
 ): Tok[] {
   const toksOf = [docs.base, docs.live, docs.draft];
   const indexIn = (o: MergedTok, doc: Origin) => {
@@ -133,16 +136,14 @@ export function settleWhitespace(
     const [baseTok, liveTok, draftTok] = neighbours;
     // Whoever changed the whitespace wins; the draft if both did.
     let from: TextTok | null;
-    if (liveKey !== null && draftKey !== null)
-      from =
-        baseKey !== null
-          ? liveKey === baseKey
-            ? draftTok
-            : draftKey === baseKey
-              ? liveTok
-              : draftTok
-          : draftTok;
-    else if (liveKey !== null) from = liveTok;
+    if (liveKey !== null && draftKey !== null) {
+      if (liveKey === baseKey) from = draftTok;
+      else if (draftKey === baseKey) from = liveTok;
+      else {
+        from = draftTok;
+        if (liveKey !== draftKey) fire("draft-wins-space");
+      }
+    } else if (liveKey !== null) from = liveTok;
     else if (draftKey !== null) from = draftTok;
     else from = baseTok;
 
@@ -154,6 +155,7 @@ export function settleWhitespace(
     } else if (atStart || !pred) ws = "";
     else {
       ws = tok.ws || (needsSpace(pred.tok, tok) ? " " : "");
+      if (!tok.ws && ws) fire("space-added-between-words");
       wsMarks = tok.ws ? tok.wsMarks : undefined;
     }
     if (ws === tok.ws && wsMarks === tok.wsMarks) result.push(tok);

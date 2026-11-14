@@ -5,7 +5,8 @@ Read the page that owns the seam you are changing:
 - [Port contracts](port-contracts.md): what a host must do that the port types can't say.
 - [Write architecture](write-architecture.md): planning, capture, targeting and results.
 - [Link identity](link-correspondence.md): ref assignment at every write door.
-- [Diff review](diff-review.md): pure text review, composition, rebase and local Discard.
+- [Diff review](diff-review.md): pure text review, composition and local Discard.
+- [Content merge](content-merge.md): the three-way merge of a draft with live: its rules, repairs, rescues and known losses.
 
 Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 directions are in [ALTERNATIVES.md](ALTERNATIVES.md).

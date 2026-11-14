@@ -8,7 +8,8 @@
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-import { blocksEqual } from "./equal.js";
+import { blocksEqual } from "../diff/equal.js";
+import { similarity } from "../diff/tokens.js";
 import {
   CASES,
   check,
@@ -24,21 +25,21 @@ import {
   tagBySide,
   toPM,
 } from "./merge.fixtures.js";
-import { rebase } from "./merge.js";
-import { similarity } from "./tokens.js";
+import { contentMerge } from "./merge.js";
 
 const schema = buildDocumentSchema();
 
 /** Idempotence and the degenerate cases every merge must get exactly right. */
 function metaChecks(B: PMNode[], L: PMNode[], D: PMNode[], M: readonly PMNode[]): string[] {
   const out: string[] = [];
-  const again = rebase(schema, L, L, [...M]);
+  const again = contentMerge(schema, L, L, [...M]);
   if (!blocksEqual(again.blocks, M) || again.conflicts.length)
-    out.push("not idempotent: rebase(live, live, merged) changed the draft");
-  if (!blocksEqual(rebase(schema, B, B, D).blocks, D)) out.push("no live change altered the draft");
-  if (!blocksEqual(rebase(schema, B, L, B).blocks, L))
+    out.push("not idempotent: contentMerge(live, live, merged) changed the draft");
+  if (!blocksEqual(contentMerge(schema, B, B, D).blocks, D))
+    out.push("no live change altered the draft");
+  if (!blocksEqual(contentMerge(schema, B, L, B).blocks, L))
     out.push("untouched draft did not become live");
-  const same = rebase(schema, B, L, L);
+  const same = contentMerge(schema, B, L, L);
   if (!blocksEqual(same.blocks, L) || same.conflicts.length)
     out.push("identical changes did not collapse");
   return out;
@@ -66,7 +67,7 @@ function rewrittenMove(sc: Scenario): boolean {
 const isSafety = (f: string) =>
   !/^(order|blocks|block type|em on|strong on|conflict on blocks)/.test(f);
 
-describe("rebase", () => {
+describe("contentMerge", () => {
   it("keeps original source coordinates when a live move carries a draft edit", () => {
     const base = parseDoc(
       schema,
@@ -77,7 +78,7 @@ describe("rebase", () => {
     function paragraph(text: string) {
       return schema.nodes.paragraph.create(null, schema.text(text));
     }
-    const merged = rebase(schema, base, live, draft);
+    const merged = contentMerge(schema, base, live, draft);
     expect(merged.blocks.map((b) => b.textContent)).toEqual([
       draft[1].textContent,
       base[0].textContent,
@@ -89,12 +90,12 @@ describe("rebase", () => {
     const base = parseDoc(schema, "p:The cat sat on the mat.");
     const live = parseDoc(schema, "p:A big black cat sat on the mat.");
     const patched = parseDoc(schema, "p:The big black cat sat on the mat.");
-    const merged = rebase(schema, base, live, patched).blocks;
+    const merged = contentMerge(schema, base, live, patched).blocks;
     expect(blocksEqual(merged, live)).toBe(true);
     const deleted = parseDoc(schema, "p:The big cat sat on the mat.");
     expect(
       blocksEqual(
-        rebase(schema, patched, merged, deleted).blocks,
+        contentMerge(schema, patched, merged, deleted).blocks,
         parseDoc(schema, "p:A big cat sat on the mat."),
       ),
     ).toBe(true);
@@ -104,7 +105,7 @@ describe("rebase", () => {
     const [base, live, draft] = ["p:a b z a", "p:b a z", "p:a b z X"].map((text) =>
       parseDoc(schema, text),
     );
-    const result = rebase(schema, base, live, draft);
+    const result = contentMerge(schema, base, live, draft);
     expect(render(result.blocks)).toBe("p:b a z X");
     expect(result.conflicts).toEqual([]);
     expect(result.orderConflict).toBe(false);
@@ -118,9 +119,10 @@ describe("rebase", () => {
         PMNode[],
       ]),
     );
-    const r = rebase(schema, B, L, D);
+    const r = contentMerge(schema, B, L, D);
     expect(render(r.blocks)).toBe(c.merged.replace(/#\w+/g, ""));
     expect(r.conflicts).toHaveLength(c.conflicts);
+    expect(Object.keys(r.rules).sort()).toEqual([...c.rules].sort());
     expect(
       check({
         base: B,
@@ -161,7 +163,7 @@ describe("rebase", () => {
       resetWords();
       const sc = genScenario(new Rng(seed), suites[i % suites.length]);
       const [B, L, D] = [toPM(schema, sc.base), toPM(schema, sc.live), toPM(schema, sc.draft)];
-      const r = rebase(schema, B, L, D);
+      const r = contentMerge(schema, B, L, D);
       const rng = new Rng(seed ^ 0x9e3779b9);
       const fails = [
         ...check(

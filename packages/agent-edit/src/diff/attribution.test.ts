@@ -13,6 +13,8 @@ import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { tagBySide } from "../content-merge/merge.fixtures.js";
+import { contentMerge } from "../content-merge/merge.js";
 import { appendApplyRecord, readApplyRecord } from "./apply-record.js";
 import {
   type AttributionPart,
@@ -23,8 +25,6 @@ import {
 } from "./attribution.js";
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
-import { tagBySide } from "./merge.fixtures.js";
-import { rebase } from "./merge.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
 import { writeBlocks, writeDiscardBlocks } from "./writer.js";
@@ -128,7 +128,7 @@ function room(blocks: Array<string | PMNode>) {
       // The base and the draft keep the ids the room gave them; live's blocks take the ids an editor
       // would have kept (by guess), as the model's write does.
       const [b, l, d] = tagBySide(base, live.map(withoutBlockIds), readBlocks(frag(draft), schema));
-      const result = rebase(schema, b, l, d);
+      const result = contentMerge(schema, b, l, d);
       draft.clientID = 1;
       draft.transact(() => writeBlocks(frag(draft), schema, result.blocks));
       draft.clientID = 9;

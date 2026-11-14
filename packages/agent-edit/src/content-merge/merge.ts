@@ -1,5 +1,5 @@
 /**
- * The content rebase: a pure three-way merge of base, live and draft top-level blocks. It brings live's
+ * The content merge: a pure three-way merge of base, live and draft top-level blocks. It brings live's
  * newer edits into a Work draft (and, with the patch as the draft side, writes an Apply into live).
  *
  * Nothing relates the sides' Yjs items; the tokens of each side are aligned to base, paragraph moves are
@@ -12,10 +12,18 @@
  */
 import { hasBlockId, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
-import { align } from "./align.js";
-import { type Correspondence, correspond, emptyCorrespondence } from "./correspond.js";
-import type { Hunk } from "./hunks.js";
-import { posMap } from "./hunks.js";
+import { align } from "../diff/align.js";
+import { type Correspondence, correspond, emptyCorrespondence } from "../diff/correspond.js";
+import type { Hunk } from "../diff/hunks.js";
+import {
+  blockKey,
+  buildBlocks,
+  buildSide,
+  isWordTok,
+  shareBlockTokens,
+  type Tok,
+  tokenizeBlock,
+} from "../diff/tokens.js";
 import {
   applyWithin,
   BASE,
@@ -26,23 +34,14 @@ import {
   LIVE,
   type MergedTok,
   mergeMarks,
-  overlaps,
   peel,
-  reslide,
   sameTokens,
+  touch,
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
+import { addCounts, type Fire, type RuleCounts, ruleCounter } from "./rules.js";
 import { settleStretches } from "./stretch.js";
-import {
-  blockKey,
-  buildBlocks,
-  buildSide,
-  isWordTok,
-  shareBlockTokens,
-  type Tok,
-  tokenizeBlock,
-} from "./tokens.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move" | "attributes";
@@ -52,8 +51,9 @@ export interface Conflict {
   draft: Tok[];
 }
 
-export interface RebaseResult {
+export interface ContentMergeResult {
   overrode: number; // live words replaced by the draft in contested text
+  rules: RuleCounts; // how many times each rule fired
 
   blocks: PMNode[]; // the new draft
   conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
@@ -72,7 +72,12 @@ interface Cluster {
 }
 
 /** Live and draft hunks sorted by position, grouped into clusters of hunks that overlap each other. */
-function clusterHunks(liveHunks: Hunk[], draftHunks: Hunk[], baseToks: Tok[]): Cluster[] {
+function clusterHunks(
+  liveHunks: Hunk[],
+  draftHunks: Hunk[],
+  baseToks: Tok[],
+  fire: Fire,
+): Cluster[] {
   const all = [
     ...liveHunks.map((hunk) => ({ hunk, isLive: true })),
     ...draftHunks.map((hunk) => ({ hunk, isLive: false })),
@@ -81,7 +86,9 @@ function clusterHunks(liveHunks: Hunk[], draftHunks: Hunk[], baseToks: Tok[]): C
   for (const { hunk, isLive } of all) {
     const current = clusters.at(-1);
     const otherSide = current && (isLive ? current.draft : current.live);
-    if (current && otherSide?.some((h) => overlaps(h, hunk, baseToks))) {
+    const touches = otherSide?.map((h) => touch(h, hunk, baseToks)).find((t) => t !== null);
+    if (current && touches) {
+      if (touches !== "overlap") fire(touches);
       (isLive ? current.live : current.draft).push(hunk);
       current.lo = Math.min(current.lo, hunk.from);
       current.hi = Math.max(current.hi, hunk.to);
@@ -144,6 +151,7 @@ function isRectangular(table: PMNode): boolean {
 }
 
 interface ContainerMerge {
+  rules: RuleCounts;
   merged: MergedTok[];
   overrode: number;
   conflicts: Conflict[];
@@ -163,8 +171,16 @@ function mergeContainers(
   draft: MergedTok[],
   baseIds: number[],
 ): ContainerMerge | null {
+  // Counted apart: a run that turns out not to merge pairwise must leave no counts behind.
+  const { counts, fire } = ruleCounter();
   if (live.length !== base.length || draft.length !== base.length) return null;
-  const out: ContainerMerge = { merged: [], overrode: 0, conflicts: [], orderConflict: false };
+  const out: ContainerMerge = {
+    merged: [],
+    overrode: 0,
+    conflicts: [],
+    orderConflict: false,
+    rules: counts,
+  };
   const kids = (n: PMNode) => {
     const nodes: PMNode[] = [];
     n.forEach((c) => {
@@ -185,7 +201,7 @@ function mergeContainers(
       out.merged.push(live[i]);
       continue;
     }
-    const inner = rebase(schema, kids(bn), kids(ln), kids(dn));
+    const inner = merge(schema, kids(bn), kids(ln), kids(dn), fire);
     const changed = (n: PMNode, key: string) =>
       JSON.stringify(n.attrs[key]) !== JSON.stringify(bn.attrs[key]);
     const attrs = Object.fromEntries(
@@ -214,6 +230,7 @@ function mergeContainers(
       return null;
     }
     if (bn.type.name === "table" && !isRectangular(node)) return null;
+    fire("containers-merged");
     out.merged.push({
       tok: { kind: "atom", key: `A${blockKey(node)}`, node },
       origin: DRAFT,
@@ -276,7 +293,7 @@ function withIdsOf(node: PMNode, model: PMNode): PMNode {
 }
 
 /**
- * Both sides made the same block at one place (equal but for ids: the same split, or the same
+ * `same-block-added-twice`: both sides made the same block at one place (equal but for ids: the same split, or the same
  * paragraph typed twice). It is one block, and carries live's id, because live is the next review
  * base. Returns the draft with its copy given live's ids.
  */
@@ -285,6 +302,7 @@ function unifyAdded(
   draft: readonly PMNode[],
   inLive: Correspondence,
   inDraft: Correspondence,
+  fire: Fire,
 ): readonly PMNode[] {
   // A block with no pair of its own (a split's later part has none), with the base block before it that stays in place.
   const added = (side: readonly PMNode[], c: Correspondence) => {
@@ -310,6 +328,7 @@ function unifyAdded(
       taken.add(l);
       out ??= [...draft];
       out[d] = withIdsOf(draft[d], live[l]);
+      fire("same-block-added-twice");
     }
   }
   return out ?? draft;
@@ -328,6 +347,7 @@ function mergeAttributes(
   draft: readonly PMNode[],
   inLive: Correspondence,
   inDraft: Correspondence,
+  fire: Fire,
 ): { sides: [PMNode[], PMNode[], PMNode[]]; clashes: Conflict[] } {
   const sides: [PMNode[], PMNode[], PMNode[]] = [[...base], [...live], [...draft]];
   const clashes: Conflict[] = [];
@@ -346,11 +366,15 @@ function mergeAttributes(
       attrs[key] = draftChanged ? byDraft : byLive;
     }
     const at = [i, inLive.partner[i], inDraft.partner[i]];
+    let changed = false;
     [b, l, d].forEach((node, k) => {
       const merged = { ...node.attrs, ...attrs };
-      if (!same(merged, node.attrs))
+      if (!same(merged, node.attrs)) {
         sides[k][at[k]] = node.type.create(merged, node.content, node.marks);
+        changed = true;
+      }
     });
+    if (changed) fire("block-attributes-merged");
     if (clash)
       clashes.push({
         kind: "attributes",
@@ -363,28 +387,42 @@ function mergeAttributes(
   return { sides, clashes };
 }
 
-export function rebase(
+export function contentMerge(
   schema: Schema,
   base: readonly PMNode[],
   live: readonly PMNode[],
   draft: readonly PMNode[],
-): RebaseResult {
+): ContentMergeResult {
+  const { counts, fire } = ruleCounter();
+  return { ...merge(schema, base, live, draft, fire), rules: counts };
+}
+
+function merge(
+  schema: Schema,
+  base: readonly PMNode[],
+  live: readonly PMNode[],
+  draft: readonly PMNode[],
+  fire: Fire,
+): Omit<ContentMergeResult, "rules"> {
   shareBlockTokens([base, live, draft]);
   let inLive = correspond(base, live, { byId: true, stays: staysFor(base, draft) });
   let inDraft = correspond(base, draft, { byId: true, stays: staysFor(base, live) });
-  draft = unifyAdded(live, draft, inLive, inDraft);
+  draft = unifyAdded(live, draft, inLive, inDraft, fire);
   const stretches = settleStretches(base, live, draft, inLive, inDraft);
   if (stretches) {
+    fire("draft-wins-stretch", stretches.stretches.length);
     live = stretches.live;
     inLive = stretches.inLive;
   }
-  const attributes = mergeAttributes(base, live, draft, inLive, inDraft);
+  const attributes = mergeAttributes(base, live, draft, inLive, inDraft, fire);
   [base, live, draft] = attributes.sides;
   let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
   let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
 
   const order = mergeOrder({ ...sides, inLive, inDraft });
+  fire("draft-wins-order", order.contested.length + (order.cyclic ? 1 : 0));
   if (order.reordered) {
+    fire("moved-paragraph-keeps-edits");
     baseIds = order.baseOrder;
     inLive = relaid(inLive, order.baseOrder, order.liveOrder);
     inDraft = relaid(inDraft, order.baseOrder, order.draftOrder);
@@ -464,6 +502,7 @@ export function rebase(
   const sourceIds = (source: number[]) => [
     ...new Set(source.map((i) => baseIds[baseSide.blockOf[i]])),
   ];
+  fire("moved-text-dropped", movedByLive.length);
   for (const m of movedByLive) {
     // The stale paste vanished, but words kept at the edited source were not replaced.
     overrode += m.source.filter((i) => isWordTok(baseToks[i]) && draftAlignment.pos[i] < 0).length;
@@ -489,13 +528,9 @@ export function rebase(
     });
   }
 
-  if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
-    liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
-  if (reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks))
-    draftAlignment.pos = posMap(baseToks.length, draftAlignment.hunks);
-  peel(liveAlignment.hunks, draftAlignment.hunks);
+  fire("shared-edge-kept-once", peel(liveAlignment.hunks, draftAlignment.hunks));
 
-  const clusters = clusterHunks(liveAlignment.hunks, draftAlignment.hunks, baseToks);
+  const clusters = clusterHunks(liveAlignment.hunks, draftAlignment.hunks, baseToks, fire);
   const merged: MergedTok[] = [];
   const copyBase = (from: number, to: number) => {
     for (let i = from; i < to; i++) merged.push({ tok: baseToks[i], origin: BASE, index: i });
@@ -506,6 +541,7 @@ export function rebase(
     const next = clusters[ci + 1];
     const coalesced = next ? coalesce(cluster, next, baseToks) : null;
     if (next && coalesced) {
+      fire("neighbouring-changes-joined");
       copyBase(at, cluster.lo);
       merged.push(...coalesced);
       at = next.hi;
@@ -523,6 +559,7 @@ export function rebase(
     const draftVersion = applyWithin(baseToks, lo, hi, draftHunks, DRAFT);
     const markMerged = mergeMarks(baseToks, liveHunks, draftHunks);
     if (markMerged) {
+      fire("marks-merged");
       merged.push(markMerged);
       continue;
     }
@@ -535,6 +572,7 @@ export function rebase(
         ? null
         : mergeContainers(schema, baseToks.slice(lo, hi), liveVersion, draftVersion, idsIn(lo, hi));
     if (nested) {
+      addCounts(fire, nested.rules);
       merged.push(...nested.merged);
       overrode += nested.overrode;
       conflicts.push(...nested.conflicts);
@@ -542,7 +580,7 @@ export function rebase(
       continue;
     }
     if (lo === hi) {
-      merged.push(...unionInsertions(liveVersion, draftVersion));
+      merged.push(...unionInsertions(liveVersion, draftVersion, fire));
       continue;
     }
     // One side's text may already carry the other's change here (the same edit made on both sides
@@ -557,6 +595,11 @@ export function rebase(
         if (tok) retained.push({ tok, origin: DRAFT, index: i });
       }
       replacedWords(liveVersion, retained);
+      fire(
+        [...liveVersion, ...draftVersion].some((o) => o.tok.kind === "atom")
+          ? "whole-block-unit"
+          : "draft-wins-text",
+      );
       conflicts.push({
         kind: "overlap",
         baseIds: idsIn(lo, hi),
@@ -574,7 +617,11 @@ export function rebase(
     { base: baseToks, live: liveSide.toks, draft: draftSide.toks },
     liveAlignment.pos,
     draftAlignment.pos,
+    fire,
   );
-  const { blocks } = buildBlocks(schema, settled);
+  const { blocks, shape } = buildBlocks(schema, settled);
+  fire("mark-dropped", shape.markDropped);
+  fire("inline-moved-out", shape.inlineMovedOut);
+  fire("stray-inline-wrapped", shape.strayInlineWrapped);
   return { blocks, overrode, conflicts, orderConflict };
 }

@@ -464,9 +464,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   never counts and a writer who types on a train gets delivery on reconnect, however
   long it takes. (Elapsed connected time, not a refusal count: the transport counts
   refusals for draft rooms only, and a live-room count would change every live session.)
-  The edits stay in IndexedDB in every case.
+  The edits stay in IndexedDB in every case but a removed room.
 - A removed room (4208) retires at once, before an availability check can prove a
-  restore and restart it; its edits wait in IndexedDB for the next open.
+  restore and restart it. `destroy` clears the local copy of a closed or removed room, so
+  its unsent edits do not wait in IndexedDB for a next open.
 - Restarting a removed or unavailable room cancels its pending teardown and schedules
   it again when no host retains the room.
 

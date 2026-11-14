@@ -12,7 +12,6 @@
 import { Fragment, type Node as PMNode, type Schema } from "prosemirror-model";
 import { blocksEqual } from "./equal.js";
 import { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
-import { rebase } from "./merge.js";
 import { buildBlocks, isBlockTok, type Side, type Tok } from "./tokens.js";
 
 export interface SpanPatch {
@@ -139,18 +138,6 @@ export function applySpanPatches(
   ))
     out.splice(p[side].from, p[side].to - p[side].from, ...p.blocks);
   return out;
-}
-
-/** The shared server write and optimistic fold of a frozen Apply click (O → P). */
-export function applyBase(
-  schema: Schema,
-  committed: readonly PMNode[],
-  optimistic: readonly PMNode[],
-  patched: readonly PMNode[],
-): readonly PMNode[] {
-  return blocksEqual(optimistic, committed)
-    ? patched
-    : rebase(schema, optimistic, committed, patched).blocks;
 }
 
 /** One block-range delta from the room's base to the base the writer saw, not a chain of clicks. */

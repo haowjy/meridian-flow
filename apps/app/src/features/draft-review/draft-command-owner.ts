@@ -2,9 +2,9 @@
  * Account-lifetime command ownership. Each review item owns one frozen FIFO for its text, tree
  * and text+tree clicks; each draft room is a resource the item attaches, with its optimistic base.
  */
+import { applyBase } from "@meridian/agent-edit/content-merge";
 import {
   APPLY_RECORD_ROOT,
-  applyBase,
   applySpanPatches,
   baseViewDelta,
   blocksEqual,
