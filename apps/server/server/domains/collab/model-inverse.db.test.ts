@@ -19,6 +19,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDraftDispositionReader } from "./domain/draft-disposition.js";
@@ -51,6 +52,7 @@ describe("model document stack", () => {
         turnInverse: { reverseTurn: view.collab.reverseTurn },
         resolveDocumentUri,
         listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
+        commands: createDrizzleDocumentCommands(db),
         threadContext: { requireThreadOwner: async () => ({ projectId: PROJECT_ID }) },
       });
       const liveContext = { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) };
@@ -124,6 +126,7 @@ describe("model document stack", () => {
         for (const direction of ["undo", "redo"] as const) {
           expect(
             await card.reverseThreadContext({
+              commandId: randomUUID(),
               threadId: THREAD_ID,
               turnId,
               direction,
@@ -140,6 +143,7 @@ describe("model document stack", () => {
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
       expect(
         await card.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD_ID,
           turnId,
           direction: "undo",
@@ -149,6 +153,7 @@ describe("model document stack", () => {
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(
         await card.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD_ID,
           turnId,
           direction: "redo",

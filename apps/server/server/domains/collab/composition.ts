@@ -664,6 +664,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     turnInverse,
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
+    commands,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

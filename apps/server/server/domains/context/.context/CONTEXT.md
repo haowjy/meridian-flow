@@ -255,7 +255,10 @@ one source's tree contributes.
   refusal, a retryable failure, a replay that never reads it). A process crash between a put
   and the rollback still leaks it (the model copy tool leaks the same way; one storage sweep
   would cover both).
-- The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
+- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the receipt the
+  client reads back through `GET .../context/operations/:id`) owns the transaction: the claim is its first
+  write, a refusal after it is stored, and a transient `io_error` rolls the claim back so the id stays
+  retryable. Move and delete still use `context_operation_receipts`. Inside it the command
   transaction takes the destination's Work and namespace, and nothing else: the sources are
   a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
   of what the writer saw. The command re-resolves an identity destination through the

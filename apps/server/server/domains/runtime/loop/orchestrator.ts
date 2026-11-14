@@ -1,4 +1,3 @@
-import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Ordered model/tool loop. Preparation commits initial turns and report admission;
  * execution publishes through the journal, never a caller-driven event generator.
@@ -45,39 +44,21 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import {
-  type AgentEditResultV1,
-  createReplyMutations,
-  type FrontierLookup,
-  isAgentEditResultEnvelope,
-  type LinkShowing,
-  modelResult,
-  type ObservationFrontier,
-  type ResponseCommitWriteReceipt,
-  renderAgentEditResult,
-  type WriteRejection,
-} from "@meridian/agent-edit/integration";
+import { createReplyMutations } from "@meridian/agent-edit/integration";
 import {
   isMeridianError,
   type MeridianError,
   meridianErrorFromGateway,
   meridianErrorFromSystem,
 } from "@meridian/contracts/errors";
-import type {
-  DocumentRemovalRecord,
-  DocumentRevisionEvidence,
-  PermissionDeniedReason,
-} from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
   JsonObject,
-  JsonValue,
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
-  ToolContentPart,
   Turn,
 } from "@meridian/contracts/threads";
 import type {
@@ -149,7 +130,7 @@ import { failCompactionSuccessor } from "./compaction-successor.js";
 import { createDeltaJournal } from "./delta-journal.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
-import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
+import { CreditedBlocks, frontierLookup } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import {
   createLocalTurn,
@@ -309,49 +290,6 @@ export interface OrchestratorDeps {
   shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
   observationFrontiers: ObservationFrontiers;
-  responseWrites: {
-    commitResponse(
-      responseIdentity: ModelResponseIdentity,
-      ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier: FrontierLookup },
-      beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
-    ): Promise<ResponseWriteCommitOutcome>;
-    /** What a rollback couldn't reverse (a move back to a taken location); the rest it did. */
-    rollbackResponse(
-      responseIdentity: ModelResponseIdentity,
-      ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<{ skipped: readonly { uri: string; cause: string }[] } | undefined>;
-  };
-}
-
-type ResponseWriteCommitOutcome =
-  | {
-      status: "committed";
-      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /** The saved documents' frontiers at the save's after-state, for those that recorded one. */
-      frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      /** Documents the save left out; their writes did not land. */
-      refused: Array<{
-        documentId: string;
-        message: string;
-        reason?: PermissionDeniedReason;
-        rejected?: WriteRejection;
-        removal?: DocumentRemovalRecord;
-      }>;
-    }
-  | { status: "branch_closed"; responseId: string; mode: "draft" };
-
-function settledReceipt(
-  receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
-  documentId: string,
-  settlementId: string,
-): ResponseCommitWriteReceipt {
-  const settled = receipts.find(
-    (entry) => entry.documentId === documentId && entry.receipt.settlementId === settlementId,
-  );
-  if (!settled) {
-    throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
-  }
-  return settled.receipt;
 }
 
 export function createOrchestrator(deps: OrchestratorDeps) {
@@ -790,7 +728,6 @@ async function runDrainTurn(
             input.threadId,
             selection.activeLeafTurnId,
             async () => {
-              await reconcileOrphanedPendingWrites(deps, input.threadId);
               if (preflight)
                 await persistPreparedPromptBake(
                   preflight.assembled,
@@ -946,30 +883,6 @@ async function loadRunStartContext(
     prevTurnId,
     contextError: null,
   };
-}
-
-async function reconcileOrphanedPendingWrites(
-  deps: OrchestratorDeps,
-  threadId: ThreadId,
-): Promise<void> {
-  const blocks = await deps.repos.blocks.listByThread(threadId);
-  for (const block of blocks) {
-    if (block.blockType !== "tool_result") continue;
-    const content = block.content as {
-      result?: unknown;
-      metadata?: { stagedWrite?: unknown };
-    } | null;
-    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.result)) {
-      continue;
-    }
-    if (content.result.phase !== "staged") continue;
-    await persistUncommittedWriteResult({
-      deps,
-      threadId,
-      block,
-      text: "The response ended before its staged write could commit. Re-read and retry.",
-    });
-  }
 }
 
 async function persistModelResponse(input: {
@@ -1149,16 +1062,6 @@ async function settleCancelledResponse(input: {
     });
     currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    await input.deps.responseWrites.rollbackResponse(
-      {
-        providerResponseId: persistedResponse.responseId,
-        editScopeId: persistedResponse.responseId,
-      },
-      {
-        threadId: input.runInput.threadId,
-        turnId: currentTurn.id,
-      },
-    );
   }
   return currentTurn;
 }
@@ -1229,145 +1132,6 @@ async function persistToolOutcome(input: {
     block: persistedRejection.result,
     nextBlockSeq: blockSeq,
   };
-}
-
-/** A staged write block's typed result, kept beside its rendered text. */
-function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
-  const result = (block.content as { result?: unknown } | null)?.result;
-  return isAgentEditResultEnvelope(result) ? (result as AgentEditResultV1) : undefined;
-}
-
-/** A write's tool-result fields: the model's text and the typed result beside it. */
-function writeResultContent(result: AgentEditResultV1): {
-  content: ToolContentPart[];
-  result: JsonValue;
-} {
-  return { content: textContent(renderAgentEditResult(result)), result: toJsonValue(result) };
-}
-
-async function persistUncommittedWriteResult(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  block: Block;
-  text: string;
-  /** Already-rendered per-write failure from the save boundary. */
-  message?: string;
-  status?: "internal_error" | "invalid_write";
-  /** A file-policy refusal at the save: `permission_denied` with this reason. */
-  reason?: PermissionDeniedReason;
-  /** Why the host rejected a staged write, so the chat can say it plainly. */
-  rejected?: WriteRejection;
-  /** The removal record beside `rejected: "removed"`. */
-  removal?: DocumentRemovalRecord;
-}): Promise<{ block: Block }> {
-  const content = input.block.content as { toolCallId?: string } | null;
-  const toolCallId = content?.toolCallId ?? "";
-  const staged = stagedWriteResult(input.block);
-  const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
-  const { content: resultContent, result } = writeResultContent(
-    modelResult({
-      command: staged?.command ?? "unknown",
-      status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
-      payload: {
-        ...(staged?.path ? { path: staged.path } : {}),
-        ...(input.reason ? { reason: input.reason } : {}),
-        ...(input.rejected ? { rejected: input.rejected } : {}),
-        ...(input.removal ? { removal: input.removal } : {}),
-        message,
-      },
-    }),
-  );
-  const persisted = await persistAndAppendEvents(
-    input.deps,
-    input.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        id: input.block.id,
-        turnId: input.block.turnId,
-        responseId: input.block.responseId,
-        blockType: "tool_result",
-        sequence: input.block.sequence,
-        content: { toolCallId, content: resultContent, result, isError: true },
-        provider: input.block.provider,
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [
-          { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, content: resultContent, result, isError: true },
-        ],
-      };
-    },
-    // The failure shows no document: whatever the result recorded goes with the text it replaced.
-    { afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, undefined) },
-  );
-  return { block: persisted.result };
-}
-
-/** A replaced result's frontier is its new rendering's, in the transaction that replaces it. */
-function replaceFrontier(
-  deps: OrchestratorDeps,
-  threadId: ThreadId,
-  block: Block,
-  frontier: ObservationFrontier | undefined,
-): Promise<void> {
-  return recordFrontier(deps, block.id, frontier, { threadId, turnId: block.turnId });
-}
-
-async function persistCommittedWriteResult(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  block: Block;
-  result: AgentEditResultV1;
-  documentRevision: DocumentRevisionEvidence;
-  /** The save's post-commit frontier, on the document's last settled result only. */
-  frontier: ObservationFrontier | undefined;
-}): Promise<{ block: Block }> {
-  const content = input.block.content as {
-    toolCallId?: string;
-    metadata?: Record<string, unknown>;
-  } | null;
-  const metadata = { ...content?.metadata };
-  metadata.documentRevisions = [input.documentRevision];
-  const toolCallId = content?.toolCallId ?? "";
-  // The settled receipt describes the same document and destination the staged result named.
-  const staged = stagedWriteResult(input.block);
-  const { content: resultContent, result } = writeResultContent({
-    ...input.result,
-    ...(staged?.path ? { path: staged.path } : {}),
-    ...(staged?.notice ? { notice: staged.notice } : {}),
-    ...(staged?.owner ? { owner: staged.owner } : {}),
-    ...(staged?.destination ? { destination: staged.destination } : {}),
-    ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
-  });
-  const persisted = await persistAndAppendEvents(
-    input.deps,
-    input.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        id: input.block.id,
-        turnId: input.block.turnId,
-        responseId: input.block.responseId,
-        blockType: "tool_result",
-        sequence: input.block.sequence,
-        content: toJsonValue({ toolCallId, content: resultContent, result, metadata }),
-        provider: input.block.provider,
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [
-          { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, content: resultContent, result },
-        ],
-      };
-    },
-    {
-      afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, input.frontier),
-    },
-  );
-  return { block: persisted.result };
 }
 
 /**
@@ -1571,206 +1335,6 @@ function buildGenerateRequestFromAssembled(input: {
   };
 }
 
-/**
- * A call that must see the reply's writes saved first. History reversal needs
- * saved edits, and a Work switch must settle earlier writes under the old Work.
- */
-function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
-  const args = call.arguments;
-  if (!args || typeof args !== "object") return false;
-  if (call.name === "read" && "format" in args && args.format === "edits") return true;
-  if (call.name === "work" && "command" in args && args.command === "switch") return true;
-  if (call.name !== "write" || !("command" in args)) {
-    return false;
-  }
-  return args.command === "undo" || args.command === "redo" || args.command === "revert";
-}
-
-/** Staged edits belong to a response scope, which rotates at a save boundary. */
-function createResponseScope(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  turnId: TurnId;
-  responseId: string;
-  allBlocks: Block[];
-  credited: CreditedBlocks;
-}) {
-  const { deps, threadId, turnId, allBlocks, credited } = input;
-  const writes = new Map<
-    string,
-    Array<{
-      block: Block;
-      writeId: string;
-      settlementId: string;
-      uri: string | null;
-    }>
-  >();
-  /** Records what a settled receipt showed the model, from the binding that rendered it. */
-  const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
-    if (!shown.showing) return;
-    await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
-  };
-  let id = input.responseId;
-  let active = true;
-  /** A move or delete committed at its call, so a save boundary after it rotates the scope. */
-  let treeWrites = false;
-  const reply = createReplyMutations();
-  return {
-    get id() {
-      return id;
-    },
-    /** The reply's own accepted mutations: they outlive edit-scope rotations, not the reply. */
-    reply,
-    get hasWrites() {
-      return writes.size > 0 || treeWrites;
-    },
-    rotate() {
-      // Durable tool blocks keep the provider response id; only edit identity rotates.
-      id = crypto.randomUUID();
-      writes.clear();
-      treeWrites = false;
-      active = true;
-    },
-    stage(dispatched: Extract<Awaited<ReturnType<typeof dispatchToolCall>>, { block: Block }>) {
-      const metadata = dispatched.metadata;
-      if (metadata?.treeWrite === true) treeWrites = true;
-      if (metadata?.stagedWrite !== true || typeof metadata.documentId !== "string") return;
-      if (typeof metadata.writeId !== "string" || typeof metadata.settlementId !== "string")
-        throw new Error(
-          `Staged write result missing write or settlement id for ${metadata.documentId}.`,
-        );
-      // Capture the source address before commit, not from a loosely typed block after apply.
-      const [{ uri }] = metadata.documentRevisions as [DocumentRevisionEvidence];
-      const blocks = writes.get(metadata.documentId) ?? [];
-      blocks.push({
-        uri,
-        block: dispatched.block,
-        writeId: metadata.writeId,
-        settlementId: metadata.settlementId,
-      });
-      writes.set(metadata.documentId, blocks);
-    },
-    async commit() {
-      const persistSettledReceipt = async (
-        documentId: string,
-        write: { block: Block; uri: string | null },
-        receipt: ResponseCommitWriteReceipt,
-        frontier: ObservationFrontier | undefined,
-      ) => {
-        if (receipt.result.status !== "success")
-          return persistUncommittedWriteResult({
-            deps,
-            threadId,
-            block: write.block,
-            status: "invalid_write",
-            text: "the user discarded the text it edited. Re-read and retry.",
-            message: receipt.result.message,
-            ...(receipt.result.rejected ? { rejected: receipt.result.rejected } : {}),
-            ...(receipt.result.removal ? { removal: receipt.result.removal } : {}),
-          });
-        // The settled receipt replaces the staged echo; both were shown.
-        await recordShown(documentId, receipt);
-        return persistCommittedWriteResult({
-          deps,
-          threadId,
-          block: write.block,
-          documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
-          result: receipt.result,
-          frontier,
-        });
-      };
-      const finalized: Array<{ write: { block: Block }; block: Block }> = [];
-      const outcome = await deps.responseWrites.commitResponse(
-        { providerResponseId: input.responseId, editScopeId: id },
-        {
-          threadId,
-          turnId,
-          // The settled receipts are a result like any other: their frontier chains from the
-          // model's latest row, which may be a sibling read's in this step.
-          recordingFrontier: frontierLookup(deps, () => credited.ids(), { threadId, turnId }),
-        },
-        async (settled) => {
-          for (const [documentId, blocks] of writes) {
-            const refusal =
-              settled.status === "committed"
-                ? settled.refused.find((refused) => refused.documentId === documentId)
-                : undefined;
-            // The document's frontier records on its last settled receipt, the step's latest
-            // result there.
-            const frontier =
-              settled.status === "committed" && !refusal
-                ? settled.frontiers?.find((entry) => entry.documentId === documentId)?.frontier
-                : undefined;
-            const lastSettled =
-              settled.status === "committed" && !refusal
-                ? [...blocks]
-                    .reverse()
-                    .find(
-                      (write) =>
-                        settledReceipt(settled.receipts, documentId, write.settlementId).result
-                          .status === "success",
-                    )
-                : undefined;
-            for (const write of blocks) {
-              const result = refusal
-                ? await persistUncommittedWriteResult({
-                    deps,
-                    threadId,
-                    block: write.block,
-                    status: "invalid_write",
-                    ...(refusal.reason ? { reason: refusal.reason } : {}),
-                    ...(refusal.rejected ? { rejected: refusal.rejected } : {}),
-                    ...(refusal.removal ? { removal: refusal.removal } : {}),
-                    // A removal's sentence stands alone, as the peer path's receipt gives it.
-                    ...(refusal.rejected === "removed" ? { message: refusal.message } : {}),
-                    text: refusal.message,
-                  })
-                : settled.status === "committed"
-                  ? await persistSettledReceipt(
-                      documentId,
-                      write,
-                      settledReceipt(settled.receipts, documentId, write.settlementId),
-                      write === lastSettled ? frontier : undefined,
-                    )
-                  : await persistUncommittedWriteResult({
-                      deps,
-                      threadId,
-                      block: write.block,
-                      text: "The response closed before its staged write could commit. Re-read and retry.",
-                    });
-              finalized.push({ write, block: result.block });
-            }
-          }
-        },
-      );
-      active = false;
-      for (const { write, block } of finalized) {
-        write.block = block;
-        const index = allBlocks.findIndex((existing) => existing.id === block.id);
-        if (index >= 0) allBlocks[index] = block;
-      }
-      return outcome;
-    },
-    async rollback() {
-      if (!active) return;
-      active = false;
-      const rolledBack = await deps.responseWrites.rollbackResponse(
-        { providerResponseId: input.responseId, editScopeId: id },
-        { threadId, turnId },
-      );
-      // Each move or delete reverses on its own; one that couldn't is reported, not fatal.
-      if (rolledBack?.skipped.length)
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "response_rollback.partial",
-          correlation: { threadId, turnId, runId: turnId },
-          payload: { threadId, turnId, skipped: rolledBack.skipped.map((skip) => ({ ...skip })) },
-        });
-    },
-  };
-}
-
 async function executeLoop({
   deps,
   input,
@@ -1854,7 +1418,6 @@ async function executeLoop({
     }
     await settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget });
   }
-  let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const credited = new CreditedBlocks(initialContext?.creditedBlockIds);
   // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
@@ -1997,10 +1560,6 @@ async function executeLoop({
           ),
           signal: input.signal,
           forcedDecision,
-          assertNoResponseScope: () => {
-            if (responseScope)
-              throw new Error("Undo revision query requires no open response scope");
-          },
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
         return {
@@ -2089,10 +1648,6 @@ async function executeLoop({
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
-      assertNoResponseScope: () => {
-        if (responseScope)
-          throw new Error("Compaction revision query requires no open response scope");
-      },
       input,
       thread,
       currentTurn: currentTurn,
@@ -2109,12 +1664,6 @@ async function executeLoop({
     pendingSummaryResponses = [];
     pendingSummary = undefined;
     return acceptBoundary(result.successor);
-  }
-
-  async function rollbackActiveResponse(): Promise<void> {
-    const scope = responseScope;
-    responseScope = undefined;
-    await scope?.rollback();
   }
 
   async function exitRun(continueOnPending: boolean, cause: TerminalCause): Promise<boolean> {
@@ -2156,13 +1705,7 @@ async function executeLoop({
       ? cancelExit()
       : exitRun(false, { kind: "success", finishReason: "end_turn" });
 
-  // The one cancel exit: discard an in-flight response, then finalize through
-  // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
-  // cannot diverge.
-  async function cancelExit(): Promise<boolean> {
-    await rollbackActiveResponse();
-    return exitRun(false, abortTerminal());
-  }
+  const cancelExit = () => exitRun(false, abortTerminal());
 
   // One loader for request-only skill bodies: a writer start passes its
   // activated slugs on the input; a drained or mid-run adopted writer turn
@@ -2583,16 +2126,8 @@ async function executeLoop({
         // turn are numbered contiguously regardless of which iteration
         // created them.
         if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
-          const scope = createResponseScope({
-            deps,
-            threadId: input.threadId,
-            turnId: currentTurn.id,
-            responseId,
-            allBlocks,
-            credited,
-          });
-          responseScope = scope;
           // The reply owns its own-mutation sequence until here, whichever way it ends.
+          const reply = createReplyMutations();
           try {
             if (isCancelled()) {
               return cancelExit();
@@ -2627,15 +2162,6 @@ async function executeLoop({
                   allBlocks.push(held.block);
                   continue;
                 }
-              }
-
-              if (scope.hasWrites && isSaveBoundary(call)) {
-                const boundary = await scope.commit();
-
-                if (boundary.status === "branch_closed") {
-                  return exitRun(true, abortTerminal());
-                }
-                scope.rotate();
               }
 
               // If denied, we still persist a tool_result block (with isError: true)
@@ -2678,7 +2204,6 @@ async function executeLoop({
                   lease: input.lease,
                   agentSlug: built.agentSlug,
                   responseId,
-                  editResponseId: scope.id,
                   threadId: input.threadId,
                   currentTurn,
                   signal: input.signal,
@@ -2689,7 +2214,7 @@ async function executeLoop({
                   planningBlockIds,
                   batch,
                   credited,
-                  replyMutations: scope.reply,
+                  replyMutations: reply,
                   ...(built.resolvedModel ? { model: built.resolvedModel } : {}),
                 },
               );
@@ -2697,19 +2222,11 @@ async function executeLoop({
 
               if (dispatched.kind === "cancelled" || isCancelled()) return cancelExit();
               batchOutcomes.push(dispatched);
-              if (dispatched.kind === "completed") scope.stage(dispatched);
             }
             const batchDisposition = reduceToolBatch(batchOutcomes);
             if (isCancelled()) {
               return cancelExit();
             }
-            const saved = await scope.commit();
-            responseScope = undefined;
-
-            if (saved.status === "branch_closed") {
-              return exitRun(true, abortTerminal());
-            }
-
             if (continuation.kind === "notes") {
               if (continuation.remaining === 0) continuation = { kind: "compaction_due" };
               return true;
@@ -2730,7 +2247,7 @@ async function executeLoop({
 
             return true;
           } finally {
-            scope.reply.clear();
+            reply.clear();
           }
         }
 
@@ -2744,20 +2261,6 @@ async function executeLoop({
         /* The next request starts only after its boundary commits. */
       }
     } catch (err) {
-      try {
-        await rollbackActiveResponse();
-      } catch (rollbackError) {
-        emitEvent(eventSink, {
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "response_rollback.failed",
-          correlation: { threadId: input.threadId },
-          payload: unknownToEventPayload(rollbackError),
-        });
-        // Keep the original turn failure visible. rollbackResponse invalidates
-        // staged runtimes before surfacing cleanup failures, so a second failure
-        // here should not hide the error that broke the response.
-      }
       if (err instanceof LostRunError) {
         // Another process took the run over and settled its turns: nothing here may write.
         currentTurn = (await deps.repos.turns.findById(currentTurn.id)) ?? currentTurn;
@@ -2824,15 +2327,6 @@ async function executeLoop({
         );
       }
     } finally {
-      await rollbackActiveResponse().catch((error) => {
-        emitEvent(eventSink, {
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "response_rollback.failed",
-          correlation: { threadId: input.threadId },
-          payload: unknownToEventPayload(error),
-        });
-      });
       // Helper result delivery is flushed by callers after their live-turn registry
       // is cleared. Draining here would race queued helper system turns into a
       // still-running parent thread.

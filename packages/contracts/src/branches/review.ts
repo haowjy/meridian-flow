@@ -9,6 +9,8 @@
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchId, DocumentCommandId, DraftItemKey, ProjectId, UserId } from "../ids.js";
+import type { ContextOperationReceipt } from "../protocol/context-operation.js";
+import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
 import type { DraftOwnerKey } from "./owner.js";
 
@@ -127,7 +129,21 @@ export type StoredDocumentCommandResult =
   | DiscardCommandResult
   | ApplyClickResult
   | UnapplyClickResult
-  | ModelEditCommandResult;
+  | ModelEditCommandResult
+  | ReverseTurnCommandResult
+  | CopyCommandResult;
+
+/** A chat card's Undo or Redo: the reversal's own outcome; `reversed` when it changed something. */
+export type ReverseTurnCommandResult = {
+  status: "reversed" | "refused";
+  outcome: ReversalOutcome;
+};
+
+/** A Copy: the receipt the writer's client reads, which holds the created ids. */
+export type CopyCommandResult = {
+  status: "copied" | "refused";
+  receipt: ContextOperationReceipt;
+};
 
 /** The tool result a model's edit stores: what its result block holds, before the block's own ids. */
 export type ModelEditToolResult = {
@@ -244,7 +260,14 @@ export type DraftMetadataResponse =
 // answer contract above.
 
 /** Which kind of command a `commandId` was recorded for. */
-export const DOCUMENT_COMMAND_KINDS = ["apply", "unapply", "discard", "model_edit"] as const;
+export const DOCUMENT_COMMAND_KINDS = [
+  "apply",
+  "unapply",
+  "discard",
+  "model_edit",
+  "reverse_turn",
+  "copy",
+] as const;
 export type DocumentCommandKind = (typeof DOCUMENT_COMMAND_KINDS)[number];
 
 /** HTTP 409 code: the `commandId` was already used for a different command. */
