@@ -350,7 +350,7 @@ async function classifyYjsConnectionAdmission(input: {
     // The file policy denies a removed document; `withRemovalRefusal` answers it.
     admitted = await roomAccess(services, userId, fileTarget);
     if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
-      throw permissionDenied("permission-denied");
+      refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
     }
     // The room's explicit touch: a living document missing its authority is seeded empty
     // before the first generation read, which never creates one.
