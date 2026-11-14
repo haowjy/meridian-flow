@@ -549,8 +549,14 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    async serverDeletedBlocks(draftId, ids) {
+    async writerText(draftId, ids) {
       if (!ids.length) return new Set<string>();
+      const runs: { client: number; lo: number; hi: number }[] = [];
+      for (const id of [...ids].sort((a, b) => a.client - b.client || a.clock - b.clock)) {
+        const last = runs[runs.length - 1];
+        if (last && last.client === id.client && id.clock <= last.hi + 1) last.hi = id.clock;
+        else runs.push({ client: id.client, lo: id.clock, hi: id.clock });
+      }
       const rows = await currentDrizzleDb(db)
         .select({ effect: documentEditParts.effect })
         .from(documentEditParts)
@@ -562,12 +568,12 @@ export function createDrizzleDraftStore(
           and(
             sql`${documentEditParts.origin}->>'kind' = 'pending'`,
             sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
-            eq(draftWriteJournal.source, "server"),
-            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
+            sql`(${draftWriteJournal.source} = 'writer' or ${draftWriteJournal.updateMeta}->>'lateTyping' = 'true')`,
+            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'inserted') r
             where ${sql.join(
-              ids.map(
-                (id) =>
-                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
+              runs.map(
+                (run) =>
+                  sql`((r->>'client')::bigint = ${run.client} and (r->>'clock')::bigint <= ${run.hi} and (r->>'clock')::bigint + (r->>'len')::bigint > ${run.lo})`,
               ),
               sql` or `,
             )})`,
@@ -577,7 +583,7 @@ export function createDrizzleDraftStore(
         ids
           .filter((id) =>
             rows.some((row) =>
-              row.effect.deleted.some(
+              row.effect.inserted.some(
                 (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
               ),
             ),

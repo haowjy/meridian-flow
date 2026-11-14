@@ -32,7 +32,7 @@ export { blocksEqual } from "./equal.js";
 export { REVIEW_BASE_FRAGMENT, readBlocks } from "./fragments.js";
 export { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
 export { deleterOf, type ItemAuthor, originOf } from "./item-authorship.js";
-export { findLostEdits, type LostEdit } from "./late-peer.js";
+export { findLostEdits, type LostEdit, type LostEdits } from "./late-peer.js";
 export {
   type LateRecovery,
   type LateTyping,
