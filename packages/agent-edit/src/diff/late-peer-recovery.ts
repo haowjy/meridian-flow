@@ -121,8 +121,9 @@ function typedSpans(
       const str = item.content instanceof Y.ContentString ? item.content.str : null;
       for (let i = 0; i < item.length; i++) {
         const id = Y.createID(item.id.client, item.id.clock + i);
-        if (peerDeleted(id)) continue;
         const key = keyOf(id);
+        // Typing the detector accepted stays typing: its delete-set entry was explained by its block,
+        // and judging it again from the same set would drop it.
         if (str && typed(key)) {
           if (!open) {
             open = { ids: [], text: "" };
@@ -130,7 +131,7 @@ function typedSpans(
           }
           open.ids.push(key);
           open.text += str[i];
-        } else open = null;
+        } else if (!peerDeleted(id)) open = null;
       }
     }
   };
@@ -247,21 +248,51 @@ export function recoverLatePeerEdits(input: {
       const matches = live.filter((s) => !claimed.has(s) && s.ids.some((id) => ids.has(id)));
       for (const s of matches) claimed.add(s);
       // Remembered typing is never deleted, so a span holding a written paragraph's typing still has text.
-      const home = matches.find((s) => s.paragraph);
-      const next = aligned
-        ? { block, ids: span.ids, written: text ? para(text, home?.written?.attrs.id) : null }
-        : null;
-      if (home) {
-        if (text !== home.written?.textContent) {
-          out.written.push(text);
-          rewrite.set(shownAt(home) as number, { text, span: next });
-          extend.set(shownAt(home) as number, { span, oldIds: home.ids });
-        } else if (next) kept.push({ ...home, ids: next.ids });
-      } else if (text) add(anchorOf(item), { text, span: next });
-      else if (next) kept.push({ ...next, paragraph: null });
-      // Other written paragraphs this span now joins (the peer deleted what stood between) fold into it.
-      for (const s of matches)
-        if (s !== home && s.paragraph) rewrite.set(shownAt(s) as number, { text: "", span: null });
+      const published = matches.filter((s) => s.paragraph);
+      /** One run of typing as one paragraph: `home` is the published paragraph it extends, if any. */
+      const place = (run: Span, home: WrittenSpan | undefined) => {
+        const runText = run.text.trim();
+        const next = aligned
+          ? {
+              block,
+              ids: run.ids,
+              written: runText ? para(runText, home?.written?.attrs.id) : null,
+            }
+          : null;
+        if (home) {
+          if (runText !== home.written?.textContent) {
+            out.written.push(runText);
+            rewrite.set(shownAt(home) as number, { text: runText, span: next });
+            extend.set(shownAt(home) as number, { span: run, oldIds: home.ids });
+          } else if (next) kept.push({ ...home, ids: next.ids });
+        } else if (runText) add(anchorOf(item), { text: runText, span: next });
+        else if (next) kept.push({ ...next, paragraph: null });
+      };
+      if (published.length <= 1) {
+        place(span, published[0]);
+        continue;
+      }
+      // The peer removed what stood between paragraphs already shown. Each stays its own paragraph, since
+      // copying one into another would give its words new ids and a peer that saw them would not list
+      // them. New characters join the paragraph before them, or the one after, in place.
+      const owner = new Map<string, WrittenSpan>();
+      for (const s of published) for (const id of s.ids) owner.set(id, s);
+      const segments: Array<{ owner: WrittenSpan | undefined; from: number; to: number }> = [];
+      for (let at = 0; at < span.ids.length; at++) {
+        const who = owner.get(span.ids[at]);
+        const last = segments[segments.length - 1];
+        if (last && last.owner === who) last.to = at + 1;
+        else segments.push({ owner: who, from: at, to: at + 1 });
+      }
+      const claims = new Map<WrittenSpan | undefined, Span>();
+      segments.forEach((seg, i) => {
+        const to = seg.owner ?? segments[i - 1]?.owner ?? segments[i + 1]?.owner;
+        const into = claims.get(to) ?? { ids: [], text: "" };
+        into.ids.push(...span.ids.slice(seg.from, seg.to));
+        into.text += span.text.slice(seg.from, seg.to);
+        claims.set(to, into);
+      });
+      for (const [home, run] of claims) place(run, home);
     }
   }
 

@@ -257,15 +257,21 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   text under the splitter's byline.
 - Late typing recovery (Work drafts), what stays lost or doubled:
   - Typing sent after the typist's own client already held the deletion: the client collected the
-    text (a browser doc collects deleted content), so the update carries no characters. The browser's
-    handback is the only rescue.
+    text (a browser doc collects deleted content), so the update carries no characters, except what
+    its undo history retains. The browser's handback is the only rescue for the rest. What the undo
+    history retains is recovered, and a word deleted and restored offline may then show twice.
   - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
-    applied, and neither is a peer's deletion of the typist's original that it saw before the recovery:
-    a reconnect's resent delete set looks the same. The words stay and the writer deletes them again.
+    applied, and neither is a peer's deletion of the typist's original that it saw before the
+    recovery: a reconnect's resent delete set looks the same. The words stay and the writer deletes
+    them again.
   - A typist who backspaced hidden typing and then received the deletion before resending a whole delete
     set gets that typing back with it: the set lists the block, which explains every deleted character.
+  - When the typist removes the text between two recovered paragraphs, they stay two paragraphs (copying
+    one into the other would give its words new ids, so a peer that saw them would not list them); the
+    new words join the paragraph before them.
   - After a restart in the middle of one burst of keystrokes, the word being typed splits across
-    paragraphs, since the memory that extends a paragraph is not durable.
+    paragraphs. A chosen tradeoff: the spans that extend a paragraph live in memory, and persisting them
+    (the recovery rows hold the ids) costs a journal read on every late frame for a cosmetic split.
   - Two writers' words typed with no separator between them fuse in the recovered paragraph.
   Randomised runs (3 clients typing, deleting words and paragraphs, per-keystroke, merged and
   whole-state frames, a model client, memory loss between bursts; 500 sequences each of 25 and 70 steps

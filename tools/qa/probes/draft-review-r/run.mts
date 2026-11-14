@@ -261,9 +261,12 @@ try {
       s,
       captured(stale, () => textAt(stale).insert(2, "Z")),
     );
+    // The typist joined X and Y by deleting what stood between: the published paragraphs stay as they
+    // are, and the new word joins the one before it in place.
     const result = await read(s);
-    assert.equal(result.length, 2);
-    once(result, "XZY");
+    assert.equal(result.length, 3);
+    once(result, "XZ");
+    once(result, "Y");
   });
   await row("deferred-contained-observer-keeps-newer-recovery-spans", async () => {
     const s = await seed("r-memory-deferred", [paragraph("ab")]);
@@ -301,8 +304,11 @@ try {
         captured(stale, () => textAt(stale).insert(3, "W")),
       );
       const result = await read(s);
-      assert.equal(result.length, 2);
-      once(result, "XZWY");
+      assert.equal(result.length, 3);
+      // Z was typed before the deletion of the separator reached memory, so it joined Y's paragraph, and W
+      // extends that paragraph in place.
+      once(result, "ZWY");
+      once(result, "X");
     } finally {
       resume();
       await outer;
@@ -399,6 +405,59 @@ try {
     );
     const extended = (await read(sixth)).map((b) => b.textContent);
     assert.deepEqual(extended, ["W"]);
+    // Typing a client's undo history retains still travels in its whole state after it received the deletion.
+    const seventh = await seed("r-writer-delete-undo");
+    const undoer = new Y.Doc();
+    docs.push(undoer);
+    Y.applyUpdate(undoer, Y.encodeStateAsUpdate(seventh.room));
+    const history = new Y.UndoManager(fragment(undoer), { captureTimeout: 0 });
+    textAt(undoer).insert(4, "FIRST");
+    textAt(undoer).delete(4, 5);
+    history.undo();
+    const gone = clone(seventh.room);
+    const removal = captured(gone, () => fragment(gone).delete(0, 1));
+    await writer(seventh, removal);
+    Y.applyUpdate(undoer, removal);
+    await writer(seventh, Y.encodeStateAsUpdate(undoer));
+    // The deleted original and its undo copy both survive the block's deletion: the word may show twice.
+    assert.ok((await read(seventh)).some((b) => b.textContent.includes("FIRST")));
+    // A peer that saw two recovered paragraphs deletes both after the typist joins them: only what it
+    // never saw (the joining words) comes back, because neither paragraph was copied.
+    const eighth = await seed("r-writer-delete-join");
+    const joiner = clone(eighth.room),
+      cutter = clone(eighth.room);
+    await writer(
+      eighth,
+      captured(cutter, () => fragment(cutter).delete(0, 1)),
+    );
+    await writer(
+      eighth,
+      captured(joiner, () => textAt(joiner).insert(0, "FIRST")),
+    );
+    await writer(
+      eighth,
+      captured(joiner, () => textAt(joiner).insert(textAt(joiner).length, "SECOND")),
+    );
+    const both = await coordinator.readDraft(eighth.draftId, async (doc) => clone(doc));
+    assert.deepEqual(
+      blocks(both).map((b) => b.textContent),
+      ["FIRST", "SECOND"],
+    );
+    await writer(
+      eighth,
+      captured(joiner, () => {
+        textAt(joiner).delete(5, 11);
+        textAt(joiner).insert(5, "NEW");
+      }),
+    );
+    await writer(
+      eighth,
+      captured(both, () => fragment(both).delete(0, 2)),
+    );
+    assert.deepEqual(
+      (await read(eighth)).map((b) => b.textContent),
+      ["NEW"],
+    );
   });
   await row("effect-drops-after-live-matches-no-key", async () => {
     const s = await seed("r-effect");

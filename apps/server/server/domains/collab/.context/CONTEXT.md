@@ -495,7 +495,8 @@ pulls never count, and nothing is lost when the process restarts. Recovery autho
 in the same append; its opaque per-draft `LateTyping` memory (spans only, to extend
 a paragraph in place) installs only after commit. A paragraph is extended by
 inserting the new characters where the typist placed them among the old ones, so
-the characters a peer saw keep their ids. Deletion-only frames advance memory
+the characters a peer saw keep their ids; paragraphs the typist's edit would join
+stay separate for the same reason. Deletion-only frames advance memory
 without writing; a contained echo with existing recovery observes its deleted
 separators without a row hold. Deferred observers read latest memory at commit
 (`retainLateTypingDeletions` keeps the kernel's memory bound). Stale backspaces
