@@ -38,6 +38,7 @@ import {
   findNoWorkId,
 } from "./context-source-provisioning.js";
 import type { ContextCopyCommandDeps } from "./copy/copy-command.js";
+import { type CopyCommands, createCopyCommands } from "./copy/copy-commands.js";
 import { bindOwners, type OwnerLookup } from "./owner-lookup.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type {
@@ -116,7 +117,7 @@ interface AdapterAssembly {
   treeLists: Pick<TreeListStore, "submit" | "read">;
   db: Database;
   arrivals?: DocumentArrivals;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   owner: { projectId: string; userId: string };
 }
 
@@ -241,6 +242,7 @@ function buildUnifiedContextPort(input: {
   arrivals?: DocumentArrivals;
   drafts: AdapterAssembly["drafts"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  copyCommands?: CopyCommands;
   copy?: ContextCopyCommandDeps;
 }): ContextPort {
   const { scope, storeResolvers, commandTransaction } = input;
@@ -359,6 +361,7 @@ function buildUnifiedContextPort(input: {
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
+    ...(input.copyCommands ? { copyCommands: input.copyCommands } : {}),
     ...(input.copy ? { copy: input.copy } : {}),
   });
 }
@@ -396,7 +399,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
   documentSync: ContextFSDeps["documentSync"] &
     DocumentCreationAggregate &
-    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   /** The project's tree lists: every create, move and delete is a `submit` on one. */
   treeLists: Pick<TreeListStore, "submit" | "read">;
   /** Told when a source is provisioned: the first write into a Work, a chat or a lineage makes it. */
@@ -479,6 +482,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,
         treeLists: options.treeLists,
@@ -496,6 +500,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,
         treeLists: options.treeLists,

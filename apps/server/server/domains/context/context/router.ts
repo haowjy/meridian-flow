@@ -65,6 +65,7 @@ export interface ContextPortRouterDeps {
   /** Who owns what, for near-miss errors and the owner listings. */
   owners?: ProjectOwners;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
+  copyCommands?: import("../copy/copy-commands.js").CopyCommands;
   /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   sources: ReadonlyMap<
@@ -514,6 +515,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     /** One Copy (`copy/` reads, binds and writes; this only resolves its addresses). */
     copy: createContextCopyPort({
       copy: deps.copy,
+      commands: deps.copyCommands,
       commandTransaction: deps.commandTransaction,
       resolveIdentityDestination,
       resolve,
@@ -646,17 +648,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const denied = moveCreationDenied(source.value, folder.value);
       if (denied) return denied;
       return moveNodeAcrossLists(node, source.value, folder.value, change);
-    },
-
-    async retractCreate(uri, options): Promise<Result<void, ContextError>> {
-      const r = await resolveMutation(uri);
-      if (!r.ok) return r;
-      const { adapter, canonical } = r.value;
-      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      const retracted = await callAdapter(canonical, () =>
-        adapter.retractCreate(r.value.path, options.documentId, options.cause),
-      );
-      return retracted.ok ? Ok(undefined) : retracted;
     },
 
     async delete(node, area, options = {}) {

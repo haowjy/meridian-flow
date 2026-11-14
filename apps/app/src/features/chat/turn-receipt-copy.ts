@@ -136,8 +136,6 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
       return t`Moved or deleted after this change`;
     case "refused":
       return t`Couldn't be reversed`;
-    case "rolled_back":
-      return t`Rolled back`;
     case "applied":
       return t`Applied to the manuscript`;
     case "discarded":

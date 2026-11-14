@@ -10,6 +10,7 @@ export * from "./branches";
 export * from "./content";
 export * from "./document-edits";
 export * from "./imports";
+export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";

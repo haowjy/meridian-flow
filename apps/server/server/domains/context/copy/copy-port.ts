@@ -16,6 +16,7 @@ import {
   type CopySourceHandoff,
   createContextCopyCommand,
 } from "./copy-command.js";
+import type { CopyCommands } from "./copy-commands.js";
 
 /** A canonical address resolved to the adapter that owns it. */
 export interface CopyEnd {
@@ -29,6 +30,7 @@ export interface CopyEnd {
 export interface ContextCopyPortDeps {
   /** Absent compositions refuse Copy typed. */
   copy: ContextCopyCommandDeps | undefined;
+  commands: CopyCommands | undefined;
   commandTransaction: ContextCommandTransaction | undefined;
   /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
@@ -56,8 +58,8 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
   return async function copy(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    const { commandTransaction } = deps;
-    if (!deps.copy || !commandTransaction) {
+    const { commands, commandTransaction } = deps;
+    if (!deps.copy || !commands || !commandTransaction) {
       return Err({
         code: "invalid_operation",
         uri: request.destinationUri,
@@ -102,7 +104,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
     const parent = request.destinationParent;
     const folderParent = parent?.kind === "folder" ? parent : null;
     return createContextCopyCommand(deps.copy).copy({
-      environment: { commandTransaction },
+      environment: { commands, commandTransaction },
       request,
       sources,
       destination: destinationHandoff,

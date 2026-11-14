@@ -207,7 +207,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(context.tools.map((tool) => (tool.type === "function" ? tool.name : ""))).toContain(
         "write",
       );
-      const { call, save } = await script.begin();
+      const { call } = await script.begin();
 
       const archive = await call("work", { command: "archive", work: "w1" });
       expect(archive.isError).toBe(true);
@@ -255,7 +255,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Agent ideas.",
       });
       expect(notes.isError).toBeFalsy();
-      await save();
 
       const chapter = await script.runtime.ports.documentSync.readAsMarkdown(CHAPTER_ID);
       expect(chapter.ok && chapter.value).toContain("Writer chapter.");

@@ -8,9 +8,7 @@ The server resolves every item key through the identity module; no caller accept
 ambiguous bare ID. There is at most one active Work draft per
 `(documentId, branchId)`.
 
-`ThreadPeerPullLost` names a failed binding or save fence, not a content pull; a
-retired binding doesn't redirect its staged writes to a replacement draft.
-`DraftReplayJournalReads` uses the ambient transaction, so it sees the reply's
+`DraftReplayJournalReads` uses the ambient transaction, so it sees the command's
 uncommitted receipts.
 
 ## Draft store
@@ -25,8 +23,8 @@ rebases are server appends, not Yjs pulls.
 
 These writes stand outside the doors: the shared close (`drizzle-draft-close.ts`), the
 projection job's effect write, creation and its seeds, which insert the row
-(`ensureDocumentDraft`, `ensureThreadPeerDraft`), and retraction and tree deletion,
-which delete it.
+(`ensureDocumentDraft`), and tree deletion,
+which deletes it.
 
 A Work draft's insert also stores the live room, the live and draft seed snapshots,
 the paired live journal position and state, and the live-origin map for copied

@@ -89,6 +89,8 @@ export async function runTreeToolCommand(
   call: ToolCall,
   input: TreeToolInput,
   ctx: ToolHandlerContext,
+  /** Runs the part that changes things as the call's command. */
+  settle: (effect: () => Promise<unknown>) => Promise<unknown>,
 ) {
   const command = commandOf(input);
   if (isToolError(command)) return command;
@@ -124,7 +126,7 @@ export async function runTreeToolCommand(
       input.command,
       "A change in a Work's draft can't move files between a project and the account's files.",
     );
-  if (crossing) return runMoveAcrossLists(deps, call, ctx, grants, command as never);
+  if (crossing) return runMoveAcrossLists(deps, call, ctx, grants, command as never, settle);
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;
@@ -145,97 +147,99 @@ export async function runTreeToolCommand(
   };
   const port = drafted
     ? call.context.port
-    : contextPortForThread(deps.contextPorts, call.context.resolution, {
-        responseId: ctx.responseIdentity?.editScopeId ?? null,
-        liveWrites: true,
-      });
+    : contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
   let handle: string | undefined;
 
-  const run = await runWithEditGrants(deps.fileAccess, grants, () =>
-    port.treeCommand(area, {
-      origin,
-      drafted,
-      make: (scope) => {
-        const result = runTreeCommand(scope, places, shown, local);
-        return { result, arrived: result.ok ? result.arrived : [], refused: !result.ok };
-      },
-      afterWrite: async (result, scope) => {
-        if (!result.ok || result.made.length === 0) return;
-        const recorded = await history.recordAgentTreeChange({
-          subject: result.subject,
-          nodes: result.touched.map((touched) => ({
-            nodeId: touched.node,
-            beforeAt: touched.before,
-            afterAt: touched.after,
-          })),
-          records: result.made,
-          op: input.command === "create" ? "create" : input.command,
-          threadId: ctx.threadId as ThreadId,
-          ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
-          ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-          ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-          ...(scope.view.draft
-            ? {
-                draftBranchId: scope.view.draft as import("@meridian/contracts").BranchId,
-              }
-            : {}),
-          shownAt: uriOfWritten(result.shownAt),
-        });
-        handle = recorded.handle;
-      },
-    }),
-  );
-  if (!run.ok)
-    return fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string);
-  const done = run.value;
-  if (!done.ok) return writeToolError(input.command, contextErrorMessage(done.error));
-  const result = done.value;
-  if (!result.ok)
-    return {
-      ...refusalOf(input, result),
-      ...(result.status === "path_changed"
-        ? { evidence: { shown: [], ...namesEvidence(result.delta) } }
-        : {}),
-    };
+  return settle(async () => {
+    const run = await runWithEditGrants(deps.fileAccess, grants, () =>
+      port.treeCommand(area, {
+        origin,
+        drafted,
+        make: (scope) => {
+          const result = runTreeCommand(scope, places, shown, local);
+          return { result, arrived: result.ok ? result.arrived : [], refused: !result.ok };
+        },
+        afterWrite: async (result, scope) => {
+          if (!result.ok || result.made.length === 0) return;
+          const recorded = await history.recordAgentTreeChange({
+            subject: result.subject,
+            nodes: result.touched.map((touched) => ({
+              nodeId: touched.node,
+              beforeAt: touched.before,
+              afterAt: touched.after,
+            })),
+            records: result.made,
+            op: input.command === "create" ? "create" : input.command,
+            threadId: ctx.threadId as ThreadId,
+            ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
+            ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+            ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+            ...(scope.view.draft
+              ? {
+                  draftBranchId: scope.view.draft as import("@meridian/contracts").BranchId,
+                }
+              : {}),
+            shownAt: uriOfWritten(result.shownAt),
+          });
+          handle = recorded.handle;
+        },
+      }),
+    );
+    if (!run.ok)
+      return fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string);
+    const done = run.value;
+    if (!done.ok) return writeToolError(input.command, contextErrorMessage(done.error));
+    const result = done.value;
+    if (!result.ok)
+      return {
+        ...refusalOf(input, result),
+        ...(result.status === "path_changed"
+          ? { evidence: { shown: [], ...namesEvidence(result.delta) } }
+          : {}),
+      };
 
-  // A delete is never refused for its Works: they keep their drafts of what it took.
-  const survivingWorks =
-    input.command === "delete" && !drafted && result.taken.length <= 100
-      ? [
-          ...new Set(
-            (
-              await Promise.all(result.taken.map((id) => history.survivingDraftWorks(id as never)))
-            ).flat(),
-          ),
-        ].sort()
-      : [];
-  const payload: Parameters<typeof modelResult>[0]["payload"] = {
-    ...(result.landed ? { path: result.landed } : {}),
-    ...(destination ? { destination: destination.kind } : {}),
-    ...(destination?.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
-    ...(handle ? { write: { id: handle } } : {}),
-    tree: {
-      ...(result.moved ? { moved: result.moved } : {}),
-      ...(result.notMoved.length > 0 ? { notMoved: result.notMoved } : {}),
-      ...(result.deleted !== undefined ? { deleted: result.deleted } : {}),
-      ...(result.kept ? { kept: result.kept } : {}),
-      ...(result.placedAtEnd ? { placedAtEnd: result.placedAtEnd } : {}),
-      ...(result.alreadyDeleted ? { alreadyDeleted: true as const } : {}),
-      ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
-      ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
-      ...(drafted && firstDrafted && result.made.length > 0 ? { firstDrafted: true as const } : {}),
-      ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),
-    },
-  };
-  return {
-    output: modelResult({
-      command: input.command,
-      status: "success",
-      phase: "committed",
-      payload,
-    }),
-    // Committed at the call: a save boundary after it rotates the reply's edit scope.
-    metadata: { treeWrite: true },
-    evidence: { shown: [], ...namesEvidence(result.delta) },
-  };
+    // A delete is never refused for its Works: they keep their drafts of what it took.
+    const survivingWorks =
+      input.command === "delete" && !drafted && result.taken.length <= 100
+        ? [
+            ...new Set(
+              (
+                await Promise.all(
+                  result.taken.map((id) => history.survivingDraftWorks(id as never)),
+                )
+              ).flat(),
+            ),
+          ].sort()
+        : [];
+    const payload: Parameters<typeof modelResult>[0]["payload"] = {
+      ...(result.landed ? { path: result.landed } : {}),
+      ...(destination ? { destination: destination.kind } : {}),
+      ...(destination?.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
+      ...(handle ? { write: { id: handle } } : {}),
+      tree: {
+        ...(result.moved ? { moved: result.moved } : {}),
+        ...(result.notMoved.length > 0 ? { notMoved: result.notMoved } : {}),
+        ...(result.deleted !== undefined ? { deleted: result.deleted } : {}),
+        ...(result.kept ? { kept: result.kept } : {}),
+        ...(result.placedAtEnd ? { placedAtEnd: result.placedAtEnd } : {}),
+        ...(result.alreadyDeleted ? { alreadyDeleted: true as const } : {}),
+        ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
+        ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
+        ...(drafted && firstDrafted && result.made.length > 0
+          ? { firstDrafted: true as const }
+          : {}),
+        ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),
+      },
+    };
+    return {
+      output: modelResult({
+        command: input.command,
+        status: "success",
+        phase: "committed",
+        payload,
+      }),
+      metadata: { treeWrite: true },
+      evidence: { shown: [], ...namesEvidence(result.delta) },
+    };
+  });
 }

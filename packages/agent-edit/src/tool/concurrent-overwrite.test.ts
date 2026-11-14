@@ -136,10 +136,7 @@ const scenarios: Array<{
 ];
 
 describe("concurrent structural mutation matrix", () => {
-  it.each([
-    { path: "staged", responseId: "response-code-overwrite" },
-    { path: "immediate", responseId: undefined },
-  ])("preserves concurrent code-block text on the $path overwrite path", async ({ responseId }) => {
+  it("preserves concurrent code-block text on an overwrite", async () => {
     const { ctx, appendHookCount } = codeHarnessWithHumanEditAfterAppend();
     const result = await ctx.core.write(
       {
@@ -150,50 +147,25 @@ describe("concurrent structural mutation matrix", () => {
       },
       {
         ...context,
-        turnId: `turn-code-overwrite-${responseId ?? "immediate"}`,
-        ...(responseId
-          ? {
-              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-              createdDocument: false,
-            }
-          : {}),
+        turnId: "turn-code-overwrite",
       },
     );
     expectOutcome(result, "success");
-
-    if (responseId) await ctx.core.commitResponse(responseId);
 
     expect(appendHookCount()).toBe(1);
     expect(blockTexts(ctx.liveDoc(DOC_ID)).join("\n")).toContain(HUMAN_MARKER);
   });
 
-  it.each(
-    scenarios.flatMap((scenario) => [
-      { ...scenario, path: "staged", responseId: `response-${scenario.operation}` },
-      { ...scenario, path: "immediate", responseId: undefined },
-    ]),
-  )("$operation on the $path path has the intended parent-identity semantics", async ({
+  it.each(scenarios)("$operation has the intended parent-identity semantics", async ({
     command,
     markerSurvives,
-    responseId,
   }) => {
     const { ctx, appendHookCount } = harnessWithHumanEditAfterAppend();
     const result = await ctx.core.write(command, {
       ...context,
-      turnId: `turn-concurrent-overwrite-${responseId ?? "immediate"}`,
-      ...(responseId
-        ? {
-            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-            createdDocument: false,
-          }
-        : {}),
+      turnId: "turn-concurrent-overwrite",
     });
     expectOutcome(result, "success");
-
-    if (responseId) {
-      expect(appendHookCount()).toBe(0);
-      await ctx.core.commitResponse(responseId);
-    }
 
     expect(appendHookCount()).toBe(1);
     const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
@@ -201,51 +173,37 @@ describe("concurrent structural mutation matrix", () => {
     else expect(visibleText).not.toContain(HUMAN_MARKER);
   });
 
-  it.each(
-    [
-      {
-        operation: "unrelated same-shape overwrite",
-        content: "Unrelated first.\n\nUnrelated second.\n\nUnrelated third.",
-        expectedSurvivors: 3,
-      },
-      // Structural parent deletion remains the documented residual window until
-      // canonical-advancement detection can reject and replan the net diff.
-      {
-        operation: "shrinking overwrite",
-        content: "One unrelated paragraph.",
-        expectedSurvivors: 1,
-      },
-      {
-        operation: "shrinking type-change overwrite",
-        content: "# One heading",
-        expectedSurvivors: 1,
-      },
-    ].flatMap((scenario) => [
-      { ...scenario, path: "staged", responseId: `response-${scenario.operation}` },
-      { ...scenario, path: "immediate", responseId: undefined },
-    ]),
-  )("$operation on the $path path preserves $expectedSurvivors of 3 concurrent markers", async ({
+  it.each([
+    {
+      operation: "unrelated same-shape overwrite",
+      content: "Unrelated first.\n\nUnrelated second.\n\nUnrelated third.",
+      expectedSurvivors: 3,
+    },
+    // Structural parent deletion remains the documented residual window until
+    // canonical-advancement detection can reject and replan the net diff.
+    {
+      operation: "shrinking overwrite",
+      content: "One unrelated paragraph.",
+      expectedSurvivors: 1,
+    },
+    {
+      operation: "shrinking type-change overwrite",
+      content: "# One heading",
+      expectedSurvivors: 1,
+    },
+  ])("$operation preserves $expectedSurvivors of 3 concurrent markers", async ({
     content,
     expectedSurvivors,
-    responseId,
   }) => {
     const ctx = matrixHarnessWithHumanEditsAfterAppend();
     const result = await ctx.core.write(
       { command: "create", file: DOC_ID, content, overwrite: true },
       {
         ...context,
-        turnId: `turn-residual-window-${responseId ?? "immediate"}`,
-        ...(responseId
-          ? {
-              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-              createdDocument: false,
-            }
-          : {}),
+        turnId: "turn-residual-window",
       },
     );
     expectOutcome(result, "success");
-
-    if (responseId) await ctx.core.commitResponse(responseId);
 
     const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
     expect(BLOCK_MARKERS.filter((marker) => visibleText.includes(marker))).toHaveLength(

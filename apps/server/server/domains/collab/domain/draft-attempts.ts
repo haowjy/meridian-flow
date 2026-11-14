@@ -2,7 +2,7 @@
  * The one owner of a bounded draft-store attempt: capture and compute off
  * every lock, one commit scope per attempt, and the lifetime of every candidate the attempt
  * prepared. Operation policy (the bound's exhaustion outcome, the inverse's classification
- * pass, the reply save's retained `confirm` locks) stays with the caller.
+ * pass) stays with the caller.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 

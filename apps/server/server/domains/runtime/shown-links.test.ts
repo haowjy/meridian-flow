@@ -1,5 +1,5 @@
 /**
- * In-memory shown-link storage matches the runtime store contract.
+ * In-memory shown-link storage matches the document side's contract.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - latest-tuple shown-link arbitration and lineage-cutoff inheritance (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
@@ -11,7 +11,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import { describe, expect, it } from "vitest";
 import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createInMemoryRepositories } from "../threads/adapters/in-memory/index.js";
-import { createInMemoryShownLinkStore } from "./adapters/in-memory/shown-links.js";
+import { createInMemoryDocumentEvidence } from "./adapters/in-memory/document-evidence.js";
 import {
   type ShownLinksCheck,
   type ShownLinksRig,
@@ -40,19 +40,18 @@ async function rig(): Promise<ShownLinksRig> {
     originTurnId: answer.id as TurnId,
     spawnDepth: 1,
   });
-  const store = createInMemoryShownLinkStore({
+  const store = createInMemoryDocumentEvidence({
     transactionOwner: owner,
     threads: repos.threads,
     turns: repos.turns,
   });
   const show = (threadId: string, turn: Turn, links: SpelledLinkFact[]) =>
-    store.record({
+    store.resultStored({
+      projectId,
       threadId,
       turnId: turn.id,
-      documentId,
-      holderUri: "kb://chapter.md",
-      view: { kind: "live" },
-      links,
+      shown: [{ documentId, holderUri: "kb://chapter.md", view: { kind: "live" }, links }],
+      frontiers: [],
     });
   return {
     childId: child.id,

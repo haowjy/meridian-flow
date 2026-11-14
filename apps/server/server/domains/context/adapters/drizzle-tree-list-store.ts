@@ -13,6 +13,10 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import {
   currentDrizzleDb,
   type DrizzleDb,
+  type DrizzleTransactionParticipant,
+  deferUntilDrizzleRollback,
+  enlistDrizzleTransactionParticipant,
+  isInDrizzleTransaction,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -31,11 +35,29 @@ import { arriveNodes, claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-
 
 /**
  * This process's copy of one list, brought to the journal's head under the list's lock and
- * changed in place by what the transaction admits. `pending` is the transaction that changed it
- * and has not committed: a copy found in any other transaction's hands is behind the journal or
- * ahead of it, so it is thrown away and reloaded.
+ * changed in place by what the transaction admits. `pending` is the root transaction (its
+ * `Ownership.token`, the same in every savepoint under it) that changed it and has not
+ * committed: a copy found in any other transaction's hands is behind the journal or ahead of
+ * it, so it is thrown away and reloaded. A rollback drops the copies the transaction held.
  */
 type Copy = { doc: Y.Doc; writer: TreeWriter; seq: number; pending: object | null };
+
+/**
+ * What a root transaction holds in this store: its identity, and the lists whose keys it has
+ * taken. A savepoint's state is a fork; one that rolls back leaves its keys out of the parent's.
+ */
+type Ownership = { token: object; keys: Set<string> };
+
+const ownership: DrizzleTransactionParticipant<Ownership> = {
+  key: {},
+  create: () => ({ token: {}, keys: new Set() }),
+  fork: (parent) => ({ token: parent.token, keys: new Set(parent.keys) }),
+  merge(parent, child) {
+    parent.token = child.token;
+    for (const id of child.keys) parent.keys.add(id);
+    return parent;
+  },
+};
 
 /** A list in a transaction that holds its key, with its copy at the journal's head. */
 type Held = { list: TreeList; listId: string; copy: Copy };
@@ -112,9 +134,9 @@ export function createDrizzleTreeListStore(deps: {
     return { retired: row?.retired ?? 0, head: row?.head ?? 0 };
   }
 
-  async function copyAtHead(tx: DrizzleDb, listId: string): Promise<Copy> {
+  async function copyAtHead(tx: DrizzleDb, listId: string, owner: object): Promise<Copy> {
     let copy = copies.get(listId);
-    if (copy && copy.pending !== null && copy.pending !== tx) copy = undefined;
+    if (copy && copy.pending !== null && copy.pending !== owner) copy = undefined;
     const { retired, head } = await journalBounds(tx, listId);
     // Rows up to `retired` may be gone into a checkpoint: a copy behind them cannot catch up
     // from the rows that remain.
@@ -154,7 +176,11 @@ export function createDrizzleTreeListStore(deps: {
    */
   async function viewCopy(tx: DrizzleDb, listId: string): Promise<Copy> {
     const shared = copies.get(listId);
-    if (shared && (shared.pending === null || shared.pending === tx)) return copyAtHead(tx, listId);
+    const owner = isInDrizzleTransaction()
+      ? enlistDrizzleTransactionParticipant(ownership).token
+      : null;
+    if (shared && (shared.pending === null || shared.pending === owner))
+      return copyAtHead(tx, listId, owner ?? {});
     const doc = new Y.Doc({ gc: false });
     const snapshot = await journal.read(listId);
     applyHistory(doc, [
@@ -165,37 +191,66 @@ export function createDrizzleTreeListStore(deps: {
   }
 
   /**
+   * Takes the lists' keys in list-id order, after the Work locks (the lock order in
+   * `collab/.context/CONTEXT.md`), and returns their ids in the caller's order. `held` says the
+   * transaction took them already: a path that takes document keys does it first, and a key
+   * taken here after one could deadlock, so a missing key throws instead of waiting.
+   */
+  async function keysOf(
+    tx: DrizzleDb,
+    lists: readonly TreeList[],
+    mode: "take" | "held",
+  ): Promise<{ ids: string[]; owner: Ownership }> {
+    const owner = enlistDrizzleTransactionParticipant(ownership);
+    // Work rows and lifecycle locks come before any advisory key; the journal's append then
+    // takes no lock it lacks.
+    if (mode === "take") await lockSeamWorks(tx, []);
+    const ids: string[] = [];
+    for (const list of lists) {
+      const listId = await listIdOf(tx, list);
+      if (listId === null) throw new Error("The list's project or account is gone");
+      ids.push(listId);
+    }
+    for (const listId of [...new Set(ids)].sort()) {
+      if (mode === "held") {
+        if (!owner.keys.has(listId))
+          throw new Error(`The list ${listId} is resynced without its key: lock it first`);
+        continue;
+      }
+      await lockDocumentMutation(tx as Database, listId);
+      owner.keys.add(listId);
+    }
+    return { ids, owner };
+  }
+
+  /**
    * One transaction on one or several lists: the Work locks, then the lists' keys in list-id
    * order whatever order `lists` names, then each copy at the journal's head. A failure
-   * discards the copies, which `body` may have changed in place.
+   * discards the copies, which `body` may have changed in place; so does a rollback of the
+   * transaction, or of a savepoint it is nested in, after the body returned.
    */
   function withLists<T>(
     lists: readonly TreeList[],
-    body: (tx: DrizzleDb, held: readonly Held[]) => Promise<T>,
+    body: (tx: DrizzleDb, held: readonly Held[], owner: object) => Promise<T>,
+    mode: "take" | "held" = "take",
   ): Promise<T> {
     return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db);
-      // Work rows and lifecycle locks come before any advisory key (the lock order in
-      // `collab/.context/CONTEXT.md`); the journal's append then takes no lock it lacks.
-      await lockSeamWorks(tx, []);
-      const ids: string[] = [];
-      for (const list of lists) {
-        const listId = await listIdOf(tx, list);
-        if (listId === null) throw new Error("The list's project or account is gone");
-        ids.push(listId);
-      }
-      for (const listId of [...new Set(ids)].sort())
-        await lockDocumentMutation(tx as Database, listId);
+      const { ids, owner } = await keysOf(tx, lists, mode);
       const held: Held[] = [];
       for (const [at, list] of lists.entries()) {
         const listId = ids[at] as string;
-        held.push({ list, listId, copy: await copyAtHead(tx, listId) });
+        held.push({ list, listId, copy: await copyAtHead(tx, listId, owner.token) });
       }
+      const drop = () => {
+        for (const { listId, copy } of held) if (copies.get(listId) === copy) copies.delete(listId);
+      };
+      deferUntilDrizzleRollback(drop);
       try {
         await testHook("treeList.afterLock");
-        return await body(tx, held);
+        return await body(tx, held, owner.token);
       } catch (cause) {
-        for (const { listId } of held) copies.delete(listId);
+        drop();
         throw cause;
       }
     });
@@ -237,8 +292,9 @@ export function createDrizzleTreeListStore(deps: {
     );
     await testHook("treeList.afterRows");
     const committed = { listId, update, seq };
+    const owner = copy.pending;
     runAfterDrizzleCommit(async () => {
-      if (copy.pending === tx) copy.pending = null;
+      if (copy.pending === owner) copy.pending = null;
       await testHook("treeList.afterCommit");
       for (const listener of listeners) listener(committed);
     });
@@ -286,7 +342,7 @@ export function createDrizzleTreeListStore(deps: {
     admit: async ({ list, accountId, update }) => {
       let created: readonly Extract<TreeRecord, { type: "create" }>[] = [];
       try {
-        return await withLists([list], async (tx, [held]) => {
+        return await withLists([list], async (tx, [held], owner) => {
           const { copy, listId } = held as Held;
           const connection: Connection | null = await readConnection(tx, list, accountId);
           if (!connection) return { ok: false as const, reason: NO_WRITE_ACCESS };
@@ -295,7 +351,7 @@ export function createDrizzleTreeListStore(deps: {
           if (!verdict.ok) return verdict;
           if (sameBytes(Y.encodeStateVector(copy.doc), before))
             return { ok: true as const, committed: null };
-          copy.pending = tx;
+          copy.pending = owner;
           const refused = new Set(verdict.refused.map((entry) => entry.id));
           const kept = verdict.kept.map((entry) => entry.record);
           const added = [...verdict.records.filter((record) => !refused.has(record.id)), ...kept];
@@ -326,7 +382,7 @@ export function createDrizzleTreeListStore(deps: {
     },
 
     submit: ({ lists, make }) =>
-      withLists(lists, async (tx, held) => {
+      withLists(lists, async (tx, held, owner) => {
         const marks = held.map(({ copy }) => ({
           before: Y.encodeStateVector(copy.doc),
           ops: recordsOf(copy.doc).length,
@@ -350,7 +406,7 @@ export function createDrizzleTreeListStore(deps: {
         );
         // Marked in this tick, before the first await: a read in this process then reloads
         // instead of seeing a copy ahead of the journal.
-        for (const { held: each } of changes) each.copy.pending = tx;
+        for (const { held: each } of changes) each.copy.pending = owner;
         // A node that leaves a list for another in this change is claimed by the other list
         // when its create is written; the list it leaves writes first, so its row is gone.
         const leaving = new Set(
@@ -406,10 +462,20 @@ export function createDrizzleTreeListStore(deps: {
       return view(writers);
     },
 
+    lock: async (lists) => {
+      await runInDrizzleTransaction(db, async () => {
+        await keysOf(currentDrizzleDb(db), lists, "take");
+      });
+    },
+
     resync: (lists) =>
-      withLists(lists, async (tx, held) => {
-        for (const { list, listId, copy } of held) await syncRows(tx, list, listId, copy.doc, []);
-      }),
+      withLists(
+        lists,
+        async (tx, held) => {
+          for (const { list, listId, copy } of held) await syncRows(tx, list, listId, copy.doc, []);
+        },
+        "held",
+      ),
 
     onCommitted(listener) {
       listeners.add(listener);

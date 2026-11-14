@@ -5,7 +5,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { blockTexts, expectOutcome, hashAt } from "./test-support/assertions.js";
+import { expectOutcome, hashAt } from "./test-support/assertions.js";
 import {
   context,
   harness,
@@ -83,15 +83,14 @@ describe("block copy (from)", () => {
 });
 
 describe("document copy", () => {
-  it("creates the copy as a staged create that commits with the source's nodes", async () => {
+  it("creates the copy with the source's nodes", async () => {
     const ctx = harness();
     seed(ctx, "src.md", SOURCE);
     const nodes = await sourceNodes(ctx, "src.md");
     const responseContext = {
       ...context,
       turnId: "turn-copy",
-      responseIdentity: { providerResponseId: "response-copy", editScopeId: "response-copy" },
-      createdDocument: true,
+      responseIdentity: { modelResponseId: "response-copy" },
     };
 
     const result = await ctx.core.write(
@@ -100,10 +99,6 @@ describe("document copy", () => {
     );
 
     expectOutcome(result, "success");
-    expect(blockTexts(ctx.liveDoc("copy.md")), "the host's empty document, untouched").toEqual([]);
-
-    const commit = await ctx.core.commitResponse("response-copy");
-    expect(commit.stagedCreates.committed).toEqual(["copy.md"]);
     expect(nodesJson(ctx.liveDoc("copy.md"))).toEqual(nodesJson(ctx.liveDoc("src.md")));
   });
 });

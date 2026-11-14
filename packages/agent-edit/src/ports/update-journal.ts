@@ -8,7 +8,6 @@ type JournalMutationBase = {
   threadId: string;
   turnId: string | null;
   authoringResponseId?: string;
-  editScopeId?: string;
   /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as e<N>. */
@@ -22,15 +21,7 @@ type JournalMutationBase = {
   semanticEditIr?: SemanticEditIRV1;
 };
 
-export type JournalMutation = JournalMutationBase &
-  (
-    | { mode: "live" }
-    | {
-        mode: "threadPeer";
-        /** Peer that accepted this buffered write, not its shared upstream. */
-        peerDraftId?: string;
-      }
-  );
+export type JournalMutation = JournalMutationBase;
 
 export type JournalAuthority = { authorityId: string; generation: bigint };
 

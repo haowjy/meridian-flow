@@ -8,19 +8,12 @@ import {
   modelBlockItem,
   modelResult,
 } from "./model-result.js";
-import type {
-  WriteErrorDetail,
-  WriteErrorStatus,
-  WriteOutcome,
-  WriteStatus,
-  WriteSuccessPhase,
-} from "./types.js";
+import type { WriteErrorStatus, WriteOutcome, WriteStatus, WriteSuccessPhase } from "./types.js";
 
 export interface ApplySuccessResponseInput {
   revision?: string | null;
   phase: WriteSuccessPhase;
   writeId?: string;
-  settlementId?: string;
   echo: ApplyEchoHunk[];
   deletedBlocks?: readonly string[];
   awarenessDegraded?: boolean;
@@ -68,18 +61,15 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
-    ...(input.settlementId ? { settlementId: input.settlementId } : {}),
   };
 }
 
 export function status(
   code: Exclude<WriteStatus, "success">,
   message?: string,
-  options: { error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
   return {
     status: code,
-    ...(options.error ? { error: options.error } : {}),
     ...(message ? { model: { message } } : {}),
   };
 }
@@ -100,8 +90,6 @@ export function toOutcome(
     revision: result.revision ?? null,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
-    ...(result.settlementId ? { settlementId: result.settlementId } : {}),
-    ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
     ...(result.aheadSettlements ? { aheadSettlements: result.aheadSettlements } : {}),
     ...(result.showing ? { showing: result.showing } : {}),

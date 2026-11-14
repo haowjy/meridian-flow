@@ -8,7 +8,7 @@
  */
 
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
-import type { WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branches,
@@ -42,6 +42,8 @@ export function createDrizzleWorkPurger(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
+  /** What the model was shown of documents, kept by the document side. */
+  evidence: { forgetThreads(threadIds: readonly ThreadId[]): Promise<void> };
   now?: () => Date;
 }) {
   const now = deps.now ?? (() => new Date());
@@ -220,6 +222,7 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.execute(sql`SET CONSTRAINTS threads_origin_turn_id_turns_id_fk DEFERRED`);
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
+        await deps.evidence.forgetThreads(lockedTree.threadIds);
       }
       // The disposed branches' rows go with the Work and its purged lineages; their closed drafts cascade.
       await activeDb

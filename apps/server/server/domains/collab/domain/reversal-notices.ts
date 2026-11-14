@@ -1,4 +1,4 @@
-/** Notice construction for reversal and post-durability writer-awareness events. */
+/** Notice construction for reversal and writer-awareness events. */
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -10,13 +10,6 @@ export type ReversalNoticeDiagnostics = {
     docId: string;
     threadId: string;
     representativeTurnId?: string | null;
-  }): void;
-  recordFailedAfterDurability(input: {
-    kind: string;
-    threadId: string;
-    documentIds: readonly string[];
-    responseId?: string;
-    cause: unknown;
   }): void;
 };
 
@@ -47,39 +40,6 @@ export async function recordAwarenessDegradedNotice(input: {
       "Your changes are committed, but concurrent user content could not be verified. Re-read to confirm current state.",
     data: { documentIds: [...input.documentIds], documentNames },
   });
-}
-
-export type PostDurabilityNoticeService = {
-  recordAwarenessDegraded(input: {
-    threadId: string;
-    responseId: string;
-    documentIds: readonly string[];
-  }): Promise<void>;
-};
-
-export function createPostDurabilityNoticeService(deps: {
-  notices: NoticePort;
-  documentUriResolver: DocumentUriResolver;
-  diagnostics: ReversalNoticeDiagnostics;
-}): PostDurabilityNoticeService {
-  return {
-    async recordAwarenessDegraded(input) {
-      try {
-        await recordAwarenessDegradedNotice({
-          notices: deps.notices,
-          resolveDocumentUri: deps.documentUriResolver,
-          threadId: input.threadId,
-          documentIds: input.documentIds,
-        });
-      } catch (cause) {
-        deps.diagnostics.recordFailedAfterDurability({
-          kind: "awareness_degraded",
-          ...input,
-          cause,
-        });
-      }
-    },
-  };
 }
 
 export interface TurnInverseNoticePort {

@@ -38,7 +38,7 @@ The write-seam order is:
 4. document mutation locks in ID order.
 
 Taking an advisory or document lock before the Work rows can deadlock archive
-or purge. A new agent write entry point enters through the thread-peer pool or a
+or purge. A new agent write entry point enters through `modelEdits().write` or a
 container grant.
 
 A path that can run concurrently must not hold one pooled connection while

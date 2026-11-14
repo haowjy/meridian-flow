@@ -36,7 +36,13 @@ type InverseInput = {
 /** What the tree took back, and what is still the text engine's. */
 export type TreeInverse =
   | { kind: "answer"; answer: Awaited<ReturnType<typeof reverseReceipt>> }
-  | { kind: "then_text"; count: number; undone: string[] };
+  | {
+      kind: "then_text";
+      count: number;
+      undone: string[];
+      /** The tree half's answer: all the call has to say when the node it took back had the text. */
+      answer: Awaited<ReturnType<typeof reverseReceipt>>;
+    };
 
 type Chosen = { receipts: TreeReceipt[]; text: number };
 
@@ -124,6 +130,7 @@ export async function runTreeInverse(
     kind: "then_text",
     count: chosen.text,
     undone: chosen.receipts.map((receipt) => `e${receipt.wId}`),
+    answer: last,
   };
 }
 
@@ -166,10 +173,7 @@ async function reverseReceipt(
   const drafted = receipt.draftBranchId !== null;
   const port = drafted
     ? call.context.port
-    : contextPortForThread(deps.contextPorts, call.context.resolution, {
-        responseId: ctx.responseIdentity?.editScopeId ?? null,
-        liveWrites: true,
-      });
+    : contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
   let handle: string | undefined;
   const kind = input.command === "redo" ? "redo" : "undo";
   const places = { area: parts.area, roots: new Map<string, string>(), locate: () => null };

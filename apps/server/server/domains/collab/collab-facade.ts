@@ -12,7 +12,6 @@ import type {
   DraftAttributionAccess,
   DraftPeerShadowAccess,
   MarkdownDocumentStore,
-  ResponseWriteFinalizer,
   TurnLiveLineageAccess,
   TurnReversalAccess,
 } from "./contracts.js";
@@ -27,7 +26,6 @@ export type CollabFacadeServices = {
   documents: MarkdownDocumentStore;
   projections: DocumentProjectionRefresher;
   lineage: TurnLiveLineageAccess;
-  responses: ResponseWriteFinalizer;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
   draftAttribution: DraftAttributionAccess;
@@ -47,7 +45,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.documents,
     ...services.projections,
     ...services.lineage,
-    ...services.responses,
     ...services.checkpoints,
     ...services.attribution,
     ...services.draftAttribution,
