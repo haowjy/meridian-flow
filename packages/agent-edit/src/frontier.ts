@@ -380,6 +380,17 @@ function below(ranges: readonly Range[], limit: number): Range[] {
   );
 }
 
+/**
+ * `doc` as the frontier saw it: the document a Work draft seeds from, so a write the model
+ * planned on that view lands in a draft that lacks what the writer typed since. Null when
+ * the history behind the cut is gone.
+ */
+export function docAtFrontier(doc: Y.Doc, frontier: ObservationFrontier): Y.Doc | null {
+  const observed = decodeSnapshot(frontier.snapshot);
+  if (!observed || !containsSnapshot(Y.snapshot(doc), observed)) return null;
+  return Y.createDocFromSnapshot(doc, observed, new Y.Doc({ gc: false }));
+}
+
 /** A planning frontier is usable only in its room and when all its history survives. */
 export function planningSnapshot(
   doc: Y.Doc,
