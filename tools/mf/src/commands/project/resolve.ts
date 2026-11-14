@@ -1,18 +1,27 @@
 /** Project and Work resolution shared by thread, doc, and seed commands. */
 import { decodeWorkHandle, type WorkHandle } from "@meridian/contracts/handles";
-import { apiProjectWorksPath, projectBootstrapResponseSchema } from "@meridian/contracts/protocol";
+import {
+  API_PROJECTS_PATH,
+  apiProjectWorksPath,
+  type ListProjectsResponse,
+} from "@meridian/contracts/protocol";
 import { worksSnapshotSchema } from "@meridian/contracts/works";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
-import { jsonResponse } from "../../core/session";
+import { jsonResponse, unknownJsonResponse } from "../../core/session";
 
-/** `--project <id>`; omitted or `default` ensures and returns the writer's default project. */
+/**
+ * `--project <id>`; omitted or `default` reads the writer's personal project. Authentication
+ * already provisioned it, so this never writes.
+ */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
-  const bootstrap = await session.request("POST", "/api/projects/bootstrap-default", undefined, {
-    decode: jsonResponse(projectBootstrapResponseSchema),
-  });
-  return bootstrap.projectId;
+  const { projects } = (await session.request("GET", API_PROJECTS_PATH, undefined, {
+    decode: unknownJsonResponse,
+  })) as ListProjectsResponse;
+  const personal = projects.find((project) => project.isPersonal);
+  if (!personal) throw new CliError("not_found", "The account has no default project");
+  return personal.id;
 }
 
 /** A Work as its handle names it (`w3` or `@w3`); a bare id passes through. */
