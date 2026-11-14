@@ -36,6 +36,8 @@ const TUNE = {
   candidates: 4,
   /** Entries of a common word's list that are read, nearest the block's place. */
   window: 16,
+  /** Blocks either side of a block's place that are always scored. */
+  near: 2,
 };
 
 /** Weight of the least similar pair that clears `TUNE.similar`; weaker pairs weigh under 200. */
@@ -223,11 +225,19 @@ function similarChain(
       }
       for (let k = from; k < to; k++) votes.set(list[k], (votes.get(list[k]) ?? 0) + 1);
     }
-    const best = [...votes]
-      .sort((x, y) => y[1] - x[1] || Math.abs(x[0] - place) - Math.abs(y[0] - place))
-      .slice(0, TUNE.candidates);
+    const best = new Set(
+      [...votes]
+        .sort((x, y) => y[1] - x[1] || Math.abs(x[0] - place) - Math.abs(y[0] - place))
+        .slice(0, TUNE.candidates)
+        .map(([j]) => j),
+    );
+    // The word index only speeds the search up: the blocks at this one's place, counted from the
+    // gap's start, its end and in proportion, are always scored, so misleading rare words never
+    // leave an edited block unpaired.
+    for (const at of [b0 + (i - a0), b1 - (a1 - i), Math.round(place)])
+      for (let j = at - TUNE.near; j <= at + TUNE.near; j++) if (j >= b0 && j < b1) best.add(j);
     // Largest j first within one old block, so a strictly rising chain takes at most one of them.
-    for (const [j] of best.sort((x, y) => y[0] - x[0]))
+    for (const j of [...best].sort((x, y) => y - x))
       if (weight(old[i], next[j]) >= STRONG) cand.push([i, j]);
   }
   const tails: number[] = [];

@@ -42,8 +42,10 @@ at its first block, and its pieces are of that type too. The pairing is always o
 set: of blocks that cross (swapped paragraphs, a repeated line) one stays and the other is
 deleted and inserted. A gap small enough to score whole pairs by shared words, and a weak
 overlap beats none; blocks of one type that share nothing still pair by position there. A
-larger gap is cut first at the pairs that clear the similarity bar (found through a word
-index, longest in-order chain), and each piece between them is treated the same way. A piece
+larger gap is cut first at the pairs that clear the similarity bar (longest in-order
+chain). A block's candidates come from a word index of its rarest words plus the blocks at its
+place, counted from the gap's start, from its end and in proportion, so misleading rare words
+never leave an edited block unpaired. Each piece between them is treated the same way. A piece
 still too large pairs nothing new: never by position, never by weak overlap, and never does the
 budget remove a pair the cut found. An unpaired block is deleted or inserted, and nothing else
 rebuilds an element. Inside a block the writer pairs atoms the
