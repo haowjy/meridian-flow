@@ -111,11 +111,18 @@ export async function recompileStalePackages(store: AgentRevisionStore): Promise
     if (!source || !Object.keys(source.files).some((path) => agentSlugOf(path) !== undefined)) {
       continue;
     }
-    await publishAgentSource({
-      store,
-      ownerUserId: installation.ownerUserId,
-      source,
-      expectedRevisionId: installation.currentRevisionId,
+    // Another instance booting or saving may have moved the head since the list above.
+    await store.withCatalogTransaction(installation.ownerUserId, async () => {
+      const head = (await store.listInstallations(installation.ownerUserId)).find(
+        (item) => item.coordinate === installation.coordinate,
+      );
+      if (head?.currentRevisionId !== installation.currentRevisionId) return;
+      await publishAgentSource({
+        store,
+        ownerUserId: installation.ownerUserId,
+        source,
+        expectedRevisionId: installation.currentRevisionId,
+      });
     });
   }
 }
