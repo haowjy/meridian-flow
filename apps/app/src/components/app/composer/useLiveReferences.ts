@@ -59,12 +59,26 @@ export function useLiveReferences(
       // Not the writer's edit: Undo must not bring the old name back.
       editor.view.dispatch(transaction.setMeta("addToHistory", false));
     };
-    sync();
-    const stop = catalog.port.subscribe(sync);
-    editor.on("update", sync);
+    // Callers announce changes from React effects, and Tiptap `flushSync`es a chip's React node
+    // view when a respelled chip remounts, which React forbids inside a commit; a microtask is
+    // outside it. One pending pass reads whatever the list and draft are by then.
+    let pending = false;
+    let live = true;
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      queueMicrotask(() => {
+        pending = false;
+        if (live) sync();
+      });
+    };
+    schedule();
+    const stop = catalog.port.subscribe(schedule);
+    editor.on("update", schedule);
     return () => {
+      live = false;
       stop();
-      editor.off("update", sync);
+      editor.off("update", schedule);
     };
   }, [catalog, draft, editor]);
 }

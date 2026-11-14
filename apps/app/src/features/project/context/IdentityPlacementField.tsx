@@ -295,13 +295,19 @@ export function IdentityPlacementField({
                   return;
                 }
                 if (event.key === "Enter") void submit();
+                // Back out the way the writer came in: the prose, not the toolbar before the field.
+                if (event.key === "Tab" && event.shiftKey) {
+                  event.preventDefault();
+                  onExit("escape");
+                  return;
+                }
                 if (event.key === "Escape") {
                   event.preventDefault();
                   onExit("escape");
                 }
                 if (
                   !value &&
-                  ((event.key === "Tab" && !event.shiftKey) || event.key === "ArrowRight") &&
+                  (event.key === "Tab" || event.key === "ArrowRight") &&
                   (ghost || location.leaf)
                 ) {
                   event.preventDefault();
