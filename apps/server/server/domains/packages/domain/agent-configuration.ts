@@ -7,7 +7,7 @@ import {
 import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import { readSkill, skillPath, skillSlugOf } from "./mars.js";
-import type { SkillFiles } from "./skill-files.js";
+import type { SkillFiles } from "./types.js";
 
 export class AgentConfigurationError extends Error {}
 

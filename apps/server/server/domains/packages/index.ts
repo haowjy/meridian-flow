@@ -16,7 +16,6 @@ export {
   buildRetainedSkillResolver,
   type RetainedSkillResolver,
   resolveAgentConfiguration,
-  resolveAgentDependencies,
   retainedPackageSkillMaps,
 } from "./domain/agent-configuration.js";
 export {
@@ -30,18 +29,13 @@ export {
 export {
   AgentSourceError,
   type AgentSourceSnapshot,
-  type CompiledAgent,
   type CompiledAgentDefinition,
-  type CompiledPackage,
-  compilePackage,
-  type NormalizedAgentMetadata,
   type PackageDiagnostic,
 } from "./domain/compile-package.js";
 export {
   seedGeneralAgent,
   seedLaunchAgentPackage,
 } from "./domain/default-package-seeding.js";
-export { GRAMMAR_VERSION } from "./domain/mars.js";
 export {
   exportMarsPackage,
   PackageInstallationNotFoundError,
@@ -61,5 +55,4 @@ export type {
   AgentRevision,
   AgentRevisionBinding,
   AgentRevisionStore,
-  CatalogRevision,
 } from "./ports/agent-revision-store.js";

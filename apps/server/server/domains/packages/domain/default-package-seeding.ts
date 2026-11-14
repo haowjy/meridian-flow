@@ -11,7 +11,7 @@ import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { installSystemAgentSource } from "./bound-agent-catalog.js";
 import type { AgentSourceSnapshot } from "./compile-package.js";
 import { MANIFEST_PATH, readManifest, rewriteBlock } from "./mars.js";
-import type { SkillFiles } from "./skill-files.js";
+import type { SkillFiles } from "./types.js";
 
 const LAUNCH_AGENT_PACKAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

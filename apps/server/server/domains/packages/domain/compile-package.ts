@@ -23,7 +23,7 @@ import {
   skillSlugOf,
   type ToolProjection,
 } from "./mars.js";
-import type { SkillFiles } from "./skill-files.js";
+import type { SkillFiles } from "./types.js";
 
 export class AgentSourceError extends Error {}
 
@@ -274,8 +274,9 @@ function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): 
     const message = `Tool rule ${named}: ${projected.note ?? projected.status}`;
     draft.errors.push(flow(file, `tools-${projected.status}`, message, "error", ["tools", index]));
   });
-  if (projection.ask.length) {
-    const message = `ask runs as allow: ${projection.ask.join(", ")}`;
+  if (projection.ask.length || projection.default === "ask") {
+    const named = projection.default === "ask" ? ["*", ...projection.ask] : projection.ask;
+    const message = `ask runs as allow: ${named.join(", ")}`;
     draft.warnings.push(flow(file, "tools-ask", message, "warning", ["tools"]));
   }
   return projection;
