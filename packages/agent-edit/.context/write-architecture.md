@@ -51,6 +51,11 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
+- Block ids (`id` on every block): the model's Markdown has none, so `projectBlocks` hands the
+  resolver nodes with ids removed, and a block it leaves alone still compares equal to its own
+  Markdown. A block edited by operations keeps its element and id; an inserted block, and a block
+  rewritten whole (`applyBlockDiff`), take fresh ids. `insertBlocks` is the door where the codec's
+  id-free blocks become stored blocks, so it assigns ids; `writeBlocks` refuses a block with none.
 - Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
   there were no room: a node added, removed or retyped inside the block (a table
   row, a quote paragraph), and an inline atom put into

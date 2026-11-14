@@ -56,9 +56,11 @@ export function fixBlockIds(transaction: Transaction, oldState: EditorState): vo
   for (const { node, pos } of blocksOf(oldState.doc)) {
     const id = node.attrs.id as string | null;
     if (id == null) continue;
-    const result = transaction.mapping.mapResult(pos, 1);
-    if (result.deleted) continue;
-    if (transaction.doc.nodeAt(result.pos)?.attrs.id === id) owners.set(id, result.pos);
+    // Content inserted at the block's start goes before it (assoc 1). A block whose own tokens were
+    // replaced (`setNodeMarkup`) reads as deleted, but a block with this id still stands at its start.
+    const mapped = transaction.mapping.mapResult(pos, 1);
+    const at = mapped.deleted ? transaction.mapping.map(pos, -1) : mapped.pos;
+    if (transaction.doc.nodeAt(at)?.attrs.id === id) owners.set(id, at);
   }
 
   // Enter at the start of a block leaves its empty first half where the block was; the text moves on.
