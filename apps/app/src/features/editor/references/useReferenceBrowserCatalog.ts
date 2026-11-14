@@ -54,11 +54,10 @@ export function useReferenceBrowserCatalog(
   );
 
   const latest = useRef({ trees, workNames, warmSources, workRows });
-  latest.current = { trees, workNames, warmSources, workRows };
   const listeners = useRef(new Set<() => void>());
   // The open menu reads through the port, so a change to the trees is its cue to read again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the inputs are the cue
   useEffect(() => {
+    latest.current = { trees, workNames, warmSources, workRows };
     for (const listener of [...listeners.current]) listener();
   }, [trees, workNames, warmSources, workRows]);
 

@@ -49,9 +49,6 @@ have it:
 | Thread subscription, client half | One thread's subscription and replay | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Hand-back and Stop commands | One Stop press, or one request to take queued messages back | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Response | The document writes of one model reply, staged and then saved together | [agent-edit](../../packages/agent-edit/.context/state-machines.md) |
-| Server hold | Whether the server has a document or folder the browser created | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
-| Resource lifecycle | Whether a document or folder exists for the server | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
-| Namespace intent | One place, move, delete or copy on its way to the server | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
 
 ## App
 
@@ -73,7 +70,6 @@ have it:
 | Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |
 | Live document binding | One editor pane's hold on an open document | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
 | Route selection during removal | Which document the route is trying to show | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
-| Rename and move feedback | What to show for one rename or move | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
 | Server feed | The debug overlay's event stream | [features/debug](../../apps/app/src/features/debug/.context/state-machines.md) |
 
 ## Site

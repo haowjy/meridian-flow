@@ -12,7 +12,6 @@ flowchart TB
   server["server<br/><small>HTTP and sockets, every domain's logic</small>"]:::module
   www["www<br/><small>the landing site</small>"]:::module
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
-  resource-replica["resource-replica<br/><small>the local copy of documents</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
@@ -24,7 +23,6 @@ flowchart TB
   gateway["gateway<br/><small>one port to the model providers</small>"]:::package
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"follows a chat with"| thread-client
-  app -->|"keeps documents locally with"| resource-replica
   server -->|"applies the model's edits with"| agent-edit
   server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
@@ -154,17 +152,6 @@ The records, the replay and its rules, Apply, Discard and Undo, the server's che
 - Kind: package
 - Paths: `packages/project-tree/src`
 - Docs: [CONTEXT](../../packages/project-tree/.context/CONTEXT.md), [AGENTS](../../packages/project-tree/AGENTS.md)
-
-## resource-replica
-
-Pure policy for the writer's local copy of documents and folders.
-
-Follows the server's catalogs, its listings of documents and folders. A document's place comes from ids, never from its path. No I/O: the app supplies storage.
-
-- Kind: package
-- Paths: `packages/resource-replica/src`
-- Docs: [CONTEXT](../../packages/resource-replica/.context/CONTEXT.md), [AGENTS](../../packages/resource-replica/AGENTS.md)
-- Machines: [resource-replica](../../packages/resource-replica/.context/state-machines.md)
 
 ## thread-client
 

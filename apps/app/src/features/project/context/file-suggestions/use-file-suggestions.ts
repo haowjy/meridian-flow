@@ -23,8 +23,7 @@ export function useFileSuggestions(
 ): { suggestions: FileSuggestion[] } {
   const { workId, rootThreadId, chatThreadId } = options.owner;
   const schemeKey = options.schemes.join(",");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `schemeKey` stands for the schemes' contents
-  const schemes = useMemo(() => options.schemes, [schemeKey]);
+  const schemes = useMemo(() => schemeKey.split(",") as Options["schemes"], [schemeKey]);
   const views = useProjectTreeViews(projectId, schemes, {
     workId,
     rootThreadId,

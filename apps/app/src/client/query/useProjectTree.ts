@@ -10,10 +10,11 @@ import type {
   TreeListRef,
 } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { dismissedFailures, useDismissalRevision } from "@/core/project-tree/failure-dismissals";
 import { treeFailures } from "@/core/project-tree/tree-failures";
 import { buildTreeView, type TreeFailure, type TreeView } from "@/core/project-tree/tree-view";
+import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
 import type {
   TreeListSession,
   TreeListSnapshot,
@@ -41,14 +42,24 @@ export function useTreeList(list: TreeListRef | null): {
   snapshot: TreeListSnapshot | null;
 } {
   const registry = useOptionalTreeLists();
-  const key = list ? JSON.stringify(list) : null;
-  // The handle is held for the life of the mount: acquired once per list, released with it.
-  const held = useMemo(
-    () => (registry && list ? registry.acquire(list) : null),
-    // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the list's identity
-    [registry, key],
-  );
-  useReleaseOnUnmount(held);
+  const kind = list?.kind ?? null;
+  const owner = list ? (list.kind === "project" ? list.projectId : list.userId) : null;
+  // The handle is held while the caller is mounted on this list, and released with it.
+  const [held, setHeld] = useState<TreeListHandle | null>(null);
+  useEffect(() => {
+    if (!registry || !kind || !owner) {
+      setHeld(null);
+      return;
+    }
+    const handle = registry.acquire(
+      kind === "project" ? { kind, projectId: owner } : { kind, userId: owner },
+    );
+    setHeld(handle);
+    return () => {
+      handle.release();
+      setHeld(null);
+    };
+  }, [registry, kind, owner]);
   const session = held?.session ?? null;
   const subscribe = useCallback(
     (listener: () => void) => session?.subscribe(listener) ?? (() => undefined),
@@ -60,10 +71,6 @@ export function useTreeList(list: TreeListRef | null): {
     () => null,
   );
   return useMemo(() => ({ session, snapshot }), [session, snapshot]);
-}
-
-function useReleaseOnUnmount(handle: { release(): void } | null) {
-  useEffect(() => () => handle?.release(), [handle]);
 }
 
 /** A source's authority and id for a scheme and owner, or null when the sources do not hold one. */

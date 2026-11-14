@@ -62,6 +62,5 @@ id.
 | [Apply click command](../../apps/app/src/features/draft-review/.context/state-machines.md) | App | `retrying`, then `stalled` |
 | [Queued control](../../apps/app/src/features/chat/.context/state-machines.md) | App | `failed`, retried under the same id |
 | [Hand-back and Stop](../../packages/thread-client/.context/state-machines.md) | thread-client | `ambiguous` |
-| [Server hold](../../packages/resource-replica/.context/state-machines.md) | resource-replica | `uncertain` |
 | [User-turn admission](../../apps/server/server/domains/runtime/.context/state-machines.md) | Server | the server half: `pending` until the turn commits |
 | [Branch command](../../apps/server/server/domains/collab/.context/state-machines.md) | Server | the server half: `pending` until the effect commits |
