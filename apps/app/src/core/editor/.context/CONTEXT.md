@@ -79,13 +79,20 @@ and remain quarantined until their retryable destroy ledger succeeds.
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
   read) and keep `refreshProseMirrorDoc` and `sameBlock`.
-- The binding never writes a node into an element with a different block `id`
-  (`sameBlock` in `updateYFragment`). Stock y-tiptap updates the left element in
-  place when the two candidates tie, so a paragraph inserted before an empty
-  paragraph took over the old element, and a peer's concurrent typing landed
-  in the new paragraph under a duplicated `id`. The fold fuzz
-  (`qa/fold-fuzz.md`) catches a binding change that breaks this or the text rule
-  above; run it by hand when the patch changes.
+- A block keeps its Yjs element: `updateYFragment` pairs the children it can't
+  match from either end by block `id` (`pairByBlockId`), deletes an old element
+  with no partner, inserts a node with none, and never writes a node into an
+  element with a different `id` (`sameBlock`). When the pairing must choose (two
+  blocks swapped), a node this editor's own steps just inserted
+  (`binding.insertedNodes`, recorded in the sync plugin's `apply`) loses, so a
+  dragged block is the one re-created and the blocks it passed keep their
+  elements and a peer's concurrent typing. Stock y-tiptap pairs by position and
+  child equality: Enter at the end of a paragraph followed by an empty one moved
+  the empty one's element to the new paragraph. Yjs has no move, so typing a
+  peer puts into a block while it is dragged is lost, and two peers dragging one
+  block at once leave two copies with one `id`. The fold fuzz
+  (`qa/fold-fuzz.md`) checks this rule and the text rule above; run it by hand
+  when the patch changes.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines

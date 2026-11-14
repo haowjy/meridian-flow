@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Probe: random concurrent editing against the patched y-tiptap binding. Two or three real TipTap
- * editors, each on its own `Y.Doc`, type, delete, bold and align while a server peer writes into
+ * editors, each on its own `Y.Doc`, type, delete, move blocks, bold and align while a server peer writes into
  * the same paragraphs through agent-edit (`writeBlocks` and `applyOps`),
  * with updates delivered through the server at random times. Run it by hand when the y-tiptap patch, the binding or
  * agent-edit's writer changes: see fold-fuzz.md beside this file.
@@ -113,6 +113,10 @@ function run(seed: number, editorCount: number) {
   };
 
   const typedBy = new Map<string, number>();
+  // Yjs has no move: a moved block is re-created, so typing a peer put in it concurrently is lost
+  // by design and its byline goes to the mover. Those characters are not counted.
+  const typedIn = new Map<string, unknown>();
+  const moved = new Set<unknown>();
   const deleted = new Set<string>();
   let counter = 0;
   let rebuilt = 0;
@@ -138,6 +142,7 @@ function run(seed: number, editorCount: number) {
       if (block.type.name !== "paragraph") continue;
       const c = nextChar();
       typedBy.set(c, who);
+      typedIn.set(c, block.attrs.id);
       const text = block.textContent;
       const at = Math.min(2 * Math.floor(r() * (block.content.size / 2 + 1)), text.length);
       const marks = block.content.size > 0 ? block.firstChild!.marks : [];
@@ -168,6 +173,7 @@ function run(seed: number, editorCount: number) {
       const c = nextChar();
       view.dispatch(state.tr.insertText(`${c} `, b.pos + 1 + off));
       typedBy.set(c, who);
+      typedIn.set(c, b.node.attrs.id);
     } else if (op < 0.6) {
       const b = pick(blocks(editor));
       view.dispatch(state.tr.insert(r() < 0.5 ? b.pos : b.pos + b.size, own.nodes.paragraph!.create()));
@@ -182,7 +188,19 @@ function run(seed: number, editorCount: number) {
     } else if (op < 0.8 && paragraphs.length) {
       const b = pick(paragraphs);
       view.dispatch(state.tr.setNodeMarkup(b.pos, undefined, { ...b.node.attrs, align: r() < 0.5 ? "center" : null }));
-    } else if (op < 0.88 && paragraphs.length) {
+    } else if (op < 0.84 && who === 0 && editor.state.doc.childCount > 1) {
+      // Move a block, as a drag does: delete it and insert the same node (same id) elsewhere.
+      // Only one editor moves: two peers moving one block at once each re-create it, leaving
+      // two copies with one id (Yjs has no move), a known limit this probe does not measure.
+      const all = blocks(editor);
+      const from = pick(all);
+      const rest = all.filter((b) => b !== from);
+      const to = pick(rest);
+      moved.add(from.node.attrs.id);
+      const tr = state.tr.delete(from.pos, from.pos + from.size);
+      const at = tr.mapping.map(r() < 0.5 ? to.pos : to.pos + to.size);
+      view.dispatch(tr.insert(at, from.node));
+    } else if (op < 0.9 && paragraphs.length) {
       const b = pick(paragraphs);
       if (b.node.content.size > 1)
         view.dispatch(state.tr.addMark(b.pos + 1, b.pos + 1 + b.node.content.size, own.marks.strong!.create()));
@@ -206,6 +224,7 @@ function run(seed: number, editorCount: number) {
   let duplicated = 0;
   let bylineMoved = 0;
   for (const [c, who] of typedBy) {
+    if (moved.has(typedIn.get(c))) continue;
     const count = present.split(c).length - 1;
     if (count === 0 && !deleted.has(c)) lost++;
     if (count > 1) duplicated++;
