@@ -184,6 +184,7 @@ try {
   const journalBefore = await h.raw`select id from draft_write_journal order by id`;
   const close = createDraftClose();
   const discard = createDrizzleBranchDiscard(h.db, {
+    releaseObjects: async () => {},
     close,
     branches: h.branches,
     workProjection: h.projection,

@@ -1,3 +1,5 @@
+import { assertOutsideCommandTransaction } from "./drizzle-transaction.js";
+
 export class KeyedMutex {
   private readonly chains = new Map<string, Promise<unknown>>();
 
@@ -6,6 +8,7 @@ export class KeyedMutex {
     fn: () => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<T> {
+    assertOutsideCommandTransaction("A process mutex");
     const prev = this.chains.get(key) ?? Promise.resolve();
     let acquired = false;
     let cancelled: Error | undefined;

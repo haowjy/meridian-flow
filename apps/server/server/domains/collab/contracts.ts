@@ -222,8 +222,9 @@ export type ReverseThreadContextInput = {
   /** Minted by the browser for each click; a resend under it answers the stored outcome. */
   commandId: DocumentCommandId;
   /**
-   * Runs in the command's transaction after the documents, on their outcome (the Work
-   * receipts a turn made), so the stored answer is the whole answer.
+   * The click's second part (the Work receipts a turn made), on the documents' outcome: its
+   * own command, under an id derived from `commandId`, once the documents' committed. Its
+   * stored outcome is the click's answer.
    */
   alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
 };

@@ -8,14 +8,8 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import {
-  runInDrizzleSavepoint,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
-import {
-  lookupCommand,
-  runCommandWithinTx,
-} from "../../collab/adapters/drizzle-document-commands.js";
+import { runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
+import { lookupCommand, runCommand } from "../../collab/adapters/drizzle-document-commands.js";
 import {
   commandDigest,
   DocumentCommandExistsError,
@@ -88,43 +82,41 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
       const replay = await stored(operationId, command, address);
       if (replay) return replay;
       try {
-        const settled = await runInDrizzleTransaction(db, () =>
-          runCommandWithinTx<CopyCommandResult>(
-            db,
-            {
-              commandId: operationId,
-              accountId,
-              projectId,
-              kind: "copy",
-              digest: digestOf(command),
-            },
-            async () => {
-              let result: ContextOperationResult<"copy">;
-              try {
-                result = await runInDrizzleSavepoint(db, async () => {
-                  const done = await operation();
-                  // An inner Result-aware owner may have caught its rollback exception.
-                  if (!done.ok) throw new RejectedCopy(done);
-                  return done;
-                });
-              } catch (cause) {
-                if (!(cause instanceof RejectedCopy)) throw cause;
-                result = cause.result;
-              }
-              if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
-              const receipt = {
-                operationId,
-                observationVersion: await createDrizzleContextOperationReceipts(
-                  db,
-                  owner,
-                ).observationVersion(result.ok ? command.destinationUri : result.error.uri),
-                command,
-                result,
-              } as ContextOperationReceipt;
-              return { status: result.ok ? "copied" : "refused", receipt };
-            },
-            () => undefined,
-          ),
+        const settled = await runCommand<CopyCommandResult>(
+          db,
+          {
+            commandId: operationId,
+            accountId,
+            projectId,
+            kind: "copy",
+            digest: digestOf(command),
+          },
+          async () => {
+            let result: ContextOperationResult<"copy">;
+            try {
+              result = await runInDrizzleSavepoint(db, async () => {
+                const done = await operation();
+                // An inner Result-aware owner may have caught its rollback exception.
+                if (!done.ok) throw new RejectedCopy(done);
+                return done;
+              });
+            } catch (cause) {
+              if (!(cause instanceof RejectedCopy)) throw cause;
+              result = cause.result;
+            }
+            if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
+            const receipt = {
+              operationId,
+              observationVersion: await createDrizzleContextOperationReceipts(
+                db,
+                owner,
+              ).observationVersion(result.ok ? command.destinationUri : result.error.uri),
+              command,
+              result,
+            } as ContextOperationReceipt;
+            return { status: result.ok ? "copied" : "refused", receipt };
+          },
+          () => undefined,
         );
         return settled.receipt.result as ContextOperationResult<"copy">;
       } catch (cause) {

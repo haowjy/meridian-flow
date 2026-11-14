@@ -23,7 +23,6 @@ import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
-  ApplyClickAnswer,
   ApplyClickResult,
   ApplyRenamedNote,
   UnapplyClickResult,
@@ -70,7 +69,7 @@ import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coor
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
-import { runCommandWithinTx } from "./drizzle-document-commands.js";
+import { runCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -218,12 +217,12 @@ export function createDrizzleApplyClick(
             ? closed()
             : undefined;
       try {
-        return await deps.workProjection.mutate(
-          { branches: [prepared.branchId] },
+        return await runCommand(
+          db,
+          command.envelope,
           () =>
-            runCommandWithinTx(
-              db,
-              command.envelope,
+            deps.workProjection.mutate(
+              { branches: [prepared.branchId] },
               async (): Promise<UnapplyClickResult> => {
                 const tx = currentDrizzleDb(db);
                 if (!(await deps.branches.lockActive(prepared.branchId))) return closed();
@@ -393,9 +392,9 @@ export function createDrizzleApplyClick(
                   live.destroy();
                 }
               },
-              unapplyRefusal,
+              { requireActive: true, seam: true },
             ),
-          { requireActive: true, seam: true },
+          unapplyRefusal,
         );
       } catch (cause) {
         if (cause instanceof LineageDraftsUnavailableError)
@@ -437,18 +436,18 @@ export function createDrizzleApplyClick(
             return await applyTiming.run(
               { commandId: command.envelope.commandId, measured: deps.measured },
               () =>
-                deps.workProjection.mutate(
-                  // The branch's owner enters the boundary as Discard's does.
-                  { branches: [branchId] },
-                  async (): Promise<ApplyClickAnswer> => {
-                    // mutate awaits post-commit delivery too; stop the boundary clock at
+                runCommand(
+                  db,
+                  command.envelope,
+                  async (): Promise<ApplyClickResult> => {
+                    // The command awaits post-commit delivery too; stop the boundary clock at
                     // root commit, before room recovery and document projections run.
                     deferUntilDrizzleCommit(() => {
                       committedAt = performance.now();
                     });
-                    return runCommandWithinTx(
-                      db,
-                      command.envelope,
+                    // The branch's owner enters the boundary after the claim, as Discard's does.
+                    return deps.workProjection.mutate(
+                      { branches: [branchId] },
                       async (): Promise<ApplyClickResult> => {
                         const tx = currentDrizzleDb(db);
                         if (!(await deps.branches.lockActive(branchId))) return closed(command);
@@ -803,10 +802,10 @@ export function createDrizzleApplyClick(
                           live.destroy();
                         }
                       },
-                      applyRefusal,
+                      { requireActive: true, seam: true },
                     );
                   },
-                  { requireActive: true, seam: true },
+                  applyRefusal,
                 ),
             );
           } catch (cause) {

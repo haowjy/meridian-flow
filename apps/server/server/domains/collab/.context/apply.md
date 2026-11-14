@@ -25,8 +25,8 @@ uses the forward-inverse kernel directly against live history, not the model/tur
 reversal planner, and folds only the reversed groups out of the current review base.
 
 Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
-The effect transaction inserts it first and `runCommandWithinTx` runs the effect in a savepoint under
-the claim. A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
+`runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
+enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
 append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
 outcome, so a resend under the same id gets the same refusal and "Try again" needs a new id. A miss
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,

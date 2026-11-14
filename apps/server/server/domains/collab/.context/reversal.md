@@ -9,14 +9,17 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
 accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
 `commandId` for each click and each Try again. It is a `reverse_turn` row in `document_commands`:
-`DocumentCommands.run` claims the id and runs the whole reversal, then the route's Work receipts
-(`alongside`, in their own savepoint), in one transaction, and stores the full outcome, the
-no-op and refusal answers included (`nothing_to_undo`, `expired`, `permission_denied`). A resend
-under the id answers that outcome and changes nothing; another request under it is
-`command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A
-miss the inverse retries itself rolls back past the claim; exhausting its attempts is
-`ReversalConflictError` and stores nothing. The captured planning reads run on the command's own
-connection (`joinRootTransactionsInAmbient`), as a model edit's do. Capture resolves each
+`DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
+its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired`,
+`permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,
+`lib/work-receipt-reversal.ts`) are a second `reverse_turn` command once that one committed,
+under an id derived from the click's, on the documents' outcome: their Work and thread locks
+never wait under a document key. Its stored outcome is the click's answer. A resend under the id
+answers the stored outcomes and changes nothing; a kill between the two runs the second on the
+resend; another request under the id is `command_conflict` (409). The receipts the reversal
+writes carry `document_edits.command_id`. A miss the server retries (a moved capture, a deadlock)
+rolls back past the claim; exhausting the inverse's attempts is `ReversalConflictError` and
+stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use
@@ -188,15 +191,17 @@ dirtied after inverse commit; the inverse writes neither effect nor baseline.
 Pull snapshot, effect, and projection updates commit in their own root
 transaction. Root pulls must not be awaited while holding Work locks.
 
-An inverse is an attempt. It captures its documents in one read snapshot with
-no lock or lease (live state, live heads, committed drafts alone) and plans
-off every lock. Its commit scope takes the live mutexes, then one savepoint
-whose first locks are the Work rows (the captured drafts' Works and the bound
-grants' Works in id order, the grants confirmed: a seam boundary), then its
-documents' mutation locks in id order; the inverse takes no lock of its own,
-since the captured fences order two inverses of one edit. Inside it, each
-live destination's head must equal the captured head, and each draft
-destination is an exact checkpoint rewrite at its captured revision. A miss
+An inverse is an attempt. It captures its documents with no lock or lease
+(live state, committed drafts alone, history, dispositions) and plans off every
+lock; those reads need not agree with each other. Its commit scope is one
+savepoint whose first locks are the Work rows (the captured drafts' Works and
+the bound grants' Works in id order, the grants confirmed: a seam boundary),
+then its documents' mutation locks in id order, then its drafts' rows; the
+inverse takes no lock of its own, since the captured fences order two inverses
+of one edit. Under them it takes the capture again and compares the two
+(`confirmCapture`): a write that landed since any read, or between two of them,
+is a miss. Each draft destination is an exact checkpoint rewrite at its
+captured revision. A miss
 unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for

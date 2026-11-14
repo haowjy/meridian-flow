@@ -5,12 +5,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { Branches } from "./branches.js";
 import type { DocumentCommandEnvelope } from "./document-commands.js";
-import {
-  type Attempt,
-  type AttemptScope,
-  NO_ATTEMPT_SCOPE,
-  runBoundedAttempts,
-} from "./draft-attempts.js";
+import { type Attempt, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
 import { DraftCasConflictError } from "./draft-store.js";
 
 export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
@@ -97,20 +92,15 @@ export type DiscardCommandClaim = {
 
 export interface BranchDiscardStore {
   /**
-   * `discardItems`' transaction (§12.2): the branch's owner, refusing an archived or deleted Work;
-   * the branch (null: not active any more); the namespaces and documents; the kernel inside
-   * the Work's pending projection. The kernel's refusals are stored with the command and
-   * returned, not thrown.
+   * `discardItems`' command transaction (§12.2): the claim; the branch's owner, refusing an
+   * archived or deleted Work; the branch (null: not active any more); the namespaces and
+   * documents; the kernel inside the Work's pending projection. The kernel's refusals are
+   * stored with the command and returned, not thrown. Its released objects go after commit.
    */
   discardLocked(input: {
     kernel: DiscardKernelInput;
     command: DiscardCommandClaim;
   }): Promise<DiscardKernelResult | DiscardRefusal | null>;
-  /**
-   * Runs `callback` once the ambient transaction's root commits, never after a rollback
-   * (a savepoint's rolls back with it); false, with nothing deferred, outside a transaction.
-   */
-  deferUntilCommit(callback: () => Promise<void>): boolean;
 }
 
 /** One of the branch's created documents moved to another source before the locks: run again. */
@@ -146,23 +136,17 @@ export function createBranchDiscard(deps: {
    * racing the retirement may need them.
    */
   holdRetirement<T>(run: () => Promise<T>): Promise<T>;
-  /** After commit: delete tombstoned binaries' objects, best effort. */
-  releaseObjects(storageUrls: readonly string[]): Promise<void>;
-  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
-  attemptScope?: AttemptScope;
 }): BranchDiscard {
   /**
-   * The locked kernel again when the branch moved: each attempt's commit scope opens inside
-   * the live scopes it took (process-level locks before the database's), and a miss leaves
-   * it before the next attempt. The after-commit effects of exactly what the kernel ended
-   * are registered on the attempt's transaction, so they run once its root commits.
+   * The locked kernel again when the branch moved: each attempt is one command transaction,
+   * and a miss rolls it back past its claim before the next attempt.
    */
   function attempts(
     run: (attempt: Attempt) => Promise<DiscardKernelResult | DiscardRefusal | null>,
   ): Promise<DiscardKernelResult | DiscardRefusal | null> {
     return runBoundedAttempts({
       bound: ATTEMPTS,
-      scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
+      scope: NO_ATTEMPT_SCOPE,
       isMiss: (cause) =>
         cause instanceof DraftCasConflictError || cause instanceof BranchDiscardScopeChangedError,
       run,
@@ -172,30 +156,23 @@ export function createBranchDiscard(deps: {
     });
   }
 
-  /** `discardLocked` in the attempt's scope, its objects released once that transaction commits. */
+  /** `discardLocked` as the attempt's one commit scope. */
   async function commitDiscard(
     attempt: Attempt,
     kernel: DiscardKernelInput,
     command: CommandClaim,
   ): Promise<DiscardKernelResult | DiscardRefusal | null> {
     await testHook("discard.beforeCommitScope");
-    return attempt.commit(async () => {
-      const ended = await deps.store.discardLocked({
+    return attempt.commit(() =>
+      deps.store.discardLocked({
         kernel,
         command: {
           envelope: command.envelope,
           result: (ended) =>
             command.result(discardResult(kernel.branchId, kernel.selection, ended)),
         },
-      });
-      if (
-        ended &&
-        !("refused" in ended) &&
-        !deps.store.deferUntilCommit(() => deps.releaseObjects(ended.releasedObjects))
-      )
-        throw new Error("Discard must run inside its attempt's transaction");
-      return ended;
-    });
+      }),
+    );
   }
 
   return {
