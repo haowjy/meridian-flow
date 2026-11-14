@@ -9,11 +9,14 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TopPrimaryChatResolver } from "../../threads/ports/top-primary-chat.js";
 import type { ChatUploadsOwners } from "../chat-uploads-owners.js";
-import { createOwnerLookup, type OwnerLookup, type WorkOwner } from "../owner-lookup.js";
+import {
+  createOwnerLookup,
+  NAMED_WORK_CANDIDATES,
+  type OwnerLookup,
+  type WorkOwner,
+} from "../owner-lookup.js";
 import type { ScratchLineages } from "../scratch-owner.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-relations.js";
-
-const NAMED_WORK_CANDIDATES = 5;
 
 const workOwnerColumns = {
   handle: works.handle,
@@ -108,7 +111,7 @@ export function createDrizzleOwnerLookup(
     },
     async worksNamed(projectId, name) {
       // Exact name, or the same name with punctuation and spacing collapsed: the two spellings
-      // `findWorkNamed` accepts. Few rows can match, so the cap only guards a pathological project.
+      // `worksNamedLike` accepts. Few rows can match, so the cap only guards a pathological project.
       const exact = foldAccents(name.trim()).toLowerCase();
       const collapsed = collapseName(name);
       const rows = await currentDrizzleDb(db)

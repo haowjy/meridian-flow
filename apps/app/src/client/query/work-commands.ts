@@ -6,7 +6,12 @@
  * (`work-command-projection`) reads records against the server snapshot.
  */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
+import {
+  isWorkArchived,
+  type UpdateWorkRequest,
+  type Work,
+  type WorkAnswer,
+} from "@meridian/contracts/works";
 
 import {
   archiveWork,
@@ -18,6 +23,7 @@ import {
   updateWork,
 } from "@/client/api/projects-api";
 import { createWithRecovery } from "@/client/creation/creation-registry";
+import { WorkReturnedError } from "@/client/query/work-update-failure";
 
 export type WorkCommandVariables = {
   create: { workId: ParsedRequestId; name: string; goal?: string };
@@ -32,7 +38,7 @@ export type WorkOperation = keyof WorkCommandVariables;
 
 type WorkCommandResults = {
   create: Work;
-  update: Work;
+  update: WorkAnswer;
   archive: Work;
   unarchive: Work;
   delete: unknown;
@@ -91,7 +97,13 @@ const workCommands = {
     keepsFailure: true,
   },
   update: {
-    request: ({ workId, data }, { signal }) => updateWork(workId, data, { signal }),
+    request: async ({ workId, data }, { signal }) => {
+      const answer = await updateWork(workId, data, { signal });
+      const returned = answer.settled?.find((settlement) => settlement.rule === "returned");
+      // A closed Work answers as it stands: the edit failed, so the field reopens with its words.
+      if (returned) throw new WorkReturnedError(returned.why);
+      return answer;
+    },
     project: (work, { data }, { at }) => patch(work, { ...data, updatedAt: at }),
     commit: (work, { data }, committed) =>
       patch(
