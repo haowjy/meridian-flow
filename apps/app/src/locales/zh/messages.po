@@ -1126,8 +1126,8 @@ msgid "Another import in this project is organizing."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
-msgid "Another Work already has this name. Choose a different name."
-msgstr ""
+#~ msgid "Another Work already has this name. Choose a different name."
+#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Another Work is now named {name}. Rename that Work, then restore this one."
