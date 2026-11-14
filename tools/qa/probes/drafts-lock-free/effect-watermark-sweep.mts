@@ -6,8 +6,8 @@
  *     a fresh process's `sweep()` repairs both.
  * (b) a compaction leaves the watermark behind; the sweep re-judges the same value.
  * (c) fairness: 51 stale drafts, the newest 50 on a Work an open transaction holds, the oldest
- *     on an idle Work. One pass tracks all 51 in two pages; the oldest is written within 2 s
- *     while the 50 answer `contended`; no projection connection waits on one lock longer than
+ *     on an idle Work. One pass tracks all 51 in two pages; the oldest is written while
+ *     the 50 answer `contended`; no projection connection waits on one lock longer than
  *     the 100 ms `lock_timeout` (per lock acquisition, C1); the next tick is a new pass;
  *     releasing the Work lets the 50 land on their backoff.
  * (c) first marks every other draft fresh, so the sweep sees only its rows.
@@ -35,7 +35,7 @@ export const effectWatermarkSweep: Probe = {
   name: "effect-watermark-sweep",
   decision: "D28 (§3.2–3.3 R5/R6/G5/G6)",
   expected:
-    "(a) the sweep repairs an unprojected key; (b) a compaction's stale watermark is re-judged; (c) one fair pass of two pages, the idle Work's draft written within 2 s, no lock wait past 100 ms",
+    "(a) the sweep repairs an unprojected key; (b) a compaction's stale watermark is re-judged; (c) one fair pass of two pages, the idle Work's draft written while the held Work's drafts answer contended, no lock wait past 100 ms",
   async run(harness) {
     await runArms({
       async "a-unprojected-key"() {
@@ -184,8 +184,11 @@ export const effectWatermarkSweep: Probe = {
         try {
           await p.projection().sweep();
           const firstPass = [...pages];
+          // The holder is released only after this wait, so the idle Work's draft landing at all
+          // proves the pass did not starve it; the milliseconds are reported, not bounded to 2 s
+          // (a loaded runner took 1.9-2.0 s here while green).
           const oldest = await within(
-            2_000,
+            30_000,
             () => draftRow(harness, first),
             (row) => row.watermark === row.revision,
           );
