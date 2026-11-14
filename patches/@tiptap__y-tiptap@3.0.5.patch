@@ -20,33 +20,38 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf1816405e1ce7a3 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..f8babaf667b88c46189fc03099f9e9ebb94d9126 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
-@@ -211,6 +211,13 @@ const ySyncPlugin = (yXmlFragment, {
+@@ -211,6 +211,18 @@ const ySyncPlugin = (yXmlFragment, {
        },
        apply: (tr, pluginState) => {
          const change = tr.getMeta(ySyncPluginKey);
-+        // Meridian patch: the nodes this editor's steps insert, for `pairByBlockId` (a dropped
-+        // block is a moved one). Cleared once `_prosemirrorChanged` has written them.
++        // Meridian patch: the block ids this editor's steps insert, for `pairByBlockId` (a dropped
++        // block is a moved one). Ids, not nodes: a later step in the same transaction can rebuild
++        // the node. Cleared once `_prosemirrorChanged` has written them.
 +        if (tr.docChanged && !(change !== undefined && change.isChangeOrigin)) {
 +          for (const step of tr.steps) {
-+            if (step.slice) step.slice.content.descendants((node) => { binding.insertedNodes.add(node); });
++            if (step.slice) {
++              step.slice.content.descendants((node) => {
++                if (node.attrs.id != null) binding.insertedIds.add(node.attrs.id);
++              });
++            }
 +          }
 +        }
          if (change !== undefined) {
            pluginState = Object.assign({}, pluginState);
            for (const key in change) {
-@@ -474,6 +481,8 @@ class ProsemirrorBinding {
+@@ -474,6 +486,8 @@ class ProsemirrorBinding {
       * @type {Map<import('prosemirror-model').MarkType, boolean>}
       */
      this.isOMark = new Map();
-+    /** Nodes this editor's own steps inserted since the last write to Yjs. */
-+    this.insertedNodes = new Set();
++    /** Block ids this editor's own steps inserted since the last write to Yjs. */
++    this.insertedIds = new Set();
      this._observeFunction = this._typeChanged.bind(this);
      /**
       * @type {Y.Doc}
-@@ -753,35 +762,14 @@ class ProsemirrorBinding {
+@@ -753,35 +767,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -85,15 +90,15 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y__namespace.UndoManager });
-@@ -800,6 +788,7 @@ class ProsemirrorBinding {
+@@ -800,6 +793,7 @@ class ProsemirrorBinding {
    _prosemirrorChanged (doc) {
      this.doc.transact(() => {
        updateYFragment(this.doc, this.type, doc, this);
-+      this.insertedNodes.clear();
++      this.insertedIds.clear();
        this.beforeTransactionSelection = getRelativeSelection(
          this,
          this.prosemirrorView.state
-@@ -900,20 +889,7 @@ const createNodeFromYElement = (
+@@ -900,20 +894,7 @@ const createNodeFromYElement = (
          children.push(n);
        }
      } else {
@@ -115,7 +120,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1104,11 +1080,61 @@ const normalizePNodeContent = (pnode) => {
+@@ -1104,11 +1085,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -180,7 +185,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1131,7 +1157,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1131,7 +1162,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -189,7 +194,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1140,13 +1166,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1140,13 +1171,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -207,7 +212,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1168,7 +1195,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1168,7 +1200,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -216,7 +221,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1179,7 +1206,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1179,7 +1211,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -225,7 +230,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1188,7 +1215,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1188,7 +1220,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -234,7 +239,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1233,22 +1260,50 @@ const ytextTrans = (ytext) => {
+@@ -1233,22 +1265,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -295,7 +300,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1334,19 +1389,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1334,19 +1394,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -323,7 +328,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        } else {
          break
        }
-@@ -1356,15 +1415,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1356,15 +1420,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -342,7 +347,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1372,16 +1432,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1372,16 +1437,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -384,7 +389,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1427,33 +1509,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1427,33 +1514,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -429,7 +434,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
      }
    }, ySyncPluginKey);
  };
-@@ -1466,6 +1550,92 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1466,6 +1555,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -466,7 +471,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
 + * @param {number} from
 + * @param {number} yTo
 + * @param {number} pTo
-+ * @param {BindingMetadata & { insertedNodes?: Set<any> }} meta
++ * @param {BindingMetadata & { insertedIds?: Set<string> }} meta
 + * @return {{ y: Set<any>, p: Set<any> }}
 + */
 +const pairByBlockId = (yChildren, pChildren, from, yTo, pTo, meta) => {
@@ -484,9 +489,11 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
 +    }
 +  }
 +  // The heaviest run in the same order on both sides (a Fenwick tree of best runs by
-+  // ProseMirror index). A node this editor's own steps just inserted weighs less: when a drag
-+  // swaps two blocks, the block that was dropped is the one re-created, not the one left in place.
-+  const inserted = meta.insertedNodes;
++  // ProseMirror index). A block this editor's own steps just inserted weighs 1 and any other
++  // weighs more than all of those together, so a block left in place always keeps its element
++  // and a dragged run of any length is the one re-created.
++  const inserted = meta.insertedIds;
++  const stationary = candidates.length + 1;
 +  const size = pTo - from;
 +  const tree = new Array(size + 1).fill(null);
 +  const best = (j) => {
@@ -500,7 +507,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
 +  for (const [i, j] of candidates) {
 +    const before = best(j);
 +    const run = {
-+      weight: (before === null ? 0 : before.weight) + (inserted && inserted.has(pChildren[j]) ? 1 : 2),
++      weight: (before === null ? 0 : before.weight) + (inserted && inserted.has(blockId(pChildren[j])) ? 1 : stationary),
 +      i,
 +      j,
 +      previous: before
@@ -522,7 +529,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1797,6 +1967,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +1974,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -566,7 +573,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2558,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2565,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -616,7 +623,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
        }
      }
    }
-@@ -2388,6 +2607,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2614,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -625,33 +632,38 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..e8b551880ae51fd803327befaf181640
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2ec8d977d 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..b2dae8d9194f4f52a4ec52a1951720b7c5b2f15a 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
-@@ -177,6 +177,13 @@ const ySyncPlugin = (yXmlFragment, {
+@@ -177,6 +177,18 @@ const ySyncPlugin = (yXmlFragment, {
        },
        apply: (tr, pluginState) => {
          const change = tr.getMeta(ySyncPluginKey);
-+        // Meridian patch: the nodes this editor's steps insert, for `pairByBlockId` (a dropped
-+        // block is a moved one). Cleared once `_prosemirrorChanged` has written them.
++        // Meridian patch: the block ids this editor's steps insert, for `pairByBlockId` (a dropped
++        // block is a moved one). Ids, not nodes: a later step in the same transaction can rebuild
++        // the node. Cleared once `_prosemirrorChanged` has written them.
 +        if (tr.docChanged && !(change !== undefined && change.isChangeOrigin)) {
 +          for (const step of tr.steps) {
-+            if (step.slice) step.slice.content.descendants((node) => { binding.insertedNodes.add(node); });
++            if (step.slice) {
++              step.slice.content.descendants((node) => {
++                if (node.attrs.id != null) binding.insertedIds.add(node.attrs.id);
++              });
++            }
 +          }
 +        }
          if (change !== undefined) {
            pluginState = Object.assign({}, pluginState);
            for (const key in change) {
-@@ -440,6 +447,8 @@ class ProsemirrorBinding {
+@@ -440,6 +452,8 @@ class ProsemirrorBinding {
       * @type {Map<import('prosemirror-model').MarkType, boolean>}
       */
      this.isOMark = new Map();
-+    /** Nodes this editor's own steps inserted since the last write to Yjs. */
-+    this.insertedNodes = new Set();
++    /** Block ids this editor's own steps inserted since the last write to Yjs. */
++    this.insertedIds = new Set();
      this._observeFunction = this._typeChanged.bind(this);
      /**
       * @type {Y.Doc}
-@@ -719,35 +728,14 @@ class ProsemirrorBinding {
+@@ -719,35 +733,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -690,15 +702,15 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager });
-@@ -766,6 +754,7 @@ class ProsemirrorBinding {
+@@ -766,6 +759,7 @@ class ProsemirrorBinding {
    _prosemirrorChanged (doc) {
      this.doc.transact(() => {
        updateYFragment(this.doc, this.type, doc, this);
-+      this.insertedNodes.clear();
++      this.insertedIds.clear();
        this.beforeTransactionSelection = getRelativeSelection(
          this,
          this.prosemirrorView.state
-@@ -866,20 +855,7 @@ const createNodeFromYElement = (
+@@ -866,20 +860,7 @@ const createNodeFromYElement = (
          children.push(n);
        }
      } else {
@@ -720,7 +732,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1070,11 +1046,61 @@ const normalizePNodeContent = (pnode) => {
+@@ -1070,11 +1051,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -785,7 +797,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1097,7 +1123,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1097,7 +1128,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -794,7 +806,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1106,13 +1132,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1106,13 +1137,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -812,7 +824,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1134,7 +1161,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1134,7 +1166,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -821,7 +833,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1145,7 +1172,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1145,7 +1177,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -830,7 +842,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1154,7 +1181,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1154,7 +1186,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -839,7 +851,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1199,22 +1226,50 @@ const ytextTrans = (ytext) => {
+@@ -1199,22 +1231,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -900,7 +912,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1300,19 +1355,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1300,19 +1360,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -928,7 +940,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
        } else {
          break
        }
-@@ -1322,15 +1381,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1322,15 +1386,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -947,7 +959,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1338,16 +1398,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1338,16 +1403,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -989,7 +1001,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1393,33 +1475,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1393,33 +1480,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -1034,7 +1046,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
      }
    }, ySyncPluginKey);
  };
-@@ -1432,6 +1516,92 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1432,6 +1521,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -1071,7 +1083,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
 + * @param {number} from
 + * @param {number} yTo
 + * @param {number} pTo
-+ * @param {BindingMetadata & { insertedNodes?: Set<any> }} meta
++ * @param {BindingMetadata & { insertedIds?: Set<string> }} meta
 + * @return {{ y: Set<any>, p: Set<any> }}
 + */
 +const pairByBlockId = (yChildren, pChildren, from, yTo, pTo, meta) => {
@@ -1089,9 +1101,11 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
 +    }
 +  }
 +  // The heaviest run in the same order on both sides (a Fenwick tree of best runs by
-+  // ProseMirror index). A node this editor's own steps just inserted weighs less: when a drag
-+  // swaps two blocks, the block that was dropped is the one re-created, not the one left in place.
-+  const inserted = meta.insertedNodes;
++  // ProseMirror index). A block this editor's own steps just inserted weighs 1 and any other
++  // weighs more than all of those together, so a block left in place always keeps its element
++  // and a dragged run of any length is the one re-created.
++  const inserted = meta.insertedIds;
++  const stationary = candidates.length + 1;
 +  const size = pTo - from;
 +  const tree = new Array(size + 1).fill(null);
 +  const best = (j) => {
@@ -1105,7 +1119,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
 +  for (const [i, j] of candidates) {
 +    const before = best(j);
 +    const run = {
-+      weight: (before === null ? 0 : before.weight) + (inserted && inserted.has(pChildren[j]) ? 1 : 2),
++      weight: (before === null ? 0 : before.weight) + (inserted && inserted.has(blockId(pChildren[j])) ? 1 : stationary),
 +      i,
 +      j,
 +      previous: before
@@ -1127,7 +1141,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1763,6 +1933,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +1940,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -1171,7 +1185,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..c44329096a8b82706487ac88df8dccb2
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2524,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2531,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;

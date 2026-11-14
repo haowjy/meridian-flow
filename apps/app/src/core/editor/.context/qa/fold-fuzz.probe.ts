@@ -199,17 +199,23 @@ function run(seed: number, editorCount: number) {
       const b = pick(paragraphs);
       view.dispatch(state.tr.setNodeMarkup(b.pos, undefined, { ...b.node.attrs, align: r() < 0.5 ? "center" : null }));
     } else if (op < 0.84 && who === 0 && editor.state.doc.childCount > 1) {
-      // Move a block, as a drag does: delete it and insert the same node (same id) elsewhere.
-      // Only one editor moves: two peers moving one block at once each re-create it, leaving
-      // two copies with one id (Yjs has no move), a known limit this probe does not measure.
+      // Move a run of one to three blocks, as a drag does: delete it and insert the same nodes
+      // (same ids) elsewhere, in one transaction. Only one editor moves: two peers moving one
+      // block at once each re-create it, leaving two copies with one id (Yjs has no move), a
+      // known limit this probe does not measure.
       const all = blocks(editor);
-      const from = pick(all);
-      const rest = all.filter((b) => b !== from);
-      const to = pick(rest);
-      moved.add(from.node.attrs.id);
-      const tr = state.tr.delete(from.pos, from.pos + from.size);
-      const at = tr.mapping.map(r() < 0.5 ? to.pos : to.pos + to.size);
-      view.dispatch(tr.insert(at, from.node));
+      const start = Math.floor(r() * all.length);
+      const run = all.slice(start, start + 1 + Math.floor(r() * 3));
+      const rest = all.filter((b) => !run.includes(b));
+      if (rest.length) {
+        const to = pick(rest);
+        for (const b of run) moved.add(b.node.attrs.id);
+        const from = run[0]!.pos;
+        const end = run[run.length - 1]!.pos + run[run.length - 1]!.size;
+        const tr = state.tr.delete(from, end);
+        const at = tr.mapping.map(r() < 0.5 ? to.pos : to.pos + to.size);
+        view.dispatch(tr.insert(at, run.map((b) => b.node)));
+      }
     } else if (op < 0.9 && paragraphs.length) {
       const b = pick(paragraphs);
       if (b.node.content.size > 1)

@@ -3,8 +3,8 @@
 `fold-fuzz.probe.ts` checks the patched `@tiptap/y-tiptap` binding
 (`patches/@tiptap__y-tiptap@3.0.5.patch`) and agent-edit's writer against each other under
 random concurrent edits. Two or three real TipTap editors, each on its own `Y.Doc`, type,
-delete, insert empty paragraphs, bold and align, and the first editor moves blocks the way a drag
-does. A server peer writes into the same paragraphs
+delete, insert empty paragraphs, bold and align, and the first editor moves runs of one to three
+blocks the way a drag does. A server peer writes into the same paragraphs
 through `writeBlocks` and `applyOps`. Updates travel as they do in the app: an editor talks only
 to the server, the server relays to the others, and each link delivers in order at random times.
 After a full sync, a run fails when:
@@ -44,11 +44,10 @@ The probe's own mistakes look like binding bugs, so check these first:
   before the one it builds on. Yjs then shows a deletion and holds back the item that replaces
   it, so a paragraph briefly loses its `id` and `writeBlocks` throws.
 
-## Last run: 2026-11-14, on `origin/main` 0bed6546c3 and this branch
+## Last run: 2026-11-14, on `origin/main` 881f5d7fc2 and this branch
 
-- This branch, 600 seeds × 120 steps, 36,027 typed characters: 0 lost, 0 duplicated, 0 moved
+- This branch, 600 seeds × 120 steps, 36,024 typed characters: 0 lost, 0 duplicated, 0 moved
   bylines, 0 in the wrong block, 0 shared ids, 0 rebuilt blocks, 0 diverged runs. About 50 s.
-- `main`, same probe: 379 of 600 runs fail, with 30 lost characters, 1 doubled, 1,609 moved
-  bylines, 2,786 in the wrong block, 20 shared ids and 188 rebuilt blocks. `main`'s binding
-  pairs elements by position, so a paragraph inserted or moved beside another takes over that
-  block's element.
+- `main`, same probe: 30 lost characters, 1,263 moved bylines, 2,290 in the wrong block, 15
+  shared ids and 122 rebuilt blocks. `main`'s binding pairs elements by position, so a paragraph
+  inserted or moved beside another takes over that block's element.

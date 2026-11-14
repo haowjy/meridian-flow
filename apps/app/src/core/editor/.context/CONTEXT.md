@@ -82,11 +82,11 @@ and remain quarantined until their retryable destroy ledger succeeds.
 - A block keeps its Yjs element: `updateYFragment` pairs the children it can't
   match from either end by block `id` (`pairByBlockId`), deletes an old element
   with no partner, inserts a node with none, and never writes a node into an
-  element with a different `id` (`sameBlock`). When the pairing must choose (two
-  blocks swapped), a node this editor's own steps just inserted
-  (`binding.insertedNodes`, recorded in the sync plugin's `apply`) loses, so a
-  dragged block is the one re-created and the blocks it passed keep their
-  elements and a peer's concurrent typing. Stock y-tiptap pairs by position and
+  element with a different `id` (`sameBlock`). When the pairing must choose
+  (blocks swapped), a block whose id this editor's own steps just inserted
+  (`binding.insertedIds`, recorded in the sync plugin's `apply`) always loses to
+  one left in place, however many moved, so a dragged run is what is re-created
+  and the blocks it passed keep their elements and a peer's concurrent typing. Stock y-tiptap pairs by position and
   child equality: Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
