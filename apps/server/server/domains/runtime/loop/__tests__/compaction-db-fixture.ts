@@ -5,7 +5,6 @@ import { executionScenario } from "../../../../test-support/execution-scenario.j
 import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
 import { createDrizzleNoticePort } from "../../../notices/adapters/drizzle-notice-port.js";
 import type { NoticePort } from "../../../notices/index.js";
-import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
 import type { WorkContextReader } from "../work-context.js";
