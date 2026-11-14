@@ -29,13 +29,11 @@ const TUNE = {
   /** Share of a block's words that must be in a pair for the block to be a split or a join's piece. */
   piece: 0.5,
   /** Old-by-new pairs searched exhaustively; a larger gap is searched in a band. */
-  cells: 40_000,
+  cells: 10_000,
   /** Table size the band search may allocate. */
   work: 4_000_000,
   /** Band half-width, in blocks, around the diagonal of a large gap. */
   band: 40,
-  /** Words in common, over the longer block, to pair inside a large gap. */
-  bandSimilar: 0.8,
 };
 
 const sameContent = (a: PMNode, b: PMNode) => a.type === b.type && a.content.eq(b.content);
@@ -80,23 +78,27 @@ function remembered(memo: WeakMap<object, number>, b: object, score: () => numbe
   return v;
 }
 
-/** Score of pairing two blocks of one type: same content beats similar text beats nothing (0). */
-const weight = (a: PMNode, b: PMNode, floor = TUNE.similar) =>
-  remembered(scoresOf(floor, a), b, () => scoreWeight(a, b, floor));
+/** Weight of a pair that shares enough words to be one block edited; weaker pairs weigh less. */
+const SIMILAR = 5_000;
 
-function scoreWeight(a: PMNode, b: PMNode, floor: number): number {
+/**
+ * Score of pairing two blocks of one type: same content beats similar text beats a weaker overlap
+ * beats nothing in common (1: an unrelated rewrite keeps its elements, and a peer's typing in them,
+ * by position). Blocks of different types never pair (0).
+ */
+const weight = (a: PMNode, b: PMNode) => remembered(scoresOf(0, a), b, () => scoreWeight(a, b));
+
+function scoreWeight(a: PMNode, b: PMNode): number {
   if (a.type !== b.type) return 0;
   if (sameContent(a, b)) return 20_000 + Math.round(100 * attrShare(a, b));
-  const sim = similarity(a, b, false, floor);
-  if (sim >= floor) {
+  const sim = similarity(a, b, false, TUNE.similar);
+  if (sim >= TUNE.similar) {
     const x = contentWords(a);
     const y = contentWords(b);
     let lead = 0;
     while (lead < 63 && lead < x.length && lead < y.length && x[lead] === y[lead]) lead++;
     return Math.round(sim * 100) * 100 + lead;
   }
-  // A weaker real overlap beats none, and none still keeps the block by position (1).
-  if (floor > TUNE.similar) return 0;
   const longer = Math.max(contentWords(a).length, contentWords(b).length);
   return 1 + (longer ? Math.round((100 * sharedBound(a, b)) / longer) : 0);
 }
@@ -136,28 +138,24 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   while (o0 < o1 && n0 < n1 && blockKey(old[o0]) === blockKey(next[n0])) pairs.push([o0++, n0++]);
   while (o0 < o1 && n0 < n1 && blockKey(old[o1 - 1]) === blockKey(next[n1 - 1]))
     pairs.push([--o1, --n1]);
-  const { anchors, deferredOld, deferredNext } = findAnchors(old, next, o0, o1, n0, n1);
+  const anchors = findAnchors(old, next, o0, o1, n0, n1);
   const pairGap = (a0: number, a1: number, b0: number, b1: number) => {
     const rows = a1 - a0;
     const cols = b1 - b0;
     if (!rows || !cols) return;
-    const skipped = (i: number, j: number) => deferredOld.has(i) || deferredNext.has(j);
-    if (rows === 1 && cols === 1) {
-      // One block left against one has no rival: it is that block rewritten, whatever words survive.
-      if (!skipped(a0, b0) && old[a0].type === next[b0].type) pairs.push([a0, b0]);
-      return;
-    }
-    if (rows * cols > TUNE.cells) {
-      pairs.push(...pairLargeGap(old, next, a0, a1, b0, b1, skipped));
-      return;
-    }
-    const w = new Uint32Array(rows * cols);
-    for (let r = 0; r < rows; r++)
-      for (let q = 0; q < cols; q++)
-        if (!skipped(a0 + r, b0 + q)) w[r * cols + q] = weight(old[a0 + r], next[b0 + q]);
+    // Within a large gap only pairs near its diagonal are scored; the bar for a pair stays the same.
+    const ratio = cols / rows;
+    const banded = rows * cols > TUNE.cells;
     const matches =
-      weightedOrderedMatches((i, j) => w[(i - a0) * cols + (j - b0)], a0, a1, b0, b1, TUNE.work) ??
-      [];
+      weightedOrderedMatches(
+        (i, j) =>
+          banded && Math.abs(j - b0 - (i - a0) * ratio) > TUNE.band ? 0 : weight(old[i], next[j]),
+        a0,
+        a1,
+        b0,
+        b1,
+        TUNE.work,
+      ) ?? [];
     for (const [i, j] of matches) pairs.push([i, j]);
   };
   let [ao, an] = [o0, n0];
@@ -172,7 +170,7 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
 /**
  * A block whose content occurs once on each side is the same block: an anchor, as in a patience
  * diff. Candidates that cross (either could be the one that stayed) are not anchors; the gap's
- * best in-order pairing decides them.
+ * best in-order pairing keeps one of them.
  */
 function findAnchors(
   old: readonly PMNode[],
@@ -223,55 +221,8 @@ function findAnchors(
     atLevel.set(left[k], [...(atLevel.get(left[k]) ?? []), pair]);
   });
   const anchors: Array<[number, number]> = [];
-  const deferredOld = new Set<number>();
-  const deferredNext = new Set<number>();
-  for (const level of atLevel.values())
-    for (const pair of level) {
-      if (level.length === 1) anchors.push(pair);
-      else {
-        deferredOld.add(pair[0]);
-        deferredNext.add(pair[1]);
-      }
-    }
-  anchors.sort((a, b) => a[0] - b[0]);
-  return { anchors, deferredOld, deferredNext };
-}
-
-/**
- * A gap too large to score pair by pair. A run of the same length whose blocks all pair in place
- * pairs in place; otherwise only blocks that are nearly the same text and near the gap's diagonal
- * pair, and the rest stay unpaired.
- */
-function pairLargeGap(
-  old: readonly PMNode[],
-  next: readonly PMNode[],
-  a0: number,
-  a1: number,
-  b0: number,
-  b1: number,
-  skipped: (i: number, j: number) => boolean,
-): Array<[number, number]> {
-  const rows = a1 - a0;
-  const cols = b1 - b0;
-  if (rows === cols) {
-    const inPlace = Array.from({ length: rows }, (_, k) => [a0 + k, b0 + k] as [number, number]);
-    if (inPlace.every(([i, j]) => !skipped(i, j) && weight(old[i], next[j], TUNE.bandSimilar) > 0))
-      return inPlace;
-  }
-  const ratio = cols / rows;
-  return (
-    weightedOrderedMatches(
-      (i, j) =>
-        skipped(i, j) || Math.abs(j - b0 - (i - a0) * ratio) > TUNE.band
-          ? 0
-          : weight(old[i], next[j], TUNE.bandSimilar),
-      a0,
-      a1,
-      b0,
-      b1,
-      TUNE.work,
-    ) ?? []
-  ).map(([i, j]) => [i, j]);
+  for (const level of atLevel.values()) if (level.length === 1) anchors.push(level[0]);
+  return anchors.sort((a, b) => a[0] - b[0]);
 }
 
 const sameType = (a: PMNode, b: PMNode) => a.type === b.type;
