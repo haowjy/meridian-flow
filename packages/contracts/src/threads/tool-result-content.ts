@@ -13,6 +13,11 @@ export type StoredMediaPart = {
   /** A PDF's page count, counted when it was read; what it costs the model depends on it. */
   pageCount?: number;
   name: string;
+  /**
+   * A writer's picture only: the chat's own copy of the bytes, made when the message was sent, so
+   * the picture stays in the chat after its upload is deleted or purged.
+   */
+  chatCopy?: { key: string };
 };
 
 export type StoredTextPart = { type: "text"; text: string };

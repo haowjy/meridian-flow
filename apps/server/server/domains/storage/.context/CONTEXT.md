@@ -98,6 +98,13 @@ Nitro traces
 Every delete of a stored object that may have a derived file, compensating deletes
 included, goes through `ObjectRelease`, so a derived file never outlives its original.
 
+## Chat media
+
+`chatMediaPrefix(threadId)` (`chat-media/<threadId>/`) holds a thread's own copies of the pictures
+its writer sent, each with its `.preview` beside it. They belong to the thread, not to the upload
+they came from: the Work purge lists the prefix and releases it after commit, and no document
+release touches it.
+
 ## Derived files
 
 A file is derived from an original and lives and dies with it. `derivedObjectKeys(key)`
