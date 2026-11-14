@@ -41,9 +41,9 @@ chat and use the returned ID, rather than assuming a global `cN` handle:
    overwrite. Send `./mf thread send <id> "invalid write probe" --mock
    '[{"toolCalls":[{"name":"write","args":{"command":"nope","path":"scratch://Bad"}}]},{"text":"Refusal probe finished."}]'`.
    Expect a failed tool row; the tool result reports an invalid command rather
-   than creating a document. A step's `responseId` and a tool call's `id` fix the ids the
-   runtime sees (default `chatcmpl-mock-<n>` and `call_mock_<n>_<i>`, which restart with the
-   process); the crash probes script them so a second process derives the same command ids.
+   than creating a document. A tool call's `id` fixes the call id the runtime sees (default
+   `call_mock_<n>_<i>`, which restarts with the process); the crash probes script it so their
+   assertions name the call.
 6. **Failure and retry.** `mock-recovery.json` must finish with the outline after
    one retry. `mock-provider-error.json` must leave a visible failed reply.
    `mock-truncated.json` must not be shown as an ordinary successful answer.

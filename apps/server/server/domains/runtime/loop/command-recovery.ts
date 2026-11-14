@@ -1,6 +1,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentCommands } from "../ports/document-commands.js";
 import { didNotRunResult, type ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -50,6 +51,7 @@ export function createCommandRecovery(deps: {
         accountId: thread.userId,
         projectId: thread.projectId,
       };
+      await testHook("recovery.beforeResolve");
       const outcome = await deps.commands.resolveCommand(key);
       const toolResult =
         outcome.status === "never" ? didNotRunResult(toolCallId) : outcome.result.toolResult;

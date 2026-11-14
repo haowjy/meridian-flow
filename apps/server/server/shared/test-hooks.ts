@@ -60,8 +60,10 @@ const TEST_HOOK_POINTS = [
   "command.afterLock",
   /** The effect ran and its outcome is stored; nothing has committed. */
   "command.beforeCommit",
-  /** The command's transaction committed; the caller has not been answered. */
+  /** The command's transaction committed (a model edit's, or a top-level one's); the caller has not been answered. */
   "command.afterCommit",
+  /** Recovery is about to resolve one open command call's key; its result block is not stored. */
+  "recovery.beforeResolve",
   /** A model response is about to be stored under the run's lease. */
   "response.beforeStore",
   /** A tool result is about to be stored; the call ran, nothing of its block exists. */

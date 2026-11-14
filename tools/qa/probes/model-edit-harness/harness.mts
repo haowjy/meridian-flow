@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
+import { modelEditIds } from "../../../../apps/server/server/shared/model-edit-ids.ts";
 import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.mts";
 
 export { createScratchDatabase, openHarness };
@@ -75,10 +77,12 @@ export class Child {
   private readonly waiters: (() => void)[] = [];
   private nextId = 1;
   private readonly proc: ChildProcess;
+  /** The application name of this process's connections. */
+  readonly name = `mec-${randomUUID()}`;
 
   private constructor(url: string, bundle: string) {
     this.proc = spawn(process.execPath, [bundle], {
-      env: { ...process.env, DATABASE_URL: url },
+      env: { ...process.env, DATABASE_URL: url, CHILD_NAME: this.name },
       stdio: ["pipe", "pipe", "inherit"],
     });
     createInterface({ input: this.proc.stdout as NodeJS.ReadableStream }).on("line", (line) => {
@@ -145,6 +149,20 @@ export class Child {
     return this.call({ op: "release", point });
   }
 
+  /** Waits for the child to die, as the case's kill point should make it; fails if it does not. */
+  async died(timeoutMs = 30_000): Promise<string> {
+    const outcome = await Promise.race([
+      this.exited,
+      new Promise<string>((done) => setTimeout(() => done("still running"), timeoutMs)),
+    ]);
+    return outcome;
+  }
+
+  /** Shortens a tool's registered timeout in this process. */
+  timeout(tool: string, ms: number) {
+    return this.call({ op: "timeout", tool, ms });
+  }
+
   /** SIGKILL, from outside: a death no handler sees. */
   kill(): Promise<string> {
     this.proc.kill("SIGKILL");
@@ -196,35 +214,154 @@ export async function openModelEditHarness(url: string) {
 
 type Harness = Awaited<ReturnType<typeof openModelEditHarness>>;
 
-/** Waits until the chat's latest assistant turn is complete, errored or interrupted. */
-export async function waitForAssistantTurn(h: Harness, threadId: string, timeoutMs = 30_000) {
+/**
+ * Waits until the chat has `count` assistant turns, the latest complete, errored or interrupted.
+ * A takeover adds a turn, so a case that expects the old run's turn and the new one passes 2.
+ */
+export async function waitForAssistantTurn(
+  h: Harness,
+  threadId: string,
+  { count = 1, timeoutMs = 30_000 } = {},
+) {
   const until = Date.now() + timeoutMs;
   for (;;) {
-    const [turn] = await h.raw<{ id: string; status: string }[]>`
-      select id, status from turns
-      where thread_id=${threadId} and role='assistant' and status not in ('pending','streaming','running')
-      order by position desc limit 1`;
-    if (turn) return turn;
+    const turns = await h.raw<{ id: string; status: string }[]>`
+      select id, status from turns where thread_id=${threadId} and role='assistant'
+      order by position`;
+    const last = turns.at(-1);
+    if (last && turns.length >= count && !["pending", "streaming", "running"].includes(last.status))
+      return last;
     if (Date.now() > until) throw new Error("the assistant turn did not settle");
     await new Promise((done) => setTimeout(done, 100));
   }
 }
 
-/** What a case asserts on: the stored rows for one chat and document. */
-export async function rows(h: Harness, threadId: string, documentId: string) {
+/** The paragraphs of a document's `prosemirror` text, as its XML string holds them. */
+const paragraphs = (xml: string) =>
+  [...xml.matchAll(/<paragraph>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
+
+/** One result block's outcome in a word: what the model was shown the call did. */
+function resultLabel(content: { result?: Record<string, unknown>; content?: unknown }): string {
+  const result = content.result ?? {};
+  const message = String(result.message ?? "");
+  if (/did not run/.test(message)) return "did_not_run";
+  if (/timed out/.test(message)) return "timeout";
+  return String(result.phase ?? result.status ?? result.code ?? "unknown");
+}
+
+/**
+ * The seam for part 3: the evidence a result block commits with it (the model's observation
+ * frontiers) is read here and nowhere else. Part 3 moves those rows to the document side and
+ * changes this one function; a frontier case asserts on `frontiers(h, thread)` beside `state`.
+ * `thread_shown_links` joins here the same way.
+ */
+export async function frontiers(h: Harness, threadId: string) {
+  const [found] = await h.raw<{ n: number }[]>`
+    select count(*)::int as n from observation_frontiers f
+    join turn_blocks b on b.id=f.source_block_id join turns t on t.id=b.turn_id
+    where t.thread_id=${threadId}`;
+  return (found as { n: number }).n;
+}
+
+/**
+ * The statuses of the model-edit command rows of this chat's calls, in call order. A command's id
+ * comes from the stored response's id and the call id.
+ */
+async function commandStatuses(h: Harness, threadId: string) {
+  const uses = await h.raw<{ response: string; call: string }[]>`
+    select b.model_response_id as response, b.content->>'toolCallId' as call
+    from turn_blocks b join turns t on t.id=b.turn_id
+    where t.thread_id=${threadId} and b.block_type='tool_use' and b.model_response_id is not null
+    order by t.position, b.sequence`;
+  const statuses: string[] = [];
+  for (const use of uses) {
+    const { commandId } = modelEditIds({ responseId: use.response, toolCallId: use.call });
+    const [row] = await h.raw<{ status: string }[]>`
+      select outcome->>'status' as status from document_commands where id=${commandId}`;
+    if (row) statuses.push(row.status);
+  }
+  return statuses;
+}
+
+/**
+ * What a case asserts on, from stored rows only: the live document's paragraphs, the assistant
+ * turns' statuses, each result block's outcome in call order, the edit receipts' call ids and
+ * the model-edit command rows' statuses. Frontiers are read separately (`frontiers`).
+ */
+export async function state(h: Harness, threadId: string, documentId: string) {
+  const results = await h.raw<{ call: string; content: Parameters<typeof resultLabel>[0] }[]>`
+    select b.content->>'toolCallId' as call, b.content as content
+    from turn_blocks b join turns t on t.id=b.turn_id
+    where t.thread_id=${threadId} and b.block_type='tool_result' order by t.position, b.sequence`;
   return {
-    text: await h.liveText(documentId),
-    turns:
-      await h.raw`select role, status from turns where thread_id=${threadId} order by position`,
-    blocks: await h.raw`
-      select b.block_type, b.content->>'toolCallId' as call, left(b.content::text, 160) as content
-      from turn_blocks b join turns t on t.id=b.turn_id where t.thread_id=${threadId}
-      order by t.position, b.sequence`,
-    edits:
-      await h.raw`select tool_call_id, command_id, kind from document_edits where document_id=${documentId} order by created_at`,
-    commands:
-      await h.raw`select id, kind, left(outcome::text,120) as outcome from document_commands where kind='model_edit'`,
+    doc: paragraphs(await h.liveText(documentId)),
+    turns: (
+      await h.raw<{ status: string }[]>`
+        select status from turns where thread_id=${threadId} and role='assistant' order by position`
+    ).map((turn) => turn.status),
+    results: results.map((r) => `${r.call}:${resultLabel(r.content)}`),
+    // The receipts of this chat's calls: another chat on the document has its own.
+    edits: (
+      await h.raw<{ call: string }[]>`
+        select e.tool_call_id as call from document_edits e
+        where e.document_id=${documentId} and e.tool_call_id in (
+          select b.content->>'toolCallId' from turn_blocks b join turns t on t.id=b.turn_id
+          where t.thread_id=${threadId} and b.block_type='tool_use')
+        order by e.created_at`
+    ).map((edit) => edit.call),
+    commands: await commandStatuses(h, threadId),
   };
+}
+
+/** A writer's replica of the draft as committed now; the caller destroys it. */
+export async function draftDoc(h: Harness, draftId: string) {
+  const read = await h.store.readDraftAt(draftId);
+  if (!read) throw new Error(`Draft ${draftId} is missing`);
+  return materializeDraftRead(read);
+}
+
+/** The document's Work drafts as stored, oldest first: each one's status and paragraphs. */
+export async function drafts(h: Harness, documentId: string) {
+  const found = await h.raw<{ id: string; status: string }[]>`
+    select id, status from document_drafts
+    where document_id=${documentId} and kind='work_draft' order by created_at, id`;
+  return Promise.all(
+    found.map(async (draft) => ({
+      status: draft.status,
+      doc: paragraphs((await h.readDraft(draft.id)).text),
+    })),
+  );
+}
+
+/** The probe's source's documents whose name starts with `prefix`: by name, and whether each is deleted. */
+export async function documentsNamed(h: Harness, prefix: string) {
+  return h.raw<{ id: string; name: string; deleted: boolean }[]>`
+    select id, name, deleted_at is not null as deleted from documents
+    where context_source_id=${h.ids.source} and name like ${`${prefix}%`} order by name`;
+}
+
+/**
+ * Cuts a child's session claim on its chats' runs, as a dropped connection does: its advisory
+ * locks go, so another process can take the runs over while this one is alive and held.
+ */
+export async function dropRunClaim(h: Harness, child: Child) {
+  const dropped = await h.raw`
+    select pg_terminate_backend(a.pid) from pg_locks l join pg_stat_activity a on a.pid=l.pid
+    where l.locktype='advisory' and l.granted and a.application_name=${child.name}`;
+  if (dropped.length === 0) throw new Error("the child holds no run claim");
+}
+
+/** Waits for a connection blocked on a `document_commands` insert: a resolve waiting on a key. */
+export async function waitForKeyWaiter(h: Harness, timeoutMs = 10_000) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const [waiting] = await h.raw`
+      select 1 from pg_stat_activity
+      where datname=current_database() and wait_event_type='Lock' and query ilike '%document_commands%'`;
+    if (waiting) return;
+    if (Date.now() > until) throw new Error("no resolve waited on a command key");
+    await new Promise((done) => setTimeout(done, 50));
+  }
 }
 
 /** The arguments a scripted model uses to insert `content` into the document at `path`. */

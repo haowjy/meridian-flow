@@ -78,8 +78,6 @@ export const mockModelStepSchema = z
     ...responseFields,
     /** Executed by the real runtime after reasoning/text. End a tool script with a text step. */
     toolCalls: z.array(toolCallSchema).min(1).max(100).optional(),
-    /** The response's provider id; default `chatcmpl-mock-<request>`. */
-    responseId: z.string().min(1).optional(),
     /** Truncation/filtering instead of normal completion; partial tools must not execute. */
     finishReason: z.enum(["length", "content_filter"]).optional(),
     error: z
