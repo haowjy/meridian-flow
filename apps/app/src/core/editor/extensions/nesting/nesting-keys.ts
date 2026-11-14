@@ -3,7 +3,7 @@
  * `nest` and writes attributes on the blocks it names; a binding declines (returns false)
  * wherever ProseMirror's own key does the right thing, so the base chain runs there.
  */
-import { innermostListStep, pathOf, readPath } from "@meridian/prosemirror-schema";
+import { innermostListStep, isNested, pathOf, readPath } from "@meridian/prosemirror-schema";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
@@ -16,7 +16,7 @@ type Dispatch = ((tr: Transaction) => void) | undefined;
 /** The text block at `$from` when it carries a path, with its place among its siblings. */
 function nestedBlockAt($from: ResolvedPos) {
   const block = $from.parent;
-  if (!block.isTextblock || readPath(block.attrs.path).length === 0) return null;
+  if (!block.isTextblock || !isNested(block.attrs.path)) return null;
   const sequence = selectedSequence(TextSelection.create($from.doc, $from.pos));
   return { block, pos: $from.before(), facts: sequence.facts[sequence.from], $from };
 }

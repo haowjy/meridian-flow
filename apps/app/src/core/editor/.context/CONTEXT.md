@@ -431,6 +431,17 @@ keyboard, pointer, drop, or draft-recovery answer.
   inside the paste sanitizer, before it drops list and quote elements; only the `data-`
   values it writes survive). Pasted lists merge with a list beside them; two pasted quotes in a
   row stay two (`|>`). A pasted item replaces an empty line instead of merging into it.
+- **A block changes type in one place** (`extensions/block-type.ts`): it keeps its `id`, its
+  nesting attributes and every other attribute the new type also has. The `#`/fence input rules
+  (`blockTypeInputRule`, never TipTap's `textblockTypeInputRule`), `setParagraph`,
+  `setCodeBlock`/`toggleCodeBlock` (toolbar, Turn into, block menu), the fence's own Backspace
+  and the slash menu's conversion of an empty block all go through it; ProseMirror's
+  `setBlockType`, TipTap's `setNode` and `clearNodes` build from defaults and drop both. So a
+  heading in a list item stays an item at every door; `setList` on a heading is the one
+  exception, making a body-text item. A slash insert lands after the list the caret's block is
+  in, inside the quotes around it (`afterList`); leaving a fence lands its new line where Enter
+  would (`landAt`). Questions about a block's place go through `nesting.ts` (`readPath`,
+  `isNested`, `isListed`, `isBodyText`), never a test on the `path` string.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

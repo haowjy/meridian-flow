@@ -33,6 +33,7 @@
  * what lets a future surface take Tab at `layer` scope while it is open
  * without touching this file.
  */
+import { isListed } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import {
   type EditorState,
@@ -168,7 +169,7 @@ function insertTab(state: EditorState, dispatch: Parameters<KeymapBinding>[1]): 
 function insideListItem(state: EditorState): boolean {
   const { $from } = state.selection;
   const block = $from.parent.isTextblock ? $from.parent : state.selection.$to.parent;
-  return typeof block.attrs.path === "string" && block.attrs.path.includes("-");
+  return isListed(block.attrs.path);
 }
 
 /**

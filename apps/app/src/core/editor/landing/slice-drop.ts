@@ -5,6 +5,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { isNested } from "@meridian/prosemirror-schema";
 import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
@@ -278,7 +279,7 @@ function blocksAtLanding(
     const { $from, $to } = selection;
     if ($from.depth === 1 && $from.parent.isTextblock) {
       if ($from.parentOffset === $from.parent.content.size) nodes.shift();
-      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock && !isNested(nodes[0]))
+      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock && !isNested(nodes[0].attrs.path))
         nodes[0] = retype(nodes[0], landingBlock);
     }
     if ($to.depth === 1 && $to.parent.isTextblock) {
@@ -286,7 +287,7 @@ function blocksAtLanding(
       else if (
         $to.parentOffset < $to.parent.content.size &&
         nodes.at(-1)?.isTextblock &&
-        !isNested(nodes.at(-1) as PMNode)
+        !isNested(nodes.at(-1)?.attrs.path)
       ) {
         nodes[nodes.length - 1] = retype(nodes.at(-1) as PMNode, landingBlock);
         joinsTail = true;
@@ -309,11 +310,6 @@ function blocksAtLanding(
   const content = Fragment.from(nodes.map(closeNode));
   if (content.size === 0) return null;
   return { slice: new Slice(content, 0, 0), joinsTail };
-}
-
-/** A list item or quoted block keeps its place when part of it is dropped; only plain text takes the landing block's type. */
-function isNested(node: PMNode): boolean {
-  return typeof node.attrs.path === "string" && /[->]/.test(node.attrs.path);
 }
 
 function retype(node: PMNode, landingBlock: PMNode): PMNode {
