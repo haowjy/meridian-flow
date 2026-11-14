@@ -1,41 +1,26 @@
 /**
- * What the writer reads when a Work update (goal or rename) is refused. Only a
- * refusal the writer can act on gets its own line, read from the server's
- * error code; anything else, a network drop included, is the caller's plain
- * retry line.
+ * What the writer reads when a Work update (goal or rename) did not apply. Only a failure the
+ * writer can act on gets its own line; anything else, a network drop included, is the caller's
+ * plain retry line.
  */
 import { t } from "@lingui/core/macro";
 import { deletedDestinationCopy } from "@/client/api/meridian-error";
 import { DeviceRefusedError } from "@/client/commands/submit";
-import { WorkCommandRefused } from "./work-mutations";
+import { WorkCommandRefused, WorkReturnedError } from "./work-mutations";
+
+/** The words for a closed Work, which a field shows on its trailing chip and as its sentence. */
+export const workClosedSentence = (why: WorkReturnedError["why"]) =>
+  why === "work_archived"
+    ? t`This Work is archived. Unarchive it to edit.`
+    : t`This Work was deleted. Restore it to edit.`;
 
 export function workUpdateFailure(cause: unknown, fallback: string): string {
   // The device-refusal toast already said it; the field keeps its draft and adds no second line.
   if (cause instanceof DeviceRefusedError) return "";
-  if (!(cause instanceof WorkCommandRefused)) return fallback;
-  const deleted = cause.code ? deletedDestinationCopy(cause.code) : null;
-  if (deleted) return deleted;
-  return copyFor(cause.code, cause) ?? copyFor(cause.reason, cause) ?? fallback;
-}
-
-function copyFor(key: string | null, cause: WorkCommandRefused): string | null {
-  switch (key) {
-    case "work_archived":
-      return t`This Work is archived. Unarchive it to edit.`;
-    case "work_not_found":
-      return t`This Work no longer exists.`;
-    case "work_name_conflict":
-    case "name_conflict":
-      return t`Another Work already has this name. Choose a different name.`;
-    case "returned":
-      return cause.state === "work_archived"
-        ? t`This Work is archived. Unarchive it to edit.`
-        : t`This Work no longer exists.`;
-    case "unavailable":
-      return cause.state === "archived"
-        ? t`This Work is archived. Unarchive it to edit.`
-        : t`This Work no longer exists.`;
-    default:
-      return null;
-  }
+  if (cause instanceof WorkReturnedError) return workClosedSentence(cause.why);
+  if (!(cause instanceof WorkCommandRefused) || !cause.code) return fallback;
+  return (
+    deletedDestinationCopy(cause.code) ??
+    (cause.code === "work_not_found" ? t`This Work no longer exists.` : fallback)
+  );
 }

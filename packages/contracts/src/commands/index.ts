@@ -41,9 +41,23 @@ export const EXPECTED_ACCOUNT_HEADER = "x-meridian-account";
  * effect was turned away after the claim and nothing of it committed. `never`: the id was
  * claimed so that no attempt under it can take effect.
  */
-export type CommandOutcome<R = unknown> =
+export type CommandOutcome<R = StoredResult> =
   | { status: "done" | "refused"; result: R }
   | { status: "never" };
+
+/**
+ * Where a done command's result differs from what was asked: `result.settled` on a done outcome,
+ * absent when it landed as asked.
+ * `already`: the asked state held before the command ran (a second press, or another tab did it).
+ * `returned`: the command would change a closed Work, so nothing changed; the result carries the
+ * Work as it stands and `why` names how it is closed.
+ */
+export type Settlement =
+  | { rule: "already"; state: string }
+  | { rule: "returned"; why: "work_archived" | "work_deleted" };
+
+/** What a stored command result may carry beyond its own fields. */
+export type StoredResult = { settled?: Settlement[] };
 
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =

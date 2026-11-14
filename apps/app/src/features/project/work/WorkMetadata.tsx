@@ -10,8 +10,10 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useFailure } from "@/client/failures/useFailure";
-import { workUpdateFailure } from "@/client/query/work-update-failure";
+import { WorkReturnedError } from "@/client/query/work-mutations";
+import { workClosedSentence, workUpdateFailure } from "@/client/query/work-update-failure";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,8 @@ export function useWorkMetadataController(
   const [saving, setSaving] = useState(false);
   const { failure, fail, end } = useFailure();
   const error = failure?.message ?? null;
+  // A closed Work kept none of the goal: the field keeps the text and says so beside Save.
+  const [closed, setClosed] = useState<string | null>(null);
   const [hasPendingIntent, setHasPendingIntent] = useState(false);
   const heldRef = useRef<HeldIntent>(null);
   const takeHeld = useCallback(() => {
@@ -85,6 +89,7 @@ export function useWorkMetadataController(
     }
     const goal = draft.trim();
     setSaving(true);
+    setClosed(null);
     end("retried");
     try {
       await saveWork({ goal });
@@ -93,6 +98,10 @@ export function useWorkMetadataController(
       focusDisplay();
       return true;
     } catch (cause) {
+      if (cause instanceof WorkReturnedError) {
+        setClosed(workClosedSentence(cause.why));
+        return false;
+      }
       fail(
         cause,
         workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`),
@@ -120,6 +129,7 @@ export function useWorkMetadataController(
     if (readOnly) return;
     setEditing(true);
     setDraft(work.goal ?? "");
+    setClosed(null);
     end("dismissed");
   }, [readOnly, work.goal, end]);
   const saveAndResume = useCallback(async () => {
@@ -144,6 +154,7 @@ export function useWorkMetadataController(
     dirty,
     saving,
     error,
+    closed,
     held: hasPendingIntent,
     announcement,
     editorRef,
@@ -298,6 +309,7 @@ export function WorkGoal({
 
 function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
   const errorId = "work-goal-error";
+  const closedId = "work-goal-closed";
   return (
     <>
       <InlineEditTextarea
@@ -306,7 +318,7 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
         disabled={c.saving}
         aria-label={t`Goal`}
         aria-invalid={Boolean(c.error)}
-        aria-describedby={c.error ? errorId : undefined}
+        aria-describedby={c.error ? errorId : c.closed ? closedId : undefined}
         placeholder={t`Add a goal for this Work`}
         onChange={(event) => c.setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -335,6 +347,7 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
             <Trans>Save</Trans>
           )}
         </Button>
+        {c.closed ? <WorkClosedChip id={closedId} sentence={c.closed} /> : null}
       </div>
     </>
   );

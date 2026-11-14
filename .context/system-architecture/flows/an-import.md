@@ -38,7 +38,7 @@ sequenceDiagram
 8. **Classify.** The organizer calls [file-intake](../server-files.md#file-intake) to classify each file and make WebP previews for HEIC, BMP and TIFF.
 9. **Stage tree.** It stages bounded generations of the tree through [context](../server-documents.md#context).
 10. **Stage documents.** Document bodies go through [collab](../server-documents.md#collab) (`MarkdownDocumentStore`, link binding).
-11. **Reveal.** One transaction publishes the tree, the catalog and the terminal import status in [postgres](../system.md#postgres), so the writer never sees a half-built tree.
+11. **Reveal.** One transaction publishes the tree and the terminal import status in [postgres](../system.md#postgres), so the writer never sees a half-built tree.
 12. **Poll.** The coordinator polls the import's status until it is terminal.
 
 State machines: [import (server)](../../../apps/server/server/domains/import/.context/state-machines.md), [import (app)](../../../apps/app/src/features/import/.context/state-machines.md), [context uploads](../../../apps/server/server/domains/context/uploads/.context/state-machines.md).

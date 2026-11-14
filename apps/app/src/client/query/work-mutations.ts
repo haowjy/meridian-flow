@@ -12,6 +12,7 @@ import { useCommandDriver, useCommands } from "@/client/commands/driver-context"
 import { DeviceRefusedError, submitCommand } from "@/client/commands/submit";
 import { projectQueryKeys } from "./project-query-keys";
 import {
+  type ReturnedWhy,
   WORK_KINDS,
   type WorkCommandRecord,
   type WorkCommandVariables,
@@ -22,20 +23,24 @@ import {
   workLanes,
 } from "./work-commands";
 
-/** The server turned a command away; `reason` is its code (`name_conflict`, `restore_expired`, ...). */
+/** The server turned a command away; `code` is its error code (`work_locked`, `work_not_found`). */
 export class WorkCommandRefused extends Error {
   readonly name = "WorkCommandRefused";
-  constructor(
-    readonly reason: string | null,
-    readonly state: string | null,
-    readonly code: string | null = null,
-  ) {
-    super(`Work command refused${reason ? `: ${reason}` : ""}`);
+  constructor(readonly code: string | null) {
+    super(`Work command refused${code ? `: ${code}` : ""}`);
   }
 
   /** Only a refusal the server did not explain can succeed on a second try: the others ran and were turned away. */
   get retryable(): boolean {
-    return this.reason === null && this.code === null;
+    return this.code === null;
+  }
+}
+
+/** The server left a closed Work as it stands: the writer's change did not apply. */
+export class WorkReturnedError extends Error {
+  readonly name = "WorkReturnedError";
+  constructor(readonly why: ReturnedWhy) {
+    super(why);
   }
 }
 
@@ -112,7 +117,7 @@ async function runWorkCommand<Op extends WorkOperation>(
   // A closed Work answers `done` with nothing changed: the field reopens like a refusal.
   if (failed?.returned) {
     if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
-    return new WorkCommandRefused("returned", failed.returned);
+    return new WorkReturnedError(failed.returned);
   }
   if (settled.state !== "never") return null;
   if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
@@ -120,11 +125,7 @@ async function runWorkCommand<Op extends WorkOperation>(
 }
 
 const refusedBy = (record: WorkCommandRecord | null) =>
-  new WorkCommandRefused(
-    record?.reason ?? null,
-    record?.refusalState ?? null,
-    record?.code ?? null,
-  );
+  new WorkCommandRefused(record?.code ?? null);
 
 /** Runs a refused command again, in its place. Resolves to its failure, or `null`. */
 export async function retryWorkCommand(

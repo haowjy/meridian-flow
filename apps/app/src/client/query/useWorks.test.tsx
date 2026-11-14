@@ -104,9 +104,9 @@ const transport = async (request: TransportRequest): Promise<TransportAnswer> =>
   if (answer === "refuse") {
     stored.set(commandId, {
       status: "refused",
-      result: { status: "refused", refusal: { error: "name_conflict" } },
+      result: { status: "refused", refusal: { error: "locked" } },
     });
-    return { status: 409, code: null, body: null };
+    return { status: 400, code: "work_locked", body: null };
   }
   return { status: 200, code: null, body: answer.work ?? null };
 };
@@ -231,7 +231,7 @@ describe("Work command projection", () => {
       });
       await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
       expect(field(WORK.id, "archivedAt")).toBeNull();
-      expect(seen.failures.get(WORK.id)?.error.reason).toBe("name_conflict");
+      expect(seen.failures.get(WORK.id)?.error.code).toBe("work_locked");
       await act(async () => seen.failures.get(WORK.id)?.dismiss());
       await settle(() => expect(seen.failures.size).toBe(0));
     });

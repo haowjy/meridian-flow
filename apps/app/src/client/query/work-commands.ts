@@ -5,9 +5,15 @@
  * (`createWorkKinds`); `work-command-projection` lays the records over the server snapshot.
  */
 import type { CommandKind, CommandRecord, HttpRequest } from "@meridian/command-driver";
+import type { Settlement, StoredResult } from "@meridian/contracts/commands";
 import { apiProjectWorksPath } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
+import {
+  isWorkArchived,
+  type UpdateWorkRequest,
+  type Work,
+  type WorkAnswer,
+} from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
@@ -22,6 +28,9 @@ export type WorkCommandVariables = {
   delete: { workId: string };
   restore: { workId: string };
 };
+
+/** How a closed Work turned a command away. */
+export type ReturnedWhy = Extract<Settlement, { rule: "returned" }>["why"];
 
 export type WorkOperation = keyof WorkCommandVariables;
 
@@ -180,18 +189,14 @@ type ViewOf<Op extends WorkOperation> = {
   since: number;
   /** The Work the server returned; set once the command is `done`. */
   committed?: Work;
-  /** Why the server turned it away (`name_conflict`, `restore_expired`, ...), when it says. */
-  reason: string | null;
   /**
    * Set when the server answered `done` but changed nothing because the Work is closed
-   * (`settled: [{ rule: "returned", why }]`): `work_archived` or `work_deleted`. The result is then
-   * the Work as it stands, so projecting it puts the subject back.
+   * (`settled: [{ rule: "returned", why }]`). The result is then the Work as it stands, so
+   * projecting it puts the subject back.
    */
-  returned: string | null;
-  /** The structured error code of the attempt that was turned away, when this tab saw it. */
+  returned: ReturnedWhy | null;
+  /** The error code of the attempt the server turned away (`work_locked`, `work_not_found`). */
   code: string | null;
-  /** For `unavailable`: whether the Work is `archived`, `deleted` or `missing`. */
-  refusalState: string | null;
 };
 
 export type WorkCommandRecord = { [Op in WorkOperation]: ViewOf<Op> }[WorkOperation];
@@ -200,25 +205,25 @@ const OPERATION_OF = Object.fromEntries(
   Object.entries(KINDS).map(([operation, kind]) => [kind, operation]),
 ) as Record<string, WorkOperation>;
 
+/** What a Work command's outcome carries: the Work route's own body, or the stored result of one. */
+type StoredWork = StoredResult & { work?: Work; refusal?: { error: string } };
+type WorkResult = WorkAnswer | StoredWork;
+
+const isAnswer = (result: WorkResult): result is WorkAnswer => "id" in result;
+
+/** A refusal stored with the command: the only one a Work command still has. */
+const locked = (result: unknown) => (result as StoredWork | undefined)?.refusal?.error === "locked";
+
 /** The Work view of a driver record; null for another domain's. */
 export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
   const operation = OPERATION_OF[record.kind];
   if (!operation) return null;
   const body = record.body as WorkCommandBody;
-  const result = record.outcome?.result as
-    | { work?: Work; status?: string; refusal?: { error?: string; state?: string } }
-    | Work
-    | null
-    | undefined;
-  // A direct answer is the Work itself; a stored outcome wraps it as `{ status, work }`.
-  const committed =
-    record.state === "done" && result && typeof result === "object"
-      ? "work" in result
-        ? result.work
-        : (result as Work)
-      : undefined;
-  const refusal =
-    record.state === "never" && result && "refusal" in result ? result.refusal : undefined;
+  const result = record.outcome ? (record.outcome.result as WorkResult | null) : null;
+  const done = record.state === "done" && result ? result : null;
+  const committed = done && (isAnswer(done) ? done : done.work);
+  const returned = done?.settled?.find((entry) => entry.rule === "returned");
+  const refused = record.outcome?.status === "never" ? record.outcome : null;
   return {
     id: record.id,
     operation,
@@ -229,17 +234,8 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
     observed: record.observed,
     since: record.since,
     committed: committed?.id ? committed : undefined,
-    reason: refusal?.error ?? null,
-    returned:
-      (record.state === "done" &&
-        (result as { settled?: { rule?: string; why?: string }[] } | null)?.settled?.find(
-          (entry) => entry.rule === "returned",
-        )?.why) ||
-      null,
-    refusalState: refusal?.state ?? null,
-    code:
-      (record.state === "never" && record.outcome?.status === "never" && record.outcome.code) ||
-      null,
+    returned: returned?.why ?? null,
+    code: refused?.code ?? (refused && locked(refused.result) ? "work_locked" : null),
   } as WorkCommandRecord;
 }
 

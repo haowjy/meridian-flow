@@ -11,8 +11,8 @@
 
 import { t } from "@lingui/core/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { useWorkMutations } from "@/client/query/work-mutations";
-import { workUpdateFailure } from "@/client/query/work-update-failure";
+import { useWorkMutations, WorkReturnedError } from "@/client/query/work-mutations";
+import { workClosedSentence, workUpdateFailure } from "@/client/query/work-update-failure";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
@@ -24,6 +24,9 @@ const headingClass = cn("relative flex min-w-0", role.pageHeading);
 
 const renameFailure = (cause: unknown) =>
   workUpdateFailure(cause, t`Couldn’t rename this Work. Try again.`);
+
+const closedSentence = (cause: unknown) =>
+  cause instanceof WorkReturnedError ? workClosedSentence(cause.why) : null;
 
 /** Renames the Work; rejects when the server refused it. */
 export function useWorkRename(projectId: string, work: Work) {
@@ -51,6 +54,7 @@ export function WorkTitleTab({
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
         failure={renameFailure}
+        closed={closedSentence}
         rename={rename}
       >
         {({ start, triggerRef }) => (
@@ -82,6 +86,7 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
         failure={renameFailure}
+        closed={closedSentence}
         rename={rename}
         fieldClassName="flex min-w-0"
       >

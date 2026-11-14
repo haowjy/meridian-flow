@@ -2,7 +2,10 @@
  * The destination a request names, as a move, a copy and a create all carry it: a parent by
  * identity (a folder id, or a scheme root and its owner) and a sibling position.
  */
-import type { ContextSiblingPosition, MoveContextEntryRequest } from "@meridian/contracts/protocol";
+import type {
+  ContextDestinationParent,
+  ContextSiblingPosition,
+} from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import { parseContextMutationName } from "./context-mutation-validation.js";
@@ -18,11 +21,9 @@ function parseWorkId(raw: unknown) {
 }
 
 /** A parent folder, or a scheme root and its owner, each with the missing-folder suffix (`createFolders`). */
-export function parseDestinationParent(
-  raw: unknown,
-): NonNullable<MoveContextEntryRequest["destinationParent"]> {
+export function parseDestinationParent(raw: unknown): ContextDestinationParent {
   const parent = raw as Record<string, unknown> | null;
-  let destinationParent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+  let destinationParent: ContextDestinationParent;
   if (parent?.kind === "folder") {
     destinationParent = {
       kind: "folder",

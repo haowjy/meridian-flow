@@ -1,75 +1,43 @@
 /**
  * Work commands: each lifecycle request claims its id in the transaction that changes the Work
- * (`runRouteCommand`). A refusal raised inside the change is stored with the command and thrown
- * again as the same domain error on every resend, so the route's one error mapping answers the
- * first request and every resend alike.
+ * (`runRouteCommand`). A Work command stores the Work as the writer should see it and, when the
+ * asked state already held, an `already` settlement. The one refusal left is the No Work lock; it
+ * is stored with the command and thrown again as the same domain error on every resend, so the
+ * route's one error mapping answers the first request and every resend alike.
  */
 import type { CommandId, ProjectId, UserId } from "@meridian/contracts";
-import type { CommandKind } from "@meridian/contracts/commands";
+import type { CommandKind, Settlement } from "@meridian/contracts/commands";
+import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import {
   WorkLifecycleUnavailableError,
   WorkLockedError,
-  WorkNameConflictError,
-  WorkRestoreConflictError,
-  WorkRestoreExpiredError,
+  type WorkRepository,
 } from "../domains/projects/index.js";
 import type { CommandStore } from "../shared/commands/drizzle-commands.js";
 import { runRouteCommand } from "./command-route.js";
 
-type WorkRefusal =
-  | { error: "name_conflict" | "restore_conflict" | "restore_expired" | "locked" }
-  | {
-      error: "unavailable";
-      workId: string;
-      state: WorkLifecycleUnavailableError["state"];
-      handle: string | null;
-    };
-
-/** What a Work command stores: the Work as the writer saw it (none for a delete), or its refusal. */
+/** What a Work command stores: the Work (none for a delete), what settled, or its refusal. */
 type WorkCommandResult =
-  | { status: "done"; work?: Work }
-  | { status: "refused"; refusal: WorkRefusal };
+  | { status: "done"; work?: Work; settled?: Settlement[] }
+  | { status: "refused"; refusal: { error: "locked" } };
 
 function refusalOf(cause: unknown): WorkCommandResult | undefined {
-  const refusal = refusalFields(cause);
-  return refusal && { status: "refused", refusal };
+  return cause instanceof WorkLockedError
+    ? { status: "refused", refusal: { error: "locked" } }
+    : undefined;
 }
 
-function refusalFields(cause: unknown): WorkRefusal | undefined {
-  if (cause instanceof WorkNameConflictError) return { error: "name_conflict" };
-  if (cause instanceof WorkRestoreConflictError) return { error: "restore_conflict" };
-  if (cause instanceof WorkRestoreExpiredError) return { error: "restore_expired" };
-  if (cause instanceof WorkLockedError) return { error: "locked" };
-  if (cause instanceof WorkLifecycleUnavailableError)
-    return {
-      error: "unavailable",
-      workId: cause.workId,
-      state: cause.state,
-      handle: cause.workHandle,
-    };
-  return undefined;
-}
-
-function errorOf(refusal: WorkRefusal): Error {
-  switch (refusal.error) {
-    case "name_conflict":
-      return new WorkNameConflictError();
-    case "restore_conflict":
-      return new WorkRestoreConflictError();
-    case "restore_expired":
-      return new WorkRestoreExpiredError();
-    case "locked":
-      return new WorkLockedError();
-    case "unavailable":
-      return new WorkLifecycleUnavailableError(refusal.workId, refusal.state, refusal.handle);
-  }
+/** The settlement a second press stores: the lifecycle state the Work was already in. */
+export function already(state: string): { settled: Settlement[] } {
+  return { settled: [{ rule: "already", state }] };
 }
 
 /**
  * Runs `effect` as the Work command `kind`, in one transaction that starts with the claim.
- * Answers the Work the command made (none for a delete) or throws the domain error that refused
- * it. `body` is the request's body without its `commandId`: a resend must carry the same one.
+ * Answers the Work the command made (none for a delete) and what settled, or throws the domain error that refused
+ * it. The effect lists what settled differently from the ask.
+ * `body` is the request's body without its `commandId`: a resend must carry the same one.
  */
 export async function runWorkCommand(
   store: CommandStore,
@@ -81,17 +49,54 @@ export async function runWorkCommand(
     workId?: string;
     body: unknown;
   },
-  effect: () => Promise<Work | undefined>,
-): Promise<Work | undefined> {
+  effect: () => Promise<{ work?: Work; settled?: Settlement[] }>,
+): Promise<{ work?: Work; settled?: Settlement[] }> {
   const result = await runRouteCommand<WorkCommandResult>(
     store,
     { ...input, selectors: { workId: input.workId ?? null } },
     async () => {
-      const work = await effect();
-      return work ? { status: "done", work } : { status: "done" };
+      const { work, settled } = await effect();
+      return { status: "done", ...(work && { work }), ...(settled && { settled }) };
     },
     refusalOf,
   );
-  if (result.status === "refused") throw errorOf(result.refusal);
-  return result.work;
+  if (result.status === "refused") throw new WorkLockedError();
+  return { work: result.work, settled: result.settled };
+}
+
+/** A Work route's body: the Work, with what settled differently from the ask when anything did. */
+export function workAnswer({ work, settled }: { work?: Work; settled?: Settlement[] }) {
+  if (!work) throw new Error("A Work command answers its Work");
+  return settled ? { ...work, settled } : work;
+}
+
+/**
+ * A command on a closed Work changes nothing: it is done, and the result is the Work as it stands
+ * with a `returned` settlement, so the client keeps what the writer typed or clicked. A purged
+ * Work still throws.
+ */
+export async function orReturnedWhenClosed(
+  works: WorkRepository,
+  workId: WorkId,
+  effect: () => Promise<{ work?: Work; settled?: Settlement[] }>,
+): Promise<{ work?: Work; settled?: Settlement[] }> {
+  try {
+    return await effect();
+  } catch (cause) {
+    if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing") {
+      const work = await works.findById(workId);
+      if (work) {
+        return {
+          work,
+          settled: [
+            {
+              rule: "returned",
+              why: cause.state === "archived" ? "work_archived" : "work_deleted",
+            },
+          ],
+        };
+      }
+    }
+    throw cause;
+  }
 }

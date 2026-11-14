@@ -4,7 +4,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { DELETION_RETENTION_DAYS as WORK_DELETE_RETENTION_DAYS } from "@meridian/contracts/retention";
 import type { ReactNode } from "react";
 import type { WorkCommandFailure } from "@/client/query/work-command-selectors";
 import type { WorkCommandRefused } from "@/client/query/work-mutations";
@@ -61,21 +60,6 @@ export function workFailureLine(
 
 /** A restore the server will refuse again as it is: Retry can't help. */
 function restoreRefusal(error: WorkCommandRefused, name?: string): ReactNode {
-  if (error.reason === "restore_conflict")
-    return name ? (
-      <Trans>Another Work is now named {name}. Rename that Work, then restore this one.</Trans>
-    ) : (
-      <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
-    );
-  if (error.reason === "restore_expired")
-    return name ? (
-      <Trans>
-        {name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
-      </Trans>
-    ) : (
-      <Trans>
-        This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
-      </Trans>
-    );
-  return null;
+  if (error.code !== "work_not_found") return null;
+  return name ? <Trans>{name} is gone from Trash.</Trans> : <Trans>Gone from Trash.</Trans>;
 }

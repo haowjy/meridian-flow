@@ -48,7 +48,7 @@ export function useWorkCommandFailures<Op extends WorkOperation>(
       failures.set(record.workId, {
         workId: record.workId,
         operation: record.operation as Op,
-        error: new WorkCommandRefused(record.reason, record.refusalState, record.code),
+        error: new WorkCommandRefused(record.code),
         retry: () => retryWorkCommand(driver, record),
         dismiss: () => dismissWorkCommand(driver, record.id),
       });

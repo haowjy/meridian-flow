@@ -3,24 +3,21 @@
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 
 /**
- * "deleted by Ana", "discarded from the draft by Ana", "removed by repair". Without a record the
+ * "deleted by Ana", "discarded from the draft by Ana". Without a record the
  * file is gone but not removed itself: its source or Work went, or a closed draft sits over a
  * document that stands again.
  */
 export function removalPhrase(removal: DocumentRemovalRecord | null | undefined): string {
   if (!removal) return "deleted";
   const { actor } = removal;
-  if (actor?.kind === "system") return "removed by repair";
   const verb = removal.reason === "deleted" ? "deleted" : "discarded from the draft";
   const name = actorName(actor);
   return name ? `${verb} by ${name}` : verb;
 }
 
-/** Who removed it, as the model reads it: a person, a Work, or the AI in a chat. */
+/** Who removed it, as the model reads it: a person or the AI in a chat. */
 function actorName(actor: DocumentRemovalRecord["actor"]): string | null {
   switch (actor?.kind) {
-    case "work":
-      return actor.name;
     case "user":
       return actor.displayName;
     case "agent":

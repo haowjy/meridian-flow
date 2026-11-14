@@ -5,7 +5,12 @@ import { requireWorkOwner, setWorkArchived } from "../../../../domains/projects/
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../lib/work-command.js";
+import {
+  already,
+  orReturnedWhenClosed,
+  runWorkCommand,
+  workAnswer,
+} from "../../../../lib/work-command.js";
 import { throwWorkMutationHttpError } from "../../../../lib/work-http.js";
 
 export default defineEventHandler(async (event) => {
@@ -17,6 +22,7 @@ export default defineEventHandler(async (event) => {
       { works: app.workRepo, projects: app.projectRepo },
       workId,
       user.userId,
+      { includeSoftDeleted: true },
     );
     const archived = await runWorkCommand(
       app.commands,
@@ -28,16 +34,17 @@ export default defineEventHandler(async (event) => {
         workId,
         body,
       },
-      async () =>
-        (
-          await setWorkArchived(
+      () =>
+        orReturnedWhenClosed(app.workRepo, workId, async () => {
+          const { after, changed } = await setWorkArchived(
             { works: app.workRepo, workContextNotices: app.workContextNotices },
             workId,
             true,
-          )
-        ).after,
+          );
+          return { work: after, ...(!changed && already("archived")) };
+        }),
     );
-    return serializeTransport(archived);
+    return serializeTransport(workAnswer(archived));
   } catch (error) {
     throwWorkMutationHttpError(error);
   }
