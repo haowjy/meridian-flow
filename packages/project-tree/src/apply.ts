@@ -364,7 +364,6 @@ export function undoApply(
   const now = Y.encodeStateVector(writer.doc);
   if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
   const { settled, copies } = appliedBy(writer, applied);
-  if (settled.length === 0) return "superseded";
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
   const restored = new Set(settled.map(([id]) => id));
   const undone = copies.map((copy) => copy.id);
