@@ -7,6 +7,7 @@ import { createDrizzleNoticePort } from "../../../notices/adapters/drizzle-notic
 import type { NoticePort } from "../../../notices/index.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
+import { TRIGGER_SHARE } from "../compaction/trigger.js";
 import type { WorkContextReader } from "../work-context.js";
 import { createTestAgentBinding } from "./runtime-fixtures.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
@@ -70,8 +71,9 @@ export function createCompactionFixture(db: Database) {
             tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 128000,
-            // The default trigger is 90% of the smaller of this tier and the usable window.
-            ...(threshold !== undefined && { inputTierTokens: Math.ceil(threshold / 0.9) }),
+            ...(threshold !== undefined && {
+              inputTierTokens: Math.ceil(threshold / TRIGGER_SHARE),
+            }),
             maxOutputTokens: 100,
             promptCache: { kind: "automatic", shortTtlSeconds: 60, longTtlSeconds: 60 },
             reasoning: { efforts: ["low", "medium", "high", "max"] },

@@ -166,7 +166,7 @@ function compactionBlock(
 }
 
 describe("resolveCompactionTrigger", () => {
-  it("clamps at the usable window, the absolute ceiling, and zero", () => {
+  it("waits for 90% of the smaller of the tier and the usable window, capped at the absolute ceiling", () => {
     expect(
       resolveCompactionTrigger({
         inputTierTokens: 50_000,

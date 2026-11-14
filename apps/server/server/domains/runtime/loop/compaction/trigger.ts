@@ -1,6 +1,8 @@
 /** Resolves the compaction trigger against the model's usable input window. */
 
 export const FLOW_ABSOLUTE_CEILING = 400_000;
+/** Share of the smaller of the input pricing tier and the usable window that compaction waits for. */
+export const TRIGGER_SHARE = 0.9;
 
 export interface ResolveCompactionTriggerInput {
   inputTierTokens?: number;
@@ -39,11 +41,11 @@ export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): 
         (input.concurrentRenderSafetyTokens ?? 0),
     ),
   );
-  const configured = Math.floor(
-    0.9 * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
+  const share = Math.floor(
+    TRIGGER_SHARE * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
   );
   return {
-    thresholdTokens: Math.max(0, Math.min(configured, usableWindowTokens, FLOW_ABSOLUTE_CEILING)),
+    thresholdTokens: Math.min(share, FLOW_ABSOLUTE_CEILING),
     usableWindowTokens,
   };
 }
