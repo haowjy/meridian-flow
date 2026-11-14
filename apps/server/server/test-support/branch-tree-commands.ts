@@ -42,7 +42,7 @@ import {
 } from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
-import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
+import type { useComposedRuntimes } from "./composed-runtime.js";
 import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
@@ -271,12 +271,9 @@ export function branchTreeCommands(
     return {
       reply,
       async now(name, args) {
-        const { runtime } = composed();
-        await bindEditAgent(runtime, work.threadId);
-        return runtime.app.toolExecutor.executeTool(
-          { id: randomUUID(), name, arguments: args },
-          { threadId: work.threadId, turnId: work.turnId, agentSlug: null },
-        );
+        const { runtime, runtimes } = composed();
+        const { call } = await runtimes.script(runtime, work).begin();
+        return call(name, args);
       },
       async create(path, text) {
         const turn = await reply();

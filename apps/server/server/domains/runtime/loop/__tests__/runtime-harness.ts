@@ -41,7 +41,6 @@ import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detac
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import { noCommandRecovery } from "../execution-finalizer.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createRunStarter } from "../run-starter.js";
@@ -197,7 +196,7 @@ export function createRuntimeHarness(
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
         backgroundTasks,
-        recoverCommands: noCommandRecovery,
+        recoverCommands: async () => {},
         toolRegistry,
         workContext,
         repos,
@@ -225,12 +224,6 @@ export function createRuntimeHarness(
       async resolve() {
         return null;
       },
-    },
-    responseWrites: {
-      async commitResponse() {
-        return { status: "committed", receipts: [], concurrentEdits: [], refused: [] };
-      },
-      async rollbackResponse() {},
     },
     shownLinks: createInMemoryShownLinkStore({
       transactionOwner:

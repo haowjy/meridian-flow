@@ -11,6 +11,7 @@
  */
 
 import type { ReplyMutations } from "@meridian/agent-edit/integration";
+import type { ProjectId, UserId } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -73,8 +74,6 @@ export interface ToolDispatchContext {
   lease: import("./ports.js").Lease;
   agentSlug: string | null;
   responseId: string;
-  /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
-  editResponseId?: string;
   threadId: ThreadId;
   currentTurn: Turn;
   signal?: AbortSignal;
@@ -363,9 +362,10 @@ export async function dispatchToolCall(
     {
       threadId: ctx.threadId,
       turnId: ctx.currentTurn.id,
-      responseIdentity: {
-        providerResponseId: ctx.responseId,
-        editScopeId: ctx.editResponseId ?? ctx.responseId,
+      responseIdentity: { providerResponseId: ctx.responseId },
+      commandOwner: {
+        accountId: ctx.thread.userId as UserId,
+        projectId: ctx.thread.projectId as ProjectId,
       },
       agentSlug: ctx.agentSlug,
       signal: ctx.signal,
@@ -386,14 +386,14 @@ export async function dispatchToolCall(
   );
   outputJournal.seal();
   await drainOutput();
-  if (ctx.signal?.aborted) {
+  // A command's outcome is stored even when the run was stopped: its edit may have committed.
+  if (ctx.signal?.aborted && !execResult.blockId) {
     return { kind: "cancelled" };
   }
 
   // A created ask settles the execution, whatever the tool did after asking.
   if (deferredAskId) return { kind: "deferred", askId: deferredAskId };
 
-  const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
   if (execResult.returnResult) {
     const returned = execResult.returnResult;
     const settled = await deps.delivery.storeUnderLease(ctx.lease, () =>
@@ -422,7 +422,7 @@ export async function dispatchToolCall(
       async () => {
         const block = contentForBlockInput({
           turnId: ctx.currentTurn.id,
-          ...(stagedWrite ? { responseId: ctx.responseId } : {}),
+          ...(execResult.blockId ? { id: execResult.blockId } : {}),
           blockType: "tool_result",
           sequence: ctx.blockSeqRef.value++,
           content: {

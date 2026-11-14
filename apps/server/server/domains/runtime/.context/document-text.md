@@ -18,19 +18,14 @@ Exclude it from document pairing and edit records, and retain its not-run output
 verbatim in compaction and history, rather than treating missing evidence as a stale
 successful write.
 
-Staged mutation results start with null. The response-settlement receipt supplies
-the revision captured at apply, and `persistCommittedWriteResult` copies it without
-a second read: a reread would misattribute an intervening writer edit. Revision
-evidence is distinct from shown-link evidence and is not derived from it.
+Revision evidence is distinct from shown-link evidence and is not derived from it.
 
 ## Shown links
 
 Tool results that show document links record host-only shown-link facts, stripped
 from the model-facing result. Handlers produce candidates and the executor records
 them only with an accepted result, in the transaction of the tool result or
-reference blocks. Settled receipts and concurrent response fits use the response
-save transaction. A response rollback still keeps evidence for an echo the model
-already saw.
+reference blocks.
 
 Rows are per showing key per turn. Fork readers select their own and source rows
 through the cutoff, then deduplicate by the latest eligible sequence; nothing is

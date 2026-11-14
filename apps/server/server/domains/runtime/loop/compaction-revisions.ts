@@ -13,11 +13,7 @@ export async function queryCompactionRevisions(input: {
   threadId: ThreadId;
   recorded: RecordedDocuments;
   revisions: DocumentRevisions;
-  assertNoResponseScope: () => void;
 }): Promise<Map<string, string | null>> {
-  // An open response has staged text that settled authority cannot represent. This is
-  // a programming error, not an unavailable revision, and must escape the fail-closed catch.
-  input.assertNoResponseScope();
   // Null revisions are already stale, including edit records for discarded or rejected paths.
   const documentIds = [
     ...new Set(
@@ -39,7 +35,6 @@ export async function changedDocumentUris(input: {
   projection: { turns: readonly Turn[]; blocks: readonly Block[] };
   policies: DocumentTextPolicies;
   revisions: DocumentRevisions;
-  assertNoResponseScope: () => void;
 }): Promise<string[]> {
   const recorded = collectRecordedDocuments(
     input.projection.turns.map((turn) => ({
@@ -52,7 +47,6 @@ export async function changedDocumentUris(input: {
     threadId: input.threadId,
     recorded,
     revisions: input.revisions,
-    assertNoResponseScope: input.assertNoResponseScope,
   });
   return [
     ...new Set(changedDocuments(recorded, current).flatMap((ref) => (ref.uri ? [ref.uri] : []))),

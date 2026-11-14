@@ -279,46 +279,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toMatchObject([{ level: "warn", payload: { documentIds: [stray] } }]);
     });
-    it("retires only its own draft's peers: another Work's staged reply on the shared document saves", async () => {
-      const { s } = await start();
-      const [ascension, beacon] = [
-        await s.work("Ascension", "draft"),
-        await s.work("Beacon", "draft"),
-      ];
-      const ori = await s.model(ascension).create("lore/ori", "Ascension's Ori.");
-      expect.soft(await s.model(beacon).create("lore/ori", "Beacon's Ori."), "joined").toBe(ori);
-      const staged = await s.model(beacon).reply();
-      expect((await staged.call("read", { path: "manuscript://lore/ori" })).isError).toBeFalsy();
-      const write = await staged.call("write", {
-        command: "replace",
-        path: "manuscript://lore/ori",
-        find: "Beacon's Ori.",
-        content: "BEACON STAGED TEXT.",
-      });
-      expect(write.isError, JSON.stringify(write.content)).toBeFalsy();
-
-      await s.discard(ascension, [ori]);
-      const saved = (await staged.save()) as {
-        status: string;
-        receipts: { documentId: string }[];
-        refused: unknown[];
-      };
-      expect.soft(saved.status, "Beacon's reply saves").toBe("committed");
-      expect.soft(saved.refused, "refusing nothing").toEqual([]);
-      expect
-        .soft(
-          saved.receipts.map((receipt) => receipt.documentId),
-          "with a receipt for Ori",
-        )
-        .toContain(ori);
-      expect
-        .soft(await s.view(beacon).read("lore/ori"), "Beacon's staged text survived")
-        .toMatchObject({
-          ok: true,
-          value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
-        });
-    });
-
     it("purges only inside a verified scope: a move to another source and a create there leave no hidden document under a tombstone", async () => {
       const { runtime, s } = await start();
       const [doomed, beacon] = [await s.work("Doomed", "draft"), await s.work("Beacon", "draft")];

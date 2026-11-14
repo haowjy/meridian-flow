@@ -60,6 +60,8 @@
  * The original array index is preserved so the orchestrator can map results
  * back to the model's output item order.
  */
+
+import type { ModelEditKey } from "@meridian/contracts/branches";
 import {
   type MeridianError,
   meridianErrorFromTool,
@@ -68,6 +70,8 @@ import {
 } from "@meridian/contracts/errors";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { modelEditIds } from "../../../shared/model-edit-ids.js";
+import type { DocumentCommands } from "../ports/document-commands.js";
 import {
   invalidArgumentsResult,
   parseToolInput,
@@ -76,6 +80,7 @@ import {
 import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
 import { jsonContent, textContent } from "./tool-content.js";
 import type {
+  ModelEditHandlerResult,
   RequestToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -107,6 +112,14 @@ export function toolFailureResult(result: { ok: false; error: MeridianError }) {
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
   const value = meridianErrorToJson(error);
   return { toolCallId, content: textContent(renderRefusal(value)), result: value, isError: true };
+}
+
+/** The result of a `documentCommand` call whose command was settled `never`: nothing changed. */
+export function didNotRunResult(toolCallId: string): ToolExecutionResult {
+  return errorResult(
+    toolCallId,
+    meridianErrorFromTool("This call did not run: it was stopped before it changed anything."),
+  );
 }
 
 /**
@@ -207,6 +220,15 @@ export function handlerToolResult(
   input: JsonObject,
 ): Omit<ToolExecutionResult, "toolCallId"> {
   const evidence = hostEvidence(output);
+  if (isModelEditHandlerResult(output)) {
+    // The command's own outcome holds the stored result: nothing is rendered a second time.
+    if (output.modelEdit.status === "never") {
+      const { toolCallId: _, ...ranNot } = didNotRunResult("");
+      return ranNot;
+    }
+    const { toolCallId: _, ...stored } = output.modelEdit.result.toolResult;
+    return { ...stored, ...evidence };
+  }
   if (isHandlerErrorResult(output)) {
     return {
       ...modelOutput(registration, toJsonValue(withoutHostOnly(output.output)), input),
@@ -229,6 +251,10 @@ export function handlerToolResult(
       : {}),
     ...evidence,
   };
+}
+
+function isModelEditHandlerResult(value: unknown): value is ModelEditHandlerResult {
+  return typeof value === "object" && value !== null && "modelEdit" in value;
 }
 
 const HOST_ONLY = ["evidence", "showing", "frontier"] as const;
@@ -384,15 +410,63 @@ function handlerContextForRegistration(
   }
 }
 
-export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatch {
-  /** Dispatches one call and maps handler failures to tool results. */
-  async function executeTool(
+/** A call that ended without a result: what stopped it, for the exit to settle. */
+type CallExit = { exit: ToolExecutionError };
+
+/**
+ * `commands` settles a `documentCommand` call that ends without its handler's result (timeout,
+ * cancel, a throw): the call's effect may still commit, so its outcome is asked for, never assumed.
+ */
+export function createToolExecutor(
+  registry: ToolRegistry,
+  commands?: DocumentCommands,
+): ToolExecutorWithBatch {
+  /** The key of a `documentCommand` call: its response, its id and whose thread it ran in. */
+  function commandKey(
+    registration: ToolRegistration | undefined,
     call: ToolCallInput,
     ctx: ToolExecutionContext,
+  ): ModelEditKey | undefined {
+    if (!registration?.documentCommand) return undefined;
+    if (!commands || !ctx.responseIdentity || !ctx.commandOwner)
+      throw new Error(`Tool ${call.name} is a document command and has no command context`);
+    return {
+      responseId: ctx.responseIdentity.providerResponseId,
+      toolCallId: call.id,
+      ...ctx.commandOwner,
+    };
+  }
+
+  /** A call whose handler may have started and did not return: its command answers for it. */
+  async function settleExit(
+    call: ToolCallInput,
+    registration: ToolRegistration | undefined,
+    key: ModelEditKey | undefined,
+    exit: ToolExecutionError,
   ): Promise<ToolExecutionResult> {
-    let registration: ToolRegistration | undefined;
+    const unsettled = executionErrorResult(call.id, registration, exit);
+    if (!key || !commands) return unsettled;
+    const outcome = await commands.resolveCommand(key);
+    const blockId = modelEditIds(key).blockId;
+    return outcome.status === "never"
+      ? { ...unsettled, blockId }
+      : { ...outcome.result.toolResult, blockId };
+  }
+
+  /** Runs one call to a result, or to the exit that stopped it once its handler could have started. */
+  async function attempt(
+    call: ToolCallInput,
+    ctx: ToolExecutionContext,
+    registration: ToolRegistration | undefined,
+    key: ModelEditKey | undefined,
+  ): Promise<ToolExecutionResult | CallExit> {
+    const blockId = key ? modelEditIds(key).blockId : undefined;
+    const ran = (result: Omit<ToolExecutionResult, "toolCallId">): ToolExecutionResult => ({
+      toolCallId: call.id,
+      ...result,
+      ...(blockId ? { blockId } : {}),
+    });
     try {
-      registration = registry.getRegistration(call.name);
       if (!registration) {
         return errorResult(call.id, meridianErrorFromTool(`Tool not found: ${call.name}`));
       }
@@ -453,6 +527,21 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
           : undefined,
+        ...(key
+          ? {
+              modelEdit: {
+                key,
+                render(raw) {
+                  const { evidence, ...rendered } = handlerToolResult(
+                    raw,
+                    registration,
+                    inputObject(input),
+                  );
+                  return { toolResult: { toolCallId: call.id, ...rendered }, evidence };
+                },
+              },
+            }
+          : {}),
       };
       const effectiveHandlerContext = handlerContextForRegistration(
         registration,
@@ -469,23 +558,18 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           ctx.signal,
         );
         if ("aborted" in outcome) {
-          return executionErrorResult(call.id, registration, {
-            kind: "abort",
-            message: "Tool aborted",
-            arguments: call.arguments,
-          });
+          return { exit: { kind: "abort", message: "Tool aborted", arguments: call.arguments } };
         }
         if (outcome.timedOut) {
-          return executionErrorResult(call.id, registration, {
-            kind: "timeout",
-            message: `Tool timed out after ${registration.timeoutMs}ms`,
-            arguments: call.arguments,
-          });
+          return {
+            exit: {
+              kind: "timeout",
+              message: `Tool timed out after ${registration.timeoutMs}ms`,
+              arguments: call.arguments,
+            },
+          };
         }
-        return {
-          toolCallId: call.id,
-          ...handlerToolResult(outcome.result, registration, inputObject(input)),
-        };
+        return ran(handlerToolResult(outcome.result, registration, inputObject(input)));
       }
 
       const handler = registration.execution.handler as (
@@ -500,24 +584,24 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         abortPromise ? [handlerPromise, abortPromise] : [handlerPromise],
       );
       if ("aborted" in outcome) {
-        return executionErrorResult(call.id, registration, {
-          kind: "abort",
-          message: "Tool aborted",
-          arguments: call.arguments,
-        });
+        return { exit: { kind: "abort", message: "Tool aborted", arguments: call.arguments } };
       }
-      return {
-        toolCallId: call.id,
-        ...handlerToolResult(outcome.result, registration, inputObject(input)),
-      };
+      return ran(handlerToolResult(outcome.result, registration, inputObject(input)));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return executionErrorResult(call.id, registration, {
-        kind: "exception",
-        message,
-        arguments: call.arguments,
-      });
+      return { exit: { kind: "exception", message, arguments: call.arguments } };
     }
+  }
+
+  /** Dispatches one call and maps handler failures to tool results. */
+  async function executeTool(
+    call: ToolCallInput,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolExecutionResult> {
+    const registration = registry.getRegistration(call.name);
+    const key = commandKey(registration, call, ctx);
+    const attempted = await attempt(call, ctx, registration, key);
+    return "exit" in attempted ? settleExit(call, registration, key, attempted.exit) : attempted;
   }
 
   /**

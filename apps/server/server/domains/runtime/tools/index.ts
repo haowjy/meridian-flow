@@ -50,6 +50,7 @@ export {
 } from "./spawn-tools.js";
 export {
   createToolExecutor,
+  didNotRunResult,
   handlerToolResult,
   type ToolExecutorWithBatch,
 } from "./tool-executor.js";

@@ -304,48 +304,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(await call("read", { path: "ch2 (2)" }))).toContain("Chapter two.");
     });
 
-    it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
-      const script = await start();
-      // w2's draft-mode chat drafts a change to ch2: a live delete leaves it alone.
-      await runtimes.script(script.runtime, OTHER).reply(async (call) => {
-        await call("write", { command: "replace", path: "ch2", find: "two", content: "2" });
-      });
-      await script.runtime.ports.documentSync.draftEffects.flush();
-      const { call, responseId } = await script.begin();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch1" }, path: "ch9" })).isError,
-      ).toBeFalsy();
-      const deleted = await call("write", { command: "delete", path: "ch2" });
-      expect(text(deleted)).toContain(
-        `Work "Polish" still has changes to it; applying them brings it back.`,
-      );
-      // The writer makes a new ch2 before the reply fails: the restored document lands beside it.
-      await db.insert(schema.documents).values({
-        contextSourceId: SOURCE_ID,
-        name: "ch2",
-        extension: "",
-        fileType: "markdown",
-      });
-
-      const rolledBack = await script.runtime.ports.documentSync.finalizeResponseRollback(
-        { providerResponseId: responseId, editScopeId: responseId },
-        THREAD as never,
-      );
-      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
-      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
-      expect(rolledBack.skipped).toEqual([]);
-      const drafts = await db
-        .select({ status: schema.documentDrafts.status })
-        .from(schema.documentDrafts)
-        .where(
-          and(
-            eq(schema.documentDrafts.documentId, CH2),
-            eq(schema.documentDrafts.kind, "work_draft"),
-          ),
-        );
-      expect(drafts).toEqual([{ status: "active" }]);
-    });
-
     it("refuses an undo the writer's later removal superseded even when the old path is occupied", async () => {
       const script = await start();
       const { call } = await script.begin();

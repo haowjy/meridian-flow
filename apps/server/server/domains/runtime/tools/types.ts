@@ -68,6 +68,8 @@ export interface ToolExecutionContext {
   turnId: TurnId;
   /** Model-response id currently dispatching tool calls. */
   responseIdentity?: ResponseAuthorship;
+  /** Whose thread this is: what a `documentCommand` call's key names beside its response and call. */
+  commandOwner?: Pick<ModelEditKey, "accountId" | "projectId">;
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -125,6 +127,11 @@ export interface ToolExecutionResult {
    * thrown call carries none. Never part of `content`, `result` or `metadata`.
    */
   evidence?: ResultEvidence;
+  /**
+   * Set when a `documentCommand` call's effect may have run: the result is the command's
+   * outcome, and its block is stored under this id even if the run was cancelled meanwhile.
+   */
+  blockId?: string;
 }
 
 /**

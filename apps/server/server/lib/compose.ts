@@ -179,6 +179,7 @@ import {
 import {
   createChildRunCoordinator,
   createChildRunDriver,
+  createCommandRecovery,
   createContextMediaResolver,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
@@ -210,8 +211,8 @@ import {
   createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
+  type DocumentCommands,
   InvalidAdmissionError,
-  noCommandRecovery,
   type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
@@ -871,10 +872,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
+  const documentCommands: DocumentCommands = {
+    resolveCommand: (key) => ports.documentSync.modelEdits().resolve(key),
+  };
+  const recoverCommands = createCommandRecovery({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    toolRegistry,
+    commands: documentCommands,
+  });
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
     toolRegistry,
-    recoverCommands: noCommandRecovery,
+    recoverCommands,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     runClaim: runClaim,
@@ -958,7 +968,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
-  const toolExecutor = createToolExecutor(toolRegistry);
+  const toolExecutor = createToolExecutor(toolRegistry, documentCommands);
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
       {
@@ -1001,7 +1011,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    recoverCommands: noCommandRecovery,
+    recoverCommands,
     authority: runClaim,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
@@ -1189,7 +1199,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
-    responseWrites,
     delivery,
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
@@ -1361,7 +1370,8 @@ export function createInMemoryAppServices(): AppServices {
   const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
-    recoverCommands: noCommandRecovery,
+    // This composition has no document tools, so no call can leave a command open.
+    async recoverCommands() {},
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");
