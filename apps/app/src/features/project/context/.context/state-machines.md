@@ -58,24 +58,3 @@ Each new `candidate` gets the next `revision`; binding or rejecting it keeps tha
 Work started for an earlier revision is dropped when it returns. A `candidate` carries the obligations still pending for it and a guard against
 re-entering a document whose removal already finished: binding without checking that guard
 reopens a document the writer just deleted.
-
-## Rename and move feedback
-
-What to show for one rename or move of a document or folder the writer made (`operationLifecycle` in
-`rename-operation-lifecycle.ts`). It is computed from the newest
-[namespace intent](../../../../../../../packages/resource-replica/.context/state-machines.md)
-that carries the operation id.
-
-```mermaid
-stateDiagram-v2
-  [*] --> pending
-  pending --> feedback: the intent settled with a successful move receipt
-  pending --> retired: cancelled, superseded, needs repair, settled locally, a delete, or settled without a successful move
-  feedback --> retired: the note's time runs out
-  retired --> [*]
-```
-
-No matching intent yet is `pending`, not `retired`: a cached projection can be read before the
-intent is admitted, and retiring on absence would drop the note for an operation that is about
-to appear. A rebased successor keeps the operation id, and the intent with the highest
-`sequence` decides.

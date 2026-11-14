@@ -11,26 +11,24 @@
  * Work's) and the chat's uploads. A URI naming another owner's Scratch or
  * another chat's uploads is outside it and always asks the server.
  *
- * The index also says WHICH catalog it is. A resolved answer is true of the
+ * The index also says WHICH tree it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
  * delete makes every cached answer a claim about a project that no longer
  * exists — without the project, the Work, or the base URI having moved. The
  * revision is what tells the resolution scope that, so no mutation site has to
- * remember to poke a cache it does not own. Project catalog wake hints also
- * advance it because a server answer may name a folder or hidden document
- * outside the catalogs this surface loads.
+ * remember to poke a cache it does not own. The project's wake hints (a draft
+ * owner's, the sources') also advance it because a server answer may name a
+ * folder or hidden document outside the trees this surface loads.
  *
- * Cached client-side and free: these are the same queries the context tree
- * already pays for, so the index costs no request.
+ * Read from the project's list the app already holds: the index costs no request.
  */
 
-import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useLinkResolutionEpoch } from "@/client/query/link-resolution-epoch";
-import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
+import type { TreeView } from "@/core/project-tree/tree-view";
 
-import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
+import { LINKABLE_SCHEMES, linkableScopes } from "./linkable-scopes";
 
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
@@ -53,13 +51,13 @@ export type LinkableDocumentIndex = {
   readonly documents: readonly LinkableDocument[];
   readonly folders: readonly LinkableFolder[];
   /**
-   * Which catalog these rows are. Content, not an object identity and not a
+   * Which tree these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
    * invalidates nothing, while any change to what a link could reach is a
    * different one.
    */
   readonly revision: string;
-  /** Every catalog has loaded, so an address it holds no document at can be left to the server. */
+  /** Every list has synced, so an address it holds no document at can be left to the server. */
   readonly complete: boolean;
 };
 
@@ -76,18 +74,16 @@ export function useLinkableDocuments({
 }): LinkableDocumentIndex {
   const resolutionEpoch = useLinkResolutionEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
-  const catalogWorkId = scopes?.workId ?? null;
-  const catalogRootThreadId = scopes?.rootThreadId ?? null;
-  // A surface owns only some catalogs (an Editor document has no chat, so no uploads):
-  // an unowned scheme is absent here, not a catalog that never finishes loading.
-  const schemes = useMemo(
-    () => ownedLinkableSchemes(scopes),
-    [scopes?.projectId, scopes?.workId, scopes?.rootThreadId, scopes?.chatId],
-  );
-  const views = useContextCatalogViews(scopes?.projectId ?? "", schemes, {
+  const scopes = linkableScopes({ projectId, workId, rootThreadId, chatId });
+  const scopedWorkId = scopes?.workId ?? null;
+  const scopedRootThreadId = scopes?.rootThreadId ?? null;
+  // A surface owns only some sources (an Editor document has no chat, so no uploads): an unowned
+  // scheme has an empty tree here, and completeness is the list's.
+  const views = useProjectTreeViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
-    ...contextOwner(catalogWorkId, catalogRootThreadId),
+    // A No Work chat's lineage Scratch replaces the Work's.
+    workId: scopedRootThreadId ? null : scopedWorkId,
+    rootThreadId: scopedRootThreadId,
     chatId: scopes?.chatId ?? null,
   });
 
@@ -95,41 +91,37 @@ export function useLinkableDocuments({
     const documents: LinkableDocument[] = [];
     const folders: LinkableFolder[] = [];
     let complete = scopes !== null;
-    for (const scheme of schemes) {
-      const { catalog, isComplete } = views[scheme];
+    for (const scheme of LINKABLE_SCHEMES) {
+      const { tree, isComplete } = views[scheme];
       complete &&= isComplete;
-      if (!catalog) continue;
+      if (!tree) continue;
       documents.push(
         ...(scheme === "scratch"
-          ? linkableDocuments(
-              catalog,
-              catalogRootThreadId ? null : catalogWorkId,
-              catalogRootThreadId,
-            )
-          : linkableDocuments(catalog, null)),
+          ? linkableDocuments(tree, scopedRootThreadId ? null : scopedWorkId, scopedRootThreadId)
+          : linkableDocuments(tree, null)),
       );
-      folders.push(...linkableFolders(catalog));
+      folders.push(...linkableFolders(tree));
     }
     const next = {
       documents,
       folders,
-      revision: `${resolutionEpoch}\n${catalogRevision(documents, folders)}`,
+      revision: `${resolutionEpoch}\n${treeRevision(documents, folders)}`,
       complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, resolutionEpoch]);
+  }, [views, scopes, scopedWorkId, scopedRootThreadId, resolutionEpoch]);
 }
 
 /**
  * Everything an answer depends on, in one string: which documents exist and
- * where each one is. Two catalogs with the same revision cannot disagree about
+ * where each one is. Two trees with the same revision cannot disagree about
  * where any link goes, which is the property the resolution scope needs — a
  * link is re-asked when this changes and left alone when it does not.
  */
-function catalogRevision(
+function treeRevision(
   documents: readonly LinkableDocument[],
   folders: readonly LinkableFolder[],
 ): string {
@@ -139,27 +131,26 @@ function catalogRevision(
   ].join("\n");
 }
 
-/** The catalog's folders with a server identity; device-synthesized ancestry names nothing. */
-function linkableFolders(catalog: CatalogContextView): LinkableFolder[] {
+/** The tree's folders. */
+function linkableFolders(tree: TreeView): LinkableFolder[] {
   const folders: LinkableFolder[] = [];
   const walk = (parentId: string) => {
-    for (const node of catalog.children(parentId)) {
+    for (const node of tree.children(parentId)) {
       if (node.kind !== "dir") continue;
-      if (!node.navigationOnly)
-        folders.push({ folderId: node.entryId, title: node.name, uri: node.uri });
+      folders.push({ folderId: node.entryId, title: node.name, uri: node.uri });
       walk(node.entryId);
     }
   };
-  walk(catalog.root.entryId);
+  walk(tree.root.entryId);
   return folders;
 }
 
 function linkableDocuments(
-  catalog: CatalogContextView,
+  tree: TreeView,
   workId: string | null,
   rootThreadId?: string | null,
 ): LinkableDocument[] {
-  return catalog.files().map((node) => ({
+  return tree.files().map((node) => ({
     documentId: node.documentId,
     title: node.name,
     uri: node.uri,

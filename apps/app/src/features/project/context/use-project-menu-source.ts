@@ -1,13 +1,13 @@
-/** Catalog-backed project areas for document paths and placement menus. */
+/** Project areas read from the replay, for document paths and placement menus. */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
+import { useProjectTreeView, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
 import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
   buildMenuTree,
@@ -18,26 +18,34 @@ import {
   pathSegments,
   trailAlong,
 } from "./menu-tree";
-import { type ScratchSource, useScratchCatalogs } from "./use-scratch-catalogs";
+import { type ScratchSource, useScratchTrees } from "./use-scratch-trees";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
   tabFor(rowId: string): ServerOpenDocument | null;
-  /** How the catalog behind the folder on screen (its trail, outermost first) is loading. */
+  /** How the tree behind the folder on screen (its trail, outermost first) is loading. */
   loadState(trail: readonly DrillNode[]): "ready" | "loading" | "failed";
   /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
   trailInside(folderId: string): DrillNode[] | null;
+  /** The tree and shown node a folder or file id names, from whichever area holds it. */
+  locate(id: string): {
+    scheme: ProjectContextTreeScheme;
+    owner: ContextOwner;
+    tree: TreeView;
+    entry: TreeEntry;
+  } | null;
   /** Resolve an area or folder row into its placement destination. */
   folderFor(rowId: string): {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
     path: string;
-    catalog: CatalogContextView;
+    tree: TreeView;
+    /** The folder's id, or the source's id for an area's top: what a destination names as its parent. */
     entryId: string;
   } | null;
-  /** The own area's catalog and its opening trails. */
+  /** The own area's tree and its opening trails. */
   own: {
-    catalog: CatalogContextView | null;
+    tree: TreeView | null;
     /** Opens in the list holding the entry at `path`. */
     openAt(path: string): DrillNode[];
     /** Opens inside the folder at `folders` (names from the area root). */
@@ -51,7 +59,7 @@ export type ProjectMenuSource = {
  * Scratch on screen as folders under the project's title. The own area (the open
  * document's, an entry being moved, or the folder a mention opens) is always
  * reachable; when it is not one of those (an Uploads file, or another Work's
- * Scratch), its catalog is acquired here and held but not offered at the root.
+ * Scratch), its tree is read here and held but not offered at the root.
  */
 export function useProjectMenuSource({
   projectId,
@@ -74,10 +82,10 @@ export function useProjectMenuSource({
     heading: string;
   } | null;
 }): ProjectMenuSource {
-  const projectViews = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
+  const projectViews = useProjectTreeViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,
   });
-  const { primary, earlier } = useScratchCatalogs(projectId, scratch);
+  const { primary, earlier } = useScratchTrees(projectId, scratch);
   const scratchArea = useMemo<MenuArea | null>(
     () =>
       scratch
@@ -88,14 +96,14 @@ export function useProjectMenuSource({
             name: schemeLabel("scratch"),
             title: scratch.heading,
             icon: schemeIcon("scratch"),
-            catalog: primary.catalog,
+            tree: primary.tree,
             listed: true,
             earlier: scratch.earlierRootThreadId
-              ? { catalog: earlier.catalog, rootThreadId: scratch.earlierRootThreadId }
+              ? { tree: earlier.tree, rootThreadId: scratch.earlierRootThreadId }
               : undefined,
           }
         : null,
-    [scratch, primary.catalog, earlier.catalog],
+    [scratch, primary.tree, earlier.tree],
   );
   const documentScheme = own?.scheme ?? null;
   const documentOwner = own?.owner ?? null;
@@ -112,8 +120,10 @@ export function useProjectMenuSource({
     documentScheme !== null &&
     (EDITOR_CONTEXT_SCHEMES as readonly string[]).includes(documentScheme);
   const hiddenNeeded = documentScheme !== null && !sameAsScratch && !sameAsProject;
-  const hidden = useContextCatalogView(projectId, documentScheme ?? "scratch", {
-    ...(documentOwner ?? {}),
+  const hidden = useProjectTreeView(projectId, documentScheme ?? "scratch", {
+    workId: documentOwner?.workId,
+    rootThreadId: documentOwner?.rootThreadId,
+    chatId: documentOwner?.chatThreadId,
     enabled: hiddenNeeded,
   });
 
@@ -124,7 +134,7 @@ export function useProjectMenuSource({
       owner: {},
       name: schemeLabel(scheme),
       icon: schemeIcon(scheme),
-      catalog: projectViews[scheme]?.catalog ?? null,
+      tree: projectViews[scheme]?.tree ?? null,
       listed: true,
     }));
     if (scratchArea) list.push(scratchArea);
@@ -136,7 +146,7 @@ export function useProjectMenuSource({
         name: schemeLabel(documentScheme),
         title: documentHeading,
         icon: schemeIcon(documentScheme),
-        catalog: hidden.catalog,
+        tree: hidden.tree,
         listed: false,
       });
     return list;
@@ -147,7 +157,7 @@ export function useProjectMenuSource({
     documentScheme,
     documentOwner,
     documentHeading,
-    hidden.catalog,
+    hidden.tree,
   ]);
 
   const tree = useMemo(() => buildMenuTree({ heading: title, areas }), [areas, title]);
@@ -171,41 +181,49 @@ export function useProjectMenuSource({
           : areaId === "area:document"
             ? hidden
             : projectViews[areaId?.replace("area:", "") as keyof typeof projectViews];
-      return !view || view.catalog ? "ready" : view.isError ? "failed" : "loading";
+      return !view || view.tree ? "ready" : view.isError ? "failed" : "loading";
     },
     trailInside: (folderId) => {
       for (const area of areas) {
-        const folder = area.catalog ? menuEntryFor(area.catalog, folderId) : null;
+        const folder = area.tree ? menuEntryFor(area.tree, folderId) : null;
         if (folder?.kind === "dir") return trailAlong(area, pathSegments(folder.path));
+      }
+      return null;
+    },
+    locate: (id) => {
+      for (const area of areas) {
+        const entry = area.tree?.entry(id);
+        if (area.tree && entry)
+          return { scheme: area.scheme, owner: area.owner, tree: area.tree, entry };
       }
       return null;
     },
     folderFor: (rowId) => {
       for (const area of areas) {
-        const catalog = area.catalog;
-        if (!catalog) continue;
+        const tree = area.tree;
+        if (!tree) continue;
         if (rowId === area.id)
           return {
             scheme: area.scheme,
             owner: area.owner,
             path: "/",
-            catalog,
-            entryId: catalog.root.entryId,
+            tree,
+            entryId: tree.root.entryId,
           };
-        const folder = menuEntryFor(catalog, rowId);
+        const folder = menuEntryFor(tree, rowId);
         if (folder?.kind === "dir")
           return {
             scheme: area.scheme,
             owner: area.owner,
             path: folder.path,
-            catalog,
+            tree,
             entryId: rowId,
           };
       }
       return null;
     },
     own: {
-      catalog: ownArea?.catalog ?? null,
+      tree: ownArea?.tree ?? null,
       openAt: (path) => (ownArea ? trailAlong(ownArea, pathSegments(path).slice(0, -1)) : []),
       openInside: (folders) => (ownArea ? trailAlong(ownArea, folders) : []),
       crumbTrail: (path, depth) => crumbTrailFor(ownArea, path, depth),

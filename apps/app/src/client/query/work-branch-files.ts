@@ -1,10 +1,10 @@
-/** The Work draft list's catalog-labelled file projection and stable file order. */
+/** The Work draft list's tree-labelled file projection and stable file order. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import type { TreeView } from "@/core/project-tree/tree-view";
 import type { ContextUri } from "@/lib/context-uri";
 import { parseContextUri } from "@/lib/context-uri";
-import type { CatalogContextView } from "./context-catalog-projection";
 
 /** One document's active draft, as a file in the Work's list of drafts. */
 export type ReviewFileTarget = {
@@ -23,18 +23,18 @@ export type ReviewFileTarget = {
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
 export function projectWorkBranchFiles(
   drafts: readonly ThreadDraftListItem[],
-  catalog: Pick<CatalogContextView, "findDocument"> | null,
+  tree: Pick<TreeView, "findDocument"> | null,
 ): ReviewFileTarget[] {
   return sortDraftFiles(
     drafts.map((draft) => {
-      const live = catalog?.findDocument(draft.documentId);
+      const live = tree?.findDocument(draft.documentId);
       const location = live ? parseContextUri(live.uri) : null;
-      // Until the catalog answers, a document the draft moves is live where it was, not at the
+      // Until the tree answers, a document the draft moves is live where it was, not at the
       // draft's new path: opening it there would land on an address nothing holds yet.
       const movedFrom = draft.tree?.movedFrom;
       return {
         documentId: draft.documentId,
-        // The draft row owns a drafted move's current identity. The live catalog still names the
+        // The draft row owns a drafted move's current identity. The live tree still names the
         // old location until Apply, but review surfaces must agree with the open draft editor.
         documentName: movedFrom
           ? draft.documentName

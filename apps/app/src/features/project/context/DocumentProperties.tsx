@@ -1,7 +1,7 @@
 /**
  * DocumentProperties — a document's imported frontmatter, shown read-only under
  * its path: one quiet line that opens to the keys and values. It is the same
- * row in main and the side, and only mounts when the catalog says the
+ * row in main and the side, and only mounts when the list says the
  * document has properties; the properties themselves load by document id.
  * Nothing here edits them.
  */
@@ -9,9 +9,9 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentProperties as DocumentPropertiesDto } from "@meridian/contracts";
 import { useId } from "react";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
-import { documentContextOwner, type OpenDocument } from "@/client/stores";
+import { useProjectTreeView } from "@/client/query/useProjectTree";
+import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { editorColumnChrome } from "@/features/editor/editor-column";
@@ -19,18 +19,15 @@ import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-p
 import { cn } from "@/lib/utils";
 import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 
-/** The catalog's word on whether a document has properties; false until it has said so. */
+/** The create record's word on whether a document has properties; false until the list has said so. */
 function useHasProperties(projectId: string, tab: OpenDocument): boolean {
-  const owner = tab.kind === "new" ? {} : documentContextOwner(tab);
-  const { catalog } = useContextCatalogView(
-    projectId,
-    tab.kind === "new" ? "unfiled" : tab.scheme,
-    {
-      ...owner,
-      enabled: tab.kind !== "new",
-    },
-  );
-  return tab.kind !== "new" && catalog?.findDocument(tab.documentId)?.hasProperties === true;
+  const { tree } = useProjectTreeView(projectId, tab.kind === "new" ? "unfiled" : tab.scheme, {
+    ...(tab.kind === "new"
+      ? {}
+      : { workId: tab.workId, rootThreadId: tab.rootThreadId, chatId: tab.chatId }),
+    enabled: tab.kind !== "new",
+  });
+  return tree?.findDocument(tab.documentId)?.hasProperties === true;
 }
 
 export function DocumentProperties({

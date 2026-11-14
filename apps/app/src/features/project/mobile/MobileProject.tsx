@@ -70,15 +70,11 @@ export function MobileProject(props: MobileProjectProps) {
     setSheetOpen(true);
   }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const main = useMainItem();
   const trashedId = useTrashNavigation().shown;
   const trashedName = useTrashedDocument(props.projectId, trashedId ?? null).data?.name;
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
-    : contextBreadcrumbSegments(
-        props,
-        main.document.local ? main.document.document?.name : undefined,
-      );
+    : contextBreadcrumbSegments(props);
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
   // The sheet shows the side's item: a document or a chat, with the desktop's picker.
   const side = useSideItem();
@@ -306,11 +302,7 @@ function PhoneMain(props: MobileProjectProps) {
   );
 }
 
-function contextBreadcrumbSegments(
-  props: ReviewScopedProjectProps,
-  localName?: string,
-): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.chatDisplay) return [];
-  if (props.activeLocalDocumentId) return [{ label: localName ?? t`Untitled` }];
   return props.activeContextPath ? [{ label: pathLeafName(props.activeContextPath) }] : [];
 }

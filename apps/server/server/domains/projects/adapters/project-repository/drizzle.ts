@@ -9,6 +9,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockProjectLifecycleExclusive } from "../../../../shared/project-lifecycle-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import { provisionProjectSources } from "../../../context/index.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import type {
   CreateProjectInput,
@@ -16,7 +17,7 @@ import type {
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE, ensureManuscriptSource, nextProjectSlug } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
 type ProjectRow = typeof projects.$inferSelect;
 function mapProject(row: ProjectRow): Project {
@@ -73,7 +74,7 @@ export function createDrizzleProjectRepository(
           })
           .returning();
         if (!row) throw new Error("Failed to create project");
-        await ensureManuscriptSource(db, row.id);
+        await provisionProjectSources(db, row.id, { personal: false });
         await deps.ensureNoWork(row.id);
         return mapProject(row);
       });

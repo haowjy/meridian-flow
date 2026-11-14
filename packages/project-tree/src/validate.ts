@@ -13,7 +13,7 @@ const SERVER_BASE = ["carries", "appliedBy", "fromDraft", "restores", "restoredB
 /** The five kinds a client may write, with every field a client may set on each. */
 const FIELDS = new Map<string, readonly string[]>([
   ["create", [...BASE, "kind", "name", "parent", "source", "rank", "filetype", "provisional"]],
-  ["move", [...BASE, "parent", "rank", "from"]],
+  ["move", [...BASE, "parent", "rank", "from", "name"]],
   ["rename", [...BASE, "name", "fromName", "filetype"]],
   ["delete", [...BASE, "cascade"]],
   ["restore", BASE],
@@ -157,6 +157,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
     }
     case "move": {
       const { parent, rank, from } = value;
+      if (value.name !== undefined && !name(value.name)) return fail("name");
       const place = (v: unknown): v is string =>
         matches(v, PLACE) || (client === null && matches(v, LIST_PLACE));
       if (!place(parent) || !isRank(rank)) return fail("move");
@@ -170,6 +171,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
           parent,
           rank,
           from: { parent: from.parent, rank: from.rank },
+          ...(value.name === undefined ? {} : { name: value.name }),
         },
       };
     }

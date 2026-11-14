@@ -2,25 +2,20 @@
 
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
-import { useWorks } from "@/client/query/useWorks";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
+import { useTreeActions } from "@/client/query/useTreeActions";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
-import { useAccountResourceReplica } from "./account-feature-context";
 import { documentRow } from "./context-entry-name";
-import {
-  type DesiredIdentity,
-  destinationOwner,
-  identityDestination,
-  tabLocation,
-} from "./identity-location";
+import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
+
+const EDITOR_SCHEMES = ["manuscript", "kb", "user", "unfiled", "scratch"] as const;
 
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
-export type IdentityCommitOutcome =
-  /** `operationId` names the move's receipt; absent when the document queued or nothing changed. */
-  { status: "committed"; operationId?: string } | { status: "error"; message: string };
+export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
 
 /** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
@@ -31,7 +26,7 @@ export type IdentityCommitted = {
 } & OpenDocumentOwner;
 
 export type IdentityCommitOwnership = {
-  /** True only for the latest operation started by this identity surface. */
+  /** Always true: a commit appends its records before it returns, so none is superseded. */
   isLatest: boolean;
   /** The mounted representation captured before the namespace command. */
   document: OpenDocument;
@@ -60,10 +55,7 @@ export function identityCommitRoute(
   };
 }
 
-type IdentityCommitPlan =
-  | { kind: "queue"; desired: DesiredIdentity }
-  | { kind: "no-op" }
-  | { kind: "commit"; desired: DesiredIdentity };
+type IdentityCommitPlan = { kind: "no-op" } | { kind: "commit"; desired: DesiredIdentity };
 
 export function deriveIdentityCommitPlan(
   tab: OpenDocument,
@@ -81,7 +73,6 @@ export function deriveIdentityCommitPlan(
     name: stored.ok ? stored.name : target.name.trim(),
     ...(target.typedName ? { typedName: target.typedName } : {}),
   };
-  if (tab.kind === "new") return { kind: "queue", desired };
 
   const current = identityDestination(location, editorWorkId);
   const sameDestination =
@@ -111,54 +102,57 @@ export function useIdentityCommit({
     ownership: IdentityCommitOwnership,
   ) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
-  const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId);
+  const projectActions = useTreeActions({ kind: "project", projectId });
+  const accountActions = useTreeActions({ kind: "account" });
+  const location = tabLocation(document);
+  const trees = useProjectTreeViews(projectId, EDITOR_SCHEMES, {
+    workId: location.workId ?? editorWorkId,
+    rootThreadId: location.rootThreadId,
+  });
   return async (target) => {
     const plan = deriveIdentityCommitPlan(document, target, editorWorkId);
     if (plan.kind === "no-op") return { status: "committed" };
 
     try {
-      const key = document.resourceHandle
-        ? { handle: document.resourceHandle }
-        : await resources.keyForDocument(projectId, document.documentId);
-      if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
-      const authority = destinationOwner(destination, works, noWork);
-      if (!authority) throw new Error("The destination Work is unavailable");
-      const parent =
-        destination.parent ??
-        (!destination.folderPath.split("/").filter(Boolean).length
-          ? { kind: "root" as const, scheme: destination.scheme, owner: authority }
-          : document.kind !== "new" &&
-              destination.scheme === document.scheme &&
-              destination.folderPath === tabLocation(document).parentPath
-            ? await resources.parentForEntry(projectId, document.documentId)
-            : await resources.findParentAtLocation(projectId, {
-                scheme: destination.scheme,
-                path: destination.folderPath,
-                name: "",
-                ...authority,
-              }));
-      if (!parent) throw new Error("Destination folder is unavailable");
-      const optimisticDestination = { parent, name: target.name.trim() };
-      const ownership = plan.desired.typedName
-        ? await resources.setLocation(projectId, key, optimisticDestination, plan.desired.typedName)
-        : await resources.setLocation(projectId, key, optimisticDestination);
+      const current = location.scheme;
+      // A move between a project and the account's files is a server route, not a record.
+      if ((destination.scheme === "user") !== (current === "user"))
+        throw new Error("Moving between project and account files is not offered here");
+      const actions = destination.scheme === "user" ? accountActions : projectActions;
+      const from = trees[current as (typeof EDITOR_SCHEMES)[number]].tree;
+      const into = trees[destination.scheme as (typeof EDITOR_SCHEMES)[number]].tree;
+      const file = from?.findDocument(document.documentId);
+      if (!from || !into || !file) throw new Error("Document is not in the list");
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
+      const parentId =
+        destination.parentId ?? (folder ? into.findPath(`/${folder}`)?.entryId : into.root.entryId);
+      if (!parentId) throw new Error("Destination folder is unavailable");
+
+      const moved = parentId !== file.parentId;
+      const asked = moved ? actions.move(file.entryId, parentId) : { ok: true as const };
+      if (!asked.ok) throw new Error(asked.reason);
+      const stored = storedFilename(plan.desired.name, file);
+      const renamed =
+        plan.desired.name !== file.name || file.provisionalName
+          ? actions.rename(
+              file.entryId,
+              plan.desired.name,
+              (stored.ok ? stored.filename.filetype : null) ?? undefined,
+            )
+          : { ok: true as const, name: file.name };
+      if (!renamed.ok) throw new Error(renamed.reason);
       onCommitted(
         document.documentId,
         {
           scheme: destination.scheme,
-          path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
-          name: plan.desired.name,
+          path: `/${[folder, renamed.name].filter(Boolean).join("/")}`,
+          name: renamed.name,
           ...replaceOwner(destination),
         },
-        { ...ownership, document },
+        { isLatest: true, document },
       );
-      return {
-        status: "committed",
-        ...(ownership.operationId ? { operationId: ownership.operationId } : {}),
-      };
+      return { status: "committed" };
     } catch {
       return { status: "error", message: t`Couldn't save this document's home. Try again.` };
     }

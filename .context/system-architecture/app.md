@@ -16,7 +16,7 @@ flowchart LR
   library["library<br/><small>project list, import, export, account</small>"]:::group
   debug["debug<br/><small>the debug overlay</small>"]:::feature
   client["client<br/><small>talks to the server: HTTP, queries, thread store</small>"]:::module
-  core["core<br/><small>document sessions, sockets, local replica</small>"]:::group
+  core["core<br/><small>document sessions, sockets, the tree list</small>"]:::group
   shared["shared<br/><small>shared UI, helpers, rich text</small>"]:::group
   server["server<br/><small>HTTP and the two sockets</small>"]:::context
   routes -->|"1. mounts the workspace"| project
@@ -111,9 +111,9 @@ HTTP clients, React Query hooks, the thread store and the transport provider. Al
 
 ## core
 
-The editor core: document sessions, the socket to the server, the local replica.
+The editor core: document sessions, the socket to the server, the tree list.
 
-`core-editor`, `core-transport`, `core-resources`, `core-uploads` and `core-completion`. They draw nothing of their own; the features use them.
+`core-editor`, `core-transport`, `core-tree-list`, `core-uploads` and `core-completion`. They draw nothing of their own; the features use them.
 
 - Kind: group
 - Opens: [Core](app-core.md)

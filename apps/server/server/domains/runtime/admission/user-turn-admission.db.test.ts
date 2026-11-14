@@ -7,6 +7,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
 if (!RUN) {
@@ -115,7 +116,6 @@ if (!RUN) {
         finalPath: `map-${suffix}.png`,
         objectKey: `uploads/${PROJECT}/${documentId}`,
         fileType: "png",
-        locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
       return uri;
@@ -134,7 +134,7 @@ if (!RUN) {
         journalReader: eventReader,
         eventSink: createNoopEventSink(),
       });
-      const uploadIntake = createDrizzleUploadIntakeRepository(firstDb);
+      const uploadIntake = createDrizzleUploadIntakeRepository(firstDb, NO_PROJECT_HINTS);
       const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
         runClaim: createInMemoryRunClaim(),

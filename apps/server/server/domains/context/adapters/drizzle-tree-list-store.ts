@@ -284,6 +284,7 @@ export function createDrizzleTreeListStore(deps: {
     },
 
     admit: async ({ list, accountId, update }) => {
+      let created: readonly Extract<TreeRecord, { type: "create" }>[] = [];
       try {
         return await withLists([list], async (tx, [held]) => {
           const { copy, listId } = held as Held;
@@ -298,6 +299,7 @@ export function createDrizzleTreeListStore(deps: {
           const refused = new Set(verdict.refused.map((entry) => entry.id));
           const kept = verdict.kept.map((entry) => entry.record);
           const added = [...verdict.records.filter((record) => !refused.has(record.id)), ...kept];
+          created = verdict.records.filter(isCreate);
           // Every create the update holds claims its id, a refused one too (its kept create has
           // the same node): an id in use refuses the whole update.
           return {
@@ -315,8 +317,10 @@ export function createDrizzleTreeListStore(deps: {
         });
       } catch (cause) {
         // The transaction is rolled back: the update, its claims and its rows are not stored.
-        if (cause instanceof NodeIdRefusedError)
-          return { ok: false as const, reason: cause.message };
+        if (cause instanceof NodeIdRefusedError) {
+          const record = created.find((create) => create.node === cause.nodeId)?.id;
+          return { ok: false as const, reason: cause.message, ...(record ? { record } : {}) };
+        }
         throw cause;
       }
     },

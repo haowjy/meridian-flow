@@ -1,10 +1,10 @@
 /** Main's document identity proofs across every editable catalog scheme. */
 
 import { describe, expect, it } from "vitest";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import { resolveMainDocument } from "./views";
 
-const file: CatalogFile = {
+const file: TreeFile = {
   kind: "file",
   entryId: "document-routed",
   parentId: "folder",
@@ -31,7 +31,11 @@ describe("main's draft-only review route", () => {
     filetype: "markdown",
     schemaType: "document",
   } as const;
-  const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
+  const emptyTree = {
+    tree: { findPath: () => null, findDocument: () => null } as never,
+    isComplete: true,
+    isError: false,
+  };
   const route = (
     overrides: Partial<Parameters<typeof resolveMainDocument>[0]> = {},
   ): ReturnType<typeof resolveMainDocument> =>
@@ -41,9 +45,7 @@ describe("main's draft-only review route", () => {
       path: "/new-chapter.md",
       workId: null,
       addressed: { document: draftTab, draftOnly: true },
-      catalog: emptyCatalog,
-      isError: false,
-      isFetching: false,
+      tree: emptyTree,
       ...overrides,
     });
 
@@ -55,22 +57,24 @@ describe("main's draft-only review route", () => {
   it("keeps a bound draft-only document when another document now holds its old path", () => {
     // Document A moved from /old.md to /new.md and B took /old.md before the URL repaired.
     const occupant = { ...file, documentId: "document-b", path: "/old.md" };
-    const catalog = {
-      findPath: (path: string) => (path === occupant.path ? occupant : null),
-      findDocument: (id: string) => (id === occupant.documentId ? occupant : null),
-    } as never;
+    const tree = {
+      ...emptyTree,
+      tree: {
+        findPath: (path: string) => (path === occupant.path ? occupant : null),
+        findDocument: (id: string) => (id === occupant.documentId ? occupant : null),
+      } as never,
+    };
     const moved = { ...draftTab, path: "/new.md", name: "new.md" };
     const resolved = route({
       path: "/old.md",
       boundDocumentId: "document-draft",
       addressed: { document: moved, draftOnly: true },
-      catalog,
+      tree,
     });
     expect(resolved.document).toMatchObject({ documentId: "document-draft" });
     // A bound document no source resolves is pending, never the occupant.
     expect(
-      route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, catalog })
-        .document,
+      route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, tree }).document,
     ).toBeNull();
   });
 });

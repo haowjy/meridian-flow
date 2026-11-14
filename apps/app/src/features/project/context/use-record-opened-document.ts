@@ -5,131 +5,69 @@
  * POST, so the landing does not wait on the network. A failed or unchanged
  * record leaves that opening where the writer put it.
  *
- * A document the writer just made exists only on this device until its create
- * syncs, and the server answers a record for it 404. So the POST waits until
- * the replica says the server has the document; one that never gets there
- * (deleted first, or the account closed) is never posted. A document the
- * replica does not hold is the server's already.
+ * A document the writer just made exists only in this device's copy of the list until the list
+ * syncs, and the server answers a record for it 404. So the POST waits until the project's list
+ * has synced; one that never gets there (the account closed, or no access) is never posted.
  */
-import {
-  type ResourceProjectionSnapshot,
-  type ResourceRecord,
-  resourceIdentityIndex,
-} from "@meridian/resource-replica";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
 import { type RecentOpening, touchAccountRecent } from "@/client/recents";
+import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import {
   useAccountEpochSignal,
   useAccountId,
-  useOptionalAccountResourceReplica,
+  useOptionalTreeLists,
 } from "./account-feature-context";
 
-/** The replica reads the recorder needs. */
-export type ServerPresenceSource = {
-  readKnownDocument(
-    projectId: string,
-    documentId: string,
-  ): Promise<{ record: ResourceRecord } | null>;
-  observeProjection(
-    projectId: string,
-    listener: (snapshot: ResourceProjectionSnapshot) => void,
-    onError: (error: unknown) => void,
-  ): () => void;
-};
-
-/**
- * The id the server knows the document by once it holds it: at once for one
- * the replica does not track or has acknowledged, later when a local create is
- * acknowledged. A joined create answers with the joined id, never the device's
- * minted one. Null when it ends without reaching the server, or the signal aborts.
- */
-async function whenOnServer(
-  source: ServerPresenceSource,
+/** Resolves true once the project's list holds the copy's records on the server; false when it will not. */
+function whenListSynced(
+  lists: TreeListRegistry,
   projectId: string,
-  documentId: string,
   signal: AbortSignal,
-): Promise<string | null> {
-  // A replica that is closing, or a read that fails, proves nothing: no post.
-  try {
-    return await waitOnServer(source, projectId, documentId, signal);
-  } catch {
-    return null;
-  }
-}
-
-async function waitOnServer(
-  source: ServerPresenceSource,
-  projectId: string,
-  documentId: string,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const known = await source.readKnownDocument(projectId, documentId);
-  const state = (record: ResourceRecord | undefined) =>
-    !record || record.resource.lifecycle.kind === "acknowledged"
-      ? "server"
-      : record.resource.lifecycle.kind === "terminal"
-        ? "gone"
-        : "local";
-  const initial = state(known?.record);
-  if (initial !== "local")
-    return initial === "server" && !signal.aborted
-      ? (known?.record.resource.identity.documentId ?? documentId)
-      : null;
-  return new Promise<string | null>((resolve) => {
-    let stop: () => void = () => {};
-    const finish = (result: string | null) => {
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const held = lists.acquire({ kind: "project", projectId });
+    let stop = () => {};
+    const finish = (synced: boolean) => {
       stop();
       signal.removeEventListener("abort", onAbort);
-      resolve(result);
+      held.release();
+      resolve(synced);
     };
-    const onAbort = () => finish(null);
+    const onAbort = () => finish(false);
+    const check = () => {
+      const { status } = held.session.getSnapshot();
+      if (status === "synced" || status === "read-only") finish(true);
+      else if (status === "denied") finish(false);
+    };
     signal.addEventListener("abort", onAbort, { once: true });
-    try {
-      stop = source.observeProjection(
-        projectId,
-        ({ records }) => {
-          const record = resourceIdentityIndex(records).byDocumentId(documentId) ?? undefined;
-          const current = state(record);
-          if (current !== "local")
-            finish(
-              current === "server" ? (record?.resource.identity.documentId ?? documentId) : null,
-            );
-        },
-        () => finish(null),
-      );
-    } catch {
-      finish(null);
-      return;
-    }
-    if (signal.aborted) finish(null);
+    stop = held.session.subscribe(check);
+    if (signal.aborted) onAbort();
+    else check();
   });
 }
 
 export function useRecordOpenedDocument(): (opening: RecentOpening) => void {
   const accountId = useAccountId();
   const epoch = useAccountEpochSignal();
-  const resources = useOptionalAccountResourceReplica();
+  const lists = useOptionalTreeLists();
   const queryClient = useQueryClient();
   return useCallback(
     (opening: RecentOpening) => {
       const touched = touchAccountRecent(accountId, opening);
       if (!touched) return;
       void (async () => {
-        const documentId = resources
-          ? await whenOnServer(resources, opening.projectId, opening.documentId, epoch)
-          : opening.documentId;
-        if (!documentId) return;
-        const result = await recordRecentDocument(documentId, epoch);
+        if (lists && !(await whenListSynced(lists, opening.projectId, epoch))) return;
+        const result = await recordRecentDocument(opening.documentId, epoch);
         if (result.kind !== "recorded") return;
         void queryClient.invalidateQueries({
           queryKey: accountQueryKeys.recentDocumentsRoot(accountId),
         });
       })();
     },
-    [accountId, epoch, queryClient, resources],
+    [accountId, epoch, queryClient, lists],
   );
 }

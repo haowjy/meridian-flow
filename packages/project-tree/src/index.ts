@@ -14,6 +14,7 @@ export {
   restoreDiscard,
   undoApply,
 } from "./apply.js";
+export { nameFault } from "./names.js";
 export {
   type Actor,
   type BlobRef,
@@ -25,6 +26,7 @@ export {
   listRoot,
   type MoveRecord,
   type NodeKind,
+  nameSet,
   newId,
   type PurgeRecord,
   type RenameRecord,
@@ -58,6 +60,12 @@ export {
   projectedRows,
 } from "./rows.js";
 export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";
+export {
+  compareCatalogSiblings,
+  compareDefaultSiblings,
+  type DefaultSiblingOrderEntry,
+  type RankedSibling,
+} from "./siblings.js";
 export { undoChange } from "./undo.js";
 export { type ReadRecord, readRecord } from "./validate.js";
 export {

@@ -18,7 +18,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-suppor
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
-import { createDrizzleContextCatalog } from "./context-catalog.js";
+import { createDrizzleContextSources } from "./context-sources.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -302,13 +302,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("fences and restores a user source with its personal backing project", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db);
+      const sources = createDrizzleContextSources(db);
+      const userDocuments = async () =>
+        (
+          await Promise.all(
+            (await sources.ofUser(USER as never)).map((source) => sources.liveDocuments(source.id)),
+          )
+        )
+          .flat()
+          .map((file) => file.id);
 
-      await expect(
-        catalog.snapshot({ kind: "user", userId: USER } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([expect.objectContaining({ entryId: DOCS[3] })]),
-      });
+      expect(await userDocuments()).toContain(DOCS[3]);
 
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PERSONAL));
       const provisioned = createProjectContextDocumentStore(db, PROJECT, "user", USER);
@@ -322,9 +326,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({
         resolutions: [{ kind: "authority-unavailable", reason: "project_deleted" }],
       });
-      await expect(
-        catalog.snapshot({ kind: "user", userId: USER } as never),
-      ).resolves.toMatchObject({ entries: [] });
+      expect(await userDocuments()).toEqual([]);
 
       await db.update(projects).set({ deletedAt: null }).where(eq(projects.id, PERSONAL));
 
@@ -337,11 +339,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({
         resolutions: [{ kind: "available", entry: { uri: "user://doc-3" } }],
       });
-      await expect(
-        catalog.snapshot({ kind: "user", userId: USER } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([expect.objectContaining({ entryId: DOCS[3] })]),
-      });
+      expect(await userDocuments()).toContain(DOCS[3]);
     });
 
     it("hides draft-only identities from live availability", async () => {

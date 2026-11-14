@@ -4,9 +4,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { focusContentOnOpen, useDismissalFocus } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";

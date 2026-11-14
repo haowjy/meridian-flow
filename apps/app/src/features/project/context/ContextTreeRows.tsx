@@ -1,4 +1,4 @@
-/** Direct-child rows and inline actions for one context catalog scheme. */
+/** Direct-child rows and inline actions for one source's tree. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -13,13 +13,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  CatalogContextView,
-  CatalogFile as ContextFile,
-  CatalogNode as ContextNode,
-} from "@/client/query/context-catalog-projection";
 import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
+import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
   type ImportedTree,
@@ -37,7 +33,6 @@ import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import type { DragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
-import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { DropRegion, InsertionLine } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
@@ -65,7 +60,7 @@ export type TreeEnv = {
     createdFolder: string | null;
     setCreatedFolder: (path: string | null) => void;
   };
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   importHere?: {
     folders: boolean;
@@ -76,8 +71,9 @@ export type TreeEnv = {
   };
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
-  catalog: CatalogContextView;
-  tree?: ImportedTree;
+  tree: TreeView;
+  /** The tree's rows with the imports still being built; the tree's own when none is. */
+  rows?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
   /** Rows say a refusal in words with its repair, where nothing can hover (the phone). */
   refusalNotice?: true;
@@ -95,7 +91,7 @@ function useTreeEnv(): TreeEnv {
   return env;
 }
 
-/** A visible child group, which may span more than one catalog. */
+/** A visible child group, which may span more than one tree. */
 export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
   return (
     <div className="relative isolate">
@@ -111,7 +107,7 @@ export function TreeGroup({ depth, children }: { depth: number; children: ReactN
   );
 }
 
-/** The sole catalog child renderer; standalone lists start at depth zero. */
+/** The sole child renderer; standalone lists start at depth zero. */
 export function TreeChildren({
   parentId,
   parentPath,
@@ -125,14 +121,15 @@ export function TreeChildren({
   parent?: DropFolder | null;
 }) {
   const env = useTreeEnv();
-  const tree = useMemo(() => env.tree ?? plainTree(env.catalog), [env.tree, env.catalog]);
-  const children = tree.rows(parentId);
+  const rows = useMemo(() => env.rows ?? plainTree(env.tree), [env.rows, env.tree]);
+  const children = rows.rows(parentId);
   const siblings = useMemo(() => siblingsOf(children), [children]);
   return (
     <>
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
           kind={env.creation?.creating.kind}
+          parentId={parentId}
           parent={parentPath}
           depth={depth}
           siblings={siblings}
@@ -182,7 +179,7 @@ function DirRow({
   siblings,
   parent,
 }: {
-  dir: Extract<ContextNode, { kind: "dir" }>;
+  dir: TreeDirectory;
   depth: number;
   siblings: readonly ContextEntrySibling[];
   parent: DropFolder | null;
@@ -215,16 +212,13 @@ function DirRow({
   const isOpen = env.isExpanded(dir.entryId);
   // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
   const drop = useTreeDropTarget(
-    { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
+    { scheme: env.scheme, treeRootId: env.tree.root.entryId, folder },
     {
       reveal: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId),
       edges: { folder: parent, siblingId: dir.entryId, band: FOLDER_EDGE_BAND, after: !isOpen },
     },
   );
-  const row = useEntryRow(interaction.entry, {
-    active: false,
-    draggable: !dir.navigationOnly,
-  });
+  const row = useEntryRow(interaction.entry, { active: false });
   if (interaction.renaming) {
     return (
       <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
@@ -251,19 +245,12 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          detail={
-            <LinkUpdateNote
-              projectId={env.projectId}
-              subject={{ kind: "folder", id: dir.entryId }}
-              operationId={interaction.operationId}
-              layout="stacked"
-            />
-          }
           trailing={
             dir.namespaceFailure && !env.refusalNotice ? (
               <NamespaceFailureMark
                 failure={dir.namespaceFailure}
                 move={Boolean(dir.namespaceRepairMove)}
+                reason={dir.failureReason}
                 folder
               />
             ) : null
@@ -274,6 +261,7 @@ function DirRow({
                 <EntryRefusalNotice
                   failure={dir.namespaceFailure}
                   move={Boolean(dir.namespaceRepairMove)}
+                  reason={dir.failureReason}
                   folder
                   actions={interaction.actions}
                   onAction={interaction.onAction}
@@ -329,7 +317,7 @@ function FileRow({
   siblings,
   parent,
 }: {
-  file: ContextFile;
+  file: TreeFile;
   depth: number;
   siblings: readonly ContextEntrySibling[];
   parent: DropFolder | null;
@@ -337,7 +325,7 @@ function FileRow({
   const env = useTreeEnv();
   // A file is not a drop target of its own: its centre hands the drop to its folder (or the area).
   const drop = useTreeDropTarget(
-    { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder: parent },
+    { scheme: env.scheme, treeRootId: env.tree.root.entryId, folder: parent },
     { edges: { folder: parent, siblingId: file.entryId, band: FILE_EDGE_BAND, after: true } },
   );
   const interaction = useEntryInteraction({
@@ -370,19 +358,12 @@ function FileRow({
         frameProps={drop.dropProps}
         menu={interaction.menu}
         revealActions
-        detail={
-          <LinkUpdateNote
-            projectId={env.projectId}
-            subject={{ kind: "file", id: file.documentId }}
-            operationId={interaction.operationId}
-            layout="stacked"
-          />
-        }
         trailing={
           file.namespaceFailure && !env.refusalNotice ? (
             <NamespaceFailureMark
               failure={file.namespaceFailure}
               move={Boolean(file.namespaceRepairMove)}
+              reason={file.failureReason}
             />
           ) : null
         }
@@ -392,6 +373,7 @@ function FileRow({
               <EntryRefusalNotice
                 failure={file.namespaceFailure}
                 move={Boolean(file.namespaceRepairMove)}
+                reason={file.failureReason}
                 actions={interaction.actions}
                 onAction={interaction.onAction}
               />
@@ -427,11 +409,13 @@ function RenameRow({
 
 function CreateRow({
   kind,
+  parentId,
   parent,
   depth,
   siblings,
 }: {
   kind: ContextCreateKind;
+  parentId: string;
   parent: string;
   depth: number;
   siblings: readonly ContextEntrySibling[];
@@ -445,6 +429,7 @@ function CreateRow({
     projectId: env.projectId,
     scheme: env.scheme,
     kind,
+    parentId,
     parent,
     siblings,
     onDone: creation.done,

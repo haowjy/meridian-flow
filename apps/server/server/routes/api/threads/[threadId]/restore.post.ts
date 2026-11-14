@@ -19,6 +19,6 @@ export default defineEventHandler(async (event) => {
     threadId,
     user.userId,
   );
-  app.contextCatalogWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
+  app.projectWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
   return serializeTransport(thread);
 });

@@ -7,7 +7,7 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 import { parseProjectAddress } from "./project-address";
-import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
+import { createProjectNavigation } from "./project-navigation";
 
 function address(href: string) {
   const [path, query] = href.split("?");
@@ -15,35 +15,27 @@ function address(href: string) {
   if (parsed.kind !== "valid") throw new Error(parsed.reason);
   return parsed.address;
 }
-function setup(
-  initial: string,
-  displayed: DisplayedProjectSelection = {},
-  restore?: () => undefined | Promise<boolean>,
-) {
+function setup(initial: string, restore?: () => undefined | Promise<boolean>) {
   const history = createMemoryHistory({ initialEntries: [initial] });
   const changes: string[] = [];
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({
-        href: history.location.href,
-        key: history.location.state.__TSR_key ?? "",
-        state: { ...history.location.state },
-      }),
-      subscribe: (listener) => history.subscribe(listener),
-      flush: () => history.flush(),
-      settlePendingTraversal: restore ?? (() => history.settlePendingTraversal()),
-      replaceEntry(href, state) {
-        changes.push(`freeze:${href}`);
-        history.replace(href, state);
-      },
-      async navigate(href, { replace, state }) {
-        changes.push(`${replace ? "replace" : "push"}:${href}`);
-        if (replace) history.replace(href, state);
-        else history.push(href, state);
-      },
+  const navigation = createProjectNavigation({
+    read: () => ({
+      href: history.location.href,
+      key: history.location.state.__TSR_key ?? "",
+      state: { ...history.location.state },
+    }),
+    subscribe: (listener) => history.subscribe(listener),
+    flush: () => history.flush(),
+    settlePendingTraversal: restore ?? (() => history.settlePendingTraversal()),
+    replaceEntry(href, state) {
+      history.replace(href, state);
     },
-    () => displayed,
-  );
+    async navigate(href, { replace, state }) {
+      changes.push(`${replace ? "replace" : "push"}:${href}`);
+      if (replace) history.replace(href, state);
+      else history.push(href, state);
+    },
+  });
   return { history, navigation, changes };
 }
 
@@ -58,7 +50,6 @@ describe("project navigation", () => {
     });
     const { navigation, changes, history } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      undefined,
       () => restoration,
     );
     const first = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
@@ -229,27 +220,24 @@ it("writes the accepted native history entry before committing the workspace", a
   let entry = { href: source, key: "source", state: {} as Record<string, unknown> };
   let nativeHref = source;
   let listener = () => {};
-  const navigation = createProjectNavigation(
-    {
-      read: () => entry,
-      subscribe: (next) => {
-        listener = next;
-        return () => {};
-      },
-      flush: () => {
-        nativeHref = entry.href;
-      },
-      settlePendingTraversal: () => undefined,
-      replaceEntry: (href, state) => {
-        entry = { ...entry, href, state };
-      },
-      navigate: async (href, { state }) => {
-        entry = { href, key: "destination", state: state ?? {} };
-        listener();
-      },
+  const navigation = createProjectNavigation({
+    read: () => entry,
+    subscribe: (next) => {
+      listener = next;
+      return () => {};
     },
-    () => ({}),
-  );
+    flush: () => {
+      nativeHref = entry.href;
+    },
+    settlePendingTraversal: () => undefined,
+    replaceEntry: (href, state) => {
+      entry = { ...entry, href, state };
+    },
+    navigate: async (href, { state }) => {
+      entry = { href, key: "destination", state: state ?? {} };
+      listener();
+    },
+  });
   const result = await navigation.transition(
     address(destination),
     { replace: false },

@@ -7,15 +7,15 @@ for feature-level contracts first.
 
 The sidebar's sources, on desktop and in the phone's drawer, render ordinary nested
 folders through `TreeChildren`. Search supplies visible ids
-with ancestor closure, not a filtered catalog: rename and move free-name predictions
+with ancestor closure, not a filtered tree: rename and move free-name predictions
 always see all siblings. Search disclosure is temporary; it never overwrites
 the normal expansion state. A newly created Work note stays visible for naming
 even when its name does not match the search.
 
-Indentation counts visible expandable parents, not catalog depth: standalone
+Indentation counts visible expandable parents, not tree depth: standalone
 lists start at zero; rail sections start at one. The shared
 `TreeGroup` spans all visible children, including Earlier notes and the current
-Work’s separate catalog. It paints its parent guide above row highlights without taking pointer
+Work’s separate tree. It paints its parent guide above row highlights without taking pointer
 input. Section headers and folder rows use the same disclosure-center geometry.
 
 The chat Files menu combines this same shared Scratch browser with chat-owned
@@ -45,20 +45,16 @@ swallowing a same-tick `focus()`.
 |---|---|---|
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
-| validate siblings | all sibling identities and kinds | syntax only; sibling claims choose the optimistic free name |
+| validate siblings | all sibling identities and kinds | syntax only; the list numbers a taken name |
 | select | — | the part before a visible extension; all of a prose name |
 
 Names are compared and submitted as the contracts codec stores them
 (`storedFilename` in `context-entry-name.ts`), given the row's own
-facts (`NamedRow`: its catalog `extension` and whether it is `editable`, never read from
+facts (`NamedRow`: its stored `extension` and whether it is `editable`, never read from
 the suffix): a prose name has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
 beside `Chapter 13` predicts `Chapter 13 (2)`; a bare name keeps the renamed file's visible
-extension (`settings` on `config.toml`). Siblings of either kind compare by their literal rendered names. Create conflict copy names the occupant's kind, not the requested kind. Rename and move never block on a sibling claim: the shared allocator predicts the landed name immediately, and the server receipt replaces it after settlement. The codec's `invalid_name` message
-shows on the field. Rename and identity commits transport the writer's typed name.
-`planResourceLocation` stores it as `typedName` beside the canonical optimistic
-destination; the request sends `typedName`, and the server mover computes the stored
-name once. A canonical name is never fed back into extension inheritance.
-
+extension (`settings` on `config.toml`). Siblings of either kind compare by their literal rendered names. Create conflict copy names the occupant's kind, not the requested kind. Rename and move never block on a sibling claim: the shared allocator predicts the landed name for the warning, and the list numbers it when the record is written (rename, create) or when the replay shows it (move). The codec's `invalid_name` message
+shows on the field. A rename sends the stored name (`storedFilename`) and the type it changes to, if any; a canonical name is never fed back into extension inheritance.
 
 ## Dual-trigger caveat
 
@@ -109,24 +105,17 @@ validation uses the target folder's children. The rail's Files tree lists the pr
 replaces a pending one; Escape/blur semantics are the shared
 `useInlineEdit` contract.
 
-## Tree query invalidation
+## Deleting
 
-Deleting an editable file queues a resource deletion intent and hides the row
-optimistically. A terminal receipt carries exact identity and generation into
-session/removal authority. A rejected deletion restores the row with repair state. Transport
-failure leaves the submitted attempt recoverable and does not prove rejection
-or deletion. Folder deletion uses the same account namespace journal: its receipt
-settles the folder and exact descendant identities atomically. Pending deletion
-hides the subtree; refusal restores rows with a failure mark. Tree absence never
-proves document removal.
-
-A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDelete`: one own
-removal covers every document they take away, and an entry inside another entry's folder goes
-with that folder, never on its own. Each refused entry toasts and keeps its documents.
-Writer deletion has no confirmation step and no Undo: the row leaves the tree, and the document
-waits in Trash. Delete progress is derived from the namespace journal. A document the server never
-accepted has no Trash entry; its deletion settles on this device. Its content is cleaned up after ten
-minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it back.
+A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDelete`
+(`entry-drag/entry-failure.ts`): a `delete` record per entry, appended to the browser's copy of the
+list that holds it (`TreeActions.remove`, one update per list). The row leaves the tree at once and
+the document waits in Trash. One own removal covers every document the gesture takes away, and an
+entry inside another entry's folder goes with that folder, never on its own. A list that cannot
+take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
+comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
+delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
+Writer deletion has no confirmation step and no Undo here: the sidebar's Undo is step 8.
 
 ## Downlinks
 
@@ -134,61 +123,29 @@ minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it b
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
 
-Every rename is local first. File rename (any area, any Work) and the identity bar
-share the durable resource-location command; folder rename admits a folder
-namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
-and its descendants show their new place at once in the tree, headers and
-routes, and so does the phone. One placement source, the projected catalog, serves
-every surface, and a route resolves its open document by identity: the document the
-route is bound to (a navigation that named it, or an address answer, both proof; a
-cached path's guess never binds) is found by id, so a
-move of it or a folder above it, that move's rollback after a refusal, or another
-document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
-returns it as `bound` and it outranks the server's answer for that path; admission
-then repairs the URL (and, on the phone, the crumbs) to its projected path, and the
-phone host finds the same document by identity meanwhile. Desktop and phone also
-follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
-of the open document changes the URL at once. The route follows only while the selection is
-bound to that document at the current route and its projected locator or owner differs, so a
-pasted or traversed URL is never pulled back to a presented document. A review address owns its path and
-is never followed; its document still reconciles. A document under a pending
-move carries `placementPending` for the same reason: a server alias for the path the
-writer just gave it cannot pull the route back.
+A rename is a `rename` record, appended at once (`useRenameEntryForm`, `TreeActions.rename`): the
+list numbers the name when the clash is visible in its copy, and the tree, headers, tabs and routes
+show the new name from the same replay. Nothing is sent or retried by the UI: Yjs carries the record.
 
-A refused rename returns the entry to its old name with `NamespaceFailureMark` on
-the row. The identity bar of a homed document shows a passive status directing
-retry to Rename in the file list; only provisional placement opens a field there.
-The list repair field opens once, as the refusal arrives (`use-repair-on-fresh-failure.ts`): a
-failure already there on mount, a remount, or one that lands while another input is
-active leaves only the mark; blur dismisses the field without retrying and Enter
-retries.
+A refusal comes back as a `refused` settlement on the record, and `treeFailures`
+(`core/project-tree/tree-failures.ts`) puts it on the row as `TreeFailure` fields:
+`namespaceFailure` (`delete`, `set-location`, `create`), the server's `failureReason`, the repair
+(`namespaceRepairName` for a rename, `namespaceRepairMove` for a move) and `failureRecord`. The row
+returns to where it was with `NamespaceFailureMark`; the identity bar of a homed document shows a
+passive status directing the writer to Rename in the file list. The list's repair field opens once,
+as the refusal arrives (`use-repair-on-fresh-failure.ts`): a failure already there on mount, a
+remount, or one that lands while another input is active leaves only the mark; blur dismisses the
+field without retrying and Enter retries. A later record of the writer's on the node ends the
+failure, which is the repair. The row menu's Dismiss (`dismissFailure`) puts a refusal away without
+repairing it; it stays in the list and no longer shows.
 
-A document whose create the server refused sits in Unfiled with its text and the same mark
-(`namespaceFailure: "create"`, "Couldn't create this document. Try another place."). Its row menu
-repairs it like any row: Move… or Rename files it with a new create under the same id,
-Delete removes it from this device. A refused named create (New file in a folder, a link's
-Create) is listed at its name, not under a folder of the refused destination.
+A document whose create the server kept in Unfiled stands there with its text and the same mark
+(`namespaceFailure: "create"`, "This document couldn't be created where you put it." and the
+reason). Its row menu repairs it: Move… offers the place the writer asked for
+(`namespaceRepairMove`), Rename the name.
 
-The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
-return the operation id issued at admission; the account-owned lifecycle watches
-its journal receipt and `LinkUpdateNote` shows "Updated N links" on its own line
-under the name in tree and drawer rows, inline in the phone listing,
-or after the open document's identity path. Selection is keyed by stable resource
-handle (folder handles for folders). Presentation document IDs resolve through
-the replica's canonical identity/alias policy, so feedback follows remint and
-appears in every mounted surface. Observation starts at admission and ends on
-positive terminal evidence or the receipt's deadline (settlement plus four
-seconds), independently of row mounts. Missing cached records are not terminal
-evidence. Each operation announces once through the app's polite region.
-A move that updated no links shows nothing: the writer just did it and can see
-where the row went (owner, 2026-10-14). Refused moves show nothing.
-Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
-destination name, including a cancelled rename/move chain; fresh moves use the
-entry's current name.
-The remembered operation follows the entry's identity across row remounts. Inline
-operations keep stable entry identity. Work selection is attached only to
-Scratch/Uploads, never project-owned Manuscript/KB/User paths.
-
+A move or rename shows no "Updated N links" line: the links name the document's id, which does
+not change, and a record has no receipt to carry the count.
 
 ## Move and Copy picker, and Scratch rows
 
@@ -212,7 +169,7 @@ when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
 commit at the area list. In the current parent the action is "Change position", which
 opens the places among its siblings in place of the tree (`DrillAction.choices`): the top, after each
-sibling, the bottom, read from the replica's complete sibling order (`childrenAt`, not what a search
+sibling, the bottom, read from the tree's complete sibling order (`children`, not what a search
 shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
 siblings. The phone uses the same picker; it has no drag.
 A taken name never refuses: the row arrives at the next free name (predicted
@@ -222,24 +179,28 @@ warning line under it ("chapter-1 will be renamed chapter-1 (2)", the `note` of 
 `DrillAction`): a move renames something the writer already has, and until tree
 Undo exists dragging it back doesn't restore the name. A Copy shows none, since
 nothing the writer has changes. Either pick opens the destination folder.
-Catalog snapshots span areas, so menu lookups check source identity as well as
-entry identity; equal paths in different areas remain distinct destinations.
+Trees span areas, so menu lookups check source identity as well as entry identity; equal paths in
+different areas remain distinct destinations.
 
-Move… and dragging share every step. Refusal is judged by identity from the
-replica's placement graph (`moveRefusal` in `entry-drag/move-plan.ts`), so the
-picker and a hover agree even while a peer moves rows. A ready drag plan already
-contains rows with their authoritative `ParentRef`; hover prediction and
-`moveRows` consume those rows without resolving the destination again.
-`moveRows` (`entry-drag/execute-move.ts`) places, remembers each operation for
-its row's link-update note and returns which rows moved and which the replica refused. Root authority resolution lives in `move-entry.ts`; arrival naming is
-`arrivals` in `execute-move.ts`, over `context-entry-name.ts`. A positional
-destination makes a same-parent placement a reorder rather than "already there";
-the subject is removed from name occupancy, so keeping its name cannot collide
-with itself. Cross-parent placement without a position appends.
+Move… and dragging share every step. Refusal is judged by identity from the trees the list
+shows (`moveRefusal` in `entry-drag/move-plan.ts`: a folder over itself or its own subtree, a row
+already in the parent), so the picker and a hover agree even while a peer moves rows. A ready
+plan contains rows with their `TreeDestination` (`{ parentId, index? }`, the folder's id or the
+source's id at the top); hover prediction and `moveRows` consume those rows without resolving the
+destination again. `moveRows` (`entry-drag/execute-move.ts`) appends one `move` record per row to the
+list that holds the row (`TreeActions.move`) and returns which rows moved and which no list could
+take. A move sends no name: the replay numbers a clash, and `renamesOnArrival` only predicts it
+for the warning shown before the drop. A positional destination (an edge drop, the picker's
+"Change position") is an index among the destination's children without the carried rows, so a
+same-parent placement is a reorder rather than "already there". A move between the account's files
+and a project is not a record the browser can append to two lists; the drop offers Copy there.
+Copy stays a server route: `copyRows` (`entry-drag/execute-copy.ts`) mints the copies' ids and the
+command's id, sends them once, and the copies arrive through the list. A refused Copy toasts with
+Retry.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
-per real catalog. Earlier notes is a navigation disclosure outside the second
-lineage tree, not a menu-node projection or a mutable catalog folder. Selected
+per real tree. Earlier notes is a navigation disclosure outside the second
+lineage tree, not a menu-node projection or a mutable folder. Selected
 files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
@@ -287,7 +248,7 @@ deleted it, or its parent isn't known yet), does nothing for that action rather
 than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop). The transfer carries only Meridian's entries type, no
 `text/plain` or `text/uri-list` fallback. The composer and manuscript editor
-resolve selected row identities through their live `@` catalog and copy files and folders as mentions;
+resolve selected row identities through their live `@` tree and copy files and folders as mentions;
 other surfaces ignore the drop instead of pasting names that look like a
 half-made link. A writing drop stops before the tree's move route, so it never
 moves a selected row.
@@ -305,19 +266,18 @@ would arrive renamed carries a warning, drawn as a second line under the hint
 go accepts it; Escape or another target declines it. A drop moves every carried row through
 `moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
 own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
-A row the replica won't admit toasts "Couldn't move chapter-3 to Act 2." ("Couldn't move 3 items
-to Act 2." for several) with Retry for the rows it refused. A row the server refuses later goes
-back with its failure mark and `RefusalToasts` shows the same toast (see `CONTEXT.md`).
+A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to Act 2."
+("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. A row the
+server refuses later goes back with its failure mark and the server's reason; there is no toast.
 
 Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
 selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
 document reveals it through the active-document reveal.
 
-Placement is optimistic, exactly as for Move…: each placement's operation is
-remembered, so the row's link-update note follows its receipt and a later server
+Placement is optimistic, exactly as for Move…: the record shows at once and a later server
 refusal lands on the row as its failure mark. Verdicts likewise resolve each
-dragged row by identity from the replica's placement graph (rows another list
+dragged row by identity from the trees the list shows (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a
 folder inside itself. A lone moved row stays selected on its own (an explicit
 selection of one), not the open row.
@@ -370,9 +330,9 @@ is a new item there and a branch in the list's `choose`. The contract:
 - `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, drag, target)`):
   what a drop is now, before any action decides what to do with it. `sources` are
   the outermost placed entries (one inside a carried folder rides with it) with their
-  views, `into`, `scheme`, `destinationName` (the catalog's current name), `position`,
+  views, `into` (a folder's id, or the source's id), `scheme`, `destinationName` (the tree's current name), `area` (the tree it lands in), `position`,
   `asks` (a reference, or a source in another system than the target), `insideItself`,
-  `unavailable` (carried entries the replica can't place) and `canMove`. Copy has no
+  `unavailable` (carried entries no shown tree places), `crossesLists` (an account row into a project, or the reverse) and `canMove`. Copy has no
   condition; Move is refused for a row in the Scratch of an archived Work or of one the project
   doesn't list (it fails closed), judged here from each source's placement so a new drag
   source never says it. `resolveDrop` returns null
@@ -385,8 +345,8 @@ is a new item there and a branch in the list's `choose`. The contract:
   `dragend` clears the drag session right after it. `EntriesRoute.drop`
   therefore receives the point.
 - `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
-  menu is `dropChoices(view, resolved, target)`, derived from `resolveDrop`
-  against the replica as it is when the menu draws and again when the writer
+  menu is `dropChoices(resolved, target)`, derived from `resolveDrop`
+  against the trees as they are when the menu draws and again when the writer
   picks, so a destination renamed or removed while it was open is judged by
   identity: the label follows a rename, and a removed destination leaves the item
   disabled with its reason. `DropChoiceMenu.tsx` renders the items and knows no
@@ -399,7 +359,7 @@ source supplies what it names (a document or folder by identity, the name to sho
 shows). An element spreads the props `useReferenceDrag` returns: `draggable` and an `onDragStart`
 that publishes the drag with `source: "reference"`. A source that isn't an element (the Editor's
 link) takes `useReferenceDragStart()` and calls the start it returns; both give nothing on the
-phone shell, and a source that names nothing yet gets no props. A source never reads the replica
+phone shell, and a source that names nothing yet gets no props. A source never reads the replay
 or decides what a drop does: `resolveDrop` finds the entry by identity, so a renamed or moved
 document drags as itself and a gone one answers "Some of these items are no longer there".
 
@@ -434,20 +394,16 @@ next free name), and an edge drop may anchor on a carried row. Each entry's `vie
 server with its root: a tree row copies the live document, a draft title or receipt row the draft it
 shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
 of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
-listed at once under predicted names (`arrivals`, as for Move): the replica holds
-one operation with one root per row, and the answer places every root or refuses
-the whole Copy (see `packages/resource-replica/.context/CONTEXT.md`, "Copy"). A
-document the device holds open sends its pending edits with the Copy; the server
-waits for them, and the replica resends for up to two minutes before refusing.
+one request with one root per row: the browser mints the copies' ids and the command's id and sends
+them once (`copyRows`), and the answer places every root or refuses the whole Copy. The copies
+arrive through the list like anyone's records.
 
-The copy's rows show at once, before the server answers. A refused Copy
-removes its rows, and `RefusalToasts` shows "Couldn't copy chapter-3 to Vault. A source or the
-destination is no longer there.", with Retry while every source and the destination still resolve.
-The journal keeps the refusal until that toast closes or Retry lands (`copy-refusal.ts`).
+A refused Copy toasts "Couldn't copy chapter-3 to Vault. A source or the destination is no longer
+there." with the route's reason, and Retry sends it again as a new Copy (`entry-failure.ts`).
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header is the
-catalog's top level. A row's top and bottom bands are sibling edges, before or
+tree's top level. A row's top and bottom bands are sibling edges, before or
 after that row in its actual parent (`RowEdges` in `tree-drop.tsx`): a third of a
 file row, a quarter of a folder row, whose centre keeps moving rows into it. An
 open folder has no bottom edge, because its bottom borders its own first child;
@@ -463,8 +419,8 @@ from the parent's complete sibling sequence, so a row a search hides still
 counts: an edge is quiet when every carried row would end where it is, or when
 the anchor is itself carried. Several rows land together in screen order (the
 first takes the edge, each next one goes after the one before). Edges don't
-spring. Every target names its catalog root, so a list showing
-several catalogs (Scratch and its earlier notes) resolves the right one. The
+spring. Every target names its tree's root, so a list showing
+several trees (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block. Hovering a
@@ -483,17 +439,17 @@ appeared to accept but landed elsewhere would mislead.
 A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
 the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
-`restoreInto` on `DocumentTrashRestoreProvider`, which posts one restore request with the destination.
+`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per document and a
+`move` to the destination (`TreeActions.restore`, `TreeActions.move`).
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
-refuses with the hint. The rows leave Trash and appear in the destination at once through
-`client/trash-restore/pending-restores.ts`, an in-memory overlay on the catalog view (not a replica
-journal entry: a reload shows the server). A refused item goes back to Trash with its reason; the
-notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
+refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
+destination at once from the replay. A restore the server refuses comes back as a settlement on its
+record: the entry goes back to Trash with the server's reason; the notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
 Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
-Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
-for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore
-… A file is in the way."), and one notice counts the ones that came back ("Restored 3 files.").
+Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` appends the `restore` records as one update per
+list; a refused one shows on its Trash row ("Couldn't restore … " and the reason), and one notice
+counts the ones that came back ("Restored 3 files.").
 There is no Delete forever: permanent removal is only the scheduled purge.

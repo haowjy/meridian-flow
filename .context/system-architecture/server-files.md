@@ -45,7 +45,7 @@ Drafts are not included. The inventory and addresses are captured before any con
 - Kind: domain
 - Paths: `apps/server/server/domains/export`
 - Docs: [CONTEXT](../../apps/server/server/domains/export/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/export/AGENTS.md)
-- Drift: `export/AGENTS.md` says to go through Context's public index, but `export` imports `context/adapters/catalog-file-mapper.ts`.
+- Drift: `export/AGENTS.md` says to go through Context's public index, but `export` imports `context/adapters/context-file-entry.ts`.
 
 ## file-intake
 

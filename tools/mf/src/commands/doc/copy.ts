@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   apiProjectContextCatalogPath,
   apiProjectContextCopyPath,
-  type CatalogLookupResult,
+  type CatalogEntry,
   type ContextSiblingPosition,
   type CopyContextEntrySource,
   type CopyContextEntryView,
@@ -142,14 +142,12 @@ function scopeQuery(target: ResolvedUri): Record<string, string> {
 const catalogLookupResponse = {
   safeParse(
     value: unknown,
-  ):
-    | { success: true; data: Pick<CatalogLookupResult, "entry"> }
-    | { success: false; error: unknown } {
+  ): { success: true; data: { entry: CatalogEntry | null } } | { success: false; error: unknown } {
     const entries = (value as { entries?: unknown; entry?: unknown } | null) ?? {};
     if (entries.entry && typeof entries.entry === "object") {
-      return { success: true, data: entries as Pick<CatalogLookupResult, "entry"> };
+      return { success: true, data: entries as { entry: CatalogEntry | null } };
     }
-    return { success: true, data: null as unknown as Pick<CatalogLookupResult, "entry"> };
+    return { success: true, data: null as unknown as { entry: CatalogEntry | null } };
   },
 };
 

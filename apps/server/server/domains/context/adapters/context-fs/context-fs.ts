@@ -14,8 +14,7 @@ import {
   type RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { LIVE } from "@meridian/project-tree";
-import { compareCatalogSiblings } from "@meridian/resource-replica";
+import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BoundWrite,

@@ -13,6 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -33,7 +34,6 @@ import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import {
-  useAccountResourceProjection,
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
@@ -45,7 +45,7 @@ import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
-import { projectResourceDocument } from "./open-document-from-file";
+import { placeTab } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
 import { useContextRemovalProject } from "./use-context-removal-project";
@@ -97,11 +97,7 @@ export function DocumentHost(props: DocumentHostProps) {
         ) : null}
         {props.presentation === "phone" ? (
           place === "main" ? (
-            <PhoneDocumentFrame
-              projectId={projectId}
-              document={tab}
-              local={props.main?.local === true}
-            />
+            <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
           ) : (
             <div className="flex h-full min-h-0 flex-col">
               {props.header}
@@ -123,11 +119,16 @@ export function DocumentHost(props: DocumentHostProps) {
  * placement; main's host gets the same from its address, which follows the document.
  */
 function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolean): OpenDocument {
-  const { records, placement } = useAccountResourceProjection(projectId);
+  const trees = useProjectTrees(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
   if (main) return tab;
-  const projected = projectResourceDocument(tab, records, placement, isDraftOnly(tab.documentId));
-  return projected.kind === "projected" ? projected.document : tab;
+  const found = trees.find(tab.documentId);
+  const placed = placeTab(
+    found && { scheme: found.source.scheme, file: found.file, owner: ownerOfSource(found.source) },
+    trees.isComplete,
+    isDraftOnly(tab.documentId),
+  );
+  return placed.kind === "projected" ? placed.document : tab;
 }
 
 /** Main's and the side's documents are what removals, notices and availability act on. */

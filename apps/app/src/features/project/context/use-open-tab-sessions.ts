@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { DocumentHistory } from "@/core/editor/editor-history";
-import { useAccountResourceReplica } from "./account-feature-context";
+import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export const OPEN_TAB_SESSION_CAP = 8;
 const OPEN_RETRY_MS = 5_000;
@@ -28,7 +28,7 @@ export function useOpenTabSessions(
   tabs: readonly { document: { documentId: string } }[],
   shown: readonly { documentId: string }[],
 ): void {
-  const resources = useAccountResourceReplica();
+  const opener = useProjectDocumentLiveOpener();
   const held = useRef(new Map<string, Held>());
   const want = useRef({ open: new Set<string>(), showing: new Set<string>() });
   const clock = useRef(0);
@@ -75,18 +75,17 @@ export function useOpenTabSessions(
       retry.current = setTimeout(() => reconcile.current(), OPEN_RETRY_MS);
     };
     void (async () => {
-      const key = await resources.keyForDocument(projectId, documentId);
-      if (!key || abort.signal.aborted) return failed();
-      const opened = await resources.openDocument(
+      const opened = await opener.open({
+        source: "server",
         projectId,
-        key,
-        `open-tab:${documentId}`,
-        abort.signal,
-      );
+        documentId,
+        signal: abort.signal,
+      });
       if (opened.kind !== "opened") return failed();
-      if (abort.signal.aborted) return opened.handle.release();
-      binding = opened.handle;
-      const { history } = opened.handle.session;
+      const candidate = await opened.admission.bind(`open-tab:${documentId}`);
+      if (abort.signal.aborted) return candidate.release();
+      binding = candidate;
+      const { history } = candidate.session;
       tab.history = history;
       stopWatching = history.subscribe(() => {
         tab.edited = ++clock.current;

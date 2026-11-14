@@ -182,6 +182,7 @@ export function replay(
     index: number,
     before: Before,
     changed: boolean,
+    arrivedBefore = node.arrivedAt,
   ) => {
     const top = stack[stack.length - 1];
     if (
@@ -197,7 +198,7 @@ export function replay(
       id: record.id,
       ...(record.carries ? { carries: record.carries } : {}),
       before,
-      arrivedBefore: node.arrivedAt,
+      arrivedBefore,
     });
     if (changed) node.arrivedAt = index;
   };
@@ -276,6 +277,8 @@ export function replay(
           continue;
         }
         pend(record);
+        // One arrival sets both facts, so both answer to the arrival before it.
+        const arrivedBefore = node.arrivedAt;
         setFact(
           node.place,
           node,
@@ -284,6 +287,19 @@ export function replay(
           { parent: node.parent, rank: node.rank },
           node.parent !== record.parent,
         );
+        if (record.name !== undefined) {
+          setFact(
+            node.label,
+            node,
+            record,
+            index,
+            { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
+            node.name !== record.name,
+            arrivedBefore,
+          );
+          node.name = record.name;
+          if (record.actor.startsWith("user:")) node.provisional = false;
+        }
         node.parent = record.parent;
         node.rank = record.rank;
         node.lastChangedBy = record.actor;

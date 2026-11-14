@@ -26,7 +26,7 @@ import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import { catalogSourceAuthority } from "../adapters/catalog-file-mapper.js";
+import { sourceAuthority } from "../adapters/context-file-entry.js";
 import { LIVE_TREE, type TreeView } from "./tree-relations.js";
 
 /** A decoded canonical address resolved to storage coordinates. */
@@ -152,7 +152,7 @@ export async function loadDocumentAddresses(
       uri = canonicalContextUri(
         scheme,
         row.path,
-        catalogSourceAuthority(
+        sourceAuthority(
           scheme,
           row.work_id,
           row.is_no_work ? null : row.work_handle,
@@ -468,7 +468,7 @@ export async function spellNodeAddresses(
       uri = canonicalContextUri(
         scheme,
         path,
-        catalogSourceAuthority(
+        sourceAuthority(
           scheme,
           source.work_id,
           workHandle,

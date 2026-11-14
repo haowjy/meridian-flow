@@ -23,7 +23,9 @@ After a close with `4210` the copy's `replace()` keeps the records the copy held
 gives an empty document under a new client id, and once the server's state has arrived
 (`onSynced`) the records the new copy lacks (by record id) are appended again, then
 `settleCarried()`. The first rebuild appends them in one update (an honest client's rebuild is one
-admission, never a stream that meets the rate limit). A second rebuild within a minute appends one
-record per transaction, so the server's refusal falls on the one record it refuses; past three,
-the first of the carried records is given up on each time, so one hostile record cannot starve
-the honest ones behind it.
+admission, never a stream that meets the rate limit). When the server's refusal names a
+record (the close reason is `list-rebuild:<record id>`; `admit` returns the record in its whole
+refusal), that record is given up on (`onRejected`) and the rest go again in one update, so one
+hostile record cannot starve the honest ones behind it. A refusal about the update's own
+structure names none: after more than three rebuilds within a minute all the carried records are
+given up on, so the copy cannot rebuild forever.

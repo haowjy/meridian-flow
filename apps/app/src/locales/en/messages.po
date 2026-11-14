@@ -140,12 +140,12 @@ msgid "{0, plural, one {Continues in # min} other {Continues in # min}}"
 msgstr "{0, plural, one {Continues in # min} other {Continues in # min}}"
 
 #. placeholder {0}: sources.length
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
 msgstr "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
 
 #. placeholder {0}: sources.length
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
 msgstr "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
 
@@ -174,7 +174,7 @@ msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't mov
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
-#. placeholder {0}: landed.length
+#. placeholder {0}: entries.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "{0, plural, one {Restored # file.} other {Restored # files.}}"
 msgstr "{0, plural, one {Restored # file.} other {Restored # files.}}"
@@ -461,8 +461,8 @@ msgid "{label}…"
 msgstr "{label}…"
 
 #: src/features/project/context/LinkUpdateNote.tsx
-msgid "{links, plural, one {Updated # link} other {Updated # links}}"
-msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
+#~ msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+#~ msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -822,14 +822,14 @@ msgstr "A folder named {name} already exists in this location."
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr "A source is no longer there."
 
 #: src/features/project/context/entry-drag/copy-refusal.ts
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "A source or the destination is no longer there."
-msgstr "A source or the destination is no longer there."
+#~ msgid "A source or the destination is no longer there."
+#~ msgstr "A source or the destination is no longer there."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -1853,6 +1853,10 @@ msgid "Copy reference"
 msgstr "Copy reference"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Copy these between your files and a project"
+msgstr "Copy these between your files and a project"
+
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy to {destinationName}"
 msgstr "Copy to {destinationName}"
 
@@ -1932,11 +1936,11 @@ msgstr "Couldn't confirm whether this discarded. Check what is left before you t
 msgid "Couldn't copy"
 msgstr "Couldn't copy"
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "Couldn't copy {only} to {destination}."
 msgstr "Couldn't copy {only} to {destination}."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "Couldn't copy {only}."
 msgstr "Couldn't copy {only}."
 
@@ -1949,21 +1953,20 @@ msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
 
 #: src/features/project/context/IdentityPlacementField.tsx
-#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't create this document. Try another place."
 msgstr "Couldn't create this document. Try another place."
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this file."
-msgstr "Couldn't create this file."
+#~ msgid "Couldn't create this file."
+#~ msgstr "Couldn't create this file."
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this folder."
-msgstr "Couldn't create this folder."
+#~ msgid "Couldn't create this folder."
+#~ msgstr "Couldn't create this folder."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't create this folder. Try another place."
-msgstr "Couldn't create this folder. Try another place."
+#~ msgid "Couldn't create this folder. Try another place."
+#~ msgstr "Couldn't create this folder. Try another place."
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't create this fork."
@@ -1995,16 +1998,24 @@ msgid "Couldn't delete this chat"
 msgstr "Couldn't delete this chat"
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't delete this document. Try again."
-msgstr "Couldn't delete this document. Try again."
+msgid "Couldn't delete this document."
+msgstr "Couldn't delete this document."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+#~ msgid "Couldn't delete this document. Try again."
+#~ msgstr "Couldn't delete this document. Try again."
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr "Couldn’t delete this file. Try again."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't delete this folder. Try again."
-msgstr "Couldn't delete this folder. Try again."
+msgid "Couldn't delete this folder."
+msgstr "Couldn't delete this folder."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+#~ msgid "Couldn't delete this folder. Try again."
+#~ msgstr "Couldn't delete this folder. Try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
@@ -2054,8 +2065,8 @@ msgid "Couldn't load documents."
 msgstr "Couldn't load documents."
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Couldn't load files."
-msgstr "Couldn't load files."
+#~ msgid "Couldn't load files."
+#~ msgstr "Couldn't load files."
 
 #: src/features/project/chat/RecentChatsLanding.tsx
 msgid "Couldn't load more chats."
@@ -2126,8 +2137,12 @@ msgid "Couldn't move {0}."
 msgstr "Couldn't move {0}."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't move this entry. Try again."
-msgstr "Couldn't move this entry. Try again."
+msgid "Couldn't move this entry."
+msgstr "Couldn't move this entry."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+#~ msgid "Couldn't move this entry. Try again."
+#~ msgstr "Couldn't move this entry. Try again."
 
 #: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
@@ -2189,16 +2204,24 @@ msgid "Couldn’t rename this chat. Try again."
 msgstr "Couldn’t rename this chat. Try again."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't rename this document. Try again."
-msgstr "Couldn't rename this document. Try again."
+msgid "Couldn't rename this document."
+msgstr "Couldn't rename this document."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+#~ msgid "Couldn't rename this document. Try again."
+#~ msgstr "Couldn't rename this document. Try again."
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Couldn't rename this folder. Try again."
-msgstr "Couldn't rename this folder. Try again."
+msgid "Couldn't rename this folder."
+msgstr "Couldn't rename this folder."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+#~ msgid "Couldn't rename this folder. Try again."
+#~ msgstr "Couldn't rename this folder. Try again."
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
@@ -2208,25 +2231,35 @@ msgstr "Couldn’t rename this Work. Try again."
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
 
+#. placeholder {0}: entry.name
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Couldn't restore {0}. {reason}"
+msgstr "Couldn't restore {0}. {reason}"
+
+#. placeholder {0}: entry.name
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Couldn't restore {0}. Try again."
+msgstr "Couldn't restore {0}. Try again."
+
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore {name}"
 msgstr "Couldn’t restore {name}"
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Couldn't restore {name}."
-msgstr "Couldn't restore {name}."
+#~ msgid "Couldn't restore {name}."
+#~ msgstr "Couldn't restore {name}."
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Couldn't restore {name}. A file is in the way."
-msgstr "Couldn't restore {name}. A file is in the way."
+#~ msgid "Couldn't restore {name}. A file is in the way."
+#~ msgstr "Couldn't restore {name}. A file is in the way."
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Couldn't restore {name}. That folder is no longer available."
-msgstr "Couldn't restore {name}. That folder is no longer available."
+#~ msgid "Couldn't restore {name}. That folder is no longer available."
+#~ msgstr "Couldn't restore {name}. That folder is no longer available."
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Couldn't restore {name}. Try again."
-msgstr "Couldn't restore {name}. Try again."
+#~ msgid "Couldn't restore {name}. Try again."
+#~ msgstr "Couldn't restore {name}. Try again."
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -2646,9 +2679,14 @@ msgstr "Discarding"
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
+#: src/features/project/context/EntryRefusalNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Dismiss the error"
+msgstr "Dismiss the error"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -4630,22 +4668,32 @@ msgstr "Restore to {destinationName}"
 #. placeholder {0}: landed.length
 #. placeholder {1}: entries.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0} of {1} files."
-msgstr "Restored {0} of {1} files."
+#~ msgid "Restored {0} of {1} files."
+#~ msgstr "Restored {0} of {1} files."
 
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0} of {requested} items to {destinationName}."
-msgstr "Restored {0} of {requested} items to {destinationName}."
+#~ msgid "Restored {0} of {requested} items to {destinationName}."
+#~ msgstr "Restored {0} of {requested} items to {destinationName}."
+
+#. placeholder {0}: only.name
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {0} to {destinationName}."
+msgstr "Restored {0} to {destinationName}."
 
 #. placeholder {0}: document.name
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Restored {0}, but couldn't open it. Try again from the file list."
 msgstr "Restored {0}, but couldn't open it. Try again from the file list."
 
+#. placeholder {0}: entries[0].name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {name} to {destinationName}."
-msgstr "Restored {name} to {destinationName}."
+msgid "Restored {0}."
+msgstr "Restored {0}."
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+#~ msgid "Restored {name} to {destinationName}."
+#~ msgstr "Restored {name} to {destinationName}."
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -4654,11 +4702,9 @@ msgstr "Restored as {0}."
 
 #. placeholder {0}: documentLocationName(only)
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored at {0}."
-msgstr "Restored at {0}."
+#~ msgid "Restored at {0}."
+#~ msgstr "Restored at {0}."
 
-#: src/features/project/context/TrashedDocument.tsx
-#: src/features/project/shell/sidebar/TrashSource.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr "Restoring"
@@ -5097,6 +5143,10 @@ msgstr "Status unknown"
 msgid "Stayed as you edited it"
 msgstr "Stayed as you edited it"
 
+#: src/features/project/context/tree-action-message.ts
+msgid "Still loading. Try again in a moment."
+msgstr "Still loading. Try again in a moment."
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5402,11 +5452,11 @@ msgstr "That rename couldn't be completed. Choose another name or try again."
 msgid "That Work is no longer available. Choose another Work."
 msgstr "That Work is no longer available. Choose another Work."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "That Work isn't available."
 msgstr "That Work isn't available."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "That Work no longer has a draft of it."
 msgstr "That Work no longer has a draft of it."
 
@@ -5503,7 +5553,7 @@ msgstr "The change could not be confirmed. Try again."
 msgid "The change didn't fit the current draft. The AI will read it again."
 msgstr "The change didn't fit the current draft. The AI will read it again."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
 msgstr "The destination is no longer there."
 
@@ -5539,7 +5589,7 @@ msgstr "The header row does not merge into the body."
 msgid "The header row stays first."
 msgstr "The header row stays first."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The latest edits hadn't reached the server."
 msgstr "The latest edits hadn't reached the server."
 
@@ -5788,6 +5838,10 @@ msgstr "This diagram stopped parsing. The preview is the last version that rende
 msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
 msgstr "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "This document couldn't be created where you put it."
+msgstr "This document couldn't be created where you put it."
+
 #: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
 msgstr "This document is not taking changes right now."
@@ -5885,21 +5939,33 @@ msgstr "This file holds code only."
 msgid "This file is binary, so this change can't be reversed."
 msgstr "This file is binary, so this change can't be reversed."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This file is no longer there. Refresh and try again."
+msgstr "This file is no longer there. Refresh and try again."
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This file is unavailable. Refresh and try again."
-msgstr "This file is unavailable. Refresh and try again."
+#~ msgid "This file is unavailable. Refresh and try again."
+#~ msgstr "This file is unavailable. Refresh and try again."
 
 #: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
 msgstr "This filename contains unsupported characters. Rename the file and try again."
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "This folder couldn't be created where you put it."
+msgstr "This folder couldn't be created where you put it."
+
 #: src/features/project/context/FolderMenu.tsx
 msgid "This folder is no longer available."
 msgstr "This folder is no longer available."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This folder is no longer there. Refresh and try again."
+msgstr "This folder is no longer there. Refresh and try again."
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This folder is unavailable. Refresh and try again."
-msgstr "This folder is unavailable. Refresh and try again."
+#~ msgid "This folder is unavailable. Refresh and try again."
+#~ msgstr "This folder is unavailable. Refresh and try again."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 msgid "This fork continues here"
@@ -5933,6 +5999,10 @@ msgstr "This Meridian export can't be read. Import its folders one at a time."
 msgid "This move or delete changed since you looked. Check it, then apply again."
 msgstr "This move or delete changed since you looked. Check it, then apply again."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This name can't be used. Try a different one."
+msgstr "This name can't be used. Try a different one."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
 msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
@@ -5952,6 +6022,10 @@ msgstr "This passage couldn't be recovered."
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
+
+#: src/features/project/context/tree-action-message.ts
+msgid "This project is read-only, so nothing can be changed here."
+msgstr "This project is read-only, so nothing can be changed here."
 
 #: src/client/api/meridian-error.ts
 msgid "This project was deleted."
@@ -6075,6 +6149,14 @@ msgstr "Try again, or close this tab. The draft stays in your list."
 #: src/features/editor/EditorView.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Try again."
+msgstr "Try again."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Try another place."
+msgstr "Try another place."
 
 #: src/features/chat/useReplyRetry.ts
 msgid "Trying the response again"
@@ -6208,7 +6290,6 @@ msgstr "Unpinned {title}"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#: src/features/project/mobile/MobileProject.tsx
 msgid "Untitled"
 msgstr "Untitled"
 
@@ -6491,9 +6572,17 @@ msgstr "You can close this tab."
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
 
-#: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "You can't copy there."
 msgstr "You can't copy there."
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "You can't open these files."
+msgstr "You can't open these files."
+
+#: src/features/project/context/tree-action-message.ts
+msgid "You don't have access to change this."
+msgstr "You don't have access to change this."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

@@ -41,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
-    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
+    const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../threads/adapters/drizzle/repositories.js"
     );
@@ -62,11 +62,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
-    const catalog = createDrizzleContextCatalog(db);
     const projectionMutation = createWorkProjectionMutation({
       db,
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
-      draftOwnerHints: catalog,
+      draftOwnerHints: NO_PROJECT_HINTS,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
@@ -458,21 +457,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("ends a Work's sources without touching its nodes, and restores them as they were", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
-      await db.insert(schema.contextSources).values({
-        workId: empty.id,
-        name: "Scratch",
-        slug: "scratch",
-        scope: "work",
-      });
       await expect(works.softDelete(empty.id)).resolves.toMatchObject({
         after: { deletedAt: expect.any(String) },
       });
 
       const withFile = await works.create({ projectId: PROJECT_ID, name: "With file" });
       const [source] = await db
-        .insert(schema.contextSources)
-        .values({ workId: withFile.id, name: "Scratch", slug: "scratch", scope: "work" })
-        .returning();
+        .select()
+        .from(schema.contextSources)
+        .where(eq(schema.contextSources.workId, withFile.id));
       if (!source) throw new Error("Expected context source");
       const seed = treeSeeder(db);
       await seed.document(source.id, "reference");
@@ -519,9 +512,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
-        .insert(schema.contextSources)
-        .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
-        .returning();
+        .select()
+        .from(schema.contextSources)
+        .where(eq(schema.contextSources.workId, work.id));
       if (!source) throw new Error("Expected Work context source");
       const document = { id: await treeSeeder(db).document(source.id, "outline") };
       // The documents some view shows, at their addresses: a Work's delete takes them out.
@@ -1183,7 +1176,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
       const [lineageSource] = await db
@@ -1280,8 +1272,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("serializes Work content creation before deletion", async () => {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
-      const { ensureWorkContextSource } = await import("../context/context-source-provisioning.js");
-      const sourceId = await ensureWorkContextSource(db, work.id, "scratch");
+      const { createWorkContextDocumentStore } = await import(
+        "../context/context-source-provisioning.js"
+      );
+      const sourceId = await createWorkContextDocumentStore(
+        db,
+        work.id,
+        "scratch",
+      ).contextSourceId();
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$

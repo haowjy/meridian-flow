@@ -11,7 +11,6 @@ import {
   projects,
   threads,
   treeNodes,
-  uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
@@ -20,6 +19,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
+import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
@@ -131,7 +131,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       // address never captures the ref.
       const intakeStore = createInMemoryObjectStore();
       const intake = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(db),
+        repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
         content: createContextUploadContentPort(app.contextPorts),
         objectStore: intakeStore,
         release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
@@ -157,22 +157,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         };
         const firstUpload = await uploadOnce();
         expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
-        const [arrived] = await db
-          .select({ intakeId: uploadIntakes.intakeId })
-          .from(uploadIntakes)
-          .where(eq(uploadIntakes.documentId, firstUpload.documentId as never));
         expect
           .soft(
-            await intake.deleteDraft(
-              {
-                intakeId: arrived?.intakeId ?? "",
-                documentId: firstUpload.documentId,
-                uri: firstUpload.uri,
-                expectedRevision: firstUpload.locationRevision,
-              },
-              userId,
-              { kind: "chat", projectId, chatId },
-            ),
+            await intake.deleteDraft({ documentId: firstUpload.documentId }, userId, {
+              kind: "chat",
+              projectId,
+              chatId,
+            }),
             filename,
           )
           .toEqual({ kind: "deleted" });

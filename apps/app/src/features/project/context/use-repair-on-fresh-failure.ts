@@ -7,7 +7,7 @@
  */
 
 import { useEffect } from "react";
-import type { CatalogNode } from "@/client/query/context-catalog-projection";
+import type { TreeEntry } from "@/core/project-tree/tree-view";
 
 const FRESH_MS = 5_000;
 const offered = new Set<number>();
@@ -31,7 +31,7 @@ export function useRepairOnFreshFailure(failedAt: number | undefined, openRepair
 }
 
 /** All Files and Scratch rows distinguish move refusal from name-only repair. */
-export function useEntryRenameRepair(entry: CatalogNode, openRepair: () => void, allowed = true) {
+export function useEntryRenameRepair(entry: TreeEntry, openRepair: () => void, allowed = true) {
   useRepairOnFreshFailure(
     allowed && entry.namespaceFailure === "set-location" && !entry.namespaceRepairMove
       ? entry.namespaceFailureAt

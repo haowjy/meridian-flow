@@ -13,6 +13,7 @@ import {
   isSourceRoot,
   listRecords,
   type NodeKind,
+  nameSet,
   restoreDiscard,
   type TreeRecord,
   type View,
@@ -153,7 +154,8 @@ export async function discardedTree(
         if (record.type === "create")
           made.set(record.node, { kind: record.kind, name: record.name, parent: record.parent });
         const node = made.get(record.node);
-        if (record.type === "rename" && node) node.name = record.name;
+        const named = nameSet(record);
+        if (named !== undefined && node) node.name = named;
         if (record.type === "move" && node) node.parent = record.parent;
       }
       const pathOf = (id: string): string[] => {

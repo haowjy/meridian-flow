@@ -11,7 +11,6 @@ import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import type { ParentRef, ResourceDestination } from "@meridian/resource-replica";
 import {
   ArrowDownToLine,
   ArrowDownUp,
@@ -22,28 +21,18 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
-import { useWorks } from "@/client/query/useWorks";
+import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
-import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
-import { moveEntryName } from "./context-entry-name";
+import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "./context-schemes";
-import { describeRenames } from "./entry-drag/drop-choice";
-import { type DragEntry, LIVE_VIEW } from "./entry-drag/entry";
+import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { copyRows } from "./entry-drag/execute-copy";
-import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
-import {
-  type MoveRow,
-  moveRefusal,
-  outermost,
-  parentOf,
-  type ReadyCopy,
-  sameParent,
-} from "./entry-drag/move-plan";
+import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
-import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
+import { treeActionMessage } from "./tree-action-message";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
@@ -64,7 +53,7 @@ type EntryDestinationPickerProps = {
   /** A selection the row's menu acted on, moved together in screen order; absent moves the row alone. */
   selection?: readonly DragEntry[];
   open: boolean;
-  repairMove?: ResourceDestination;
+  repairMove?: TreeDestination;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 };
@@ -79,7 +68,6 @@ export function EntryDestinationPicker({ children, ...props }: EntryDestinationP
   );
 }
 
-/** Closed rows keep their anchor but do not subscribe to any project catalog. */
 function OpenPicker({
   projectId,
   action,
@@ -91,10 +79,9 @@ function OpenPicker({
   onOpenChange,
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
-  const resources = useAccountResourceReplica();
+  const projectActions = useTreeActions({ kind: "project", projectId });
+  const accountActions = useTreeActions({ kind: "account" });
   const selection = useOptionalEntrySelection();
-  const view = useAccountResourceProjection(projectId);
-  const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // A moved selection keeps focus at its first row in its new place, not at the row it left.
@@ -112,32 +99,54 @@ function OpenPicker({
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
   const currentTrail = own ? source.own.openAt(entry.path) : [];
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
-  const name = moveEntryName(entry.name, repairMove);
   const failedFolder =
     action === "move" && repairMove
-      ? repairMove.parent.kind === "root"
-        ? schemeLabel(repairMove.parent.scheme)
-        : (source.folderFor(repairMove.parent.folderId)?.path.split("/").at(-1) ?? t`that folder`)
+      ? (() => {
+          const folder = source.folderFor(repairMove.parentId);
+          if (!folder) return t`that folder`;
+          return folder.path === "/" ? schemeLabel(folder.scheme) : folder.path.split("/").at(-1);
+        })()
       : null;
   const refusal = failedFolder
     ? t`Couldn't move to ${failedFolder}. Try again or pick another folder.`
     : null;
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
-  const ref = { kind: entry.kind, id: entry.id };
   const several = picked !== undefined && picked.length > 1;
   // A row inside a selected folder goes with that folder, never on its own.
-  const subjects = several ? outermost(view, picked) : [{ ref, name: entry.name, view: LIVE_VIEW }];
-  const refusalAt = (destination: MoveDestination) => {
-    const into = destinationParent(destination, works, noWork);
-    if (!into) return null;
-    const position =
-      repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
-    const refusals = subjects.map((row) => moveRefusal(view, row.ref, into, position));
-    if (refusals.includes("inside-itself")) return "inside-itself";
+  const subjects = useMemo(() => {
+    const rows: { ref: EntryRef; name: string; view: DragEntry["view"] }[] = several
+      ? picked.map((row) => ({ ref: row.ref, name: row.name, view: row.view }))
+      : [{ ref: { kind: entry.kind, id: entry.id }, name: entry.name, view: LIVE_VIEW }];
+    const inside = new Set(
+      rows.flatMap((row) => {
+        const found = row.ref.kind === "folder" ? source.locate(row.ref.id) : null;
+        return found ? found.tree.descendants(row.ref.id) : [];
+      }),
+    );
+    return rows.filter((row) => !inside.has(row.ref.id));
+  }, [several, picked, entry.kind, entry.id, entry.name, source]);
+  const placed = subjects.map((row) => ({ row, at: source.locate(row.ref.id) }));
+
+  /** Why a destination is no place for the subjects, if it is not. */
+  const refusalAt = (destination: NonNullable<ReturnType<typeof source.folderFor>>) => {
+    for (const { row, at } of placed) {
+      if (
+        at &&
+        row.ref.kind === "folder" &&
+        (destination.entryId === row.ref.id ||
+          at.tree.descendants(row.ref.id).includes(destination.entryId))
+      )
+        return "inside-itself";
+    }
     // Copy adds beside what is there, so only a folder inside itself refuses.
     if (action === "copy") return null;
-    return refusals.every((refusal) => refusal === "already-there") ? "already-there" : null;
+    // Two lists (the project's, the account's files) are moved between by a server route.
+    if (placed.some(({ at }) => at && (at.scheme === "user") !== (destination.scheme === "user")))
+      return "other-list";
+    return placed.every(({ at }) => at?.entry.parentId === destination.entryId)
+      ? "already-there"
+      : null;
   };
 
   /**
@@ -146,10 +155,9 @@ function OpenPicker({
    * place it already holds is not offered.
    */
   function positionChoices(folderName: string) {
-    if (several) return [];
-    const parent = parentOf(view, ref);
-    if (!parent) return [];
-    const siblings = view.placement.childrenAt(parent, view.records);
+    const here = placed[0]?.at;
+    if (several || !here) return [];
+    const siblings = here.tree.children(here.entry.parentId ?? here.tree.root.entryId);
     const at = siblings.findIndex((sibling) => sibling.entryId === entry.id);
     if (at < 0) return [];
     const others = siblings.filter((sibling) => sibling.entryId !== entry.id);
@@ -157,14 +165,14 @@ function OpenPicker({
       key: string;
       icon: LucideIcon;
       label: string;
-      position: ContextSiblingPosition;
+      index: number;
     }[] = [];
     if (at > 0)
       choices.push({
         key: "start",
         icon: ArrowUpToLine,
         label: t`Move to the top of ${folderName}`,
-        position: { kind: "start" },
+        index: 0,
       });
     others.forEach((other, index) => {
       // After the row just above it is where it already is.
@@ -176,84 +184,59 @@ function OpenPicker({
               key: "end",
               icon: ArrowDownToLine,
               label: t`Move to the bottom of ${folderName}`,
-              position: { kind: "end" },
+              index: others.length,
             }
           : {
               key: `after:${other.entryId}`,
               icon: CornerDownRight,
               label: t`Move after ${sibling}`,
-              position: { kind: "after", siblingId: other.entryId },
+              index: index + 1,
             },
       );
     });
     return choices;
   }
 
-  async function move(trail: readonly DrillNode[], chosen?: ContextSiblingPosition) {
+  function move(trail: readonly DrillNode[], index?: number) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending || (!chosen && refusalAt(destination))) return;
-    setPending(true);
+    if (!destination || pending || (index === undefined && refusalAt(destination))) return;
     setError(null);
-    try {
-      const after = destinationParent(destination, works, noWork);
-      const rows = after && moveRowsInto(after, chosen);
-      if (!rows) throw new Error(unavailable);
-      const result = await moveRows(rows, { resources, projectId });
-      if (result.failed.length > 0) throw new Error(unavailable);
-      selectRows(selection, result.moved);
-      revealFolder(destination.entryId);
-      movedSeveral.current = several;
-      onOpenChange(false);
-      // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
-      if (several) selection?.focus();
-    } catch {
-      setError(unavailable);
-    } finally {
-      setPending(false);
-    }
-  }
-
-  /**
-   * The rows a move into `after` places: the row (with its retried name and position), or each
-   * selected row not already there. Null when one of them is gone.
-   */
-  function moveRowsInto(after: ParentRef, chosen?: ContextSiblingPosition): MoveRow[] | null {
-    const placed = subjects.map((row) => ({ row, before: parentOf(view, row.ref) }));
-    if (placed.some(({ before }) => !before)) return null;
-    const position =
-      chosen ??
-      (repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined);
-    return placed.flatMap(({ row, before }) =>
-      before && (!several || !sameParent(before, after))
-        ? [
-            {
-              entry: row.ref,
-              name: row.name,
-              before,
-              after,
-              ...(several ? {} : { typed: name }),
-              ...(position ? { position } : {}),
-            },
-          ]
-        : [],
+    const actions = destination.scheme === "user" ? accountActions : projectActions;
+    const at =
+      index ??
+      (!several && repairMove?.parentId === destination.entryId ? repairMove.index : undefined);
+    const moving = placed.filter(
+      ({ at: here }) => here && !(several && here.entry.parentId === destination.entryId),
     );
+    const result = actions.moveAll(
+      moving.map(({ row }) => ({
+        node: row.ref.id,
+        parentId: destination.entryId,
+        ...(at === undefined ? {} : { index: at }),
+      })),
+    );
+    if (!result.ok) return setError(treeActionMessage(result.reason, "folder"));
+    const moved = moving.map(({ row }) => row.ref);
+    selectRows(selection, moved);
+    revealFolder(destination.entryId);
+    movedSeveral.current = several;
+    onOpenChange(false);
+    // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
+    if (several) selection?.focus();
   }
 
   /** Copies the row into the folder at the end of `trail`. */
   async function copy(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    const into = destination && destinationParent(destination, works, noWork);
-    if (!destination || !into || pending || refusalAt(destination)) return;
+    if (!destination || pending || refusalAt(destination)) return;
     setPending(true);
     setError(null);
     try {
-      const rows = await copyRows(copyPlan(destination.scheme, into, folder.name), {
-        resources,
-        projectId,
-      });
-      if (!rows) throw new Error(unavailable);
+      const plan = copyPlan(destination, folder.name);
+      if (!plan) throw new Error(unavailable);
+      const rows = await copyRows(projectId, plan);
       selectRows(selection, rows);
       revealFolder(destination.entryId);
       onOpenChange(false);
@@ -265,20 +248,40 @@ function OpenPicker({
   }
 
   const copyPlan = (
-    scheme: ProjectContextTreeScheme,
-    into: ParentRef,
+    destination: NonNullable<ReturnType<typeof source.folderFor>>,
     destinationName: string,
-  ): ReadyCopy => ({
-    kind: "ready",
-    destinationName,
-    scheme,
-    into,
-    copies: subjects.map((row) => ({ entry: row.ref, name: row.name, view: row.view })),
-  });
+  ): ReadyCopy | null => {
+    const copies = placed.flatMap(({ row, at }) =>
+      at
+        ? [
+            {
+              entry: row.ref,
+              name: row.name,
+              view: row.view,
+              place: { scheme: at.scheme, owner: at.owner, path: at.entry.path },
+            },
+          ]
+        : [],
+    );
+    if (copies.length !== placed.length) return null;
+    return {
+      kind: "ready",
+      destinationName,
+      scheme: destination.scheme,
+      area: {
+        scheme: destination.scheme,
+        owner: destination.owner,
+        tree: destination.tree,
+        accepts: true,
+      },
+      into: destination.entryId,
+      copies,
+    };
+  };
 
   return (
     <DrillInMenu
-      // Catalog acquisition may resolve the initial destination after this open picker mounts.
+      // The trees may resolve the initial destination after this open picker mounts.
       key={openAt.map((node) => node.id).join("/")}
       tree={source.tree}
       hereIds={currentTrail.map((node) => node.id)}
@@ -305,7 +308,7 @@ function OpenPicker({
         if (!folder) return [];
         const destination = source.folderFor(folder.id);
         const blocked = destination ? refusalAt(destination) : "inside-itself";
-        if (blocked === "inside-itself") return [];
+        if (!destination || blocked === "inside-itself") return [];
         if (action === "copy") {
           return [
             {
@@ -333,23 +336,18 @@ function OpenPicker({
                 ...choice,
                 disabled: pending,
                 onSelect: () => {
-                  void move(trail, choice.position);
+                  move(trail, choice.index);
                 },
               })),
             },
           ];
-        const after = destination && !already && destinationParent(destination, works, noWork);
-        const renamed = (after && moveRowsInto(after)) || [];
         return [
           {
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move here`,
-            disabled: already || pending,
-            note: describeRenames(renamesOnArrival(renamed, view)),
-            onSelect: () => {
-              void move(trail);
-            },
+            disabled: already || blocked === "other-list" || pending,
+            onSelect: () => move(trail),
           },
         ];
       }}

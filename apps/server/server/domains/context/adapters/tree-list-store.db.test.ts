@@ -529,6 +529,7 @@ describe("the tree list store (postgres)", () => {
         expect(await newStore().admit({ list, accountId: ACCOUNT, update: c.send() })).toEqual({
           ok: false,
           reason: "a node id already in use",
+          record: expect.any(String),
         });
       }
       expect(await updateCount()).toBe(0);

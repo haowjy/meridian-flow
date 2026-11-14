@@ -1,6 +1,6 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter, type TreeProjection } from "./replay.js";
-import { descendantsOf } from "./shape.js";
+import { descendantsOf, nameAmong } from "./shape.js";
 import { inForce, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
@@ -73,6 +73,8 @@ export function undoChange(
         const { parent, rank } = record.from;
         const back = projection.nodes.get(parent);
         if (back?.trashed || (!back && !isSourceRoot(parent))) return "superseded";
+        // Back at the place the original went to, under the name that place shows free.
+        const arrives = nameAmong(projection, parent, node.kind, node.name, node.id);
         return writer.author(
           view,
           actor,
@@ -82,6 +84,7 @@ export function undoChange(
             parent,
             rank,
             from: { parent: node.parent, rank: node.rank },
+            ...(arrives === node.name ? {} : { name: arrives }),
           },
           extra,
         );
@@ -91,6 +94,12 @@ export function undoChange(
       const { parent, rank } = last.before;
       const back = projection.nodes.get(parent);
       if (back?.trashed || (!back && !isSourceRoot(parent))) return "superseded";
+      // A move that carried a name took that fact too, and goes back only while it still holds it.
+      const named =
+        record.name === undefined
+          ? undefined
+          : lastSetBy(projection.setters.get(record.node)?.label, record);
+      if (record.name !== undefined && !named) return "superseded";
       return writer.author(
         view,
         actor,
@@ -100,6 +109,7 @@ export function undoChange(
           parent,
           rank,
           from: { parent: node.parent, rank: node.rank },
+          ...(named ? { name: named.before.name } : {}),
         },
         extra,
       );

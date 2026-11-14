@@ -1,15 +1,4 @@
 /** Authenticated-account scope for the project feature lifetime. */
-import type {
-  FolderNamespaceRecord,
-  ResourcePlacement,
-  ResourceProjectionSnapshot,
-  ResourceRecord,
-} from "@meridian/resource-replica";
-import {
-  createResourcePlacement,
-  resourcePlacementForSnapshot,
-  resourceVisibleInProject,
-} from "@meridian/resource-replica";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -24,7 +13,7 @@ import {
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
-import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
@@ -36,13 +25,13 @@ const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands
 const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
+const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectAvailabilityAccountContext =
   createContext<ProjectContextAvailabilityCoordinator | null>(null);
-const ResourceReplicaAccountContext = createContext<AccountResourceReplica | null>(null);
 const RemovedNoticesAccountContext = createContext<RemovedNoticeStore | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
   null,
@@ -175,9 +164,9 @@ function AccountFeatureProviders({
   return (
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
-        <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-          <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
-            <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
+        <TreeListsAccountContext.Provider value={lifetime.treeLists}>
+          <ContextRemovalAccountContext.Provider value={lifetime.removal}>
+            <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
               <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
                 <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
@@ -193,86 +182,17 @@ function AccountFeatureProviders({
                   </ProjectDocumentLiveOpenerContext.Provider>
                 </RemovedNoticesAccountContext.Provider>
               </LiveDocumentRegistryAccountContext.Provider>
-            </ResourceReplicaAccountContext.Provider>
-          </ProjectAvailabilityAccountContext.Provider>
-        </ContextRemovalAccountContext.Provider>
+            </ProjectAvailabilityAccountContext.Provider>
+          </ContextRemovalAccountContext.Provider>
+        </TreeListsAccountContext.Provider>
       </AccountIdContext.Provider>
     </AccountEpochContext.Provider>
   );
 }
 
-export function useAccountResourceReplica(): AccountResourceReplica {
-  const replica = useContext(ResourceReplicaAccountContext);
-  if (!replica) throw new Error("Browser AccountFeatureComposition is required");
-  return replica;
-}
-
-export function useOptionalAccountResourceReplica(): AccountResourceReplica | null {
-  return useContext(ResourceReplicaAccountContext);
-}
-
-export function useAccountResourceProjection(projectId: string): {
-  records: readonly ResourceRecord[];
-  folders: readonly FolderNamespaceRecord[];
-  snapshot: ResourceProjectionSnapshot | null;
-  placement: ResourcePlacement;
-  error: unknown;
-} {
-  const replica = useOptionalAccountResourceReplica();
-  return useObservedResourceProjection(replica, projectId);
-}
-
-/** React projection state over the replica's recoverable observation port. */
-export function useObservedResourceProjection(
-  replica: Pick<AccountResourceReplica, "observeProjection"> | null,
-  projectId: string,
-): {
-  records: readonly ResourceRecord[];
-  folders: readonly FolderNamespaceRecord[];
-  snapshot: ResourceProjectionSnapshot | null;
-  placement: ResourcePlacement;
-  error: unknown;
-} {
-  const [snapshot, setSnapshot] = useState<ResourceProjectionSnapshot | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  useEffect(() => {
-    setSnapshot(null);
-    setError(null);
-    if (!replica || !projectId) return;
-    return replica.observeProjection(
-      projectId,
-      (next) => {
-        setSnapshot(next);
-        setError(null);
-      },
-      setError,
-    );
-  }, [projectId, replica]);
-  const records = useMemo(
-    () =>
-      snapshot?.records.filter(
-        (record) =>
-          // Terminal facts are account-wide: losing a catalog row must not hide its deletion.
-          record.resource.lifecycle.kind === "terminal" ||
-          resourceVisibleInProject(projectId, record, snapshot.catalogs),
-      ) ?? [],
-    [projectId, snapshot],
-  );
-  const folders = useMemo(
-    () =>
-      snapshot?.folders.filter(
-        (folder) => folder.projectId === null || folder.projectId === projectId,
-      ) ?? [],
-    [projectId, snapshot],
-  );
-  const placement = useMemo(
-    () =>
-      snapshot
-        ? resourcePlacementForSnapshot(projectId, snapshot)
-        : createResourcePlacement(projectId, [], []),
-    [projectId, snapshot],
-  );
-  return { records, folders, snapshot, placement, error };
+/** The account's open tree lists; null outside the authenticated shell. */
+export function useOptionalTreeLists(): TreeListRegistry | null {
+  return useContext(TreeListsAccountContext);
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";

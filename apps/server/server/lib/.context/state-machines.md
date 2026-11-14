@@ -70,8 +70,9 @@ stateDiagram-v2
 - **Every close is a close of the socket, with its code**, through the gateway's one close path
   (`withTreeRefusal`, as `withRemovalRefusal` is for documents): Hocuspocus's own close message
   reaches a provider as 1000 and leaves the socket open, so a refusal that relied on it would
-  leave the client offline for good. A whole refusal is `4210 list-rebuild` and applies nothing;
-  the client rebuilds from the server's copy. An account that lost write access since it
+  leave the client offline for good. A whole refusal is `4210 list-rebuild` and applies nothing, and
+  its reason is `list-rebuild:<record id>` when a record earned it; the client rebuilds from the server's
+  copy and gives that record up. An account that lost write access since it
   connected gets `4409`, and a server error `1013`: the client reconnects on both. A refused
   connection is marked, and the messages Hocuspocus has queued behind the refusal are refused
   without reaching the store.
