@@ -67,6 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Namespace tools",
         slug: "namespace-tools",
+        isPersonal: true,
       });
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "No Work", isNoWork: true },
@@ -90,6 +91,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         name: "Manuscript",
         slug: "manuscript",
+        scope: "project",
+      });
+      await db.insert(schema.contextSources).values({
+        projectId: PROJECT_ID,
+        name: "User Files",
+        slug: "user",
         scope: "project",
       });
       await db.insert(schema.contextSources).values({
