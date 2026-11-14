@@ -447,6 +447,7 @@ export async function handleOwnerDraftListRequest(
           readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
       )
       .map((item) => toWireItem(item, listed.threadTitles)),
+    branchId: listed.branchId,
     frozen,
   };
 }

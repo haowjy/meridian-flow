@@ -194,6 +194,11 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
   /**
+   * The owner's active branch, null when it has none: the `draft` its tree records carry, which
+   * the browser replays as the Work's tree (a change to a folder alone lists no item).
+   */
+  branchId: BranchId | null;
+  /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.

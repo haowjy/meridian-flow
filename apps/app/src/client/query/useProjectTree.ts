@@ -9,10 +9,11 @@ import type {
   ProjectContextTreeScheme,
   TreeListRef,
 } from "@meridian/contracts/protocol";
-import { LIVE } from "@meridian/project-tree";
+import type { View } from "@meridian/project-tree";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { dismissedFailures, useDismissalRevision } from "@/core/project-tree/failure-dismissals";
 import { treeFailures } from "@/core/project-tree/tree-failures";
+import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
 import { buildTreeView, type TreeFailure, type TreeView } from "@/core/project-tree/tree-view";
 import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
 import type {
@@ -126,36 +127,46 @@ function failureSeenAt(session: TreeListSession, status: TreeListStatus) {
 
 const failuresOfSnapshot = new WeakMap<
   TreeListSnapshot,
-  { dismissals: number; failures: ReadonlyMap<string, TreeFailure> }
+  Map<string | null, { dismissals: number; failures: ReadonlyMap<string, TreeFailure> }>
 >();
 
-/** The writer's refusals as the list stands, read once per version for every view that shows them. */
+/** The writer's refusals in a view as the list stands, read once per version for every view that shows them. */
 function failuresOf(
   session: TreeListSession,
   snapshot: TreeListSnapshot,
   accountId: string,
   dismissals: number,
+  view: View,
 ): ReadonlyMap<string, TreeFailure> {
-  const held = failuresOfSnapshot.get(snapshot);
+  let byView = failuresOfSnapshot.get(snapshot);
+  if (!byView) {
+    byView = new Map();
+    failuresOfSnapshot.set(snapshot, byView);
+  }
+  const held = byView.get(view.draft);
   if (held?.dismissals === dismissals) return held.failures;
   const failures = treeFailures(
     snapshot.doc,
     `user:${accountId}`,
     dismissedFailures(accountId),
     failureSeenAt(session, snapshot.status),
-    LIVE,
+    view,
   );
-  failuresOfSnapshot.set(snapshot, { dismissals, failures });
+  byView.set(view.draft, { dismissals, failures });
   return failures;
 }
 
-/** The trees of the schemes' sources, built from the lists' replays. */
+/**
+ * The trees of the schemes' sources, built from the lists' replays: live, unless the caller names
+ * a version (the sidebar's Live/Draft toggle, a review address read in its Work's tree).
+ */
 export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   projectId: string,
   schemes: readonly S[],
-  options: { enabled?: boolean } & TreeOwner,
+  options: { enabled?: boolean; version?: TreeVersion } & TreeOwner,
 ): Record<S, TreeViewResult> {
   const { workId, rootThreadId, chatId } = options;
+  const { view, pendingText } = options.version ?? LIVE_VERSION;
   const enabled = (options.enabled ?? true) && Boolean(projectId);
   const accountId = useAccountId();
   const wantsAccount = schemes.includes("user" as S);
@@ -182,11 +193,11 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
         tree:
           list.session && snapshot && source
             ? buildTreeView({
-                projection: list.session.replay(),
+                projection: list.session.replay(view, pendingText),
                 scheme,
                 source,
                 authority: source.authority,
-                failures: failuresOf(list.session, snapshot, accountId, dismissals),
+                failures: failuresOf(list.session, snapshot, accountId, dismissals, view),
               })
             : null,
         isComplete: ready,
@@ -206,13 +217,15 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
     owner,
     accountId,
     dismissals,
+    view,
+    pendingText,
   ]);
 }
 
 export function useProjectTreeView(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  options: { enabled?: boolean } & TreeOwner,
+  options: { enabled?: boolean; version?: TreeVersion } & TreeOwner,
 ): TreeViewResult {
   const schemes = useMemo(() => [scheme], [scheme]);
   return useProjectTreeViews(projectId, schemes, options)[scheme];
