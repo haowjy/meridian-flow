@@ -1,19 +1,26 @@
 /**
- * Shown-link evidence (contract §7.3): every link the model was shown in a
- * holder document, per thread, with the address, holder URI and view it was
- * shown in. Ref assignment reads it through `WriteContext.shownLinks`; the
- * model never sees it. Rows outlive compaction and restart, rolled-back
- * responses keep theirs, and a fork reads its source's rows up to its cutoff
- * turn through lineage. Handoffs and spawned subagents inherit nothing.
+ * What the model was shown of documents (contract §7): the shapes the runtime hands the document
+ * side after a result, and the rules for reading shown links back through a fork's lineage.
  *
- * Storage keeps one row per key per turn, so a source's later repeat never
- * rewrites what a fork saw before its cutoff; readers dedupe only the rows
- * their lineage makes eligible.
+ * Shown links: every link the model was shown in a holder document, per thread, with the address,
+ * holder URI and view it was shown in. Ref assignment reads them through `WriteContext.shownLinks`;
+ * the model never sees them. Rows outlive compaction and restart, rolled-back responses keep
+ * theirs, and a fork reads its source's rows up to its cutoff turn through lineage. Handoffs and
+ * spawned subagents inherit nothing. Storage keeps one row per key per turn, so a source's later
+ * repeat never rewrites what a fork saw before its cutoff; readers dedupe only the rows their
+ * lineage makes eligible.
  */
-import type { ShownLink as CorrespondenceShownLink } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import type {
+  ShownLink as CorrespondenceShownLink,
+  FrontierLookup,
+  ObservationFrontier,
+  ReplyMutations,
+} from "@meridian/agent-edit/integration";
+import type { LinkView, ProjectId } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
+
+export type { FrontierLookup, ObservationFrontier, ReplyMutations };
 
 /** One recorded showing; `at` is its global sequence, larger is more recent. */
 export interface ShownLink extends CorrespondenceShownLink {
@@ -30,19 +37,19 @@ export interface ShownLinkShowing {
   links: readonly SpelledLinkFact[];
 }
 
-export interface RecordShownLinksInput extends ShownLinkShowing {
-  threadId: string;
-  turnId: string;
+/** Host-only: what one result showed the model; its frontier is recorded under the result's block. */
+export interface ResultEvidence {
+  shown: readonly ShownLinkShowing[];
+  frontier?: ObservationFrontier;
 }
 
-export interface ShownLinkStore {
-  /**
-   * Upsert per key and turn, keeping the greatest sequence when concurrent
-   * writers race. Joins an ambient transaction if any.
-   */
-  record(input: RecordShownLinksInput): Promise<void>;
-  /** Own rows plus, for a fork, the source thread's rows at turns up to its cutoff, recursively. */
-  forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
+/** What stored blocks showed the model: shown links under the turn, a frontier per block. */
+export interface StoredEvidence {
+  projectId: ProjectId;
+  threadId: string;
+  turnId: string;
+  shown: readonly ShownLinkShowing[];
+  frontiers: readonly { blockId: string; frontier: ObservationFrontier }[];
 }
 
 export function linkViewKey(view: LinkView): string {

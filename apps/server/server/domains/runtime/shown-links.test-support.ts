@@ -1,8 +1,8 @@
-/** Shared behavioral contract for shown-link stores. */
+/** Shared behavioral contract for the document side's shown links, read back through `forDocument`. */
 
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
-import type { ShownLinkStore } from "./ports/shown-links.js";
+import type { ShownLink } from "../../shared/model-evidence.js";
 
 export const shownLink = (n: number, address = `kb://target-${n}.md`): SpelledLinkFact => ({
   ref: `doc:0000000${n}-0000-4000-8000-000000000000`,
@@ -11,7 +11,7 @@ export const shownLink = (n: number, address = `kb://target-${n}.md`): SpelledLi
 
 export type ShownLinksRig = {
   childId: string;
-  store: ShownLinkStore;
+  store: { forDocument(threadId: string, documentId: string): Promise<ShownLink[]> };
   answer: Turn;
   source: Thread;
   documentId: string;

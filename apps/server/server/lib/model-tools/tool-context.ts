@@ -25,6 +25,7 @@ import type {
   AgentEditAccess,
   CollabBranches,
   DocumentProjectionRefresher,
+  ModelEvidence,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
 import {
@@ -45,11 +46,7 @@ import type {
   WorkRepository,
 } from "../../domains/projects/index.js";
 import type { PermissionGrantStore } from "../../domains/runtime/index.js";
-import {
-  type ShownLinkStore,
-  SKILLS_URI_ROOT,
-  type SkillFilesDeps,
-} from "../../domains/runtime/index.js";
+import { SKILLS_URI_ROOT, type SkillFilesDeps } from "../../domains/runtime/index.js";
 import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
@@ -93,9 +90,9 @@ export interface ToolWiringDeps {
   /**
    * Links shown to the model, per thread and document; writes bind to them
    * (contract §7). Handlers only read here: they return what they showed as
-   * `shown`, and dispatch records it with the persisted result.
+   * `shown`, and the document side records it with the result.
    */
-  shownLinks: Pick<ShownLinkStore, "forDocument">;
+  shownLinks: Pick<ModelEvidence, "forDocument">;
 }
 
 export type ToolErrorOutput = { isError: true; output: MeridianError };
