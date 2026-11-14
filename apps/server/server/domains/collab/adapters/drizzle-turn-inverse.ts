@@ -532,7 +532,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     if (!principal) return null;
     const requirements = new Map<
       string,
-      { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
+      { documentId: DocumentId; branchId: BranchId | null; restore: boolean; treeOnly: boolean }
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
@@ -541,16 +541,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         documentId,
         branchId,
         restore: false,
+        treeOnly: false,
       });
     }
     // A tree change is taken back where it was made, by the one who may edit that document; a
     // live document in Trash may only be restored.
-    for (const { documentId, branchId, restore } of treeDocuments)
-      requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
+    for (const { documentId, branchId, restore } of treeDocuments) {
+      const key = `${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`;
+      requirements.set(key, {
         documentId: documentId as DocumentId,
         branchId,
         restore: restore && branchId === null,
+        treeOnly: requirements.get(key)?.treeOnly ?? true,
       });
+    }
     const admittedRequirements = [...requirements.values()];
     const branchIds = [
       ...new Set(admittedRequirements.flatMap((r) => (r.branchId ? [r.branchId] : []))),
@@ -586,7 +590,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           : { kind: "live" },
         "edit",
       );
-      if (isFileAccessDenied(grant)) throw new FileEditRefusedError([grant]);
+      if (isFileAccessDenied(grant)) {
+        // A node the Work's Discard took out of its draft has no file to ask about: its step is
+        // skipped as changed since, and the rest of the reply is reversed.
+        if (requirement.treeOnly && grant.reason === "not_found") continue;
+        throw new FileEditRefusedError([grant]);
+      }
       grants.push(grant);
     }
     return grants;

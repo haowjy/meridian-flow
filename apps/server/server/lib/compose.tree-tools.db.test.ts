@@ -34,6 +34,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const {
       handleApplyClickRequest,
+      handleApplyItemsRequest,
       handleDiscardWorkDraftRequest,
       handleOwnerDraftListRequest,
       selectBranchRouteServices,
@@ -524,6 +525,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed");
         expect((await placement(CH1))?.name).toBe("ch1");
+      });
+
+      it("the card's Undo after an Apply takes the applied moves back though one drafted document was discarded", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+          await edit("write", { command: "create", path: "part1/fresh", content: "Fresh." });
+        });
+        const routes = selectBranchRouteServices(script.runtime.app);
+        const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
+        const owner = `work:${OTHER_WORK_ID}`;
+        const { items } = await handleOwnerDraftListRequest(routes, { ...scope, owner } as never);
+        const created = items.find((item) => item.documentId !== CH1);
+        await review(script).discard(created?.documentId as string, { ends: "item" });
+        const { items: left } = await handleOwnerDraftListRequest(routes, {
+          ...scope,
+          owner,
+        } as never);
+        await handleApplyItemsRequest(routes, {
+          ...scope,
+          branchId: await branchOf(OTHER_WORK_ID),
+          request: {
+            commandId: randomUUID(),
+            items: left.map((item) => ({
+              node: item.documentId,
+              tree: { revision: item.tree?.revision ?? null },
+            })),
+          },
+        } as never);
+        expect((await placement(CH1))?.name).toBe("ch1");
+        const undone = await reverseTurnCard(
+          {
+            ...composed.ports,
+            workContextNotices: { workChanged: async () => {} },
+            stopThreads: async () => {},
+          },
+          {
+            threadId: OTHER.threadId as never,
+            turnId: OTHER.turnId as never,
+            userId: USER_ID as never,
+            direction: "undo",
+            commandId: randomUUID() as never,
+          },
+        );
+        expect(undone.status, JSON.stringify(undone)).not.toBe("permission_denied");
+        expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+        expect(
+          await composed.ports.documentSync.getTurnReceiptChip(
+            OTHER.threadId as never,
+            OTHER.turnId as never,
+          ),
+        ).toMatchObject({ control: "redo" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {

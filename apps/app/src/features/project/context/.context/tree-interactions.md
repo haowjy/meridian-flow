@@ -119,7 +119,9 @@ Writer deletion has no confirmation step. Its notice ("Chapter 2 deleted.", Undo
 notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the sidebar for a
 delete made there, on Recently opened for one made there, and on the page main goes back to when
 the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
-(`core/project-tree/tree-undo.ts`).
+(`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
+applies: once the deleted nodes are out of Trash (a Trash Restore, a peer's, a purge) the step
+leaves the stack and the notice with it (`endWhenRestored`).
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing
 moves on Enter. The source header's New file and New folder name the folder the writer last

@@ -17,7 +17,9 @@ under an id derived from the click's, on the documents' outcome: their Work and 
 never wait under a document key. Its stored outcome is the click's answer. A resend under the id
 answers the stored outcomes and changes nothing; a kill between the two runs the second on the
 resend; another request under the id is `command_conflict` (409). The receipts the reversal
-writes carry `document_edits.command_id`. A miss the server retries (a moved capture, a deadlock)
+writes carry `document_edits.command_id`. A tree step on a node a Discard took out of its draft finds no file to authorize
+(`not_found`): it is skipped as changed since, and the rest of the reply still reverses; any other
+denial refuses the whole reversal. A miss the server retries (a moved capture, a deadlock)
 rolls back past the claim; exhausting the inverse's attempts is `ReversalConflictError` and
 stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a

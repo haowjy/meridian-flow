@@ -158,6 +158,25 @@ export function undoStep(
   );
 }
 
+/**
+ * Ends `step` when none of its nodes is in Trash any more (restored by anyone, or purged): a
+ * delete's notice offers an Undo that no longer applies. Returns the stop for the watch.
+ */
+export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
+  const view: View = step.draft === null ? LIVE : { draft: step.draft };
+  const stop = session.subscribe(() => {
+    const projection = session.replay(view);
+    if (step.nodes.some((node) => projection.nodes.get(node)?.trashed)) return;
+    stop();
+    const stack = stackOf(session);
+    const at = stack.indexOf(step);
+    if (at < 0) return;
+    stack.splice(at, 1);
+    step.ended?.();
+  });
+  return stop;
+}
+
 /** Writes the step's opposite records; true when any was written. */
 function takeBack(
   session: TreeListSession,
