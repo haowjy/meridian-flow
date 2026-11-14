@@ -149,11 +149,12 @@ function typedBeforeFirstWrite(
       await send(child, h, thread);
       await waitForAssistantTurn(h, thread);
       if (options.forget) {
-        // A cut live no longer contains: the snapshot of an unrelated document.
+        // A cut live no longer contains: the snapshot of an unrelated document. The names the model was
+        // shown (the `tree` room) are not a Yjs snapshot and stay.
         const other = paragraphDoc("Other");
         await h.raw`update observation_frontiers set snapshot=${Buffer.from(
           Y.encodeSnapshotV2(Y.snapshot(other)),
-        )} where thread_id=${thread}`;
+        )} where thread_id=${thread} and room_key <> 'tree'`;
       }
       await writerTypesLive(h, documentId, " typed");
       await send(child, h, thread, "again");
