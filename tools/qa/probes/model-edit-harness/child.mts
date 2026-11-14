@@ -6,7 +6,7 @@
  *   {op:"script", script}            queue scripted model replies
  *   {op:"arm", point, action, nth?}  "kill": SIGKILL on the nth arrival; "hold": wait for release
  *   {op:"release", point}
- *   {op:"send", threadId, userId, text}   admit a message, as the chat route does
+ *   {op:"send", threadId, userId, text, disallowedTools?}   admit a message, as the chat route does
  *   {op:"sweep"}                     the recovery lanes once: wake scan, orphan repair
  *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo, as the route sends it
  *   {op:"resolve", threadId, responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
@@ -85,7 +85,7 @@ type Op = { id?: number } & (
   | { op: "script"; script: Parameters<NonNullable<typeof app.mockModelScript>["enqueue"]>[0] }
   | { op: "arm"; point: TestHookPoint; action: "kill" | "hold"; nth?: number }
   | { op: "release"; point: string }
-  | { op: "send"; threadId: string; userId: string; text: string }
+  | { op: "send"; threadId: string; userId: string; text: string; disallowedTools?: string[] }
   | {
       op: "reverse";
       threadId: string;
@@ -128,6 +128,7 @@ async function handle(message: Op): Promise<unknown> {
             skills: { load: [], available: [] },
             namedTargets: [],
             permission: "edit",
+            ...(message.disallowedTools ? { "disallowed-tools": message.disallowedTools } : {}),
           },
           null,
         );

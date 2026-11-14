@@ -1,6 +1,5 @@
 // The model's words for a removed document, from its removal record. One phrase serves every
-// reader, so a call that names the file, a staged write the removal refused, a reply's save and
-// an undo that reached it all say the same fact. Writer-facing copy is the app's own.
+// reader, so a call that names the file and an undo that reached it say the same fact. Writer-facing copy is the app's own.
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 
 /**
@@ -11,10 +10,7 @@ import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 export function removalPhrase(removal: DocumentRemovalRecord | null | undefined): string {
   if (!removal) return "deleted";
   const { actor } = removal;
-  if (actor?.kind === "system")
-    return actor.cause === "repair"
-      ? "removed by repair"
-      : "removed when the reply that created it didn't finish";
+  if (actor?.kind === "system") return "removed by repair";
   const verb = removal.reason === "deleted" ? "deleted" : "discarded from the draft";
   const name = actorName(actor);
   return name ? `${verb} by ${name}` : verb;

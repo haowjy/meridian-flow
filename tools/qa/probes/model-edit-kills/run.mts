@@ -272,6 +272,46 @@ const cases: ModelEditCase[] = [
     },
   },
   {
+    name: "a write with missing content, in a turn that finishes normally",
+    expected:
+      "the call has one result block, the executor's invalid-arguments error: recovery adds none",
+    async run({ h, start }) {
+      const { thread, documentId, path } = await seedCase(h, "invalid-input", "direct");
+      const child = await start();
+      await child.script([
+        { toolCalls: [{ id: "call-1", name: "write", args: { command: "insert", path } }] },
+        reply,
+      ]);
+      await send(child, h, thread);
+      await waitForAssistantTurn(h, thread);
+      assert.deepEqual(await state(h, thread, documentId), {
+        doc: SEED,
+        turns: ["complete"],
+        results: ["call-1:unknown"],
+        edits: [],
+        commands: [],
+      });
+    },
+  },
+  {
+    name: "a write outside the agent's tools, in a turn that finishes normally",
+    expected: "the call has one result block, the refusal: recovery adds none",
+    async run({ h, start }) {
+      const { thread, documentId, path } = await seedCase(h, "tool-denied", "direct");
+      const child = await start();
+      await child.script(oneCall(path));
+      await send(child, h, thread, "go", ["write"]);
+      await waitForAssistantTurn(h, thread);
+      assert.deepEqual(await state(h, thread, documentId), {
+        doc: SEED,
+        turns: ["complete"],
+        results: ["call-1:unknown"],
+        edits: [],
+        commands: [],
+      });
+    },
+  },
+  {
     name: "tool timeout before the claim",
     expected: "the call is settled never: the late claim finds that and changes nothing",
     async run({ h, start }) {

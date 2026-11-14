@@ -186,7 +186,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   // Every bounded draft-store attempt's rollback boundary.
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
-  // Removal records for the reply save that answers with them.
+  // Removal records, read by the tools that answer a call on a removed document.
   const removalRecords = createRemovalRecords(deps.db);
   const workBranches = createBranches({
     store: createDrizzleBranchStore(deps.db),

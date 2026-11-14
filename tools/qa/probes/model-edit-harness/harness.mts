@@ -464,6 +464,12 @@ export async function seedCase(
 }
 
 /** Sends the chat a message as the writer; the run starts behind it. */
-export function send(child: Child, h: Harness, threadId: string, text = "go") {
-  return child.call({ op: "send", threadId, userId: h.ids.user, text });
+export function send(
+  child: Child,
+  h: Harness,
+  threadId: string,
+  text = "go",
+  disallowedTools?: string[],
+) {
+  return child.call({ op: "send", threadId, userId: h.ids.user, text, disallowedTools });
 }
