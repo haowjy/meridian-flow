@@ -42,7 +42,7 @@ import type {
   AdapterFileRef,
   AdapterGrepFile,
   AdapterGrepResult,
-  AdapterMoved,
+  AdapterMovedAcrossLists,
   ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
   ContextTreeAdapter,
@@ -154,7 +154,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     sourceId: () => this.store.contextSourceId(),
-    move: (input) => this.moveNode(input),
+    moveAcrossLists: (input) => this.moveAcrossLists(input),
     delete: (input) => this.deleteNode(input),
     command: (input) => this.treeCommand(input),
     read: (input) => this.treeRead(input),
@@ -677,7 +677,7 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * A move or delete in this source: the records of one command transaction. A drafted one is a
+   * A tree command in this source: the records of one command transaction. A drafted one is a
    * record of the Work's branch, which the transaction makes and locks; a live one is live.
    * `afterWrite` runs inside it once the records are made.
    */
@@ -726,31 +726,27 @@ export class ContextFS implements ContextSchemeAdapter {
     );
   }
 
-  private moveNode(
-    input: Parameters<ContextTreeAdapter["move"]>[0],
-  ): Promise<Result<AdapterMoved, AdapterFault>> {
-    return this.inTreeCommand(input, async (target) => {
-      const moved = await this.writes.move(target, {
+  private moveAcrossLists(
+    input: Parameters<ContextTreeAdapter["moveAcrossLists"]>[0],
+  ): Promise<Result<AdapterMovedAcrossLists, AdapterFault>> {
+    return this.inTreeCommand({ ...input, fromSourceId: input.fromSourceId }, async (target) => {
+      const moved = await this.writes.moveAcrossLists(target, {
         node: input.node.nodeId,
-        kind: input.node.kind,
         fromSourceId: input.fromSourceId,
         dir: input.dir,
         ...(input.leaf !== undefined ? { leaf: input.leaf } : {}),
         ...(input.position ? { position: input.position } : {}),
+        ...(input.onlyAt !== undefined ? { onlyAt: input.onlyAt } : {}),
       });
       if (!moved.ok) return moved;
-      const result: AdapterMoved = {
-        moved: moved.value.moved,
+      const result: AdapterMovedAcrossLists = {
+        node: input.node.nodeId,
         path: moved.value.path.join("/"),
-        ...(moved.value.facts && target.view.draft
-          ? { drafted: { branchId: target.view.draft as BranchId, ...moved.value.facts } }
-          : {}),
+        records: { left: moved.value.left.id, entered: moved.value.entered.id },
       };
-      if (result.moved) await input.afterWrite?.(result);
-      // A move into a live address is an arrival (contract §9.3): once per move, so a folder
-      // settles against its final tree. Only live documents arrive; a drafted move is not one.
-      if (result.moved && !target.view.draft && moved.value.documentIds.length > 0)
-        await this.liveCreate.arrive(moved.value.documentIds as DocumentId[]);
+      await input.afterWrite?.(result);
+      // Arriving at a live address: once per move, against the tree it entered (contract §9.3).
+      await this.liveCreate.arrive([input.node.nodeId as DocumentId]);
       return Ok(result);
     });
   }
@@ -769,9 +765,6 @@ export class ContextFS implements ContextSchemeAdapter {
       const result: AdapterDeleted = {
         path: deleted.value.path.join("/"),
         documentIds: deleted.value.documentIds,
-        ...(deleted.value.facts && target.view.draft
-          ? { drafted: { branchId: target.view.draft as BranchId, ...deleted.value.facts } }
-          : {}),
       };
       await input.afterWrite?.(result);
       return Ok(result);

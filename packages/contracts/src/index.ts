@@ -24,11 +24,8 @@ export type {
   ProjectExportPreview,
 } from "./project-export.js";
 export {
-  type BranchTreeFacts,
   type RemovalIdentity,
   removalIdentitySchema,
-  samePlacement,
   serializeRemovalIdentity,
-  type TreePlacement,
 } from "./tree-change.js";
 export * from "./usage";
