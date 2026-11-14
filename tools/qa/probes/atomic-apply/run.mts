@@ -1041,7 +1041,7 @@ try {
     ]);
     f.close();
   });
-  await row("Un-Apply skips an edited group and reverses an intact peer", async () => {
+  await row("Un-Apply reverses an edited group around the writer's typing and an intact peer whole", async () => {
     const f = await fixture(
       ["The cat sat.", "The dog slept."],
       ["The big cat sat.", "The small dog slept."],
@@ -1049,17 +1049,17 @@ try {
     const click = f.click();
     assert.equal(click.request.groupIds.length, 2);
     await applied(f, click);
-    // Text typed after the applied text depends on it; text typed before it does not.
+    // The writer's word inside the applied text stays; Un-Apply takes only the Apply's own words.
     await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     if (answer.status === "unapplied") {
-      assert.equal(answer.reversedGroupIds.length, 1);
-      assert.equal(answer.skippedGroupIds.length, 1);
+      assert.equal(answer.reversedGroupIds.length, 2);
+      assert.equal(answer.skippedGroupIds.length, 0);
     }
-    assert.deepEqual(await f.liveText(), ["The big very cat sat.", "The dog slept."]);
+    assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
     const durable = await f.durable();
-    assert.equal(readApplyRecord(durable).length, 1);
+    assert.equal(readApplyRecord(durable).length, 0);
     durable.destroy();
     f.close();
   });
