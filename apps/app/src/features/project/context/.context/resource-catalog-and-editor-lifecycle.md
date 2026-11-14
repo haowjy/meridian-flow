@@ -17,8 +17,8 @@ list, or waiting for the list (an absence is not an answer until the list has be
 removal observer (`list-removal-observer.ts`), the removed notice and the editor's own banner all
 read it, so nothing is polled and nothing is stamped with a generation. A document that leaves the
 live tree closes its views and leaves the recent routes; one that comes back is let back. The
-exact removal batch, on the route, selection, working set and views, is planned once
-(`context-removal-batch-planner.ts`) and applied by `ContextRemovalCoordinator.applyRemovals`.
+removal's effect on views, notices and recent routes is applied by
+`ContextRemovalCoordinator.applyRemovals`; the route follows the replay itself.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
 never walks or caches a second recursive tree and never adds a server-search path; hosts constrain
@@ -31,7 +31,8 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 ## Presented documents
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
-removal of presented documents, route continuity and Work pruning from what the list says. `AccountResourceReplica` independently owns resource and
+the effect of a removal on presented documents, notices and recent routes from what the list says;
+route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). `AccountResourceReplica` independently owns resource and
 content durability. Neither owns the other's state.
 
 New appends a provisional `create` in Unfiled and opens the node by the name the replay gives

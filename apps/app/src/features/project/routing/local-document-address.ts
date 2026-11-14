@@ -129,7 +129,6 @@ function entryOf(file: TreeFile, sourceId: string, authority: ProjectContextAuth
       };
   return {
     kind: "file",
-    observationVersion: "0",
     entryId: file.documentId,
     scope: scopeOf(authority),
     sourceId,
@@ -186,7 +185,6 @@ export function resolveReplayAddress(input: {
       document: {
         kind: "available",
         documentId: file.documentId,
-        generation: "0",
         authority,
         entry: entryOf(file, input.tree.tree?.root.entryId ?? "", authority),
       },

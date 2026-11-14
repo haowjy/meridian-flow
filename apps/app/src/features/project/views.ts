@@ -36,10 +36,8 @@ import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
-import { routeSelectionDocumentId } from "./context/context-removal-protocol";
 import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
-import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import { contextRouteRequest } from "./routing/project-route";
@@ -259,20 +257,12 @@ export function useMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  /** The document the route is: where the replay puts it, whatever path the address spells. */
+  boundDocumentId: string | null;
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
 }): MainDocument {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
-  const { selection } = useContextRemovalProject(input.projectId);
-  const boundDocumentId =
-    input.scheme !== null && input.path !== null
-      ? routeSelectionDocumentId(selection, {
-          scheme: input.scheme,
-          path: input.path,
-          workId: input.workId ?? undefined,
-          rootThreadId: input.rootThreadId ?? undefined,
-        })
-      : null;
   const tree = useProjectTreeView(input.projectId, input.scheme ?? "kb", {
     enabled: requested,
     workId: input.workId,
@@ -286,13 +276,13 @@ export function useMainDocument(input: {
         path: input.path,
         workId: input.workId,
         rootThreadId: input.rootThreadId,
-        boundDocumentId,
+        boundDocumentId: input.boundDocumentId,
         addressed: input.addressed,
         addressState: input.addressState,
         tree,
       }),
     [
-      boundDocumentId,
+      input.boundDocumentId,
       input.addressed,
       tree,
       input.addressState,

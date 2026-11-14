@@ -10,13 +10,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import {
-  type ContextRouteSelection,
-  type RouteBindingProof,
-  selectionAtRoute,
-} from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
-import type { ContextRouteRequest } from "./project-route";
 
 export type DocumentAddressBinding =
   | { kind: "plain" }
@@ -57,50 +51,6 @@ export function reviewBoundAddressResult(
 ): DocumentAddressResult | undefined {
   if (binding.kind === "pending") return undefined;
   return remote;
-}
-
-/**
- * The one way an address answer binds the route. A review's answer is authoritative for its
- * item and rebinds a selection bound to another document. A plain answer binds only a candidate:
- * a bound selection was proven by a navigation that named its document or by an earlier answer.
- */
-export function addressRouteBinding(
-  binding: DocumentAddressBinding,
-  result: DocumentAddressResult | undefined,
-  selection: ContextRouteSelection,
-  destination: Extract<ProjectDestination, { kind: "document" }> | null,
-  /** The Scratch owner the route's locator carries; empty for every other document. */
-  owner: Pick<ContextRouteRequest, "workId" | "rootThreadId">,
-  /** The owner the address reviews (`addressReviewOwner`); null when it names none. */
-  reviewOwner?: string | null,
-): { revision: number; documentId: string; by: RouteBindingProof } | null {
-  if (
-    binding.kind === "pending" ||
-    !result ||
-    result.kind === "unavailable" ||
-    !destination ||
-    !selectionAtRoute(selection, {
-      scheme: destination.scheme,
-      path: destination.path,
-      ...owner,
-    })
-  )
-    return null;
-  const { documentId } = result.document;
-  if (binding.kind === "review") {
-    if (
-      reviewOwner !== binding.review.owner ||
-      (selection.status === "bound" &&
-        selection.identity.kind === "server" &&
-        selection.identity.documentId === documentId)
-    )
-      return null;
-  } else if (selection.status !== "candidate") return null;
-  return {
-    revision: selection.revision,
-    documentId,
-    by: binding.kind === "review" ? "review" : "answer",
-  };
 }
 
 /** A review's address read: a plain address is the replay's, and the key owns the selector. */

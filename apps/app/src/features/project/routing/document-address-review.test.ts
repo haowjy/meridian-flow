@@ -1,6 +1,6 @@
 /** Review admission requires both explicit draft intent and a resolved Work. */
 import { expect, it } from "vitest";
-import { addressRouteBinding, bindDocumentAddressReview } from "./document-address-review";
+import { bindDocumentAddressReview } from "./document-address-review";
 
 it("starts review admission with the selected Work and draft, without draft-list identity", () => {
   expect(bindDocumentAddressReview("draft-a", "work:work-a")).toEqual({
@@ -13,87 +13,6 @@ it("starts review admission with the selected Work and draft, without draft-list
   });
   expect(bindDocumentAddressReview("draft-a", null)).toEqual({ kind: "pending" });
   expect(bindDocumentAddressReview(undefined, "work:work-a")).toEqual({ kind: "plain" });
-});
-
-it("replaces a cold live path binding only after the selected review identity is admitted", () => {
-  const binding = {
-    kind: "review" as const,
-    review: { owner: "work:work", itemKey: "draft" },
-  };
-  const selection = {
-    status: "bound" as const,
-    revision: 2,
-    locator: { scheme: "kb" as const, path: "/Withern" },
-    identity: { kind: "server" as const, documentId: "live" },
-    by: "navigation" as const,
-  };
-  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Withern" };
-  const result = {
-    kind: "current",
-    document: { documentId: "hidden" },
-  } as import("@meridian/contracts/protocol").DocumentAddressResult;
-  expect(addressRouteBinding(binding, result, selection, destination, {}, "work:work")).toEqual({
-    revision: 2,
-    documentId: "hidden",
-    by: "review",
-  });
-  expect(addressRouteBinding({ kind: "pending" }, result, selection, destination, {})).toBeNull();
-  expect(
-    addressRouteBinding(binding, undefined, selection, destination, {}, "work:work"),
-  ).toBeNull();
-  expect(
-    addressRouteBinding(
-      binding,
-      result,
-      { ...selection, identity: { kind: "server", documentId: "hidden" } },
-      destination,
-      {},
-      "work:work",
-    ),
-  ).toBeNull();
-  expect(
-    addressRouteBinding(binding, result, selection, destination, {}, "work:other-work"),
-  ).toBeNull();
-});
-
-it("a plain answer binds a candidate at its own route and never rebinds a proven one", () => {
-  const candidate = {
-    status: "candidate" as const,
-    revision: 3,
-    locator: { scheme: "kb" as const, path: "/Withern" },
-    obligations: [],
-    reentryGuard: null,
-  };
-  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Withern" };
-  const result = {
-    kind: "current",
-    document: { documentId: "occupant" },
-  } as import("@meridian/contracts/protocol").DocumentAddressResult;
-  const plain = { kind: "plain" as const };
-  expect(addressRouteBinding(plain, result, candidate, destination, {})).toEqual({
-    revision: 3,
-    documentId: "occupant",
-    by: "answer",
-  });
-  expect(
-    addressRouteBinding(plain, result, candidate, destination, { rootThreadId: "chat" }),
-  ).toBeNull();
-  expect(
-    addressRouteBinding(
-      plain,
-      result,
-      {
-        status: "bound",
-        revision: 4,
-        locator: candidate.locator,
-        identity: { kind: "server", documentId: "opened" },
-        by: "navigation",
-      },
-      destination,
-      {},
-      "work:work",
-    ),
-  ).toBeNull();
 });
 
 it("starts a cold copied URL's selector read while the list is unresolved and round trips transport", async () => {

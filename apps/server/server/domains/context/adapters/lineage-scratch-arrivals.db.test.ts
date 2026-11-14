@@ -138,22 +138,14 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           .where(eq(works.id, work));
         await threadRepo.setTrashState(root as never, "deleted");
       } else await workRepo.softDelete(work as never);
-      const lookup = (id = note) =>
-        availability.lookup({ projectId: p as never, documentIds: [id] as never }, { userId: u });
-      // A hidden lineage is restorable authority, never a terminal document fact.
-      await expect(lookup()).resolves.toMatchObject({
-        resolutions: [{ kind: "authority-unavailable", reason: "lineage_hidden" }],
-      });
-      // A trashed chat hides its own uploads the same way, through either door.
-      await expect(lookup(upload)).resolves.toMatchObject({
-        resolutions: [{ kind: "authority-unavailable", reason: "chat_hidden" }],
-      });
-      await expect(
-        availability.lookup(
-          { projectId: p as never, documentIds: [deleted] as never },
-          { userId: u },
-        ),
-      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
+      const placed = async (id = note) =>
+        (
+          await availability.placed({ projectId: p as never, documentIds: [id] }, { userId: u })
+        ).documents.get(id);
+      // A hidden lineage or chat is restorable authority: its documents are not placed meanwhile.
+      await expect(placed()).resolves.toBeUndefined();
+      await expect(placed(upload)).resolves.toBeUndefined();
+      await expect(placed(deleted)).resolves.toBeUndefined();
       const ahead = crypto.randomUUID(),
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
@@ -164,11 +156,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
-      await expect(lookup()).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { entryId: note } }],
-      });
-      await expect(lookup(upload)).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { uri: "uploads://@c1/pic.png" } }],
+      await expect(placed()).resolves.toMatchObject({ entry: { entryId: note } });
+      await expect(placed(upload)).resolves.toMatchObject({
+        entry: { uri: "uploads://@c1/pic.png" },
       });
       const [uploads] = await sources.ownedBy(p as never, { kind: "chat", chatId: root });
       expect((await sources.liveDocuments(uploads?.id as never)).map((file) => file.id)).toContain(

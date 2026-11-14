@@ -306,7 +306,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 {!props.contextLive ? null : trashedId ? (
                   <TrashedDocument key={trashedId} projectId={projectId} documentId={trashedId} />
                 ) : main.document.requested ? (
-                  <MainDocumentStatus projectId={projectId} main={main.document} />
+                  <MainDocumentStatus main={main.document} />
                 ) : (
                   <RecentDocumentsLanding
                     projectId={projectId}
