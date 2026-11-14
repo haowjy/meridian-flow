@@ -42,6 +42,8 @@ export type AiDraftLaunchTarget = {
   draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
+  /** The writer just made the document: its text takes the caret, as one made on Live does. */
+  made?: true;
 };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
@@ -111,6 +113,7 @@ export function ReviewLaunchProvider({
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
             changeId: target.focus?.id,
+            ...(target.made ? { focus: true as const } : {}),
             canCommit: () => sequence.current === launch,
             afterCommit: pin,
           },
@@ -210,7 +213,7 @@ export function useOpenCreatedDocument(
   projectId: string,
 ): (documentId: string, live: () => Promise<void>, opened?: () => void) => Promise<void> {
   const shell = useShellTreeVersion();
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openAiDraft } = useAiDraftLauncher();
   const captureNavigation = useCaptureProjectNavigation();
   const queryClient = useQueryClient();
   const branchId = shell?.version.view.draft ?? null;
@@ -226,11 +229,19 @@ export function useOpenCreatedDocument(
         (item) => item.itemKey === itemKey,
       );
       const [file] = row ? projectWorkBranchFiles([row], null) : [];
-      if (!file) return;
-      openReviewFile(file, ownerKey);
+      if (!file?.contextLocation) return;
+      openAiDraft({
+        ownerKey,
+        documentId: file.documentId,
+        itemKey: file.draft.itemKey,
+        contextLocation: file.contextLocation,
+        documentName: file.documentName ?? undefined,
+        draftOnly: file.draftOnly,
+        made: true,
+      });
       opened?.();
     },
-    [branchId, ownerKey, projectId, captureNavigation, queryClient, openReviewFile],
+    [branchId, ownerKey, projectId, captureNavigation, queryClient, openAiDraft],
   );
 }
 

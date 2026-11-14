@@ -206,6 +206,7 @@ export function EditorView(props: EditorViewProps) {
               identity={identity}
               session={reviewSession}
               holderUri={reviewHolderUri}
+              focusKey={props.focusKey}
               surfaceOptions={{
                 ...surfaceOptions,
                 editable:
