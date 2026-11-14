@@ -17,7 +17,7 @@ export type StoredMediaPart = {
    * A writer's picture only: the chat's own copy of the bytes, made when the message was sent, so
    * the picture stays in the chat after its upload is deleted or purged.
    */
-  chatCopy?: { key: string; sha256: string };
+  chatCopy?: { key: string };
 };
 
 export type StoredTextPart = { type: "text"; text: string };

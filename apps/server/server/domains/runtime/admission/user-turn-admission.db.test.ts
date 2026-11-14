@@ -137,7 +137,9 @@ if (!RUN) {
       const uploadIntake = createDrizzleUploadIntakeRepository(firstDb, NO_PROJECT_HINTS);
       const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
-        chatMedia: { keep: async () => null },
+        chatMedia: {
+          admit: async () => ({ mediaType: "image/png", sizeBytes: 5, name: "image.png" }),
+        },
         runClaim: createInMemoryRunClaim(),
         records,
         availability: {
@@ -184,9 +186,6 @@ if (!RUN) {
             };
           },
         } as never,
-        async describeImage() {
-          return { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
-        },
         async threadProject() {
           return PROJECT;
         },
@@ -511,7 +510,9 @@ if (!RUN) {
         claimExpiresAt: new Date(0),
       });
       const service = createUserTurnAdmission({
-        chatMedia: { keep: async () => null },
+        chatMedia: {
+          admit: async () => ({ mediaType: "image/png", sizeBytes: 5, name: "image.png" }),
+        },
         records,
         runClaim: createDrizzleRunClaim(firstDb),
         availability: {
@@ -524,9 +525,6 @@ if (!RUN) {
           async serializeCreate() {
             throw new Error("Recovery entered create effects");
           },
-        },
-        async describeImage() {
-          return { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
         },
         async threadProject() {
           throw new Error("Recovery entered project resolution");

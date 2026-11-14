@@ -1061,19 +1061,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    chatMedia: createChatMedia({ identities: ports.uploadIdentity, objects: ports.objectStore }),
+    chatMedia: createChatMedia({
+      identities: ports.uploadIdentity,
+      objects: ports.objectStore,
+      eventSink: ports.eventSink,
+    }),
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
-    },
-    async describeImage(documentId) {
-      const identity = await ports.uploadIdentity.lookupDocument(documentId);
-      const mediaType = identity?.mimeType?.split(";")[0]?.trim().toLowerCase();
-      return identity?.sizeBytes != null && mediaType?.startsWith("image/")
-        ? { mediaType, sizeBytes: identity.sizeBytes, name: identity.name }
-        : null;
     },
     verifyDraftUpload: createDraftUploadVerifier({
       identities: ports.uploadIdentity,

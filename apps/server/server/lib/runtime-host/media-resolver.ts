@@ -28,10 +28,19 @@ export function createContextMediaResolver(deps: {
   objects: ObjectStorePort;
   eventSink: EventSink;
 }): MediaResolverPort {
+  /**
+   * Only a missing object means the file is gone; any other store failure fails the turn, so a
+   * fault is never saved as a decision to leave the file out.
+   */
+  function missingOrFault(error: { code: string; message?: string }): null {
+    if (error.code === "not_found") return null;
+    throw new MediaResolutionError(`Media storage failed: ${error.code}`);
+  }
+
   /** Null: the object is gone or not what the record says; that file is unavailable, not the turn. */
   async function bytesSource(key: string, mediaType: string, sizeBytes: number) {
     const object = await deps.objects.get(key, { maxBytes: sizeBytes });
-    if (!object.ok) return null;
+    if (!object.ok) return missingOrFault(object.error);
     if (object.value.mimeType.split(";")[0]?.trim().toLowerCase() !== mediaType) return null;
     return { data: Buffer.from(object.value.bytes).toString("base64") };
   }
@@ -46,11 +55,11 @@ export function createContextMediaResolver(deps: {
       signedAt: new Date(window.startMs),
       expiresInSeconds: linkExpirySeconds(window),
     });
-    if (!link.ok) return null;
+    if (!link.ok) return missingOrFault(link.error);
     return link.value === null ? bytesSource(key, mediaType, sizeBytes) : { url: link.value };
   }
 
-  /** A stored file as the request can use it; null when its preview can't be told apart from missing. */
+  /** A stored file as the request can use it. */
   async function resolvedMedia(file: {
     key: string;
     mediaType: string;
@@ -58,13 +67,13 @@ export function createContextMediaResolver(deps: {
     name: string;
     mayHavePreview: boolean;
     window: LinkWindow;
-  }): Promise<ResolvedMedia | null> {
+  }): Promise<ResolvedMedia> {
     const previewKey = previewObjectKey(file.key);
     let preview: ResolvedMedia["preview"];
     if (file.mayHavePreview) {
       const head = await deps.objects.readHead(previewKey, 0);
       if (head.ok) preview = { mediaType: PREVIEW_MIME_TYPE, sizeBytes: head.value.sizeBytes };
-      else if (head.error.code !== "not_found") return null;
+      else missingOrFault(head.error);
     }
     return {
       mediaType: file.mediaType,

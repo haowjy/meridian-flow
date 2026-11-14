@@ -3,8 +3,13 @@ import type { StoredMediaPart } from "@meridian/contracts/threads";
 
 export interface ChatMediaPort {
   /**
-   * Copy the writer's uploaded picture into the thread's own storage and name the copy. Null: the
-   * copy could not be made; the message is stored without it and reads the upload, as before.
+   * The writer's uploaded picture as the message stores it: its name, type and size, and the
+   * thread's own copy of the bytes (`chatCopy`) so it outlives the upload. Null: the file is no
+   * picture the server can name. A copy that could not be made is left off; the message then
+   * reads the upload, as before.
    */
-  keep(threadId: string, documentId: string): Promise<StoredMediaPart["chatCopy"] | null>;
+  admit(
+    threadId: string,
+    documentId: string,
+  ): Promise<Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name" | "chatCopy"> | null>;
 }

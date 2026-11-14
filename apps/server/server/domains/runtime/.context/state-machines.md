@@ -166,12 +166,12 @@ stateDiagram-v2
   retries and the provider's fetch.
 - **A sent picture belongs to its chat.** At admission the host copies the writer's picture into
   the thread's own storage (`chat-media/<threadId>/…`, with its preview) and the media part keeps
-  the copy's key and sha256 (`chatCopy`). Every later request reads that copy through the same
+  the copy's key (`chatCopy`). Every later request reads that copy through the same
   resolver with no placement or grant check, so deleting or purging the upload changes nothing the
   model sees and the bytes stay where they were in the prefix. The copy goes with the thread (the
   Work purge lists the prefix and deletes it after commit). A copy that could not be made at admission is
-  left off the part; that picture is then read from its upload like the other kinds below. Mentioned
-  files and tool-result media have no copy.
+  left off the part; that picture is then read from its upload like the other kinds below. A store fault on read (anything but a missing object) fails the turn; it is never
+  saved as the picture being excluded. Mentioned files and tool-result media have no copy.
 - **Access is checked on every request** for those other kinds, by the host's resolver, on the
   file's identity and the read grant, so a moved or renamed file stays visible. A file the thread
   can no longer read, or whose stored object is gone, becomes a first-sight or `asset_unavailable`

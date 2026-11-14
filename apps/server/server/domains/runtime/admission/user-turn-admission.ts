@@ -430,10 +430,6 @@ export function createUserTurnAdmission(deps: {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
-  /** The image's name, type and size as stored; null when the file is no image the server can name. */
-  describeImage(
-    documentId: string,
-  ): Promise<Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name"> | null>;
   chatMedia: ChatMediaPort;
   /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
   verifyDraftUpload?(
@@ -603,10 +599,9 @@ export function createUserTurnAdmission(deps: {
           storedBlocks.push(block);
           continue;
         }
-        const media = await deps.describeImage(block.documentId);
+        const media = await deps.chatMedia.admit(input.threadId, block.documentId);
         if (!media) throw attachmentFailed();
-        const chatCopy = await deps.chatMedia.keep(input.threadId, block.documentId);
-        storedBlocks.push({ ...block, ...media, ...(chatCopy ? { chatCopy } : {}) });
+        storedBlocks.push({ ...block, ...media });
       }
       const admittedText = admittedBlocks
         .filter((block) => block.type !== "image")
