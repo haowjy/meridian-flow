@@ -24,7 +24,10 @@ removal's effect on views, notices and recent routes is applied by
 never walks or caches a second recursive tree and never adds a server-search path; hosts constrain
 schemes and file/directory kinds, then mount the presentation-only list.
 
-Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows`
+Desktop scheme/query orchestration lives in `useContextTree` (`ContextTreePanel.tsx`): one
+source's rows from its top or from a folder (`rootPath`, as the Agents tab shows `~/.agents/`),
+rendered by `ContextTreeBody`. `ContextTreePanel` is that plus the pane's heading and search;
+the Agents tab stacks two of them. `ContextTreeRows`
 selects each expanded row's direct children by stable parent ID through one
 scheme-scoped environment. Mobile renders one level at a time via route params.
 

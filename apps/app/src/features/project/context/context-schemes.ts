@@ -55,7 +55,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
     case "uploads":
       return t`Uploads`;
     case "agents":
-      return t`Agents`;
+      // The writer, the model and stored text spell the project's Agents folder this way.
+      return ".agents";
   }
 }
 

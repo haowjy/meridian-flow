@@ -42,3 +42,14 @@ export function agentsUriOf(level: AgentsLevel, path: string): string {
   const root = ROOTS[level];
   return canonicalContextUri(root.scheme, [root.path, path].filter(Boolean).join("/"));
 }
+
+const AGENT_FILE = /^(?:packages\/[^/]+\/)?agents\/([^/]+)\.md$/;
+const SKILL_FILE = /^(?:packages\/[^/]+\/)?skills\/([^/]+)\/SKILL\.md$/;
+
+/** What a level-relative path defines, if anything: an Agent or a skill, and its name. */
+export function agentsFileOf(path: string): { kind: "agent" | "skill"; slug: string } | null {
+  const agent = AGENT_FILE.exec(path)?.[1];
+  if (agent) return { kind: "agent", slug: agent };
+  const skill = SKILL_FILE.exec(path)?.[1];
+  return skill ? { kind: "skill", slug: skill } : null;
+}

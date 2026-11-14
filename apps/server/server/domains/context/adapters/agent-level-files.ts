@@ -33,12 +33,16 @@ export function createAgentLevelFiles(deps: {
     const heads = await currentDrizzleDb(deps.db)
       .select({
         id: documentYjsHeads.documentId,
+        authority: documentYjsHeads.authorityId,
         generation: documentYjsHeads.authorityGeneration,
-        seq: documentYjsHeads.latestUpdateSeq,
+        // Every admitted update moves this; `latestUpdateSeq` waits for the next checkpoint.
+        admitted: documentYjsHeads.nextAdmissionSequence,
       })
       .from(documentYjsHeads)
       .where(inArray(documentYjsHeads.documentId, ids));
-    return new Map(heads.map((head) => [head.id, `${head.generation}:${head.seq}`]));
+    return new Map(
+      heads.map((head) => [head.id, `${head.authority}:${head.generation}:${head.admitted}`]),
+    );
   }
 
   async function textOf(document: ContextDocument, version: string | undefined): Promise<string> {

@@ -110,7 +110,7 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   unfiled: "Unfiled",
   scratch: "Scratch",
   uploads: "Uploads",
-  agents: "Agents",
+  agents: ".agents",
 };
 
 function extensionOf(node: TreeNode): string {

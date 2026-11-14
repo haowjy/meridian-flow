@@ -67,20 +67,36 @@ function withinLevel<T>(level: LevelItems<T>): Map<string, Entry<T>> {
   return names;
 }
 
+/** Every level's item of each name, with what it hides and what hides it. */
+export interface Layered<T> extends Combined<T> {
+  /** The nearest level above that has the same name, which hides this one. */
+  hiddenBy: AgentLevel | null;
+}
+
 /** `levels` run from lowest to highest priority. */
-export function combineByName<T>(levels: LevelItems<T>[]): Combined<T>[] {
-  const result = new Map<string, Combined<T>>();
+export function layerByName<T>(levels: LevelItems<T>[]): Layered<T>[] {
+  const all: Layered<T>[] = [];
+  const top = new Map<string, Layered<T>>();
   for (const level of levels) {
     for (const [slug, entry] of withinLevel(level)) {
-      const below = result.get(slug);
-      result.set(slug, {
+      const below = top.get(slug);
+      if (below) below.hiddenBy = level.level;
+      const layered: Layered<T> = {
         slug,
         level: level.level,
         shadows: below ? [below.level, ...below.shadows] : [],
         value: entry.value,
         ...(entry.clash ? { clash: entry.clash } : {}),
-      });
+        hiddenBy: null,
+      };
+      top.set(slug, layered);
+      all.push(layered);
     }
   }
-  return [...result.values()];
+  return all;
+}
+
+/** The item each name resolves to: its highest level's. */
+export function combineByName<T>(levels: LevelItems<T>[]): Combined<T>[] {
+  return layerByName(levels).filter((item) => item.hiddenBy === null);
 }

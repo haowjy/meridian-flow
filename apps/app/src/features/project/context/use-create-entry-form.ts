@@ -7,12 +7,15 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { classifyFiletype, storedFilename } from "@meridian/contracts/protocol";
+import { classifyFiletype, documentFilenameAt, storedFilename } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
+import { agentFileTemplate, writeFirstText } from "@/features/agents/agent-file-template";
+import { useLiveDocumentSessionRegistry } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
@@ -56,15 +59,17 @@ export function useCreateEntryForm({
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
   const actions = useEntryActions(projectId);
+  const registry = useLiveDocumentSessionRegistry();
 
   // The entry is appended to the writer's copy of the list and shows at once; a refusal by the
   // server comes back on its row.
   const handleSubmit = useCallback(
     (typed: string) => {
       const what = kind === "folder" ? "folder" : "file";
-      const stored = kind === "file" ? storedFilename(typed) : null;
+      const at = joinContextEntryPath(parent, typed.trim()).slice(1);
+      const stored = kind === "file" ? storedNameAt(scheme, at, typed) : null;
       if (stored && !stored.ok) throw new Error(stored.message);
-      const filetype = stored?.filename.filetype ?? "markdown";
+      const filetype = stored?.filetype ?? "markdown";
       if (stored && classifyFiletype(filetype).kind !== "tracked")
         throw new Error(treeActionMessage("name", what));
       const made = (scheme === "user" ? actions.account : actions.project).create({
@@ -75,9 +80,13 @@ export function useCreateEntryForm({
           : { kind: "document" as const, filetype }),
       });
       if (!made.ok) throw new Error(treeActionMessage(made.reason, what));
-      onCreated?.(joinContextEntryPath(parent, made.name));
+      const path = joinContextEntryPath(parent, made.name);
+      const location = kind === "file" ? agentsLocationOf(scheme, path.slice(1)) : null;
+      const template = location && agentFileTemplate(location.path);
+      if (template) void writeFirstText(registry, projectId, made.node, template);
+      onCreated?.(path);
     },
-    [actions, scheme, kind, parentId, parent, onCreated],
+    [actions, registry, projectId, scheme, kind, parentId, parent, onCreated],
   );
 
   const form = useInlineEdit({
@@ -95,6 +104,27 @@ export function useCreateEntryForm({
     icon: kind === "folder" ? Folder : fileKindIcon(iconName(form.draft)),
     placeholder: kind === "folder" ? t`Folder name` : t`File name`,
   };
+}
+
+/**
+ * The name and kind a file typed at `path` is stored with: in an Agents location, the literal
+ * name as code text (Mars reads those bytes); anywhere else, the name codec's.
+ */
+function storedNameAt(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  typed: string,
+): { ok: true; name: string; filetype: string } | { ok: false; message: string } {
+  if (agentsLocationOf(scheme, path)) {
+    const parsed = documentFilenameAt(scheme, path);
+    return parsed.ok
+      ? { ok: true, name: typed.trim(), filetype: parsed.value.filetype }
+      : { ok: false, message: parsed.error.message };
+  }
+  const stored = storedFilename(typed);
+  return stored.ok
+    ? { ok: true, name: stored.name, filetype: stored.filename.filetype ?? "markdown" }
+    : { ok: false, message: stored.message };
 }
 
 /** The icon previews the name the file will be stored under; an empty field is prose. */

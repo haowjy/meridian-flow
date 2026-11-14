@@ -5,6 +5,7 @@
 import type {
   AgentCatalog,
   AgentCatalogItem,
+  AgentFiles,
   AgentLevel,
   AgentSelection,
   ResolvedAgentConfiguration,
@@ -21,17 +22,18 @@ import {
   resolveAgentConfiguration,
   skillReference,
 } from "./agent-configuration.js";
-import { type Combined, combineByName, type LevelItems } from "./combine-agents.js";
+import { type Combined, type Layered, type LevelItems, layerByName } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
   type CompiledAgent,
   type CompiledAgentDefinition,
   type CompiledPackage,
   compilePackage,
+  type PackageDiagnostic,
   sourceDigest,
 } from "./compile-package.js";
-import { splitLevel } from "./level-packages.js";
-import { GRAMMAR_VERSION, MANIFEST_PATH, readManifest, skillPath } from "./mars.js";
+import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
+import { agentPath, GRAMMAR_VERSION, MANIFEST_PATH, readManifest, skillPath } from "./mars.js";
 import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js";
 
 export type {
@@ -49,12 +51,15 @@ export class AgentSelectionError extends Error {
 interface AgentEntry {
   package: CompiledPackage;
   agent: CompiledAgent;
+  /** The package's folder in its level: `""` for the root, `packages/<name>/` for an import. */
+  folder: string;
 }
 /** A skill of one compiled package; one with a diagnostic is held but never offered. */
 interface SkillEntry {
   package: CompiledPackage;
   slug: string;
-  available: boolean;
+  diagnostics: PackageDiagnostic[];
+  folder: string;
 }
 
 /** A skill the `/` menu offers or a writer invoked. */
@@ -72,6 +77,10 @@ export interface BoundAgentCatalog {
     | { ok: true; revision: AgentRevision; configuration: ResolvedAgentConfiguration }
     | { ok: false; reason: "not-found" | "unavailable"; details: string[] }
   >;
+  /** Every level's Agent and skill files, with Mars's verdict and what each hides. */
+  files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
+  /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
+  builtinFile(path: string): string | undefined;
   /** The skills a writer can invoke with `/`: built-in, user and project, combined by name. */
   userSkills(userId: string, input: { projectId?: string }): Promise<CatalogSkill[]>;
   /**
@@ -136,54 +145,56 @@ export function createBoundAgentCatalog(input: {
   }
   type Levels = Awaited<ReturnType<typeof levels>>;
 
-  const agentsOf = (all: Levels): Array<Combined<AgentEntry>> => {
-    const items = (pkg: CompiledPackage) =>
-      pkg.agents.map((agent) => ({ name: agent.slug, value: { package: pkg, agent } }));
-    return combineByName(
+  /** Each level's items of `pick`, by name, with the package folder each came from. */
+  const layered = <T>(
+    all: Levels,
+    pick: (pkg: CompiledPackage, folder: string) => Array<{ name: string; value: T }>,
+  ): Array<Layered<T>> =>
+    layerByName(
       all.map(
-        (level): LevelItems<AgentEntry> => ({
+        (level): LevelItems<T> => ({
           level: level.level,
-          root: level.root ? items(level.root) : [],
+          root: level.root ? pick(level.root, "") : [],
           imports: level.imports.map((item) => ({
             package: item.name,
-            items: items(item.package),
+            items: pick(item.package, `${PACKAGES_DIR}${item.name}/`),
           })),
         }),
       ),
     );
-  };
-  const skillsOf = (all: Levels): Array<Combined<SkillEntry>> => {
-    const items = (pkg: CompiledPackage) =>
-      pkg.skills.map(({ slug, diagnostics }) => ({
-        name: slug,
-        value: { package: pkg, slug, available: diagnostics.length === 0 },
-      }));
-    return combineByName(
-      all.map(
-        (level): LevelItems<SkillEntry> => ({
-          level: level.level,
-          root: level.root ? items(level.root) : [],
-          imports: level.imports.map((item) => ({
-            package: item.name,
-            items: items(item.package),
-          })),
-        }),
-      ),
+  const agentsOf = (all: Levels) =>
+    layered(
+      all,
+      (pkg, folder): Array<{ name: string; value: AgentEntry }> =>
+        pkg.agents.map((agent) => ({ name: agent.slug, value: { package: pkg, agent, folder } })),
     );
-  };
+  const skillsOf = (all: Levels) =>
+    layered(
+      all,
+      (pkg, folder): Array<{ name: string; value: SkillEntry }> =>
+        pkg.skills.map(({ slug, diagnostics }) => ({
+          name: slug,
+          value: { package: pkg, slug, diagnostics, folder },
+        })),
+    );
+  const winners = <T>(items: Array<Layered<T>>): Array<Combined<T>> =>
+    items.filter((item) => item.hiddenBy === null);
 
-  /** Why an Agent cannot start a conversation: what the compile found, then what the host adds. */
-  const reasonsOf = (agent: Pick<CompiledAgent, "definition" | "diagnostics">): string[] => {
+  /** Why an Agent cannot run: what the compile found, then what the host adds. */
+  const reasonsOf = (
+    agent: Pick<CompiledAgent, "definition" | "diagnostics">,
+    /** The file the reasons are read on: its own findings need no file name. */
+    ownFile?: string,
+    /** Whether only an Agent a writer can start a conversation with counts as available. */
+    asPrimary = true,
+  ): string[] => {
     const { definition } = agent;
     if (!definition) {
       return agent.diagnostics
         .filter((item) => item.severity === "error" || !item.code.startsWith("flow."))
-        .map((item) => `${item.file}: ${item.message}`);
+        .map((item) => (item.file === ownFile ? item.message : `${item.file}: ${item.message}`));
     }
-    if (
-      definition.metadata.mode === "subagent" ||
-      definition.metadata["user-invocable"] === false
-    ) {
+    if (asPrimary && !isPrimary(definition)) {
       return ["This Agent is unavailable for primary conversations"];
     }
     const model = definition.metadata.model ?? input.defaultModel();
@@ -215,7 +226,7 @@ export function createBoundAgentCatalog(input: {
   };
 
   const listingOf = (entry: Combined<SkillEntry>): CatalogSkill | null =>
-    entry.value?.available
+    entry.value?.diagnostics.length === 0
       ? {
           ...skillListingFromMarkdown(
             entry.value.package.files[skillPath(entry.value.slug)],
@@ -228,7 +239,9 @@ export function createBoundAgentCatalog(input: {
 
   return {
     async list(userId, { projectId }) {
-      const items = await Promise.all(agentsOf(await levels(userId, projectId)).map(itemOf));
+      const items = await Promise.all(
+        winners(agentsOf(await levels(userId, projectId))).map(itemOf),
+      );
       const key = (item: AgentCatalogItem) => item.name.normalize("NFC").toLowerCase();
       return {
         agents: items.sort((a, b) =>
@@ -273,14 +286,65 @@ export function createBoundAgentCatalog(input: {
       }
     },
 
+    async files(userId, { projectId }) {
+      const all = await levels(userId, projectId);
+      const agents = agentsOf(all).flatMap((entry) => {
+        if (!entry.value) return [];
+        const file = agentPath(entry.value.agent.slug);
+        return [
+          {
+            kind: "agent" as const,
+            slug: entry.slug,
+            level: entry.level,
+            path: `${entry.value.folder}${file}`,
+            unavailableReasons: reasonsOf(entry.value.agent, file, false),
+            pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
+            shadows: entry.shadows,
+            hiddenBy: entry.hiddenBy,
+          },
+        ];
+      });
+      const skills = skillsOf(all).flatMap((entry) => {
+        if (!entry.value) return [];
+        const file = skillPath(entry.value.slug);
+        return [
+          {
+            kind: "skill" as const,
+            slug: entry.slug,
+            level: entry.level,
+            path: `${entry.value.folder}${file}`,
+            unavailableReasons: entry.value.diagnostics.map((item) =>
+              item.file === file ? item.message : `${item.file}: ${item.message}`,
+            ),
+            pickable: listingOf(entry)?.userInvocable ?? true,
+            shadows: entry.shadows,
+            hiddenBy: entry.hiddenBy,
+          },
+        ];
+      });
+      return { files: [...agents, ...skills] };
+    },
+
+    builtinFile(path) {
+      if (!path.startsWith(PACKAGES_DIR)) return undefined;
+      const inside = path.slice(PACKAGES_DIR.length);
+      const slash = inside.indexOf("/");
+      const pkg = builtinPackages.find((item) => item.name === inside.slice(0, slash));
+      const files = pkg?.package.files;
+      const file = inside.slice(slash + 1);
+      return files && Object.hasOwn(files, file) ? files[file] : undefined;
+    },
+
     async userSkills(userId, { projectId }) {
-      return skillsOf(await levels(userId, projectId))
+      return winners(skillsOf(await levels(userId, projectId)))
         .map(listingOf)
-        .filter((skill): skill is CatalogSkill => skill !== null && skill.userInvocable);
+        .filter((skill): skill is CatalogSkill => skill?.userInvocable === true);
     },
 
     async resolveSkill(userId, { projectId, slug }) {
-      const winner = skillsOf(await levels(userId, projectId)).find((entry) => entry.slug === slug);
+      const winner = winners(skillsOf(await levels(userId, projectId))).find(
+        (entry) => entry.slug === slug,
+      );
       const skill = winner && listingOf(winner);
       if (!winner?.value || !skill?.userInvocable) return undefined;
       const { packageRevisionId } = await install(winner.value.package);
@@ -290,6 +354,11 @@ export function createBoundAgentCatalog(input: {
       };
     },
   };
+}
+
+/** Whether a writer can start a conversation with the Agent, not only another Agent call it. */
+function isPrimary(definition: CompiledAgentDefinition): boolean {
+  return definition.metadata.mode !== "subagent" && definition.metadata["user-invocable"] !== false;
 }
 
 function availableRevision(row: CatalogRevision): AgentRevision | null {

@@ -53,6 +53,8 @@ export type TreeEnv = {
   activeDocumentId: string | null;
   /** On Live, what the Work's draft changes: each gets a jade dot. */
   changed?: ReadonlySet<string> | null;
+  /** A note on a file's row, after its name. */
+  meta?: (file: TreeFile) => ReactNode;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -359,6 +361,7 @@ function FileRow({
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
+        meta={env.meta?.(file)}
         onOpen={() => env.onSelectFile(env.scheme, file)}
         current={active && "page"}
         selected={row.selected}

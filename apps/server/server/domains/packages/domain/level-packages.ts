@@ -5,7 +5,7 @@ import { type AgentSourceSnapshot, isPackagePath } from "./compile-package.js";
 import { MANIFEST_PATH } from "./mars.js";
 import type { SkillFiles } from "./types.js";
 
-const PACKAGES_DIR = "packages/";
+export const PACKAGES_DIR = "packages/";
 
 /**
  * A level root with no `mars.toml` is a package named for its level, so a bare `agents/x.md`
