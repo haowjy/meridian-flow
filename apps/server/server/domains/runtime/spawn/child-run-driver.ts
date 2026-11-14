@@ -7,9 +7,9 @@ import type {
   TreeBudget,
 } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
+import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
-import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";

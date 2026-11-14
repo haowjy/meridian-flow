@@ -37,3 +37,10 @@ session whose socket is detached (no editor, e.g. an upload finishing) does not 
 unsent. The registry can then retire the session without holding it for delivery. Check
 whether local persistence alone carries that edit to the server on the next open; if not,
 count local-only updates as unsent while detached.
+
+## Selection on mount beside a table
+
+Opening a document whose first block is a table logs ProseMirror's "TextSelection endpoint not
+pointing into a node with inline content (table)": y-tiptap's mount rerender rebuilds the
+selection as a text selection at the document's start, inside the table. Nothing the writer sees
+changes. The fix is a selection that falls back to a gap cursor there.

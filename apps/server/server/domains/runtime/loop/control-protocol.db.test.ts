@@ -40,7 +40,7 @@ else
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { processDetachedWork } = await import("../detached-work.js");
+    const { processDetachedWork } = await import("../../../shared/detached-work.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const { assertPublicationHooks, openAuditedDatabase } = await import(
       "../../../test-support/run-state-publication.js"

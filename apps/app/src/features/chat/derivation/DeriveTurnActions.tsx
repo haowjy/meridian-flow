@@ -12,7 +12,6 @@
  * brief reports it as the open request.
  */
 import { t } from "@lingui/core/macro";
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -23,14 +22,18 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
-import type { CreationAgent } from "@/features/agents/creation-agent";
+import {
+  type BoundAgent,
+  boundAgentRow,
+  type CreationAgent,
+} from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
 export type TurnDerivation = {
   projectId: string;
   /** The Agent the source chat is bound to, for the picker's default. */
-  sourceAgent: { name: string | null; definitionRevisionId: string | null };
+  sourceAgent: BoundAgent;
   fork: (turnId: string) => void;
   handoff: (turnId: string, agent: CreationAgent) => void;
 };
@@ -54,22 +57,6 @@ export function canDeriveFrom(input: {
   canOpen: boolean;
 }): boolean {
   return input.kind === "primary" && !input.pendingCreation && input.canOpen;
-}
-
-/** The picker's default: the source's own revision, else its Agent by name. */
-export function defaultHandoffAgent(
-  agents: readonly AgentCatalogItem[],
-  source: TurnDerivation["sourceAgent"],
-): AgentCatalogItem | null {
-  return (
-    agents.find(
-      (agent) =>
-        source.definitionRevisionId !== null &&
-        agent.selection.definitionRevisionId === source.definitionRevisionId,
-    ) ??
-    agents.find((agent) => source.name !== null && agent.name === source.name) ??
-    null
-  );
 }
 
 export function DeriveTurnActions({ turnId }: { turnId: string }) {
@@ -126,10 +113,7 @@ function HandoffPicker({
     catalog.status === "ready"
       ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
       : [];
-  const fallback = defaultHandoffAgent(agents, derivation.sourceAgent);
-  const selected: CreationAgent | null = fallback
-    ? { selection: fallback.selection, slug: fallback.slug, name: fallback.name }
-    : null;
+  const selected = boundAgentRow(agents, derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;
   // Land on the source's Agent so Enter hands off to it. The catalog may load

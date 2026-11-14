@@ -1,6 +1,7 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
+import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -440,6 +441,12 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const path = settledDocumentPath(tool, asString(input.path));
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
+
+  // A call the run ended never failed: it reads as what it was going to do.
+  if (isToolNotRunResult(tool.result)) {
+    const { verb, parameter } = descriptor.phrases(tool, names).active;
+    return <PhraseTitle phrase={{ verb, parameter: parameter?.replace(/…$/, "") }} />;
+  }
 
   if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();

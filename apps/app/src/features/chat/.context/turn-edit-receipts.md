@@ -5,10 +5,18 @@ This page defines the chat contract for turn-edit records and reversal.
 The per-turn receipt is a quiet, default-collapsed record for live and pending draft
 document edits, moves and deletes. Its header counts documents and never names one;
 document names belong to the expanded rows, which navigate. It reads "Drafted 1
-document" when every change went into a draft (the manuscript is unchanged until
-an Apply, and the heading stays true after one: the part lines say what became of
-each), else "Edited 1 document", or "Changed 1 document" once the turn moved or
-deleted one or wrote both a draft and the manuscript.
+document" while a drafted document still waits, "Applied" or "Discarded" once every
+drafted document has had that outcome, and "Drafted 3 documents: 1 applied, 1
+discarded, 1 still a draft" when they differ. The heading reads what is true now of this reply's change, not
+what was true when the reply ended: the receipt's `drafts` map (each drafted document
+still a draft, applied or discarded, from the same capture as the receipt: still a draft
+means a change waits in an open draft at this reply's own text, or the writer typed over
+it; another reply's change in the same draft does not count, so each reply's card records
+what became of that reply's change) is re-read when
+this chat's waiting drafts change (`useDraftDock`). A turn that wrote the manuscript
+reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one or
+wrote both a draft and the manuscript. A drafted row says "Applied" or "Discarded" at
+its end; one still waiting needs no word.
 Expanding shows one row per edited document and shows no per-change detail: the
 card has no Before/After excerpts or word totals. A conversation reveal opened
 from an editor peer mark lands on the owning turn.
@@ -19,7 +27,7 @@ direct and draft lineage may produce the same receipt. The receipt is a record o
 what the reply wrote: it counts every document the reply wrote to, live or draft,
 edited or created, as soon as the reply finishes. Apply and Discard never create
 or change it, and Undo never erases its turn-owned record. Pending draft lineage
-shows the same “Drafted N documents” card before and after Apply.
+shows the same card before and after Apply; only its words change.
 
 A document the reply created in a draft counts at once, and pending draft rows
 name the edited files.
@@ -45,9 +53,13 @@ it was" after one.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `work-active`, reversed, dependent, or expired) decides whether
-it is available. Unavailable actions render a compact `Can't undo` pill; the
-server-derived reason appears only after expansion. A deleted document's row stays
-as a record without being a door.
+it is available. When it is not (`view_change`; the server gives no control once every drafted document is
+discarded, where a Redo would bring the discarded text back) the card shows no
+control and no failure line: "can't reverse" is never read as "went wrong". What
+became of each part shows as plain facts after expansion, worded from the typed
+causes ("Taken out", "Stayed as you edited it"); a drafted document's apply or
+discard is on its row instead. A deleted document's row stays as a record without
+being a door.
 
 A reversal command can race the projected receipt and return a semantic
 unavailable outcome with HTTP 200. The mutation invalidates the turn query,
@@ -116,3 +128,18 @@ turn that never arrives still leaves them in the thread. Nothing copies the pend
 component state — display without the lifecycle is what let a request outlive
 everything that could complete it. A stage deadline in the controller is only a
 backstop for the case no surface can report: a stage whose surface never mounts.
+
+## A reply the run ended early
+
+A stopped reply keeps the words streamed before Stop and ends with one plain line
+(`TurnStoppedLine`): "Stopped." and, when calls never ran, "Stopped. Didn't run: create
+Scene C." A call the run ended before it settled carries `TOOL_NOT_RUN_CODE` in its
+result (`didNotRunResult`, or any abort exit, read and write included), and its row reads as done, not failed. Edits that landed
+stay landed and keep their receipt. A crashed reply keeps its failure card and adds
+the "Didn't run" line when calls never ran. Replies stopped before this code have no
+code, so they read only "Stopped."
+
+The dock's Apply and Discard stay locked while a round runs. A mid-round Discard of a
+document the reply created would send the model "File not found"; the lock lifts when the
+server settles an agent write to a discarded draft with `returned`
+(never-refuse §6).

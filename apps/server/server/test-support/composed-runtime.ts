@@ -15,10 +15,10 @@ import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
-import { processDetachedWork } from "../domains/runtime/detached-work.js";
 import { TREE_NAMES_ROOM } from "../domains/runtime/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
+import { processDetachedWork } from "../shared/detached-work.js";
 
 type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
 type RuntimeThread = { threadId: string; turnId: string };

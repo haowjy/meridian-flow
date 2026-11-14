@@ -51,13 +51,16 @@ export function selectedSequence(selection: Transaction["selection"]): Sequence 
     positions.push(at);
     at += child.nodeSize;
   });
-  const last = selection instanceof NodeSelection ? $from.index(depth) + 1 : $to.indexAfter(depth);
+  // A gap cursor stands between blocks and covers the one after it; at the container's end
+  // there is none, so it covers the one before (a document ending in a table).
+  const from = Math.min($from.index(depth), blocks.length - 1);
+  const last = selection instanceof NodeSelection ? from + 1 : $to.indexAfter(depth);
   return {
     blocks,
     positions,
     facts: nestNodes(blocks),
-    from: $from.index(depth),
-    to: Math.max(last, $from.index(depth) + 1),
+    from,
+    to: Math.max(last, from + 1),
   };
 }
 
