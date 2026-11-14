@@ -129,8 +129,8 @@ What a change must keep:
 - **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
   row. A commit applies its update to the process's own room at once; the `NOTIFY` it sent in
   its transaction then reaches every process (this one too), whose room reads the rows past
-  `seq`. `listen()` on the store starts hearing it (`app.ts`); the catalog this list replaces
-  gave every tab cross-process freshness, so the tree must too. Measured across two processes
+  `seq`. `listen()` on the store starts hearing it (`app.ts`); the old catalog gave every tab
+  cross-process freshness, so the tree must too. Measured across two processes
   in the room's test: about 20 ms from a tab's record to an idle tab on the other.
 - **Nothing is cut on the way to a browser.** Only the client's sends are split in parts.
 

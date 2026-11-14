@@ -1,6 +1,6 @@
-/** A catalog file grows exactly one boolean for properties; their content never rides along. */
+/** A file entry grows exactly one boolean for properties; their content never rides along. */
 import { describe, expect, it } from "vitest";
-import { type CatalogFileRow, mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import { type CatalogFileRow, mapAuthoritativeFile } from "./context-file-entry.js";
 
 const entryFor = (metadata: unknown) =>
   mapAuthoritativeFile({
@@ -22,7 +22,7 @@ const entryFor = (metadata: unknown) =>
     parentPath: [],
   });
 
-describe("catalog hasProperties", () => {
+describe("file entry hasProperties", () => {
   it("is true only for stored properties with something in them", () => {
     const text = "status: revised\n";
     expect(entryFor({ properties: { format: "yaml", text } }).hasProperties).toBe(true);

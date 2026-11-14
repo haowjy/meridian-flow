@@ -383,14 +383,9 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
+        "path": "apps/server/server/domains/context/project-wake-hub.ts",
         "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/context/context-catalog-wake-hub.ts",
-        "line": "} catch {",
-        "count": 1
+        "count": 2
       },
       {
         "path": "apps/server/server/domains/observability/adapters/deferred/deferred-event-sink.ts",

@@ -1,8 +1,8 @@
 /**
- * Real catalog/Work-authority integration for canonical document-link navigation.
+ * Real source/Work-authority integration for canonical document-link navigation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - catalog-backed canonical navigation under Work-specific readability (kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure)
+ * - source-backed canonical navigation under Work-specific readability (kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure)
  */
 
 import type { DraftOwner } from "@meridian/contracts";
@@ -32,7 +32,7 @@ import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
-import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
+import { createDrizzleContextSources } from "./adapters/context-sources.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
@@ -40,9 +40,9 @@ import { createDocumentLinkResolver } from "./document-link-resolution.js";
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("catalog-backed document links (postgres)", () => {});
+  describe.skip("source-backed document links (postgres)", () => {});
 } else {
-  describe("catalog-backed document links (postgres)", () => {
+  describe("source-backed document links (postgres)", () => {
     const u = "00000000-0000-4000-8000-000000000900";
     const p = "00000000-0000-4000-8000-000000000901";
     const personal = "00000000-0000-4000-8000-000000000902";
@@ -180,7 +180,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function resolver() {
       const db = database.current;
       return createDocumentLinkResolver({
-        catalog: createDrizzleContextCatalog(db),
+        sources: createDrizzleContextSources(db),
         history: createDrizzleDocumentLinkHistory(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         chats: createDrizzleChatUploadsOwners(db),

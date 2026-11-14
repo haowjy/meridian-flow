@@ -1,11 +1,11 @@
 # domains/context FUTURE
 
-These are deferred domain improvements. Validate the existing URI, tree, and
-catalog contracts before changing them.
+These are deferred domain improvements. Validate the existing URI and tree
+contracts before changing them.
 
 ## Manuscript ordering and agent reorder
 
-Catalog order is currently derived from the existing name-based projection.
+Sibling order is currently derived from the existing name-based projection.
 Design an explicit manuscript binder order, then add its persistence, route,
 ContextPort seam, and agent move/reorder behavior as one coherent change.
 
@@ -47,17 +47,8 @@ vectors a probe built. The browser sends a live document's vector from its open 
 has been checked against it; no surface sends a draft tab's yet. Before one does, compare the
 draft room's vector (`drafts.copyDraft`) against a real tab's.
 
-## Copy: preparation cost and the catalog reconcile
+## Copy: preparation cost
 
 A 200-document copy spends most of its time before the lock: reading each document's room
 one after another takes about 18 ms each. Reading four at a time would cut it, at the price of
 more pool connections per copy; measure under concurrent copies first.
-
-`ContextCatalogMutationPort.refreshSources` reconciles the whole project scope against the
-stored catalog on every write and holds the catalog head lock to the end of the transaction,
-so every write in a project waits behind every other and each write costs more as the
-project grows (on a dev stack a `doc put` took about 130 ms in a project of 200 documents and
-over a second in one of 4,400). A copy into a folder that does not exist yet pays it twice,
-once to create the folder path and once for the tree. Refreshing only the invalidated roots,
-and as late in the transaction as possible, would make a write's cost independent of the
-project and shorten the head-lock hold.

@@ -650,6 +650,7 @@ export function useContextCatalogWake(
         });
         return;
       }
+      if (hint.type === "context-sources-hint") return;
       bumpLinkResolutionEpoch(projectId);
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.documentTrash(projectId),

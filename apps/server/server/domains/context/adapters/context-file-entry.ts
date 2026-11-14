@@ -1,4 +1,4 @@
-/** Shared authoritative row-to-file mapping for catalog and project availability. */
+/** The row-to-file-entry mapping that project availability and recent documents answer with. */
 
 import { hasDisplayableProperties } from "@meridian/contracts";
 import {
@@ -34,7 +34,7 @@ export type CatalogFileRow = {
   locationVersion?: bigint;
 };
 
-export function catalogSourceAuthority(
+export function sourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
   workHandle: string | null,
@@ -65,8 +65,6 @@ export function mapAuthoritativeFile(input: {
   parentPath: readonly string[];
   ownerThreadRef?: string | null;
   chatOwned?: boolean;
-  /** A chat upload's intake facts; absent for every other file. */
-  upload?: { attachedAt: Date; consumed: boolean; intakeId: string; locationRevision: string };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.name;
@@ -112,7 +110,7 @@ export function mapAuthoritativeFile(input: {
     uri: canonicalContextUri(
       scheme,
       path.join("/"),
-      catalogSourceAuthority(
+      sourceAuthority(
         scheme,
         input.workId,
         input.workHandle,
@@ -125,15 +123,5 @@ export function mapAuthoritativeFile(input: {
     // No name is provisional: the list names every node when it is made.
     provisionalName: false,
     rank: document.rank,
-    ...(input.upload
-      ? {
-          upload: {
-            attachedAt: input.upload.attachedAt.toISOString(),
-            used: input.upload.consumed,
-            intakeId: input.upload.intakeId,
-            locationRevision: input.upload.locationRevision,
-          },
-        }
-      : {}),
   };
 }

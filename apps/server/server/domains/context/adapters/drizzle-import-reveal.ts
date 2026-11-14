@@ -12,6 +12,7 @@ import { ensureProjectContextSource } from "../context-source-provisioning.js";
 import type { ContextImportReveal, ImportRevealNode } from "../ports/context-import-reveal.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { AheadRegistration, LinkAheadRegistry } from "../ports/link-ahead-registry.js";
+import type { ProjectHintPort } from "../ports/project-hints.js";
 import type { TreeListStore } from "../ports/tree-list-store.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import { resolveCanonicalAddresses } from "./document-address.js";
@@ -26,12 +27,16 @@ export function createDrizzleContextImportReveal(deps: {
   tree: Pick<TreeListStore, "submit">;
   ahead: Pick<LinkAheadRegistry, "registerWithinTransaction">;
   arrivals: Pick<DocumentArrivals, "settle">;
+  hints: Pick<ProjectHintPort, "publishSourcesHint">;
 }): ContextImportReveal {
   return {
     async reveal({ projectId, nodes }) {
       const sourceOf = new Map<string, string>();
       for (const area of new Set(nodes.map((node) => node.area)))
-        sourceOf.set(area, await ensureProjectContextSource(deps.db, projectId, area, ""));
+        sourceOf.set(
+          area,
+          await ensureProjectContextSource(deps.db, projectId, area, "", deps.hints),
+        );
 
       const planned = new Map(nodes.map((node) => [node.id, node]));
       const inside = new Map<string, ImportRevealNode[]>();

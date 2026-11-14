@@ -603,7 +603,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               intakeId,
               documentId: ready.documentId,
               uri: ready.uri,
-              locationRevision: ready.locationRevision,
+              locationRevision: "",
             },
           }),
         )

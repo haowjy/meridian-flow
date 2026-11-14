@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createTreeReader, LIVE_TREE } from "../context/tree/tree-view.js";
@@ -147,7 +148,13 @@ else
         name: "Ambient source",
         slug: `ambient-${projectId}`,
       });
-      const store = createProjectContextDocumentStore(db, projectId, "manuscript", USER_ID);
+      const store = createProjectContextDocumentStore(
+        db,
+        projectId,
+        "manuscript",
+        USER_ID,
+        NO_PROJECT_HINTS,
+      );
       await expect(
         runInDrizzleTransaction(db, () =>
           store.transaction(async () => {

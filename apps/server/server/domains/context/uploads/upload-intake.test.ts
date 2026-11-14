@@ -43,7 +43,6 @@ it("rejects a committed address different from the reservation", async () => {
     mimeType: "text/markdown",
     sizeBytes: 0,
     objectKey: "object",
-    locationRevision: "revision",
     state: "reserved",
     consumed: false,
     canonicalUri: "uploads://upload.md",

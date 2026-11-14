@@ -54,6 +54,7 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { ProjectHintPort } from "./ports/project-hints.js";
 import type { TreeListStore } from "./ports/tree-list-store.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 
@@ -362,21 +363,24 @@ function buildUnifiedContextPort(input: {
   });
 }
 
-function createProductionStoreResolvers(db: Database): ContextStoreResolvers {
+function createProductionStoreResolvers(
+  db: Database,
+  hints: Pick<ProjectHintPort, "publishSourcesHint">,
+): ContextStoreResolvers {
   return {
     lineages: createDrizzleScratchLineages(db),
     chats: createDrizzleChatUploadsOwners(db),
     resolveLineageStore(projectId, rootThreadId) {
-      return createLineageContextDocumentStore(db, projectId, rootThreadId);
+      return createLineageContextDocumentStore(db, projectId, rootThreadId, hints);
     },
     resolveChatStore(projectId, chatId, scheme) {
-      return createChatContextDocumentStore(db, projectId, chatId, scheme);
+      return createChatContextDocumentStore(db, projectId, chatId, scheme, hints);
     },
     resolveProjectStore(projectId, userId, scheme) {
-      return createProjectContextDocumentStore(db, projectId, scheme, userId);
+      return createProjectContextDocumentStore(db, projectId, scheme, userId, hints);
     },
     resolveWorkStore(workId, scheme) {
-      return createWorkContextDocumentStore(db, workId, scheme);
+      return createWorkContextDocumentStore(db, workId, scheme, hints);
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);
@@ -395,6 +399,8 @@ export function createProductionUnifiedContextPortFactory(options: {
     Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** The project's tree lists: every create, move and delete is a `submit` on one. */
   treeLists: Pick<TreeListStore, "submit" | "read">;
+  /** Told when a source is provisioned: the first write into a Work, a chat or a lineage makes it. */
+  sourceHints: Pick<ProjectHintPort, "publishSourcesHint">;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
   /** The one branches resolver: draft placements read and write through it (§2.3). */
@@ -411,7 +417,7 @@ export function createProductionUnifiedContextPortFactory(options: {
 }): UnifiedContextPortFactory {
   const topPrimaryChats =
     options.topPrimaryChats ?? createDrizzleTopPrimaryChatResolver(options.db);
-  const storeResolvers = createProductionStoreResolvers(options.db);
+  const storeResolvers = createProductionStoreResolvers(options.db, options.sourceHints);
   const chatFiles = createDrizzleOwnerLookup(options.db, {
     chats: storeResolvers.chats,
     lineages: storeResolvers.lineages,

@@ -104,7 +104,6 @@ export interface WorkRepository {
   /** Lists most recently updated first. Named Works only unless includeNoWork. */
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
   snapshotIdentity(projectId: ProjectId): Promise<{
-    catalogGeneration: string;
     authorityRevision: string;
   }>;
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;

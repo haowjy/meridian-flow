@@ -263,6 +263,7 @@ export type WsServerMessage =
     }
   | import("./context-catalog.js").DraftOwnerHint
   | import("./context-catalog.js").ProjectChatsHint
+  | import("./context-sources.js").ContextSourcesHint
   | AskAnswerReply
   | {
       type: "error";
@@ -337,6 +338,10 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     projectId: z.string().min(1),
     removedChatIds: z.array(z.string().min(1)).optional(),
     recheckTabs: z.literal(true).optional(),
+  }),
+  z.object({
+    type: z.literal("context-sources-hint"),
+    projectId: z.string().min(1),
   }),
   z.object({
     type: z.literal("draft-owner-hint"),

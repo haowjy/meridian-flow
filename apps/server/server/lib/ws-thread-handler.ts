@@ -26,7 +26,7 @@ const SERVER_VERSION = "0.0.0";
 export type WsAuthenticatedContext = Readonly<{
   app: Pick<
     AppServices,
-    "eventSink" | "threadEventHub" | "projectRepo" | "contextCatalogWakeHub" | "asks"
+    "eventSink" | "threadEventHub" | "projectRepo" | "projectWakeHub" | "asks"
   > & {
     threadRuntime: Pick<AppServices["threadRuntime"], "requireOwnedThread" | "liveState">;
   };
@@ -475,7 +475,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                   return;
                 }
                 slot.unsubscribe?.();
-                slot.unsubscribe = peer.context.app.contextCatalogWakeHub.subscribe({
+                slot.unsubscribe = peer.context.app.projectWakeHub.subscribe({
                   projectId,
                   userId: peer.context.userId,
                   listener: (hint) => sendFrame(peer, hint),

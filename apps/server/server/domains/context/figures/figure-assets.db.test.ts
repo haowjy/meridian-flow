@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
@@ -83,6 +84,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("creates a distinct binary asset without changing the host document", async () => {
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,

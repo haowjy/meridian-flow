@@ -1,7 +1,7 @@
 # domains/context — context filesystem
 
-Agent-readable and writable content behind context URIs: URI routing, catalog
-views, arrivals and the storage seam. File access stays with
+Agent-readable and writable content behind context URIs: URI routing, tree
+views, sources, arrivals and the storage seam. File access stays with
 [file policy](../file-policy/.context/CONTEXT.md). Owners, schemes and the
 rest of the contracts: [context contracts](.context/CONTEXT.md).
 
@@ -21,7 +21,7 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
 - A Copy (`copy/`) reads, plans names and binds refs before taking any lock, then
   submits one command into the destination's list. A source not yet caught up to the client answers `source_behind`, which is
   retryable and records nothing.
-- The catalog and ContextFS read the same replay through a tree view. Every write of the
+- ContextFS reads the replay through a tree view; the browser reads the list itself and asks the sources query (`adapters/context-sources.ts`) for what a source is. Every write of the
   tree (ContextFS, copy, upload, the model's tree tools) is records made in `treeListStore.submit`;
   the browser has no tree routes, and no write inserts a `documents` or `tree_nodes` row itself.
 - Lineage hiding is reversible authority loss, not document deletion. Folder

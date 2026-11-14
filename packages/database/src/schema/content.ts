@@ -279,7 +279,6 @@ export const uploadIntakes = pgTable(
     fileType: text("file_type"),
     // The length the writer declared; finish refuses an object of any other.
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-    locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: createdAt(),
