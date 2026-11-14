@@ -32,7 +32,9 @@ Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
-otherwise an invertible active part offers Undo. Effective action state is
+otherwise an invertible active part offers Undo. The card counts only a person's Undo
+(its own, `actor: "human"`): the model's undo in the reply is part of what the reply did and
+gives the card no Redo, the same rule as for tree receipts below. Effective action state is
 indexed per immutable part. A model count consumes original actions: once a
 partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit; Redo retains the exact parts that were

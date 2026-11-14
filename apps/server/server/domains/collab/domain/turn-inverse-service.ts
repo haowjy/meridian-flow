@@ -152,7 +152,12 @@ function prepare(
   );
   const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
   const index = effectiveActionIndex(all, keys);
-  const selected = direction === "redo" ? index.actions[0] : undefined;
+  // The card redoes only what its own Undo took back (a person's action); the model's own undo
+  // in the reply is part of what the reply did, as for the tree's receipts.
+  const selected =
+    direction === "redo"
+      ? index.actions.find((action) => action.parts.every((part) => part.actor === "human"))
+      : undefined;
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   const consumes = selectedAction ? [selectedAction] : [];
