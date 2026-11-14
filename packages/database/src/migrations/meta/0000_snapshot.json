@@ -9016,6 +9016,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "commands_discard_project": {
+          "name": "commands_discard_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"commands\".\"kind\" IN ('discard', 'undo_discard')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9042,85 +9064,6 @@
           "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.discard_command_drafts": {
-      "name": "discard_command_drafts",
-      "schema": "",
-      "columns": {
-        "command_id": {
-          "name": "command_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "restored_by": {
-          "name": "restored_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "discard_command_drafts_command_id_commands_id_fk": {
-          "name": "discard_command_drafts_command_id_commands_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "commands",
-          "columnsFrom": [
-            "command_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discard_command_drafts_draft_id_document_drafts_id_fk": {
-          "name": "discard_command_drafts_draft_id_document_drafts_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "document_drafts",
-          "columnsFrom": [
-            "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discard_command_drafts_restored_by_commands_id_fk": {
-          "name": "discard_command_drafts_restored_by_commands_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "commands",
-          "columnsFrom": [
-            "restored_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "discard_command_drafts_command_id_draft_id_pk": {
-          "name": "discard_command_drafts_command_id_draft_id_pk",
-          "columns": [
-            "command_id",
-            "draft_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.document_block_rooms": {
@@ -9343,6 +9286,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "closed_by": {
+          "name": "closed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "state": {
           "name": "state",
           "type": "bytea",
@@ -9471,6 +9420,22 @@
           "method": "btree",
           "with": {}
         },
+        "document_drafts_closed_by": {
+          "name": "document_drafts_closed_by",
+          "columns": [
+            {
+              "expression": "closed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_drafts\".\"closed_by\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "document_drafts_active_work_draft_by_branch": {
           "name": "document_drafts_active_work_draft_by_branch",
           "columns": [
@@ -9533,6 +9498,10 @@
         "document_drafts_closed_cause_presence": {
           "name": "document_drafts_closed_cause_presence",
           "value": "(\"document_drafts\".\"status\" = 'closed') = (\"document_drafts\".\"closed_cause\" IS NOT NULL)"
+        },
+        "document_drafts_closed_by_closed": {
+          "name": "document_drafts_closed_by_closed",
+          "value": "\"document_drafts\".\"closed_by\" IS NULL OR \"document_drafts\".\"status\" = 'closed'"
         },
         "document_drafts_closed_cause_valid": {
           "name": "document_drafts_closed_cause_valid",
