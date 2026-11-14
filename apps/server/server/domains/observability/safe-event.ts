@@ -126,7 +126,6 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   status: new Set([
     "active",
     "binary_file",
-    "cant_undo_dependent",
     "closed",
     "committed",
     "discarded",

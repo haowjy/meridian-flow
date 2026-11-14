@@ -235,7 +235,7 @@ export function executeUndo(
   const collect = (update: Uint8Array) => updates.push(update);
   const manager = new Y.UndoManager(doc.getXmlFragment(root), {
     trackedOrigins: new Set(),
-    ignoreRemoteMapChanges: true,
+    ignoreRemoteMapChanges: false,
     deleteFilter,
   });
   doc.clientID = client;

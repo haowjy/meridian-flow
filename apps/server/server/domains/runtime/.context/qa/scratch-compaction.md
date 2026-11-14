@@ -5,10 +5,12 @@ request inspection, then confirm the transcript in the browser. Mock usage grows
 with the request so automatic compaction can be exercised; its synthetic counts
 are not provider-performance evidence. Avoid concurrent globally queued scripts.
 
-1. Create a primary mock Agent with an explicit low `autocompact` token trigger
-   (12,000 is useful) and a Work chat bound to it. Send a long history message
-   (`"The silver gate opens only for the keeper. "` repeated 1,400 times), with
-   a short scripted response. A first request alone cannot open the update step.
+1. Create a primary mock Agent (no compaction field exists in an Agent file) and a Work
+   chat bound to it. The trigger is the default, 90% of the usable window of
+   `mock-llm-v1` (about 111,000 tokens). Send long history as several messages of
+   `"The silver gate opens only for the keeper. "` repeated 3,000 times (an argument over
+   about 128 KB fails), each with a short scripted response, until a request is near the
+   trigger. A first request alone cannot open the update step.
 2. Queue a script with `./mf mock script` **without a match filter**: the optional
    update response, a summary response, and a resumed reply. Rolling summary
    prompts replace the latest user text, so `send --mock`'s match is unsuitable

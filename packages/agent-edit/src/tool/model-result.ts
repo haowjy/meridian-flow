@@ -16,7 +16,6 @@ export type WriteErrorStatus =
   | "gone"
   | "path_changed"
   | "partial_failure"
-  | "cant_undo_dependent"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
@@ -268,7 +267,6 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "gone":
     case "path_changed":
     case "partial_failure":
-    case "cant_undo_dependent":
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":

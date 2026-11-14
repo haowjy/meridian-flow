@@ -1,10 +1,10 @@
-/** Resolves an Agent's autocompaction policy against the model's usable input window. */
+/** Resolves the compaction trigger against the model's usable input window. */
 
 export const FLOW_ABSOLUTE_CEILING = 400_000;
+/** Share of the smaller of the input pricing tier and the usable window that compaction waits for. */
+export const TRIGGER_SHARE = 0.9;
 
 export interface ResolveCompactionTriggerInput {
-  autocompact?: number | null;
-  autocompact_pct?: number | null;
   inputTierTokens?: number;
   contextWindow: number;
   maxOutputTokens: number;
@@ -25,15 +25,12 @@ export function outputReserveTokens(model: { maxOutputTokens: number }): number 
 
 const OUTPUT_RESERVE_CEILING_TOKENS = 65_536;
 
-export type CompactionTriggerSource = "agent_tokens" | "agent_percent" | "config_default";
-
 export interface CompactionTrigger {
   thresholdTokens: number;
   usableWindowTokens: number;
-  source: CompactionTriggerSource;
 }
 
-/** Resolves the Agent's trigger to a usable token threshold; defaults avoid input repricing and respect the usable window. */
+/** Resolves the trigger to a usable token threshold; defaults avoid input repricing and respect the usable window. */
 export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): CompactionTrigger {
   const usableWindowTokens = Math.max(
     0,
@@ -44,21 +41,11 @@ export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): 
         (input.concurrentRenderSafetyTokens ?? 0),
     ),
   );
-  const agentTokens = input.autocompact;
-  const percent = input.autocompact_pct;
-  const source: CompactionTriggerSource =
-    agentTokens != null ? "agent_tokens" : percent != null ? "agent_percent" : "config_default";
-
-  const configured =
-    agentTokens ??
-    (percent != null
-      ? Math.floor((Math.max(0, percent) / 100) * usableWindowTokens)
-      : Math.floor(
-          0.9 * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
-        ));
+  const share = Math.floor(
+    TRIGGER_SHARE * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
+  );
   return {
-    thresholdTokens: Math.max(0, Math.min(configured, usableWindowTokens, FLOW_ABSOLUTE_CEILING)),
+    thresholdTokens: Math.min(share, FLOW_ABSOLUTE_CEILING),
     usableWindowTokens,
-    source,
   };
 }

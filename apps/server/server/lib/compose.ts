@@ -131,6 +131,7 @@ import {
   createDrizzleAgentRevisionStore,
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
+  recompileStalePackages,
   seedGeneralAgent,
   seedLaunchAgentPackage,
 } from "../domains/packages/index.js";
@@ -647,6 +648,7 @@ export async function createProductionAppPorts(input: {
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
   await seedLaunchAgentPackage(agentRevisions);
+  await recompileStalePackages(agentRevisions);
   const users = createDrizzleUserRepository({ db });
   const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({

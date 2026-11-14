@@ -36,7 +36,8 @@ async function installSkills(coordinate: string, slugs: string[]) {
   const revisions = createInMemoryAgentRevisionStore({ threadExists: async () => true });
   const files: Record<string, string> = {};
   for (const slug of slugs) {
-    files[`skills/${slug}/SKILL.md`] = `---\nname: ${slug}\n---\n${slug} body.\n`;
+    files[`skills/${slug}/SKILL.md`] =
+      `---\nname: ${slug}\ndescription: ${slug} skill.\n---\n${slug} body.\n`;
   }
   const installed = await revisions.installSource({ coordinate, files });
   return { revisions, packageRevisionId: installed.packageRevisionId };

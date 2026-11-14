@@ -12,12 +12,12 @@
  * catalog without either is a compile error rather than a blank row.
  */
 
+import type { HeadingLevel } from "@meridian/prosemirror-schema";
+
 import type { EditorAnchor } from "../../anchors";
 
 export type SlashCommandId =
-  | "heading-1"
-  | "heading-2"
-  | "heading-3"
+  | `heading-${HeadingLevel}`
   | "bullet-list"
   | "numbered-list"
   | "task-list"
@@ -38,6 +38,8 @@ export type SlashCommandItem = {
   aliases: readonly string[];
   /** A second line of answer for entries whose result is not obvious. */
   hint?: string;
+  /** Left out of the unfiltered menu, so rarer rows don't push the rest past its fold. */
+  onlyWhenSearched?: boolean;
 };
 
 export type SlashCommandCatalog = {
@@ -79,7 +81,7 @@ export function filterSlashCommandItems(
   query: string,
 ): SlashCommandItem[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) return [...items];
+  if (!normalizedQuery) return items.filter((item) => !item.onlyWhenSearched);
 
   return items
     .map((item, order) => ({

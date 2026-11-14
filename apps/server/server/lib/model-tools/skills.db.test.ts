@@ -44,7 +44,7 @@ const url = process.env.DATABASE_URL;
 async function launchAgentsSource(): Promise<AgentSourceSnapshot> {
   const files: Record<string, string> = {};
   for (const entry of await readdir(LAUNCH_AGENTS, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || entry.name === "mars.toml") continue;
+    if (!entry.isFile()) continue;
     const absolute = path.join(entry.parentPath, entry.name);
     files[path.relative(LAUNCH_AGENTS, absolute)] = await readFile(absolute, "utf8");
   }
@@ -96,15 +96,17 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         ownerUserId: null,
         coordinate: "meridian-launch-agents",
         currentRevisionId: launch.packageRevisionId,
-        upstreamRevisionId: launch.packageRevisionId,
-        origin: null,
       });
-      const general = (
+      const generalRow = (
         await agentRevisions.installSource({
           coordinate: "meridian/general",
-          files: { "agents/general.md": "---\nname: General\nmodel: fixture-model\n---\n\n" },
+          files: {
+            "mars.toml": '[package]\nname = "general"\nversion = "0.1.0"\nschema = 1\n',
+            "agents/general.md": "---\nname: General\nmodel: fixture-model\n---\n\n",
+          },
         })
       ).definitions[0];
+      const general = generalRow && (await agentRevisions.readRevision(generalRow.id));
       if (!general) throw new Error("General definition missing");
       const configuration = await resolveAgentConfiguration({
         revision: general,

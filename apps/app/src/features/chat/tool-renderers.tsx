@@ -295,8 +295,6 @@ export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): str
       : t`Something went wrong while reading that document.`;
   }
   switch (status) {
-    case "cant_undo_dependent":
-      return t`That change can't be undone because later edits depend on it.`;
     case "cant_undo_applied":
       return t`That change can't be undone here because it was already applied to your manuscript.`;
     case "cant_undo_discarded":

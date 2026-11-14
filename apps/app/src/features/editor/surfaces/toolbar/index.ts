@@ -6,6 +6,7 @@
  * verbs — the formatting menu and the block menu carry the same toggles and
  * must refuse the same targets.
  */
+export { BlockTypeMenuItem, HEADING_ICONS } from "./BlockTypeMenuItem";
 export { DocumentToolbar, type DocumentToolbarProps } from "./DocumentToolbar";
 export {
   BLOCK_TYPE_IDS,
@@ -24,7 +25,6 @@ export {
   textMarkState,
   toggleBulletListBlock,
   toggleCodeBlockBlock,
-  toggleHeadingBlock,
   toggleTextMark,
   turnIntoBlockType,
 } from "./toolbar-commands";

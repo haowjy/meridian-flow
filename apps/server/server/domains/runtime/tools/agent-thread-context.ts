@@ -22,7 +22,6 @@ import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
   agentSlug: string;
-  compaction: { autocompact?: number; autocompact_pct?: number };
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   tools: Tool[];
   agentBody: string;
@@ -109,10 +108,6 @@ export async function resolveAgentThreadTurnContext(
   );
   const agentBody = binding.revision?.definition.systemPrompt ?? GENERIC_AGENT_BODY;
   return {
-    compaction: {
-      autocompact: binding.revision?.definition.metadata.autocompact,
-      autocompact_pct: binding.revision?.definition.metadata.autocompact_pct,
-    },
     agentSlug: binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
     gatewayParams: agentGatewayMetaToGenerateParams({
       model: binding.configuration.model,
