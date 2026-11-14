@@ -147,7 +147,7 @@ keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and on
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
 `e<N>` the model is given is the ordinal on the receipt's subject.
 
-A node has one history per chat: its tree receipts and its text edits, ordered by that ordinal,
+A node has one history per chat: this agent's own tree receipts and text edits (each agent is its own peer for the text, as above, so the writer's typing never drops an edit from it; only an edit with no item left to remove or restore does), ordered by that ordinal,
 with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
 not reversed, the receipts an Undo made and a Redo has not, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
