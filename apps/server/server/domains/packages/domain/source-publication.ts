@@ -106,22 +106,23 @@ export async function publishAgentSource(input: {
  * advance. Chats already bound keep their revisions. With no change it finds nothing.
  */
 export async function recompileStalePackages(store: AgentRevisionStore): Promise<void> {
-  for (const installation of await store.listInstallationsWithoutRows(GRAMMAR_VERSION)) {
-    const source = await store.readSource(installation.currentRevisionId);
-    if (!source || !Object.keys(source.files).some((path) => agentSlugOf(path) !== undefined)) {
-      continue;
-    }
-    // Another instance booting or saving may have moved the head since the list above.
-    await store.withCatalogTransaction(installation.ownerUserId, async () => {
-      const head = (await store.listInstallations(installation.ownerUserId)).find(
-        (item) => item.coordinate === installation.coordinate,
+  for (const listed of await store.listInstallationsWithoutRows(GRAMMAR_VERSION)) {
+    // Another instance booting or saving may have moved the head since the list above, so
+    // recompile whatever the head is now, and skip only when its rows already exist.
+    await store.withCatalogTransaction(listed.ownerUserId, async () => {
+      const head = (await store.listInstallationsWithoutRows(GRAMMAR_VERSION)).find(
+        (item) => item.ownerUserId === listed.ownerUserId && item.coordinate === listed.coordinate,
       );
-      if (head?.currentRevisionId !== installation.currentRevisionId) return;
+      if (!head) return;
+      const source = await store.readSource(head.currentRevisionId);
+      if (!source || !Object.keys(source.files).some((path) => agentSlugOf(path) !== undefined)) {
+        return;
+      }
       await publishAgentSource({
         store,
-        ownerUserId: installation.ownerUserId,
+        ownerUserId: head.ownerUserId,
         source,
-        expectedRevisionId: installation.currentRevisionId,
+        expectedRevisionId: head.currentRevisionId,
       });
     });
   }

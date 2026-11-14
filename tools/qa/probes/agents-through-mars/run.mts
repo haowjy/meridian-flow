@@ -485,6 +485,46 @@ try {
       );
     },
   );
+
+  await check(
+    "boot recompile: a head that moved to another old-reader revision is recompiled, not skipped",
+    async () => {
+      const coordinate = await publish(
+        { "mars.toml": MANIFEST, "agents/b4.md": agent("B4") },
+        OLD_READER,
+      );
+      const moving: typeof store = {
+        ...store,
+        async listInstallationsWithoutRows(grammarVersion) {
+          const stale = await store.listInstallationsWithoutRows(grammarVersion);
+          if (!moved) {
+            moved = true;
+            await publishAgentSource({
+              store,
+              ownerUserId: USER,
+              source: {
+                coordinate,
+                files: { "mars.toml": MANIFEST, "agents/b4.md": agent("B4", "model: other\n") },
+              },
+              grammarVersion: OLD_READER,
+              expectedRevisionId: stale.find((i) => i.coordinate === coordinate)?.currentRevisionId,
+            });
+          }
+          return stale;
+        },
+      };
+      let moved = false;
+      await recompileStalePackages(moving);
+      const head = (await store.listInstallations(USER)).find((i) => i.coordinate === coordinate);
+      assert.ok(head);
+      const entry = await store.readCatalogEntry(USER, "b4");
+      assert.ok(entry);
+      assert.notEqual(
+        (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion,
+        OLD_READER,
+      );
+    },
+  );
 } finally {
   await raw.end();
   await db.close();
