@@ -7,7 +7,7 @@
  * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
  */
 
-import { newBlockId } from "@meridian/prosemirror-schema";
+import { blankDocument, newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 
@@ -216,8 +216,7 @@ export function buildBlocks(
     }
   }
   flush();
-  if (!blocks.length && !opts.allowEmpty)
-    blocks.push(schema.nodes.paragraph.create({ id: newBlockId() }));
+  if (!blocks.length && !opts.allowEmpty) blocks.push(...blankDocument(schema));
   return { blocks, normalized };
 }
 

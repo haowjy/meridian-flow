@@ -1,6 +1,10 @@
 // Mutating and query write command handlers.
 import { type HolderLinkScope, settledAheads } from "@meridian/markup/links";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  isEmptyDocument,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks, snapshotProjected } from "../apply/echo.js";
@@ -10,7 +14,6 @@ import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
@@ -294,7 +297,7 @@ export function createWriteCommands(deps: {
             overwriting,
             alreadyExists,
           });
-        if (existing && hasText(room.doc))
+        if (existing && !isEmptyDocument(room.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)))
           return withPlanDoc(room, address.documentId, context, actor, plan);
         const created = await plan(room.doc);
         // The document began empty for the model: its later writes in this reply plan from that.
@@ -891,16 +894,6 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
-
-/**
- * Whether the document holds anything beyond the one blank block an empty document keeps:
- * initializing an empty document isn't checked against the model's view.
- */
-function hasText(doc: Y.Doc): boolean {
-  return getTopLevelXmlBlocks(doc).some((block) =>
-    block.toArray().some((child) => !(child instanceof Y.XmlText) || child.length > 0),
-  );
-}
 
 /** The docs a write's links spell: the plan doc and, when it is a view, the room copy. */
 function planDocs(planDoc: Y.Doc, room: RoomCopy): Y.Doc[] {
