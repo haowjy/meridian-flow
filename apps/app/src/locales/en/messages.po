@@ -188,7 +188,7 @@ msgstr "{0, plural, one {Restored # file.} other {Restored # files.}}"
 msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
 msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
 
-#. placeholder {0}: outcome.skipped.length
+#. placeholder {0}: skipped.length
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 msgid "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
 msgstr "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
@@ -313,6 +313,14 @@ msgstr "{agent} wants to unarchive {work}?"
 msgid "{agent} wants to update {work}?"
 msgstr "{agent} wants to update {work}?"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{all} are now in {place}."
+msgstr "{all} are now in {place}."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{all} is now in {place}."
+msgstr "{all} is now in {place}."
+
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "{answered, plural, one {# answered} other {# answered}}"
 msgstr "{answered, plural, one {# answered} other {# answered}}"
@@ -328,6 +336,10 @@ msgstr "{changes, plural, one {Apply this chat's change to {name}} other {Apply 
 #: src/features/chat/DraftDock.tsx
 msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
 msgstr "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+msgstr "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
 
 #: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
@@ -386,6 +398,7 @@ msgid "{count, plural, one {Undo left # part as it was} other {Undo left # parts
 msgstr "{count, plural, one {Undo left # part as it was} other {Undo left # parts as they were}}"
 
 #: src/features/draft-review/ReviewStepper.tsx
+#: src/features/draft-review/useWorkBranchCommands.tsx
 msgid "{count} changes"
 msgstr "{count} changes"
 
@@ -475,8 +488,8 @@ msgstr "{label}…"
 
 #. placeholder {0}: placeOf(uri)
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{landedName} is now in {0}."
-msgstr "{landedName} is now in {0}."
+#~ msgid "{landedName} is now in {0}."
+#~ msgstr "{landedName} is now in {0}."
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -2337,6 +2350,10 @@ msgstr "Couldn't turn this into a document. Kept as a file."
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "Couldn't undo applying {name}. Try again."
+msgstr "Couldn't undo applying {name}. Try again."
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't undo the switch."
 msgstr "Couldn't undo the switch."
@@ -2471,6 +2488,7 @@ msgstr "Delete Work"
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr "Deleted"
@@ -4650,10 +4668,13 @@ msgstr "Response complete"
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/work/DeletedWorkList.tsx
+#: src/features/project/work/EndedWorkNotice.tsx
 msgid "Restore"
 msgstr "Restore"
 
+#. placeholder {0}: scoped.name
 #. placeholder {0}: work.name
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
 msgstr "Restore {0}"
@@ -5047,9 +5068,19 @@ msgstr "Skip"
 msgid "Skipped"
 msgstr "Skipped"
 
+#. placeholder {0}: only.name
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "Skipped your change to {only}: it was changed again since."
-msgstr "Skipped your change to {only}: it was changed again since."
+msgid "Skipped applying {0}: the tree changed since."
+msgstr "Skipped applying {0}: the tree changed since."
+
+#. placeholder {0}: only.name
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "Skipped your change to {0}: it was changed again since."
+msgstr "Skipped your change to {0}: it was changed again since."
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+#~ msgid "Skipped your change to {only}: it was changed again since."
+#~ msgstr "Skipped your change to {only}: it was changed again since."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
@@ -6055,7 +6086,7 @@ msgstr "This took too long, so it was stopped."
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
 
-#: src/features/project/work/ArchivedWorkNotice.tsx
+#: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
 
@@ -6063,9 +6094,25 @@ msgstr "This Work is archived."
 msgid "This Work is archived. Unarchive it to apply or discard its changes."
 msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This Work is archived. Unarchive it to change its tree."
+msgstr "This Work is archived. Unarchive it to change its tree."
+
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
 msgstr "This Work is archived. Unarchive it to edit."
+
+#: src/features/project/work/EndedWorkNotice.tsx
+msgid "This Work is deleted."
+msgstr "This Work is deleted."
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This Work is deleted. Restore it to apply or discard its changes."
+msgstr "This Work is deleted. Restore it to apply or discard its changes."
+
+#: src/features/project/context/tree-action-message.ts
+msgid "This Work is deleted. Restore it to change its tree."
+msgstr "This Work is deleted. Restore it to change its tree."
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "This Work is unavailable."
@@ -6188,10 +6235,15 @@ msgstr "ul"
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
 
-#: src/features/project/work/ArchivedWorkNotice.tsx
+#: src/features/project/work/EndedWorkNotice.tsx
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Unarchive"
 msgstr "Unarchive"
+
+#. placeholder {0}: scoped.name
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Unarchive {0}"
+msgstr "Unarchive {0}"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts

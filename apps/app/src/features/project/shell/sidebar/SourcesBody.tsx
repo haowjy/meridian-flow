@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { workLifecycleState } from "@meridian/contracts/works";
 import {
   Ellipsis,
   FileDiff,
@@ -258,8 +259,11 @@ export function SourcesBody({
 }) {
   // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
   // in its Files menu, and the foot has no Scratch.
-  const { noWork } = useWorks(projectId);
+  const { works, noWork } = useWorks(projectId);
   const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
+  // An archived or deleted Work's Scratch shows, and takes nothing new until it is back.
+  const scratchWork = works?.find((work) => work.id === scratchWorkId);
+  const scratchOpen = Boolean(scratchWork && workLifecycleState(scratchWork) === "active");
   // Another owner's note (another Work's, a chat's) is in no list here.
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
@@ -359,9 +363,10 @@ export function SourcesBody({
     () =>
       TREE_SCHEMES.flatMap((scheme) => {
         const tree = catalogs[scheme].tree;
-        return tree ? [{ scheme, owner: { workId: editorWorkId }, tree, accepts: true }] : [];
+        const accepts = scheme !== "scratch" || scratchOpen;
+        return tree ? [{ scheme, owner: { workId: editorWorkId }, tree, accepts }] : [];
       }),
-    [catalogs, editorWorkId],
+    [catalogs, editorWorkId, scratchOpen],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;

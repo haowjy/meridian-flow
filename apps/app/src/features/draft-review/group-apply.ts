@@ -18,6 +18,7 @@ export class GroupApply {
     this.ready = resolve;
   });
   private request: Promise<ApplyClickAnswer> | null = null;
+  private nodes: Promise<readonly Item[]> | null = null;
   private answered: ApplyClickAnswer | null = null;
   private settle!: (answer: ApplyClickAnswer | null) => void;
   /** The command's final answer; null when nothing was left to send. */
@@ -28,8 +29,10 @@ export class GroupApply {
   constructor(
     readonly commandId: string,
     private readonly input: {
-      /** Nodes with no queue of their own: folders, each with its tree cut. */
-      nodes: readonly Item[];
+      /** Nodes with no queue of their own: folders, each with its tree cut, read once. */
+      nodes: () => Promise<readonly Item[]>;
+      /** Whether any such node was asked for: a command of none and no member sends nothing. */
+      hasNodes: boolean;
       restore: boolean;
       post(body: ApplyItemsClick): Promise<ApplyClickAnswer>;
     },
@@ -65,7 +68,7 @@ export class GroupApply {
     if (this.handed.size + this.dropped.size < this.members) return;
     this.ready();
     if (this.handed.size === 0) {
-      if (this.input.nodes.length > 0) void this.postAlone();
+      if (this.input.hasNodes) void this.postAlone();
       else this.settle(null);
     }
   }
@@ -86,12 +89,15 @@ export class GroupApply {
 
   /** One request at a time; a member's queue retries a failed delivery, with the same id. */
   private post(): Promise<ApplyClickAnswer> {
-    this.request ??= this.input
-      .post({
-        commandId: this.commandId,
-        items: [...this.input.nodes, ...this.handed.values()],
-        ...(this.input.restore ? { restore: true as const } : {}),
-      })
+    this.nodes ??= this.input.nodes();
+    this.request ??= this.nodes
+      .then((nodes) =>
+        this.input.post({
+          commandId: this.commandId,
+          items: [...nodes, ...this.handed.values()],
+          ...(this.input.restore ? { restore: true as const } : {}),
+        }),
+      )
       .then(
         (answer) => {
           if (answer.status !== "conflict") {
@@ -103,6 +109,7 @@ export class GroupApply {
         },
         (cause: unknown) => {
           this.request = null;
+          this.nodes = null;
           throw cause;
         },
       );

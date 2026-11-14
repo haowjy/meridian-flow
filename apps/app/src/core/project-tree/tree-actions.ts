@@ -26,7 +26,14 @@ import { LIVE_VERSION, type TreeVersion } from "./tree-version";
  * denied or not open yet, the name is not one a node may have, or the folder or node the action
  * names is not in the list (it was deleted, or never was).
  */
-export type TreeActionRefusal = "read-only" | "denied" | "no-list" | "name" | "missing";
+export type TreeActionRefusal =
+  | "read-only"
+  | "archived"
+  | "deleted"
+  | "denied"
+  | "no-list"
+  | "name"
+  | "missing";
 
 export type TreeActionResult<T = unknown> =
   | ({ ok: true } & T)
@@ -52,7 +59,8 @@ export class TreeActions {
     if (!session) return { ok: false, reason: "no-list" };
     const { doc, status } = session.getSnapshot();
     if (status === "read-only" || status === "denied") return { ok: false, reason: status };
-    const { view, pendingText } = this.version();
+    const { view, pendingText, ended } = this.version();
+    if (ended) return { ok: false, reason: ended };
     const replay = () => session.replay(view, pendingText);
     // The session's replay is the one every view reads: the writer numbers and ranks against it.
     return {

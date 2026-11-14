@@ -771,8 +771,9 @@ export class DraftCommandOwner {
       restore: boolean;
       tree?: { revision: string | null };
     }[];
-    /** Nodes with no draft of their own: folders, with their tree cut. */
-    nodes: readonly { node: string; tree: { revision: string | null } }[];
+    /** Nodes with no draft of their own: folders, with their tree cut, read when it sends. */
+    nodes: () => Promise<readonly { node: string; tree: { revision: string | null } }[]>;
+    hasNodes: boolean;
     restore: boolean;
   }): {
     commandId: string;
@@ -781,6 +782,7 @@ export class DraftCommandOwner {
   } {
     const group = new GroupApply(crypto.randomUUID(), {
       nodes: input.nodes,
+      hasNodes: input.hasNodes,
       restore: input.restore,
       post: (body) => applyItems(input.projectId, input.branchId, body),
     });

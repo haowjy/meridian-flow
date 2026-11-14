@@ -138,8 +138,9 @@ async function requireListedOwner(
   const owner = draftOwnerFromKey(input.owner, input.projectId);
   if (!owner) throw createError({ statusCode: 400, message: "Invalid draft owner" });
   if (owner.kind === "work") {
+    // A deleted Work's drafts still read until it is purged: it stays picked, with Restore.
     const work = await deps.works.findById(owner.workId);
-    if (!work || work.projectId !== input.projectId || work.deletedAt) {
+    if (!work || work.projectId !== input.projectId) {
       throw createError({ statusCode: 404, message: "Work not found" });
     }
   }

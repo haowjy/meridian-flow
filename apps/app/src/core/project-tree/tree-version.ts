@@ -6,6 +6,8 @@ export type TreeVersion = {
   view: View;
   /** The Work's documents with pending text, which the list cannot see (rule 7). */
   pendingText?: ReadonlySet<string>;
+  /** The Work ended: its tree shows, and takes no change until it is unarchived or restored. */
+  ended?: "archived" | "deleted";
 };
 
 export const LIVE_VERSION: TreeVersion = { view: LIVE };

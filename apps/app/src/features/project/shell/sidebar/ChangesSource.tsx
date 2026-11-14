@@ -148,7 +148,7 @@ export function ChangesSource({
   onPicked?: () => void;
 }) {
   const { ownerKey } = scope;
-  // Locked with rows to show means archived: no owner key or Work lists nothing.
+  // Locked with rows to show means archived or deleted: no owner key or Work lists nothing.
   const archived = controller.dispositionLocked;
   useSyncExternalStore(
     controller.owner.subscribe,
@@ -348,7 +348,9 @@ export function ChangesSource({
         {hasFiles && (archived || controller.frozen) ? (
           <div className="px-2">
             <ListLine iconSlot>
-              {archived ? (
+              {archived && scope.work?.deletedAt ? (
+                <Trans>This Work is deleted. Restore it to apply or discard its changes.</Trans>
+              ) : archived ? (
                 <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
               ) : (
                 <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>

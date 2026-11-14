@@ -145,7 +145,7 @@ independent duties:
   as `landed`, with `restored` unknown.
 
 A `work_archived` refusal stores no failure: the Works query refetches and
-`ArchivedWorkNotice` explains. Other refusals still move prose in two cases, open in
+`EndedWorkNotice` explains. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.

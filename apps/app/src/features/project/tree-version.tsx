@@ -8,6 +8,7 @@
  * (`review-launch`), sets the toggle with it.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
@@ -58,14 +59,22 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
 export function useDraftTreeVersion(
   branchId: string | null,
   rows: readonly ThreadDraftListItem[] | null,
+  lifecycle: WorkLifecycleState = "active",
 ): TreeVersion | null {
   const pendingText = useMemo(
     () => new Set(rows?.filter((row) => row.hasDraft).map((row) => row.documentId)),
     [rows],
   );
   return useMemo<TreeVersion | null>(
-    () => (branchId ? { view: { draft: branchId }, pendingText } : null),
-    [branchId, pendingText],
+    () =>
+      branchId
+        ? {
+            view: { draft: branchId },
+            pendingText,
+            ...(lifecycle !== "active" ? { ended: lifecycle } : {}),
+          }
+        : null,
+    [branchId, pendingText, lifecycle],
   );
 }
 
@@ -100,7 +109,11 @@ export function TreeVersionProvider({
   const offered = branchId !== null && changed.size > 0;
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
-  const draftVersion = useDraftTreeVersion(branchId, drafts.drafts);
+  const draftVersion = useDraftTreeVersion(
+    branchId,
+    drafts.drafts,
+    work ? workLifecycleState(work) : "active",
+  );
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
   const main = useOptionalMainItem()?.item;

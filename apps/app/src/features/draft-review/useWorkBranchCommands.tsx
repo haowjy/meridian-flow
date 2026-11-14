@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
+import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
@@ -11,6 +11,7 @@ import { unapplyCommand, undoDiscard } from "@/client/api/branches-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   cachedOwnerDrafts,
+  ownerDraftsQueryOptions,
   patchOwnerDrafts,
   relistedOwnerDraft,
   useOwnerDraftsFrozen,
@@ -58,7 +59,8 @@ export function useWorkBranchCommands({
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  const locked = !ownerKey || !work || isWorkArchived(work);
+  // An archived or deleted Work's drafts show, and take no command until it is back.
+  const locked = !ownerKey || !work || workLifecycleState(work) !== "active";
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
@@ -282,11 +284,21 @@ export function useWorkBranchCommands({
         const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
         return { draft, item, target, tree: (tree && item?.tree) || undefined };
       });
-      // A folder whose row the list hasn't read yet waits for the next Apply.
-      const nodes = folders.flatMap((node) => {
-        const revision = listed.folders.find((folder) => folder.id === node)?.revision;
-        return revision ? [{ node, tree: { revision } }] : [];
-      });
+      // A folder changed alone lists no item, so the cached list may predate it: read it again.
+      const nodes = async () => {
+        const known = (response: ThreadDraftListResponse) =>
+          folders.every((node) => response.folders.some((folder) => folder.id === node));
+        const read = known(listed)
+          ? listed
+          : await queryClient.fetchQuery({
+              ...ownerDraftsQueryOptions(projectId, ownerKey),
+              staleTime: 0,
+            });
+        return folders.flatMap((node) => {
+          const revision = read.folders.find((folder) => folder.id === node)?.revision;
+          return revision ? [{ node, tree: { revision } }] : [];
+        });
+      };
       const started = owner.applyGroup({
         projectId,
         branchId,
@@ -297,6 +309,7 @@ export function useWorkBranchCommands({
           ...(tree ? { tree } : {}),
         })),
         nodes,
+        hasNodes: folders.length > 0,
         restore: restore.size > 0,
       });
       started.outcomes.forEach((outcome, index) => {
@@ -333,11 +346,8 @@ export function useWorkBranchCommands({
               outcome.kind === "done" ? [{ item: members[index]?.item, outcome }] : [],
             ),
           );
-        if (answer?.status !== "applied") {
-          if (nodes.length > 0) refresh([]);
-          return;
-        }
-        if (nodes.length > 0) refresh([]);
+        if (folders.length > 0) refresh([]);
+        if (answer?.status !== "applied") return;
         const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
         const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
         const count = taken.length;
