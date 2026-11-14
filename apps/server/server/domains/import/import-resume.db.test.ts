@@ -10,6 +10,7 @@
  * - Every node the reveal makes has a rank, so a drag relative to one places.
  * - A stopped import's waiting texts are deleted by the sweep, with its objects.
  */
+
 import { randomUUID } from "node:crypto";
 import type { ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -27,6 +28,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import {
   createDrizzleContextImportRead,
@@ -118,6 +120,7 @@ describe.runIf(enabled)("import resume", () => {
       db,
       tree: treeSeeder(db).store,
       ahead: ports.linkAheadRegistry,
+      hints: NO_PROJECT_HINTS,
       arrivals: ports.documentArrivals,
     });
     const expireLease = () =>

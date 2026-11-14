@@ -1,7 +1,7 @@
 # domains/context — context filesystem contracts
 
 This page holds the cross-module contracts for URI resolution, ContextFS,
-tree views, arrivals, and catalog publication. It deliberately omits adapter
+tree views, arrivals, and the sources query. It deliberately omits adapter
 inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
 know before editing.
 
@@ -279,8 +279,23 @@ one source's tree contributes.
 
 ## Catalog and publication
 
-The catalog tables and the catalog read endpoint stay; the server no longer writes them. The
-catalog is a view of the replay, not a second visibility policy, and no write refreshes it.
+There is no catalog: the browser reads placement from the project's list. What the list cannot
+say is the project's **sources** (`context_sources`): which node root is the manuscript, which is
+a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
+
+- `GET /api/projects/:projectId/context/sources` answers `ContextSourcesResult` for the project's
+  owner: the project's own, each Work's (not a deleted Work's: an archived Work's stay), each
+  lineage's and each chat's, while the source itself has not ended (a trashed chat's lineage or
+  uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
+  account's own `user://`. Each source carries the `authority` its addresses are spelled with.
+- A source that begins (its first write provisions it), ends or comes back (a chat or Work
+  trashed or restored) publishes a truth-free `context-sources-hint` on the project's
+  subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
+  until its next read.
+- A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
+  (`ChatUploadsResult`): `attachedAt` and `used` per document id. Deleting an unused upload is
+  `DELETE .../context/uploads/upload?chatId=` with `{ documentId }`, refused once a sent message
+  used it; the document id is the node's id.
 
 Move and delete are addressed by entry id: the router takes the node (`{kind, nodeId}`) and an
 area; the area only decides which adapter to ask. The adapter finds the node in the list's replay
@@ -376,7 +391,7 @@ Notice names the previous Scratch root. Work purge explicitly removes lineage so
 set, with documents, journals, memberships, and blobs.
 
 `unfiled://` is project-owned storage with the same ContextFS, Yjs authority,
-catalog, availability, and identity-preserving move rules as Manuscript and
+availability, and identity-preserving move rules as Manuscript and
 KB. Its membership means not yet filed; a name does not change membership.
 
 ## Negative space

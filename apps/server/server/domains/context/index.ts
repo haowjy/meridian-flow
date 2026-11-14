@@ -1,8 +1,8 @@
 export { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
-export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { fileRefOfVisible } from "./adapters/context-fs/file-ref.js";
+export { createDrizzleContextSources } from "./adapters/context-sources.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
@@ -10,7 +10,6 @@ export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.
 export { createDrizzleDocumentPropertiesReader } from "./adapters/drizzle-document-properties-reader.js";
 export { createDrizzleContextImportReveal } from "./adapters/drizzle-import-reveal.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
-export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
   createDrizzleLineageScratchLifecycle,
   type LineageScratchLifecycle,
@@ -31,10 +30,6 @@ export {
   toCanonical,
   UNIFIED_CONTEXT_SCHEMES,
 } from "./context/uri.js";
-export {
-  type ContextCatalogWakeHub,
-  createContextCatalogWakeHub,
-} from "./context-catalog-wake-hub.js";
 export {
   contextPortForProjectAuthorities,
   contextPortForProjectBrowse,
@@ -68,11 +63,6 @@ export type {
   SchemeCapabilities,
 } from "./ports/context-adapter.js";
 export { schemeCapabilities } from "./ports/context-adapter.js";
-export type {
-  ContextCatalog,
-  ContextCatalogWakePort,
-  DraftOwnerHintPort,
-} from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,
   ContextFolder,
@@ -122,6 +112,7 @@ export type {
   WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
+export type { ContextSources } from "./ports/context-sources.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
 export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
@@ -146,6 +137,12 @@ export type {
   HeldContextNodeAddress,
   ProjectContextAvailabilityPort,
 } from "./ports/project-context-availability.js";
+export type { ProjectHint, ProjectHintPort, ProjectWakePort } from "./ports/project-hints.js";
+export {
+  createProjectHints,
+  createProjectWakeHub,
+  type ProjectWakeHub,
+} from "./project-wake-hub.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
 export type {

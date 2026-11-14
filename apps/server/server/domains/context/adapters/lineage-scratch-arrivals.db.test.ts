@@ -15,6 +15,7 @@ import { LIVE } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
@@ -22,7 +23,8 @@ import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleProjectWorkRepository } from "../../projects/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
-import { createDrizzleContextCatalog } from "./context-catalog.js";
+import { createDrizzleChatUploads } from "../uploads/index.js";
+import { createDrizzleContextSources } from "./context-sources.js";
 import { createDrizzleDocumentArrivals } from "./document-arrivals.js";
 import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -83,7 +85,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       objectKey: "k",
       fileType: "image",
       canonicalUri: "uploads://pic.png",
-      locationRevision: crypto.randomUUID(),
       state: "finalized",
       consumedAt: new Date("2026-01-02T00:00:00Z"),
       createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -94,11 +95,11 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const db = database.current;
       const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
-      const catalog = createDrizzleContextCatalog(db);
+      const sources = createDrizzleContextSources(db);
       const fileAccessChanges = createLocalFileAccessChanges();
       const lifecycle = createDrizzleLineageScratchLifecycle(db, arrivals, {
         fileAccessChanges,
-        draftOwnerHints: catalog,
+        hints: NO_PROJECT_HINTS,
       });
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });
       const availability = createDrizzleProjectContextAvailability(db);
@@ -109,7 +110,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         projectionMutation: createWorkProjectionMutation({
           db,
           pendingCounts: createDrizzleWorkBranchPendingStore(db),
-          draftOwnerHints: catalog,
+          draftOwnerHints: NO_PROJECT_HINTS,
         }),
         fileAccessChanges,
       });
@@ -169,21 +170,17 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       await expect(lookup(upload)).resolves.toMatchObject({
         resolutions: [{ kind: "available", entry: { uri: "uploads://@c1/pic.png" } }],
       });
-      await expect(
-        catalog.snapshot({ kind: "chat", projectId: p, chatId: root } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([
-          expect.objectContaining({
-            entryId: upload,
-            upload: expect.objectContaining({ attachedAt: "2026-01-01T00:00:00.000Z", used: true }),
-          }),
-        ]),
+      const [uploads] = await sources.ownedBy(p as never, { kind: "chat", chatId: root });
+      expect((await sources.liveDocuments(uploads?.id as never)).map((file) => file.id)).toContain(
+        upload,
+      );
+      await expect(createDrizzleChatUploads(db).list(p, root)).resolves.toEqual({
+        uploads: [{ documentId: upload, attachedAt: "2026-01-01T00:00:00.000Z", used: true }],
       });
-      await expect(
-        catalog.snapshot({ kind: "lineage", projectId: p, rootThreadId: root } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([expect.objectContaining({ entryId: note })]),
-      });
+      const [scratch] = await sources.ownedBy(p as never, { kind: "lineage", rootThreadId: root });
+      expect((await sources.liveDocuments(scratch?.id as never)).map((file) => file.id)).toContain(
+        note,
+      );
       const settlements = async () =>
         new Map(
           (await db.select().from(linkAheadRefs)).map((r) => [r.aheadId, r.settledDocumentId]),

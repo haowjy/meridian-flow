@@ -41,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
-    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
+    const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../threads/adapters/drizzle/repositories.js"
     );
@@ -62,11 +62,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
-    const catalog = createDrizzleContextCatalog(db);
     const projectionMutation = createWorkProjectionMutation({
       db,
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
-      draftOwnerHints: catalog,
+      draftOwnerHints: NO_PROJECT_HINTS,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
@@ -1183,7 +1182,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
       const [lineageSource] = await db
@@ -1281,7 +1279,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
       const { ensureWorkContextSource } = await import("../context/context-source-provisioning.js");
-      const sourceId = await ensureWorkContextSource(db, work.id, "scratch");
+      const sourceId = await ensureWorkContextSource(db, work.id, "scratch", NO_PROJECT_HINTS);
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$

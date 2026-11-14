@@ -45,7 +45,7 @@ Runs the Hocuspocus rooms for live documents and drafts, and keeps the write jou
 
 The context filesystem behind `manuscript://`, `kb://`, `user://`, `unfiled://`, `scratch://` and `uploads://`.
 
-Catalog views, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is stored through the collab journal and its rows are written with it (the tree list store).
+The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is stored through the collab journal and its rows are written with it (the tree list store).
 
 - Kind: domain
 - Paths: `apps/server/server/domains/context`

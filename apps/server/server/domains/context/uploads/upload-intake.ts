@@ -86,7 +86,6 @@ export interface UploadReservation {
   /** The length the writer declared; the signed PUT carries exactly this. */
   sizeBytes: number;
   objectKey: string;
-  locationRevision: string;
   state: "reserved" | "object_stored" | "finalized" | "deleted";
   /** Null while `reserved`: the name and type are chosen when the stored bytes are read. */
   fileType: Filetype | null;
@@ -165,7 +164,7 @@ export interface UploadIntakeRepository {
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   /** `finalPath` is the name the upload took. */
   finalize(projectId: string, intakeId: string, finalPath: string): Promise<PlacedUpload>;
-  /** Locks and validates the exact unused identity a writer asked to delete, in the chat they name. */
+  /** Locks the unused upload a writer asked to delete, in the chat they name. */
   lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
@@ -269,7 +268,6 @@ const resultOf = (
     documentId: placed.documentId,
     uri: uriOf(placed, source),
     fileType: placed.fileType,
-    locationRevision: placed.locationRevision,
   };
 };
 
@@ -413,7 +411,7 @@ export function createUploadIntake<Bound>(deps: {
       if (reserved.kind === "owner_unavailable")
         return { ok: false, error: { code: "owner_unavailable" } };
       const { reservation } = reserved;
-      const { documentId, locationRevision } = reservation;
+      const { documentId } = reservation;
       // The name finish would give the file now, by finish's own rule, so a chip can be labelled
       // before the bytes are sent. Finish names it again: another upload finishing first between
       // the two can take this name, and the file lands one number on.
@@ -442,7 +440,7 @@ export function createUploadIntake<Bound>(deps: {
         case "object_stored":
           return {
             ok: true,
-            value: { state: "stored", name: await freeName(), documentId, locationRevision },
+            value: { state: "stored", name: await freeName(), documentId },
           };
         case "reserved": {
           const put = await deps.objectStore.signPut(
@@ -456,7 +454,6 @@ export function createUploadIntake<Bound>(deps: {
               state: "reserved",
               name: await freeName(),
               documentId,
-              locationRevision,
               put: put.value,
             },
           };

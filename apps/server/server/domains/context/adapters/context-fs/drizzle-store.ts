@@ -25,7 +25,7 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import { isStorageBackedDocument } from "../catalog-file-mapper.js";
+import { isStorageBackedDocument } from "../context-file-entry.js";
 
 type DocumentRow = Pick<
   VisibleDocument,

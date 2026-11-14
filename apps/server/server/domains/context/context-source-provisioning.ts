@@ -27,6 +27,7 @@ import {
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextDocumentStore } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
+import type { ProjectHintPort } from "./ports/project-hints.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<
@@ -125,11 +126,14 @@ async function findProjectContextSource(
   return row?.id ?? null;
 }
 
+type SourceHints = Pick<ProjectHintPort, "publishSourcesHint">;
+
 export async function ensureProjectContextSource(
   db: Database,
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
+  hints: SourceHints,
 ): Promise<string> {
   const sourceProjectId = storedInPersonalProject(scheme)
     ? await ensureUserContextProject(db, userId)
@@ -150,7 +154,11 @@ export async function ensureProjectContextSource(
       where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.chatThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
     })
     .returning({ id: contextSources.id });
-  if (created) return created.id;
+  if (created) {
+    // `user://` is the account's own list: its source is never a project's to announce.
+    if (!storedInPersonalProject(scheme)) hints.publishSourcesHint(projectId);
+    return created.id;
+  }
 
   const raced = await findProjectContextSource(db, projectId, scheme, userId);
   if (!raced) throw new Error(`Failed to provision ${scheme} context source for ${projectId}`);
@@ -180,6 +188,7 @@ export async function ensureWorkContextSource(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
+  hints: SourceHints,
 ): Promise<string> {
   return runInDrizzleTransaction(db, async () => {
     await requireLockedActiveWorks(db, [workId]);
@@ -207,7 +216,14 @@ export async function ensureWorkContextSource(
         where: sql`${contextSources.workId} IS NOT NULL AND ${contextSources.deletedAt} IS NULL`,
       })
       .returning({ id: contextSources.id });
-    if (created) return created.id;
+    if (created) {
+      const [work] = await activeDb
+        .select({ projectId: works.projectId })
+        .from(works)
+        .where(eq(works.id, workId));
+      if (work) hints.publishSourcesHint(work.projectId);
+      return created.id;
+    }
 
     const raced = await findWorkContextSource(activeDb, workId, scheme);
     if (!raced) throw new Error(`Failed to provision ${scheme} context source for Work ${workId}`);
@@ -342,10 +358,11 @@ export function createProjectContextDocumentStore(
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
+  hints: SourceHints,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
-    () => ensureProjectContextSource(db, projectId, scheme, userId),
+    () => ensureProjectContextSource(db, projectId, scheme, userId, hints),
     () => findProjectContextSource(db, projectId, scheme, userId),
   );
 }
@@ -354,10 +371,11 @@ export function createWorkContextDocumentStore(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
+  hints: SourceHints,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
-    () => ensureWorkContextSource(db, workId, scheme),
+    () => ensureWorkContextSource(db, workId, scheme, hints),
     () => findWorkContextSource(db, workId, scheme),
     workId,
   );
@@ -368,8 +386,9 @@ export function createLineageContextDocumentStore(
   db: Database,
   projectId: string,
   rootThreadId: string,
+  hints: SourceHints,
 ): ContextDocumentStore {
-  const lifecycle = createDrizzleLineageScratchLifecycle(db);
+  const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, undefined, hints);
   const find = async () => {
     const [row] = await currentDrizzleDb(db)
       .select({ id: contextSources.id })
@@ -420,6 +439,7 @@ async function ensureChatContextSource(
   projectId: string,
   chatId: string,
   scheme: "uploads",
+  hints: SourceHints,
 ): Promise<string> {
   const existing = await findChatContextSource(db, projectId, chatId, scheme);
   if (existing) return existing;
@@ -437,7 +457,10 @@ async function ensureChatContextSource(
       where: sql`${contextSources.chatThreadId} IS NOT NULL`,
     })
     .returning({ id: contextSources.id });
-  if (created) return created.id;
+  if (created) {
+    hints.publishSourcesHint(projectId);
+    return created.id;
+  }
   const raced = await findChatContextSource(db, projectId, chatId, scheme);
   if (!raced) throw new Error(`Failed to provision ${scheme} context source for chat ${chatId}`);
   return raced;
@@ -453,10 +476,11 @@ export function createChatContextDocumentStore(
   projectId: string,
   chatId: string,
   scheme: "uploads",
+  hints: SourceHints,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
-    () => ensureChatContextSource(db, projectId, chatId, scheme),
+    () => ensureChatContextSource(db, projectId, chatId, scheme, hints),
     () => findChatContextSource(db, projectId, chatId, scheme),
   );
 }

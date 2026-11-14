@@ -110,15 +110,7 @@ function FilesDropdown({
       const mark = reason === "used" ? setUsed : setFailed;
       mark((current) => new Set(current).add(upload.documentId));
     };
-    void deleteChatUpload(
-      { projectId, chatId },
-      {
-        intakeId: deletion.intakeId,
-        documentId: upload.documentId,
-        uri: upload.uri,
-        expectedRevision: deletion.locationRevision,
-      },
-    ).then(
+    void deleteChatUpload({ projectId, chatId }, { documentId: upload.documentId }).then(
       (result) => {
         if (result.kind === "deleted" || result.kind === "already_deleted") {
           // A gone file must not ride along on the message being written.

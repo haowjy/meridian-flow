@@ -3,6 +3,7 @@ import type { DraftOwnerKey } from "../branches/owner.js";
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
+import type { ContextSourcesHint } from "./context-sources.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
 
@@ -206,8 +207,12 @@ export type ProjectChatsHint = {
   recheckTabs?: true;
 };
 
-/** What a project's catalog subscription receives. */
-export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint | ProjectChatsHint;
+/** What a project's subscription receives. */
+export type CatalogChannelMessage =
+  | CatalogWakeHint
+  | DraftOwnerHint
+  | ProjectChatsHint
+  | ContextSourcesHint;
 
 export function catalogScopeKey(scope: CatalogScope): string {
   switch (scope.kind) {

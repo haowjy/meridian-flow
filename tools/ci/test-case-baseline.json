@@ -187,7 +187,7 @@
     "apps/server/server/domains/collab/seed-batch.db.test.ts": 1,
     "apps/server/server/domains/collab/text-convergence.test.ts": 1,
     "apps/server/server/domains/collab/turn-inverse.db.test.ts": 2,
-    "apps/server/server/domains/context/adapters/catalog-file-mapper.test.ts": 2,
+    "apps/server/server/domains/context/adapters/context-file-entry.test.ts": 2,
     "apps/server/server/domains/context/adapters/context-fs/context-fs-command-owner.test.ts": 1,
     "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts": 3,
     "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts": 6,

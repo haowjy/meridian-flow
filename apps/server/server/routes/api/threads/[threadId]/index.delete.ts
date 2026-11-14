@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
-  app.contextCatalogWakeHub.publish({
+  app.projectWakeHub.publish({
     type: "project-chats-hint",
     projectId: thread.projectId,
     removedChatIds: [thread.id],

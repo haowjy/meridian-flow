@@ -40,9 +40,9 @@ import { type FolderLink, loadFolderChains, placedNodesSql } from "../tree/tree-
 import { LIVE_TREE, type TreeView } from "../tree/tree-view.js";
 import {
   type CatalogFileRow,
-  catalogSourceAuthority,
   mapAuthoritativeFile,
-} from "./catalog-file-mapper.js";
+  sourceAuthority,
+} from "./context-file-entry.js";
 
 type AvailabilityRow = {
   document: CatalogFileRow & { deleted?: boolean };
@@ -593,7 +593,7 @@ export function createDrizzleProjectContextAvailability(
                 uri: canonicalContextUri(
                   scheme,
                   path.join("/"),
-                  catalogSourceAuthority(
+                  sourceAuthority(
                     scheme,
                     row.work?.id ?? null,
                     row.work && !row.work.isNoWork ? row.work.handle : null,
@@ -668,7 +668,7 @@ export async function resolveActiveFolderUri(
   return canonicalContextUri(
     classification.identity.scheme,
     [...classification.identity.parentPath, row.folder.name].join("/"),
-    catalogSourceAuthority(
+    sourceAuthority(
       classification.identity.scheme,
       row.work?.id ?? null,
       row.work && !row.work.isNoWork ? row.work.handle : null,
@@ -758,7 +758,7 @@ async function resolveHeldContextNode(input: {
       uri: canonicalContextUri(
         scheme,
         path,
-        catalogSourceAuthority(
+        sourceAuthority(
           scheme,
           found.work?.id ?? null,
           found.work && !found.work.isNoWork ? found.work.handle : null,
