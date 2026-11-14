@@ -20,6 +20,7 @@ export type SlashCommandId =
   | "heading-3"
   | "bullet-list"
   | "numbered-list"
+  | "task-list"
   | "quote"
   | "divider"
   | "table"

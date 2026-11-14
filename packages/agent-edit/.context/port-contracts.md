@@ -37,8 +37,7 @@ after are both that prefix.
 Neither host fences a WebSocket transport from this port: nothing applies to a live
 room inside a transaction. See the [WebSocket concurrency
 contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md).
-Whole Discard retires only the addressed peer or draft; it never transfers a staged
-write to a replacement draft.
+Whole Discard retires only the addressed draft.
 
 ## `AgentEditCodec`
 

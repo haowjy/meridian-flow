@@ -12,15 +12,18 @@
  *     asked, the removal's sentence once it proves one, and "Access lost"
  *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     It begins when the status is `offline`. It stays through
+ *     It begins when the status is `offline`, and ends at once
+ *     when the session says its unsent edits can't be delivered
+ *     (`canDeliverUnsentEdits()`: the room ended, or it was admitted read-only,
+ *     as for an archived Work, whose notice says so beside it). It stays through
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
  *   - updates refused (`updatesRefused`: the server kept refusing a draft
- *     room's updates) → "Couldn't save your latest changes (copy them before
- *     you reopen)" with Reopen draft
- *     when the owner offers `onReopen`. The editor stays read-only behind it so
- *     the unsent text can be copied first. Wins over the outage phase.
+ *     room's updates) → "Couldn't save your latest changes" with Try again
+ *     when the owner offers `onReopen`, which reopens the room and resends
+ *     them. The editor stays read-only behind it with the text on screen. Wins
+ *     over the outage phase.
  *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
  *     spends about a second there), so there is no timer and a first load never
  *     shows a label.
@@ -46,16 +49,20 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
 
 /**
  * Advance on every snapshot, so the offline→confirmation swap is one state
- * change and no render exists between the two labels. Terminal states reset to
- * idle. An outage (offline, or a stalled adoption) always means awaiting. A
+ * change and no render exists between the two labels. A session whose unsent
+ * edits can't be delivered resets to idle: nothing is waiting to upload. An outage (offline) always means awaiting. A
  * drop while confirmed (any non-synced status) returns to awaiting. A local
  * edit while confirmed (the server no longer has everything) ends the
  * confirmation and hides the pill: the connection is healthy, so it is not
  * "offline" again, and waiting to re-show the confirmation would flicker on
  * every keystroke.
  */
-function nextPhase(phase: OutagePhase, snapshot: DocumentSessionSnapshot): OutagePhase {
-  if (snapshot.status === "access-lost" || snapshot.status === "destroyed") return "idle";
+function nextPhase(
+  phase: OutagePhase,
+  snapshot: DocumentSessionSnapshot,
+  deliverable: boolean,
+): OutagePhase {
+  if (!deliverable) return "idle";
   if (snapshot.status === "offline") return "awaiting";
   if (phase === "idle") return phase;
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
@@ -73,7 +80,7 @@ type Tracked = {
 /** A session already offline or stalled when the pill mounts shows its label on the first render. */
 function trackSession(session: DocumentSession): Tracked {
   const snapshot = session.getSnapshot();
-  return { session, snapshot, phase: nextPhase("idle", snapshot) };
+  return { session, snapshot, phase: nextPhase("idle", snapshot, session.canDeliverUnsentEdits()) };
 }
 
 export type SyncStatusProps = {
@@ -104,9 +111,11 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   useEffect(
     () =>
       session.subscribe((next) => {
+        // Read with the snapshot it belongs to, not when React runs the updater.
+        const deliverable = session.canDeliverUnsentEdits();
         setStored((current) =>
           current.session === session
-            ? { session, snapshot: next, phase: nextPhase(current.phase, next) }
+            ? { session, snapshot: next, phase: nextPhase(current.phase, next, deliverable) }
             : current,
         );
       }),
@@ -133,10 +142,10 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
         data-sync-refused
       >
         <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
-        <Trans>Couldn't save your latest changes (copy them before you reopen)</Trans>
+        <Trans>Couldn't save your latest changes</Trans>
         {onReopen ? (
           <Button type="button" size="xs" variant="secondary" onClick={onReopen}>
-            <Trans>Reopen draft</Trans>
+            <Trans>Try again</Trans>
           </Button>
         ) : null}
       </div>

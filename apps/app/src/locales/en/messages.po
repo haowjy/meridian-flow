@@ -1587,6 +1587,10 @@ msgstr "Chats without a Work"
 msgid "Check your connection."
 msgstr "Check your connection."
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checkbox"
+msgstr "checkbox"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr "Checked Work"
@@ -1598,6 +1602,10 @@ msgstr "Checking links…"
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
 msgstr "Checking Work…"
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checklist"
+msgstr "checklist"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -1823,7 +1831,7 @@ msgstr "Conversation compacted automatically"
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
 msgstr "Copied"
@@ -1845,7 +1853,7 @@ msgid "Copied from {source} into"
 msgstr "Copied from {source} into"
 
 #: src/features/chat/AssistantTurnActions.tsx
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr "Copy"
@@ -1887,8 +1895,8 @@ msgid "Copy reference"
 msgstr "Copy reference"
 
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
-msgid "Copy the draft's text"
-msgstr "Copy the draft's text"
+#~ msgid "Copy the draft's text"
+#~ msgstr "Copy the draft's text"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy these between your files and a project"
@@ -1987,7 +1995,7 @@ msgstr "Couldn't copy {only} to {destination}."
 msgid "Couldn't copy {only}."
 msgstr "Couldn't copy {only}."
 
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 msgid "Couldn't copy. Select the text to copy it."
 msgstr "Couldn't copy. Select the text to copy it."
 
@@ -2299,8 +2307,12 @@ msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Couldn't save your latest changes (copy them before you reopen)"
-msgstr "Couldn't save your latest changes (copy them before you reopen)"
+msgid "Couldn't save your latest changes"
+msgstr "Couldn't save your latest changes"
+
+#: src/features/editor/SyncStatus.tsx
+#~ msgid "Couldn't save your latest changes (copy them before you reopen)"
+#~ msgstr "Couldn't save your latest changes (copy them before you reopen)"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
@@ -2688,9 +2700,8 @@ msgstr "Discarding"
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/UnsentDraftTextNotice.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/features/project/context/EntryRefusalNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Dismiss"
@@ -3363,6 +3374,10 @@ msgstr "Invoking a skill…"
 #: src/features/import/ImportPanel.tsx
 msgid "It finished before it could stop."
 msgstr "It finished before it could stop."
+
+#: src/features/editor/RescuedText.tsx
+msgid "It isn't in the document."
+msgstr "It isn't in the document."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
@@ -4650,8 +4665,8 @@ msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Reopen draft"
-msgstr "Reopen draft"
+#~ msgid "Reopen draft"
+#~ msgstr "Reopen draft"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens the documents you had open when you switch devices."
@@ -5372,6 +5387,10 @@ msgstr "Talk it out"
 msgid "Tap a change to go to it in the manuscript."
 msgstr "Tap a change to go to it in the manuscript."
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "task"
+msgstr "task"
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
@@ -5634,8 +5653,8 @@ msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
 
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
-msgid "The draft was discarded before your latest typing reached it."
-msgstr "The draft was discarded before your latest typing reached it."
+#~ msgid "The draft was discarded before your latest typing reached it."
+#~ msgstr "The draft was discarded before your latest typing reached it."
 
 #: src/features/import/reason-copy.ts
 msgid "The folder you chose isn't there anymore."
@@ -6063,7 +6082,7 @@ msgstr "This note is empty. Open it in the Editor to write."
 msgid "This part of the message can’t hold mentions"
 msgstr "This part of the message can’t hold mentions"
 
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 msgid "This passage couldn't be recovered."
 msgstr "This passage couldn't be recovered."
 
@@ -6172,6 +6191,10 @@ msgstr "Time to first token"
 msgid "title"
 msgstr "title"
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "To-do list"
+msgstr "To-do list"
+
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Today"
 msgstr "Today"
@@ -6201,6 +6224,7 @@ msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
+#: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -6680,6 +6704,18 @@ msgstr "Your files"
 #: src/features/import/ImportPanel.tsx
 msgid "Your imports in this project, with their controls."
 msgstr "Your imports in this project, with their controls."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before the document was removed."
+msgstr "Your latest typing didn't reach the server before the document was removed."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before the draft closed."
+msgstr "Your latest typing didn't reach the server before the draft closed."
+
+#: src/features/editor/RescuedText.tsx
+#~ msgid "Your latest typing didn't reach the server before your access to the document changed."
+#~ msgstr "Your latest typing didn't reach the server before your access to the document changed."
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"

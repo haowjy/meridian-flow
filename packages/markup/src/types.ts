@@ -7,8 +7,9 @@ import type { PluggableList } from "unified";
 import type { MdastRoot } from "./ast.js";
 import type { CodecParseErrorLocation } from "./error.js";
 import type { PreparedSource } from "./prepared-source.js";
+import type { SerializedBlock } from "./serialize-nested.js";
 
-export type { CodecParseErrorLocation, PMNode, SpelledHref };
+export type { CodecParseErrorLocation, PMNode, SerializedBlock, SpelledHref };
 
 /**
  * Synchronous spelling for one holder in one view, over a snapshot prepared
@@ -33,6 +34,14 @@ export interface ParsedContent {
   blocks: PMNode[];
 }
 
+export interface ParseOptions {
+  /**
+   * Parse as if the content were spliced into a document where these containers are open:
+   * a block's `open` from `serializeBlocks`. The blocks carry the document's paths.
+   */
+  within?: string | null;
+}
+
 /** Where one link occurrence was written, as offsets into the parsed text. */
 export interface OccurrenceSpan {
   start: number;
@@ -53,6 +62,8 @@ export interface ParsedContentWithSpans extends ParsedContent {
 export interface SerializeContext {
   schema: Schema;
   links: DocumentLinkScope;
+  /** The block is the first of a quote, where export keeps a callout's `[!type]` literal. */
+  leadsQuote?: boolean;
 }
 
 /** Context threaded through block/mark parse calls. */
@@ -111,12 +122,13 @@ export interface MarkupCodecBuilder {
 /** Assembled text ↔ ProseMirror codec. */
 export interface MarkupCodec {
   /** Pure syntax: every link `ref` is null and every href is as written. */
-  parse(content: string): ParsedContent;
-  parseWithSpans(content: string): ParsedContentWithSpans;
+  parse(content: string, options?: ParseOptions): ParsedContent;
+  parseWithSpans(content: string, options?: ParseOptions): ParsedContentWithSpans;
   parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
-  serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
+  /** One entry per block: its Markdown as it sits in the document, and the gap before it. */
+  serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): SerializedBlock[];
   /** One canonical whole-source parse for presentation while Markdown is arriving. */
   parseStreaming(content: string, options?: MarkdownStreamOptions): MarkdownStreamResult;
 }

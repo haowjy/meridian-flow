@@ -6,7 +6,7 @@
  * (Apply sends the snapshot so the server rebuilds exactly what the writer saw). Kept free of
  * ProseMirror view imports so it unit-tests without a DOM.
  */
-import type { ProseMirrorJSON, ReviewProjection } from "@meridian/agent-edit/diff";
+import type { ProseMirrorJSON, ReviewHunk, ReviewProjection } from "@meridian/agent-edit/diff";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type * as Y from "yjs";
 
@@ -52,28 +52,33 @@ export function mapReview(
   mapping: { map(position: number, assoc?: number): number },
   doc: PMNode,
 ): ProjectedReview {
+  const mapHunk = (hunk: ReviewHunk): ReviewHunk => ({
+    ...hunk,
+    anchor: mapping.map(hunk.anchor, -1),
+    ...(hunk.attributes && {
+      attributes: {
+        ...hunk.attributes,
+        nested: hunk.attributes.nested.map((at) => mapping.map(at, 1)),
+      },
+    }),
+    ...(hunk.inner && { inner: hunk.inner.map(mapHunk) }),
+    ...(hunk.formatContext && {
+      formatContext: {
+        ...hunk.formatContext,
+        inserted: hunk.formatContext.inserted.map(({ from, to }) => ({
+          from: mapping.map(from, 1),
+          to: mapping.map(to, -1),
+        })),
+      },
+    }),
+    inserted: hunk.inserted
+      ? { from: mapping.map(hunk.inserted.from, 1), to: mapping.map(hunk.inserted.to, -1) }
+      : null,
+  });
   return {
     ...review,
     doc,
-    groups: review.groups.map((group) => ({
-      ...group,
-      hunks: group.hunks.map((hunk) => ({
-        ...hunk,
-        anchor: mapping.map(hunk.anchor, -1),
-        ...(hunk.formatContext && {
-          formatContext: {
-            ...hunk.formatContext,
-            inserted: hunk.formatContext.inserted.map(({ from, to }) => ({
-              from: mapping.map(from, 1),
-              to: mapping.map(to, -1),
-            })),
-          },
-        }),
-        inserted: hunk.inserted
-          ? { from: mapping.map(hunk.inserted.from, 1), to: mapping.map(hunk.inserted.to, -1) }
-          : null,
-      })),
-    })),
+    groups: review.groups.map((group) => ({ ...group, hunks: group.hunks.map(mapHunk) })),
   };
 }
 

@@ -19,6 +19,8 @@ import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import { joinEntries } from "../resolver/find.js";
+import { applyTextEdit } from "../test-support/text-edit.js";
 import { applyEdits } from "./apply-edits.js";
 import { computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
@@ -94,9 +96,9 @@ describe("applyEdits update fidelity", () => {
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
     expect(
-      codec
-        .serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node))
-        .join("\n\n"),
+      joinEntries(
+        codec.serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node)),
+      ),
     ).toBe(expected);
     expectNoOrphanedElements(doc);
   });
@@ -214,6 +216,7 @@ function block(hash: string, body: string) {
     clock: Number.parseInt(hash, 36),
     body,
     serialized: `${hash}|${body}`,
+    node: schema.nodes.paragraph.create(null, body ? schema.text(body) : null),
   };
 }
 
@@ -263,7 +266,7 @@ function remoteTextUpdate(
 ): Uint8Array {
   const before = Y.encodeStateVector(doc);
   const block = baseModel.getBlocks(doc)[blockIndex];
-  doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
+  doc.transact(() => applyTextEdit(block, span, newText), transactionOrigin);
   return Y.encodeStateAsUpdate(doc, before);
 }
 

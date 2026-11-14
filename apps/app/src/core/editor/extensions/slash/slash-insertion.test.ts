@@ -60,8 +60,9 @@ function mountAround(content: JSONContent[]) {
 }
 
 const listItem = (text: string): JSONContent => ({
-  type: "list_item",
-  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+  type: "paragraph",
+  attrs: { path: "-", marker: "item" },
+  content: text ? [{ type: "text", text }] : [],
 });
 
 const cell = (text: string): JSONContent => ({
@@ -82,8 +83,8 @@ function blockTypes(instance: Editor): string[] {
 
 /**
  * §5.7 says the new block lands "after the current one", and inside a list or
- * a table that sentence needs a level. A list item exists only as part of its
- * list and a cell only as part of its table, so "after" means after the whole
+ * a table that sentence needs a level. A list is a run of sibling items and a
+ * cell exists only as part of its table, so "after" means after the whole
  * structure: a table wedged inside a bullet, or a command that silently does
  * nothing because the cell will not take it (law 5), is not what the writer
  * asked for.
@@ -91,16 +92,16 @@ function blockTypes(instance: Editor): string[] {
 describe("slash insertion out of nested structures", () => {
   it("keeps a multi-item list whole and lands after it", () => {
     const { editor: instance, range } = mountAround([
-      {
-        type: "bullet_list",
-        content: [listItem("first"), listItem(`second ${TRIGGER}`), listItem("third")],
-      },
+      listItem("first"),
+      listItem(`second ${TRIGGER}`),
+      listItem("third"),
     ]);
     applySlashCommand(instance, range, item("table"), catalog());
 
-    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
-    expect(instance.state.doc.firstChild?.childCount).toBe(3);
-    expect(instance.state.doc.firstChild?.textContent).toBe("firstsecond third");
+    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph", "paragraph", "table"]);
+    expect(instance.state.doc.child(0).textContent).toBe("first");
+    expect(instance.state.doc.child(1).textContent).toBe("second ");
+    expect(instance.state.doc.child(2).textContent).toBe("third");
   });
 
   /**

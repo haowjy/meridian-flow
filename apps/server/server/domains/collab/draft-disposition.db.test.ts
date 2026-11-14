@@ -46,7 +46,7 @@ async function review(...args: Parameters<typeof read>) {
 }
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
-const para = (text: string) => pm.nodes.paragraph.create(null, pm.text(text));
+const para = (text: string) => pm.nodes.paragraph.create({ id: text }, pm.text(text));
 
 async function fixture() {
   const doc = createCollabYDoc({ gc: false });

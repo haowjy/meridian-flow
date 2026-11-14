@@ -1,10 +1,12 @@
 /** Hocuspocus-backed Yjs gateway orchestration behind the thin CrossWS route. */
 import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
+import { isSchemaRepairUpdate } from "@meridian/agent-edit";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { draftOwnerKey } from "@meridian/contracts/branches";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
+  buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   clientSchemaVersionFromSubprotocolHeader,
@@ -470,6 +472,15 @@ export async function admitWriterSync(input: {
 
 type WriterSyncInput = Parameters<typeof admitWriterSync>[0];
 
+const documentSchema = buildDocumentSchema();
+
+/** The binding's schema repair is nobody's edit: the journal stores it under no name. */
+function writerOrigin(input: WriterSyncInput) {
+  return isSchemaRepairUpdate(input.document, input.payload, documentSchema)
+    ? ({ type: "system" } as const)
+    : ({ type: "user", userId: input.userId } as const);
+}
+
 function carriesUpdate(syncType: number, payload: Uint8Array): boolean {
   return (syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate) && payload.length > 0;
 }
@@ -494,7 +505,7 @@ async function admitDraftSync(
     await input.services.documentSync.admitDraftWriterUpdate({
       draftId: room.draftId,
       update: input.payload,
-      origin: { type: "user", userId: input.userId },
+      origin: writerOrigin(input),
       document: input.document,
     });
     return;
@@ -525,7 +536,7 @@ async function admitLiveSync(
       documentId: room.documentId,
       document: input.document,
       update: input.payload,
-      origin: { type: "user", userId: input.userId },
+      origin: writerOrigin(input),
       expectedGeneration: input.expectedGeneration,
     });
     return admission;

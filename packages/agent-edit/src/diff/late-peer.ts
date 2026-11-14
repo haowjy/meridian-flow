@@ -92,38 +92,3 @@ export function findLostEdits(
       }
   return out;
 }
-
-/**
- * After a reply's writes merged into `doc`: the text each write inserted that shows nowhere, because the
- * writer discarded or deleted it meanwhile. One string per write (each a list of its update segments).
- * Text the same reply deleted itself is not lost, only revised.
- */
-export function invisibleInsertions(
-  doc: Y.Doc,
-  writes: readonly (readonly Uint8Array[])[],
-): string[] {
-  const decoded = writes.map((segments) => segments.map((update) => Y.decodeUpdate(update)));
-  const revised = new Set<string>();
-  for (const write of decoded)
-    for (const { ds } of write)
-      for (const [client, ranges] of ds.clients)
-        for (const r of ranges)
-          for (let c = r.clock; c < r.clock + r.len; c++) revised.add(`${client}:${c}`);
-  return decoded.map((write) => {
-    let text = "";
-    for (const { structs } of write)
-      for (const s of structs) {
-        if (!(s instanceof Y.Item) || !(s.content instanceof Y.ContentString)) continue;
-        for (let i = 0; i < s.length; i++) {
-          const id = Y.createID(s.id.client, s.id.clock + i);
-          if (
-            revised.has(`${id.client}:${id.clock}`) ||
-            id.clock >= Y.getState(doc.store, id.client)
-          )
-            continue;
-          if (gone(Y.getItem(doc.store, id))) text += s.content.str[i];
-        }
-      }
-    return text;
-  });
-}

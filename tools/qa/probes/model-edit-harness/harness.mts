@@ -247,7 +247,7 @@ export async function waitForAssistantTurn(
 
 /** The paragraphs of a document's `prosemirror` text, as its XML string holds them. */
 const paragraphs = (xml: string) =>
-  [...xml.matchAll(/<paragraph>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
+  [...xml.matchAll(/<paragraph(?: [^>]*)?>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
 
 /** One result block's outcome in a word: what the model was shown the call did. */
 function resultLabel(content: { result?: Record<string, unknown>; content?: unknown }): string {

@@ -95,8 +95,7 @@ so a close needs no invalidation.
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
-`{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
-peers in ID order, derives the durable
+`{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
 `closed_cause` (`document_removed` for a removal, else `discarded`), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
@@ -113,11 +112,8 @@ removal still stands: after every matching room load settles, one batched record
 read outside DB locks drops live rooms a Work Restore has since made living
 again (draft rooms close by exact draft id; a closed draft stays closed). A
 Restore that commits while that read is in flight can still have its new live
-connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
-reply's closed pin lost its write is one pure rule, `closedPinReason`
-(`domain/closed-pin-reason.ts`), shared by a model edit's check and a failed peer
-identity ensure: a draft closed `document_removed` is the removal's even when its document
-stands again (`removed: null`). The closer is
+connection closed `4208`; the app's stale-4208 recovery reconnects it. A draft closed `document_removed` stays the removal's even when its
+document stands again. The closer is
 built at the composition root and its retirement bound by the collab domain once
 rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as in
 fixtures without rooms, it retires nothing. A caller whose commit happens inside
@@ -664,8 +660,7 @@ decides the answer: nothing left to end is `gone`, an applicable state that
 changed since the writer looked is `stale`, and a text draft that moved on is
 `draft_changed` (`work-branch-review-service.ts`).
 
-A reply's save applies ordered per-segment journal rows to a provisional Work-draft
-clone and never regenerates durable rows from a raw state-vector diff, which
+A draft write never regenerates durable rows from a raw state-vector diff, which
 would reintroduce cumulative tombstones. An unresolved sync dependency is an
 integrity failure, never a partially journaled update. Manifest membership
 mutations still journal cumulative sync bytes

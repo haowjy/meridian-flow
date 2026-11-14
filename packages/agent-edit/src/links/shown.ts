@@ -146,11 +146,8 @@ export function shownEvidence(
   return shown.length > 0 ? { showing: { holderUri: uri, view, links: shown } } : {};
 }
 
-/** Every block item a model payload renders: block groups and the concurrent listing. */
+/** Every block item a model payload renders. */
 export function renderedItems(payload: AgentEditModelPayload | undefined): AgentEditBlockItem[] {
   if (!payload) return [];
-  return [
-    ...(payload.blocks ?? []).flatMap((group) => group.items),
-    ...(payload.concurrent?.groups.flatMap((group) => group.blocks) ?? []),
-  ];
+  return (payload.blocks ?? []).flatMap((group) => group.items);
 }

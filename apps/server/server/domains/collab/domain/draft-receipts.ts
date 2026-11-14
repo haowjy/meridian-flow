@@ -82,6 +82,8 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
   prefixRows: readonly DraftTailRow[];
   checkpointSeq: number;
   lateTyping?: LateTyping;
+  /** The paragraphs late-peer recovery wrote or rewrote in this append. */
+  recovered?: readonly string[];
 };
 
 /**
@@ -123,6 +125,7 @@ export async function finalizeAppend(
       return done({ status: "preconditionFailed" });
 
     let lateTyping = input.recovery?.memory() ?? NO_LATE_TYPING;
+    const recovered: string[] = [];
     const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
@@ -190,6 +193,7 @@ export async function finalizeAppend(
               clientId: DRAFT_SERVER_CLIENT_ID,
             });
             lateTyping = recovery.memory;
+            recovered.push(...recovery.written);
             if (recovery.update) {
               const refused = admit({
                 draftId: row.draftId,
@@ -257,6 +261,7 @@ export async function finalizeAppend(
         prefixRows: read.tail,
         checkpointSeq: read.documentDraft.checkpointSeq,
         lateTyping,
+        recovered,
       },
     };
   } catch (cause) {

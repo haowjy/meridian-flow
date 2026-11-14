@@ -34,6 +34,8 @@ export interface CodecRuntime {
   parseBlocks(content: string, ctx: ParseContext): PMNode[];
   stringifyMarkdown(root: MdastRoot): string;
   serializeBlock(node: PMNode, ctx: SerializeContext): string;
+  /** A container's children as one Markdown text, blank lines and prefixes included. */
+  serializeSequence(nodes: readonly PMNode[], ctx: SerializeContext): string;
 }
 
 const runtimeKey: unique symbol = Symbol("markup-codec-runtime");

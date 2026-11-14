@@ -6,19 +6,9 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import {
-  type CommandProps,
-  InputRule,
-  isiOS,
-  isMacOS,
-  type KeyboardShortcutCommand,
-  mergeAttributes,
-  Node,
-  textblockTypeInputRule,
-  wrappingInputRule,
-} from "@tiptap/core";
+import { isNested } from "@meridian/prosemirror-schema";
+import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
-import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
@@ -26,8 +16,6 @@ import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image, { type ImageOptions } from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
-import ListItem from "@tiptap/extension-list-item";
-import OrderedList from "@tiptap/extension-ordered-list";
 import Paragraph from "@tiptap/extension-paragraph";
 import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
@@ -62,6 +50,8 @@ import {
 } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
+import { blockTypeInputRule, setBlockType } from "./block-type";
+import { landAt, landSlice } from "./nesting";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -169,15 +159,19 @@ const unclosed = new WeakMap<Slice, Slice>();
  * merging into it, when the pasted node type is `defining`. That is a flag on
  * the type, and a heading is no longer a type: closing the slice's open start
  * for a leveled paragraph gives replaceRange the same input a `defining`
- * heading gave it. A destination with the same level and alignment still takes
- * the content in place, as `defining` also lets it.
+ * heading gave it. A list item replaces only an empty line, so a list pasted
+ * there keeps its first item. A destination with the same attributes still
+ * takes the content in place, as `defining` also lets it.
  */
-function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
+function closeShapedSlice(slice: Slice, $dest: ResolvedPos): Slice {
   const first = slice.content.firstChild;
+  const replaces =
+    first?.attrs.level != null ||
+    (isNested(first?.attrs.path) && $dest.parent.isTextblock && $dest.parent.content.size === 0);
   if (
     slice.openStart !== 1 ||
     first?.type.name !== "paragraph" ||
-    first.attrs.level === null ||
+    !replaces ||
     first.sameMarkup($dest.parent)
   ) {
     return slice;
@@ -185,9 +179,13 @@ function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
   return new Slice(slice.content, 0, slice.openEnd);
 }
 
+function shapeForDestination(slice: Slice, $dest: ResolvedPos): Slice {
+  return closeShapedSlice(landSlice(slice, $dest), $dest);
+}
+
 /** A slice shaped for the block it will land in, whatever shaping the paste hook already gave it. */
 export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
-  return closeLeveledSlice(unclosed.get(slice) ?? slice, $dest);
+  return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
 /**
@@ -223,11 +221,10 @@ export const MeridianParagraph = Paragraph.extend({
 
   addCommands() {
     return {
-      // The stock command keeps the block's current attrs, level included.
       setParagraph:
         () =>
-        ({ commands }) =>
-          commands.setNode(this.name, { level: null }),
+        ({ tr }) =>
+          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, { level: null }),
       setHeading:
         ({ level }) =>
         ({ commands }) =>
@@ -283,7 +280,7 @@ export const MeridianParagraph = Paragraph.extend({
           // A paste lands at the selection. A drop is shaped again where it lands
           // (`slice-drop.ts`), from the slice as it was before this ran.
           transformPasted: (slice, view) => {
-            const shaped = closeLeveledSlice(slice, view.state.selection.$from);
+            const shaped = shapeForDestination(slice, view.state.selection.$from);
             if (shaped !== slice) unclosed.set(shaped, slice);
             return shaped;
           },
@@ -294,30 +291,12 @@ export const MeridianParagraph = Paragraph.extend({
 
   addInputRules() {
     return [
-      textblockTypeInputRule({
+      blockTypeInputRule({
         find: /^(#{1,6})\s$/,
         type: this.type,
         getAttributes: (match) => ({ level: match[1]?.length }),
       }),
     ];
-  },
-});
-
-export const MeridianListItem = ListItem.extend({
-  name: "list_item",
-
-  addAttributes() {
-    return {
-      checked: {
-        default: null,
-        parseHTML: (element) => {
-          const checkbox = element.querySelector('input[type="checkbox"]');
-          return checkbox ? (checkbox as HTMLInputElement).checked : null;
-        },
-        renderHTML: (attrs) =>
-          attrs.checked === null ? {} : { "data-checked": attrs.checked ? "true" : "false" },
-      },
-    };
   },
 });
 
@@ -334,6 +313,56 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
     return ReactNodeViewRenderer(CodeBlockNodeView);
   },
 
+  addCommands() {
+    return {
+      setCodeBlock:
+        (attributes) =>
+        ({ tr }) =>
+          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, attributes),
+      toggleCodeBlock:
+        (attributes) =>
+        ({ tr, editor }) =>
+          editor.isActive(this.name)
+            ? setBlockType(tr, tr.selection.from, tr.selection.to, editor.schema.nodes.paragraph)
+            : setBlockType(tr, tr.selection.from, tr.selection.to, this.type, attributes),
+    };
+  },
+
+  // TipTap's own bindings clear a fence with `clearNodes` and leave it with `exitCode`, and
+  // both make their block from defaults: the fence's id and its place in a list or quote go.
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      Backspace: ({ editor }) => {
+        const { empty, $anchor } = editor.state.selection;
+        if (!empty || $anchor.parent.type !== this.type) return false;
+        if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
+        return editor.commands.setParagraph();
+      },
+      Enter: ({ editor }) => {
+        const { empty, $from } = editor.state.selection;
+        if (!empty || $from.parent.type !== this.type) return false;
+        const atEnd = $from.parentOffset === $from.parent.content.size;
+        if (!atEnd || !$from.parent.textContent.endsWith("\n\n")) return false;
+        return editor.commands.command(({ tr }) => {
+          tr.delete($from.pos - 2, $from.pos);
+          return exitFence(tr);
+        });
+      },
+      ArrowDown: ({ editor }) => {
+        const { empty, $from } = editor.state.selection;
+        if (!empty || $from.parent.type !== this.type) return false;
+        if ($from.parentOffset !== $from.parent.content.size) return false;
+        const after = editor.state.doc.nodeAt($from.after());
+        return editor.commands.command(({ tr }) => {
+          if (!after) return exitFence(tr);
+          tr.setSelection(Selection.near(tr.doc.resolve($from.after())));
+          return true;
+        });
+      },
+    };
+  },
+
   // The fence trigger belongs to `MarkdownAutoformatExtension`, which accepts
   // the whole GFM info string and completes on Enter. Keeping TipTap's narrower
   // rules here would leave two rules racing for the same keystrokes.
@@ -341,6 +370,20 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
     return [];
   },
 });
+
+/** A new line after the fence the caret is in, where Enter would put one beside it. */
+function exitFence(tr: Transaction): boolean {
+  const { $head } = tr.selection;
+  const fence = $head.parent;
+  const above = $head.node(-1);
+  const after = $head.indexAfter(-1);
+  const line = above.contentMatchAt(after).defaultType?.createAndFill();
+  if (!line || !above.canReplaceWith(after, after, line.type)) return false;
+  const pos = $head.after();
+  tr.insert(pos, landAt([line], fence));
+  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1))).scrollIntoView();
+  return true;
+}
 
 /** Keeps block alignment live when the resize plugin takes over table rendering. */
 class MeridianTableView extends TableView {
@@ -618,113 +661,6 @@ export const MeridianLink = Link.extend({
   // in a manuscript. `rel` stays as the fence for anything that does navigate.
   HTMLAttributes: { target: null, rel: "noopener noreferrer" },
 });
-
-// We renamed list_item from TipTap's default `listItem`, so the list commands
-// (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
-// via `itemTypeName` — otherwise they resolve "listItem", which isn't in the
-// schema, and throw.
-/** Markdown list tightness is a serialization fact, never a DOM attribute. */
-const tightAttribute = { default: false, renderHTML: () => ({}) };
-
-/** A list item holds body text: wrapping a heading in a list, by shortcut, toolbar or input rule, clears its level. */
-function clearSelectedLevels(tr: Transaction): void {
-  const { from, to } = tr.selection;
-  tr.doc.nodesBetween(from, to, (node, pos) => {
-    if (node.type.name === "paragraph" && node.attrs.level !== null) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, level: null });
-    }
-    return !node.isTextblock;
-  });
-}
-
-function bodyTextListRule(rule: InputRule): InputRule {
-  return new InputRule({
-    find: rule.find,
-    handler: (props) => {
-      const result = rule.handler(props);
-      if (result !== null) clearSelectedLevels(props.state.tr);
-      return result;
-    },
-  });
-}
-
-/** TipTap's toggleList wraps when the selection is outside the list type and unwraps inside it. */
-function toggleListWithBodyText(
-  { chain, editor }: CommandProps,
-  list: { name: string; itemTypeName: string; keepMarks: boolean },
-): boolean {
-  const run = chain();
-  if (!editor.isActive(list.name)) run.command(({ tr }) => (clearSelectedLevels(tr), true));
-  return run.toggleList(list.name, list.itemTypeName, list.keepMarks).run();
-}
-
-export const MeridianBulletList = BulletList.extend({
-  name: "bullet_list",
-  content: "list_item+",
-  group: "block",
-
-  addCommands() {
-    return {
-      toggleBulletList: () => (props) =>
-        toggleListWithBodyText(props, { name: this.name, ...this.options }),
-    };
-  },
-
-  addInputRules() {
-    return (this.parent?.() ?? []).map(bodyTextListRule);
-  },
-
-  addAttributes() {
-    return {
-      tight: tightAttribute,
-    };
-  },
-}).configure({ itemTypeName: "list_item" });
-
-export const MeridianOrderedList = OrderedList.extend({
-  name: "ordered_list",
-  content: "list_item+",
-  group: "block",
-
-  addAttributes() {
-    return {
-      // GFM's list start number. TipTap calls it `start`; the shared schema
-      // calls it `order`, so the rename has to reach the DOM mapping and the
-      // input rule below as well as the attr itself — an inherited `start`
-      // silently falls out of the schema, and the writer's `3. ` opens at one.
-      order: {
-        default: 1,
-        parseHTML: (element) => {
-          const start = Number.parseInt(element.getAttribute("start") ?? "", 10);
-          return Number.isFinite(start) ? start : 1;
-        },
-        renderHTML: (attrs) =>
-          typeof attrs.order === "number" && attrs.order !== 1 ? { start: attrs.order } : {},
-      },
-      tight: tightAttribute,
-    };
-  },
-
-  addCommands() {
-    return {
-      toggleOrderedList: () => (props) =>
-        toggleListWithBodyText(props, { name: this.name, ...this.options }),
-    };
-  },
-
-  addInputRules() {
-    return [
-      bodyTextListRule(
-        wrappingInputRule({
-          find: /^(\d+)\.\s$/,
-          type: this.type,
-          getAttributes: (match) => ({ order: Number(match[1]) }),
-          joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
-        }),
-      ),
-    ];
-  },
-}).configure({ itemTypeName: "list_item" });
 
 export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; owner?: string }>({
   marks: "",

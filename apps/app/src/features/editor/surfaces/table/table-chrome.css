@@ -93,8 +93,9 @@
 .meridian-editor .ProseMirror .column-resize-handle {
   position: absolute;
   top: 0;
+  /* Over the cell's own right and bottom strokes, so the line runs unbroken down the column. */
   right: -1px;
-  bottom: 0;
+  bottom: -1px;
   z-index: 2;
   width: 2px;
   background: var(--color-primary);

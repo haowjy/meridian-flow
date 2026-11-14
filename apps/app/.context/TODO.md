@@ -22,5 +22,4 @@
 - Move the remaining lists onto the shared list components
   (`components/ui/list-row.tsx`, `picker.tsx`): `WorkspaceNavBody`'s rows are not
   `ListRow`s yet; `WorkScopePicker` is a `DropdownMenu`, not a `Picker`; and
-  `FileSuggestionList` and the editor's `SuggestionMenu` keep their own listbox (the
-  first shares the pickers' keys through `list-keys.ts`).
+  the editor's `SuggestionMenu` keeps its own listbox.

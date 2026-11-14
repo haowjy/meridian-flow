@@ -9,6 +9,7 @@
  * - table row and column movement semantics
  */
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
@@ -123,10 +124,12 @@ const heading = (text: string): JSONContent => ({
   content: [{ type: "text", text }],
 });
 
-const bullets = (...items: string[]): JSONContent => ({
-  type: "bullet_list",
-  content: items.map((text) => ({ type: "list_item", content: [paragraph(text)] })),
-});
+const bullets = (...items: string[]): JSONContent[] =>
+  items.map((text) => ({
+    type: "paragraph",
+    attrs: { path: "-", marker: "item" },
+    content: [{ type: "text", text }],
+  }));
 
 /** One body row of two block-capable cells under the standard header. */
 function mountCellBlocks(left: JSONContent[], right: JSONContent[]) {
@@ -174,7 +177,8 @@ function expectWireFixpoint(current: Editor) {
     schema: current.schema,
     components: {},
   });
-  const blocks = [...current.state.doc.content.content];
+  // Markdown carries no ids.
+  const blocks = [...current.state.doc.content.content].map(withoutBlockIds);
   const reparsed = codec.parse(codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).blocks;
   expect(reparsed.map((block) => block.toJSON())).toEqual(blocks.map((block) => block.toJSON()));
 }
@@ -224,14 +228,14 @@ describe("merging block-capable cells", () => {
   }
 
   it("appends a heading after a list rather than flattening either", () => {
-    const current = mountCellBlocks(
-      [bullets("gather the disciples", "seal the gate")],
-      [heading("The gate")],
-    );
+    const current = mountCellBlocks(bullets("gather the disciples", "seal the gate"), [
+      heading("The gate"),
+    ]);
     mergeBodyRow(current);
 
     expect(mergedCellBlocks(current)).toEqual([
-      ["bullet_list", "gather the disciplesseal the gate"],
+      ["paragraph", "gather the disciples"],
+      ["paragraph", "seal the gate"],
       ["paragraph", "The gate"],
     ]);
   });
