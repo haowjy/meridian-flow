@@ -45,6 +45,12 @@ export function documentSlashCatalog(
       { id: "heading-3", group: "text", label: t`Heading 3`, aliases: [t`h3`] },
       { id: "bullet-list", group: "text", label: t`Bulleted list`, aliases: [t`list`, t`ul`] },
       { id: "numbered-list", group: "text", label: t`Numbered list`, aliases: [t`ordered`, t`ol`] },
+      {
+        id: "task-list",
+        group: "text",
+        label: t`To-do list`,
+        aliases: [t`task`, t`checklist`, t`checkbox`],
+      },
       { id: "quote", group: "text", label: t`Quote`, aliases: [t`blockquote`, t`epigraph`] },
       {
         id: "divider",

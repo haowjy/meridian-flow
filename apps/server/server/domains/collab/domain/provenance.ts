@@ -1,13 +1,7 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
 import { APPLY_RECORD_ROOT, RESTORED_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
-import {
-  type LineageRange,
-  type SemanticEditIRV1,
-  type SemanticProvenanceWriter,
-  unwrapBlock,
-  unwrapDoc,
-} from "@meridian/agent-edit/integration";
+import type { LineageRange } from "@meridian/agent-edit/integration";
 import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -66,12 +60,6 @@ export type AttributedJournalRow = JournalReplayKey & {
   update: Uint8Array;
 };
 
-export type ProvenanceRun = {
-  target: LineageRange;
-  root: LineageRange;
-  birthClass: SafetyBirthClass;
-};
-
 export type RootLineageRun = {
   target: LineageRange;
   root: LineageRange;
@@ -106,76 +94,8 @@ export function insertionAttributions(
   return result;
 }
 
-/** Derives the normalized view for an already-materialized durable settlement doc. */
-export function materializeProvenanceForDoc(input: {
-  doc: Y.Doc;
-  rows: readonly AttributedJournalRow[];
-  retainedAttributions?: readonly AttributionRunV1[];
-  /** Settlement lock cuts may contain writer-ingress roots captured before their
-   * attributed replay row; classify that unexplained birth source conservatively. */
-  fallbackBirthClass?: SafetyBirthClass;
-}): ProvenanceRun[] {
-  const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
-  for (const attribution of input.retainedAttributions ?? []) {
-    attributions.add(attribution.range, attribution, sameAttribution);
-  }
-  for (const row of input.rows) {
-    for (const range of journalInsertionRanges(row.update)) {
-      attributions.addUncovered(range, {
-        range,
-        birthClass: birthClassFromAttribution(row),
-        origin: replayKey(row),
-      });
-    }
-  }
-  return provenanceRunsForDoc(input.doc, attributions, input.fallbackBirthClass);
-}
-
-/** Re-materializes provenance after a candidate update without granting old roots to fresh prose. */
-export function materializeCandidateProvenance(
-  doc: Y.Doc,
-  retained: readonly ProvenanceRun[],
-): ProvenanceRun[] {
-  const attributions = new RangeIndex<AttributionRunV1>("retained root attribution");
-  for (const [index, run] of retained.entries()) {
-    attributions.add(
-      run.root,
-      {
-        range: run.root,
-        birthClass: run.birthClass,
-        origin: { admissionSequence: 0n, batchOrdinal: 0, journalRowId: BigInt(index) },
-      },
-      sameAttribution,
-    );
-  }
-  return provenanceRunsForDoc(doc, attributions, "agent");
-}
-
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
-}
-
-function provenanceRunsForDoc(
-  doc: Y.Doc,
-  attributions: RangeIndex<AttributionRunV1>,
-  fallbackBirthClass?: SafetyBirthClass,
-): ProvenanceRun[] {
-  const visible: ProvenanceRun[] = [];
-  for (const run of materializeRootLineageForDoc(doc)) {
-    for (let offset = 0; offset < run.root.length; offset += 1) {
-      const root = unit(run.root, offset);
-      const attribution = attributions.valueAt(root);
-      if (!attribution && !fallbackBirthClass) {
-        throw blocked("Provenance root has no retained journal attribution");
-      }
-      appendRun(visible, {
-        target: unit(run.target, offset),
-        root,
-        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
-      });
-    }
-  }
-  return visible;
 }
 
 /** Materializes only the visible target-to-root relation. Attention policy
@@ -280,151 +200,6 @@ export class ReservedNamespaceAdmissionError extends Error {
   readonly name = "ReservedNamespaceAdmissionError";
 }
 
-export function createSemanticProvenanceWriter(): SemanticProvenanceWriter {
-  return {
-    writeCertifiedFacts(docHandle, ir, beforeStateVector) {
-      writeCertifiedProvenanceFacts(unwrapDoc(docHandle), ir, beforeStateVector);
-    },
-  };
-}
-
-function writeCertifiedProvenanceFacts(
-  doc: Y.Doc,
-  ir: SemanticEditIRV1,
-  beforeStateVector: Uint8Array,
-): void {
-  if (ir.intent.kind === "fullScopeFreshReplacement") return;
-  const edits = ir.intent.edits.map(({ edit, outputRuns }) => {
-    const runs = [...outputRuns].sort(
-      (left, right) => left.output.from - right.output.from || left.output.to - right.output.to,
-    );
-    return {
-      edit,
-      runs,
-      materializedRuns: runs.filter(
-        (run) => run.kind !== "preserved" || run.materialization !== "retained",
-      ),
-    };
-  });
-  if (
-    !edits.some(({ runs }) =>
-      runs.some(({ kind }) => kind === "preserved" || kind === "restoration"),
-    )
-  ) {
-    return;
-  }
-  const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
-  const targets: ProvenanceTargetFactV1[] = [];
-  const existingAssignments = readTargetFacts(doc);
-  for (const { edit, runs, materializedRuns } of edits) {
-    if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) continue;
-    const declaredLength = materializedRuns.reduce(
-      (sum, run) => sum + run.output.to - run.output.from,
-      0,
-    );
-    const outputLength = runs.at(-1)?.output.to ?? 0;
-    const outputWindow = visibleOutputWindow(edit, outputLength, allInserted);
-    const inserted = intersectRangesInOrder(outputWindow, allInserted);
-    const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
-    if (insertedLength !== declaredLength) {
-      throw new ProvenanceMaterializationError(
-        `Certified semantic output length ${declaredLength} does not match lowered prose insertion length ${insertedLength}`,
-      );
-    }
-    let outputCursor = 0;
-    for (const run of materializedRuns) {
-      const length = run.output.to - run.output.from;
-      const targetRuns = sliceRanges(inserted, outputCursor, length);
-      if (run.kind === "preserved" || run.kind === "restoration") {
-        if (run.kind === "restoration" && length !== run.root.length) {
-          throw new ProvenanceMaterializationError(
-            "Restoration output must map length-for-length to its certified root",
-          );
-        }
-        const roots =
-          run.kind === "preserved"
-            ? resolvedRootUnits(existingAssignments, run.source)
-            : Array.from({ length }, (_, offset) => unit(run.root, offset));
-        const targetUnits = targetRuns.flatMap((target) =>
-          Array.from({ length: target.length }, (_, offset) => unit(target, offset)),
-        );
-        for (let index = 0; index < targetUnits.length; index += 1) {
-          const target = targetUnits[index];
-          const root = roots[index];
-          if (!target || !root)
-            throw blocked("Certified continuation length changed during lowering");
-          const previous = targets.at(-1);
-          if (
-            previous &&
-            previous.target.clientID === target.clientID &&
-            end(previous.target) === target.clock &&
-            previous.root.clientID === root.clientID &&
-            end(previous.root) === root.clock
-          ) {
-            previous.target.length += 1;
-            previous.root.length += 1;
-          } else {
-            targets.push({ version: 1, target: { ...target }, root: { ...root } });
-          }
-        }
-      }
-      outputCursor += length;
-    }
-  }
-  appendProvenanceFacts(doc, { targets });
-}
-
-type MappedEdit = Extract<SemanticEditIRV1["intent"], { kind: "mappedEdits" }>["edits"][number];
-
-function visibleOutputWindow(
-  edit: MappedEdit["edit"],
-  outputLength: number,
-  inserted: readonly LineageRange[],
-): LineageRange[] {
-  if (edit.kind !== "block") {
-    throw new ProvenanceMaterializationError(
-      `Certified ${edit.kind} output cannot materialize continuation or restoration facts`,
-    );
-  }
-  const block = unwrapBlock(edit.block);
-  const ranges = visibleStringRanges(block);
-  const outputRanges =
-    ranges.length > 0 ? ranges : replacedBlockOutputRanges(block, inserted, outputLength);
-  return sliceRanges(outputRanges, 0, outputLength);
-}
-
-function replacedBlockOutputRanges(
-  block: Y.XmlElement,
-  inserted: readonly LineageRange[],
-  outputLength: number,
-): LineageRange[] {
-  const item = block._item;
-  if (!item?.deleted) return [];
-  // A structural remint inserts beside the input tombstone. Accept only one adjacent
-  // block whose complete prose was inserted by this lowering, or let the length guard fail.
-  const candidates = [
-    nearestVisibleType(item.left, "left"),
-    nearestVisibleType(item.right, "right"),
-  ];
-  const matches = candidates.flatMap((candidate) => {
-    if (!(candidate instanceof Y.XmlElement)) return [];
-    const ranges = visibleStringRanges(candidate);
-    const visibleLength = ranges.reduce((sum, range) => sum + range.length, 0);
-    const insertedLength = intersectRangesInOrder(ranges, inserted).reduce(
-      (sum, range) => sum + range.length,
-      0,
-    );
-    return visibleLength === outputLength && insertedLength === outputLength ? [ranges] : [];
-  });
-  return matches.length === 1 ? (matches[0] ?? []) : [];
-}
-
-function nearestVisibleType(item: Y.Item | null, direction: "left" | "right"): unknown {
-  let current = item;
-  while (current?.deleted) current = current[direction];
-  return current?.content instanceof Y.ContentType ? current.content.type : undefined;
-}
-
 function resolvedRootUnits(
   assignments: RangeIndex<ProvenanceTargetFactV1>,
   source: LineageRange,
@@ -436,57 +211,6 @@ function resolvedRootUnits(
       ? unit(assignment.root, sourceUnit.clock - assignment.target.clock)
       : sourceUnit;
   });
-}
-
-function insertedStringRanges(update: Uint8Array): LineageRange[] {
-  return decodeAdmittedUpdate(update).structs.flatMap((struct) =>
-    struct instanceof Y.Item && struct.content instanceof Y.ContentString
-      ? [{ clientID: struct.id.client, clock: struct.id.clock, length: struct.length }]
-      : [],
-  );
-}
-
-function intersectRangesInOrder(
-  ordered: readonly LineageRange[],
-  candidates: readonly LineageRange[],
-): LineageRange[] {
-  return ordered.flatMap((range) =>
-    candidates
-      .filter((candidate) => rangesOverlap(range, candidate))
-      .map((candidate) => {
-        const clock = Math.max(range.clock, candidate.clock);
-        return {
-          clientID: range.clientID,
-          clock,
-          length: Math.min(end(range), end(candidate)) - clock,
-        };
-      })
-      .sort((left, right) => left.clock - right.clock),
-  );
-}
-
-function sliceRanges(
-  ranges: readonly LineageRange[],
-  from: number,
-  length: number,
-): LineageRange[] {
-  const result: LineageRange[] = [];
-  let offset = 0;
-  const to = from + length;
-  for (const range of ranges) {
-    const overlapFrom = Math.max(from, offset);
-    const overlapTo = Math.min(to, offset + range.length);
-    if (overlapFrom < overlapTo) {
-      result.push({
-        clientID: range.clientID,
-        clock: range.clock + overlapFrom - offset,
-        length: overlapTo - overlapFrom,
-      });
-    }
-    offset += range.length;
-    if (offset >= to) break;
-  }
-  return result;
 }
 
 /** Refresh outside writer admission, immediately after load or provenance writes. */
@@ -896,27 +620,6 @@ function parseRange(value: unknown): LineageRange {
     throw blocked("Lineage range is outside safe integer bounds");
   }
   return { clientID: Number(clientID), clock: Number(clock), length: Number(length) };
-}
-
-function appendRun(target: ProvenanceRun[], unitRun: ProvenanceRun): void {
-  const previous = target.at(-1);
-  if (
-    previous &&
-    previous.birthClass === unitRun.birthClass &&
-    previous.target.clientID === unitRun.target.clientID &&
-    end(previous.target) === unitRun.target.clock &&
-    previous.root.clientID === unitRun.root.clientID &&
-    end(previous.root) === unitRun.root.clock
-  ) {
-    previous.target.length += 1;
-    previous.root.length += 1;
-    return;
-  }
-  target.push({
-    target: { ...unitRun.target },
-    root: { ...unitRun.root },
-    birthClass: unitRun.birthClass,
-  });
 }
 
 function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun): void {

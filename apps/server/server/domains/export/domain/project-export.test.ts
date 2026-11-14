@@ -119,10 +119,12 @@ function fixture() {
       ),
     ]),
     schema.node("image", { src: `asset:${uuid("image")}`, alt: "map" }),
-    schema.node("blockquote", null, [
-      schema.node("paragraph", null, schema.text("[!warning]- A costly breakthrough\nNot [!note]")),
-      schema.node("paragraph", null, schema.text("[!tip] second paragraph")),
-    ]),
+    schema.node(
+      "paragraph",
+      { path: ">" },
+      schema.text("[!warning]- A costly breakthrough\nNot [!note]"),
+    ),
+    schema.node("paragraph", { path: ">" }, schema.text("[!tip] second paragraph")),
     schema.node("paragraph", null, schema.text("[!note] outside a quote")),
     schema.node("paragraph", null, schema.text("[^1]: The ledger outlives the sect.")),
   ];

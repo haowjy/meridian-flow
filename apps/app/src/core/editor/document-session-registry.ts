@@ -16,6 +16,12 @@ export type LiveDocumentSessionLease = Readonly<{
   documentId: DocumentId;
 }>;
 
+/** Why a room's unsent typing could not be delivered. */
+export type UnsentTypingCause = "closed" | "removed";
+
+/** Typing a room ended with before the server acknowledged it, handed back once. */
+export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string }>;
+
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
   /**
@@ -31,14 +37,6 @@ export interface LiveDocumentSessionRegistry {
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
-  /**
-   * The registry drops a live room whose pending edits the server refused
-   * (4409): it tears the session down and clears its local copy, so the next open
-   * loads the server's state instead of replaying them. This is that drop while it runs, so a host can unbind
-   * and reopen after; `null` before a refusal and once the drop has settled,
-   * whether or not it removed the session. Never rejects.
-   */
-  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null;
   retain(
     ownerId: string,
     leases: Iterable<LiveDocumentSessionLease>,
@@ -54,6 +52,12 @@ export interface LiveDocumentSessionRegistry {
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
+  /**
+   * The words a room, live or draft, held unacknowledged when it ended or its local copy was
+   * cleared (closed, removed), once per session, read before the copy goes. A room with no
+   * session in this tab has nothing to hand back.
+   */
+  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */

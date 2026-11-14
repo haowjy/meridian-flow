@@ -132,7 +132,7 @@ describe("write tool dispatch", () => {
     );
 
     expectOutcome(next, "success");
-    expect(outcomeText(next)).not.toContain("concurrent edits:");
+    expect(outcomeText(next)).not.toContain("after you last read it");
   });
 
   it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
@@ -385,62 +385,6 @@ describe("write tool dispatch", () => {
     expect(outcomeText(transient)).toContain("status: internal_error");
     expectOutcome(transient, "internal_error", true);
     expect(outcomeText(transient)).not.toContain("database unavailable");
-  });
-
-  it("forwards semantic provenance and restores the runtime if its writer rejects", async () => {
-    const writeCertifiedFacts = vi.fn(() => {
-      throw new Error("forced provenance rejection");
-    });
-    const ctx = harness(
-      { "chapter.md": "cat one" },
-      { semanticProvenance: { writeCertifiedFacts } },
-    );
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const failed = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
-      context,
-    );
-    expectOutcome(failed, "partial_failure", true);
-    expect(writeCertifiedFacts).toHaveBeenCalledOnce();
-
-    const reread = await ctx.core.read({ file: "chapter.md" }, context);
-    expectOutcome(reread, "success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
-    for (const command of [
-      {
-        command: "replace" as const,
-        file: "chapter.md",
-        in: [1, 2] as [number, number],
-        content: "kitten one\n\nkitten two",
-      },
-      {
-        command: "create" as const,
-        file: "chapter.md",
-        overwrite: true,
-        content: "kitten one\n\nkitten two",
-      },
-    ]) {
-      let certified = 0;
-      const multipart = harness(
-        { "chapter.md": "cat one\n\ncat two" },
-        {
-          semanticProvenance: {
-            writeCertifiedFacts() {
-              if (++certified === 2) throw new Error("second part rejected");
-            },
-          },
-        },
-      );
-      const rejected = await multipart.core.write(command, {
-        ...context,
-        responseIdentity: { modelResponseId: "certification" },
-      });
-      expectOutcome(rejected, "partial_failure", true);
-      expect(certified).toBe(2);
-      expect((await multipart.journal.read("chapter.md")).updates).toHaveLength(0);
-      expect(blockTexts(multipart.liveDoc("chapter.md"))).toEqual(["cat one", "cat two"]);
-    }
   });
 });
 

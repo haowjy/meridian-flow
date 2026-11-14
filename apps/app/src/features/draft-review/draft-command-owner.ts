@@ -2,9 +2,9 @@
  * Account-lifetime command ownership. Each review item owns one frozen FIFO for its text, tree
  * and text+tree clicks; each draft room is a resource the item attaches, with its optimistic base.
  */
+import { applyBase } from "@meridian/agent-edit/content-merge";
 import {
   APPLY_RECORD_ROOT,
-  applyBase,
   applySpanPatches,
   baseViewDelta,
   blocksEqual,
@@ -59,8 +59,6 @@ export type DraftCommandState = {
   removed: boolean;
   liveUri: string | null;
 };
-/** A closed draft's text, typed here, that its server room never took. */
-export type UnsentDraftText = { draftId: string; text: string };
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
@@ -153,8 +151,6 @@ export class DraftCommandOwner {
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
-  /** Per document (`[projectId, documentId]`), until dismissed: the latest closed draft's. */
-  private readonly unsent = new Map<string, UnsentDraftText>();
   private readonly listeners = new Set<() => void>();
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
@@ -512,17 +508,6 @@ export class DraftCommandOwner {
     const record = this.records.get(id) ?? EMPTY;
     if (!this.active || record.closed) return;
     const entry = this.entries.get(id);
-    const frame = entry?.binding?.runtime.projectNow();
-    const unsentText =
-      disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
-        ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
-        : null;
-    // The local copy stays (a Discard can be undone); this is the writer's way to the text now.
-    if (unsentText)
-      this.unsent.set(JSON.stringify([ref.projectId, ref.documentId]), {
-        draftId: id,
-        text: unsentText,
-      });
     this.setState(
       ref.itemKey,
       {
@@ -538,15 +523,6 @@ export class DraftCommandOwner {
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
       void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
-  }
-
-  /** The text a closed draft of this document held that its room never took, until dismissed. */
-  unsentText(projectId: string, documentId: string): UnsentDraftText | null {
-    return this.unsent.get(JSON.stringify([projectId, documentId])) ?? null;
-  }
-
-  dismissUnsentText(projectId: string, documentId: string): void {
-    if (this.unsent.delete(JSON.stringify([projectId, documentId]))) this.publish();
   }
 
   /**

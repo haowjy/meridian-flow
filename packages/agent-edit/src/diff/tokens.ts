@@ -6,6 +6,8 @@
  * depends on what precedes the token (a split turns " word" into "word"); alignment ignores it and
  * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
  */
+
+import { blankDocument, newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 
@@ -31,10 +33,23 @@ export const coreKey = (t: Tok) => (t.kind === "text" ? `T${t.core}` : t.key);
 const keyCache = new WeakMap<PMNode, string>();
 const tokCache = new WeakMap<PMNode, Tok[]>();
 
+/**
+ * JSON with object keys sorted. A schema lists a node's attrs in its own order (the editor's extensions
+ * and the server's schema differ), and a key is hashed into the review group ids the client sends and the
+ * server recomputes, so a key must not depend on that order.
+ */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
 export function blockKey(node: PMNode): string {
   let key = keyCache.get(node);
   if (key === undefined) {
-    key = JSON.stringify(node.toJSON());
+    key = stableJson(node.toJSON());
     keyCache.set(node, key);
   }
   return key;
@@ -43,7 +58,7 @@ export function blockKey(node: PMNode): string {
 const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 const SPACE = /^\s+$/u;
 const marksKey = (marks: readonly Mark[]) =>
-  marks.length ? JSON.stringify(marks.map((m) => m.toJSON())) : "";
+  marks.length ? stableJson(marks.map((m) => m.toJSON())) : "";
 const sameMarks = (a: readonly Mark[], b: readonly Mark[]) =>
   a.length === b.length && a.every((m, i) => m.eq(b[i]));
 
@@ -54,7 +69,7 @@ export function tokenizeBlock(node: PMNode): Tok[] {
   if (node.isTextblock) {
     out.push({
       kind: "block",
-      key: `B${node.type.name}${JSON.stringify(node.attrs)}${marksKey(node.marks)}`,
+      key: `B${node.type.name}${stableJson(node.attrs)}${marksKey(node.marks)}`,
       node,
     });
     // Whitespace that ends one run leads the next run's first token, so "said **no**" tokenizes like
@@ -77,7 +92,7 @@ export function tokenizeBlock(node: PMNode): Tok[] {
     node.forEach((child) => {
       if (!child.isText) {
         flushCarry();
-        out.push({ kind: "inline", key: `I${JSON.stringify(child.toJSON())}`, node: child });
+        out.push({ kind: "inline", key: `I${stableJson(child.toJSON())}`, node: child });
         return;
       }
       const marks = child.marks;
@@ -152,14 +167,24 @@ function flatten(blocks: readonly PMNode[]): Side {
   return { blocks, toks, starts, blockOf };
 }
 
+/** What `buildBlocks` had to change to make the tokens blocks: counts, no text. */
+export interface ShapeRepairs {
+  /** A mark the block's type cannot hold was dropped. */
+  markDropped: number;
+  /** An inline node the block cannot hold moved to a paragraph after it. */
+  inlineMovedOut: number;
+  /** Inline content with no paragraph to hold it got one. */
+  strayInlineWrapped: number;
+}
+
 /** Rebuilds blocks from tokens. Never drops content: inline nodes a block can't hold follow it in a paragraph. */
 export function buildBlocks(
   schema: Schema,
   toks: readonly Tok[],
   opts: { allowEmpty?: boolean } = {},
-): { blocks: PMNode[]; normalized: number } {
+): { blocks: PMNode[]; shape: ShapeRepairs } {
   const blocks: PMNode[] = [];
-  let normalized = 0;
+  const shape: ShapeRepairs = { markDropped: 0, inlineMovedOut: 0, strayInlineWrapped: 0 };
   let cur: { shell: PMNode; inline: PMNode[] } | null = null;
   const flush = () => {
     if (!cur) return;
@@ -167,13 +192,13 @@ export function buildBlocks(
     cur = null;
     const type = shell.type;
     const fixed = inline.map((n) => (n.isText ? n.mark(type.allowedMarks(n.marks)) : n));
-    if (fixed.some((n, i) => n !== inline[i])) normalized++;
+    if (fixed.some((n, i) => n !== inline[i])) shape.markDropped++;
     const allowed = fixed.filter((n) => type.contentMatch.matchType(n.type));
     const rejected = fixed.filter((n) => !type.contentMatch.matchType(n.type));
     blocks.push(type.create(shell.attrs, joinText(allowed), shell.marks));
     if (rejected.length) {
-      normalized++;
-      blocks.push(schema.nodes.paragraph.create(null, joinText(rejected)));
+      shape.inlineMovedOut++;
+      blocks.push(schema.nodes.paragraph.create({ id: newBlockId() }, joinText(rejected)));
     }
   };
   for (const t of toks) {
@@ -186,8 +211,8 @@ export function buildBlocks(
     } else {
       if (!cur) {
         // Inline content with no textblock to hold it (after a whole block, or at the start).
-        cur = { shell: schema.nodes.paragraph.create(), inline: [] };
-        normalized++;
+        cur = { shell: schema.nodes.paragraph.create({ id: newBlockId() }), inline: [] };
+        shape.strayInlineWrapped++;
       }
       if (t.kind === "text") {
         if (t.wsMarks && t.ws) {
@@ -201,8 +226,8 @@ export function buildBlocks(
     }
   }
   flush();
-  if (!blocks.length && !opts.allowEmpty) blocks.push(schema.nodes.paragraph.create());
-  return { blocks, normalized };
+  if (!blocks.length && !opts.allowEmpty) blocks.push(...blankDocument(schema));
+  return { blocks, shape };
 }
 
 function joinText(nodes: PMNode[]): PMNode[] {
@@ -340,7 +365,7 @@ export function sharedBound(a: PMNode, b: PMNode): number {
 
 /**
  * Share of words two blocks have in order, over the longer block's words (or the shorter's, for
- * `inPlace` pairs, where position already agrees). A container (a quote, a list) counts the words of
+ * `inPlace` pairs, where position already agrees). A container (a table, a JSX container) counts the words of
  * its textblocks. 1 for equal blocks, 0 for different kinds of block or when it can't reach `floor`.
  */
 export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): number {

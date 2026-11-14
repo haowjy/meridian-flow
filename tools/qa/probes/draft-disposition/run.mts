@@ -64,7 +64,7 @@ try {
     docs.push(doc);
     doc.clientID = 1;
     doc.transact(() => {
-      const blocks = [pm.nodes.paragraph.create(null, pm.text("The old mountain waits."))];
+      const blocks = [pm.nodes.paragraph.create({ id: "p" }, pm.text("The old mountain waits."))];
       writeBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), pm, blocks);
       writeBlocks(doc.getXmlFragment("prosemirror"), pm, blocks);
     });

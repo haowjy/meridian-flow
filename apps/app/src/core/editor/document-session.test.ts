@@ -293,7 +293,7 @@ describe("DocumentSession status derivation", () => {
     current().emit({
       kind: "reset",
       reason: WS_CLOSE.DRAFT_CLOSED.reason,
-      disposition: "rebuild",
+      disposition: "closed",
       code: WS_CLOSE.DRAFT_CLOSED.code,
     });
 
@@ -304,7 +304,7 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  // #940: an offline room that ends refused keeps `offline`; its pill must still learn the new state.
+  // #940: an offline room that ends terminal keeps `offline`; its pill must still learn the new state.
   it("emits a terminal close that arrives while already offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({

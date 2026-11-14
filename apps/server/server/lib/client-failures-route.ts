@@ -31,7 +31,7 @@ export async function ingestClientFailures(
   if (rates.size > 1000) rates.delete(rates.keys().next().value as string);
   const owned = new Set<string>();
   for (const threadId of new Set(
-    parsed.data.records.flatMap((r) => (r.threadId ? [r.threadId] : [])),
+    parsed.data.records.flatMap((r) => (r.phase !== "rescued" && r.threadId ? [r.threadId] : [])),
   )) {
     const row = await deps.threads.findByIdIncludingDeleted(threadId as never);
     // Diagnostics remain useful after deletion or failed creation. Only correlation needs
@@ -45,6 +45,11 @@ export async function ingestClientFailures(
     if (at !== undefined && now - at < 5 * WINDOW_MS) continue;
     seen.set(key, now);
     if (seen.size > 5000) seen.delete(seen.keys().next().value as string);
+    if (record.phase === "rescued") {
+      deps.sink.emit(clientFailureEvent(record));
+      accepted += 1;
+      continue;
+    }
     const threadId = record.threadId && owned.has(record.threadId) ? record.threadId : undefined;
     let turnId: string | undefined;
     if (record.turnId && threadId) {

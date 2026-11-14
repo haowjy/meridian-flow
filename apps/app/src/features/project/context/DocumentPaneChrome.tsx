@@ -9,7 +9,6 @@
 import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { UnsentDraftTextNotice } from "@/features/draft-review/UnsentDraftTextNotice";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useAiDraftLauncher } from "../review-launch";
@@ -48,7 +47,6 @@ export function DocumentPaneChrome({
       <DocumentProperties projectId={projectId} document={document} />
       <DraftedDeleteNotice documentId={document.documentId} />
       <LiveDraftNotice projectId={projectId} document={document} />
-      <UnsentDraftTextNotice projectId={projectId} documentId={document.documentId} />
     </>
   );
 }

@@ -41,7 +41,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   }
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
-  if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
+  if (result.concurrent) sections.push(concurrentLines(result.concurrent, result).join("\n"));
   const notMoved = result.tree?.notMoved;
   if (notMoved?.length) sections.push(`not moved: ${notMoved.join("; ")}`);
   for (const group of result.tree?.concurrent ?? [])
@@ -179,22 +179,45 @@ function listed(items: readonly string[]): string {
     : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** Concurrent changes grouped by the peer that made them. */
-function concurrentLines(listing: AgentEditConcurrentListing): string[] {
-  return listing.groups.flatMap((group) => {
-    const details = [
-      ...(group.shown?.length ? [`  also shown above: ${group.shown.join(" ")}`] : []),
-      ...group.blocks.map((item) => `  ${blockLine(item)}`),
-      ...(group.removed?.length ? [`  removed: ${group.removed.join(" ")}`] : []),
-      ...(group.more
-        ? [group.more === 1 ? "  1 more change" : `  ${group.more} more changes`]
+/**
+ * Who changed which blocks after the model last read them, by hash. Past the limit, one line sends
+ * the model back to the file. The one line of repair guidance appears only when a changed block is
+ * in the echo, where a merge can have garbled it.
+ */
+function concurrentLines(listing: AgentEditConcurrentListing, result: AgentEditResultV1): string[] {
+  if (listing.reread) {
+    const read = result.path
+      ? readCall(result.path, result.destination === "live" ? "live" : undefined)
+      : "read";
+    return [
+      `${listing.reread} blocks were changed by others after you last read it, so this result has no echo and no list. The write landed. Your view of this file is out of date: ${read} before you edit it again.`,
+    ];
+  }
+  const lines = listing.groups.flatMap((group) => {
+    const changed = [
+      ...(group.shown?.map((hash) => `${hash} (in the echo)`) ?? []),
+      ...(group.other ?? []),
+    ];
+    const did = [
+      ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
+      ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
+    ];
+    return [
+      ...(did.length ? [`${group.author} ${did.join(" and ")} after you last read it.`] : []),
+      ...(group.overwritten?.length
+        ? [`${group.author} changed ${group.overwritten.join(", ")}, which your write removed.`]
         : []),
     ];
-    if (details.length === 1 && group.shown?.length) {
-      return [`concurrent edits by ${group.author}: ${group.shown.join(" ")}`];
-    }
-    return [`concurrent edits by ${group.author}:`, ...details];
   });
+  const merged = listing.groups.some((group) => group.shown?.length);
+  return [
+    ...lines,
+    ...(merged
+      ? [
+          "The echo is the text after both edits merged. If the merge left text broken, fix it; leave what reads right.",
+        ]
+      : []),
+  ];
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */
@@ -205,7 +228,11 @@ function outlineFile(result: AgentEditResultV1): string | undefined {
 
 function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | undefined): string[] {
   const items = groups.flatMap((group) => group.items);
-  if (!outline) return items.map(blockLine);
+  if (!outline)
+    return items.flatMap((item) => [
+      ...(item.gapLine === undefined ? [] : [item.gapLine]),
+      blockLine(item),
+    ]);
   // A heading whose slug looks like a hash is read by its hash.
   return items.map((item) => `${blockLine(item)}  #${item.section ?? item.hash}`);
 }

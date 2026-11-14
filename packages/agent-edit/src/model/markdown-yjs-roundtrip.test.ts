@@ -1,8 +1,13 @@
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  withoutBlockIds,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
-import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
+import { readRepairedRoot } from "./schema-repair.js";
+import { fragmentOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
@@ -59,7 +64,7 @@ function roundTrip(markdown: string): string {
   const parsed = codec.parse(markdown);
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(doc, null, parsed);
-  const root = prosemirrorRootOf(doc, schema);
+  const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
   const blocks = Array.from({ length: root.childCount }, (_, index) => root.child(index));
   return codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
 }
@@ -80,5 +85,5 @@ function prosemirrorJson(markdown: string): unknown {
 function prosemirrorReadbackJson(markdown: string): unknown {
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(doc, null, codec.parse(markdown));
-  return prosemirrorRootOf(doc, schema).toJSON();
+  return withoutBlockIds(readRepairedRoot("projectBlocks", fragmentOf(doc), schema)).toJSON();
 }

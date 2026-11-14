@@ -1,5 +1,6 @@
 // Block snapshots, and the echo a write shows of what it changed.
 import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Block } from "../codec-types.js";
 import type { DocHandle } from "../handles.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
@@ -13,6 +14,7 @@ export interface BlockSnapshot {
   /** Canonical hashless block body. */
   body: string;
   serialized: string;
+  node: Block;
 }
 
 export interface EchoInput {
@@ -40,9 +42,10 @@ export function snapshotProjected(
     projected.map((block) => block.node),
     projected.map((block) => block.hash),
   );
-  return projected.map(({ id, hash }, index) => ({
+  return projected.map(({ id, hash, node }, index) => ({
     hash,
     ...id,
+    node,
     body: bodies[index],
     serialized: toHashline(hash, bodies[index]),
   }));

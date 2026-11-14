@@ -10,7 +10,11 @@ import {
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  withBlockIds,
+} from "@meridian/prosemirror-schema";
 import { updateYFragment } from "@tiptap/y-tiptap";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
@@ -355,7 +359,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     codec: runtime.codec,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   // Scoped as composition scopes it, so a real link scope sees every model call.
@@ -640,7 +643,7 @@ function serializeMarkdown(doc: Y.Doc): string {
 
 function replaceMarkdown(doc: Y.Doc, markdown: string): void {
   const parsed = markupCodec.parse(markdown);
-  const replacement = documentSchema.node("doc", null, parsed.blocks);
+  const replacement = documentSchema.node("doc", null, parsed.blocks.map(withBlockIds));
   updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
     mapping: new Map(),
     isOMark: new Map(),

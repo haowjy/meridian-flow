@@ -25,6 +25,13 @@ Editor Undo sends an `unapply` command for the original Apply command (`POST ...
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
 
+The groups of one click are a chain: group *k* is compiled and merged against the base with groups
+1..*k*−1 already applied, one live update each. Merging each group against the click's base would
+see its sibling groups as concurrent changes, and two groups that change one structure (one removes
+a paragraph break, the next adds one nearby) would undo each other. Un-Apply inverts the latest
+group first, because a group's update builds on the earlier groups' items; an earlier group stays
+when a later one was edited in live.
+
 Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
 enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the

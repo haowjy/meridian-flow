@@ -10,8 +10,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   components,
+  docFrom,
   expectStable,
   firstParsedBlock,
+  listItem,
   m,
   paragraph,
   schema,
@@ -67,14 +69,8 @@ describe("tables and Layout round-trip corpus", () => {
 
   it("round-trips styled blocks through nested block serializers", () => {
     const originals = [
-      schema.node("blockquote", null, [
-        schema.node("paragraph", { align: "right" }, [t("inside quote")]),
-      ]),
-      schema.node("bullet_list", { tight: true }, [
-        schema.node("list_item", null, [
-          schema.node("paragraph", { align: "center" }, [t("inside list")]),
-        ]),
-      ]),
+      schema.node("paragraph", { align: "right", path: ">" }, [t("inside quote")]),
+      schema.node("paragraph", { align: "center", path: "-", marker: "item" }, [t("inside list")]),
     ];
 
     for (const original of originals) {
@@ -256,14 +252,12 @@ describe("tables and Layout round-trip corpus", () => {
     {
       block: "ordered list",
       tag: "ol",
-      node: schema.node("ordered_list", { order: 3, tight: false }, [
-        schema.node("list_item", null, [paragraph(t("Third"))]),
-      ]),
+      node: listItem({ kind: "ordered", start: 3, loose: true }, t("Third")),
     },
     {
-      block: "blockquote",
+      block: "quote",
       tag: "blockquote",
-      node: schema.node("blockquote", null, [paragraph(t("Quoted"))]),
+      node: schema.node("paragraph", { path: ">" }, [t("Quoted")]),
     },
     {
       block: "code block",
@@ -485,16 +479,13 @@ describe("tables and Layout round-trip corpus", () => {
       expect(activeCodec.serializeBlock(block, UNSCOPED_DOCUMENT_LINKS)).toBe(input);
 
       for (const nestedInput of [nested, padded, tabPadded]) {
-        const nestedBlock = firstParsedBlock(activeCodec, nestedInput);
-        const nestedCode: PMNode[] = [];
-        nestedBlock.descendants((node) => {
-          if (node.type.name === "code_block") nestedCode.push(node);
-        });
+        const nestedBlocks = activeCodec.parse(nestedInput).blocks;
+        const nestedCode = nestedBlocks.filter((node) => node.type.name === "code_block");
         expect(nestedCode[0]?.textContent).toContain("a<br />b");
-        const serializedNested = activeCodec.serializeBlock(nestedBlock, UNSCOPED_DOCUMENT_LINKS);
+        const serializedNested = activeCodec.serialize(nestedBlocks, UNSCOPED_DOCUMENT_LINKS);
         expect(serializedNested).not.toContain("\\<br");
-        expect(firstParsedBlock(activeCodec, serializedNested).toJSON()).toEqual(
-          nestedBlock.toJSON(),
+        expect(docFrom(activeCodec.parse(serializedNested).blocks).toJSON()).toEqual(
+          docFrom(nestedBlocks).toJSON(),
         );
       }
     }
@@ -530,14 +521,13 @@ describe("tables and Layout round-trip corpus", () => {
     });
     for (const input of inputs) {
       expect(normalizeGfmTableHardBreaks(input)).toBe(input);
-      const block = firstParsedBlock(activeCodec, input);
-      const code: PMNode[] = [];
-      block.descendants((node) => {
-        if (node.type.name === "code_block") code.push(node);
-      });
+      const blocks = activeCodec.parse(input).blocks;
+      const code = blocks.filter((node) => node.type.name === "code_block");
       expect(code[0]?.textContent).toContain("a\\\nb |");
-      const serialized = activeCodec.serializeBlock(block, UNSCOPED_DOCUMENT_LINKS);
-      expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+      const serialized = activeCodec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
+      expect(docFrom(activeCodec.parse(serialized).blocks).toJSON()).toEqual(
+        docFrom(blocks).toJSON(),
+      );
     }
   });
 
@@ -549,14 +539,18 @@ describe("tables and Layout round-trip corpus", () => {
 
     for (const activeCodec of [markdownCodec({ schema }), codec]) {
       for (const input of inputs) {
-        const block = firstParsedBlock(activeCodec, input);
+        const blocks = activeCodec.parse(input).blocks;
         const hardBreaks: PMNode[] = [];
-        block.descendants((node) => {
-          if (node.type.name === "hard_break") hardBreaks.push(node);
-        });
+        for (const block of blocks) {
+          block.descendants((node) => {
+            if (node.type.name === "hard_break") hardBreaks.push(node);
+          });
+        }
         expect(hardBreaks).toHaveLength(1);
-        const serialized = activeCodec.serializeBlock(block, UNSCOPED_DOCUMENT_LINKS);
-        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+        const serialized = activeCodec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
+        expect(docFrom(activeCodec.parse(serialized).blocks).toJSON()).toEqual(
+          docFrom(blocks).toJSON(),
+        );
       }
     }
   });
@@ -626,34 +620,30 @@ describe("tables and Layout round-trip corpus", () => {
     return table.type.create(table.attrs, rows);
   }
 
-  const quote = (block: PMNode): PMNode => schema.node("blockquote", null, [block]);
-
-  const bulletItem = (...content: PMNode[]): PMNode =>
-    schema.node("bullet_list", { tight: true }, [schema.node("list_item", null, content)]);
+  const at = (block: PMNode, path: string): PMNode =>
+    block.type.create({ ...block.attrs, path }, block.content);
 
   it.each([
-    { container: "a blockquote", wrap: quote },
+    { container: "a quote", wrap: (table: PMNode): PMNode[] => [at(table, ">")] },
     {
-      container: "a blockquote under an ordered list",
-      wrap: (table: PMNode) =>
-        schema.node("ordered_list", { order: 1, tight: true }, [
-          schema.node("list_item", null, [
-            paragraph(t("outer")),
-            bulletItem(paragraph(t("inner")), quote(table)),
-          ]),
-        ]),
+      container: "a quote under an ordered list",
+      wrap: (table: PMNode): PMNode[] => [
+        listItem({ kind: "ordered" }, t("outer")),
+        schema.node("paragraph", { path: "--", marker: "item" }, [t("inner")]),
+        at(table, "-->"),
+      ],
     },
   ])("keeps HTML cell hard breaks canonical inside $container", ({ wrap }) => {
     for (const { shape, rowMarks } of BROKEN_CELL_SHAPES) {
       const original = wrap(tableWithBrokenCells(rowMarks));
 
       for (const activeCodec of [markdownCodec({ schema }), codec]) {
-        const serialized = activeCodec.serializeBlock(original, UNSCOPED_DOCUMENT_LINKS);
+        const serialized = activeCodec.serialize(original, UNSCOPED_DOCUMENT_LINKS);
         expect(serialized, shape).toContain("<table>");
         expect(serialized, shape).toContain("<br />");
         expect(serialized, shape).not.toContain("\\\n");
-        expect(firstParsedBlock(activeCodec, serialized).toJSON(), shape).toEqual(
-          original.toJSON(),
+        expect(docFrom(activeCodec.parse(serialized).blocks).toJSON(), shape).toEqual(
+          docFrom(original).toJSON(),
         );
       }
     }
