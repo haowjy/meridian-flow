@@ -39,19 +39,10 @@ function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, re
   });
 }
 
-/**
- * Whether the delete record's Trash entry, an Undo's copy of it, or the entry it put back (a delete
- * that took a restore back stands for the entries that restore lifted) is still in Trash.
- */
-function inTrashOf(projection: TreeProjection, record: TreeRecord): boolean {
-  const root = record.carries ?? record.id;
-  return projection.trash.some(
-    (entry) =>
-      entry.id === record.id ||
-      (entry.from ?? entry.id) === root ||
-      (entry.putBackBy?.includes(root) ?? false),
-  );
-}
+/** Whether the delete record, or the original an Undo's copy carries, still stands in the projection. */
+const standsIn = (projection: TreeProjection, record: TreeRecord) =>
+  projection.standingDeletes.has(record.id) ||
+  projection.standingDeletes.has(record.carries ?? record.id);
 
 /**
  * Whether the delete `recordId` can still be undone: its Trash entry survives in the view (not
@@ -60,7 +51,7 @@ function inTrashOf(projection: TreeProjection, record: TreeRecord): boolean {
 export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
   const record = inForce(writer.doc, asked, recordId);
   if (!record || record === "unknown" || record.type !== "delete") return false;
-  return inTrashOf(writer.view(record.draft === null ? LIVE : asked), record);
+  return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
 }
 
 /**
@@ -172,7 +163,7 @@ export function undoChange(
     }
     case "delete": {
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
-      if (!inTrashOf(projection, record)) return "superseded";
+      if (!standsIn(projection, record)) return "superseded";
       return writer.author(view, actor, { type: "restore", node: record.node }, extra);
     }
     case "restore":

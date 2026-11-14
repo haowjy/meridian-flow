@@ -6,15 +6,15 @@
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
  */
 
-import type { BranchId, DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
 import { LIVE, undoChange, type View } from "@meridian/project-tree";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import { createTreeReader } from "../../context/tree/tree-view.js";
+import { placedNodesSql } from "../../context/tree/tree-addresses.js";
 import type {
   AgentTreeHistory,
   MoveBackAcrossLists,
@@ -86,13 +86,13 @@ export function createTurnTreeInverse(deps: {
           step.subject,
         ]);
     for (const [branchId, ids] of draftedIn)
-      for (const id of (
-        await createTreeReader(deps.db).lineages(
-          { kind: "branch", branchId: branchId as BranchId },
-          ids as DocumentId[],
-        )
-      ).keys())
-        held.add(`${branchId}:${id}`);
+      for (const row of await db().execute<{ id: string }>(sql`
+        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as BranchId })} n
+        WHERE n.id IN (${sql.join(
+          ids.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`))
+        held.add(`${branchId}:${row.id}`);
     const gone = all.filter(
       (step) => step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`),
     );

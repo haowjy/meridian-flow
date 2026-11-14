@@ -321,6 +321,25 @@ describe("file tree as a Yjs operation log", () => {
     }
   });
 
+  it("Redo of the Undo of a restore that lifted one chapter out of a deleted folder works", () => {
+    const a = replica(1);
+    const folder = a.create(LIVE, W, { kind: "folder", name: "Arc", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: folder,
+    }).node;
+    a.delete(LIVE, W, folder);
+    const restored = a.restore(LIVE, W, ch);
+    const undone = undoChange(a, LIVE, W, restored.id);
+    expect(typeof undone).toBe("object");
+    expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(true);
+    const redone = undoChange(a, LIVE, W, (undone as TreeRecord).id);
+    expect(typeof redone).toBe("object");
+    expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(false);
+  });
+
   it("a binary file is a node with a pointer to its bytes", () => {
     const a = replica(1);
     const blob = { storageKey: "uploads/abc", mime: "image/png", size: 1234 };

@@ -64,8 +64,6 @@ export type TrashEntry = {
   /** The delete record's id (a record that carries another names it in `from`). */
   id: string;
   from?: string;
-  /** Deletes that took a restore back and so put this entry in force again (a Redo of the restore's Undo): their root ids. */
-  putBackBy?: string[];
   node: string;
   cascade: string[];
 };
@@ -100,6 +98,12 @@ export type TreeProjection = {
   rescued: string[];
   /** Trash: the deletes still in force. Per view, like the tree. */
   trash: TrashEntry[];
+  /**
+   * The root ids of the deletes Undo may still take back: each Trash entry's own, and a delete
+   * that took a restore back (its entries and cascade members are in Trash again) while one of
+   * those stands.
+   */
+  standingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
 };
@@ -133,8 +137,11 @@ type Lifted = { entries: DeleteInForce[]; members: Array<[DeleteInForce, string]
 type DeleteInForce = {
   id: string;
   from?: string;
-  /** Root ids of the deletes that put it back in force, until a restore lifts it again. */
-  putBackBy: Set<string>;
+  /**
+   * By the root id of each delete that took a restore back: the nodes of this entry it put in
+   * force again (the entry's own, or members of its cascade), until a restore lifts them again.
+   */
+  putBackBy: Map<string, Set<string>>;
   node: string;
   cascade: Set<string>;
   /** The viewed Work's own delete, pending or already applied. */
@@ -345,11 +352,17 @@ export function replay(
         // deletes it lifted are in force again, each with what it took and its own Trash entry.
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
         if (back) {
+          const root = record.carries ?? record.id;
+          const putBack = (entry: DeleteInForce, node: string) =>
+            entry.putBackBy.set(root, (entry.putBackBy.get(root) ?? new Set()).add(node));
           for (const entry of back.entries) {
-            entry.putBackBy.add(record.carries ?? record.id);
+            putBack(entry, entry.node);
             if (!deletes.includes(entry)) deletes.push(entry);
           }
-          for (const [entry, member] of back.members) entry.cascade.add(member);
+          for (const [entry, member] of back.members) {
+            entry.cascade.add(member);
+            putBack(entry, member);
+          }
           lifted.set(record.carries ?? record.id, back);
           break;
         }
@@ -357,7 +370,7 @@ export function replay(
         deletes.push({
           id: record.id,
           ...(record.carries ? { from: record.carries } : {}),
-          putBackBy: new Set(),
+          putBackBy: new Map(),
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
@@ -381,19 +394,17 @@ export function replay(
         deletes = deletes.filter((entry) => !took.entries.includes(entry));
         for (const entry of took.entries) entry.putBackBy.clear();
         node.arrivedAt = index;
-        if (again)
-          for (const [entry, member] of again.members) {
-            entry.cascade.delete(member);
-            took.members.push([entry, member]);
-          }
+        const takeOut = (entry: DeleteInForce, member: string) => {
+          entry.cascade.delete(member);
+          for (const nodes of entry.putBackBy.values()) nodes.delete(member);
+          took.members.push([entry, member]);
+        };
+        if (again) for (const [entry, member] of again.members) takeOut(entry, member);
         else if (record.undoes === undefined)
           for (const entry of deletes) {
             if (!isAncestor(entry.node, record.node)) continue;
             for (const member of [...entry.cascade])
-              if (member === record.node || isAncestor(record.node, member)) {
-                entry.cascade.delete(member);
-                took.members.push([entry, member]);
-              }
+              if (member === record.node || isAncestor(record.node, member)) takeOut(entry, member);
           }
         lifted.set(record.carries ?? record.id, took);
         break;
@@ -588,6 +599,9 @@ function derive(
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
     ordered.set(parent, kids.map((kid) => out.get(kid.id) as TreeNode).sort(byRankThenId));
+  const inTrash = deletes.filter(
+    (entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged,
+  );
   return {
     nodes: out,
     setters,
@@ -595,15 +609,19 @@ function derive(
     skipped,
     rescued,
     gone,
-    trash: deletes
-      .filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged)
-      .map((entry) => ({
-        id: entry.id,
-        ...(entry.from ? { from: entry.from } : {}),
-        ...(entry.putBackBy.size > 0 ? { putBackBy: [...entry.putBackBy] } : {}),
-        node: entry.node,
-        cascade: [...entry.cascade],
-      })),
+    trash: inTrash.map((entry) => ({
+      id: entry.id,
+      ...(entry.from ? { from: entry.from } : {}),
+      node: entry.node,
+      cascade: [...entry.cascade],
+    })),
+    standingDeletes: new Set(
+      inTrash.flatMap((entry) => [
+        entry.id,
+        entry.from ?? entry.id,
+        ...[...entry.putBackBy].flatMap(([root, put]) => (put.size > 0 ? [root] : [])),
+      ]),
+    ),
   };
 }
 

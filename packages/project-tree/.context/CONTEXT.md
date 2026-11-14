@@ -79,9 +79,10 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
   replay keeps what each restore lifted): the entry is the original delete again, so its Undo and
   `restoreEntry` reach it, and a restore that takes that Undo back lifts them again. That
-  opposite delete is not itself a Trash entry, so each entry it put back names it in `putBackBy`
-  (until a restore lifts the entry again), and the delete is undoable while one such entry stands:
-  a Redo of a Redo's Undo, and so on round, works every time.
+  opposite delete is not itself a Trash entry, so the projection's `standingDeletes` also holds
+  its root id while it stands for something it put back: an entry, or a member of a folder's
+  cascade (a restore of one chapter out of a deleted folder), until a restore lifts that again.
+  A Redo of a Redo's Undo, and so on round, works every time.
 - **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
   record in force there is live (a drafted change an Apply landed), the opposite record goes to
   live. Its `draft` says which. No caller retries in another view.
