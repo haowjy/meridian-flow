@@ -93,7 +93,11 @@ and remain quarantined until their retryable destroy ledger succeeds.
   moves blocks writes the move as a delete and an insert of the moved nodes
   (`moveTableRow` in `table-operations.ts`), never as a rebuilt parent: a
   rebuilt table tells the binding nothing about which row moved, and a tie can
-  re-create the row a collaborator is typing in. Stock y-tiptap pairs by position and
+  re-create the row a collaborator is typing in. The rule holds under a parent
+  with an id (and the document); a table cell has none, so a cell's paragraphs
+  still pair by position as in stock y-tiptap. A column move or an Enter inside a
+  cell can move a paragraph's element to its neighbour, keeping the text but in
+  the wrong cell, until cells get ids (#1541). Stock y-tiptap pairs by position and
   child equality: Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
