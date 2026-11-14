@@ -20,7 +20,7 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c360d9c99 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..83dc9e239363fea2a4b55a73f75afda1d81e0197 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
 @@ -211,6 +211,45 @@ const ySyncPlugin = (yXmlFragment, {
@@ -327,7 +327,20 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1334,19 +1421,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1311,6 +1398,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+     throw new Error('node name mismatch!')
+   }
+   meta.mapping.set(yDomFragment, pNode);
++  // Children pair by block id only under a parent that stays the same block (or the document).
++  // A table cell has no id, so cells pair by position; a container a column move rewrote in
++  // place as another block is not the same block either. Pairing by id there would delete the
++  // children that crossed, with a peer's text; positional pairing keeps it (as stock y-tiptap).
++  const keyed = !(yDomFragment instanceof Y__namespace.XmlElement) ||
++    (yDomFragment.getAttribute('id') != null && yDomFragment.getAttribute('id') === pNode.attrs.id);
+   // update attributes
+   if (yDomFragment instanceof Y__namespace.XmlElement) {
+     const yDomAttrs = yDomFragment.getAttributes();
+@@ -1334,19 +1427,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -355,7 +368,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
        } else {
          break
        }
-@@ -1356,15 +1447,20 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1356,15 +1453,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -370,15 +383,11 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
        }
      }
    }
-+  // Children pair by block id only under a parent that is itself a block (or the document):
-+  // a table cell has no id, so cells pair by position, and a paragraph that crossed cells (a
-+  // column move) is rewritten in place as stock y-tiptap does, never deleted with a peer's text.
-+  const keyed = !(yDomFragment instanceof Y__namespace.XmlElement) || yDomFragment.getAttribute('id') != null;
 +  const paired = pairByBlockId(yChildren, pChildren, left, yChildCnt - right, pChildCnt - right, meta);
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1372,16 +1468,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1372,16 +1470,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -420,7 +429,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1427,33 +1545,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1427,33 +1547,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -465,7 +474,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
      }
    }, ySyncPluginKey);
  };
-@@ -1466,6 +1586,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1466,6 +1588,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -560,7 +569,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1797,6 +2005,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +2007,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -604,7 +613,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2596,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2598,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -654,7 +663,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
        }
      }
    }
-@@ -2388,6 +2645,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2647,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -663,7 +672,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..61a68727818f4efac512d736b13aff3c
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c06ca2c17 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..6c59594a9bb7fd6d94c782fbb86c42c09c5b4b08 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
 @@ -177,6 +177,45 @@ const ySyncPlugin = (yXmlFragment, {
@@ -970,7 +979,20 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1300,19 +1387,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1277,6 +1364,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+     throw new Error('node name mismatch!')
+   }
+   meta.mapping.set(yDomFragment, pNode);
++  // Children pair by block id only under a parent that stays the same block (or the document).
++  // A table cell has no id, so cells pair by position; a container a column move rewrote in
++  // place as another block is not the same block either. Pairing by id there would delete the
++  // children that crossed, with a peer's text; positional pairing keeps it (as stock y-tiptap).
++  const keyed = !(yDomFragment instanceof Y.XmlElement) ||
++    (yDomFragment.getAttribute('id') != null && yDomFragment.getAttribute('id') === pNode.attrs.id);
+   // update attributes
+   if (yDomFragment instanceof Y.XmlElement) {
+     const yDomAttrs = yDomFragment.getAttributes();
+@@ -1300,19 +1393,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -998,7 +1020,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
        } else {
          break
        }
-@@ -1322,15 +1413,20 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1322,15 +1419,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -1013,15 +1035,11 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
        }
      }
    }
-+  // Children pair by block id only under a parent that is itself a block (or the document):
-+  // a table cell has no id, so cells pair by position, and a paragraph that crossed cells (a
-+  // column move) is rewritten in place as stock y-tiptap does, never deleted with a peer's text.
-+  const keyed = !(yDomFragment instanceof Y.XmlElement) || yDomFragment.getAttribute('id') != null;
 +  const paired = pairByBlockId(yChildren, pChildren, left, yChildCnt - right, pChildCnt - right, meta);
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1338,16 +1434,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1338,16 +1436,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -1063,7 +1081,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1393,33 +1511,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1393,33 +1513,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -1108,7 +1126,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
      }
    }, ySyncPluginKey);
  };
-@@ -1432,6 +1552,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1432,6 +1554,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -1203,7 +1221,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1763,6 +1971,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +1973,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -1247,7 +1265,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..06985541af39f930df606f0716ae320c
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2562,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2564,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
