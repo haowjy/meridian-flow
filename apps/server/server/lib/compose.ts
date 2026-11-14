@@ -184,11 +184,9 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
-  createDrizzleObservationFrontiers,
   createDrizzlePermissionGrantStore,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
-  createDrizzleShownLinkStore,
   createDrizzleThreadLock,
   createInMemoryInbox,
   createInMemoryRunClaim,
@@ -213,7 +211,6 @@ import {
   type DeliveryProducer,
   type DocumentCommands,
   InvalidAdmissionError,
-  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -221,7 +218,6 @@ import {
   readChainPermission,
   readRunStateAtHead,
   requireWritableThread,
-  type ShownLinkStore,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -442,11 +438,9 @@ export type ProductionAppPorts = {
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
-  shownLinks: ShownLinkStore;
   /** The removal record behind a missing file the model asked for. */
   documentRemovals: DocumentRemovals;
   /** What each transcript block showed the model of a document, per room. */
-  observationFrontiers: ObservationFrontiers;
 };
 
 /** Max threads one wake sweep starts; the sweep repeats on its interval. */
@@ -773,9 +767,7 @@ export async function createProductionAppPorts(input: {
     notices,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
-    shownLinks: createDrizzleShownLinkStore(db),
     documentRemovals: createRemovalRecords(db),
-    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -920,7 +912,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
-    shownLinks: ports.shownLinks,
+    shownLinks: ports.documentSync.modelEvidence(),
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
   };
@@ -991,6 +983,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -1164,8 +1157,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
-    shownLinks: ports.shownLinks,
-    observationFrontiers: ports.observationFrontiers,
+    documentEvidence: ports.documentSync.modelEvidence(),
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,

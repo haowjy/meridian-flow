@@ -1325,96 +1325,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.observation_frontiers": {
-      "name": "observation_frontiers",
-      "schema": "",
-      "columns": {
-        "source_block_id": {
-          "name": "source_block_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "room_key": {
-          "name": "room_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "snapshot": {
-          "name": "snapshot",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "journal_position": {
-          "name": "journal_position",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "recorded_seq": {
-          "name": "recorded_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "identity": {
-            "type": "always",
-            "name": "observation_frontiers_recorded_seq_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        }
-      },
-      "indexes": {
-        "observation_frontiers_room_latest": {
-          "name": "observation_frontiers_room_latest",
-          "columns": [
-            {
-              "expression": "room_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "recorded_seq",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "observation_frontiers_source_block_id_turn_blocks_id_fk": {
-          "name": "observation_frontiers_source_block_id_turn_blocks_id_fk",
-          "tableFrom": "observation_frontiers",
-          "tableTo": "turn_blocks",
-          "columnsFrom": [
-            "source_block_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.project_handle_counters": {
       "name": "project_handle_counters",
       "schema": "",
@@ -2447,115 +2357,6 @@
         "thread_run_leases_phase_valid": {
           "name": "thread_run_leases_phase_valid",
           "value": "\"thread_run_leases\".\"phase\" IN ('generating','waiting','compacting')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.thread_shown_links": {
-      "name": "thread_shown_links",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ref": {
-          "name": "ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "address": {
-          "name": "address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "holder_uri": {
-          "name": "holder_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "view": {
-          "name": "view",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "showing_digest": {
-          "name": "showing_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigserial",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "thread_shown_links_thread_id_threads_id_fk": {
-          "name": "thread_shown_links_thread_id_threads_id_fk",
-          "tableFrom": "thread_shown_links",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_shown_links_document_id_documents_id_fk": {
-          "name": "thread_shown_links_document_id_documents_id_fk",
-          "tableFrom": "thread_shown_links",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_shown_links_pk": {
-          "name": "thread_shown_links_pk",
-          "columns": [
-            "thread_id",
-            "document_id",
-            "showing_digest",
-            "turn_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "thread_shown_links_digest_valid": {
-          "name": "thread_shown_links_digest_valid",
-          "value": "\"thread_shown_links\".\"showing_digest\" ~ '^[0-9a-f]{64}$'"
         }
       },
       "isRLSEnabled": false
@@ -8735,6 +8536,269 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.observation_frontiers": {
+      "name": "observation_frontiers",
+      "schema": "",
+      "columns": {
+        "source_block_id": {
+          "name": "source_block_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "room_key": {
+          "name": "room_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "journal_position": {
+          "name": "journal_position",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_seq": {
+          "name": "recorded_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "observation_frontiers_recorded_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        }
+      },
+      "indexes": {
+        "observation_frontiers_room_latest": {
+          "name": "observation_frontiers_room_latest",
+          "columns": [
+            {
+              "expression": "room_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "observation_frontiers_thread": {
+          "name": "observation_frontiers_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "observation_frontiers_project": {
+          "name": "observation_frontiers_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "observation_frontiers_project_id_projects_id_fk": {
+          "name": "observation_frontiers_project_id_projects_id_fk",
+          "tableFrom": "observation_frontiers",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.thread_shown_links": {
+      "name": "thread_shown_links",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "holder_uri": {
+          "name": "holder_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "view": {
+          "name": "view",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "showing_digest": {
+          "name": "showing_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigserial",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "thread_shown_links_project": {
+          "name": "thread_shown_links_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "thread_shown_links_project_id_projects_id_fk": {
+          "name": "thread_shown_links_project_id_projects_id_fk",
+          "tableFrom": "thread_shown_links",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_shown_links_document_id_documents_id_fk": {
+          "name": "thread_shown_links_document_id_documents_id_fk",
+          "tableFrom": "thread_shown_links",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_shown_links_pk": {
+          "name": "thread_shown_links_pk",
+          "columns": [
+            "thread_id",
+            "document_id",
+            "showing_digest",
+            "turn_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "thread_shown_links_digest_valid": {
+          "name": "thread_shown_links_digest_valid",
+          "value": "\"thread_shown_links\".\"showing_digest\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.user_recent_documents": {

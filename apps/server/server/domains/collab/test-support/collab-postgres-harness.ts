@@ -32,6 +32,7 @@ import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-comm
 import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
+import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
@@ -403,36 +404,42 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         liveRoom: liveRoom(documentId, authority.generation),
       });
     });
-  const modelEdits = createDrizzleModelEdits(db, {
-    write: scopeModelEditWrite(
-      createModelEditWriter({
-        liveCore: runtime.liveUtilityCore,
-        threadCore,
-        branches: workBranches,
-        fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-        enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
-        enterDraftSeam: async () => {
-          await lockSeamWorks(db, []);
-        },
-        ensureWorkDraft,
-        lockDraft: async (draftId) => {
-          await currentDrizzleDb(db)
-            .select({ id: schema.documentDrafts.id })
-            .from(schema.documentDrafts)
-            .where(eq(schema.documentDrafts.id, draftId))
-            .for("update");
-        },
-        roomsOf: async (documentId) => ({
-          liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
-          drafts: await draftStore.listWorkDraftStates(documentId),
+  const modelEvidence = createDrizzleModelEvidence(db);
+  const modelEdits = createDrizzleModelEdits(
+    db,
+    {
+      write: scopeModelEditWrite(
+        createModelEditWriter({
+          evidence: modelEvidence,
+          liveCore: runtime.liveUtilityCore,
+          threadCore,
+          branches: workBranches,
+          fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
+          enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
+          enterDraftSeam: async () => {
+            await lockSeamWorks(db, []);
+          },
+          ensureWorkDraft,
+          lockDraft: async (draftId) => {
+            await currentDrizzleDb(db)
+              .select({ id: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
+              .where(eq(schema.documentDrafts.id, draftId))
+              .for("update");
+          },
+          roomsOf: async (documentId) => ({
+            liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
+            drafts: await draftStore.listWorkDraftStates(documentId),
+          }),
+          afterLiveCommit: (documentId) =>
+            deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
         }),
-        afterLiveCommit: (documentId) =>
-          deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
-      }),
-      links,
-    ),
-    catchUp: (documentId) => draftPulls.flushLivePull(documentId),
-  });
+        links,
+      ),
+      catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+    },
+    modelEvidence,
+  );
   const readAuthorityGeneration = createDrizzleAuthorityGenerationReader(db);
   const turnInverse = createDrizzleTurnInverseService({
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),

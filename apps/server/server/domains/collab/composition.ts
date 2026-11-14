@@ -73,6 +73,7 @@ import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-j
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
+import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -348,7 +349,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.links,
   );
 
+  const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
+    evidence: modelEvidence,
     liveCore: runtime.liveUtilityCore,
     threadCore,
     branches: workBranches,
@@ -383,10 +386,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     afterLiveCommit: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
   });
-  const modelEdits = createDrizzleModelEdits(deps.db, {
-    write: scopeModelEditWrite(modelEditWrite, deps.links),
-    catchUp: (documentId) => draftPulls.flushLivePull(documentId),
-  });
+  const modelEdits = createDrizzleModelEdits(
+    deps.db,
+    {
+      write: scopeModelEditWrite(modelEditWrite, deps.links),
+      catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+    },
+    modelEvidence,
+  );
 
   const draftAheads = createDraftAheadRegistration({
     drafts: draftCoordinator,
@@ -618,6 +625,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     agentEdit: {
       agentEdit: () => agentEdit,
       modelEdits: () => modelEdits,
+      modelEvidence: () => modelEvidence,
       treeHistory: () => treeHistory,
     },
     reversal: turnReversal,

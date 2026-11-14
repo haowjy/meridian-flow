@@ -159,6 +159,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       modelEdits: () => {
         throw new Error("Model edits require the command-backed Postgres adapter");
       },
+      modelEvidence: () => {
+        throw new Error("Model evidence requires the Postgres adapter");
+      },
       treeHistory: () => {
         throw new Error("Tree history requires the receipt-backed Postgres adapter");
       },

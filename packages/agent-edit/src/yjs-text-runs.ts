@@ -10,21 +10,6 @@ import * as Y from "yjs";
 
 type Attrs = Record<string, unknown>;
 
-/** A block's children with each maximal sequence of adjacent texts as one array. */
-export function groupChildren(
-  parent: Y.XmlElement | Y.XmlFragment,
-): Array<Y.XmlText[] | Y.XmlElement> {
-  const groups: Array<Y.XmlText[] | Y.XmlElement> = [];
-  for (const child of parent.toArray()) {
-    const last = groups.at(-1);
-    if (child instanceof Y.XmlText) {
-      if (Array.isArray(last)) last.push(child);
-      else groups.push([child]);
-    } else if (child instanceof Y.XmlElement) groups.push(child);
-  }
-  return groups;
-}
-
 /** The `Y.Text` calls the writers use, over a run's texts as if they were one. */
 export class TextRun {
   constructor(readonly texts: readonly Y.XmlText[]) {

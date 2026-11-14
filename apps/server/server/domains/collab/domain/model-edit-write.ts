@@ -22,18 +22,18 @@ import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
-import type {
-  LiveAgentEditCore,
-  RoutedWriteContext,
-  RoutedWriteOutcome,
-} from "./agent-edit-cores.js";
+import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
-import type { ModelEdits } from "./model-edit.js";
+import type { ModelEdits, ModelEditWriteContext } from "./model-edit.js";
+import type { ModelEvidence } from "./model-evidence.js";
 import { draftRoom } from "./observation-rooms.js";
 import { projectedFrontiers } from "./seed-frontier.js";
+
+/** A write's context without its grant, which the router takes apart. */
+type GivenContext = Omit<ModelEditWriteContext, "grant">;
 
 /** What a model edit's write needs from the rest of collab; the seams here are the adapters'. */
 export type ModelEditWriteDeps = {
@@ -55,6 +55,8 @@ export type ModelEditWriteDeps = {
     liveRoom: string | null;
     drafts: readonly { draftId: string; status: string }[];
   }>;
+  /** What the model last saw, among the blocks the runtime names. */
+  evidence: Pick<ModelEvidence, "latestRoom">;
   /** Runs once the command's transaction commits. */
   afterLiveCommit(documentId: DocumentId): void;
 };
@@ -63,14 +65,14 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   /** The model last saw a Work draft that has since closed: it has to read again. */
   async function sawClosedDraft(
     documentId: DocumentId,
-    frontiers: WriteContext["frontiers"],
+    creditedBlockIds: readonly string[] | undefined,
   ): Promise<boolean> {
-    if (!frontiers?.latestRoom) return false;
+    if (!creditedBlockIds) return false;
     const { liveRoom: live, drafts } = await deps.roomsOf(documentId);
-    const latest = await frontiers.latestRoom([
-      ...(live ? [live] : []),
-      ...drafts.map((draft) => draftRoom(draft.draftId)),
-    ]);
+    const latest = await deps.evidence.latestRoom(
+      [...(live ? [live] : []), ...drafts.map((draft) => draftRoom(draft.draftId))],
+      creditedBlockIds,
+    );
     const seen = drafts.find((draft) => draftRoom(draft.draftId) === latest);
     return seen?.status === "closed";
   }
@@ -82,13 +84,13 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
 
   async function live(
     command: WriteCommand,
-    given: WriteContext,
+    given: GivenContext,
     documentId: DocumentId | null,
   ): Promise<WriteOutcome> {
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
-      if (await sawClosedDraft(documentId, given.frontiers)) return discardedWrite(command);
+      if (await sawClosedDraft(documentId, given.creditedBlockIds)) return discardedWrite(command);
     }
     const outcome = await deps.liveCore.write(command, {
       ...given,
@@ -101,7 +103,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
 
   async function draft(
     command: WriteCommand,
-    given: WriteContext,
+    given: GivenContext,
     documentId: DocumentId | null,
     grant: FileGrant<"edit">,
     owner: DraftOwner,
@@ -119,7 +121,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     if (!documentId)
       return threadCoreFor(given).write(command, { ...given, linkView, documentVersion: "draft" });
     const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id });
-    if (await sawClosedDraft(documentId, given.frontiers)) return discardedWrite(command);
+    if (await sawClosedDraft(documentId, given.creditedBlockIds)) return discardedWrite(command);
     await deps.lockDraft(workDraft.draftId);
     await testHook("command.afterLock");
     return threadCoreFor(given).write(command, {
@@ -133,7 +135,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     });
   }
 
-  return (command, routed: RoutedWriteContext): Promise<RoutedWriteOutcome> => {
+  return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
     const inverse =

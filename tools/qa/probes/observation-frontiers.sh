@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dump observation_frontiers joined to their source turn_blocks.
+# Dump observation_frontiers, with their source turn_blocks where the block is stored.
 # Run from the repo root of the checkout to read; queries go through `tools/dev/psql`.
 # Optional $1: a thread UUID, or a room_key prefix (`live:` / `draft:`).
 set -euo pipefail
@@ -18,7 +18,7 @@ where = ""
 if filter_arg.startswith("live:") or filter_arg.startswith("draft:"):
     where = f" WHERE of.room_key LIKE {sql_literal(filter_arg + '%')}"
 elif filter_arg:
-    where = f" WHERE t.thread_id = {sql_literal(filter_arg)}::uuid"
+    where = f" WHERE of.thread_id = {sql_literal(filter_arg)}::uuid"
 
 sql = f"""
 SELECT
@@ -28,11 +28,10 @@ SELECT
   of.journal_position,
   length(of.snapshot) AS snap_bytes,
   tb.turn_id,
-  t.thread_id,
+  of.thread_id,
   left(coalesce(tb.content->>'output', ''), 80) AS output_head
 FROM observation_frontiers of
-JOIN turn_blocks tb ON tb.id = of.source_block_id
-JOIN turns t ON t.id = tb.turn_id
+LEFT JOIN turn_blocks tb ON tb.id = of.source_block_id
 {where}
 ORDER BY of.recorded_seq;
 """

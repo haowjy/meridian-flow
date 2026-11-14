@@ -19,16 +19,18 @@ export async function modelWrite(
     accountId: (who?.accountId ?? context.grant.principal.accountId) as never,
     projectId: (who?.projectId ?? context.grant.facts.projectId) as never,
   };
-  const { evidence } = await modelEdits.run({
+  let written: RoutedWriteOutcome | undefined;
+  await modelEdits.run({
     key,
+    owner: { threadId: context.threadId as string, turnId: context.turnId as string },
     signal: new AbortController().signal,
     async effect() {
-      const written = await modelEdits.write(command, context);
+      written = await modelEdits.write(command, context);
       return {
         toolResult: { toolCallId: key.toolCallId, content: [], result: { status: written.status } },
-        evidence: written,
       };
     },
   });
-  return evidence as RoutedWriteOutcome;
+  if (!written) throw new Error("A model write returned no outcome");
+  return written;
 }

@@ -33,9 +33,9 @@ arrivals. Prepared `elisions` and settled summarizer telemetry both reach
 
 Selection, budget and evidence rules are in [ranked re-show][kb-reshow]. Each
 admitted read persists on C as a reference snapshot, and the projector keeps those
-block ids, so completion records shown links and observation frontiers against the
-exact blocks the model receives. Only the winning completion transaction records
-them; a retried successor preparation reads again.
+block ids, so completion hands the document side the shown links and observation frontiers of
+the exact blocks the model receives, in its transaction. Only the winning completion
+records them; a retried successor preparation reads again.
 
 ## Projection
 

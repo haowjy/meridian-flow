@@ -231,7 +231,7 @@ An undo, redo or revert records in the room its inverse committed into
 given `recordingFrontier`, records each saved document in the room the save
 committed into (the draft adapter's `prepareSave` room, or the live room under
 the save's lock) at the save's after-state. `format: "edits"` reads record none.
-See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
 A draft-mode access whose bound peer a Discard took is named, not failed:
 `peerLossReason` (`domain/draft-pulls.ts`) classifies it in the save fence's

@@ -26,8 +26,8 @@ import type {
 import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts/threads";
 import type { ModelInfo, Tool } from "@meridian-flow/gateway";
 import type { z } from "zod";
-import type { FrontierLookups } from "../ports/observation-frontiers.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
+import type { ResultEvidence } from "../../../shared/model-evidence.js";
+import type { FrontierLookups } from "../ports/document-evidence.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
@@ -134,15 +134,7 @@ export interface ToolExecutionResult {
   blockId?: string;
 }
 
-/**
- * Host-only: what one result showed the model. Shown-link candidates record
- * under the turn, the frontier on the block that persists the result
- * (contract §7.1).
- */
-export interface ResultEvidence {
-  shown: readonly ShownLinkShowing[];
-  frontier?: ObservationFrontier;
-}
+export type { ResultEvidence };
 
 /**
  * The executor port: dispatches tool calls to registered handlers.

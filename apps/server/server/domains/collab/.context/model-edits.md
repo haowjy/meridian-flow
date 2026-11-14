@@ -21,3 +21,12 @@ The edit holds its document's lock while it plans, so a second connection waitin
 | `runInRootDrizzleReadSnapshot` in the model undo's capture and in address resolution | join the command transaction |
 
 Receipts (`document_edits.command_id`) take the id from `bindEditsToCommand`, bound by `run`, so text and tree receipts of one command share it without each writer passing it.
+
+## What the model was shown
+
+`modelEvidence()` (`ModelEvidence`) keeps `observation_frontiers` and `thread_shown_links`; the runtime reaches it through its `DocumentEvidence` port, and its own transactions write none of it.
+
+- An edit's effect returns its evidence, and `run` records it inside the command, under `modelEditIds(key).blockId` and the call's thread and turn. A refused edit records none; what its answer showed rides back in memory like a read's, and the runtime hands it on once the block is stored. A crash after the commit or a timeout loses nothing.
+- A read's evidence is handed over with `resultStored` after the runtime stores the block. Only a returned value is handed on, so a handler that outlived its timeout attaches nothing.
+- The closed-draft admission rule asks collab's own `latestRoom`, among the block ids the runtime names in `creditedBlockIds`. The runtime's other lookups (`recording`, `planning`) go through the port limited to the same kind of block ids.
+- `forgetThreads` deletes both tables' rows for the threads a Work purge removes; `project_id` cascades a deleted project.

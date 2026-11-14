@@ -253,7 +253,9 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
-        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
+        ...(ctx.frontiers
+          ? { frontiers: ctx.frontiers, creditedBlockIds: ctx.frontiers.credited() }
+          : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -648,6 +650,7 @@ function effectSettler(
   return async (effect): Promise<ModelEditHandlerResult> => {
     const { outcome, evidence } = await deps.documentSync.modelEdits().run({
       key: edit.key,
+      owner: { threadId: ctx.threadId, turnId: ctx.turnId },
       signal: ctx.signal,
       async effect() {
         const raw = await effect();
