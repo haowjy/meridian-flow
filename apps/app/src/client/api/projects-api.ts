@@ -8,6 +8,7 @@
  * state (that's React Query).
  */
 
+import type { CommandBody } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextSourcesResult,
@@ -77,6 +78,11 @@ type RequestInitOptions = {
   signal?: AbortSignal;
 };
 
+/** A command's body carries a fresh id per request, minted here once the caller has decided to send. */
+function withCommandId<T extends object>(data: T): CommandBody<T> {
+  return { ...data, commandId: crypto.randomUUID() };
+}
+
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -140,7 +146,7 @@ export function createProjectWork(
   data: CreateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
+  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), withCommandId(data), {
     headers: init?.headers,
     schema: workSchema,
     signal: init?.signal,
@@ -152,7 +158,7 @@ export function updateWork(
   data: UpdateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, {
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), withCommandId(data), {
     headers: init?.headers,
     schema: workSchema,
     signal: init?.signal,
@@ -160,31 +166,34 @@ export function updateWork(
 }
 
 export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/archive`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/archive`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 export function unarchiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/unarchive`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/unarchive`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 export function deleteWork(workId: string, init?: RequestInitOptions): Promise<void> {
-  return deleteRequest(urlFor(`/api/works/${workId}`, init), { signal: init?.signal });
+  return deleteRequest(urlFor(`/api/works/${workId}`, init), {
+    body: withCommandId({}),
+    signal: init?.signal,
+  });
 }
 
 export function restoreWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/restore`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/restore`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 /** Reading an owned project also completes idempotent default-package seeding. */
@@ -265,7 +274,7 @@ export async function createProject(
   data: CreateProjectRequest,
   init?: RequestInitOptions,
 ): Promise<CreateProjectResponse> {
-  return postJson<CreateProjectResponse>(urlFor(API_PROJECTS_PATH, init), data, {
+  return postJson<CreateProjectResponse>(urlFor(API_PROJECTS_PATH, init), withCommandId(data), {
     headers: init?.headers,
   });
 }

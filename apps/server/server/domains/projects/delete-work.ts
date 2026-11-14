@@ -17,15 +17,25 @@ type DeleteDeps = {
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
 
+/**
+ * One attempt, in the caller's transaction. `WorkDeleteRetryError` means the tree changed under
+ * the lock: the attempt's transaction must roll back before the next one (`deleteWorkTransition`
+ * for a caller that owns the transaction; a command wraps its own).
+ */
+export async function softDeleteWork(
+  deps: DeleteDeps,
+  workId: WorkId,
+): Promise<DeleteWorkTransition> {
+  // The tree's runs and subagent lineages end in this same transaction.
+  const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
+  return { before, after, changed: !!after?.deletedAt && !before?.deletedAt };
+}
+
 export async function deleteWorkTransition(
   deps: DeleteDeps,
   workId: WorkId,
 ): Promise<DeleteWorkTransition> {
-  return runWorkLifecycleCommand(deps.works.transaction, async () => {
-    // The tree's runs and subagent lineages end in this same transaction.
-    const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
-    return { before, after, changed: !!after?.deletedAt && !before?.deletedAt };
-  });
+  return runWorkLifecycleCommand(deps.works.transaction, () => softDeleteWork(deps, workId));
 }
 
 export async function restoreWork(deps: LifecycleDeps, workId: WorkId): Promise<Work> {

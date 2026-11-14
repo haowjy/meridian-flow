@@ -5,13 +5,16 @@
  * - independent archive and deletion axes, serialized restore, retention, and database-first purge (kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material)
  */
 
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import type { CommandId } from "@meridian/contracts";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { LIVE } from "@meridian/project-tree";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createCommandStore } from "../../shared/commands/drizzle-commands.js";
 import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
@@ -138,6 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("returns coded PATCH refusals for archived and deleted Works", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "PATCH lifecycle" });
       const deps = {
+        commands: createCommandStore(db),
         works,
         projects,
         workContextNotices: { async workChanged() {} },
@@ -162,6 +166,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         codeFrom(
           updateWorkMetadataForWriter(deps, {
+            commandId: randomUUID() as CommandId,
             workId: work.id,
             userId: USER_ID,
             goal: "Blocked",
@@ -174,6 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         codeFrom(
           updateWorkMetadataForWriter(deps, {
+            commandId: randomUUID() as CommandId,
             workId: work.id,
             userId: USER_ID,
             goal: "Gone",

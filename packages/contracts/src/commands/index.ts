@@ -1,8 +1,12 @@
 /** The command record's wire contracts: one id per request, one stored outcome per id. */
 import { z } from "zod";
+import type { CommandId } from "../ids.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const CommandIdSchema = z.string().uuid();
+
+/** A request body that is a command: the sender's fields plus the id it minted once. */
+export type CommandBody<T extends object = object> = T & { commandId: CommandId };
 
 /** Which kind of command a `commandId` was recorded for. */
 export const COMMAND_KINDS = [

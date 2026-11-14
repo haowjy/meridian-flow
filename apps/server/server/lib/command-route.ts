@@ -1,5 +1,5 @@
 /** The command record's HTTP doors. */
-import type { CommandId, UserId } from "@meridian/contracts";
+import type { CommandId, ProjectId, UserId } from "@meridian/contracts";
 import {
   COMMAND_CONFLICT_CODE,
   COMMAND_KINDS,
@@ -10,8 +10,15 @@ import {
 } from "@meridian/contracts/commands";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
+import {
+  type CommandEnvelope,
+  CommandExistsError,
+  commandDigest,
+  replay,
+} from "../shared/commands/command-record.js";
 import type { CommandStore } from "../shared/commands/drizzle-commands.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
+import { requireRequestId } from "./request-id.js";
 
 /**
  * GET /api/commands/:id: what a command settled as, never a guess from the list. Another
@@ -49,14 +56,82 @@ export async function handleCommandResolve(
     accountId: input.userId,
     kind: kind as CommandKind,
   });
-  if (found.kind !== "stored")
-    return throwHttpInterrupt(
-      meridianErrorFromSystem(
-        COMMAND_CONFLICT_CODE,
-        "That command id was used for a different command",
-        false,
-      ),
-      409,
-    );
+  if (found.kind !== "stored") return throwCommandConflict();
   return { commandId, outcome: found.outcome };
+}
+
+function throwCommandConflict(): never {
+  return throwHttpInterrupt(
+    meridianErrorFromSystem(
+      COMMAND_CONFLICT_CODE,
+      "That command id was used for a different command",
+      false,
+    ),
+    409,
+  );
+}
+
+/**
+ * Splits a request body into its command id and the rest, which is what the command's digest
+ * covers: a resend under the id must carry the same rest.
+ */
+export function splitCommandBody(raw: unknown): {
+  commandId: CommandId;
+  body: Record<string, unknown>;
+} {
+  const { commandId, ...body } = (raw ?? {}) as Record<string, unknown>;
+  return { commandId: requireRequestId(commandId, "commandId") as CommandId, body };
+}
+
+/**
+ * Runs a request that changes state as a command: the claim is the first write of the
+ * transaction that makes the change, and a resend under the id answers the stored result
+ * without running again. `refusal` names the causes inside the effect that are a final answer.
+ * A cause that is not one, and a request turned away before this call, store nothing.
+ */
+export async function runRouteCommand<R extends { status: "done" | "refused" }>(
+  store: CommandStore,
+  input: {
+    commandId: CommandId;
+    userId: UserId;
+    projectId: ProjectId;
+    kind: CommandKind;
+    selectors?: Record<string, string | null>;
+    body: unknown;
+  },
+  effect: () => Promise<R>,
+  refusal: (cause: unknown) => R | undefined,
+): Promise<R> {
+  const envelope: CommandEnvelope = {
+    commandId: input.commandId,
+    accountId: input.userId,
+    projectId: input.projectId,
+    kind: input.kind,
+    digest: commandDigest({
+      accountId: input.userId,
+      projectId: input.projectId,
+      kind: input.kind,
+      selectors: input.selectors ?? {},
+      body: input.body,
+    }),
+  };
+  try {
+    return await store.run(envelope, effect, {
+      outcomeOf: (result) => result.status,
+      refusal,
+    });
+  } catch (cause) {
+    if (!(cause instanceof CommandExistsError)) throw cause;
+    const stored = replay<R>(
+      await store.lookup({
+        commandId: input.commandId,
+        accountId: input.userId,
+        digest: envelope.digest,
+      }),
+      input.commandId,
+    );
+    if (stored === null) throw cause;
+    if (stored.status === "conflict") return throwCommandConflict();
+    return stored;
+  }
 }

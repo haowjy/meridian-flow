@@ -295,7 +295,7 @@ export {
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
-export { deleteWorkTransition, restoreWork } from "./delete-work.js";
+export { deleteWorkTransition, restoreWork, softDeleteWork } from "./delete-work.js";
 export { listWorkCatalog } from "./list-work-catalog.js";
 export type {
   CreateProjectInput,
