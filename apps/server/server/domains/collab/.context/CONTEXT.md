@@ -476,15 +476,33 @@ background rebases keep archived drafts current. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
-Only hidden typing under a top-level block whose deletion is certified by a
-server row's immutable receipt is recovered. Receipt reads happen only for
-hidden typing, selected by block id. Recovery authors another client-1 server row
-in the same append; its opaque per-draft `LateTyping` memory installs only after
-commit. Deletion-only frames advance memory without writing; a contained echo with
-existing recovery observes its deleted separators without a row hold. Deferred
-observers read latest memory at commit, and finalizers retain observations made
-during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
-never remove recovered writing. Another writer's deleted block is not recovered.
+A writer's typing that the deleter never saw is recovered, whoever deleted: a
+rebase, a peer's Discard revert, another writer or the model. Two arrival orders
+find it. Typing that arrives under a block already deleted (its parent chain
+reaches a deleted item, judged by the committed document however the update
+encodes the ancestor), and a delete that arrives after the typing and removes it
+without listing it (a deleter's delete set lists every item its own transaction
+deleted, children included, so an unlisted item was typed unseen). The typist's
+view of the text beside its words is its own frame's delete set when the typing
+arrives second, and the document before the frame when the delete does.
+
+Whose text it is comes from the journal, never from a client id or a cache. A
+frame's typing counts when the row is `writer`'s. Typing a delete removed counts
+when `DraftStore.writerText` finds the inserting row: a `writer` row, or a
+recovery row (`updateMeta.lateTyping`) in `document_edit_parts` of the draft, or
+a row of the same append not yet journaled. The model's rows and the server's
+pulls never count, and nothing is lost when the process restarts. Recovery authors another client-1 server row
+in the same append; its opaque per-draft `LateTyping` memory (spans only, to extend
+a paragraph in place) installs only after commit. A paragraph is extended by
+inserting the new characters where the typist placed them among the old ones, so
+the characters a peer saw keep their ids; paragraphs the typist's edit would join
+stay separate for the same reason. Deletion-only frames advance memory
+without writing; a contained echo with existing recovery observes its deleted
+separators without a row hold. Deferred observers read latest memory at commit
+(`retainLateTypingDeletions` keeps the kernel's memory bound). Stale backspaces
+never remove recovered writing. Losses that stay are under Known losses in
+[content-merge](../../../../../../packages/agent-edit/.context/content-merge.md);
+live rooms have no recovery: see TODO.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row

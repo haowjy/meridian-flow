@@ -196,13 +196,17 @@ made into its neighbour. It fires wherever ProseMirror nodes are built from Yjs.
 
 A rescue gives typed text back to its author after something else took it away. It never removes.
 
-- **Late typing**, on the server: `diff/late-peer.ts` finds typing a pull deleted or re-created
-  under it, and `diff/late-peer-recovery.ts` writes it back as paragraphs with the typist's byline
-  or none. `draft-runtime.ts` and `draft-receipts.ts` call them. The recovery returns only its own
+- **Late typing**, on the server: `diff/late-peer.ts` finds a writer's typing that a deletion
+  removed without the deleter having seen it, whoever deleted (a pull, a peer's Discard revert, another
+  writer, the model), whether the typing arrives after the deletion or the deletion after the typing
+  (the deleter's delete set lists what it deleted, so an unlisted item was typed unseen). Whose text it
+  is comes from the journal: a `writer` row, or an earlier recovery row. And `diff/late-peer-recovery.ts`
+  writes it back as paragraphs, with the typist's byline or none. `draft-runtime.ts` and `draft-receipts.ts` call them. The recovery returns only its own
   transaction's update: it never carries the binding's repair of an element the schema cannot
   build, which schema repair journals. Counted once per committed append that recovered something,
   as the `late_typing.recovered` event (source `collab.draft`) with `paragraphs` and `chars`, never
-  the words.
+  the words. Text the typist had already seen deleted, or deleted itself in the same update, is never
+  recovered. Work drafts only; live rooms have no such recovery yet (collab TODO).
 - **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
   witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
   bar's Details show it.
@@ -251,6 +255,30 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
   person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
   text under the splitter's byline.
+- Late typing recovery (Work drafts), what stays lost or doubled:
+  - Typing sent after the typist's own client already held the deletion: the client collected the
+    text (a browser doc collects deleted content), so the update carries no characters, except what
+    its undo history retains. The browser's handback is the only rescue for the rest. What the undo
+    history retains is recovered, and a word deleted and restored offline may then show twice.
+  - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
+    applied, and neither is a peer's deletion of the typist's original that it saw before the
+    recovery: a reconnect's resent delete set looks the same. The words stay and the writer deletes
+    them again.
+  - A typist who backspaced hidden typing and then received the deletion before resending a whole delete
+    set gets that typing back with it: the set lists the block, which explains every deleted character.
+  - When the typist removes the text between two recovered paragraphs, they stay two paragraphs (copying
+    one into the other would give its words new ids, so a peer that saw them would not list them); the
+    new words join the paragraph before them.
+  - After a restart in the middle of one burst of keystrokes, the word being typed splits across
+    paragraphs. A chosen tradeoff: the spans that extend a paragraph live in memory, and persisting them
+    (the recovery rows hold the ids) costs a journal read on every late frame for a cosmetic split.
+  - Two writers' words typed with no separator between them fuse in the recovered paragraph.
+  Randomised runs (3 clients typing, deleting words and paragraphs, per-keystroke, merged and
+  whole-state frames, a model client, memory loss between bursts; 500 sequences each of 25 and 70 steps
+  per setting) lost no word beyond these, brought back no word a peer deleted after seeing it, and
+  recovered no model word.
+- Typing into a live document's block that a peer or the model deletes, from a tab that was offline, is
+  swallowed (collab TODO); the Work draft case is recovered.
 - Unsent typing in a room this tab has no session for: a document or draft not open in any tab
   keeps its unsent typing only in IndexedDB, and a removal, a close or an access change clears it
   with no hand-back. So does typing from before the tab's connection began (typed offline, then

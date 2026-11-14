@@ -210,8 +210,11 @@ export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
-  /** Candidate block ids whose deletion is certified by a server row's receipt. */
-  serverDeletedBlocks(
+  /**
+   * Which of these text ids a writer's journal row or a late-typing recovery row inserted
+   * (`client:clock`): the text that stays a writer's own however later rows moved it.
+   */
+  writerText(
     draftId: string,
     ids: readonly { client: number; clock: number }[],
   ): Promise<ReadonlySet<string>>;
