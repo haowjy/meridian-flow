@@ -99,9 +99,10 @@ is refused before it is stored. A call left open by a dead process is resolved
 and stored by `loop/command-recovery.ts` when the turn is finalized
 ([recovery](recovery.md)). Cancellation has nothing to roll back.
 
-A block whose document view the model receives records its
-[observation frontier](document-text.md#observation-frontiers) in the
-transaction that persists it, in `afterEvents`, once the block row exists.
+A block whose document view the model receives has its
+[observation frontier](document-text.md#observation-frontiers) recorded by the document
+side: an edit's inside its command, a read's handed over once the block is stored. The
+runtime's transactions write only the runtime's tables.
 
 Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
 handoff settlement is outside this loop. Summary calls do not consume model

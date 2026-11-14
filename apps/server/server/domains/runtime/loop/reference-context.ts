@@ -13,11 +13,13 @@ import {
   type ReadToolInput,
   renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
+import type { ProjectId } from "@meridian/contracts";
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
-import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
+import type { ShownLinkShowing } from "../../../shared/model-evidence.js";
+import type { DocumentEvidence } from "../ports/document-evidence.js";
 import {
   type DocumentTextTreatment,
   historyReadStub,
@@ -25,7 +27,6 @@ import {
   staleReadStub,
 } from "../tools/document-text.js";
 import type { ResultEvidence } from "../tools/types.js";
-import { type FrontierRecordingDeps, recordFrontier } from "./frontier-recording.js";
 
 type ReferenceRead = { result: JsonValue; revision: string | null };
 
@@ -56,22 +57,23 @@ export interface ReferenceEvidence {
 }
 
 /**
- * Records accepted reference reads' evidence: shown links under the turn whose
- * request shows them, frontiers on each reference block. Callers run it inside
- * the commit persisting those blocks, after they are projected.
+ * Hands accepted reference reads' evidence to the document side: shown links under the turn whose
+ * request shows them, frontiers on each reference block. Callers run it inside the commit
+ * persisting those blocks, so a discarded or retried preparation records nothing.
  */
 export async function recordReferenceEvidence(
-  deps: FrontierRecordingDeps & {
-    shownLinks: Pick<ShownLinkStore, "record">;
-  },
-  threadId: string,
-  turnId: string,
+  deps: { documentEvidence: Pick<DocumentEvidence, "resultStored"> },
+  owner: { projectId: ProjectId; threadId: string; turnId: string },
   evidence: ReferenceEvidence,
 ): Promise<void> {
-  for (const showing of evidence.shown)
-    await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontier } of evidence.frontiers)
-    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
+  await deps.documentEvidence.resultStored({
+    ...owner,
+    shown: evidence.shown,
+    frontiers: evidence.frontiers.map(({ sourceBlockId, frontier }) => ({
+      blockId: sourceBlockId,
+      frontier,
+    })),
+  });
 }
 
 export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };

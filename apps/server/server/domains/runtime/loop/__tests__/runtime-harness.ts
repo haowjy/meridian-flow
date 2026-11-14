@@ -27,14 +27,13 @@ import {
   type SequencedEventInternal,
   type ThreadRepositories,
 } from "../../../threads/index.js";
+import { createInMemoryDocumentEvidence } from "../../adapters/in-memory/document-evidence.js";
 import {
   createInMemoryInbox,
   createInMemoryRunClaim,
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
-import { createInMemoryObservationFrontiers } from "../../adapters/in-memory/observation-frontiers.js";
-import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-links.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createAskService, refusingPermissionExecutor } from "../../asks/ask-service.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
@@ -225,15 +224,11 @@ export function createRuntimeHarness(
         return null;
       },
     },
-    shownLinks: createInMemoryShownLinkStore({
+    documentEvidence: createInMemoryDocumentEvidence({
       transactionOwner:
         transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
       threads: repos.threads,
       turns: repos.turns,
-    }),
-    observationFrontiers: createInMemoryObservationFrontiers({
-      transactionOwner:
-        transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
     }),
     ...dependencies,
     backgroundTasks,
@@ -334,7 +329,7 @@ export async function runtimeScenario(
     signalGatewayEvent?: (event: StreamEvent) => boolean;
     runStarter?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["runStarter"];
     notices?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["notices"];
-    /** Shared with a caller-built in-memory `shownLinks` store. */
+    /** Shared with a caller-built in-memory `documentEvidence`. */
     transactionOwner?: InMemoryTransactionOwner;
   },
 ) {

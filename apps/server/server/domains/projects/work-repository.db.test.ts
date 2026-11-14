@@ -1077,6 +1077,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
         branches: createPostgresWorkBranchDisposal(db),
+        evidence: { forgetThreads: async () => {} },
       });
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
@@ -1112,6 +1113,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore,
         eventSink,
         branches: createPostgresWorkBranchDisposal(db),
+        evidence: { forgetThreads: async () => {} },
       });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";

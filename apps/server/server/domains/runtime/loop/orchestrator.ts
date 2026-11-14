@@ -51,7 +51,7 @@ import {
   meridianErrorFromGateway,
   meridianErrorFromSystem,
 } from "@meridian/contracts/errors";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -94,10 +94,9 @@ import type { ModelTokenRateSource } from "../costing/pricing.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
+import type { DocumentEvidence } from "../ports/document-evidence.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { MediaResolutionError, type MediaResolverPort } from "../ports/media-resolver.js";
-import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
-import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { admitRun, readContinuation } from "../spawn/run-admission.js";
@@ -286,10 +285,8 @@ export interface OrchestratorDeps {
   mediaResolver: MediaResolverPort;
   /** Test seam: the span a signed media link stays identical for, instead of the cache lifetime. */
   mediaLinkWindowSeconds?: number;
-  /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
-  shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
-  observationFrontiers: ObservationFrontiers;
+  documentEvidence: DocumentEvidence;
 }
 
 export function createOrchestrator(deps: OrchestratorDeps) {
@@ -748,8 +745,11 @@ async function runDrainTurn(
                 if (preflight)
                   await recordReferenceEvidence(
                     deps,
-                    input.threadId,
-                    reservedTurn.id,
+                    {
+                      projectId: setupThread.projectId as ProjectId,
+                      threadId: input.threadId,
+                      turnId: reservedTurn.id,
+                    },
                     preflight.evidence,
                   );
                 if (selection.outstanding.length > 0 || input.replyTurnId || continuation)
@@ -1479,7 +1479,11 @@ async function executeLoop({
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
       recordEvidence: (turnId, evidence) =>
-        recordReferenceEvidence(deps, input.threadId, turnId, evidence),
+        recordReferenceEvidence(
+          deps,
+          { projectId: thread.projectId as ProjectId, threadId: input.threadId, turnId },
+          evidence,
+        ),
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
@@ -2194,8 +2198,7 @@ async function executeLoop({
                   executionReports: deps.repos.executionReports,
                   readSnapshot: deps.repos.readSnapshot,
                   runClaim: deps.runClaim,
-                  shownLinks: deps.shownLinks,
-                  observationFrontiers: deps.observationFrontiers,
+                  documentEvidence: deps.documentEvidence,
                   askRequests: deps.askRequests,
                 },
                 call,

@@ -15,12 +15,14 @@ import { modelEditIds } from "../../../shared/model-edit-ids.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { DocumentCommandExistsError } from "../domain/document-commands.js";
 import { ModelEditRefusal, type ModelEdits } from "../domain/model-edit.js";
+import type { ModelEvidence } from "../domain/model-evidence.js";
 import { lookupCommand, runCommandWithinTx } from "./drizzle-document-commands.js";
 import { bindEditsToCommand } from "./drizzle-document-edits.js";
 
 export function createDrizzleModelEdits(
   db: Database,
   seams: Pick<ModelEdits, "write" | "catchUp">,
+  evidence: Pick<ModelEvidence, "resultStored">,
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {
     const ids = modelEditIds(key);
@@ -37,11 +39,11 @@ export function createDrizzleModelEdits(
   return {
     ...seams,
 
-    async run({ key, signal, effect }) {
+    async run({ key, owner, signal, effect }) {
       if (isInDrizzleTransaction())
         throw new Error("A model edit opens its own transaction; it cannot join one");
       const ids = modelEditIds(key);
-      let evidence: Awaited<ReturnType<typeof effect>>["evidence"];
+      let refusedEvidence: Awaited<ReturnType<typeof effect>>["evidence"];
       await testHook("command.beforeClaim");
       try {
         const result = await runInDrizzleTransaction(db, async () => {
@@ -62,12 +64,20 @@ export function createDrizzleModelEdits(
               const done = await effect();
               // A call the runtime stopped waiting for must not land after it stored `never`.
               signal.throwIfAborted();
-              evidence = done.evidence;
+              if (done.evidence)
+                await evidence.resultStored({
+                  projectId: key.projectId,
+                  ...owner,
+                  shown: done.evidence.shown,
+                  frontiers: done.evidence.frontier
+                    ? [{ blockId: ids.blockId, frontier: done.evidence.frontier }]
+                    : [],
+                });
               return { status: "edited" as const, toolResult: done.toolResult };
             },
             (cause) => {
               if (!(cause instanceof ModelEditRefusal)) return undefined;
-              evidence = cause.evidence as typeof evidence;
+              refusedEvidence = cause.evidence;
               return { status: "refused" as const, toolResult: cause.toolResult };
             },
           );
@@ -77,7 +87,7 @@ export function createDrizzleModelEdits(
         await testHook("command.afterCommit");
         return {
           outcome: { status: result.status === "edited" ? "done" : "refused", result },
-          ...(evidence === undefined ? {} : { evidence }),
+          ...(refusedEvidence === undefined ? {} : { evidence: refusedEvidence }),
         };
       } catch (cause) {
         if (cause instanceof DocumentCommandExistsError) return { outcome: await stored(key) };
