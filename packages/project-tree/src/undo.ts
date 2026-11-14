@@ -8,6 +8,14 @@ import type { TreeWriter } from "./writer.js";
 const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecord) =>
   setter?.id === record.id ? setter : undefined;
 
+/** Whether a later record in the view moved or renamed the same node as this kind of record. */
+function movedAfter(writer: TreeWriter, view: View, record: TreeRecord): boolean {
+  const records = viewRecords(writer.doc, view);
+  return records
+    .slice(records.findIndex((other) => other.id === record.id) + 1)
+    .some((other) => other.type === record.type && other.node === record.node);
+}
+
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
  * back, restore what was deleted, delete what was created). A move or rename goes back to the
@@ -40,6 +48,20 @@ export function undoChange(
         extra,
       );
     case "move": {
+      if (record.undoes !== undefined) {
+        // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
+        if (movedAfter(writer, view, record)) return "superseded";
+        const { parent, rank } = record.from;
+        const back = projection.nodes.get(parent);
+        if (back?.trashed || (!back && !isSourceRoot(parent))) return "superseded";
+        return writer.author(view, actor, {
+          type: "move",
+          node: record.node,
+          parent,
+          rank,
+          from: { parent: node.parent, rank: node.rank },
+        });
+      }
       const last = lastSetBy(projection.setters.get(record.node)?.place, record);
       if (!last) return "superseded";
       const { parent, rank } = last.before;
@@ -59,6 +81,17 @@ export function undoChange(
       );
     }
     case "rename": {
+      if (record.undoes !== undefined) {
+        // The same for a rename: the Undo's name taken back is the original name again. An Undo of
+        // a type change does not say the type it changed from, so it is not redone.
+        if (record.filetype !== undefined || movedAfter(writer, view, record)) return "superseded";
+        return writer.author(view, actor, {
+          type: "rename",
+          node: record.node,
+          name: record.fromName,
+          fromName: node.name,
+        });
+      }
       const last = lastSetBy(projection.setters.get(record.node)?.label, record);
       if (!last) return "superseded";
       // A rename that changed the type takes the type back with the name, or it is not undone.

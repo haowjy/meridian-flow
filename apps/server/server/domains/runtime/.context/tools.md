@@ -131,19 +131,21 @@ add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context.
 
 Document inverse commands use `write undo/redo` and `write revert`; model-only
-handles select edits, and the command is all-or-nothing. `write move` and
-`write delete` (PR 3) are host commands (`lib/model-tools/namespace-commands.ts`):
-they run at the call, record a tree entry on the document's stack inside the
-mutation's own transaction, and mark the reply's scope as having writes
-(`treeWrite`), so a later save boundary rotates it. In an auto-apply chat they go
-through the live port. In a draft-mode chat their placement goes through the
-chat's branch (`ContextPort.changeInBranch`): facts live on the Work's branch
-row, never the mover, and live placement is untouched until the user applies
-them. Content destination is independent: Scratch and upload content stays
-live while its placement can be drafted. The user applies or discards drafted
-placement like any pending change (`collab/.context/apply.md`). A path no
-visible document holds names, for undo/redo/revert only, the document this
-chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
+handles select edits, and the command is all-or-nothing. The tree commands
+(`write move`, `delete`, `restore`, and `create` of a folder) are host commands
+(`lib/model-tools/tree-commands.ts`, the core in `domains/context/tree/tree-commands.ts`).
+Each call is its own command with its records admitted at the call; nothing waits for the
+reply's save, and a failed reply leaves what its calls did. A path resolves through the
+names the model was shown: `ls` and every tree result record, per chat, which name meant
+which node (host-only evidence, `observation_frontiers` room `tree`, never shown to the
+model), so a stale path reaches the node the model meant and a name reused for another
+document is refused as `path_changed`. The call keeps a receipt (`tree_edit_receipts`:
+its record ids, the `e<N>` handle, the Work's branch) and `undo`, `redo` and `revert` of
+a tree change go by it through the package's `undoChange`, in the Work's draft and, after
+an Apply or a restored Discard, through `carries` in live. In a draft-mode chat the
+records are the Work's branch's and live is untouched until the user applies them; Scratch
+and upload content stays live while its placement can be drafted
+(`collab/.context/apply.md`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Command details the model sees:

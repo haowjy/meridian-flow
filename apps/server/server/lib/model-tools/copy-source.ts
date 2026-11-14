@@ -83,7 +83,7 @@ export async function resolveCopySource(
   deps: ToolWiringDeps,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity" | "frontiers">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity" | "shownNames">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
   const call = await resolveToolCall(deps, ctx, source.version);

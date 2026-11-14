@@ -94,14 +94,15 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 ## Tree changes
 
-Reversal undoes text only. A tree change (create, copy, move, rename, delete, restore) is its
-own command with its own record in the project's tree list; no turn reversal, model
-`undo`/`redo`/`revert` or failed-reply rollback reverses one, and a failed reply leaves what
-its tree calls did. The history reader keeps only `document_edits` rows with parts, so a handle
-that names a tree change reads as no known edit (`Unknown edit ... Read with format: "edits"`).
-The model's handle for undoing a tree change is the `document_edits` row made with the tree
-record (step 7 of the project tree build). `recordAgentTreeChange` writes those rows; they
-carry no parts and no inverse reads them.
+Reversal of text and of tree changes are separate. A tree change (create, move, rename, delete,
+restore, folders included) is its own command with its records in the project's tree list; no
+turn reversal or failed-reply rollback reverses one, and a failed reply leaves what its tree
+calls did. The model's tree call keeps a receipt (`tree_edit_receipts`: the record ids, its
+`e<N>` handle on the node's per-chat counter, the Work's branch, and the `edit_scope_id` where
+M10's command id goes). Model `undo`, `redo` and `revert` of a tree change take the receipt's
+records back through the package's `undoChange`, which finds the live copy of an applied or
+restored change by `carries`; the receipt of an undo is what `redo` takes back. A text edit
+newer than the receipt hands the call to the text engine below.
 
 Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,

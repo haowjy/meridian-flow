@@ -86,41 +86,42 @@ export async function runTreeToolCommand(
   const command = commandOf(input);
   if (isToolError(command)) return command;
   const paths = command.command === "move" ? [...command.from, command.path] : [command.path];
-  const areas = paths.map((path) => areaOfPath(path));
-  const first = areas[0];
-  if (!first || areas.some((area) => area?.area !== first.area))
+  const located = paths.map((path) => areaOfPath(path));
+  const areas = [...new Set(located.map((place) => place?.area))];
+  if (areas.some((area) => area === undefined))
+    return writeToolError(input.command, "That path names no source.");
+  // The account's `user://` files are another list: a move between lists is not made here.
+  if (areas.length > 1 && areas.some((area) => area?.startsWith("user://")))
     return writeToolError(
       input.command,
-      "A tree command works inside one source: move between sources is not available. Copy, then delete.",
+      "A tree command can't move between a project's files and the account's files. Copy, then delete.",
     );
-  const area = first.area;
-  const strip = (path: string) => areaOfPath(path)?.rest ?? path;
-  const local: TreeCommand =
-    command.command === "move"
-      ? {
-          ...command,
-          from: command.from.map(strip),
-          path: strip(command.path),
-          ...(command.position && "sibling" in command.position
-            ? { position: { ...command.position, sibling: strip(command.position.sibling) } }
-            : {}),
-        }
-      : { ...command, path: strip(command.path) };
-
-  const target = await threadContainerTarget(
-    deps.works,
-    call.context.resolution,
-    paths[0] as string,
-  );
-  let grant: FileGrant<"edit"> | null = null;
-  if (target) {
-    const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
-    if (isFileAccessDenied(granted))
-      return fileAccessDeniedError(input.command, granted, paths[0] as string);
-    grant = granted;
+  const roots = new Map<string, string>();
+  for (const area of areas as string[]) {
+    const top = await call.context.port.readTree(area, { read: (scope) => scope.root });
+    if (!top.ok) return writeToolError(input.command, contextErrorMessage(top.error));
+    roots.set(area, top.value);
   }
-  const drafted = grant?.destination.kind === "draft";
-  const destination = grant?.destination;
+  const primary = areaOfPath(command.path)?.area as string;
+  // The file policy decides per source whether the change is the chat's draft or live.
+  const grants: FileGrant<"edit">[] = [];
+  let draftArea: string | undefined;
+  for (const area of areas as string[]) {
+    const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
+    const target = await threadContainerTarget(deps.works, call.context.resolution, path);
+    if (!target) continue;
+    const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
+    if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
+    grants.push(granted);
+    if (granted.destination.kind === "draft") draftArea ??= area;
+  }
+  const drafted = draftArea !== undefined;
+  const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
+    ?.destination;
+  // A drafted change runs in the source that has the chat's draft; a live one in the path's own.
+  const area = draftArea ?? primary;
+  const places = { area, roots, locate: (path: string) => areaOfPath(path) };
+  const local = command;
 
   const shown = await shownNamesOf(ctx);
   const history = deps.documentSync.treeHistory();
@@ -142,12 +143,12 @@ export async function runTreeToolCommand(
       });
   let handle: string | undefined;
 
-  const run = await runWithEditGrants(deps.fileAccess, grant ? [grant] : [], () =>
+  const run = await runWithEditGrants(deps.fileAccess, grants, () =>
     port.treeCommand(area, {
       origin,
       drafted,
       make: (scope) => {
-        const result = runTreeCommand(scope, area, shown, local);
+        const result = runTreeCommand(scope, places, shown, local);
         return { result, arrived: result.ok ? result.arrived : [] };
       },
       afterWrite: async (result, scope) => {

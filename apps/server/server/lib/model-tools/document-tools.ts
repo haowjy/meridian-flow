@@ -287,7 +287,7 @@ export async function readTrackedDocument(
   deps: ToolWiringDeps,
   input: ReadToolInput,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId"> &
-    Partial<Pick<ToolHandlerContext, "frontiers">>,
+    Partial<Pick<ToolHandlerContext, "frontiers" | "shownNames">>,
   options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
 ): Promise<{
   output: AgentEditResultV1;

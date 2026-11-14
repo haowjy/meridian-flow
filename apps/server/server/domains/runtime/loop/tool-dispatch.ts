@@ -374,8 +374,8 @@ export async function dispatchToolCall(
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
         reply: ctx.replyMutations,
-        shownNames: shownNamesLookup(deps, () => ctx.credited.ids(), correlation),
       },
+      shownNames: shownNamesLookup(deps, () => ctx.credited.ids(), correlation),
     },
   );
   outputJournal.seal();

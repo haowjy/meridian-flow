@@ -50,6 +50,4 @@ export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
   reply: ReplyMutations;
-  /** What the blocks the run carries showed of the tree (the names added by each result). */
-  shownNames: () => Promise<Uint8Array[]>;
 }

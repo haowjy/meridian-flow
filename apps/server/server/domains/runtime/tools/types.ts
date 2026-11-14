@@ -81,6 +81,8 @@ export interface ToolExecutionContext {
   request?: RequestToolHandlerContext["request"];
   /** The run's observation-frontier lookups, for tools that show documents. */
   frontiers?: FrontierLookups;
+  /** The run's shown names, forwarded to the handler (see `ToolHandlerContext`). */
+  shownNames?: () => Promise<Uint8Array[]>;
 }
 
 /**
@@ -179,6 +181,11 @@ export interface ToolHandlerContext {
    * a result chains from (`recording`) and the request's view (`planning`).
    */
   frontiers?: FrontierLookups;
+  /**
+   * What the blocks the run carries showed of the tree, each result's added names oldest first
+   * (`domains/context/tree/names-shown.ts`); absent where nothing was shown.
+   */
+  shownNames?: () => Promise<Uint8Array[]>;
 }
 
 export interface SpawnToolHandlerContext extends ToolHandlerContext {

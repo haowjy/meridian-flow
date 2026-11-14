@@ -1,15 +1,18 @@
 /**
- * The model's `move` and `delete` through the production-composed `write` tool (PR 3): each runs at the call and records a tree entry on the document's own stack, so
- * `undo`, `redo` and `revert` walk it with text, a reply's rollback reverses it, and the turn
- * card's Undo brings a deleted document back. In a draft-mode chat they are facts in the
- * Work's branch and live is untouched.
+ * The AI's tree commands (`move`, `delete`, `restore`, folders) through the production-composed
+ * `write` tool: a path resolves through the names the model was shown, each call is its own
+ * command, and the receipt it keeps is what `undo` names, live, drafted, applied or discarded.
+ * In a draft-mode chat they are records of the Work's branch and live is untouched.
  */
 
 import { randomUUID } from "node:crypto";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
-import { treeSeeder } from "../test-support/tree-seed.js";
+import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
+import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -25,7 +28,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const { createTreeReader } = await import("../domains/context/tree/tree-view.js");
     const {
       handleApplyClickRequest,
       handleDiscardWorkDraftRequest,
@@ -183,16 +185,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!row) throw new Error(`Work ${workId} has no active branch`);
       return row.id as never;
     };
-    it("refuses a move or delete of a path that names a folder beside the document it renders as", async () => {
+    it("a path that names a folder beside the document it renders as reaches the folder", async () => {
       await treeSeeder(db).folder(SOURCE_ID, "ch1.md");
       const script = await start();
       const { call } = await script.begin();
-      for (const path of ["ch1.md", "ch1.md/", "/ch1.md/", "manuscript://ch1.md"]) {
-        expect(text(await call("write", { command: "delete", path }))).toContain("folder");
-        expect(
-          text(await call("write", { command: "move", from: { path }, path: "renamed" })),
-        ).toContain("folder");
-      }
+      const deleted = await call("write", { command: "delete", path: "ch1.md" });
+      expect(deleted.isError, text(deleted)).toBeFalsy();
+      expect(text(deleted)).toContain("deleted: 0 inside");
       expect((await placement(CH1))?.deletedAt).toBeNull();
       expect((await placement(CH1))?.name).toBe("ch1");
     });
@@ -206,7 +205,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "ch1-old",
       });
       expect(moved.isError, text(moved)).toBeFalsy();
-      expect(text(moved)).toContain("moved from manuscript://ch1");
+      expect(text(moved)).toMatch(/^status: success; write: e\d+; version: live$/);
       expect(await placement(CH1)).toMatchObject({ name: "ch1-old" });
       const again = await call("write", {
         command: "move",
@@ -371,6 +370,152 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });
       expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-c", deletedAt: null });
+    });
+
+    const store = () => createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+    /** The writer's own change to the project's list, as their browser's record would be admitted. */
+    const asWriter = async (make: (writer: TreeWriter) => void) =>
+      store().submit({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => make(writer),
+      });
+    const WRITER = `user:${USER_ID}`;
+    const drafting = (script: Awaited<ReturnType<typeof start>>) =>
+      runtimes.script(script.runtime, OTHER);
+
+    it("a stale path reaches the node the model meant, and the result says what the writer did", async () => {
+      const script = await start();
+      const { call } = await script.begin();
+      await call("ls", { path: "manuscript://" });
+      await asWriter((writer) => writer.rename(LIVE, WRITER, CH1, "The Fall"));
+      const moved = await call("write", {
+        command: "move",
+        from: { path: "ch1" },
+        path: "part1/ch1",
+      });
+      expect(moved.isError, text(moved)).toBeFalsy();
+      expect(text(moved)).toMatch(
+        /^status: success; path: manuscript:\/\/part1\/The Fall; write: e\d+; version: live\n\nconcurrent tree changes by the user:\n {2}renamed: manuscript:\/\/ch1 → The Fall$/,
+      );
+      expect(await placement(CH1)).toMatchObject({ name: "The Fall" });
+    });
+
+    it("a name given to another document since is refused as path_changed, and nothing is touched", async () => {
+      const script = await start();
+      const { call } = await script.begin();
+      await call("ls", { path: "manuscript://" });
+      await asWriter((writer) => writer.rename(LIVE, WRITER, CH1, "The Fall"));
+      const fresh = await treeSeeder(db).document(SOURCE_ID, "ch1", { actor: WRITER });
+      const refused = await call("write", { command: "delete", path: "ch1" });
+      expect(text(refused)).toContain("status: path_changed; path: manuscript://ch1");
+      expect(text(refused)).toContain(
+        "Nothing done: manuscript://ch1 now names a different document. The one you were shown is now manuscript://The Fall.",
+      );
+      expect((await placement(CH1))?.deletedAt).toBeNull();
+      expect((await placement(fresh))?.deletedAt).toBeNull();
+      // The refusal showed both names: the old path now means the new document, the old one is reached by its new name.
+      const deleted = await call("write", { command: "delete", path: "The Fall" });
+      expect(deleted.isError, text(deleted)).toBeFalsy();
+      expect((await placement(CH1))?.deletedAt).not.toBeNull();
+      expect((await placement(fresh))?.deletedAt).toBeNull();
+    });
+
+    it("moves several into a folder, deletes it with what is inside, and restores it whole", async () => {
+      const script = await start();
+      const { call } = await script.begin();
+      expect(text(await call("write", { command: "create", path: "Arc 2/" }))).toMatch(
+        /^status: success; path: manuscript:\/\/Arc 2\/; write: e\d+; version: live$/,
+      );
+      const moved = await call("write", {
+        command: "move",
+        from: { paths: ["ch1", "ch2", "missing"] },
+        path: "Arc 2/",
+      });
+      expect(text(moved)).toContain("moved: 2 of 3");
+      expect(text(moved)).toContain("not moved: missing (not found)");
+      const deleted = await call("write", { command: "delete", path: "Arc 2/" });
+      expect(text(deleted)).toMatch(
+        /^status: success; write: e\d+; version: live; deleted: 2 inside$/,
+      );
+      const { trashEntries } = script.runtime.ports;
+      const lists = [await treeListOfSource(db, SOURCE_ID)];
+      const entries = await trashEntries.list({ lists, view: LIVE });
+      expect(entries).toMatchObject([{ name: "Arc 2", took: { documents: 2, folders: 1 } }]);
+      const restored = await call("write", { command: "restore", path: "Arc 2/" });
+      expect(restored.isError, text(restored)).toBeFalsy();
+      expect(await trashEntries.list({ lists, view: LIVE })).toEqual([]);
+      expect((await placement(CH2))?.deletedAt).toBeNull();
+    });
+
+    it("a draft can create, rename, reorder and delete folders; live stays as it was", async () => {
+      const script = await start();
+      await drafting(script).reply(async (edit) => {
+        expect(await edit("write", { command: "create", path: "Arc 3/" })).toContain(
+          "not applied yet",
+        );
+        await edit("write", { command: "move", from: { paths: ["ch1", "ch2"] }, path: "Arc 3/" });
+        await edit("write", { command: "move", from: { path: "Arc 3/" }, path: "Part Three/" });
+        await edit("write", {
+          command: "move",
+          from: { path: "Part Three/" },
+          path: "Part Three/",
+          position: { kind: "start" },
+        });
+      });
+      const branch = await branchOf(OTHER_WORK_ID);
+      const live = await store().read({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        view: ([{ writer }]) => [...writer.view(LIVE).nodes.values()].map((n) => n.displayName),
+      });
+      const work = await store().read({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        view: ([{ writer }]) =>
+          [...writer.view({ draft: branch }).nodes.values()].map((n) => n.displayName),
+      });
+      expect(live).not.toContain("Part Three");
+      expect(work).toContain("Part Three");
+      expect(work).not.toContain("Arc 3");
+      expect((await placement(CH1))?.name).toBe("ch1");
+      await drafting(script).reply(async (edit) => {
+        await edit("write", { command: "delete", path: "Part Three/" });
+      });
+    });
+
+    describe("undo by the receipt", () => {
+      it("takes back a live move, and redo does it again", async () => {
+        const script = await start();
+        const { call } = await script.begin();
+        await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        const undone = await call("write", { command: "undo", path: "part1/ch1" });
+        expect(text(undone), text(undone)).toContain("status: reversed; path: manuscript://ch1");
+        expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+        const redone = await call("write", { command: "redo", path: "ch1" });
+        expect(text(redone)).toContain("status: reversed; path: manuscript://part1/ch1");
+      });
+
+      it("still takes back a drafted move after its Apply landed it", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        });
+        expect(await review(script).apply(CH1)).toMatchObject({ status: "applied" });
+        const { call } = await drafting(script).begin();
+        const undone = await call("write", { command: "undo", path: "part1/ch1" });
+        expect(text(undone), text(undone)).toContain("status: reversed");
+        expect((await placement(CH1))?.name).toBe("ch1");
+      });
+
+      it("says nothing can be undone once the Work discarded the change", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        });
+        await review(script).discard(CH1, { ends: "item" });
+        const { call } = await drafting(script).begin();
+        const undone = await call("write", { command: "undo", path: "ch1" });
+        expect(undone.isError).toBe(true);
+        expect(text(undone)).toContain("status: cant_undo_changed");
+      });
     });
   });
 }

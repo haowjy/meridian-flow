@@ -14,6 +14,7 @@ import {
   isSourceRoot,
   LIVE,
   listRecords,
+  sourceRoot,
   type TreeNode,
   type TreeProjection,
   type TreeRecord,
@@ -95,9 +96,20 @@ export function labelOf(actor: Actor): string {
   return "unattributed";
 }
 
+/** Where the command's paths are: each source's area and the top of its tree. */
+export type Places = {
+  /** The area of the source the command runs in. */
+  area: string;
+  /** The top of each area's tree, by area. */
+  roots: ReadonlyMap<string, string>;
+  /** The area a path names and the path below it; null when it names none. */
+  locate(path: string): { area: string; rest: string } | null;
+};
+
 type Context = {
   scope: TreeScope;
   area: string;
+  places: Places;
   shown: NamesShown;
   records: Map<string, TreeRecord>;
   made: MadeRecord[];
@@ -107,8 +119,14 @@ type Context = {
 const uriOf = (area: string, names: readonly string[], folder: boolean) =>
   `${area}${names.join("/")}${folder && names.length > 0 ? "/" : ""}`;
 
+/** The area a node's source is addressed by. */
+function areaOfNode(cx: Context, node: TreeNode): string {
+  for (const [area, root] of cx.places.roots) if (root === sourceRoot(node.source)) return area;
+  return cx.area;
+}
+
 const nodeUri = (cx: Context, projection: TreeProjection, node: TreeNode) =>
-  uriOf(cx.area, pathNames(projection, node.id), node.kind === "folder");
+  uriOf(areaOfNode(cx, node), pathNames(projection, node.id), node.kind === "folder");
 
 function actorOfRecord(cx: Context, id: string | undefined): Actor | undefined {
   return id === undefined ? undefined : cx.records.get(id)?.actor;
@@ -148,9 +166,10 @@ function unresolved(
   cx: Context,
   projection: TreeProjection,
   verb: string,
-  path: string,
+  written: string,
   resolution: Exclude<Resolution, { kind: "node" }>,
 ): Refused {
+  const path = uriOfPath(cx, written);
   switch (resolution.kind) {
     case "path_changed": {
       const where = nodeUri(cx, projection, resolution.was);
@@ -203,13 +222,23 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
-function pathFrom(
-  _cx: Context,
-  area: string,
-  path: string,
-): { segments: string[]; folder: boolean } {
-  return splitSegments(path.startsWith(area) ? path.slice(area.length) : path);
+type Located = { segments: string[]; folder: boolean; area: string; root: string };
+
+/** A path the model wrote, in the area and tree it names. */
+function pathFrom(cx: Context, path: string): Located {
+  const at = cx.places.locate(path);
+  const area = at?.area ?? cx.area;
+  return {
+    ...splitSegments(at?.rest ?? path),
+    area,
+    root: cx.places.roots.get(area) ?? cx.scope.root,
+  };
 }
+
+const uriOfPath = (cx: Context, path: string) => {
+  const at = cx.places.locate(path);
+  return at ? `${at.area}${at.rest}` : path;
+};
 
 /** What others did to a node since the model last saw its name and place, as the one line each. */
 function noteChanges(
@@ -237,7 +266,7 @@ function noteChanges(
     noteConcurrent(
       cx,
       actorOfRecord(cx, setters?.place?.id),
-      `moved: ${writtenUri} → ${uriOf(cx.area, nowParent, true)}`,
+      `moved: ${writtenUri} → ${uriOf(areaOfNode(cx, node), nowParent, true)}`,
     );
 }
 
@@ -270,6 +299,7 @@ function ensureFolders(
 /** The parent folder a path's leaf goes under: resolved through the map, with what is missing made. */
 function destinationParent(
   cx: Context,
+  to: Located,
   folders: readonly string[],
   filled: Array<{ folder: string; name: string; node: string }>,
 ):
@@ -281,11 +311,11 @@ function destinationParent(
     }
   | { ok: false; refused: Refused } {
   const projection = cx.scope.writer.view(cx.scope.view);
-  if (folders.length === 0) return { ok: true, parent: cx.scope.root, trashed: [], through: [] };
+  if (folders.length === 0) return { ok: true, parent: to.root, trashed: [], through: [] };
   const found = resolveShown(
     projection,
     cx.shown,
-    cx.scope.root,
+    to.root,
     { segments: folders, folder: true },
     { through: true },
   );
@@ -295,20 +325,20 @@ function destinationParent(
         ok: false,
         refused: refuse(
           "invalid_write",
-          uriOf(cx.area, folders, true),
+          uriOf(to.area, folders, true),
           `${nodeUri(cx, projection, found.node)} is a document, not a folder.`,
         ),
       };
     return { ok: true, parent: found.node.id, trashed: found.trashed, through: found.along };
   }
   if (found.kind === "missing") {
-    const start = found.along.at(-1)?.node ?? cx.scope.root;
+    const start = found.along.at(-1)?.node ?? to.root;
     const parent = ensureFolders(cx, start, folders.slice(found.at), filled);
     return { ok: true, parent, trashed: found.trashed, through: found.along };
   }
   return {
     ok: false,
-    refused: unresolved(cx, projection, "moved", uriOf(cx.area, folders, true), found),
+    refused: unresolved(cx, projection, "moved", uriOf(to.area, folders, true), found),
   };
 }
 
@@ -323,18 +353,14 @@ function indexFor(
   const siblings = childrenOf(projection, parent).filter((node) => node.id !== moving);
   if (!position || position.kind === "end") return { index: siblings.length };
   if (position.kind === "start") return { index: 0 };
-  const sibling = resolveShown(
-    projection,
-    cx.shown,
-    cx.scope.root,
-    pathFrom(cx, cx.area, position.sibling),
-  );
+  const written = pathFrom(cx, position.sibling);
+  const sibling = resolveShown(projection, cx.shown, written.root, written);
   const at =
     sibling.kind === "node" ? siblings.findIndex((node) => node.id === sibling.node.id) : -1;
   if (at < 0)
     return {
       index: siblings.length,
-      atEnd: `${position.sibling.includes("://") ? position.sibling : `${cx.area}${position.sibling}`} is no longer in this folder`,
+      atEnd: `${uriOfPath(cx, position.sibling)} is no longer in this folder`,
     };
   return { index: position.kind === "before" ? at : at + 1 };
 }
@@ -353,7 +379,7 @@ function loopCause(
   projection: TreeProjection,
   node: TreeNode,
   through: Array<{ folder: string; name: string; node: string }>,
-  writtenSegments: readonly string[],
+  written: Located,
 ): string {
   // The folder directly under `node` on the way down to the destination is what someone moved in.
   const chain: string[] = [];
@@ -366,14 +392,14 @@ function loopCause(
   if (!inside || through.some((step) => step.node === node.id) || along < 0) return "";
   const who = actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id);
   if (who === undefined || who === cx.scope.actor) return "";
-  const named = uriOf(cx.area, writtenSegments.slice(0, along + 1), true);
+  const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
   return `: ${labelOf(who)} moved ${named} into it after you last listed it.`;
 }
 
 function moveOne(
   cx: Context,
   from: string,
-  to: { segments: string[]; folder: boolean },
+  to: Located,
   toUri: string,
   position: Placement | undefined,
   filled: Array<{ folder: string; name: string; node: string }>,
@@ -385,8 +411,8 @@ function moveOne(
   | { skip: string; fail?: undefined; done?: undefined } {
   const { scope } = cx;
   const projection = scope.writer.view(scope.view);
-  const source = pathFrom(cx, cx.area, from);
-  const found = resolveShown(projection, cx.shown, scope.root, source);
+  const source = pathFrom(cx, from);
+  const found = resolveShown(projection, cx.shown, source.root, source);
   if (found.kind !== "node") {
     const refused = unresolved(cx, projection, "moved", from, found);
     return viaMany
@@ -396,13 +422,13 @@ function moveOne(
       : { fail: refused };
   }
   const node = found.node;
-  noteChanges(cx, projection, node, source, from);
-  const parent = destinationParent(cx, to.segments.slice(0, -1), filled);
+  noteChanges(cx, projection, node, source, uriOfPath(cx, from));
+  const parent = destinationParent(cx, to, to.segments.slice(0, -1), filled);
   if (!parent.ok)
     return viaMany ? { skip: `${from} (${parent.refused.status})` } : { fail: parent.refused };
   const after = scope.writer.view(scope.view);
   if (loops(after, node, parent.parent)) {
-    const cause = loopCause(cx, after, node, parent.through, to.segments);
+    const cause = loopCause(cx, after, node, parent.through, to);
     const into = nodeUri(cx, projection, node);
     return viaMany
       ? { skip: `${from} (would put it inside itself)` }
@@ -519,13 +545,14 @@ export function reachPath(
   const cx: Context = {
     scope: { ...scope, actor: "" },
     area,
+    places: { area, roots: new Map([[area, scope.root]]), locate: () => null },
     shown,
     records: new Map(listRecords(scope.writer.doc).map((record) => [record.id, record])),
     made: [],
     concurrent: new Map(),
   };
   const projection = scope.writer.view(scope.view);
-  const resolved = resolveShown(projection, shown, scope.root, pathFrom(cx, area, path));
+  const resolved = resolveShown(projection, shown, scope.root, pathFrom(cx, path));
   // Undo names what was deleted by its old path: the node in Trash is the one it means.
   const found: Resolution =
     options.allowGone && resolved.kind === "gone"
@@ -558,13 +585,14 @@ export function reachPath(
 /** One tree command on the copy under the lock. */
 export function runTreeCommand(
   scope: TreeScope,
-  area: string,
+  places: Places,
   shown: NamesShown,
   command: TreeCommand,
 ): TreeResult {
   const cx: Context = {
     scope,
-    area,
+    area: places.area,
+    places,
     shown,
     records: new Map(listRecords(scope.writer.doc).map((record) => [record.id, record])),
     made: [],
@@ -581,15 +609,15 @@ export function runTreeCommand(
 
   switch (command.command) {
     case "create": {
-      const path = pathFrom(cx, area, command.path);
-      const found = resolveShown(projection, shown, scope.root, path);
+      const path = pathFrom(cx, command.path);
+      const found = resolveShown(projection, shown, path.root, path);
       if (found.kind === "node")
         return refuse(
           "invalid_write",
           command.path,
           `${nodeUri(cx, projection, found.node)} already exists.`,
         );
-      const parent = destinationParent(cx, path.segments.slice(0, -1), filled);
+      const parent = destinationParent(cx, path, path.segments.slice(0, -1), filled);
       if (!parent.ok) return parent.refused;
       const leaf = path.segments.at(-1);
       if (leaf === undefined)
@@ -613,8 +641,8 @@ export function runTreeCommand(
     }
 
     case "move": {
-      const to = pathFrom(cx, area, command.path);
-      const toUri = command.path.includes("://") ? command.path : `${area}${command.path}`;
+      const to = pathFrom(cx, command.path);
+      const toUri = uriOfPath(cx, command.path);
       if (!command.many) {
         const from = command.from[0] as string;
         const moved = moveOne(cx, from, to, toUri, command.position, filled, emptied, false);
@@ -623,15 +651,16 @@ export function runTreeCommand(
         return finish({ ...moved.done, delta: changeDelta(emptied, filled) });
       }
       // Several into one folder: each on its own, what could be moved is moved.
-      const folder = destinationParent(cx, to.segments, filled);
+      const folder = destinationParent(cx, to, to.segments, filled);
       if (!folder.ok) return folder.refused;
       const notMoved: string[] = [];
       const arrived: string[] = [];
       let made = 0;
       let subject: string = folder.parent;
       for (const from of command.from) {
-        const leaf = pathFrom(cx, area, from).segments.at(-1) ?? "";
+        const leaf = pathFrom(cx, from).segments.at(-1) ?? "";
         const item = {
+          ...to,
           segments: [...to.segments, leaf],
           folder: isFolderPath(from),
         };
@@ -654,7 +683,7 @@ export function runTreeCommand(
       }
       if (made === 0)
         return refuse("invalid_write", toUri, `Nothing moved: ${notMoved.join("; ")}`);
-      const landedAt = uriOf(area, to.segments, true);
+      const landedAt = uriOf(to.area, to.segments, true);
       return finish({
         ok: true,
         subject,
@@ -671,8 +700,8 @@ export function runTreeCommand(
     }
 
     case "delete": {
-      const path = pathFrom(cx, area, command.path);
-      const found = resolveShown(projection, shown, scope.root, path);
+      const path = pathFrom(cx, command.path);
+      const found = resolveShown(projection, shown, path.root, path);
       if (found.kind === "gone") {
         return finish({
           ok: true,
@@ -690,7 +719,7 @@ export function runTreeCommand(
       }
       if (found.kind !== "node") return unresolved(cx, projection, "deleted", command.path, found);
       const node = found.node;
-      const writtenUri = command.path.includes("://") ? command.path : `${area}${command.path}`;
+      const writtenUri = uriOfPath(cx, command.path);
       noteChanges(cx, projection, node, path, writtenUri);
       // The delete takes what the model saw inside the folder: a name it was shown, or any name
       // inside a folder it never listed. What was added since stays and keeps the folder standing.
@@ -754,8 +783,8 @@ export function runTreeCommand(
     }
 
     case "restore": {
-      const path = pathFrom(cx, area, command.path);
-      const fromMap = resolveShown(projection, shown, scope.root, path);
+      const path = pathFrom(cx, command.path);
+      const fromMap = resolveShown(projection, shown, path.root, path);
       let node: TreeNode | undefined;
       if (fromMap.kind === "gone") node = fromMap.node;
       else if (fromMap.kind === "node" && fromMap.node.trashed) node = fromMap.node;

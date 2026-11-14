@@ -25,11 +25,10 @@ import type { ToolCall, WriteToolErrorOutput } from "./tool-context.js";
 
 /** What the model has been shown of the tree so far in this conversation. */
 export async function shownNamesOf(
-  ctx: Pick<ToolHandlerContext, "frontiers">,
+  ctx: Pick<ToolHandlerContext, "shownNames">,
 ): Promise<NamesShown> {
   const shown = emptyShown();
-  for (const bytes of (await ctx.frontiers?.shownNames()) ?? [])
-    addDelta(shown, decodeDelta(bytes));
+  for (const bytes of (await ctx.shownNames?.()) ?? []) addDelta(shown, decodeDelta(bytes));
   return shown;
 }
 
@@ -62,7 +61,7 @@ export type Reached = {
  */
 export async function reachShown(
   call: ToolCall,
-  ctx: Pick<ToolHandlerContext, "frontiers">,
+  ctx: Pick<ToolHandlerContext, "shownNames">,
   command: Parameters<typeof modelResult>[0]["command"] | "ls",
   path: string,
   options: { version?: "draft" | "live"; folderOf?: boolean } = {},

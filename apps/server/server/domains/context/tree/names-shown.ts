@@ -72,7 +72,8 @@ export function splitSegments(path: string): { segments: string[]; folder: boole
 /** The names a segment may mean in a folder: a document's leaf also goes through the name codec. */
 function candidates(segment: string, last: boolean, folder: boolean): string[] {
   const canonical = last && !folder ? canonicalLeaf(segment) : segment;
-  return canonical === segment ? [segment] : [canonical, segment];
+  // What was written is a name before it is an alias: a folder named `ch1.md` is not `ch1`.
+  return canonical === segment ? [segment] : [segment, canonical];
 }
 
 export type Resolution =
