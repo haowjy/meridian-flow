@@ -2118,6 +2118,14 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/account/AccountMenu.tsx
+msgid "Couldn't log out: another tab still has your documents open."
+msgstr ""
+
+#: src/features/account/AccountMenu.tsx
+msgid "Couldn't log out: your latest changes haven't reached the server yet."
+msgstr ""
+
 #: src/features/project/side/SideHeader.tsx
 msgid "Couldn't look up the document to show here."
 msgstr ""
@@ -2574,6 +2582,10 @@ msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted."
 msgstr ""
 
 #: src/features/editor/DocumentVersionMenu.tsx
@@ -3086,6 +3098,10 @@ msgstr ""
 msgid "Goal: {0}. "
 msgstr ""
 
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Gone for good: this document was emptied from Trash."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr ""
@@ -3583,6 +3599,10 @@ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
+msgstr ""
+
+#: src/features/account/AccountMenu.tsx
+msgid "Logging out…"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
@@ -4682,8 +4702,8 @@ msgstr ""
 
 #. placeholder {0}: document.name
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Restored {0}, but couldn't open it. Try again from the file list."
-msgstr ""
+#~ msgid "Restored {0}, but couldn't open it. Try again from the file list."
+#~ msgstr ""
 
 #. placeholder {0}: entries[0].name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
@@ -4693,6 +4713,10 @@ msgstr ""
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 #~ msgid "Restored {name} to {destinationName}."
 #~ msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Restored {name}, but couldn't open it. Try again from the file list."
+msgstr ""
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6653,6 +6677,10 @@ msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Your selected Work is unavailable. Choose another Work, or None."
+msgstr ""
+
+#: src/features/project/context/ProjectContextRemovalController.tsx
+msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
