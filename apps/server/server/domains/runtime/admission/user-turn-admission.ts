@@ -16,7 +16,7 @@ import type {
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import type { JsonValue, StoredMediaPart } from "@meridian/contracts/threads";
+import type { JsonValue } from "@meridian/contracts/threads";
 import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { RunClaim } from "../loop/ports.js";
