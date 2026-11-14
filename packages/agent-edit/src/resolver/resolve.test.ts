@@ -27,7 +27,7 @@ import {
 } from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { ProjectedBlock } from "../ports/model.js";
-import { alignBlocks, type CanPair } from "./block-alignment.js";
+import { alignBlocks } from "./block-alignment.js";
 import { findTextMatches } from "./find.js";
 import { hashLocateContext } from "./hash-locator.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
@@ -386,22 +386,18 @@ it("lowers changed marks and text around hard breaks as operations in one segmen
   it.each([
     ["青山绿水长河天地", ["青山", "绿水", "长河天地"]],
     ["one two one three four five six", ["one two", "one", "three four five six"]],
-  ] as const)("joins three-way split/merge with either head or tail paired: %s", (text, parts) => {
+  ] as const)("joins a three-way split/merge into one boundary: %s", (text, parts) => {
     const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
     const whole = [paragraph(text)],
       pieces = parts.map(paragraph);
-    for (const paired of [0, pieces.length - 1]) {
-      const split: CanPair = (_old, next) => next === pieces[paired];
-      const merge: CanPair = (old, _next) => old === pieces[paired];
-      for (const [before, after, canPair] of [
-        [whole, pieces, split],
-        [pieces, whole, merge],
-      ] as const) {
-        const steps = alignBlocks(before, after, canPair);
-        expect(steps).toHaveLength(3);
-        expect(steps[0].structuralBoundary).toBeDefined();
-        expect(new Set(steps.map((step) => step.structuralBoundary)).size).toBe(1);
-      }
+    for (const [before, after] of [
+      [whole, pieces],
+      [pieces, whole],
+    ] as const) {
+      const steps = alignBlocks(before, after);
+      expect(steps).toHaveLength(3);
+      expect(steps[0].structuralBoundary).toBeDefined();
+      expect(new Set(steps.map((step) => step.structuralBoundary)).size).toBe(1);
     }
   });
 }

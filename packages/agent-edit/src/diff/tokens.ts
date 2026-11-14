@@ -309,7 +309,7 @@ export function blockWords(node: PMNode): string[] {
 
 const containedWords = new WeakMap<PMNode, string[]>();
 /** The words a block holds: a container's are its descendant textblocks' in order (a leaf block holds none). */
-function contentWords(node: PMNode): string[] {
+export function contentWords(node: PMNode): string[] {
   if (node.isTextblock) return blockWords(node);
   let w = containedWords.get(node);
   if (!w) {
@@ -324,7 +324,7 @@ function contentWords(node: PMNode): string[] {
 
 const wordCounts = new WeakMap<PMNode, Map<string, number>>();
 /** Shared words ignoring order: an upper bound on the in-order count, and cheap. */
-function sharedBound(a: PMNode, b: PMNode): number {
+export function sharedBound(a: PMNode, b: PMNode): number {
   const get = (n: PMNode) => {
     let m = wordCounts.get(n);
     if (!m) {

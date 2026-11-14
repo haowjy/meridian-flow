@@ -528,3 +528,24 @@ export async function deadline<T>(promise: Promise<T>, ms: number, what: string)
     clearTimeout(timer);
   }
 }
+
+/**
+ * Resolves with the milliseconds until `room` holds `token` (0 when it already does), waiting on
+ * the room's own updates: a delivery after a commit, a timer or another process has no hook to
+ * order against. Past `ms` it fails naming `what`, with the room's text.
+ */
+export function roomHolds(room: Y.Doc, token: string, ms: number, what: string): Promise<number> {
+  const text = () => room.getXmlFragment("prosemirror").toString();
+  if (text().includes(token)) return Promise.resolve(0);
+  const started = performance.now();
+  let onUpdate: (() => void) | undefined;
+  const arrived = new Promise<number>((resolve) => {
+    onUpdate = () => {
+      if (text().includes(token)) resolve(Math.round(performance.now() - started));
+    };
+    room.on("update", onUpdate);
+  });
+  return deadline(arrived, ms, `${what} (room: ${text().slice(0, 200)})`).finally(() => {
+    if (onUpdate) room.off("update", onUpdate);
+  });
+}

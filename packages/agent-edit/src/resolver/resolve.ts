@@ -649,7 +649,7 @@ function replaceScope(
     structuralBoundary = undefined;
   };
 
-  for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
+  for (const step of alignBlocks(oldNodes, newBlocks)) {
     switch (step.kind) {
       case "remove":
         if (structuralBoundary !== step.structuralBoundary) flushStructural();
@@ -707,11 +707,6 @@ function replaceScope(
   flushStructural();
 
   return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
-}
-
-/** A block keeps its element only as the same node type. */
-function canRewriteInPlace(old: Block, next: Block): boolean {
-  return old.type === next.type;
 }
 
 function serializeReplacementBlocks(
