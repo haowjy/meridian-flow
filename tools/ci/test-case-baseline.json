@@ -123,7 +123,7 @@
     "apps/server/server/domains/collab/adapters/drizzle-branches.db.test.ts": 1,
     "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts": 19,
     "apps/server/server/domains/collab/adapters/hocuspocus-coordinator.test.ts": 2,
-    "apps/server/server/domains/collab/branch-tree.apply-discard.db.test.ts": 11,
+    "apps/server/server/domains/collab/branch-tree.apply-discard.db.test.ts": 15,
     "apps/server/server/domains/collab/branch-tree.reply.db.test.ts": 1,
     "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts": 2,
     "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts": 2,

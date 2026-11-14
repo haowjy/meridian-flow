@@ -36,14 +36,21 @@ import { createTestWorkProjectionMutation } from "../../test-support/work-projec
 import { createTreeReader } from "../context/tree/tree-view.js";
 import { createDrizzleApplyClick } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./adapters/drizzle-branch-discard.js";
-import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
+import {
+  branchRowRevisions,
+  createDrizzleBranchTreeState,
+} from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
+import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
+import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
+import { createApplyClickService } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
+import { createUndoDiscardService } from "./domain/undo-discard.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
@@ -104,6 +111,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         treeLists,
       }),
       holdRetirement: draftClose.holdRetirement,
+    });
+
+    const commands = createDrizzleDocumentCommands(db);
+    const service = createApplyClickService({
+      identity: {} as never,
+      commands,
+      evidence: {} as never,
+      store: apply,
+    });
+    const undoDiscard = createUndoDiscardService({
+      commands,
+      store: createDrizzleUndoDiscard(db, { workProjection, branches: workBranches, treeLists }),
     });
 
     const viewOf = () => ({ draft: branchId as string });
@@ -467,6 +486,153 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           command: asCommand(),
         }),
       ).resolves.toMatchObject({ status: "refused", reason: "stale" });
+    });
+
+    describe("commands over the tree half", () => {
+      const envelopeOf = (kind: "apply" | "unapply" | "undo_discard", commandId: string) => ({
+        commandId: commandId as DocumentCommandId,
+        accountId: USER,
+        projectId: PROJECT as never,
+        kind,
+        digest: commandId,
+      });
+      /** Apply of several nodes, as the group route sends it, at the revisions now on screen. */
+      async function applyGroup(nodes: readonly string[], commandId: string = randomUUID()) {
+        const revisions = await branchRowRevisions(db, branchId, nodes);
+        return service.applyTree({
+          branchId,
+          envelope: envelopeOf("apply", commandId),
+          request: {
+            commandId: commandId as DocumentCommandId,
+            items: nodes.map((node) => ({ node, revision: revisions.get(node) ?? null })),
+          },
+        });
+      }
+      async function unapply(applyCommandId: string, commandId: string = randomUUID()) {
+        return service.unapply({
+          branchId,
+          envelope: envelopeOf("unapply", commandId),
+          request: {
+            commandId: commandId as DocumentCommandId,
+            applyCommandId: applyCommandId as DocumentCommandId,
+          },
+        });
+      }
+
+      it("applies a drafted folder rename alone, and Un-Apply puts it back once", async () => {
+        const folder = await seed.folder(SOURCE, "Arc");
+        await submit((writer) => writer.rename(viewOf(), AGENT, folder, "Arc two"));
+        expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
+
+        const commandId = randomUUID();
+        expect(await applyGroup([folder], commandId)).toMatchObject({ status: "applied" });
+        expect(await liveRow(folder)).toMatchObject({ name: "Arc two" });
+        expect(await branchRow(folder)).toBeUndefined();
+
+        // A repeated id answers the stored outcome and writes nothing more.
+        const before = await submit((writer) => listRecords(writer.doc).length);
+        expect(await applyGroup([folder], commandId)).toMatchObject({ status: "applied" });
+        expect(await submit((writer) => listRecords(writer.doc).length)).toBe(before);
+
+        const undo = randomUUID();
+        expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
+        expect(await liveRow(folder)).toMatchObject({ name: "Arc" });
+        expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
+        expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
+        // Taken back already: the list moved since the Apply.
+        expect(await unapply(commandId)).toMatchObject({ status: "refused", reason: "gone" });
+      });
+
+      it("applies a folder and what is under it as one command, and one Un-Apply takes both", async () => {
+        const folder = await seed.folder(SOURCE, "Part", { view: viewOf(), actor: AGENT });
+        const chapter = (await seed.document(SOURCE, "Part/one.md", {
+          view: viewOf(),
+          actor: AGENT,
+        })) as DocumentId;
+        const commandId = randomUUID();
+        expect(await applyGroup([folder, chapter], commandId)).toMatchObject({
+          status: "applied",
+        });
+        expect(await liveRow(folder)).toMatchObject({ kind: "folder", trashRecord: null });
+        expect(await liveRow(chapter)).toMatchObject({ parentId: folder });
+        expect(await pendingCount()).toBe(0);
+
+        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
+        expect(await liveRow(folder)).toBeUndefined();
+        expect(await liveRow(chapter)).toBeUndefined();
+        expect(await branchRow(chapter)).toMatchObject({ existsOnlyInDraft: true });
+        expect(await pendingCount()).toBe(1);
+      });
+
+      it("refuses Un-Apply once anything else was admitted to the list", async () => {
+        const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
+        await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
+        const commandId = randomUUID();
+        expect(await applyGroup([a], commandId)).toMatchObject({ status: "applied" });
+        await seed.document(SOURCE, "elsewhere.md");
+        expect(await unapply(commandId)).toMatchObject({ status: "refused", reason: "gone" });
+        expect(await liveRow(a)).toMatchObject({ name: "renamed" });
+      });
+
+      it("Undo of a Discard brings its records back pending, once, for a part and a whole Discard", async () => {
+        const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
+        const made = (await seed.document(SOURCE, "made.md", {
+          view: viewOf(),
+          actor: AGENT,
+        })) as DocumentId;
+        await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
+        const part = asCommand();
+        await discard.discardItems({
+          branchId,
+          userId: USER,
+          selection: {
+            kind: "items",
+            items: [{ documentId: made, origin: "created", ends: "item" }],
+          },
+          command: part,
+        });
+        expect(await branchRow(made)).toBeUndefined();
+
+        const undo = (discardCommandId: string, commandId: string = randomUUID(), on = branchId) =>
+          undoDiscard({
+            branchId: on,
+            userId: USER,
+            envelope: envelopeOf("undo_discard", commandId),
+            request: {
+              commandId: commandId as DocumentCommandId,
+              discardCommandId: discardCommandId as DocumentCommandId,
+            },
+          });
+        expect(await undo(part.envelope.commandId)).toMatchObject({
+          status: "restored",
+          branchId,
+          restored: 1,
+        });
+        expect(await branchRow(made)).toMatchObject({ existsOnlyInDraft: true, deleted: false });
+        expect(await branchRow(a)).toMatchObject({ name: "renamed" });
+        expect(await undo(part.envelope.commandId)).toMatchObject({
+          status: "refused",
+          reason: "superseded",
+        });
+
+        // A whole Discard closes the branch; its Undo lands on the Work's new one.
+        const whole = asCommand();
+        await discard.discardItems({
+          branchId,
+          userId: USER,
+          selection: { kind: "whole" },
+          command: whole,
+        });
+        const restored = await undo(whole.envelope.commandId);
+        expect(restored).toMatchObject({ status: "restored" });
+        if (restored.status !== "restored") return;
+        expect(restored.branchId).not.toBe(branchId);
+        const rows = await db
+          .select()
+          .from(branchTreeNodes)
+          .where(eq(branchTreeNodes.branchId, restored.branchId));
+        expect(rows.map((row) => row.id).sort()).toEqual([a, made].sort());
+      });
     });
   },
 );

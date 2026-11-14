@@ -176,7 +176,12 @@ export function createBranchDiscard(deps: {
       const { selection } = input;
       if (selection.kind === "items" && selection.items.length === 0)
         return { status: "discarded", branchId, branchClosed: false, closed: [] };
-      const kernel = { userId: input.userId, branchId, selection };
+      const kernel = {
+        userId: input.userId,
+        branchId,
+        selection,
+        commandId: input.command.envelope.commandId,
+      };
       const ended = await deps.holdRetirement(() =>
         attempts((attempt) => commitDiscard(attempt, kernel, input.command)),
       );
