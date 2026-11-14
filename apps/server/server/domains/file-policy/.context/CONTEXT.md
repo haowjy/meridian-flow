@@ -24,12 +24,13 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
 - **Destination.** `Principal.agent` always has `branchOwner` and `writeMode`. A write goes to a draft
   when the chat's mode is draft or the place asks, and the source is drafted; otherwise live.
   `destinationFor` decides it per document from facts; `sourceDestination` decides it per source for
-  creates and tree views, from the fixed rule alone. Callers that hold a decision or a grant read the
-  destination from it. A stored per-folder setting needs creates to ask per path, and `placementFor`
+  creates and tree views, from the fixed rule alone. Everything that has a document (revisions,
+  reads, lists) reads the destination from its decision or grant, never from the chat's mode. A stored per-folder setting needs creates to ask per path, and `placementFor`
   (context) must change before then.
 - **Facts follow the destination.** An auto-apply chat loads live facts. Only a place whose
   destination is a draft loads the branch's view, `branchOwner` lifecycle and locks (`loadFor`,
-  `loadListFor` in `file-access.ts`), and a document only the branch holds is found there. Draft mode
+  `loadListFor` in `file-access.ts`), and a document only the branch holds is found there. Once live facts say draft, the branch's
+  facts are the answer, null included: a document the branch dropped is `not_found`. Draft mode
   loads the branch's view for every document, as before.
 - **Deny.** A `deny` place caps an agent at `read` with `ai_access_denied`, a `permission_denied`
   refusal that no retry or re-read helps. A person never meets it.

@@ -125,10 +125,10 @@ document or folder that exists only in that Work's draft appears only there. A d
 empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
-`DocumentRevisions.current` resolves the thread's current primary Work and the
-chat's write mode, checks the document is placed in the view, and delegates effective
-document reads to collab. A `version: "live"` request uses live text and the
-live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
+`DocumentRevisions.current` resolves the thread's current primary Work, asks file access
+(`listAccess`) for each document's decision, and delegates effective document reads to collab at
+that decision's destination: a live document reads live, a draft destination reads the Work's
+draft, whatever the chat's mode. A document the thread can't read has no revision. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
 independent pull transaction rules. It reports settled authority.
 
