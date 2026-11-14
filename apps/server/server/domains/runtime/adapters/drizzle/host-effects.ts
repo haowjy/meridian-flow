@@ -2,7 +2,7 @@
 
 import type { JsonValue } from "@meridian/contracts/threads";
 import { hostEffects } from "@meridian/database/schema";
-import { asc, eq, gt } from "drizzle-orm";
+import { asc, eq, lte, sql } from "drizzle-orm";
 import type { DetachedWorkTracker } from "../../../../shared/detached-work.js";
 import {
   currentDrizzleDb,
@@ -13,8 +13,13 @@ import {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../../observability/index.js";
 import type { HostEffects } from "../../ports/host-effects.js";
 
-/** Failed deliveries after which a row is logged as stuck, on each further failure. */
+/** Failed deliveries at which a row is logged as stuck, once. */
 export const HOST_EFFECT_STUCK_ATTEMPTS = 5;
+
+/** Wait before a row that has failed `attempts` times is tried again: 5s, doubling, at most 5 minutes. */
+export function hostEffectBackoffMs(attempts: number): number {
+  return Math.min(5_000 * 2 ** (attempts - 1), 300_000);
+}
 
 export function createHostEffectOutbox(deps: {
   db: DrizzleDatabase;
@@ -22,25 +27,28 @@ export function createHostEffectOutbox(deps: {
   eventSink: EventSink;
   backgroundTasks: DetachedWorkTracker;
 }) {
+  let running: Promise<number> | undefined;
+  let again = false;
+  let shutdown: AbortSignal | undefined;
+
   /**
-   * Delivers each row on its own: its lock is held while the handler runs, so a second process
-   * skips it, and a crash before the handler returns leaves the row. A row that throws stays
-   * with `attempts` up and does not hold back the others; it is tried again on the next call.
+   * Delivers each due row on its own: its lock is held while the handler runs, so another process
+   * skips it, and a crash before the handler returns leaves the row. A row that throws stays with
+   * `attempts` up and `next_attempt_at` pushed out, and holds back no other.
    */
-  async function deliver(): Promise<number> {
+  async function deliverDueRows(): Promise<number> {
     let delivered = 0;
-    let after = 0;
-    for (;;) {
-      const step = await runOutsideWrite(() =>
+    while (!shutdown?.aborted) {
+      const tookRow = await runOutsideWrite(() =>
         deps.db.transaction(async (tx) => {
           const [row] = await tx
             .select()
             .from(hostEffects)
-            .where(gt(hostEffects.id, after))
+            .where(lte(hostEffects.nextAttemptAt, sql`now()`))
             .orderBy(asc(hostEffects.id))
             .limit(1)
             .for("update", { skipLocked: true });
-          if (!row) return null;
+          if (!row) return false;
           try {
             await deps.host.handle({
               id: String(row.id),
@@ -50,8 +58,14 @@ export function createHostEffectOutbox(deps: {
             });
           } catch (cause) {
             const attempts = row.attempts + 1;
-            await tx.update(hostEffects).set({ attempts }).where(eq(hostEffects.id, row.id));
-            if (attempts >= HOST_EFFECT_STUCK_ATTEMPTS) {
+            await tx
+              .update(hostEffects)
+              .set({
+                attempts,
+                nextAttemptAt: sql`now() + ${hostEffectBackoffMs(attempts)} * interval '1 millisecond'`,
+              })
+              .where(eq(hostEffects.id, row.id));
+            if (attempts === HOST_EFFECT_STUCK_ATTEMPTS) {
               emitEvent(deps.eventSink, {
                 level: "error",
                 source: "runtime.host_effects",
@@ -65,16 +79,42 @@ export function createHostEffectOutbox(deps: {
                 },
               });
             }
-            return { id: row.id, delivered: false };
+            return true;
           }
           await tx.delete(hostEffects).where(eq(hostEffects.id, row.id));
-          return { id: row.id, delivered: true };
+          delivered += 1;
+          return true;
         }),
       );
-      if (!step) return delivered;
-      after = step.id;
-      if (step.delivered) delivered += 1;
+      if (!tookRow) break;
     }
+    return delivered;
+  }
+
+  /**
+   * One loop per process: a call while it runs makes it go round once more instead of starting a
+   * second, so delivery holds at most two connections (the row lock and its handler's transaction).
+   * `signal` is the scheduler's: once it aborts, no loop takes another row.
+   */
+  function deliver(signal?: AbortSignal): Promise<number> {
+    if (signal) shutdown = signal;
+    if (running) {
+      again = true;
+      return running;
+    }
+    running = (async () => {
+      let total = 0;
+      try {
+        for (;;) {
+          again = false;
+          total += await deliverDueRows();
+          if (!again || shutdown?.aborted) return total;
+        }
+      } finally {
+        running = undefined;
+      }
+    })();
+    return running;
   }
 
   return {

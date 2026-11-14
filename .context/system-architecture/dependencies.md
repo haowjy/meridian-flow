@@ -10,7 +10,7 @@ ordinary imports between apps, packages and features, is not listed anywhere.
 
 - **Apps import packages; no package imports an app.** Nothing breaks it today.
 - **A package imports only packages lower in the list on the [code](code.md) page.** `gateway`, `prosemirror-schema`, `yjs-inspect` and `design-tokens` import no workspace code.
-- **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Six domains (`runtime`, `threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
+- **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Five domains (`threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
 - **Domains do not import `lib/`.** `lib/` is the composition root: it may import every domain and wire them together.
 - **The app's layers (`routes`, features, `client`, `components`, `core`, `lib`) have no written rule**, and imports run both ways between them, so a feature importing another feature is not a break.
 - **The agent runtime (`domains/runtime`) does not import document, billing or Work code.** Its ties are listed [below](#the-runtimes-ties-to-document-billing-and-work-code).

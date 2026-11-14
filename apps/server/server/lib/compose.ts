@@ -345,7 +345,7 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
-    deliverHostEffects(): Promise<number>;
+    deliverHostEffects(signal?: AbortSignal): Promise<number>;
     purgeDocuments(): Promise<number>;
     expireAsks(): Promise<number>;
   };

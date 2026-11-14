@@ -779,7 +779,8 @@ export const userTurnAdmissions = pgTable(
 
 /**
  * Writes the host owes after a runtime commit, inserted in that commit and delivered after it.
- * A row goes when its handler returns; `attempts` counts the deliveries that threw.
+ * A row goes when its handler returns; `attempts` counts the deliveries that threw, and
+ * `nextAttemptAt` is when a failed row is next due.
  */
 export const hostEffects = pgTable(
   "host_effects",
@@ -792,6 +793,7 @@ export const hostEffects = pgTable(
     kind: text("kind").notNull(),
     payload: jsonb("payload").$type<JsonValue>().notNull(),
     attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
     createdAt: createdAt(),
   },
   (table) => [index("host_effects_thread_idx").on(table.threadId)],

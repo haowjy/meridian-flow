@@ -104,6 +104,7 @@ CREATE TABLE "host_effects" (
 	"kind" text NOT NULL,
 	"payload" jsonb NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
+	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
