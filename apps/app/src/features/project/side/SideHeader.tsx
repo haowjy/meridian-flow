@@ -51,32 +51,30 @@ function SideBand({
 }) {
   const side = useSideItem();
   return (
-    <>
-      <PaneHeader
-        title={<SidePicker projectId={projectId} name={name} icon={icon} />}
-        actions={
-          // The corner toggle always floats over this band, open or closed: its spacer is the
-          // side's own, not PaneHeader's closed-rail one.
-          <div className="flex items-center gap-0.5">
-            {actions}
-            {onOpenInMain ? (
-              <IconButton size="sm" label={t`Swap with main`} onClick={onOpenInMain}>
-                <ArrowLeftRight aria-hidden />
-              </IconButton>
-            ) : null}
-            <PanelToggleSpacer />
-          </div>
-        }
-      />
-      {side.failed ? (
-        <div className="shrink-0 px-2 pb-1">
+    <PaneHeader
+      title={<SidePicker projectId={projectId} name={name} icon={icon} />}
+      actions={
+        // The corner toggle always floats over this band, open or closed: its spacer is the
+        // side's own, not PaneHeader's closed-rail one.
+        <div className="flex items-center gap-0.5">
+          {actions}
+          {onOpenInMain ? (
+            <IconButton size="sm" label={t`Swap with main`} onClick={onOpenInMain}>
+              <ArrowLeftRight aria-hidden />
+            </IconButton>
+          ) : null}
+          <PanelToggleSpacer />
+        </div>
+      }
+      notice={
+        side.failed ? (
           <InlineErrorRow
             message={t`Couldn't look up the document to show here.`}
             onRetry={side.failed.retry}
           />
-        </div>
-      ) : null}
-    </>
+        ) : null
+      }
+    />
   );
 }
 
