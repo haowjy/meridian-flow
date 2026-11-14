@@ -159,7 +159,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
 
   // Where a document is now, in any source of the project or the account: places a review
   // launch's document and follows a moved one.
-  const trees = useProjectTrees(projectId, { account: true });
+  const trees = useProjectTrees(projectId);
   const documentTree = useMemo(
     () => ({ findDocument: (id: string) => trees.find(id)?.file ?? null }),
     [trees],
@@ -310,7 +310,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const reviewVersion = useDraftTreeVersion(reviewedItem?.branchId ?? null, listedDrafts.drafts);
   const reviewsDelete = reviewedItem?.tree?.deleted === true;
   const reviewTrees = useProjectTrees(reviewVersion && !reviewsDelete ? projectId : "", {
-    account: true,
     version: reviewVersion ?? undefined,
   });
   const placeTrees = reviewsDelete ? trees : reviewTrees;

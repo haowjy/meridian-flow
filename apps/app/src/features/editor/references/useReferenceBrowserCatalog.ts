@@ -24,7 +24,7 @@ export function useReferenceBrowserCatalog(
 ): ReferenceBrowserCatalog | null {
   const accountId = useAccountId();
   const projectPending = useIsProjectPendingCreation(projectId);
-  const trees = useProjectTrees(projectId ?? "", { account: true });
+  const trees = useProjectTrees(projectId ?? "");
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const workNames = useMemo(
     () => new Map<string, string>(works?.map((work) => [work.id, work.name])),

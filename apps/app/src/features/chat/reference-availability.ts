@@ -20,7 +20,7 @@ export function useReferenceAvailability(
   keys: readonly string[],
 ): ReadonlyMap<string, TranscriptReferenceResolution> {
   const projectId = useProjectDocumentNavigationProjectId();
-  const trees = useProjectTrees(projectId ?? "", { account: true });
+  const trees = useProjectTrees(projectId ?? "");
   const key = keys.join("\u0000");
   return useMemo(() => {
     if (!projectId || !trees.isComplete || !key) return NOTHING;
