@@ -178,9 +178,13 @@ Core shell expectations:
   Discard for a change, Apply draft and Discard draft for a document, Apply all and
   Discard all for everything. A document's pair shows the bare verb, since the Draft chip
   beside it names the scope; the full name is its tooltip and accessible name.
-- What a command did, with its Undo, is a line where it happened: `ActionNotice`
-  ("Deleted Chapter 3 · Undo · ×"), quiet `text-xs`, staying until the next action or
-  Dismiss. An Undo that failed takes its place as `InlineErrorRow`.
+- What a command did, with its Undo, shows where it happened and never adds height. On a
+  sidebar row it is `RowWord` in the row's trailing place, replacing its meta: jade "Undo",
+  or a muted word with a mark ("Applied", "Skipped"). Hover, keyboard focus and a long press
+  show its sentence; a click or tap does its one action. A row a command took stays struck
+  through in its place until the writer's next action there. Outside the sidebar (a
+  document's band, the chat strip, Recently opened) it is an `ActionNotice` line
+  ("Deleted Chapter 3 · Undo · ×"). An Undo that failed takes its place as `InlineErrorRow`.
 - An error is a line: `InlineErrorRow`, a red icon with body-ink text and at most one
   text action. A floating editor message is `EditorNoticePill`; a standing note above a
   document is `DocumentNotice`. None of them push content down when they appear.

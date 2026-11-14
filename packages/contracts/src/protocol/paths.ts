@@ -23,15 +23,6 @@ function setOwnerQuery(
   else if (opts?.workId) query.set("workId", opts.workId);
 }
 
-function projectContextQuery(
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  const query = new URLSearchParams();
-  setOwnerQuery(query, scheme, opts);
-  const search = query.toString();
-  return search ? `?${search}` : "";
-}
 export const API_PROJECTS_PATH = "/api/projects";
 
 export const API_THREADS_PATH = "/api/threads";
@@ -188,37 +179,6 @@ export function apiProjectContextChatUploadsPath(projectId: string, chatId: stri
   return `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`;
 }
 
-export function apiProjectContextCatalogPath(
-  projectId: string,
-  operation: "snapshot" | "changes" | "children" | "lookup",
-): string {
-  return `${apiProjectPath(projectId)}/context/catalog/${operation}`;
-}
-
-export function apiProjectContextCreatePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/create${projectContextQuery(scheme, opts)}`;
-}
-
-export function apiProjectContextCreateUntitledPath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/create-untitled${projectContextQuery(scheme, opts)}`;
-}
-
-export function apiProjectContextCreateFolderPath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/create-folder${projectContextQuery(scheme, opts)}`;
-}
-
 export function apiProjectDocumentReadPath(projectId: string, documentId: string): string {
   return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
@@ -231,11 +191,6 @@ export function apiProjectContextMovePath(projectId: string): string {
 /** One Copy command: many sources, one destination, one receipt. */
 export function apiProjectContextCopyPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/copy`;
-}
-
-/** Delete one entry (file or folder) by id. */
-export function apiProjectContextEntryDeletePath(projectId: string, entryId: string): string {
-  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/delete`;
 }
 
 /** Internal document-link resolution: three spellings in, one document or none. */

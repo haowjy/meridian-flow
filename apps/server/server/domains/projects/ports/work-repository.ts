@@ -32,35 +32,11 @@ export interface ListWorksOptions {
   includeNoWork?: boolean;
 }
 
-export class WorkNameConflictError extends Error {
-  constructor() {
-    super("A Work with this name already exists in the project");
-    this.name = "WorkNameConflictError";
-  }
-}
-
-/** A Work cannot be restored because another Work now has its name. */
-export class WorkRestoreConflictError extends Error {
-  constructor() {
-    super("Work cannot be restored because its name is now in use");
-    this.name = "WorkRestoreConflictError";
-  }
-}
-
 export class WorkLockedError extends Error {
   readonly code = "work_locked" as const;
   constructor() {
     super("No Work cannot be renamed, archived, or deleted");
     this.name = "WorkLockedError";
-  }
-}
-
-export class WorkRestoreExpiredError extends Error {
-  readonly code = "work_restore_expired" as const;
-
-  constructor() {
-    super("This Work can no longer be restored because its 30-day retention period has ended.");
-    this.name = "WorkRestoreExpiredError";
   }
 }
 

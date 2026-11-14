@@ -36,7 +36,6 @@ import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
-import { removalRecordOf } from "./removal-answer";
 import { useDocumentStanding } from "./use-document-standing";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
@@ -198,7 +197,7 @@ function useOpenOnceLiving(
   return failed;
 }
 
-/** What the page says of the removal: the list's place and author, and the server's time and retention when known. */
+/** What the page says of the removal: the list's place, and the server's author, time and retention once it has answered. */
 type TrashedDetails = {
   scheme: ProjectContextTreeScheme;
   folders: readonly string[];
@@ -227,7 +226,7 @@ function useTrashedDetails(
   return {
     scheme,
     folders: trashed.folders,
-    actor: removalRecordOf(trashed.deletedBy)?.actor ?? null,
+    actor: kept?.actor ?? null,
     ...(kept ? { kept: { time: kept.removal.time, retention: kept.retention } } : {}),
   };
 }
@@ -276,12 +275,6 @@ function deletedSentence(
       return deleted
         ? t`Deleted from ${place} by the AI in a chat on ${deleted}.`
         : t`Deleted from ${place} by the AI in a chat.`;
-    }
-    case "work": {
-      const { name } = voice;
-      return deleted
-        ? t`Deleted from ${place} with the Work ${name} on ${deleted}.`
-        : t`Deleted from ${place} with the Work ${name}.`;
     }
     case "anonymous":
       return deleted ? t`Deleted from ${place} on ${deleted}.` : t`Deleted from ${place}.`;

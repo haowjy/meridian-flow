@@ -53,10 +53,7 @@ export * from "./context-owner.js";
 export * from "./context-sources.js";
 export * from "./document-filename.js";
 export * from "./document-links.js";
-export type {
-  DocumentRemovalCause,
-  DocumentRemovalRecord,
-} from "./document-removal.js";
+export type { DocumentRemovalRecord } from "./document-removal.js";
 export * from "./document-revision.js";
 export * from "./event-seq.js";
 export * from "./file-access.js";

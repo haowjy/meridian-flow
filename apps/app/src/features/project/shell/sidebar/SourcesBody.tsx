@@ -21,7 +21,6 @@ import {
 } from "react";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
-import { StatusToast } from "@/components/app/StatusToast";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -37,8 +36,6 @@ import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
-import { DraftNoticeLine, useDraftNotice } from "@/features/draft-review/CommandNotice";
-import { deleteNoticeKey } from "@/features/draft-review/draft-notices";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
@@ -392,7 +389,6 @@ export function SourcesBody({
     } else follow(source);
   }, [activeScheme, placed, inAgents, follow]);
   const undo = useSidebarUndo(projectId, version);
-  const deleted = useDraftNotice(deleteNoticeKey(projectId));
   const { openReviewFile } = useAiDraftLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
@@ -489,9 +485,6 @@ export function SourcesBody({
           >
             <SourceView key={source} source={source} />
           </div>
-          {deleted?.surface.kind === "tree" ? (
-            <DraftNoticeLine notice={deleted} className="shrink-0 px-4" />
-          ) : null}
           <div className="shrink-0 px-2 pt-1">
             {foot.map((key) => (
               <FootSource
@@ -503,7 +496,6 @@ export function SourcesBody({
             ))}
           </div>
         </div>
-        <StatusToast notice={undo.notice} onDismiss={undo.dismiss} />
       </EntryList>
     </WriteSourcesContext.Provider>
   );

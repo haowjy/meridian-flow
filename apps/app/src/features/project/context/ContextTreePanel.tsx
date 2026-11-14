@@ -37,6 +37,7 @@ import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
+import { NOWHERE, treePlace, useTreeNoticeWords } from "./use-tree-notice-words";
 
 /** What a row offers in a tree that takes no change: its documents still copy out. */
 const READ_ONLY: EntryCapabilities = ["copy"];
@@ -210,6 +211,8 @@ export function useContextTree({
   const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
+  const drawn = useMemo(() => (tree ? treePlace(tree, isExpanded) : NOWHERE), [tree, isExpanded]);
+  const notices = useTreeNoticeWords(projectId, drawn);
   const env = useMemo<TreeEnv | null>(
     () =>
       tree && importedTree
@@ -234,7 +237,12 @@ export function useContextTree({
                   placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
                 }
               : undefined,
-            onSelectFile,
+            // Opening a document is the writer's next action here: the tree's notices end.
+            onSelectFile: (picked, file) => {
+              notices.end();
+              onSelectFile(picked, file);
+            },
+            notices,
             onRequestDelete: deleteEntries,
             importHere: importable
               ? {
@@ -264,6 +272,7 @@ export function useContextTree({
       creating,
       createdFolder,
       onSelectFile,
+      notices,
       requestCreate,
       deleteEntries,
       onCreateDone,
@@ -310,6 +319,7 @@ export function useContextTree({
     importScheme,
     pickImport,
     openFolder,
+    notices,
     /** Opens the file made at this path once its row shows. */
     openWhenListed: setPendingOpenPath,
   };
@@ -405,6 +415,7 @@ export function ContextTreePanel({
     <SourcePane
       label={schemeLabel(scheme)}
       actions={actions}
+      notice={tree.notices.header}
       drop={drop}
       search={
         <SettledSearchField

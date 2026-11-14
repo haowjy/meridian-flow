@@ -758,11 +758,13 @@ CREATE TABLE "tree_nodes" (
 	"location_version" bigint DEFAULT 0 NOT NULL,
 	"trash_record" text,
 	"trashed_at" timestamp with time zone,
+	"trashed_by" text,
 	CONSTRAINT "tree_nodes_id_source" UNIQUE("id","context_source_id"),
 	CONSTRAINT "tree_nodes_kind_valid" CHECK ("tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "tree_nodes_file_type_of_document" CHECK (("tree_nodes"."kind" = 'folder') = ("tree_nodes"."file_type" IS NULL)),
 	CONSTRAINT "tree_nodes_rank_present" CHECK ("tree_nodes"."rank" <> ''),
-	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL))
+	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL)),
+	CONSTRAINT "tree_nodes_trashed_by_shape" CHECK ("tree_nodes"."trashed_by" IS NULL OR "tree_nodes"."trash_record" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "user_preferences" (
@@ -1165,7 +1167,6 @@ CREATE INDEX "upload_intakes_owner_thread" ON "upload_intakes" USING btree ("own
 CREATE INDEX "upload_intakes_open_updated" ON "upload_intakes" USING btree ("updated_at") WHERE "upload_intakes"."state" IN ('reserved', 'object_stored');--> statement-breakpoint
 CREATE INDEX "works_project_updated_active" ON "works" USING btree ("project_id","updated_at" DESC NULLS LAST) WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "works_created_by_active" ON "works" USING btree ("created_by_user_id") WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "works_project_name_active" ON "works" USING btree ("project_id",lower("name")) WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "works_project_handle" ON "works" USING btree ("project_id","handle") WHERE "works"."handle" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "works_project_no_work_active" ON "works" USING btree ("project_id") WHERE "works"."is_no_work" = true AND "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_edit_parts_edit_ordinal" ON "document_edit_parts" USING btree ("edit_id","ordinal");--> statement-breakpoint

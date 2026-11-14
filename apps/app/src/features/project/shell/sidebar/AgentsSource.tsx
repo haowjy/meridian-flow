@@ -83,7 +83,11 @@ export function AgentsSource({
   const [builtin, setBuiltin] = useState<AgentFileStatus | null>(null);
   const builtins = (files ?? []).filter((file) => file.level === "builtin");
   return (
-    <SourcePane label={t`Agents`} drop={drop}>
+    <SourcePane
+      label={t`Agents`}
+      drop={drop}
+      notice={project.notices.header ?? user.notices.header}
+    >
       <LevelSection level="project" tree={project} writable={writable} />
       <LevelSection level="user" tree={user} writable={writable} />
       <ListSectionHeader label={t`Built-in`} />

@@ -55,6 +55,16 @@ export function actorOf(origin: WriteProvenance | undefined): Actor {
   return "system";
 }
 
+/** The user or chat a record's actor string names; null for the server's own. */
+export function parseActor(
+  actor: string | null | undefined,
+): { kind: "user"; userId: string } | { kind: "agent"; chatId: string } | null {
+  if (actor?.startsWith("user:")) return { kind: "user", userId: actor.slice("user:".length) };
+  if (actor?.startsWith("agent:"))
+    return { kind: "agent", chatId: actor.slice("agent:".length).split("/")[0] ?? "" };
+  return null;
+}
+
 /** The Work's draft view for a branch, or live. */
 export function viewOfBranch(branchId: BranchId | null): View {
   return branchId === null ? LIVE : { draft: branchId };

@@ -21,7 +21,6 @@ import {
   updateWorkTransition,
   WorkLifecycleUnavailableError,
   WorkLockedError,
-  WorkNameConflictError,
   WorkNameRequiredError,
   WorkStatusInvalidError,
 } from "../../domains/projects/index.js";
@@ -336,8 +335,6 @@ function expectedWorkError(
     return toolError({ code: "invalid_work_status", message: error.message });
   if (error instanceof WorkNameRequiredError)
     return toolError({ code: "invalid_work_name", message: error.message });
-  if (error instanceof WorkNameConflictError)
-    return toolError({ code: "work_name_conflict", message: error.message });
   if (error instanceof WorkLockedError)
     return toolError({ code: error.code, message: error.message });
   if (error instanceof WorkLifecycleUnavailableError)
@@ -423,14 +420,24 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
     } satisfies WorkShowResult;
   },
   async update(deps, thread, command) {
-    return updateReceipt(
-      await updateWorkTransition(
-        { works: deps.works, workContextNotices: deps.workContextNotices },
-        command.work.id,
-        { name: command.name, goal: command.goal, status: command.status },
-        { originThreadId: thread.id },
-      ),
-    );
+    try {
+      return updateReceipt(
+        await updateWorkTransition(
+          { works: deps.works, workContextNotices: deps.workContextNotices },
+          command.work.id,
+          { name: command.name, goal: command.goal, status: command.status },
+          { originThreadId: thread.id },
+        ),
+      );
+    } catch (cause) {
+      // A closed Work takes no change, as for the writer: the result says so, with the Work
+      // as it stands, and nothing is asked of the model.
+      if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing") {
+        const work = await deps.works.findById(command.work.id);
+        if (work) return { ...modelWork(work), closed: cause.state };
+      }
+      throw cause;
+    }
   },
   archive: (deps, thread, { work }) => archiving(deps, thread, work, true),
   unarchive: (deps, thread, { work }) => archiving(deps, thread, work, false),

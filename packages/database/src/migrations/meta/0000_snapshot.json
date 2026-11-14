@@ -5103,28 +5103,6 @@
           "method": "btree",
           "with": {}
         },
-        "works_project_name_active": {
-          "name": "works_project_name_active",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"works\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "works_project_handle": {
           "name": "works_project_handle",
           "columns": [
@@ -7621,6 +7599,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "trashed_by": {
+          "name": "trashed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -7847,6 +7831,10 @@
         "tree_nodes_trash_shape": {
           "name": "tree_nodes_trash_shape",
           "value": "(\"tree_nodes\".\"trash_record\" IS NULL) = (\"tree_nodes\".\"trashed_at\" IS NULL)"
+        },
+        "tree_nodes_trashed_by_shape": {
+          "name": "tree_nodes_trashed_by_shape",
+          "value": "\"tree_nodes\".\"trashed_by\" IS NULL OR \"tree_nodes\".\"trash_record\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false

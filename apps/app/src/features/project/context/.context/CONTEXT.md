@@ -134,7 +134,7 @@ editor address and are not recorded.
 
 ## Reference pages
 
-- [Presented documents and Editor lifecycle](resource-catalog-and-editor-lifecycle.md) —
+- [Presented documents and Editor lifecycle](presented-documents-and-editor-lifecycle.md) —
   hosts, removal notices, draft-only presentation and recovery.
 - [Document identity bar](document-identity-bar.md) — identity chrome and the
   placement, rename, and repair contract.
