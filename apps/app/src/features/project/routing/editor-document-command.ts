@@ -21,7 +21,7 @@ export type EditorCommandSnapshot = {
   address: ProjectAddress;
   editorWorkId: string | null;
   addressDocumentId?: string;
-  documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
+  documentTree: Parameters<typeof resolveLaunchLocator>[0]["tree"];
 };
 /**
  * Opening a document in main is one navigation: the address names the document, and main's host
@@ -32,7 +32,6 @@ export function createEditorDocumentCommand({
   accountId,
   read,
   presented,
-  lookup,
   isDraftOnly,
   admitDraftReview,
   enterRoute,
@@ -42,7 +41,6 @@ export function createEditorDocumentCommand({
   read: () => EditorCommandSnapshot;
   /** What the views present now (`PresentedDocuments`): a renamed document's current locator. */
   presented: () => readonly OpenDocument[];
-  lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
   admitDraftReview: (tab: Extract<OpenDocument, { kind: "tracked" }>) => void;
@@ -68,7 +66,7 @@ export function createEditorDocumentCommand({
       // reused path can have outdated. Identity decides where that document is now.
       let target: ContextRouteRequest = requested;
       if (options?.replaceIfSameDocument === true) {
-        target = await resolveLaunchLocator({
+        target = resolveLaunchLocator({
           requested,
           tabs: presented(),
           addressed: current.address.destination,
@@ -76,9 +74,8 @@ export function createEditorDocumentCommand({
           draftOnly:
             options.draftOnly === true ||
             (options.document !== undefined && isDraftOnly(options.document.documentId)),
-          catalog: current.documentCatalog,
+          tree: current.documentTree,
           selected: !!options.itemKey && scope !== null,
-          lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
       }
@@ -104,9 +101,8 @@ export function createEditorDocumentCommand({
         draftOnlyPin?.itemKey ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
-        { projectId, accountId, address: current.address, scope, presented: presented() },
+        { address: current.address, scope },
         target,
-        preparedTab,
         itemKey,
         reviewOwner,
         options?.changeId ??
@@ -121,7 +117,7 @@ export function createEditorDocumentCommand({
         if (options?.focus && focused) armEditorFocus(focused);
         // The writer opened this document: the route is its own from the first frame, whatever
         // another document holds at its cached path. A pasted or reloaded URL names none.
-        if (target.documentId && target.path && scope && !next.state)
+        if (target.documentId && target.path && scope)
           enterRoute(
             contextRouteRequest({ ...target, path: `/${canonicalDocumentPath(target.path)}` }),
             target.documentId,
@@ -139,7 +135,7 @@ export function createEditorDocumentCommand({
         const carriesReview = !!itemKey && itemKey === current.address.itemKey;
         const result = carriesReview
           ? { kind: "replaced" as const }
-          : await navigation.replaceIfCurrent(ticket, next.address);
+          : await navigation.replaceIfCurrent(ticket, next);
         if (result.kind !== "replaced")
           return result.kind === "failed"
             ? { ...result, stage: "before-acceptance" }
@@ -153,11 +149,8 @@ export function createEditorDocumentCommand({
         }
       }
       return navigation.transition(
-        next.address,
-        {
-          replace: options?.replace ?? false,
-          state: next.state,
-        },
+        next,
+        { replace: options?.replace ?? false },
         {
           isCurrent: () => options?.canCommit?.() !== false,
           commit,
@@ -181,54 +174,18 @@ function routeTargetOwner(request: ContextRouteRequest, scope: string | null): C
 
 export function prepareEditorDestination(
   {
-    projectId,
-    accountId,
     address,
     scope,
-    presented,
   }: {
-    projectId: string;
-    accountId: string;
     address: ProjectAddress;
     /** The Work scope; null while the Works list has not resolved. */
     scope: string | null;
-    /** What the views present, main's document first (`PresentedDocuments`). */
-    presented: readonly OpenDocument[];
   },
   target: ContextRouteRequest,
-  preparedTab?: OpenDocument,
   itemKey?: string,
   reviewOwner?: string,
   changeId?: string,
 ) {
-  let state: Record<string, unknown> | undefined;
-  const documentId =
-    target.documentId ?? (target.path === "" && scope ? presented[0]?.documentId : undefined);
-  const eligible = presented.filter(isEditorOpenDocument);
-  const tab = documentId
-    ? eligible.find((tab) => tab.documentId === documentId)
-    : eligible.find((tab) => openDocumentMatchesRoute(tab, target));
-  const selected = preparedTab ?? tab;
-  // A locally created document keeps its stable selection even when its
-  // readable address is reused or its background placement is rejected.
-  if (
-    target.path === "" ||
-    (selected?.kind === "tracked" && selected.origin === "local-resource")
-  ) {
-    if (
-      !selected?.resourceHandle ||
-      (selected.kind !== "new" &&
-        !(selected.kind === "tracked" && selected.origin === "local-resource"))
-    )
-      throw new Error("Local document is unavailable");
-    const pointer = {
-      version: 2,
-      accountId: accountId,
-      projectId,
-      resourceHandle: selected.resourceHandle,
-    };
-    state = { meridianProjectSelection: pointer };
-  }
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
@@ -245,15 +202,12 @@ export function prepareEditorDestination(
       : scratchOwner;
   const { owner: _previousOwner, ...previous } = address;
   return {
-    address: {
-      ...previous,
-      destination,
-      ...(owner ? { owner } : {}),
-      itemKey: owner ? itemKey : undefined,
-      changeId: owner && itemKey ? changeId : undefined,
-    } as ProjectAddress,
-    state,
-  };
+    ...previous,
+    destination,
+    ...(owner ? { owner } : {}),
+    itemKey: owner ? itemKey : undefined,
+    changeId: owner && itemKey ? changeId : undefined,
+  } as ProjectAddress;
 }
 /** The draft a request's draft-only document is shown on, if the request names one. */
 function draftOnlyDocumentPin(

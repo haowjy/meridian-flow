@@ -4,6 +4,7 @@ import { nameFault } from "./names.js";
 import {
   type CreateRecord,
   isSourceRoot,
+  nameSet,
   newId,
   recordsOf,
   sourceIdOf,
@@ -48,8 +49,15 @@ export type KeptCreate = {
   record: CreateRecord;
 };
 
+/**
+ * An update refused whole. `record` is the id of the record that earned it, when one did (not
+ * when the update's own structure is at fault): the client gives that record up and sends the
+ * rest again.
+ */
+export type WholeRefusal = { ok: false; reason: string; record?: string };
+
 export type Admission =
-  | { ok: false; reason: string }
+  | WholeRefusal
   | {
       ok: true;
       /** The records the update adds (not those the server already held), in list order. */
@@ -82,37 +90,44 @@ type Struct = {
  * copy never does (design, section 4). The update is read without being applied, so a refused
  * one never touches the server's copy `doc`. What the server holds is cut away from each struct
  * first, with Yjs's own offset (a struct may start inside what the server has), so what is read
- * is only what the update would add. Returns why, or null.
+ * is only what the update would add. Returns why (and the record at fault, when there is one), or null.
  */
-function refuseWhole(doc: Y.Doc, update: Uint8Array, connection: Connection): string | null {
+function refuseWhole(
+  doc: Y.Doc,
+  update: Uint8Array,
+  connection: Connection,
+): Omit<WholeRefusal, "ok"> | null {
   let decoded: ReturnType<typeof Y.decodeUpdate>;
   try {
     decoded = Y.decodeUpdate(update);
   } catch {
-    return "not an update";
+    return { reason: "not an update" };
   }
-  if (decoded.ds.clients.size > 0) return "a deletion";
+  if (decoded.ds.clients.size > 0) return { reason: "a deletion" };
   const list = recordsOf(doc);
   const state = (client: number) => Y.getState(doc.store, client);
 
   // Each client's new structs must follow what the server holds from it, with no gap.
   const byClient = new Map<number, Struct[]>();
   for (const item of decoded.structs) {
-    if (!(item instanceof Y.Item)) return "not an item";
+    if (!(item instanceof Y.Item)) return { reason: "not an item" };
     const { client, clock } = item.id;
-    if (client < SERVER_CLIENT_IDS) return "a reserved client id";
+    if (client < SERVER_CLIENT_IDS) return { reason: "a reserved client id" };
     // Held already, as when two tabs of one browser each forward the same update.
     if (clock + item.length <= state(client)) continue;
     const cut = Math.max(0, state(client) - clock);
     const structs = byClient.get(client) ?? [];
     const last = structs[structs.length - 1];
-    if (clock + cut !== (last ? last.to : state(client))) return "not the next clock";
-    if (item.parentSub !== null) return "a map entry";
+    if (clock + cut !== (last ? last.to : state(client))) return { reason: "not the next clock" };
+    if (item.parentSub !== null) return { reason: "a map entry" };
     if (!(item.content instanceof Y.ContentAny)) {
       // Anything but plain records: text, a type, a format. Said by where it sits, when it names that.
-      return typeof item.parent === "string" && item.parent !== "ops"
-        ? "not the list"
-        : "not plain records";
+      return {
+        reason:
+          typeof item.parent === "string" && item.parent !== "ops"
+            ? "not the list"
+            : "not plain records",
+      };
     }
     structs.push({
       client,
@@ -157,20 +172,26 @@ function refuseWhole(doc: Y.Doc, update: Uint8Array, connection: Connection): st
   for (const structs of byClient.values())
     for (const struct of structs) {
       const why = sitsInList(struct, new Set());
-      if (why) return why;
+      if (why) return { reason: why };
       for (const value of struct.values) {
         const read = readRecord(value, connection.user);
-        if (!read.ok) return `a record that is ${read.why}`;
+        if (!read.ok) {
+          const id = (value as { id?: unknown } | null)?.id;
+          return {
+            reason: `a record that is ${read.why}`,
+            ...(typeof id === "string" ? { record: id } : {}),
+          };
+        }
         const record = read.record;
         if (
           (record.type === "create" || record.type === "rename") &&
           record.filetype !== undefined &&
           !connection.editableTypes.has(record.filetype)
         )
-          return "a type that is not editable";
+          return { reason: "a type that is not editable", record: record.id };
         records.push(record);
       }
-      if (records.length > MAX_RECORDS) return "too many records";
+      if (records.length > MAX_RECORDS) return { reason: "too many records" };
     }
 
   // A record is judged against the list it joins. An id already there would let a client
@@ -181,16 +202,17 @@ function refuseWhole(doc: Y.Doc, update: Uint8Array, connection: Connection): st
   const ids = new Set<string>();
   const fresh = new Set<string>();
   for (const record of records) {
-    if (ids.has(record.id)) return "a record id twice";
+    if (ids.has(record.id)) return { reason: "a record id twice", record: record.id };
     ids.add(record.id);
-    if (index.records.has(record.id)) return "a record id already in the list";
+    if (index.records.has(record.id))
+      return { reason: "a record id already in the list", record: record.id };
     if (record.type !== "create") continue;
     if (
       index.nodes.has(record.node) ||
       fresh.has(record.node) ||
       connection.takenElsewhere(record.node)
     )
-      return "a node id already in use";
+      return { reason: "a node id already in use", record: record.id };
     fresh.add(record.node);
   }
   return null;
@@ -259,11 +281,11 @@ function judge(doc: Y.Doc, added: readonly Added[], connection: Connection) {
       record.cascade.some((member) => known(member, draft) && !mayWrite(member, draft))
     )
       reason = "a source you cannot change";
-    else if (record.type === "rename") {
+    else if (nameSet(record) !== undefined) {
       const kind = viewOf(draft).nodes.get(record.node)?.kind ?? created.get(record.node)?.kind;
-      if (kind === "document" && nameFault(kind, record.name) !== null)
+      if (kind === "document" && nameFault(kind, nameSet(record) as string) !== null)
         reason = "a name a document cannot have";
-      else if (record.filetype !== undefined) {
+      else if (record.type === "rename" && record.filetype !== undefined) {
         const was = typeOf(record.node, draft);
         if (was === undefined || !connection.sameSchema(was, record.filetype))
           reason = "a type across schemas";
@@ -348,7 +370,7 @@ function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
  */
 export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
   const why = refuseWhole(server.doc, update, connection);
-  if (why !== null) return { ok: false, reason: why };
+  if (why !== null) return { ok: false, ...why };
   const added = integrate(server.doc, update);
   const { refused, kept } = judge(server.doc, added, connection);
   server.transact(() => {

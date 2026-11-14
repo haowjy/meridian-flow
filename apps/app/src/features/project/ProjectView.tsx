@@ -9,16 +9,14 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
-import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useProjectWake } from "@/client/query/useProjectWake";
 import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { retryWorkingSetHydration, type WorkingSetHydrationPlan } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
@@ -39,7 +37,6 @@ import {
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
-import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
@@ -56,7 +53,6 @@ import { ReviewLaunchProvider } from "./review-launch";
 import type { ChatDisplay } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
-import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
@@ -69,17 +65,12 @@ import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
-const ignoreColdScope = () => undefined;
-
 export type ProjectViewProps = {
   projectId: string;
   /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
   /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
-  activeLocalDocumentId?: string;
-  /** The untitled document the history entry names, as the replica holds it. */
-  activeLocalDocument?: LocalDocument;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
@@ -128,21 +119,15 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
-  const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
   const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
-  useContextCatalogWake(props.projectId, ignoreColdScope);
+  useProjectWake(props.projectId);
   // The removed-documents notice sits in main's band; a navigation in main ends it.
   useRemovedNoticeLifetime(props.projectId, {
-    key: JSON.stringify([
-      props.chatDisplay,
-      props.activeContextScheme,
-      props.activeContextPath,
-      props.activeLocalDocumentId,
-    ]),
+    key: JSON.stringify([props.chatDisplay, props.activeContextScheme, props.activeContextPath]),
     onScreen: true,
   });
   const presented = useOptionalPresentedDocuments();
@@ -163,13 +148,11 @@ export function ProjectView(props: ProjectViewProps) {
     patchRecents();
     const stopPresented = presented?.subscribe(patchRecents);
     const stopDraftOnly = draftOnlyDocuments?.subscribe(patchRecents);
-    const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
     return () => {
       stopPresented?.();
       stopDraftOnly?.();
-      stopWorksObservation();
     };
-  }, [accountId, draftOnlyDocuments, presented, props.projectId, queryClient]);
+  }, [accountId, draftOnlyDocuments, presented, props.projectId]);
   // A retry answers the entry plan it retried; new route data brings a new one.
   const [retriedHydration, setRetriedHydration] = useState<{
     entry: WorkingSetHydrationPlan;
@@ -221,7 +204,6 @@ export function ProjectView(props: ProjectViewProps) {
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
       <ChatDeleteProvider key={props.projectId} projectId={props.projectId}>
         <ManageWorksProvider>
-          <RefusalToasts projectId={props.projectId} />
           <div className="flex h-full min-h-0 w-full bg-background text-foreground">
             {hydrated ? (
               <>
@@ -233,7 +215,6 @@ export function ProjectView(props: ProjectViewProps) {
                     activeContextChat={props.activeContextChat}
                     editorWorkId={editorScope.workId}
                     activeContextWork={props.activeContextWork}
-                    localDocumentId={props.activeLocalDocumentId}
                     reviewDocumentId={props.reviewDocumentId}
                     route={props.contextRemovalRoute}
                   />
@@ -293,11 +274,7 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
 
 type MainPresentation = Pick<
   ResolvedProjectViewProps,
-  | "activeContextScheme"
-  | "activeContextPath"
-  | "activeContextChat"
-  | "activeLocalDocumentId"
-  | "activeLocalDocument"
+  "activeContextScheme" | "activeContextPath" | "activeContextChat"
 > & { main: MainView };
 
 /** Resolves main's document from the address, and keeps the last one painted while one loads. */
@@ -311,7 +288,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     path: props.activeContextPath,
     workId: props.activeContextWork,
     rootThreadId: props.activeContextChat,
-    local: props.activeLocalDocument ?? null,
     addressed: props.addressedDocument,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
@@ -356,8 +332,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
           activeContextChat: props.activeContextChat,
-          activeLocalDocumentId: props.activeLocalDocumentId,
-          activeLocalDocument: props.activeLocalDocument,
           main: requestedMain,
         },
       };

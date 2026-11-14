@@ -3,7 +3,7 @@
  *
  * Stored href parsing belongs to the shared contracts boundary. This port
  * receives its decoded canonical address and only resolves project ownership
- * and catalog identity.
+ * and document identity.
  */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
@@ -30,10 +30,6 @@ export interface DocumentLinkResolver {
 export interface DocumentLinkHistory {
   previous(
     input: ResolveDocumentLinkInput,
-    address: {
-      scope: import("@meridian/contracts/protocol").CatalogScope;
-      scheme: import("@meridian/contracts").ContextUriScheme;
-      path: string;
-    },
+    address: { sourceId: import("@meridian/contracts").ContextSourceId; path: string },
   ): Promise<string | null>;
 }

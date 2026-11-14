@@ -1,4 +1,3 @@
-import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
@@ -7,14 +6,7 @@ import {
   type Work,
 } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import {
-  contextAvailabilityHeads,
-  contextCatalogScopeHeads,
-  contextSources,
-  projects,
-  treeNodes,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, treeNodes, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -26,7 +18,7 @@ import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { lockProjectTreeList } from "../../../../shared/tree-list-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
-import type { LineageScratchLifecycle } from "../../../context/index.js";
+import { type LineageScratchLifecycle, provisionWorkScratch } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
@@ -205,6 +197,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           throw cause;
         }
         if (!row) throw new Error("Failed to create work");
+        await provisionWorkScratch(db, row.id);
         return mapWork(row);
       });
     },
@@ -281,27 +274,13 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return rows.map(mapWork);
     },
     async snapshotIdentity(projectId: ProjectId) {
+      // Every Work change raises that Work's revision and none lowers it, so the sum orders
+      // snapshots of the project. Read in the snapshot's own transaction, beside the Works.
       const [project] = await currentDrizzleDb(db)
-        .select({
-          authorityRevision: contextAvailabilityHeads.generation,
-        })
-        .from(contextAvailabilityHeads)
-        .where(eq(contextAvailabilityHeads.authorityKey, `project:${projectId}`))
-        .limit(1);
-      const [catalog] = await currentDrizzleDb(db)
-        .select({ generation: contextCatalogScopeHeads.generation })
-        .from(contextCatalogScopeHeads)
-        .where(
-          eq(
-            contextCatalogScopeHeads.scopeKey,
-            catalogScopeKey({ kind: "project", projectId } as never),
-          ),
-        )
-        .limit(1);
-      return {
-        catalogGeneration: catalog?.generation ?? "00000000-0000-0000-0000-000000000000",
-        authorityRevision: String(project?.authorityRevision ?? 0n),
-      };
+        .select({ revision: sql<string>`coalesce(sum(${works.entityRevision}), 0)::text` })
+        .from(works)
+        .where(eq(works.projectId, projectId));
+      return { authorityRevision: project?.revision ?? "0" };
     },
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       await requireUnlocked(id);

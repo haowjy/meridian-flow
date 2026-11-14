@@ -71,6 +71,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
+      await db.insert(schema.contextSources).values([
+        { projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb", scope: "project" },
+        { workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
+      ]);
       await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD.threadId,

@@ -124,14 +124,17 @@ export function useComposedRuntimes(db: () => Database) {
    * tool calls through the executor, then saves the reply.
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
+    // What the conversation was shown of the tree: each result's added names, as the runtime keeps them.
+    const shownNames: Uint8Array[] = [];
     const begin = async () => {
       await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
-      const call: ToolCall = (name, args) =>
-        runtime.app.toolExecutor.executeTool(
+      const call: ToolCall = async (name, args) => {
+        const result = await runtime.app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
+            shownNames: async () => shownNames,
             responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
             agentSlug: null,
             // No one answers here: a `work` call the policy asks about gets the refusal.
@@ -141,6 +144,9 @@ export function useComposedRuntimes(db: () => Database) {
             }),
           },
         );
+        if (result.evidence?.names) shownNames.push(result.evidence.names.snapshot);
+        return result;
+      };
       const save = () =>
         runtime.ports.documentSync.finalizeResponseCommit(
           { providerResponseId: responseId, editScopeId: responseId },

@@ -7,6 +7,7 @@ import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
+import type { ProjectHintPort } from "../ports/project-hints.js";
 import { createTreeReader } from "../tree/tree-view.js";
 import {
   claimedOf,
@@ -73,7 +74,6 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
     finalPath: row.finalPath,
     objectKey: row.objectKey,
     canonicalUri: row.finalPath && row.ownerThreadId ? uploadUri(chatRef, row.finalPath) : null,
-    locationRevision: row.locationRevision,
     fileType: row.fileType as Filetype | null,
     state: row.state as UploadReservation["state"],
     consumed: row.consumedAt !== null,
@@ -117,6 +117,7 @@ async function resolveOwner(
   db: Database,
   owner: Extract<UploadOwner, { kind: "chat" }>,
   actorUserId: string,
+  hints: Pick<ProjectHintPort, "publishSourcesHint">,
 ) {
   const activeDb = currentDrizzleDb(db);
   if (!(await projectOwnedBy(db, owner.projectId, actorUserId))) return null;
@@ -128,12 +129,15 @@ async function resolveOwner(
     .where(eq(threads.id, owner.chatId as never))
     .limit(1);
   if (chat && (chat.kind !== "primary" || chat.projectId !== owner.projectId)) return null;
-  const store = createChatContextDocumentStore(db, owner.projectId, owner.chatId, "uploads");
+  const store = createChatContextDocumentStore(db, owner.projectId, owner.chatId, "uploads", hints);
   const sourceId = await store.contextSourceId();
   return { sourceId, chatRef: chat?.ref ?? null };
 }
 
-export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository {
+export function createDrizzleUploadIntakeRepository(
+  db: Database,
+  hints: Pick<ProjectHintPort, "publishSourcesHint">,
+): UploadIntakeRepository {
   async function chatRefOf(chatId: string | null): Promise<string | null> {
     if (chatId === null) return null;
     const [thread] = await currentDrizzleDb(db)
@@ -181,7 +185,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         }
         const placement =
           requester.kind === "chat"
-            ? await resolveOwner(db, requester, input.actorUserId)
+            ? await resolveOwner(db, requester, input.actorUserId, hints)
             : (await projectOwnedBy(db, requester.projectId, input.actorUserId))
               ? { sourceId: null, chatRef: null }
               : null;
@@ -207,7 +211,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             mimeType: input.mimeType,
             sizeBytes: input.sizeBytes,
             objectKey: `uploads/${requester.projectId}/${documentId}`,
-            locationRevision: crypto.randomUUID(),
           })
           .returning();
         if (!created) throw new Error("Upload intake was not created under its lock");
@@ -301,7 +304,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
       const identity = and(
         eq(uploadIntakes.projectId, scope.projectId as never),
         eq(uploadIntakes.ownerThreadId, scope.chatId as never),
-        eq(uploadIntakes.intakeId, input.intakeId),
         eq(uploadIntakes.documentId, input.documentId as never),
         sql`exists (
           select 1 from projects
@@ -327,10 +329,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         };
       }
       if (row.consumedAt) return { kind: "refused", result: { kind: "already_used" } };
-      // The address spelling is not identity: a New-chat atom still holds the chat-relative
-      // spelling after the chat row (and its handle) exists. The document and revision pin it.
-      if (row.documentId !== input.documentId || row.locationRevision !== input.expectedRevision)
-        return { kind: "refused", result: { kind: "identity_mismatch" } };
       return { kind: "claimed", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
     },
     async markDeleted(projectId, intakeId) {

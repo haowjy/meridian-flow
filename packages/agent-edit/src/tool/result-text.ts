@@ -42,6 +42,15 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
   if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
+  const notMoved = result.tree?.notMoved;
+  if (notMoved?.length) sections.push(`not moved: ${notMoved.join("; ")}`);
+  for (const group of result.tree?.concurrent ?? [])
+    sections.push(
+      [
+        `concurrent tree changes by ${group.author}:`,
+        ...group.lines.map((line) => `  ${line}`),
+      ].join("\n"),
+    );
   return sections.join("\n\n");
 }
 
@@ -60,10 +69,7 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
-  if (result.namespace)
-    facts.push(
-      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
-    );
+  if (result.tree) facts.push(...treeFacts(result.tree));
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -77,19 +83,30 @@ function statusLine(result: AgentEditResultV1): string {
 }
 
 /**
- * A drafted move or delete is pending until the user applies it: said first, before the status
- * a model otherwise reads as done, and in terms of live, which every area shares.
+ * The first drafted tree change of a reply says once that drafted changes wait for review, before
+ * the status a model otherwise reads as done; after it, `version: draft (w2)` carries it.
  */
 function pendingLine(result: AgentEditResultV1): string[] {
-  const change = result.namespace;
-  if (!change || result.destination !== "draft") return [];
-  const what =
-    change.kind === "moved"
-      ? `moved only in this chat's draft; live still has it at ${change.from}`
-      : "deleted only in this chat's draft; it stays live";
+  if (!result.tree?.firstDrafted || result.destination !== "draft") return [];
   return [
-    `not applied yet: ${what} until the user applies it. Tell the user it is waiting for their review.`,
+    "not applied yet: tree changes in this chat's draft stay out of live until the user applies them. Tell the user they are waiting for review.",
   ];
+}
+
+/** The facts of a tree result after the status line's own fields, in the order the spec shows them. */
+function treeFacts(tree: NonNullable<AgentEditResultV1["tree"]>): string[] {
+  const facts: string[] = [];
+  if (tree.moved)
+    facts.push(
+      tree.moved.made === tree.moved.of
+        ? `moved: ${tree.moved.made}`
+        : `moved: ${tree.moved.made} of ${tree.moved.of}`,
+    );
+  if (tree.deleted !== undefined) facts.push(`deleted: ${tree.deleted} inside`);
+  if (tree.kept) facts.push(`kept: ${tree.kept}`);
+  if (tree.placedAtEnd) facts.push(`placed at end: ${tree.placedAtEnd}`);
+  if (tree.alreadyDeleted) facts.push("already deleted by the user");
+  return facts;
 }
 
 function blockCount(count: number): string {
@@ -111,10 +128,6 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (result.destination === "draft" && result.draftWork !== undefined)
     facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
-  if (result.namespace)
-    facts.push(
-      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
-    );
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -146,11 +159,13 @@ function notes(result: AgentEditResultV1): string[] {
     lines.push("later edits were kept, so the text may not match how it was before the write.");
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
-  const surviving = result.namespace?.kind === "deleted" ? result.namespace.survivingWorks : [];
+  const surviving = result.tree?.survivingWorks;
   if (surviving?.length)
     lines.push(
       `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
+  if (result.tree?.deletedInLive)
+    lines.push("deleted in live by the user: this waits until it is restored");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.awarenessDegraded) {
     lines.push("the write landed, but concurrent changes could not be reported.");

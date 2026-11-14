@@ -35,7 +35,7 @@ import {
   lockSeamWorks,
   lockWorksInIdOrder,
 } from "../../../shared/work-lifecycle-lock.js";
-import type { DraftOwnerHintPort } from "../../context/ports/context-catalog.js";
+import type { ProjectHintPort } from "../../context/ports/project-hints.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { WorkBranchPendingCounts } from "../ports/work-branch-pending-counts.js";
@@ -108,7 +108,7 @@ type WorksNoticeState = {
 
 export function createWorkProjectionMutation(input: {
   db: Database;
-  draftOwnerHints: DraftOwnerHintPort;
+  draftOwnerHints: Pick<ProjectHintPort, "publishDraftOwnerHints">;
   /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkBranchPendingCounts;
   eventSink?: EventSink;

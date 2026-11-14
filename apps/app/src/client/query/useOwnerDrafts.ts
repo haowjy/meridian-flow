@@ -1,7 +1,7 @@
 /**
  * useOwnerDrafts — reviewable AI draft list for one owner (one entry per document).
  *
- * Projects one catalog-labelled file per active document draft, in stable order.
+ * Projects one tree-labelled file per active document draft, in stable order.
  */
 import {
   parseDraftOwnerKey,
@@ -15,7 +15,7 @@ import { listOwnerDrafts } from "@/client/api/branches-api";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
-import { useContextCatalogViews } from "./useContextCatalog";
+import { useProjectTreeViews } from "./useProjectTree";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 
 export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
@@ -27,8 +27,8 @@ export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   frozen: boolean;
 };
 
-/** The catalog owner whose Scratch names this draft owner's documents. */
-export function catalogOwnerOf(owner: string | null): { workId?: string; rootThreadId?: string } {
+/** The tree owner whose Scratch names this draft owner's documents. */
+export function treeOwnerOf(owner: string | null): { workId?: string; rootThreadId?: string } {
   const parsed = owner ? parseDraftOwnerKey(owner) : null;
   if (!parsed) return {};
   return parsed.kind === "work" ? { workId: parsed.id } : { rootThreadId: parsed.id };
@@ -122,9 +122,9 @@ export function useOwnerDrafts(
     ],
     [result.data],
   );
-  const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
+  const trees = useProjectTreeViews(projectId ?? "", schemes, {
     enabled: enabled && Boolean(result.data?.length),
-    ...catalogOwnerOf(owner),
+    ...treeOwnerOf(owner),
   });
   const visible = result.data;
   const files = useMemo(
@@ -132,12 +132,12 @@ export function useOwnerDrafts(
       enabled && visible
         ? projectWorkBranchFiles(visible, {
             findDocument: (id) =>
-              Object.values(catalogs)
-                .flatMap(({ catalog }) => catalog?.findDocument(id) ?? [])
+              Object.values(trees)
+                .flatMap(({ tree }) => tree?.findDocument(id) ?? [])
                 .at(0) ?? null,
           })
         : null,
-    [enabled, visible, catalogs],
+    [enabled, visible, trees],
   );
   const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
   const fileForDocument = useCallback(

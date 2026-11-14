@@ -38,10 +38,14 @@ copied at fork time. Handoffs and spawned children inherit no rows.
 
 ## Observation frontiers
 
+Room `tree` of the same table is not text: it holds the names the model was shown per chat
+(`TREE_NAMES_ROOM`, `shownNames` on the tool context), which tree commands resolve paths
+through (`domains/context/tree/names-shown.ts`).
+
 [The Model's View][kb-model-view] is the current implementation. Here, a handler
 returns host-only evidence beside the result, and the executor strips it from
 serialized output and records it with the source block; `source_block_id` permits at
-most one row per block. Inverse echoes record a frontier without the concurrent-change
+most one row per block and room. Inverse echoes record a frontier without the concurrent-change
 lookup. A failed insert logs `observation_frontier.record_failed` and the result
 still commits.
 

@@ -15,7 +15,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
-import { mapAuthoritativeFile } from "../../../context/adapters/catalog-file-mapper.js";
+import { mapAuthoritativeFile } from "../../../context/adapters/context-file-entry.js";
 import { classifyAuthoritativeIdentity } from "../../../context/adapters/project-context-availability.js";
 import {
   LIVE_TREE,

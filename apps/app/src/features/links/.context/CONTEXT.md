@@ -14,8 +14,8 @@ A folder the index doesn't hold, including another Work's Scratch, asks the serv
 still finds a folder by identity, so a move or rename after the link was written opens its
 current location.
 
-Every project catalog wake advances `link-resolution-epoch`, which registers a new resolver
-generation even when the changed catalog isn't one this surface loads. That is how a deleted
+Every project wake hint that can change what a link reaches (a draft owner, the sources) advances `link-resolution-epoch`, which registers a new resolver
+generation even when the changed tree isn't one this surface loads. That is how a deleted
 folder in another Work turns dashed without a reload. Focus and network return recheck after
 15 seconds as a missed-wake fallback.
 
@@ -23,7 +23,7 @@ The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
 `indexedDocumentAt`): the first of `addressCandidates` that names a document (the
 exact path, then its alias), else the path with its final extension omitted when exactly one
-document fits. Only links omit the extension; the catalog's `findPath` does not. Addresses are unique, so there is no "several documents" answer.
+document fits. Only links omit the extension; the tree's `findPath` does not. Addresses are unique, so there is no "several documents" answer.
 
 **A settlement is a fact the client keeps.** The resolve endpoint marks an ahead ref's answer
 `settled: true` when it came through the ref's settlement. The resolver records it in the
@@ -63,7 +63,7 @@ pending click to be carried into.
 | Contract | Why |
 |---|---|
 | A scope change re-registers the resolver | `registerResolver` forgets every answer and failure in one step. The alternative, a scope key inside the cache, is a second invalidation concept for one rule. |
-| A catalog change is a scope change | A link is spelled the same after a create, move or delete, and its old answer is a door onto the wrong document. Nothing else in the app invalidates this cache. |
+| A tree change is a scope change | A link is spelled the same after a create, move or delete, and its old answer is a door onto the wrong document. Nothing else in the app invalidates this cache. |
 | Nothing here remounts the editor | Destroying a collaborative editor and its UndoManager to change a resolver is the expensive way to invalidate a cache. |
 | A base URI arriving is a scope change | A relative link asked before the tree settles lands in the `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it. |
 | A click survives a registration | A `resolve()` waiter whose generation retires is asked again in the new one, so a rename during a follow opens the right document. |
@@ -100,22 +100,20 @@ window costs the writer their place.
 
 ## Creating from the offer
 
-`useCreateLinkedDocument` makes the document at exactly the missing address. It captures the
-deepest existing parent identity and any missing folder names as a creation suffix, using the
-reservation and `setLocation` primitive with no folder-create or catalog request. Both steps
-commit locally, so the document opens at once while the server's atomic move creates the suffix
-beneath the anchor's current home. A local failure stays on the dialog; a sync failure lands on
-the document. Nothing about the link changes on creation: the arrival settles its ahead ref
-server-side, and the new catalog is a new resolution generation.
+`useCreateLinkedDocument` makes the document at exactly the missing address. It finds the deepest
+existing folder of the address in the scheme's tree and appends, to the list's copy, a folder
+record for each missing name and then the document's. The records are in the copy at once, so the
+document opens before the server has seen them. A refused action (read-only, no list) stays on the
+dialog; a server refusal lands on the document. Nothing about the link changes on creation: the
+arrival settles its ahead ref server-side, and the new tree is a new resolution generation.
 
 ## The document index
 
-`useLinkableDocuments` walks the context catalogs the app already caches, so it costs no
-request. `linkableCatalogScopes` names the catalogs a contextual address resolves in on the
-server. A lineage scope has two owners in one index: Scratch reads with the lineage and Uploads
-with the chat (`aggregateCatalogScope`). Narrowing the index to one exclusive `ContextOwner`
-leaves Uploads with no catalog, the index never completes, and the resolver refuses every local
-answer.
+`useLinkableDocuments` walks the project's list, which the app already holds, so it costs no
+request. `linkableScopes` names the owners a contextual address resolves in on the server. A
+lineage scope has two owners in one index: Scratch reads with the lineage and Uploads with the
+chat. A scheme the surface owns no source for (Uploads outside a chat) has an empty tree, and
+completeness is the list's, so it never holds the index back.
 
 A Work-qualified URI outside the selected Work, or another lineage's, is outside the index and
 always asks the server.

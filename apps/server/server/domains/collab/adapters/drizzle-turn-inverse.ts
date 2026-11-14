@@ -377,6 +377,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
+    async readHistory(documentId) {
+      return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
+    },
     describePart(document, part) {
       const destination = document.destinationOf(part.origin);
       const doc =

@@ -32,7 +32,7 @@ export interface ThreadCachePort {
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
    * snapshot and, when the owning project is known, Work draft-review lists,
-   * its thread list, canonical Work catalog, and the project's context trees.
+   * its thread list and the canonical Work list.
    * `snapshot: false` leaves the snapshot to the caller, which asks for its own read.
    */
   invalidateThread(
@@ -73,7 +73,6 @@ export function createThreadCache(
             projectId,
             refreshLists: true,
             workIds: "all",
-            contextTrees: "all",
             skipSnapshot,
           });
         } else {

@@ -1,4 +1,4 @@
-/** Canonical reference identity and deterministic lexical ranking over catalog metadata. */
+/** Canonical reference identity and deterministic lexical ranking over a source's tree. */
 import {
   type CanonicalContextUri,
   type DocumentId,
@@ -6,15 +6,13 @@ import {
   parseContextUri,
 } from "@meridian/contracts";
 import type {
-  CatalogAuthorityEntry,
-  CatalogFileEntry,
-  CatalogFolderEntry,
-  CatalogScope,
+  ContextSource,
   DocumentFileType,
   Filetype,
+  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { StableReferenceAuthority } from "@meridian/thread-client";
+import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 
 export const REFERENCE_ROW_LIMIT = 20;
 export const MAX_REFERENCE_QUERY_LENGTH = 80;
@@ -28,11 +26,9 @@ export type DocumentReference = {
   fileType: Filetype | DocumentFileType;
   authority: StableReferenceAuthority;
   label: string;
-  /** A chat upload's intake identity: the proof a pre-creation pick carries into admission. */
-  intake?: { intakeId: string; locationRevision: string };
 };
 
-/** A folder, named by its catalog entry; its URI is only where it is now. Area roots are never one. */
+/** A folder, named by its node; its URI is only where it is now. Area roots are never one. */
 export type FolderReference = {
   kind: "folder";
   folderId: FolderId;
@@ -47,10 +43,8 @@ export type ReferenceNavigationAction = {
   type: "navigate";
   /** One authority segment or a full canonical source/folder prefix. */
   prefix: string;
-  scope: CatalogScope;
+  sourceId: string;
   containerId?: string;
-  /** Only authority activation crosses from warm metadata into scope acquisition. */
-  acquire: boolean;
 };
 
 export type ReferenceSelectAction<Reference extends AuthoritativeReference = DocumentReference> = {
@@ -92,7 +86,56 @@ export type ReferenceRow =
 /** A row that names a reference rather than opening a level. */
 export type ReferenceTerminalRow = Extract<ReferenceRow, { kind: "file" | "folder-mention" }>;
 
-export type ReferenceAuthorityIndex = ReadonlyMap<string, CatalogAuthorityEntry>;
+/** A source as the browser lists it: where its addresses point and what the writer calls its owner. */
+export type ReferenceSource = {
+  id: string;
+  scheme: ProjectContextTreeScheme;
+  authority: StableReferenceAuthority;
+  /** A Work's name for a source it owns; empty for every other owner. */
+  ownerLabel: string;
+};
+
+export type ReferenceSourceView = { source: ReferenceSource; tree: TreeView };
+
+/** The authority a source's addresses carry. A chat's handle is null until the chat exists. */
+export function referenceSourceOf(
+  source: ContextSource,
+  context: { projectId: string; accountId: string; ownerLabel?: string },
+): ReferenceSource {
+  const { projectId, accountId } = context;
+  const address = source.authority;
+  const authority: StableReferenceAuthority =
+    source.owner.kind === "work"
+      ? {
+          kind: "work",
+          projectId,
+          workId: source.owner.workId,
+          workHandle: "workHandle" in address ? address.workHandle : null,
+        }
+      : source.owner.kind === "lineage"
+        ? {
+            kind: "lineage",
+            projectId,
+            rootThreadId: source.owner.rootThreadId,
+            rootThreadRef: "rootThreadRef" in address ? address.rootThreadRef : "",
+          }
+        : source.owner.kind === "chat"
+          ? {
+              kind: "chat",
+              projectId,
+              chatId: source.owner.chatId,
+              chatRef: "chatRef" in address ? address.chatRef : null,
+            }
+          : source.scheme === "user"
+            ? { kind: "user", userId: accountId }
+            : { kind: "project", projectId };
+  return {
+    id: source.id,
+    scheme: source.scheme,
+    authority,
+    ownerLabel: source.owner.kind === "work" ? (context.ownerLabel ?? "") : "",
+  };
+}
 
 export type ReferenceRankingPriors = {
   openDocumentIds?: ReadonlySet<string>;
@@ -116,67 +159,50 @@ type RankedRow = {
   matchedAlias: string | null;
 };
 
-/** Authority metadata is project-scope data. It never materializes a Work's files. */
-export function referenceAuthorityIndex(
-  entries: Iterable<CatalogAuthorityEntry>,
-): ReferenceAuthorityIndex {
-  return new Map([...entries].map((entry) => [authorityKey(entry.authority), entry]));
-}
-
 export function authoritativeReferenceForFile(
-  entry: CatalogFileEntry,
-  authorities: ReferenceAuthorityIndex,
+  file: TreeFile,
+  source: ReferenceSource,
 ): DocumentReference | null {
-  const authority = stableAuthority(entry.scope, authorities, entry.uri);
-  if (!authority) return null;
-  const uri = referenceUriForAuthority(entry.uri, authority);
+  const uri = referenceUriForAuthority(file.uri, source.authority);
   if (!uri) return null;
-
   return {
     kind: "document",
-    documentId: entry.entryId,
+    documentId: file.documentId,
     uri,
-    fileType: entry.editable ? entry.filetype : entry.fileType,
-    authority,
-    label: entry.name,
-    ...(entry.upload
-      ? {
-          intake: {
-            intakeId: entry.upload.intakeId,
-            locationRevision: entry.upload.locationRevision,
-          },
-        }
-      : {}),
+    fileType: file.editable ? file.filetype : file.fileType,
+    authority: source.authority,
+    label: file.name,
   };
 }
 
-/**
- * A folder a writer can mention: one with a server identity (not device-synthesized
- * ancestry) whose address carries its stable authority. Area roots are sources, never folders.
- */
+/** A folder a writer can mention: one whose address carries its source's stable authority. */
 export function folderReferenceForEntry(
-  entry: CatalogFolderEntry,
-  authorities: ReferenceAuthorityIndex,
+  dir: TreeDirectory,
+  source: ReferenceSource,
 ): FolderReference | null {
-  if (entry.navigationOnly || entry.path.length === 0) return null;
-  const uri = canonicalReferenceUri(entry.scope, entry.uri, authorities);
-  return uri ? { kind: "folder", folderId: entry.entryId, uri, label: entry.name } : null;
+  const uri = referenceUriForAuthority(dir.uri, source.authority);
+  return uri ? { kind: "folder", folderId: dir.entryId, uri, label: dir.name } : null;
 }
 
-/** The terminal browser row for a catalog file. */
+/** The directories above a node, as the row's location: `a/b` for `/a/b/c.md`. */
+export function locationOf(path: string): string {
+  return path.split("/").filter(Boolean).slice(0, -1).join("/");
+}
+
+/** The terminal browser row for a file. */
 export function referenceRowForFile(
-  entry: CatalogFileEntry,
-  authorities: ReferenceAuthorityIndex,
+  file: TreeFile,
+  source: ReferenceSource,
 ): Extract<ReferenceRow, { kind: "file" }> | null {
-  const reference = authoritativeReferenceForFile(entry, authorities);
+  const reference = authoritativeReferenceForFile(file, source);
   if (!reference) return null;
   return {
     kind: "file",
-    rowId: `file:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
-    fileKind: entry.editable ? "document" : "asset",
-    aliases: entry.aliases,
+    rowId: `file:${file.documentId}`,
+    label: file.name,
+    location: locationOf(file.path),
+    fileKind: file.editable ? "document" : "asset",
+    aliases: file.aliases ?? [],
     matchedAlias: null,
     action: { type: "select", reference },
   };
@@ -184,28 +210,18 @@ export function referenceRowForFile(
 
 /** The terminal browser row that names a folder rather than opening it. */
 export function referenceRowForFolder(
-  entry: CatalogFolderEntry,
-  authorities: ReferenceAuthorityIndex,
+  dir: TreeDirectory,
+  source: ReferenceSource,
 ): Extract<ReferenceRow, { kind: "folder-mention" }> | null {
-  const reference = folderReferenceForEntry(entry, authorities);
+  const reference = folderReferenceForEntry(dir, source);
   if (!reference) return null;
   return {
     kind: "folder-mention",
-    rowId: `folder-mention:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
+    rowId: `folder-mention:${source.id}:${dir.entryId}`,
+    label: dir.name,
+    location: locationOf(dir.path),
     action: { type: "select", reference },
   };
-}
-
-/** Verify that catalog syntax already carries the stable authority F1 promised. */
-export function canonicalReferenceUri(
-  scope: CatalogScope,
-  uri: CanonicalContextUri,
-  authorities: ReferenceAuthorityIndex,
-): CanonicalContextUri | null {
-  const authority = stableAuthority(scope, authorities, uri);
-  return authority ? referenceUriForAuthority(uri, authority) : null;
 }
 
 /**
@@ -277,56 +293,8 @@ export function normalizeReferenceName(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function stableAuthority(
-  scope: CatalogScope,
-  authorities: ReferenceAuthorityIndex,
-  uri: CanonicalContextUri,
-): StableReferenceAuthority | null {
-  switch (scope.kind) {
-    case "lineage": {
-      // The scope names the lineage by id; the handle is only in the URI it spells.
-      const parsed = parseContextUri(uri);
-      return parsed.ok && parsed.value.authority.kind === "lineage"
-        ? {
-            kind: "lineage",
-            projectId: scope.projectId,
-            rootThreadId: scope.rootThreadId,
-            rootThreadRef: parsed.value.authority.rootThreadRef,
-          }
-        : null;
-    }
-    case "project":
-      return { kind: "project", projectId: scope.projectId };
-    case "user":
-      return { kind: "user", userId: scope.userId };
-    case "chat": {
-      // The scope already names the chat; its handle only appears once the chat exists.
-      const parsed = parseContextUri(uri);
-      return {
-        kind: "chat",
-        projectId: scope.projectId,
-        chatId: scope.chatId,
-        chatRef:
-          parsed.ok && parsed.value.authority.kind === "chat"
-            ? parsed.value.authority.chatRef
-            : null,
-      };
-    }
-    case "work": {
-      const entry = authorities.get(`work:${scope.workId}`);
-      if (!entry) return null;
-      return {
-        kind: "work",
-        projectId: scope.projectId,
-        workId: scope.workId,
-        workHandle: entry.authority.workHandle,
-      };
-    }
-  }
-}
-
 export function referenceUriForAuthority(
-  uri: CanonicalContextUri,
+  uri: string,
   authority: StableReferenceAuthority,
 ): CanonicalContextUri | null {
   const parsed = parseContextUri(uri);
@@ -360,15 +328,11 @@ export function referenceUriForAuthority(
     : null;
 }
 
-function authorityKey(authority: CatalogAuthorityEntry["authority"]): string {
-  return `work:${authority.workId}`;
-}
-
 function canonicalRowIdentity(row: ReferenceRow): string {
   if (row.kind === "file") return `file:${row.action.reference.documentId}`;
   if (row.kind === "folder-mention") return `mention:${row.action.reference.folderId}`;
-  if (row.kind === "authority") return `authority:${JSON.stringify(row.action.scope)}`;
-  return `${row.kind}:${row.action.scope.kind}:${row.action.containerId ?? row.action.prefix}`;
+  if (row.kind === "authority") return `authority:${row.action.sourceId}`;
+  return `${row.kind}:${row.action.sourceId}:${row.action.containerId ?? row.action.prefix}`;
 }
 
 function bestNameMatch(

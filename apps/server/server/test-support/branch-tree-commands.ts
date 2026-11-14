@@ -80,7 +80,7 @@ export interface ScenarioWriter {
   createDocument(path: string, content: string): Promise<DocumentId>;
   mkdir(path: string): Promise<void>;
   /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
-  move(from: string, to: string): ReturnType<ContextPort["move"]>;
+  move(from: string, to: string): ReturnType<ContextPort["treeCommand"]>;
   /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
   delete(path: string): ReturnType<ContextPort["delete"]>;
   /** The writer saves the whole document live, as the editor's Markdown save does. */

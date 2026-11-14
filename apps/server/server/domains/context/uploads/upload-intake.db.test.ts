@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
@@ -76,7 +77,7 @@ if (!RUN) {
         createdByUserId: USER,
         ref: "c1",
       });
-      return createDrizzleUploadIntakeRepository(db);
+      return createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS);
     }
 
     /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
@@ -123,6 +124,7 @@ if (!RUN) {
       collab = createInMemoryCollabDomain(),
     ) {
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
         treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
@@ -131,7 +133,7 @@ if (!RUN) {
         branches: collab.branches,
       });
       return createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(db),
+        repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
         content: createContextUploadContentPort(contextPorts),
         objectStore,
         release: createObjectRelease({ objectStore, onFailure() {} }),
@@ -267,7 +269,7 @@ if (!RUN) {
       );
     });
 
-    it("deletes only the exact unused identity and preserves revision mismatches", async () => {
+    it("deletes only the chat's own unused upload", async () => {
       const repo = await seed();
       const reserved = await repo.reserve(reservation("delete", NEW_CHAT));
       if (reserved.kind === "conflict" || reserved.kind === "owner_unavailable") {
@@ -284,26 +286,14 @@ if (!RUN) {
       await treeSeeder(database.current).document(intake.contextSourceId as string, "chapter", {
         id: documentId,
       });
-      const identity = await repo.finalize(PROJECT, "delete", "chapter");
-      const base = { intakeId: "delete", documentId, uri: identity.canonicalUri ?? "" };
+      await repo.finalize(PROJECT, "delete", "chapter");
+      const base = { documentId };
       const { removed, deleteDraft } = deletion(repo);
-      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER, NEW_OWNER)).toEqual({
+      expect(await deleteDraft({ documentId: crypto.randomUUID() }, USER, NEW_OWNER)).toEqual({
         kind: "identity_mismatch",
       });
-      expect(
-        await deleteDraft(
-          { ...base, expectedRevision: identity.locationRevision },
-          USER,
-          NEW_OWNER,
-        ),
-      ).toEqual({ kind: "deleted" });
-      expect(
-        await deleteDraft(
-          { ...base, expectedRevision: identity.locationRevision },
-          USER,
-          NEW_OWNER,
-        ),
-      ).toEqual({ kind: "already_deleted" });
+      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "deleted" });
+      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "already_deleted" });
       // An arrived upload leaves through the canonical soft delete, never a hard delete.
       expect(removed).toEqual([documentId]);
       expect(
@@ -339,6 +329,7 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
+          sourceHints: NO_PROJECT_HINTS,
           treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
           pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
@@ -348,7 +339,7 @@ if (!RUN) {
         });
         const intakeStore = createInMemoryObjectStore();
         const service = createUploadIntake({
-          repository: createDrizzleUploadIntakeRepository(db),
+          repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
           content: createContextUploadContentPort(contextPorts),
           objectStore: intakeStore,
           release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
@@ -417,6 +408,7 @@ if (!RUN) {
       await seed();
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
         treeLists: createDrizzleTreeListStore({
           db: database.current,
           journal: createDrizzleJournal(database.current),
@@ -429,7 +421,7 @@ if (!RUN) {
       });
       const unusedStore = createInMemoryObjectStore();
       const service = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(database.current),
+        repository: createDrizzleUploadIntakeRepository(database.current, NO_PROJECT_HINTS),
         content: createContextUploadContentPort(contextPorts),
         objectStore: unusedStore,
         release: createObjectRelease({ objectStore: unusedStore, onFailure() {} }),
@@ -614,16 +606,11 @@ if (!RUN) {
         const first = reservedOf(await f.start("race", 8));
         await f.put(first.documentId, f.bytesOf(8));
         deleteNow = () =>
-          f.intake.deleteDraft(
-            {
-              intakeId: "race",
-              documentId: first.documentId,
-              uri: "uploads://map.pdf",
-              expectedRevision: first.locationRevision,
-            },
-            USER,
-            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
-          );
+          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
+            kind: "chat",
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
+          });
         expect(await f.finish("race")).toEqual({
           ok: false,
           error: { code: "idempotency_conflict" },
@@ -643,16 +630,11 @@ if (!RUN) {
         const first = reservedOf(await f.start("late", 8));
         await f.put(first.documentId, f.bytesOf(8));
         deleteNow = () =>
-          f.intake.deleteDraft(
-            {
-              intakeId: "late",
-              documentId: first.documentId,
-              uri: "uploads://map.pdf",
-              expectedRevision: first.locationRevision,
-            },
-            USER,
-            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
-          );
+          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
+            kind: "chat",
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
+          });
         expect(await f.finish("late")).toEqual({
           ok: false,
           error: { code: "idempotency_conflict" },

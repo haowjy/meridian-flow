@@ -30,15 +30,11 @@ import {
   writeLastShownDocument,
 } from "@/client/project-shell/store";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { useTreeList } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
-import {
-  useAccountId,
-  useAccountResourceProjection,
-  useShownDocuments,
-} from "../context/account-feature-context";
+import { useAccountId, useShownDocuments } from "../context/account-feature-context";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
-import { projectResourceDocument } from "../context/open-document-from-file";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
@@ -94,6 +90,10 @@ type Descriptions = {
   request: (documents: readonly Describing[]) => void;
 };
 
+/** A document's node in the lists: shown, left the view, or not known while a list has not synced. */
+type NodeState = "shown" | "gone" | "waiting";
+const SYNCED = new Set<string>(["synced", "read-only", "offline"]);
+
 /** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
 function useDescriptions(projectId: string): Descriptions {
   const describeLive = useDescribeProjectDocument(projectId);
@@ -125,13 +125,22 @@ function useDescriptions(projectId: string): Descriptions {
   const asked = useRef(new Set<string>());
   // "Cannot open" holds only while the document stays as it was then: a trashed document that
   // is restored opens again.
-  const { records, placement } = useAccountResourceProjection(projectId);
+  const projectList = useTreeList({ kind: "project", projectId });
+  const accountList = useTreeList({ kind: "account", userId: accountId });
   const isDraftOnly = useIsDraftOnly(projectId);
-  const lifecycleOf = (documentId: string) =>
-    records.find((record) => record.resource.identity.documentId === documentId)?.resource.lifecycle
-      .kind ?? null;
-  const lifecycle = useRef(lifecycleOf);
-  lifecycle.current = lifecycleOf;
+  const stateOf = (documentId: string): NodeState => {
+    for (const list of [projectList, accountList]) {
+      const node = list.session?.replay().nodes.get(documentId);
+      if (node) return node.trashed || node.purged ? "gone" : "shown";
+    }
+    return [projectList, accountList].every(
+      (list) => list.snapshot && SYNCED.has(list.snapshot.status),
+    )
+      ? "gone"
+      : "waiting";
+  };
+  const lifecycle = useRef(stateOf);
+  lifecycle.current = stateOf;
   const refused = useRef(new Map<string, string | null>());
   const store = useCallback((key: string, value: OpenDocument | null | "failed" | undefined) => {
     if (value === null) refused.current.set(key, lifecycle.current(key.split("|")[0] ?? ""));
@@ -161,7 +170,7 @@ function useDescriptions(projectId: string): Descriptions {
   }, [shown]);
   useEffect(() => {
     const changed = [...refused.current].filter(
-      ([key, was]) => lifecycleOf(key.split("|")[0] ?? "") !== was,
+      ([key, was]) => stateOf(key.split("|")[0] ?? "") !== was,
     );
     if (changed.length === 0) return;
     for (const [key] of changed) {
@@ -173,8 +182,8 @@ function useDescriptions(projectId: string): Descriptions {
       for (const [key] of changed) next.delete(key);
       return next;
     });
-    // Runs when the projection changes; `lifecycleOf` reads it.
-  }, [records]);
+    // Runs when a list changes; `stateOf` reads the replay.
+  }, [projectList.snapshot?.version, accountList.snapshot?.version]);
   const request = useCallback(
     (documents: readonly Describing[]) => {
       for (const document of documents) {
@@ -196,16 +205,8 @@ function useDescriptions(projectId: string): Descriptions {
         // A document deleted or removed while it sits here no longer opens: the side is empty.
         const opens = (tab: OpenDocument | null): Described => {
           if (!tab) return { status: "ready", document: null };
-          const { kind } = projectResourceDocument(
-            tab,
-            records,
-            placement,
-            isDraftOnly(tab.documentId),
-          );
-          return {
-            status: "ready",
-            document: kind === "terminal" || kind === "removed" ? null : tab,
-          };
+          const gone = stateOf(tab.documentId) === "gone" && !isDraftOnly(tab.documentId);
+          return { status: "ready", document: gone ? null : tab };
         };
         if (mounted) return opens(mounted);
         const key = describeKey(document);
@@ -223,7 +224,15 @@ function useDescriptions(projectId: string): Descriptions {
       },
       request,
     }),
-    [shown, answers, request, store, records, placement, isDraftOnly],
+    [
+      shown,
+      answers,
+      request,
+      store,
+      projectList.snapshot?.version,
+      accountList.snapshot?.version,
+      isDraftOnly,
+    ],
   );
 }
 

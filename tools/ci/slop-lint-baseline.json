@@ -23,11 +23,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/client/query/useContextCatalog.ts",
-        "line": "void resources",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/client/query/works-projection-acquisition.ts",
         "line": "void acquisition",
         "count": 1
@@ -58,8 +53,33 @@
         "count": 2
       },
       {
-        "path": "apps/app/src/components/app/composer/useRestoredReferences.ts",
-        "line": "void catalog.port",
+        "path": "apps/app/src/core/editor/document-session-authority-store.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void attempt",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.close().catch(() => undefined);",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.readiness.catch(() => this.close()).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.reconcilePending(\"operation\").catch(() => undefined);",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-recovery.ts",
+        "line": "void completion",
         "count": 1
       },
       {
@@ -115,41 +135,6 @@
       {
         "path": "apps/app/src/core/editor/schema-fence.ts",
         "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/account-resource-reconciler.ts",
-        "line": "const runner = start()",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/account-resource-reconciler.ts",
-        "line": "void this.ports.metadata",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/account-resource-replica.ts",
-        "line": "void this.reconcileOpenedProjectOwnership(projectId, key, opened.handle.session).catch(",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/resource-content-access.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/resource-content-access.ts",
-        "line": "void opening.finally(() => this.openings.delete(id)).catch(() => undefined);",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/resource-content-access.ts",
-        "line": "void operation.finally(() => this.operations.delete(operation)).catch(() => undefined);",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/resources/resource-content-access.ts",
-        "line": "void this.destroy(id, session).catch(() => undefined);",
         "count": 1
       },
       {
@@ -248,11 +233,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void resources",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/draft-review/room-attribution.ts",
         "line": "void postJson<DraftProvenanceResponse>(",
         "count": 1
@@ -275,11 +255,6 @@
       {
         "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
         "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/rename-operation-lifecycle.ts",
-        "line": "? await this.replica.readKnownDocument(projectId, subject.id).catch(() => null)",
         "count": 1
       },
       {
@@ -323,14 +298,9 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
+        "path": "apps/server/server/domains/context/project-wake-hub.ts",
         "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/context/context-catalog-wake-hub.ts",
-        "line": "} catch {",
-        "count": 1
+        "count": 2
       },
       {
         "path": "apps/server/server/domains/observability/adapters/deferred/deferred-event-sink.ts",
@@ -440,11 +410,6 @@
       {
         "path": "packages/markup/src/escape.ts",
         "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "packages/resource-replica/src/catalog-acquisition.ts",
-        "line": "state.followUp ??= running",
         "count": 1
       },
       {
@@ -652,16 +617,6 @@
         "path": "packages/agent-edit/src/tool/response-committer.test.ts",
         "line": "setTimeout(resolve, 20);",
         "count": 1
-      },
-      {
-        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
-        "line": "expect(elapsed).toBeLessThan(boundedMs);",
-        "count": 1
-      },
-      {
-        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
-        "line": "expect(performance.now() - start).toBeLessThan(boundedMs);",
-        "count": 2
       },
       {
         "path": "tools/dev/lib/migration-runner.db.test.ts",

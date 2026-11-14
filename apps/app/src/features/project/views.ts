@@ -31,10 +31,9 @@ import {
   useDocumentView,
   verifyPin,
 } from "@/client/project-shell/document-views";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { unwrapListQuery } from "@/client/query/list-query";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
 import { routeSelectionDocumentId } from "./context/context-removal-protocol";
@@ -43,7 +42,6 @@ import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/rou
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalChatOnScreen } from "./side/SideView";
 import { useScopeDraftOwner } from "./use-work-scope";
@@ -160,7 +158,7 @@ export function addressStateOf(issue: ProjectRouteIssue | undefined): AddressSta
 
 /** The document main's address names, as its host paints and binds it. */
 export type MainDocument = Readonly<{
-  /** The address names a document (a locator, or an untitled document's history pointer). */
+  /** The address names a document. */
   requested: boolean;
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
@@ -169,20 +167,20 @@ export type MainDocument = Readonly<{
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
   document: OpenDocument | null;
-  /** The history entry's pointer names an untitled document: the replica holds it, not a path. */
-  local: boolean;
+  local: false;
   /** Live lacks the document: the descriptor is built from the address's draft row. */
   draftOnly: boolean;
+  /** The list has synced: a document its tree lacks is not there. */
   catalogResolved: boolean;
   /**
    * The readable address's own verdict on its document. It is the only evidence for or
-   * against a document the live catalog lacks, such as a pending new-document draft's, so
+   * against a document the live tree lacks, such as a pending new-document draft's, so
    * absence proves nothing until the address is `settled`. `failed` is a verdict the route
    * boundary shows with its retry; the host neither waits on it nor rejects the route.
    */
   addressState: AddressState;
   isError: boolean;
-  isFetching: boolean;
+  isFetching: false;
 }>;
 
 export function resolveMainDocument(input: {
@@ -191,20 +189,16 @@ export function resolveMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  /** The untitled document the history entry names, as the replica holds it. */
-  local?: LocalDocument | null;
   /**
-   * The document this route is bound to. A rename of it or a folder above it (or that
-   * rename's rollback) changes its projected path at once, so the host finds it by identity
-   * while the readable route repairs the URL to the same projected path.
+   * The document this route is bound to. A rename of it or a folder above it changes its path
+   * at once, so the host finds it by identity while the readable route repairs the URL to the
+   * same path.
    */
   boundDocumentId?: string | null;
   /** The document the answered address names (`addressedDocument`). */
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
-  catalog: CatalogContextView | null;
-  isError: boolean;
-  isFetching: boolean;
+  tree: TreeViewResult;
 }): MainDocument {
   const base = {
     scheme: input.scheme,
@@ -212,18 +206,6 @@ export function resolveMainDocument(input: {
     workId: input.workId ?? null,
     rootThreadId: input.rootThreadId ?? null,
   };
-  if (input.enabled && input.local)
-    return {
-      ...base,
-      requested: true,
-      document: input.local,
-      local: true,
-      draftOnly: false,
-      catalogResolved: true,
-      addressState: "settled",
-      isError: false,
-      isFetching: false,
-    };
   const requested = input.enabled && input.scheme !== null && input.path !== null;
   if (!requested || !input.scheme || !input.path) {
     return {
@@ -248,7 +230,7 @@ export function resolveMainDocument(input: {
       rootThreadId,
     }),
     boundDocumentId: input.boundDocumentId,
-    catalog: input.catalog,
+    tree: input.tree.tree,
     addressed: input.addressed,
   });
   const resolved =
@@ -260,13 +242,13 @@ export function resolveMainDocument(input: {
   return {
     ...base,
     requested: true,
-    document: resolved?.kind === "new" ? null : resolved,
+    document: resolved,
     local: false,
     draftOnly: owner.kind === "draft-only",
-    catalogResolved: input.catalog !== null,
+    catalogResolved: input.tree.isComplete,
     addressState: input.addressState ?? "settled",
-    isError: input.isError,
-    isFetching: input.isFetching,
+    isError: input.tree.isError,
+    isFetching: false,
   };
 }
 
@@ -277,7 +259,6 @@ export function useMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  local?: LocalDocument | null;
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
 }): MainDocument {
@@ -292,11 +273,11 @@ export function useMainDocument(input: {
           rootThreadId: input.rootThreadId ?? undefined,
         })
       : null;
-  const { catalog, isError, isFetching } = useContextCatalogView(
-    input.projectId,
-    input.scheme ?? "kb",
-    { enabled: requested, ...contextOwner(input.workId, input.rootThreadId) },
-  );
+  const tree = useProjectTreeView(input.projectId, input.scheme ?? "kb", {
+    enabled: requested,
+    workId: input.workId,
+    rootThreadId: input.rootThreadId,
+  });
   return useMemo(
     () =>
       resolveMainDocument({
@@ -305,27 +286,21 @@ export function useMainDocument(input: {
         path: input.path,
         workId: input.workId,
         rootThreadId: input.rootThreadId,
-        local: input.local,
         boundDocumentId,
         addressed: input.addressed,
         addressState: input.addressState,
-        catalog,
-        isError,
-        isFetching,
+        tree,
       }),
     [
       boundDocumentId,
       input.addressed,
-      catalog,
+      tree,
       input.addressState,
       input.enabled,
-      input.local,
       input.path,
       input.scheme,
       input.workId,
       input.rootThreadId,
-      isError,
-      isFetching,
     ],
   );
 }

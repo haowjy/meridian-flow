@@ -11,6 +11,7 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextOperationReceipt,
+  ContextSourcesResult,
   GetDocumentTrashResponse,
   ListDocumentTrashResponse,
   ProjectChatFeedPage,
@@ -18,9 +19,9 @@ import type {
   RestoreContextDocumentsResponse,
 } from "@meridian/contracts/protocol";
 import {
+  API_ACCOUNT_CONTEXT_SOURCES_PATH,
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
-  apiProjectContextCatalogPath,
   apiProjectContextCopyPath,
   apiProjectContextCreateFolderPath,
   apiProjectContextCreatePath,
@@ -29,20 +30,17 @@ import {
   apiProjectContextEntryMovePath,
   apiProjectContextLineagePath,
   apiProjectContextOperationPath,
+  apiProjectContextSourcesPath,
   apiProjectDocumentAddressPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
-  type CatalogChanges,
-  type CatalogLookupResult,
   type CatalogScope,
-  type CatalogSnapshot,
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
-  type CreateContextEntryResult,
   type CreateContextFolderRequest,
   type CreateContextFolderResponse,
   type CreateProjectRequest,
@@ -52,7 +50,6 @@ import {
   type CreateUntitledContextDocumentAnswer,
   type CreateUntitledContextDocumentRequest,
   contextReadResponseSchema,
-  createContextEntryResultSchema,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressRequestOptions,
@@ -239,57 +236,36 @@ export async function updateProjectWorkingSet(
   );
 }
 
-function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
-  const query = new URLSearchParams({ scope: scope.kind, ...extra });
-  if (scope.kind === "work") query.set("workId", scope.workId);
-  if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
-  if (scope.kind === "chat") query.set("chatId", scope.chatId);
-  return query.toString();
+export async function getProjectContextSources(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ContextSourcesResult> {
+  return getJson(apiProjectContextSourcesPath(projectId), { signal });
 }
 
-export async function getContextCatalogSnapshot(
-  projectId: string,
-  scope: CatalogScope,
-  signal?: AbortSignal,
-): Promise<CatalogSnapshot> {
-  return getJson(`${apiProjectContextCatalogPath(projectId, "snapshot")}?${catalogQuery(scope)}`, {
-    signal,
-  });
-}
+/**
+ * What a chat's uploads query says that its tree list does not (the server's `ChatUploadsResult`):
+ * when each file was attached and whether a sent message has used it.
+ */
+export type ChatUploadFacts = {
+  uploads: readonly { documentId: string; attachedAt: string; used: boolean }[];
+};
 
-export async function getContextCatalogChanges(
+export async function getChatUploadFacts(
   projectId: string,
-  scope: CatalogScope,
-  cursor: string,
+  chatId: string,
   signal?: AbortSignal,
-): Promise<CatalogChanges> {
+): Promise<ChatUploadFacts> {
   return getJson(
-    `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
+    `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`,
     { signal },
   );
 }
 
-export async function getContextCatalogLookup(
-  projectId: string,
-  scope: CatalogScope,
-  lookup: { entryId: string } | { uri: string },
-): Promise<CatalogLookupResult> {
-  return getJson(
-    `${apiProjectContextCatalogPath(projectId, "lookup")}?${catalogQuery(scope, lookup)}`,
-  );
-}
-
-export async function getProjectContextAvailability(
-  projectId: string,
-  documentIds: readonly string[],
+export async function getAccountContextSources(
   signal?: AbortSignal,
-  folderIds?: readonly string[],
-): Promise<ProjectContextIdentityLookupResult> {
-  return postJson<ProjectContextIdentityLookupResult>(
-    `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
-    { projectId, documentIds, ...(folderIds ? { folderIds } : {}) },
-    { signal },
-  );
+): Promise<ContextSourcesResult> {
+  return getJson(API_ACCOUNT_CONTEXT_SOURCES_PATH, { signal });
 }
 
 export async function createProject(
@@ -321,23 +297,6 @@ function acceptsContextConflict(status: number, payload: unknown): boolean {
     "status" in payload &&
     payload.status === "conflict"
   );
-}
-
-export async function createContextEntry(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: { type: "file" | "folder"; path: string; content?: string },
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateContextEntryResult> {
-  return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
-    schema: createContextEntryResultSchema.refine(
-      (result) =>
-        result.status !== "created" || body.type === "folder" || result.documentId !== undefined,
-    ),
-    headers: init?.headers,
-    acceptErrorResponse: acceptsContextConflict,
-  });
 }
 
 export async function createUntitledContextDocument(

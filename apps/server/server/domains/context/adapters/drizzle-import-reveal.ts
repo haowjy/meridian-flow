@@ -8,7 +8,7 @@ import type { Database } from "@meridian/database";
 import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { ensureProjectContextSource } from "../context-source-provisioning.js";
+import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextImportReveal, ImportRevealNode } from "../ports/context-import-reveal.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { AheadRegistration, LinkAheadRegistry } from "../ports/link-ahead-registry.js";
@@ -31,7 +31,10 @@ export function createDrizzleContextImportReveal(deps: {
     async reveal({ projectId, nodes }) {
       const sourceOf = new Map<string, string>();
       for (const area of new Set(nodes.map((node) => node.area)))
-        sourceOf.set(area, await ensureProjectContextSource(deps.db, projectId, area, ""));
+        sourceOf.set(
+          area,
+          await createProjectContextDocumentStore(deps.db, projectId, area, "").contextSourceId(),
+        );
 
       const planned = new Map(nodes.map((node) => [node.id, node]));
       const inside = new Map<string, ImportRevealNode[]>();

@@ -31,7 +31,6 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
 import { relativeTime } from "../relative-time";
-import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import { fileKindIcon } from "./context-file-icon";
@@ -60,7 +59,6 @@ export function RecentDocumentsLanding({
   const recent = useRecentDocuments(projectId);
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
-  const openRoute = useOpenContextRoute();
   const now = useMinuteClock();
   const deleteEntries = useDeleteContextEntries(projectId);
   // Its Undo must stay reachable, so it shows here on the phone too, ahead of the removal's.
@@ -131,7 +129,6 @@ export function RecentDocumentsLanding({
                         projectId,
                         editorWorkId,
                         openDocument,
-                        openRoute,
                       });
                     }}
                   />
@@ -258,36 +255,15 @@ export async function openRecent(
     projectId: string;
     editorWorkId: string | null;
     openDocument: ReturnType<typeof useOpenProjectDocument>;
-    openRoute: ReturnType<typeof useOpenContextRoute>;
   },
   replace?: true,
 ): Promise<boolean> {
-  if (item.address.kind !== "local") {
-    const outcome = await ports.openDocument({
-      documentId: item.documentId,
-      workId: ports.editorWorkId ?? undefined,
-      ...(replace ? { replace } : {}),
-    });
-    return outcome.kind === "committed";
-  }
-  if (!ports.openRoute) return false;
-  const settlement = await ports.openRoute(
-    {
-      scheme: "unfiled",
-      path: "",
-      documentId: item.documentId,
-    },
-    {
-      ...(replace ? { replace } : {}),
-      document: {
-        kind: "new",
-        documentId: item.documentId,
-        name: item.name,
-        resourceHandle: item.address.resourceHandle,
-      },
-    },
-  );
-  return settlement.kind === "applied";
+  const outcome = await ports.openDocument({
+    documentId: item.documentId,
+    workId: ports.editorWorkId ?? undefined,
+    ...(replace ? { replace } : {}),
+  });
+  return outcome.kind === "committed";
 }
 
 function recentDocumentHref(item: AccountRecentItem, projectId: string | undefined): string | null {

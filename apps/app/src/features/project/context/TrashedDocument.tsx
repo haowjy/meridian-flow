@@ -37,8 +37,7 @@ export function TrashedDocument({
   const openFailed = useOpenOnceLiving(projectId, documentId, state?.kind, query.error);
   const document = query.data;
 
-  // A refetch that fails after a restore (a catalog wake re-reads Trash) keeps the record on
-  // screen while main opens the document.
+  // A refetch that fails after a restore keeps the record on screen while main opens the document.
   if (query.isError && !document) {
     return (
       <div className="p-4">
@@ -75,13 +74,8 @@ export function TrashedDocument({
           <DocumentNotice
             icon={<ArchiveRestore className="size-4" aria-hidden />}
             action={
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={state?.kind === "restoring"}
-                onClick={() => restore([document])}
-              >
-                {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
+              <Button size="sm" variant="outline" onClick={() => restore([document])}>
+                <Trans>Restore</Trans>
               </Button>
             }
           >
@@ -106,12 +100,11 @@ export function TrashedDocument({
 function useOpenOnceLiving(
   projectId: string,
   documentId: string,
-  restore: "restoring" | "failed" | undefined,
+  restore: "restored" | "failed" | undefined,
   error: Error | null,
 ): boolean {
   const openDocument = useOpenProjectDocument(projectId);
   const [failed, setFailed] = useState(false);
-  const restoring = useRef(false);
   const leaving = useRef(false);
   const mounted = useRef(false);
   const missing = [404, 410].includes(httpErrorStatus(error) ?? 0);
@@ -122,15 +115,10 @@ function useOpenOnceLiving(
     };
   }, []);
   useEffect(() => {
-    if (restore === "restoring") {
-      restoring.current = true;
-      return;
-    }
-    const restored = restoring.current && restore === undefined;
-    restoring.current = false;
+    const restored = restore === "restored";
     if (leaving.current || (!restored && !missing)) return;
     leaving.current = true;
-    void openDocument({ documentId, refreshIdentity: true, replace: true }).then((outcome) => {
+    void openDocument({ documentId, replace: true }).then((outcome) => {
       if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
     });
   }, [restore, missing, documentId, openDocument]);

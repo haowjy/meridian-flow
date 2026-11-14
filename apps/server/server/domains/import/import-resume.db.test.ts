@@ -10,6 +10,7 @@
  * - Every node the reveal makes has a rank, so a drag relative to one places.
  * - A stopped import's waiting texts are deleted by the sweep, with its objects.
  */
+
 import { randomUUID } from "node:crypto";
 import type { ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -31,6 +32,7 @@ import { treeSeeder } from "../../test-support/tree-seed.js";
 import {
   createDrizzleContextImportRead,
   createDrizzleContextImportReveal,
+  provisionProjectSources,
 } from "../context/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
@@ -61,6 +63,7 @@ describe.runIf(enabled)("import resume", () => {
     const projectId = randomUUID();
     await db.insert(users).values(conformanceUserValues(userId, "import-resume"));
     await db.insert(projects).values({ id: projectId, userId, name: "Resume", slug: "resume" });
+    await provisionProjectSources(db, projectId, { personal: false });
     const objects = createInMemoryObjectStore();
     const repository = createDrizzleImportRepository(db);
     const service = createImportUploadService({

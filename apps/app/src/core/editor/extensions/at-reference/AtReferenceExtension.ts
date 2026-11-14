@@ -84,11 +84,6 @@ const lane = createSuggestionLane<
         subscribe: (listener) => catalog()?.port.subscribe(listener) ?? (() => {}),
         status: (scope) => catalog()?.port.status(scope) ?? "loading",
         read: (scope) => catalog()?.port.read(scope) ?? null,
-        acquire: (scope, signal) => {
-          const current = catalog();
-          if (!current) return Promise.reject(new Error("Reference catalog unavailable"));
-          return current.port.acquire(scope, signal);
-        },
       },
       openContext: () => catalog()?.openContext() ?? null,
       label: () => catalog()?.label ?? "References",

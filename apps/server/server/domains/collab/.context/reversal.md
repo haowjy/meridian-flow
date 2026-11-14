@@ -94,14 +94,26 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 ## Tree changes
 
-Reversal undoes text only. A tree change (create, copy, move, rename, delete, restore) is its
-own command with its own record in the project's tree list; no turn reversal, model
-`undo`/`redo`/`revert` or failed-reply rollback reverses one, and a failed reply leaves what
-its tree calls did. The history reader keeps only `document_edits` rows with parts, so a handle
-that names a tree change reads as no known edit (`Unknown edit ... Read with format: "edits"`).
-The model's handle for undoing a tree change is the `document_edits` row made with the tree
-record (step 7 of the project tree build). `recordAgentTreeChange` writes those rows; they
-carry no parts and no inverse reads them.
+Turn reversal and failed-reply rollback do not reverse tree changes: a tree change (create,
+move, rename, delete, restore, folders included) is its own command with its records in the
+project's tree list, and a failed reply leaves what its tree calls did. The model's tree call
+keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and one
+`tree_edit_receipt_nodes` row for every node it changed, each with a write ordinal reserved on
+that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
+`e<N>` the model is given is the ordinal on the receipt's subject.
+
+A node has one history per chat: its tree receipts and its text edits, ordered by that ordinal,
+with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
+not reversed, the receipts an Undo made and a Redo has not, and the ordinals the text engine's
+own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
+`redo` the tree receipts undone after the text engine's newest undo, and `revert` the receipt
+the handle names. Tree records go back through the package's `undoChange`, which finds the live
+copy of an applied or restored change by `carries`, and takes back only what the receipt did:
+what others put in a folder it made stands and keeps it standing. The records an Undo makes name
+what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
+lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
+way. The save boundary before every undo, redo and revert saves a reply's staged text edits, so
+they are in the order when it runs.
 
 Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,

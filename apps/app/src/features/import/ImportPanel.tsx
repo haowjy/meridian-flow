@@ -5,7 +5,7 @@ import { entryNeedsLook, type ImportEntryStatus } from "@meridian/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Files, Folder, type LucideIcon } from "lucide-react";
 import { type ReactNode, useRef } from "react";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useProjectTreeView } from "@/client/query/useProjectTree";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +46,7 @@ function ImportCard({
   const files = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const scheme = importScheme(summary);
-  const { catalog } = useContextCatalogView(summary.projectId, scheme, {});
+  const { tree } = useProjectTreeView(summary.projectId, scheme, {});
   if (!coordinator) return null;
   const presentation = importPresentation(summary, local);
   const { state, title, progress } = presentation;
@@ -66,7 +66,7 @@ function ImportCard({
   const show = () => {
     // An import shows one of its files, one that needs a look first; otherwise the Editor's recents.
     const file = [...problems, ...(detail?.entries ?? [])]
-      .map((entry) => catalog?.findDocument(entry.documentId))
+      .map((entry) => tree?.findDocument(entry.documentId))
       .find(Boolean);
     void navigate({
       to: projectAddressHref({

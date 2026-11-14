@@ -13,6 +13,8 @@ export type WriteErrorStatus =
   | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
+  | "gone"
+  | "path_changed"
   | "partial_failure"
   | "cant_undo_dependent"
   | "cant_undo_applied"
@@ -94,18 +96,6 @@ export type WriteRejection =
   | "inverse"
   | "integration";
 
-/** Why a `move` or `delete` didn't run, for a host that words it itself. */
-export type NamespaceRefusal =
-  | "source_is_folder"
-  | "document_unresolved"
-  | "location_taken"
-  | "destination_missing"
-  | "stale_location"
-  | "already_at_destination"
-  | "file_type_conversion"
-  | "document_type_conversion"
-  | "unsupported";
-
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
@@ -122,8 +112,8 @@ export interface AgentEditModelPayload {
   rejected?: WriteRejection;
   /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
   removal?: DocumentRemovalRecord;
-  /** Why a `move` or `delete` was refused. */
-  refusal?: NamespaceRefusal;
+  /** Why a tree command was refused, beside its status. */
+  refusal?: "target_gone" | "would_loop" | "path_changed" | "already_at_destination";
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -138,11 +128,8 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
-  /**
-   * What a `move` or `delete` did to the whole document: where a move came from, as the model
-   * named it, and the Works whose drafts of a deleted document survive it, by handle.
-   */
-  namespace?: { kind: "moved"; from: string } | { kind: "deleted"; survivingWorks?: string[] };
+  /** What a tree command did beyond landing its node: each fact differs from what the call said. */
+  tree?: AgentEditTreeFacts;
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
@@ -157,6 +144,28 @@ export interface AgentEditModelPayload {
   documentEmpty?: boolean;
   /** The document already matched the write, so nothing was recorded and no write id exists. */
   unchanged?: boolean;
+}
+
+/** What a tree command's result states about the tree, and nothing about the parts it did not touch. */
+export interface AgentEditTreeFacts {
+  /** Several moved into one folder: how many landed, of how many asked. */
+  moved?: { made: number; of: number };
+  /** Each one not made, with its reason. */
+  notMoved?: string[];
+  /** A folder's delete took this many documents and files. */
+  deleted?: number;
+  /** A folder stands holding what was not deleted, or what a restore needed. */
+  kept?: string;
+  placedAtEnd?: string;
+  alreadyDeleted?: true;
+  /** A drafted change to a node live deleted: it waits until it is restored. */
+  deletedInLive?: true;
+  /** The Works whose drafts of a deleted document survive it. */
+  survivingWorks?: string[];
+  /** The first drafted tree change of a reply says once that drafted changes wait for review. */
+  firstDrafted?: true;
+  /** What others did to the nodes the call named, by author. */
+  concurrent?: Array<{ author: string; lines: string[] }>;
 }
 
 interface AgentEditResultBase extends AgentEditModelPayload {
@@ -235,6 +244,8 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
+    case "gone":
+    case "path_changed":
     case "partial_failure":
     case "cant_undo_dependent":
     case "cant_undo_applied":

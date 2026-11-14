@@ -20,10 +20,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("slug routing (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
-    const { eq } = await import("drizzle-orm");
     const { createDrizzleWorkRepository } = await import("./adapters/work-repository/drizzle.js");
     const { createWorkProjectionMutation } = await import("./adapters/work-projection-mutation.js");
-    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
+    const { createDrizzleContextSources } = await import("../context/adapters/context-sources.js");
+    const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
@@ -31,7 +31,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const projectionMutation = createWorkProjectionMutation({
       db,
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
-      draftOwnerHints: createDrizzleContextCatalog(db),
+      draftOwnerHints: NO_PROJECT_HINTS,
     });
     const workRepository = () =>
       createDrizzleWorkRepository({
@@ -46,25 +46,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     afterAll(async () => db.$client.end());
 
-    it("creates the project manifest source before publishing its catalog identity", async () => {
+    it("creates the project manifest source before the project's sources are read", async () => {
       const userId = "93b1f764-1234-f678-0712-123456789ad2";
       await db.insert(schema.users).values({
         id: userId,
         externalId: "manifest-owner",
         email: "manifest-owner@example.com",
       });
-      const catalog = createDrizzleContextCatalog(db);
       const projectRepository = createDrizzleProjectRepository({
         db,
         ensureNoWork: async (projectId) => workRepository().ensureNoWork(projectId),
       });
 
       const project = await projectRepository.create({ userId, title: "Manifest serial" });
-      const snapshot = await catalog.snapshot({ kind: "project", projectId: project.id });
+      const sources = await createDrizzleContextSources(db).inProject(project.id);
 
-      expect(snapshot.entries).toEqual(
+      expect(sources).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ kind: "source", scheme: "manuscript", name: "Manuscript" }),
+          expect.objectContaining({ scheme: "manuscript", name: "Manuscript" }),
         ]),
       );
       expect(await workRepository().findNoWork(project.id)).toMatchObject({

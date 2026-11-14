@@ -7,7 +7,7 @@ import type { ProjectId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, threads, works } from "@meridian/database/schema";
-import { compareCatalogSiblings } from "@meridian/resource-replica";
+import { compareCatalogSiblings } from "@meridian/project-tree";
 import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { loadDocumentAddresses } from "./tree-addresses.js";

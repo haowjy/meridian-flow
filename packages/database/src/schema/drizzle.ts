@@ -8,7 +8,7 @@ export * from "./agent-threads";
 export * from "./billing";
 export * from "./branches";
 export * from "./content";
-export * from "./context-catalog";
+export * from "./context-availability";
 export * from "./document-edits";
 export * from "./imports";
 export * from "./recent-documents";

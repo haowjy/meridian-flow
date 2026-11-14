@@ -7,7 +7,6 @@ import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
-import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
@@ -15,12 +14,10 @@ import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
 import { RemovedNoticeStore } from "./removed-notice-store";
-import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
 export class AccountFeatureLifetime {
   readonly runtime;
@@ -36,13 +33,10 @@ export class AccountFeatureLifetime {
   /** Where each document stands in its project's list: the one answer to "is it still there". */
   readonly standings;
   readonly notices;
-  readonly resources;
   /** The project tree's lists this account has open; step 6's tree screens read them. */
   readonly treeLists: TreeListRegistry;
   private readonly stopTreeListDebugHook: () => void;
   readonly opener;
-  readonly renameOperations;
-  private readonly continuity: IdentityContinuity | null;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
@@ -125,20 +119,6 @@ export class AccountFeatureLifetime {
       },
     });
     dropRetiredTabSession(accountId);
-    this.resources =
-      typeof window === "undefined"
-        ? null
-        : new AccountResourceReplica(
-            accountId,
-            this.runtime,
-            (error) => {
-              this.beginClose();
-              onInvalidated(error);
-            },
-            connectivityHints,
-          );
-    this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
-    this.continuity = this.resources ? new IdentityContinuity(accountId, this.resources) : null;
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,
@@ -158,11 +138,8 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    this.renameOperations?.dispose();
-    this.continuity?.dispose();
     this.stopTreeListDebugHook();
     this.treeLists.close();
-    this.resources?.beginClose();
     this.draftCommands.close();
     this.runtime.beginClose();
     this.featureLease.suspend();

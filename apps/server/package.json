@@ -24,7 +24,6 @@
     "@meridian/markup": "workspace:*",
     "@meridian/project-tree": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
-    "@meridian/resource-replica": "workspace:*",
     "@meridian/thread-client": "workspace:*",
     "@sanity/diff-match-patch": "^3.2.0",
     "@t3-oss/env-core": "^0.13.11",
@@ -63,7 +62,6 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.3.0",
-    "@meridian/resource-replica": "workspace:*",
     "@meridian/tree-list-sync": "workspace:*",
     "@types/busboy": "^1.5.5",
     "@types/picomatch": "^4.0.3",

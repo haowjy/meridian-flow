@@ -17,6 +17,7 @@ import {
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -89,6 +90,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,

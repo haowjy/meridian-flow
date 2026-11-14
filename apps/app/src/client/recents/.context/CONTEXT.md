@@ -12,5 +12,5 @@
 - A local handle isn't watched; a document locator is, by the removal observer
   (`list-removal-observer.ts`), which reads the project's list when it changes: a recent
   whose node is in Trash or purged is dropped, and nothing is polled.
-- The record stores the document locator, not a second catalog. Project slugs are
-  read from their catalogs at navigation time.
+- The record stores the document locator, not a second tree. Project slugs are
+  read from the sources' trees at navigation time.

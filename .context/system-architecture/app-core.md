@@ -1,12 +1,11 @@
 # App: core
 
-What the features stand on. A document session is opened by the editor core (1); it asks the transport to connect the Yjs socket (2); the server's updates arrive on it (3) and the transport reports sync status back to the session (4). The resource replica keeps the writer's local copy of documents and folders and catches up with the server through the client. Back to the [app](app.md).
+What the features stand on. A document session is opened by the editor core (1); it asks the transport to connect the Yjs socket (2); the server's updates arrive on it (3) and the transport reports sync status back to the session (4). The browser's copy of the project's tree list is read by every screen that shows a name or a place. Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
   core-editor["core-editor<br/><small>the editor schema and document sessions</small>"]:::module
   core-transport["core-transport<br/><small>the Yjs socket and connectivity</small>"]:::module
-  core-resources["core-resources<br/><small>the local replica of documents and folders</small>"]:::module
   core-tree-list["core-tree-list<br/><small>the browser's copy of the project tree's list</small>"]:::module
   core-uploads["core-uploads<br/><small>the upload store</small>"]:::module
   core-completion["core-completion<br/><small>what a suggestion menu offers</small>"]:::module
@@ -18,11 +17,9 @@ flowchart LR
   core-transport -->|"connects to the server"| server
   server -->|"3. sends updates"| core-transport
   core-transport -->|"4. reports sync status"| core-editor
-  core-resources -->|"catches up with the server through"| client
   core-tree-list -->|"connects the list's room on"| server
   core-editor -->|"tracks uploads in"| core-uploads
   core-editor -->|"offers suggestions from"| core-completion
-  core-resources -->|"opens documents through"| core-editor
   note1["core-transport carries the Yjs socket: it connects when a session asks, passes the server's updates on and reports sync status back (steps 2 to 4)."]:::note
   note1 -.- core-transport
 ```
@@ -48,16 +45,6 @@ A dev transport exists for local use. The thread socket is not here: it is `@mer
 - Kind: module
 - Paths: `apps/app/src/core/transport`
 - Docs: [CONTEXT](../../apps/app/src/core/transport/.context/CONTEXT.md), [AGENTS](../../apps/app/src/core/transport/AGENTS.md)
-
-## core-resources
-
-The account resource replica and its reconciler.
-
-Sits on `@meridian/resource-replica`: documents and folders get a local identity first and the server catches up.
-
-- Kind: module
-- Paths: `apps/app/src/core/resources`
-- Docs: [CONTEXT](../../apps/app/src/core/resources/.context/CONTEXT.md)
 
 ## core-tree-list
 

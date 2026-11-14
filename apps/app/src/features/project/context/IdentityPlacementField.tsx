@@ -18,7 +18,6 @@ import { dropdownPanelClass } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { useAccountResourceReplica } from "./account-feature-context";
 import {
   allocateContextEntryArrivalName,
   documentRow,
@@ -39,6 +38,7 @@ import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
 import { identityDestination, type TabLocation } from "./identity-location";
 import { suggestedNameFromFragment } from "./untitled-document-name";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
+import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
@@ -70,19 +70,23 @@ export function IdentityPlacementField({
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 }) {
-  const resources = useAccountResourceReplica();
   const localSessionRef = useRef<import("@/core/editor/document-session").DocumentSession | null>(
     null,
   );
   const provisionalPlacement =
     location.provisional && location.scheme === "unfiled" && location.parentPath === "/";
+  const binding = useLiveDocumentBinding({
+    projectId,
+    documentId: provisionalPlacement && document.kind !== "viewer" ? document.documentId : null,
+    owner: "desktop-document-host",
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<FileSuggestionListHandle>(null);
   const suggestionTimer = useRef<number | null>(null);
   const [destination, setDestination] = useState<{
     scheme: ProjectContextTreeScheme;
     folderPath: string;
-    parent?: import("@meridian/resource-replica").ParentRef;
+    parentId?: string;
   } | null>(null);
   const [value, setValue] = useState(
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
@@ -113,41 +117,25 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
-    if (!provisionalPlacement || document.kind !== "new") return;
-    const abort = new AbortController();
-    let release: (() => void) | null = null;
-    let unobserve: (() => void) | null = null;
-    void resources
-      .openDocument(
-        projectId,
-        { handle: document.resourceHandle },
-        `identity-field:${document.resourceHandle}`,
-        abort.signal,
-      )
-      .then((result) => {
-        if (result.kind !== "opened" || abort.signal.aborted) return;
-        release = result.handle.release;
-        const session = result.handle.session;
-        localSessionRef.current = session;
-        const fragment = session.document.getXmlFragment(session.fragmentName);
-        const refresh = () => {
-          if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
-          suggestionTimer.current = window.setTimeout(() => {
-            suggestionTimer.current = null;
-            setGhost(suggestionForSession(document, session));
-          }, 300);
-        };
-        fragment.observeDeep(refresh);
-        unobserve = () => fragment.unobserveDeep(refresh);
-        refresh();
-      });
+    if (!provisionalPlacement || document.kind === "viewer") return;
+    const session = binding.state.kind === "opened" ? binding.state.session : null;
+    if (!session) return;
+    localSessionRef.current = session;
+    const fragment = session.document.getXmlFragment(session.fragmentName);
+    const refresh = () => {
+      if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
+      suggestionTimer.current = window.setTimeout(() => {
+        suggestionTimer.current = null;
+        setGhost(suggestionForSession(document, session));
+      }, 300);
+    };
+    fragment.observeDeep(refresh);
+    refresh();
     return () => {
-      abort.abort();
-      unobserve?.();
-      release?.();
+      fragment.unobserveDeep(refresh);
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [projectId, provisionalPlacement, resources, document]);
+  }, [binding.state, provisionalPlacement, document]);
 
   // The document's own owner scopes its Scratch suggestions, collisions and "Open
   // existing"; the Editor's selected Work does not (a chat's Scratch has none).
@@ -359,9 +347,7 @@ export function IdentityPlacementField({
               setDestination({
                 scheme: entry.scheme,
                 folderPath: entry.path,
-                ...(entry.path === "/"
-                  ? {}
-                  : { parent: { kind: "folder", folderId: entry.entryId } }),
+                ...(entry.path === "/" ? {} : { parentId: entry.entryId }),
               });
               inputRef.current?.focus();
               return;

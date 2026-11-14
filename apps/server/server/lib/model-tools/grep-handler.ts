@@ -15,6 +15,7 @@ import {
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { listingCall } from "./listing-tools.js";
+import { areaOfPath, namesEvidence, printedNames } from "./shown-paths.js";
 import { contextToolError, isToolError, type ToolWiringDeps, toolError } from "./tool-context.js";
 
 const DEFAULT_HEAD_LIMIT = 50;
@@ -66,6 +67,19 @@ export function createGrepHandler(deps: ToolWiringDeps) {
     });
     if (!result.ok) return contextToolError(result.error);
     const { files, totalFiles, exact, stopped } = result.value;
+    // Every path the matches print is a name the model was shown.
+    const byArea = new Map<string, string[]>();
+    for (const file of files) {
+      const area = areaOfPath(file.uri)?.area;
+      if (area) byArea.set(area, [...(byArea.get(area) ?? []), file.documentId]);
+    }
+    const shownNames = await Promise.all(
+      [...byArea].map(([area, ids]) => printedNames(call, area, ids, version)),
+    );
+    const names = {
+      whole: [],
+      names: shownNames.flatMap((delta) => delta?.names ?? []),
+    };
     return {
       // Host-only facts never reach the model.
       output: {
@@ -77,7 +91,10 @@ export function createGrepHandler(deps: ToolWiringDeps) {
         ...(stopped ? { stopped } : {}),
       },
       // Only returned, authorized files were shown, and only the passages their text shows whole.
-      evidence: { shown: files.flatMap((file) => shownPassages(file, verbose)) },
+      evidence: {
+        shown: files.flatMap((file) => shownPassages(file, verbose)),
+        ...namesEvidence(names),
+      },
       metadata: {
         documentRevisions: files.flatMap(({ documentId, uri, revision }) =>
           revision === null

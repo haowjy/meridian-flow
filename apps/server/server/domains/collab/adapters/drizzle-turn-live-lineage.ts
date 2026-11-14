@@ -1,8 +1,14 @@
 /** Immutable edit/placement discovery for the retained turn change-viewer read model. */
 import type { DocumentId } from "@meridian/contracts";
-import { type Database, documentEdits, documents } from "@meridian/database";
+import {
+  type Database,
+  documents,
+  treeEditReceiptNodes,
+  treeEditReceipts,
+} from "@meridian/database";
 import { branches } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, ne, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TurnLiveLineageDocumentStore } from "../domain/turn-live-lineage.js";
@@ -18,48 +24,43 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
       return readTurnEditTargets(currentDrizzleDb(db), { threadId, turnId });
     },
     async listTreeEntriesForTurn(threadId, turnId) {
+      const receipts = alias(treeEditReceipts, "reversed");
       const rows = await currentDrizzleDb(db)
         .select({
-          documentId: documentEdits.documentId,
+          documentId: treeEditReceiptNodes.nodeId,
           workId: branches.originWorkId,
           rootThreadId: branches.originRootThreadId,
-          op: sql<"create" | "move" | "delete" | "restore">`${documentEdits.treeChange}->>'op'`,
-          shownAt: sql<string | null>`${documentEdits.treeChange}->>'shownAt'`,
-          landedAt: sql<string | null>`${documentEdits.treeChange}->>'landedAt'`,
+          op: treeEditReceipts.op,
+          // The node's own address before the change (a create's: where it was made), so a
+          // folder's delete or a several-move reads as each document's own line.
+          shownAt: sql<
+            string | null
+          >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
+          landedAt: treeEditReceiptNodes.afterAt,
           // A copy's create names the document it read, so the turn can say it copied.
           copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
         })
-        .from(documentEdits)
-        .leftJoin(documents, eq(documents.id, documentEdits.documentId))
-        // A drafted entry's owner: the branch its destination names.
-        .leftJoin(
-          branches,
-          sql`${branches.id} = (${documentEdits.treeChange}->'destination'->>'branchId')::uuid`,
-        )
+        .from(treeEditReceipts)
+        .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
+        // A folder has no document, and a folder's change is not a document's line.
+        .innerJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
+        // A drafted entry's owner: the branch it was drafted in.
+        .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
         .where(
           and(
-            eq(documentEdits.threadId, threadId),
-            eq(documentEdits.turnId, turnId),
-            inArray(documentEdits.kind, ["write", "revert"]),
-            isNotNull(documentEdits.treeChange),
-            sql`${documentEdits.treeChange}->>'op' <> 'settle'`,
-            sql`NOT EXISTS (
-              SELECT 1 FROM document_edits AS materialized
-              WHERE materialized.document_id = ${documentEdits.documentId}
-                AND materialized.tree_change->>'materializes' = ${documentEdits.id}::text
-            )`,
-            // A stopped reply's rollback reversed it: the turn didn't leave it moved or deleted.
-            sql`NOT EXISTS (
-              SELECT 1 FROM ${documentEdits} AS undone
-              WHERE undone.document_id = ${documentEdits.documentId}
-                AND undone.kind = 'rollback'
-                AND undone.tree_change->'targets' @> jsonb_build_array(
-                  jsonb_build_object('editId', ${documentEdits.id}::text)
-                )
-            )`,
+            eq(treeEditReceipts.threadId, threadId),
+            eq(treeEditReceipts.turnId, turnId),
+            ne(treeEditReceipts.kind, "undo"),
+            // The turn didn't leave a change its own Undo took back.
+            notExists(
+              currentDrizzleDb(db)
+                .select({ one: sql`1` })
+                .from(receipts)
+                .where(eq(receipts.reverses, treeEditReceipts.id)),
+            ),
           ),
         )
-        .orderBy(sql`(${documentEdits.treeChange}->>'seq')::bigint`);
+        .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);
       return rows.map(({ workId, rootThreadId, ...row }) => ({
         ...row,
         documentId: row.documentId as DocumentId,

@@ -41,7 +41,7 @@ export function SideExplorer({
     isDisabled: (node) => !node.folder && node.editable === false,
     rowSelector: "[data-list-item]:not(:disabled)",
   });
-  const catalogs = loadState(trail);
+  const listState = loadState(trail);
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: only catches ArrowLeft bubbling from the rows, which are the focusable controls. slop-lint: allow suppression the reason is stated in this comment
     <div
@@ -55,9 +55,9 @@ export function SideExplorer({
     >
       <PickerSection
         state={
-          folder && entries.length === 0 && catalogs !== "ready" ? (
-            <ListLine density="menu" iconSlot status={catalogs === "loading"}>
-              {catalogs === "loading" ? (
+          folder && entries.length === 0 && listState !== "ready" ? (
+            <ListLine density="menu" iconSlot status={listState === "loading"}>
+              {listState === "loading" ? (
                 <Trans>Loading…</Trans>
               ) : (
                 <Trans>Couldn't open this folder.</Trans>

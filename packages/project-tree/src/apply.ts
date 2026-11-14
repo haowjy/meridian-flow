@@ -1,6 +1,13 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
-import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
+import {
+  type Actor,
+  nameSet,
+  newId,
+  recordsOf,
+  type Settlement,
+  type TreeRecord,
+} from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { writable } from "./validate.js";
@@ -37,13 +44,18 @@ function needs(record: TreeRecord): string[] {
   return [record.node];
 }
 
-/** The fact a record sets: a later record of the same fact overrides an earlier one. */
-function factOf(record: TreeRecord): string {
-  if (record.type === "rename") return `name:${record.node}`;
-  if (record.type === "move") return `place:${record.node}`;
-  if (record.type === "delete" || record.type === "restore") return `presence:${record.node}`;
-  return `create:${record.node}`;
+/** The facts a record sets: a later record of a same fact overrides an earlier one. */
+function factsOf(record: TreeRecord): string[] {
+  if (record.type === "rename") return [`name:${record.node}`];
+  if (record.type === "move")
+    return [`place:${record.node}`, ...(record.name === undefined ? [] : [`name:${record.node}`])];
+  if (record.type === "delete" || record.type === "restore") return [`presence:${record.node}`];
+  return [`create:${record.node}`];
 }
+const sharesFact = (a: TreeRecord, b: TreeRecord) => {
+  const facts = factsOf(b);
+  return factsOf(a).some((fact) => facts.includes(fact));
+};
 
 /**
  * The chosen records plus the drafted creates they stand on, and the earlier drafted records on
@@ -70,7 +82,7 @@ export function prerequisites(
       if (creator && creator !== id) stack.push(creator);
     }
     for (const earlier of pending.slice(0, position.get(id) ?? 0))
-      if (factOf(earlier) === factOf(record)) stack.push(earlier.id);
+      if (sharesFact(earlier, record)) stack.push(earlier.id);
   }
   return out;
 }
@@ -193,11 +205,15 @@ export function applyDraft(
   const taken = chosen;
   // A record that cannot land and that a later landing record on the same fact overrides is
   // settled as superseded: left pending, it would come back later and undo that later choice.
-  const superseded = cannotLand.filter((record) =>
-    pending
-      .slice(pending.indexOf(record) + 1)
-      .some((later) => taken.has(later.id) && factOf(later) === factOf(record)),
-  );
+  const superseded = cannotLand.filter((record) => {
+    const overriding = new Set(
+      pending
+        .slice(pending.indexOf(record) + 1)
+        .filter((later) => taken.has(later.id))
+        .flatMap(factsOf),
+    );
+    return factsOf(record).every((fact) => overriding.has(fact));
+  });
   const overridden = new Set(superseded.map((record) => record.id));
 
   // A copy's `from` is what live had just before it, as the copies before it leave live. And it
@@ -213,7 +229,7 @@ export function applyDraft(
   const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
   const lastNamed = new Map<string, string>();
   for (const record of pending)
-    if (taken.has(record.id) && (record.type === "create" || record.type === "rename"))
+    if (taken.has(record.id) && (record.type === "create" || nameSet(record) !== undefined))
       lastNamed.set(record.node, record.id);
   const copies: TreeRecord[] = [];
   for (const record of pending) {
@@ -229,15 +245,22 @@ export function applyDraft(
     const before = stands(copy.node);
     if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
     if (copy.type === "rename" && before) copy.fromName = before.name;
-    if (copy.type === "create" || copy.type === "rename") {
+    if (
+      (copy.type === "create" || copy.type === "rename" || copy.type === "move") &&
+      (copy.type === "create" || nameSet(copy) !== undefined)
+    ) {
       const shown = reads.nodes.get(copy.node);
-      if (lastNamed.get(copy.node) === record.id && shown?.name === copy.name)
+      if (lastNamed.get(copy.node) === record.id && shown && shown.name === copy.name)
         copy.name = shown.displayName;
     }
     if (copy.type === "create")
       was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
     else if (before && copy.type === "move")
-      was.set(copy.node, { ...before, parent: copy.parent, rank: copy.rank });
+      was.set(copy.node, {
+        name: copy.name ?? before.name,
+        parent: copy.parent,
+        rank: copy.rank,
+      });
     else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
     copies.push(writable(copy));
   }

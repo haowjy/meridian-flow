@@ -1,33 +1,15 @@
-# Resource catalog and Editor lifecycle
+# Presented documents and Editor lifecycle
 
-Reference detail for the account resource replica, local resource-backed Editor
-sessions, and the documents this browser tab presents. Read
+Reference detail for how the Editor presents documents in this browser tab: hosts, removal
+notices and draft-only presentation. Read
 [CONTEXT.md](CONTEXT.md) for the feature-level contracts first.
 
-## Catalog acquisition and tree projection
+## Tree projection
 
-`AccountResourceReplica` serializes compact catalog snapshots and whole-commit
-deltas into durable checkpoints. React Query triggers acquisition and delivers
-results, while every tree, picker, and reference browser
-projects from the same replica state. Applied revision advances only through
-contiguous whole commits; observed head may lead while a bounded replay has more
-pages. Local resource locations overlay server checkpoints by stable resource
-identity and remain visible across offline reloads.
-
-The browser replica does not exist during server rendering. Catalog hooks use
-the optional account context and React Query `skipToken` until hydration installs
-that one owner; SSR renders the stable shell without issuing an HTTP fallback or
-constructing a second catalog hierarchy. Once live, the project-level catalog
-wake subscription sends truth-free head hints to the replica. Mount, focus,
-periodic refresh, and wake hints schedule background acquisition through the same
-serialized owner.
-
-Editable-file create, rename, move, and delete commands write ordered durable
-resource intentions before transport. Folder placement and recursive deletion
-share that journal; folder creation retains the direct context mutation adapter. Rejected deletion restores the row with repair state; transport
-uncertainty leaves the submitted attempt recoverable. Rejected placement
-reopens the identity field. Cache absence never supplies
-removal evidence.
+Every tree, picker and reference browser projects from the project's replay (`useProjectTreeViews`,
+`useProjectTrees`; see [CONTEXT.md](CONTEXT.md), Tree ownership). There is no second copy of
+placement and no catalog to acquire: a create, rename, move or delete the writer makes shows in
+every view at once, and an offline one stays in the copy until the connection returns.
 
 Whether a document is still there is the project's list's answer, not a lookup: `ProjectStandings`
 reads the list's replay for a document and says it is in the tree, in Trash, purged, not in the
@@ -46,61 +28,21 @@ Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows
 selects each expanded row's direct children by stable parent ID through one
 scheme-scoped environment. Mobile renders one level at a time via route params.
 
-## Presented documents and local documents
+## Presented documents
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
 removal of presented documents, route continuity and Work pruning from what the list says. `AccountResourceReplica` independently owns resource and
 content durability. Neither owns the other's state.
 
-New creates one initialized local resource and opens its exact Y.Doc before any
-server request. The document's descriptor carries the resource handle immediately. Empty reserved
-documents remain local and recoverable; first meaningful content or explicit
-filing records the immutable create-eligibility witness and schedules the durable
-namespace runner. A successful create transfers the same session into authorized
-registry ownership. A create conflict remints the document ID while preserving
-the resource handle, persistence database, Y.Doc, editor ancestry,
-cursor, and undo history.
-
-`openDocumentFromResource` is the single optimistic descriptor projection. An unnamed
-local resource (`materialization.unnamed`) is `new`; an explicitly filed local
-resource immediately becomes a route-owning `tracked` document even while offline;
-acknowledgement keeps it tracked, and from then on the catalog's `provisionalName`
-says whether its name is still provisional. Projection reconciliation
-targets the resource handle, so a delayed old document ID cannot replace a
-reopened document. Leaving main removes only browser-local presentation. It never
-deletes the durable resource.
+New appends a provisional `create` in Unfiled and opens the node by the name the replay gives
+it, before the server has heard of it; its text room connects once the create is admitted and is
+retried while it is not (`4211`). Leaving main removes only browser-local presentation. It never
+deletes the document.
 
 Nothing persists open documents: main shows the document its address names, the side shows
 the project's current chat or document, and the newest document shown that is off screen stays mounted
-hidden (`kept`) until a close, a Discard or a removal forgets it. Each browser tab/window presents independently. Project bootstrap keeps durable local
-documents from the replica without remote availability admission; ordinary server documents still
-use exact availability. Accepted navigation commits browser history in one prepared operation.
+hidden (`kept`) until a close, a Discard or a removal forgets it. Each browser tab/window presents independently. Accepted navigation commits browser history in one prepared operation.
 Returning to an empty Editor does not restore a closed document.
-
-When the resource boundary returns an exact initialized local session, it also
-returns verified-local readiness through `OpenDocumentSessionBoundary` and
-`ContextDocumentHost`. `EditorView` may bind that content without waiting for
-first server sync. Server-only sessions retain the first-sync horizon, and local
-readiness never claims remote acknowledgement; adoption and transport continue
-in the background on the same Y.Doc.
-
-A cached session is adopted into the registry at the document's current
-admission generation, which advances on any project mutation. Its persistence
-incarnation keeps the generation it was captured at, exactly as a live `admit`
-reuses it, so adoption must accept an older bindable incarnation (only a newer
-one is a foreign lineage). Refusing it strands the cached session `detached`:
-local edits never reach the server and the pill stays silent. When adoption
-itself fails (authority unreachable or the handoff errors), the adopter reports
-it to the session, which records the failure only while it is `detached` with no
-transport. The snapshot's `adoptionStalled` is derived from that: true only
-while `detached`, cleared by attaching a transport or a successful adoption,
-and never alongside a terminal state. `SyncStatus` treats it as an outage
-(see `core/editor/.context/CONTEXT.md`); elapsed detached time alone shows
-nothing, because a session merely awaiting its transport is healthy.
-
-A document that loses its resource handle but keeps its document (a review launch
-re-opens it without one) keeps painting its cached session while the exact
-lookup re-probes; the boundary never drops to a skeleton for that identity flip.
 
 `OpenDocumentSessionBoundary` opens the ordinary live binding once its local
 session has been probed (`useLiveDocumentBinding`: open, bind, explicit retry).
@@ -127,45 +69,15 @@ host presents the document in `DraftOnlyPresentations` under a token minted per 
 and stays draft-only until settlement promotes it, so a Discard never flips it to a live
 room the server refuses. The phone hosts it through the same `DocumentHost`, so a phone
 mount presents in the registry like a desktop one. Both shells find the document through
-`route-document-owner.ts`: the bound identity in the live catalog, then the document the
+`route-document-owner.ts`: the bound identity in the live tree, then the document the
 answered address names (`addressedDocument`, built from the address's draft row when
 live lacks it), before any path occupant. A plain path never settles on a draft-only
 document; only its address with `owner` and
 `item` reaches it.
-The live resource replica says nothing about a draft-only document
-(`projectResourceDocument` answers `none`): a deleted document's replica record is
-terminal, often from an earlier session's cache, and treating it as the document's
-removal hid the editor behind a skeleton that never resolved.
 Once live has the document (Apply, or a restore), settlement promotes the presentation
 and this host opens its live room like any other document. Whether that open is
 slow, fails, or disconnects is the host's business and never changes whether
 Apply completed.
-
-## Unfiled materialization and recovery
-
-A new document is an account resource exposed to its creating project before it
-has a server row. Reservation atomically records a stable handle, document ID,
-exact persistence name, its untitled materialization, provisional Unfiled location,
-and a first `set-location` placement whose eligibility is initially null. Local
-persistence initialization completes before the editor receives the handle.
-
-First content marks eligibility once. Explicit filing both marks eligibility and
-appends a location intent. Dispatch sends a create while the record has no canonical
-place and a move afterwards, so a refused first placement is repaired by placing it
-again rather than by a different intent kind. The runner persists immutable request
-bytes before HTTP, records outcomes before applying them, and resumes after response
-loss or reload. Creation acknowledgement records canonical metadata and transfers the
-same Y.Doc into registry transport. Leaving main leaves the resource in the
-sidebar once it holds a word; explicit Delete is the only writer command that removes it.
-An Untitled document that never held a word goes with its last view in this browser tab
-(`UntitledLifecycle` in `ContextDocumentHost`, `discardUntouched`). It is plain Untitled
-until its create is sent: the server numbers it then.
-
-A foreign-ID create conflict remints under the resource lock, cancels the old
-unsubmitted dependents, and appends a retry plus rebased intentions for the new
-identity. Aliases let every browser context update its existing detached session
-without replacing its Y.Doc. Unknown or uninitialized local databases are never
-opened as blank documents.
 
 ## Editor versus chat resources
 
@@ -194,31 +106,18 @@ live keeps painting, and admission has nothing to install for it. A chapter the 
 deleted while its draft was under review opens as the draft from its review address, whose
 answer the server gives afresh.
 
-Every editable document keeps `OpenDocumentSessionBoundary` as the same React ancestor.
-Resource-backed documents resolve through their stable resource handle before and after
-acknowledgement, placement, and remint, so metadata changes do not remount the
-editor. Close releases the content lease; a host leaving the screen does not close
-registry transport retained for the presented documents.
+Every editable document keeps `OpenDocumentSessionBoundary` as the same React ancestor, so a
+rename or move (the replay changing) does not remount the editor. Close releases the content
+lease; a host leaving the screen does not close registry transport retained for the presented
+documents.
 
-## Catalog observation
+## Tree observation
 
-The account replica reconciles metadata revisions for its entire lifetime, even
-without a mounted catalog consumer. Acquisition commits feed the existing shared
-IndexedDB live query; acquisition does not reread the whole account afterward.
-
-Composite UI consumers use `useContextCatalogViews` once for their scheme set.
-The hook observes one resource projection and one React Query result per distinct
-authority scope, then derives scheme views. The Editor sidebar derives four
-schemes from Project and User scopes; link suggestions derive six, including the
-current Work/no-Work scope.
-Collapsed sidebar sections stay mounted. Local-only rows are visible but cannot prove
-catalog completeness. Unchanged projection records retain their array identity
-through unrelated React renders.
-
-Mounting a catalog consumer respects the five-second query freshness window;
-showing a retained editor does not force a fresh request. Stale mounts,
-explicit refetch, wake hints, reconnect/focus, and interval polling still refresh
-catalogs through the same replica owner.
+Composite UI consumers use `useProjectTreeViews` once for their scheme set. It cuts the session's
+replay to each scheme's source, so a view is rebuilt when the list's version changes and not for
+unrelated renders. The Editor sidebar derives its schemes from the project and account lists; link
+suggestions derive six, including the current Work/no-Work scope. Collapsed sidebar sections stay
+mounted.
 
 ### Removed-document notices
 
@@ -235,13 +134,13 @@ before and says so. Three owners, one concept each:
   an answer or an open is pending, and the document stays watched (focus,
   `online`, the 60 s poll) until it is `removed` or `lost`. `available` is not
   final while someone asks: another browser tab's delete reaches this tab
-  through the shared local replica before the server commits it.
+  through the replay before the server commits it.
   `useRemovalRecord` is the one React reader: the notice, `SyncStatus`, the
   review room owner and the reopened review address.
 - **The notice store.** `RemovedNoticeStore` holds one notice per project. Whatever
   presented a document pushes it when it vanished: `ContextRemovalCoordinator`
   (`closeVanished`, a `terminal-remove` that ended a presentation, `discardDraft`) and
-  `useFollowOpenDocumentPlacement` (a presented document the replica no longer places). An entry
+  `useFollowOpenDocumentPlacement` (a presented document the replay no longer places). An entry
   shows once the cache says `removed`; a Work's removal and an authority loss drop it. The store
   asks `PresentedDocuments.isPresented` which documents a view still shows.
 - **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
@@ -280,10 +179,9 @@ document's edits removes nothing, so it marks nothing. Only documents a host
 presents are marked. While the
 mark lives every sighting is silent; "kept" releases it, and a settled
 removal lasts until each host that presented the document saw it vanish or its removal
-landed (`ownRemovalEnded`). A delete the server refuses after the replica admitted it never
-lands, so `observeRefusedDeletes` (account lifetime, no screen needed) ends the marks of the
-refused entry's documents. A replica change origin cannot replace the marks: Discard is a server command,
-not a replica mutation.
+landed (`ownRemovalEnded`). A delete the server refuses after the list took it never
+lands: the row comes back with its failure mark, and the marks of the refused entry's documents
+end with it (the observer that did this is gone; step 6b reads it from the replay). Discard is a server command, not a record the browser writes.
 
 A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
 the registry (`observeRemovedRooms`, held by an editor or not) and follows the
@@ -297,7 +195,7 @@ availability read the same removal record. A real restore cycle never leaves
 the document dead. The follow ends on `removed`, `lost`, the restart
 or the session's end; a failed lookup leaves it `unresolved` and the
 availability watch keeps asking. Rebinding the document instead would not help:
-its cached resource handle hands back the same removed session. A host still
+its cached session hands back the same removed session. A host still
 open on a removed room says nothing while asked, the record sentence for
 `removed`, and "Access lost (not saving to the server)" otherwise
 (`SyncStatus`). Draft rooms carry no document identity in the registry, so
@@ -312,10 +210,9 @@ document, and finding the newest tombstone at a path belongs to a later track.
 
 Unsent text is not kept: a removed document's presentation ends even when its
 session holds unacknowledged edits. Keeping it bound would need more than the
-planner deferring this document's removal and revoke: the catalog-vanished close
-must defer too, the route's path-based admission stops resolving the address
-(masking the document as unavailable and dropping its selection to a candidate),
-and the session binding re-probes when the replica marks the resource terminal.
+planner deferring this document's removal and revoke: the vanished-from-the-replay close
+must defer too, and the route's path-based admission stops resolving the address
+(masking the document as unavailable and dropping its selection to a candidate).
 
 ### Multi-Work review representations
 
@@ -324,8 +221,8 @@ Which draft a document shows is its view's pin; whether live lacks it is
 `DraftOnlyPresentations` (`features/draft-review/draft-only-presentations.ts`). Two things
 present a document there: a host mount, under a token minted per mount, and a live delete's
 hold, one entry per held draft. Settlement (`DraftOnlySettlement`) settles both the same way,
-so neither can outlive what it stands for: it promotes on catalog evidence checked against a
-fresh catalog read, and ends a presentation only on that presentation's own answer, when its
+so neither can outlive what it stands for: it promotes on the replay's evidence checked against a
+fresh read, and ends a presentation only on that presentation's own answer, when its
 draft's metadata says `gone` or the document's view no longer pins it (a Discard of the last
 change leaves the draft active and empty). An ended document moves to the scope's draft of it
 when there is one (the view's pin, and main's address with it), and closes otherwise.
@@ -337,11 +234,10 @@ open but not shown paints nothing. It records a hold for that draft (`holdRemove
 removal plan leaves held documents alone (`held`) and ends the rest. The hold ends when
 the coordinator commits an `available` command for the document (a restore, an Apply that
 brought it back) or when its draft ends. Promotion back to live otherwise needs the document
-placed in the live tree: the replica keeps a deleted document's record, and knowing the id alone
-is not "live again". Availability applies a delete before the replica hears of it, so while
-availability answers `removed` a placed record asks availability to look again
+placed in the live tree: the replay keeps a deleted document's node, and knowing the id alone
+is not "live again". Availability applies a delete before the replay hears of it, so while
+availability answers `removed` a placed node asks availability to look again
 (`removalOutdated`): the answer turns `unresolved` and availability's own watch retries a failed
 lookup on focus, online and the poll. Settlement follows that answer and promotes only on
-`available`. A join re-identifies the resource's descriptor to the draft's
-document. Restoring a saved review already queries the saved review Work and matches
+`available`. Restoring a saved review already queries the saved review Work and matches
 both draft and document within that list.

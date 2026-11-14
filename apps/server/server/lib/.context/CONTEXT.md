@@ -38,10 +38,10 @@ not own authorization.
 Runtime tool definitions and policy live in `domains/runtime`; `lib/model-tools`
 binds context, collab, file-policy, and thread services. Document writes pass
 through file grants and `@meridian/agent-edit`; URI parsing and document-row
-creation remain server-side. `write move` and `write delete` change where a whole
-document lives, so the host runs them through the live context port
-(`namespace-commands.ts`) and records their tree entry in collab's edit history
-inside the mutation's own transaction. Tool handlers return the typed agent-edit result,
+creation remain server-side. The tree commands (`tree-commands.ts`, `tree-inverse.ts`)
+run one command per call on the context port's `treeCommand`, resolve paths through
+the names the chat was shown (`shown-paths.ts`), and keep a receipt in collab's tree
+history (`tree_edit_receipts`) in the call's own transaction. Tool handlers return the typed agent-edit result,
 and model renderers never replace the persisted typed result. Context-backed
 handlers resolve one unified `ContextPort` per call.
 
@@ -73,7 +73,7 @@ it and answers `internal` with `retryable: true`; `not_found`, `bad_request` and
 auth stay non-retryable. Pending callbacks
 wait until catchup succeeds and are flushed above the delivered watermark;
 unsubscribe, replacement, close, and send failure invalidate stale work.
-Catalog subscriptions also claim a request slot before reading project ownership.
+Project hint subscriptions (`catalog.subscribe`) also claim a request slot before reading project ownership.
 Close, unsubscribe and a newer request invalidate pending acquisition; only the
 current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.

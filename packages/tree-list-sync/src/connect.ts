@@ -4,7 +4,7 @@
  * whole refusal. It owns no storage and no tabs: the copy comes in through `ListCopy`.
  */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
-import { WS_CLOSE } from "@meridian/contracts/protocol";
+import { listRebuildRecord, WS_CLOSE } from "@meridian/contracts/protocol";
 import { recordsOf, type TreeRecord } from "@meridian/project-tree";
 import type * as Y from "yjs";
 import { PART_RECORDS, splitSyncFrame } from "./parts.js";
@@ -18,7 +18,7 @@ import { PART_RECORDS, splitSyncFrame } from "./parts.js";
  *   the list and not write it
  * - `denied`: the account has no access to this list; nothing will connect again
  *
- * A record the server keeps refusing after each rebuild is not appended again: `onRejected` has it.
+ * A record the server refused whole is not appended again: `onRejected` has it.
  */
 export type ListSyncState =
   | "connecting"
@@ -43,7 +43,7 @@ export type ListCopy = {
 };
 
 const DENIAL_CODES = new Set<number>([WS_CLOSE.AUTH_FAILED.code, WS_CLOSE.PERMISSION_DENIED.code]);
-/** More rebuilds than this within the window and the records appended again are given up on. */
+/** More rebuilds than this within the window and the records appended again are all given up on. */
 const MAX_REBUILDS = 3;
 const REBUILD_WINDOW_MS = 60_000;
 
@@ -70,6 +70,8 @@ export function connectTreeList(options: {
   let state: ListSyncState = "connecting";
   let readOnly = false;
   let rebuilds: number[] = [];
+  /** The record the server's last refusal named, to give up on once the copy is rebuilt. */
+  let refused: string | undefined;
 
   const publish = (next: ListSyncState) => {
     if (state === next || destroyed) return;
@@ -86,8 +88,9 @@ export function connectTreeList(options: {
     socket = null;
   }
 
-  async function rebuild() {
+  async function rebuild(named: string | undefined) {
     stop();
+    refused = named;
     publish("rebuilding");
     const now = Date.now();
     rebuilds = [...rebuilds.filter((at) => now - at < REBUILD_WINDOW_MS), now];
@@ -106,19 +109,15 @@ export function connectTreeList(options: {
     );
     // The rebuilt copy has every record the server admitted: only the rest goes again, as it was.
     const missing = carried.filter((record) => !held.has(record.id));
-    if (rebuilds.length <= 1) {
-      // The usual case is one update, one admission, whatever the number of records.
-      if (missing.length > 0) copy.doc.transact(() => recordsOf(copy.doc).push([...missing]));
-    } else {
-      // The server refused those whole before, and does not say which record it refused: each
-      // goes in a transaction of its own, so the honest ones are admitted around the one it
-      // refuses. Past the limit the first is the one refused again and again: it is given up
-      // on, and the rest go on.
-      const giveUp = rebuilds.length > MAX_REBUILDS ? missing.slice(0, 1) : [];
-      for (const record of missing.slice(giveUp.length))
-        copy.doc.transact(() => recordsOf(copy.doc).push([record]));
-      if (giveUp.length > 0) options.onRejected?.(giveUp);
-    }
+    // The server names the record it refused: that one is given up on, the rest go in one
+    // update. A refusal that names none (the update's own structure) repeating past the limit
+    // gives up all of them, so the copy cannot rebuild forever.
+    const stuck = refused === undefined && rebuilds.length > MAX_REBUILDS;
+    const giveUp = missing.filter((record) => stuck || record.id === refused);
+    const send = missing.filter((record) => !giveUp.includes(record));
+    refused = undefined;
+    if (send.length > 0) copy.doc.transact(() => recordsOf(copy.doc).push(send));
+    if (giveUp.length > 0) options.onRejected?.(giveUp);
     await copy.settleCarried();
   }
 
@@ -145,7 +144,8 @@ export function connectTreeList(options: {
       },
       // The server closes the socket itself with the refusal's code; any other close reconnects.
       onClose: ({ event }) => {
-        if (event.code === WS_CLOSE.LIST_REBUILD.code) void rebuild();
+        if (event.code === WS_CLOSE.LIST_REBUILD.code)
+          void rebuild(listRebuildRecord(event.reason));
         else if (DENIAL_CODES.has(event.code)) {
           publish("denied");
           queueMicrotask(stop);

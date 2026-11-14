@@ -38,16 +38,14 @@
  * and a transcript link cancel each other, and a hidden chat or a switched thread
  * cancels both.
  *
- * Exact `@` references in writer messages ask by identity rather than through
- * the resolver, from the chat's `ReferenceAvailability` store. The catalog
- * revision that re-registers the resolver also refreshes that store, so a
- * deleted document turns its references dashed without a reload.
+ * Exact `@` references in writer messages read the replay by identity
+ * (`useReferenceAvailability`), so a deleted document turns its references
+ * dashed at once.
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
@@ -66,7 +64,6 @@ import { useOpenProjectDocument } from "@/features/project/context/open-project-
 import { useLinkPlacement } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
-import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
 /** What a chat link is resolved against, or pending while that is still loading. */
 function chatLinkScope({
@@ -115,7 +112,6 @@ export function useChatLinkFollowing({
   active: boolean;
 }): {
   navigation: TranscriptLinkNavigation;
-  references: ReferenceAvailability;
   /** What the chat's folder chips (transcript and composer) open documents through. */
   folders: FolderMenuHost;
   dialog: ComponentProps<typeof LinkFollowDialog>;
@@ -181,39 +177,6 @@ export function useChatLinkFollowing({
   const [requester] = useState(() => createLinkRequester(resolution));
   const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
 
-  // Exact `@` references ask by identity, not through the resolver, but the
-  // same catalog change is what makes their answers stale: a revision change
-  // (a document created, renamed, moved, or deleted) asks again about every
-  // reference shown, in one batch.
-  const references = useMemo(
-    () =>
-      createReferenceAvailability(({ documentIds, folderIds }) =>
-        lookupProjectContextAvailability(projectId, documentIds, undefined, folderIds),
-      ),
-    [projectId],
-  );
-  // The revision this store last answered for. Seeded from the first COMPLETE
-  // index, because the catalogs loading is not a change: counting it would ask
-  // about every reference twice on opening a chat. A new store (project
-  // change) starts over.
-  const seen = useRef<{ store: ReferenceAvailability; revision: string } | null>(null);
-  useEffect(() => {
-    if (!index.complete) return;
-    if (seen.current?.store !== references) {
-      seen.current = { store: references, revision: index.revision };
-      return;
-    }
-    if (seen.current.revision === index.revision) return;
-    seen.current.revision = index.revision;
-    references.refresh();
-  }, [index.complete, index.revision, references]);
-
-  const held = useMemo(
-    () => new Map(index.documents.map((document) => [document.documentId, document.uri])),
-    [index.documents],
-  );
-  useEffect(() => references.reconcile(held), [references, held]);
-
   const shellDoors = useChatDoors();
   const doors = useMemo(
     () =>
@@ -244,7 +207,6 @@ export function useChatLinkFollowing({
 
   return {
     navigation,
-    references,
     folders,
     doors,
     dialog: {

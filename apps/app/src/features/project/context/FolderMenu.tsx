@@ -3,20 +3,12 @@
  * the folder. Subfolders drill, Back climbs, and a document opens the way the
  * chip's surface opens documents.
  *
- * Opened by identity. The folder is found in the catalogs the menu already
- * holds; otherwise the stable-ID lookup says where it lives now (it may be
- * another Work's Scratch), and that area's catalog is acquired. Both happen
- * only while the menu is open, so a transcript full of folder chips costs
- * nothing until one is clicked.
+ * Opened by identity. The project's replay says where the folder lives now (it may be
+ * another Work's Scratch), a rename or move made a moment ago included. That is read
+ * only while the menu is open, so a transcript full of folder chips costs nothing
+ * until one is clicked.
  */
 import { t } from "@lingui/core/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import {
-  type CatalogFolderEntry,
-  type CatalogScope,
-  contextOwner,
-} from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
 import {
   type ComponentPropsWithoutRef,
   createContext,
@@ -25,9 +17,8 @@ import {
   useContext,
   useMemo,
 } from "react";
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useProject } from "@/client/query/useProjectList";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent, type DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useOnScreenChatScratchSource } from "../chat/use-chat-scratch-source";
@@ -80,15 +71,13 @@ export function FolderMenuBody({
   ...handlers
 }: { host: FolderMenuHost; folderId: string } & MenuContentHandlers) {
   const { projectId } = host;
-  const lookup = useQuery({
-    queryKey: projectQueryKeys.folderIdentity(projectId, folderId),
-    queryFn: ({ signal }) => lookupProjectContextAvailability(projectId, [], signal, [folderId]),
-    // Where the folder is now: a rename or move since the last open must not reopen the old place.
-    staleTime: 0,
-  });
-  const resolution = lookup.data?.folderResolutions?.[0];
-  const found = resolution?.kind === "available" ? resolution.entry : null;
-  const own = useMemo(() => (found ? ownArea(found) : null), [found]);
+  const trees = useProjectTrees(projectId, { account: true });
+  const own = useMemo(() => {
+    for (const source of trees.sources)
+      if (trees.tree(source.id)?.entry(folderId))
+        return { scheme: source.scheme, owner: ownerOfSource(source) };
+    return null;
+  }, [trees, folderId]);
   const heading = useOwnAreaHeading(projectId, own);
   const title = useProject(projectId)?.title ?? "";
   const scratch = useOnScreenChatScratchSource(projectId);
@@ -112,9 +101,8 @@ export function FolderMenuBody({
       />
     );
   }
-  const kind = resolution?.kind;
-  const failed = lookup.isError || kind === "indeterminate";
-  const gone = kind === "deleted" || kind === "not-visible" || kind === "authority-unavailable";
+  const failed = trees.isError;
+  const gone = trees.isComplete && !own;
   return (
     <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-1rem)]" {...handlers}>
       <p
@@ -129,24 +117,4 @@ export function FolderMenuBody({
       </p>
     </DropdownMenuContent>
   );
-}
-
-/** The area a folder lives in, as the menu source names areas. */
-function ownArea(entry: CatalogFolderEntry) {
-  const parsed = parseContextUri(entry.uri);
-  if (!parsed.ok) return null;
-  return { scheme: parsed.value.scheme, owner: scopeOwner(entry.scope) };
-}
-
-function scopeOwner(scope: CatalogScope) {
-  switch (scope.kind) {
-    case "work":
-      return contextOwner(scope.workId);
-    case "lineage":
-      return contextOwner(null, scope.rootThreadId);
-    case "chat":
-      return contextOwner(null, null, scope.chatId);
-    default:
-      return contextOwner(null);
-  }
 }

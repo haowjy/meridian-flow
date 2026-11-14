@@ -1,5 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
+import type { DocumentId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
@@ -408,7 +409,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         diagnostics: noticeDiagnostics,
       })
     : SILENT_POST_DURABILITY_NOTICES;
-  const treeHistory = createDrizzleTreeHistory(deps.db, persistence.journal);
+  const treeHistory = createDrizzleTreeHistory(
+    deps.db,
+    persistence.journal,
+    (threadId, documentId) => turnInverse.modelStack(documentId as DocumentId, threadId),
+  );
   const turnInverse = createDrizzleTurnInverseService({
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db: deps.db,

@@ -77,24 +77,21 @@ it("settles a waiting restoration on destruction instead of leaving its caller p
 
 it("keeps the replacement dirty decision while the old native POP restores", async () => {
   const history = fixture();
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({
-        href: history.location.href,
-        key: history.location.state.__TSR_key ?? "",
-        state: { ...history.location.state },
-      }),
-      subscribe: (listener) => history.subscribe(listener),
-      flush: () => history.flush(),
-      settlePendingTraversal: () => history.settlePendingTraversal(),
-      replaceEntry: (href, state) => history.replace(href, state, { ignoreBlocker: true }),
-      navigate: async (href, options) => {
-        if (options.replace) history.replace(href, options.state, { ignoreBlocker: true });
-        else history.push(href, options.state, { ignoreBlocker: true });
-      },
+  const navigation = createProjectNavigation({
+    read: () => ({
+      href: history.location.href,
+      key: history.location.state.__TSR_key ?? "",
+      state: { ...history.location.state },
+    }),
+    subscribe: (listener) => history.subscribe(listener),
+    flush: () => history.flush(),
+    settlePendingTraversal: () => history.settlePendingTraversal(),
+    replaceEntry: (href, state) => history.replace(href, state, { ignoreBlocker: true }),
+    navigate: async (href, options) => {
+      if (options.replace) history.replace(href, options.state, { ignoreBlocker: true });
+      else history.push(href, options.state, { ignoreBlocker: true });
     },
-    () => ({}),
-  );
+  });
   let held: { run(): void; cancel(): void } | null = null;
   navigation.registerGuard({
     dirty: () => true,
