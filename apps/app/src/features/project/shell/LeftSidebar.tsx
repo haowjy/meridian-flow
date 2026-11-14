@@ -69,7 +69,6 @@ export function LeftSidebar({
       ? "unfiled"
       : activeDocument.scheme
     : null;
-  const treeActivePath = activeDocument?.kind === "new" ? null : (activeDocument?.path ?? null);
 
   return (
     <nav
@@ -111,7 +110,6 @@ export function LeftSidebar({
         chatThreadId={chatThreadId}
         contextLive={contextLive}
         activeScheme={treeActiveScheme}
-        activePath={treeActivePath}
         activeWorkId={activeDocument?.kind === "new" ? null : (activeDocument?.workId ?? null)}
         onSelectFile={handleSelectFile}
         scopeWorkId={scope.workId}

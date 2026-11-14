@@ -259,8 +259,7 @@ function ScratchTree({
       owner,
       capabilities: editable ? SCRATCH_ACTIONS : READ_ONLY,
       tree: tree,
-      activeScheme: "scratch" as const,
-      activePath: tree.findDocument(openId ?? "")?.path ?? null,
+      activeDocumentId: openId ?? null,
       onSelectFile: (_scheme: string, file: Parameters<typeof serverDocumentFromFile>[1]) => {
         const tab = serverDocumentFromFile("scratch", file, owner);
         if (!tab) return;

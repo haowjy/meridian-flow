@@ -54,6 +54,7 @@ import { useAiDraftLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
+import { useOptionalMainItem } from "../../views";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
 import type { SourceDrop } from "./SourcePane";
@@ -81,9 +82,10 @@ type WriteSources = {
   chatThreadId: string | null;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
-  /** Main's document, as far as the sidebar lists it. */
+  /** Main's document's source, as far as the sidebar lists it: the source it shows. */
   activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  /** Main's document, marked current wherever the tree on show puts it. */
+  activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -143,8 +145,7 @@ function treeSource(scheme: TreeKey): Source {
           treeState={sources.catalogs[scheme]}
           projectId={sources.projectId}
           editorWorkId={sources.editorWorkId}
-          activeScheme={sources.activeScheme}
-          activePath={sources.activePath}
+          activeDocumentId={sources.activeDocumentId}
           onSelectFile={sources.onSelectFile}
           drop={drop}
         />
@@ -197,8 +198,7 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: ListChecks,
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, changes, changesCommands, activeScheme, activePath, onPicked } =
-        useWriteSources();
+      const { projectId, changes, changesCommands, activeDocumentId, onPicked } = useWriteSources();
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
@@ -206,10 +206,7 @@ const SOURCES: Record<SourceKey, Source> = {
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
-          isOpen={(file) =>
-            file.contextLocation?.scheme === activeScheme &&
-            file.contextLocation?.path === activePath
-          }
+          isOpen={(file) => file.documentId === activeDocumentId}
           onPicked={onPicked}
         />
       );
@@ -251,11 +248,10 @@ export function SourcesBody({
   chatThreadId,
   contextLive,
   activeScheme: mainScheme,
-  activePath: mainPath,
   activeWorkId,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands"> & {
+}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands" | "activeDocumentId"> & {
   contextLive: boolean;
   /** Who owns main's document when it is a Work's Scratch note. */
   activeWorkId: string | null;
@@ -268,7 +264,8 @@ export function SourcesBody({
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
   const activeScheme = listed ? mainScheme : null;
-  const activePath = listed ? mainPath : null;
+  const main = useOptionalMainItem()?.item;
+  const activeDocumentId = main?.kind === "document" ? main.documentId : null;
   const chosen = useSidebarTabs((state) => state.shown);
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
@@ -388,7 +385,7 @@ export function SourcesBody({
       chatThreadId,
       editorWorkId,
       activeScheme,
-      activePath,
+      activeDocumentId,
       onSelectFile: selectFile,
       onPicked,
       catalogs,
@@ -401,7 +398,7 @@ export function SourcesBody({
       chatThreadId,
       editorWorkId,
       activeScheme,
-      activePath,
+      activeDocumentId,
       selectFile,
       onPicked,
       catalogs,

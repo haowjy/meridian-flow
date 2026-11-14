@@ -227,7 +227,6 @@ export function MobileProject(props: MobileProjectProps) {
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
-        activeContextPath={props.activeContextPath}
         activeContextWork={props.activeContextWork}
         chatThreadId={chatOnScreen}
       />

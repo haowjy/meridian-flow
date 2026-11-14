@@ -49,8 +49,8 @@ export type TreeEnv = {
   owner: ContextOwner;
   capabilities: EntryCapabilities;
   scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  /** Main's document, marked current wherever this tree puts it. */
+  activeDocumentId: string | null;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -337,7 +337,7 @@ function FileRow({
     onRequestDelete: env.onRequestDelete,
     siblings,
   });
-  const active = env.scheme === env.activeScheme && file.path === env.activePath;
+  const active = file.documentId === env.activeDocumentId;
   const row = useEntryRow(interaction.entry, { active });
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;

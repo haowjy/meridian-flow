@@ -43,8 +43,7 @@ export function ContextTreePanel({
   projectId,
   editorWorkId,
   scheme,
-  activeScheme,
-  activePath,
+  activeDocumentId,
   onSelectFile,
   drop,
 }: {
@@ -53,8 +52,7 @@ export function ContextTreePanel({
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: TreeFile,
@@ -88,7 +86,8 @@ export function ContextTreePanel({
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
-  const activeLocationPath = activeScheme === scheme ? activePath : null;
+  const activeLocationPath =
+    (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
   const revealed = useRef<string | null>(null);
@@ -145,7 +144,7 @@ export function ContextTreePanel({
       revealed.current = null;
       return;
     }
-    if (!tree?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
+    if (revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
     revealPath(parentContextPath(activeLocationPath));
   }, [activeLocationPath, tree, revealPath]);
@@ -188,8 +187,7 @@ export function ContextTreePanel({
               "copy",
               ...(scheme !== "uploads" ? (["delete"] as const) : []),
             ],
-            activeScheme,
-            activePath,
+            activeDocumentId,
             creation: schemeAllowsCreation(scheme)
               ? {
                   creating,
@@ -221,8 +219,7 @@ export function ContextTreePanel({
       projectId,
       owner,
       scheme,
-      activeScheme,
-      activePath,
+      activeDocumentId,
       creating,
       createdFolder,
       onSelectFile,
@@ -285,7 +282,7 @@ export function ContextTreePanel({
           files={tree.files()}
           scheme={scheme}
           search={search}
-          activePath={activeScheme === scheme ? activePath : null}
+          activeDocumentId={activeDocumentId}
           onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
         />
       ) : env && tree ? (
@@ -320,13 +317,13 @@ function FoundFiles({
   files,
   scheme,
   search,
-  activePath,
+  activeDocumentId,
   onOpen,
 }: {
   files: readonly TreeFile[];
   scheme: ProjectContextTreeScheme;
   search: string;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onOpen: (file: TreeFile) => void;
 }) {
   const byId = new Map(files.map((file) => [file.documentId, file]));
@@ -353,7 +350,7 @@ function FoundFiles({
             icon={fileKindIcon(file)}
             title={file.name}
             meta={match.parents.at(-1)}
-            current={file.path === activePath}
+            current={file.documentId === activeDocumentId}
             onOpen={() => onOpen(file)}
           />
         );
