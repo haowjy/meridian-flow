@@ -18,7 +18,7 @@ import {
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import { pushUndoStep, shownSourceOf } from "./tree-undo";
+import { pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
 /**
@@ -79,13 +79,23 @@ export class TreeActions {
   ) {
     const projection = made.replay();
     const nodes = [...new Set(records.map((record) => record.node))];
-    pushUndoStep(made.session, {
+    const step: TreeStep = {
       kind: "tree",
       records: records.map((record) => record.id),
       draft: made.view.draft,
       sources: [...new Set(nodes.flatMap((node) => shownSourceOf(projection, node) ?? []))],
       nodes,
-    });
+    };
+    pushUndoStep(made.session, step);
+    return step;
+  }
+
+  /** A notice's Undo of a gesture made here: the step the sidebar's Ctrl+Z would take. */
+  undo(step: TreeStep): boolean {
+    const session = this.session();
+    if (!session) return false;
+    const { view, pendingText } = this.version();
+    return undoStep(session, step, this.actor, view.draft === step.draft ? pendingText : undefined);
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */
@@ -158,14 +168,16 @@ export class TreeActions {
     return { ok: true };
   }
 
-  /** One gesture's deletes as one update. */
-  remove(nodes: readonly string[]): TreeActionResult {
+  /** One gesture's deletes as one update; `step` is its Undo. */
+  remove(nodes: readonly string[]): TreeActionResult<{ step: TreeStep }> {
     const made = this.writable();
     if (!made.ok) return made;
     const replay = made.replay();
     if (nodes.some((node) => !replay.nodes.has(node))) return { ok: false, reason: "missing" };
-    this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes));
-    return { ok: true };
+    return {
+      ok: true,
+      step: this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes)),
+    };
   }
 
   restore(nodes: readonly string[]): TreeActionResult {

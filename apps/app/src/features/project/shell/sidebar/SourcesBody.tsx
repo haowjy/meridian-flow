@@ -36,6 +36,8 @@ import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
+import { DraftNoticeLine, useDraftNotice } from "@/features/draft-review/CommandNotice";
+import { deleteNoticeKey } from "@/features/draft-review/draft-notices";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
@@ -354,6 +356,7 @@ export function SourcesBody({
     version,
   });
   const undo = useSidebarUndo(projectId, version);
+  const deleted = useDraftNotice(deleteNoticeKey(projectId));
   const { openReviewFile } = useAiDraftLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
@@ -431,9 +434,10 @@ export function SourcesBody({
   return (
     <WriteSourcesContext.Provider value={value}>
       <EntryList list={list} files={files}>
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: hears Ctrl+Z from the focused row or tab inside; it has no interaction of its own. slop-lint: allow suppression the reason is stated in this comment */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: hears Ctrl+Z from anywhere inside; a click on its blank space or a heading focuses it (tabIndex -1), so the sidebar's Undo needs no row focused. slop-lint: allow suppression the reason is stated in this comment */}
         <div
-          className="flex min-h-0 flex-1 flex-col"
+          tabIndex={-1}
+          className="flex min-h-0 flex-1 flex-col outline-none"
           onKeyDown={(event) => {
             const root = isTreeKey(source) ? catalogs[source].tree?.root.entryId : undefined;
             if (source === "changes" && undo.handles(event)) undo.press(false, null);
@@ -449,6 +453,9 @@ export function SourcesBody({
           >
             <SourceView key={source} source={source} />
           </div>
+          {deleted?.surface.kind === "tree" ? (
+            <DraftNoticeLine notice={deleted} className="shrink-0 px-4" />
+          ) : null}
           <div className="shrink-0 px-2 pt-1">
             {foot.map((key) => (
               <FootSource

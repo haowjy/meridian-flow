@@ -175,7 +175,11 @@ the owner's notice holds. Editor Discard is synchronous.
 ### Notices
 
 `DraftNotices` (owned by `DraftCommandOwner`, so account-lived) holds one notice per draft
-owner key: the latest Discard with its Undo, or the latest Apply's facts. A newer Apply or
+owner key: the latest Discard with its Undo, or the latest Apply's facts. The writer's tree
+deletes use the same line under a per-project key (`deleteNoticeKey`, surfaces `tree` and
+`landing`; see the context tree's interactions page). A page whose document a Discard took away
+(a Work's new document) shows the Discard's notice, Undo included, while it holds the document
+(`discarding`); after that it says the document was discarded from the draft. A newer Apply or
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there; a band notice shows on that document's review line (above the toolbar, in place of the

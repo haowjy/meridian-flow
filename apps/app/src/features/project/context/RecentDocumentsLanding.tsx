@@ -60,7 +60,7 @@ export function RecentDocumentsLanding({
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const now = useMinuteClock();
-  const deleteEntries = useDeleteContextEntries(projectId);
+  const deleteEntries = useDeleteContextEntries(projectId, "main");
   // Its Undo must stay reachable, so it shows here on the phone too, ahead of the removal's.
   const discarded = useDocumentNotice(projectId, null);
   const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;

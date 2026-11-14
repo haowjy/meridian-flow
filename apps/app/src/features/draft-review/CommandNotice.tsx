@@ -109,7 +109,8 @@ export function CommandNotice({
 }
 
 /**
- * One notice: "Draft of Chapter 1 discarded." with Undo and a dismiss, or what an Apply did.
+ * One notice: "Draft of Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
+ * or what an Apply did.
  * An Undo that failed stays, with Retry. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
  * nothing moves.
@@ -177,20 +178,30 @@ export function DraftNoticeLine({
           sentence: t`${subject.count} drafts discarded.`,
           failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
         }
-      : subject.kind === "draft"
+      : subject.kind === "deletes"
         ? {
-            sentence: (name: string) => t`Draft of ${name} discarded.`,
-            failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
+            sentence: t`${subject.count} items deleted.`,
+            failedUndo: t`Couldn't bring back ${subject.count} items.`,
           }
-        : subject.kind === "folder"
+        : subject.kind === "deleted"
           ? {
-              sentence: (name: string) => t`Changes in ${name} discarded.`,
-              failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
+              sentence: (name: string) => t`${name} deleted.`,
+              failedUndo: t`Couldn't bring back ${subject.name}.`,
             }
-          : {
-              sentence: (name: string) => t`Change to ${name} discarded.`,
-              failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-            };
+          : subject.kind === "draft"
+            ? {
+                sentence: (name: string) => t`Draft of ${name} discarded.`,
+                failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
+              }
+            : subject.kind === "folder"
+              ? {
+                  sentence: (name: string) => t`Changes in ${name} discarded.`,
+                  failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
+                }
+              : {
+                  sentence: (name: string) => t`Change to ${name} discarded.`,
+                  failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
+                };
   const failed = notice.status === "failed";
   if (notice.status === "partial") {
     const count = notice.leftOut;
@@ -210,7 +221,7 @@ export function DraftNoticeLine({
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
       sentence={sentence}
-      name={subject.kind === "drafts" ? null : subject.name}
+      name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: undo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
       failure={failed ? { message: failedUndo, onRetry: undo, onDismiss: notice.dismiss } : null}
