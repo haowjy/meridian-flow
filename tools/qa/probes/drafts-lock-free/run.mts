@@ -25,7 +25,12 @@ import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
 import { liveDuplicateFrame } from "./live-duplicate-frame.mts";
 import { coldLoadCommit, droppedDelivery, readOnlyHandshake } from "./room-enrollment.mts";
-import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-process-frames.mts";
+import {
+  twoProcessCompaction,
+  twoProcessCompactionMoved,
+  twoProcessFold,
+  twoProcessFrames,
+} from "./two-process-frames.mts";
 
 const PROBES: readonly Probe[] = [
   d12CreateDuringArchive,
@@ -36,6 +41,7 @@ const PROBES: readonly Probe[] = [
   twoProcessFrames,
   twoProcessFold,
   twoProcessCompaction,
+  twoProcessCompactionMoved,
   coldLoadCommit,
   droppedDelivery,
   readOnlyHandshake,
