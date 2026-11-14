@@ -20,6 +20,11 @@ const TEST_HOOK_POINTS = [
   // Collab.
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",
+  /** A reply's save has opened its transaction and taken no Work lock yet. */
+  "save.beforeWorkLock",
+  "save.afterWorkLock",
+  /** A reply's save holds its live document locks and has not confirmed its grants. */
+  "save.afterDocumentLock",
   "checkpoint.afterAuthorityRead",
   /** A Discard attempt has not entered its commit scope. */
   "discard.beforeCommitScope",
@@ -32,6 +37,8 @@ const TEST_HOOK_POINTS = [
   /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
   "apply.afterScopeGuess",
   "apply.afterLive",
+  /** An inverse's capture read a document's live bytes and nothing after them. */
+  "inverse.afterCaptureRead",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */
   "inverse.beforeCommitScope",
   /**

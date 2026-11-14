@@ -22,7 +22,7 @@ export function modelEditIds(key: Pick<ModelEditKey, "responseId" | "toolCallId"
 }
 
 /** RFC 4122 version 5: the node:crypto sha1 of the namespace bytes and the name. */
-function uuidV5(namespace: string, name: string): string {
+export function uuidV5(namespace: string, name: string): string {
   const hash = createHash("sha1")
     .update(Buffer.from(namespace.replaceAll("-", ""), "hex"))
     .update(name)

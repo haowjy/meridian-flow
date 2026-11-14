@@ -80,9 +80,9 @@ export class Child {
   /** The application name of this process's connections. */
   readonly name = `mec-${randomUUID()}`;
 
-  private constructor(url: string, bundle: string) {
+  private constructor(url: string, bundle: string, pool: number) {
     this.proc = spawn(process.execPath, [bundle], {
-      env: { ...process.env, DATABASE_URL: url, CHILD_NAME: this.name },
+      env: { ...process.env, DATABASE_URL: url, CHILD_NAME: this.name, CHILD_POOL: String(pool) },
       stdio: ["pipe", "pipe", "inherit"],
     });
     createInterface({ input: this.proc.stdout as NodeJS.ReadableStream }).on("line", (line) => {
@@ -98,8 +98,9 @@ export class Child {
     );
   }
 
-  static async start(url: string): Promise<Child> {
-    const child = new Child(url, await childBundle());
+  /** `pool` is the child's connection count: 2 unless a case runs two commands in one process. */
+  static async start(url: string, pool = 2): Promise<Child> {
+    const child = new Child(url, await childBundle(), pool);
     await child.waitFor((m) => m.event === "ready", 60_000);
     return child;
   }
@@ -388,7 +389,7 @@ export type CaseContext = {
   h: Harness;
   url: string;
   /** Starts a child; every child a case starts is stopped when it ends. */
-  start(): Promise<Child>;
+  start(pool?: number): Promise<Child>;
 };
 
 export type ModelEditCase = {
@@ -416,8 +417,8 @@ export async function runCases(probe: string, cases: readonly ModelEditCase[]): 
         await modelEditCase.run({
           h,
           url: scratch.url,
-          start: async () => {
-            const child = await Child.start(scratch.url);
+          start: async (pool) => {
+            const child = await Child.start(scratch.url, pool);
             children.push(child);
             return child;
           },

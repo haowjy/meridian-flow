@@ -10,7 +10,6 @@ import {
 import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDraftRetirement } from "../../../../apps/server/server/domains/collab/domain/draft-retirement.ts";
 import { closeDraftRooms } from "../../../../apps/server/server/domains/collab/hocuspocus-rooms.ts";
-import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendToFirstParagraph,
@@ -120,18 +119,24 @@ try {
     },
   );
   const discard = createDrizzleBranchDiscard(h.db, {
+    releaseObjects: async () => {},
     close,
     branches: h.branches,
     workProjection: h.projection,
     removal: createTestDocumentRemoval(h.db),
     catalog: { refreshSources: async () => "0" },
   });
-  await runInDrizzleTransaction(h.db, async () => {
-    await discard.discardLocked({
-      kernel: { branchId: work.branchId, selection: { kind: "whole" } },
-      command: h.discardCommand(work.branchId),
-    });
-    assert.equal(closes.length, 0, "close must not escape before root commit");
+  const command = h.discardCommand(work.branchId);
+  await discard.discardLocked({
+    kernel: { branchId: work.branchId, selection: { kind: "whole" } },
+    command: {
+      ...command,
+      // Settled inside the Discard's transaction, after the kernel closed the drafts.
+      result() {
+        assert.equal(closes.length, 0, "close must not escape before root commit");
+        return command.result();
+      },
+    },
   });
   assert.deepEqual(closes, [WS_CLOSE.DRAFT_CLOSED]);
   assert.equal((await h.store.getDraft(draft.draftId))?.closedCause, "discarded");

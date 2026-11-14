@@ -1,8 +1,8 @@
 /**
  * End of use (contract §12.2 steps 3–5, §12.4, §12.5): a branch stops using documents it
  * created, and what no active branch uses any more is tombstoned, its storage released,
- * with every hidden ancestor it leaves empty; a rolled-back reply's create is retracted
- * the same way, and an inconsistent hidden node met by a read is repaired by it too.
+ * with every hidden ancestor it leaves empty, and an inconsistent hidden node met by a read
+ * is repaired by it too.
  *
  * Every function runs in its caller's transaction, which holds the Work, the branch (when
  * there is one) and the namespaces; the Work's pending count follows at that transaction's

@@ -1,7 +1,10 @@
 /** Admits the user's whole turn-card inverse at its resolved destinations. */
+
+import type { DocumentCommandId } from "@meridian/contracts";
 import type { ReverseTurnCommandResult } from "@meridian/contracts/branches";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import { uuidV5 } from "../../../shared/model-edit-ids.js";
 import { FileEditRefusedError, targetDocumentId } from "../../file-policy/index.js";
 import type { ReverseThreadContextInput, TurnReversalAccess } from "../contracts.js";
 import {
@@ -28,6 +31,14 @@ export type TurnReversalServiceDeps = {
   threadContext: ThreadContextReversalResolver;
   commands: DocumentCommands;
 };
+
+// Arbitrary fixed namespace: changing it orphans every stored alongside command.
+const ALONGSIDE_NAMESPACE = "3d0f6b52-9c7e-4a1b-b8e2-5f4a6c9d1e07";
+
+/** The id of a card command's second part, the same on every resend of the click. */
+function alongsideCommandId(commandId: DocumentCommandId): DocumentCommandId {
+  return uuidV5(ALONGSIDE_NAMESPACE, commandId) as DocumentCommandId;
+}
 
 /** Whether the reversal changed anything: a document's parts, or a Work the caller put back. */
 function changedSomething(outcome: ReversalOutcome): boolean {
@@ -78,51 +89,65 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     }
   }
 
+  /** One `reverse_turn` command: its stored outcome, or `effect` run under its claim. */
+  async function settle(
+    envelope: DocumentCommandEnvelope,
+    effect: () => Promise<ReversalOutcome>,
+  ): Promise<ReversalOutcome> {
+    const stored = async (): Promise<ReversalOutcome | null> => {
+      const found = replay<ReverseTurnCommandResult>(
+        await input.commands.lookup(envelope),
+        envelope.commandId,
+      );
+      if (!found) return null;
+      if (found.status === "conflict") throw new DocumentCommandConflictError(envelope.commandId);
+      return found.outcome;
+    };
+    const first = await stored();
+    if (first) return first;
+    try {
+      const result = await input.commands.run(
+        envelope,
+        async (): Promise<ReverseTurnCommandResult> => {
+          const outcome = await effect();
+          return { status: changedSomething(outcome) ? "reversed" : "refused", outcome };
+        },
+      );
+      return result.outcome;
+    } catch (cause) {
+      if (cause instanceof DocumentCommandExistsError) {
+        const winner = await stored();
+        if (winner) return winner;
+      }
+      throw cause;
+    }
+  }
+
   return {
     reverseTurn,
     async reverseThreadContext(command) {
       const { projectId } = await input.threadContext.requireThreadOwner(command);
-      const envelope: DocumentCommandEnvelope = {
-        commandId: command.commandId,
+      const envelope = (commandId: DocumentCommandId, part?: "alongside") => ({
+        commandId,
         accountId: command.userId,
         projectId,
-        kind: "reverse_turn",
+        kind: "reverse_turn" as const,
         digest: commandDigest({
           accountId: command.userId,
           projectId,
           kind: "reverse_turn",
           selectors: { threadId: command.threadId, turnId: command.turnId },
-          body: { direction: command.direction },
+          body: { direction: command.direction, ...(part ? { part } : {}) },
         }),
-      };
-      const stored = async (): Promise<ReversalOutcome | null> => {
-        const found = replay<ReverseTurnCommandResult>(
-          await input.commands.lookup(envelope),
-          command.commandId,
-        );
-        if (!found) return null;
-        if (found.status === "conflict") throw new DocumentCommandConflictError(command.commandId);
-        return found.outcome;
-      };
-      const first = await stored();
-      if (first) return first;
-      try {
-        const result = await input.commands.run(
-          envelope,
-          async (): Promise<ReverseTurnCommandResult> => {
-            const reversed = await reverseDocuments(command);
-            const outcome = command.alongside ? await command.alongside(reversed) : reversed;
-            return { status: changedSomething(outcome) ? "reversed" : "refused", outcome };
-          },
-        );
-        return result.outcome;
-      } catch (cause) {
-        if (cause instanceof DocumentCommandExistsError) {
-          const winner = await stored();
-          if (winner) return winner;
-        }
-        throw cause;
-      }
+      });
+      const documents = await settle(envelope(command.commandId), () => reverseDocuments(command));
+      const { alongside } = command;
+      if (!alongside) return documents;
+      // Its own command, after the documents' committed: what it locks (Works, threads) never
+      // waits under a document's lock. A resend answers both stored outcomes.
+      return settle(envelope(alongsideCommandId(command.commandId), "alongside"), () =>
+        alongside(documents),
+      );
     },
   };
 }

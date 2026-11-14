@@ -184,8 +184,7 @@ draft rows are never deleted by it.
 
 Pending counts: every Work the removal changed (tree uses, closed drafts' Works)
 goes to `WorkProjectionMutation.recountAfterCommit`, which skips a Work the
-caller already holds through the projection (Discard, a branch create's
-retraction) and recounts the rest in a separate root transaction after commit,
+caller already holds through the projection (Discard) and recounts the rest in a separate root transaction after commit,
 because the removal holds document locks and may not take a Work lock. End of
 use recounts nothing itself: every caller holds the branch's Work. Folder
 deletion locks the complete pre-split subtree, hidden boundary documents

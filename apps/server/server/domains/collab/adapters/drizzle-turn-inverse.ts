@@ -1,9 +1,11 @@
 /**
  * Durable multi-document inverse admission: a lock-free capture, a plan on attempt-local
- * documents, one commit scope that validates the capture; delivers only after it commits.
+ * documents, one commit scope that takes the capture again under its locks and writes only if
+ * it matches; delivers only after it commits.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
 import { textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import {
@@ -25,11 +27,10 @@ import {
   documentDrafts,
   documentEditParts,
   documentEdits,
-  documentYjsUpdates,
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { branchOwnerSql } from "../../../shared/draft-owner.js";
@@ -37,7 +38,6 @@ import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleSavepoint,
-  runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -270,12 +270,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * One read-only snapshot of every affected document: live at its head, each draft at its
-   * revision without merging live identity, the history,
-   * and each draft's Work lifecycle from its row. No lock of any kind.
+   * Every affected document as the plan will see it: live, each draft at its revision without
+   * merging live identity, the history, and each draft's Work lifecycle from its row. Taken
+   * with no lock, so its reads need not agree; `facts` records what each returned, and the
+   * commit takes the capture again under its locks and plans nothing unless the two match.
    */
   async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
-    const captured = await runInRootDrizzleReadSnapshot(input.db, async () => {
+    const facts: unknown[] = [];
+    const captured = await (async () => {
       const ids = await selectedDocuments(query);
       const rows = await history(ids);
       const tree = await treeHistory(ids);
@@ -286,7 +288,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         disposition: "pending",
       }));
       const documents: InverseDocument[] = [];
-      const heads = new Map<DocumentId, number>();
       const removals = await readRemovalRecords(db(), ids);
       const liveAvailability = new Map(
         await Promise.all(
@@ -311,11 +312,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const { doc: live, room: liveRoomName } = released
             ? { doc: new Y.Doc({ gc: false }), room: null }
             : await materialize(documentId);
-          const [head] = await db()
-            .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
-            .from(documentYjsUpdates)
-            .where(eq(documentYjsUpdates.documentId, documentId));
-          heads.set(documentId, Number(head?.id ?? 0));
+          await testHook("inverse.afterCaptureRead");
           const documentTree = tree.filter((row) => row.documentId === documentId);
           const branchIds = [
             ...new Set(
@@ -347,6 +344,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const branchAvailability = new Map(
             branchOwners.map((owner) => [owner.branchId, { frozen: owner.lifecycle !== "active" }]),
           );
+          facts.push({
+            documentId,
+            removal,
+            live: Y.encodeSnapshotV2(Y.snapshot(live)),
+            liveRoom: liveRoomName,
+            liveFrozen: liveAvailability.get(documentId)?.frozen ?? false,
+            occupancy: activeRows,
+            branchOwners,
+          });
           const document: InverseDocument = {
             documentId,
             // A deleted document has no address: the model's path, or where it last stood.
@@ -392,6 +398,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               .select({ handle: branchOwnerSql(branches).handle })
               .from(branches)
               .where(eq(branches.id, documentDraft.branchId));
+            facts.push({
+              draftId,
+              revision: documentDraft.revision,
+              lifecycle: documentDraft.lifecycle,
+              name: name?.handle,
+            });
             drafts.set(draftId, {
               documentDraft,
               doc,
@@ -416,11 +428,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ids,
         draftIds: [...new Set(documents.flatMap((document) => [...document.drafts.keys()]))],
         documents,
-        heads,
+        fingerprint: "",
       };
-    });
-    // The reader owns its own root snapshot. Do not nest it inside the capture above:
-    // a single-connection caller would wait forever for its own read connection.
+    })();
     try {
       // A closed draft keeps its bytes and its Apply record: what was applied before the
       // close is read from it, so a discarded branch does not make applied parts "discarded".
@@ -471,12 +481,38 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   : (classified ?? "discarded"),
           };
         });
+        facts.push({
+          documentId: document.documentId,
+          uri: document.uri,
+          history: document.history.map((part) => [part.id, part.disposition]),
+          tree: document.tree.map((entry) => entry.id),
+          treeStates: document.treeStates,
+        });
       }
+      captured.fingerprint = fingerprintOf(facts);
       return captured;
     } catch (cause) {
       destroyDocuments(captured.documents);
       throw cause;
     }
+  }
+
+  /**
+   * The capture taken again under the commit's locks (Works, then the document keys or tree
+   * scope, then the drafts' rows here): a write that landed since any of the first capture's
+   * reads, or between two of them, changes what it returns, and the attempt misses.
+   */
+  async function confirmCapture(query: TurnInverseQuery, attempt: InverseCapture): Promise<void> {
+    if (attempt.draftIds.length)
+      await db()
+        .select({ id: documentDrafts.id })
+        .from(documentDrafts)
+        .where(inArray(documentDrafts.id, [...attempt.draftIds].sort()))
+        .orderBy(documentDrafts.id)
+        .for("update");
+    const now = await capture(query);
+    destroyDocuments(now.documents);
+    if (now.fingerprint !== attempt.fingerprint) throw new InverseAttemptMiss();
   }
 
   /**
@@ -564,11 +600,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       // Off every lock: each plan's parts with provenance on its attempt-local view.
       const planned = new Map(plans.map((plan) => [plan, planInverseDocument(plan, query)]));
       const documents = [...planned.values()];
-      // A restore step owns the removed document through tree scope until it recreates live
-      // authority. Its later text step and post-commit delivery use that new authority.
-      const liveIds = documents
-        .filter((entry) => entry.live && entry.living)
-        .map((entry) => entry.documentId);
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
@@ -588,19 +619,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ),
         ],
       };
-      const commitScope = <T>(operation: () => Promise<T>) =>
-        withLiveDocuments([...new Set(liveIds)].sort(), () => scope.commit(operation));
       const operation = async () => {
-        // The live state each plan was computed against is still the head.
-        for (const entry of documents) {
-          if (!entry.live) continue;
-          const [head] = await db()
-            .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
-            .from(documentYjsUpdates)
-            .where(eq(documentYjsUpdates.documentId, entry.documentId));
-          if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
-            throw new InverseAttemptMiss();
-        }
+        // What each plan was computed against is still what the documents hold.
+        await confirmCapture(query, attempt);
         // The steps in their planned order: text lands in a document a restore before it
         // brought back, and before a delete after it takes the document away.
         for (const { plan, step } of sequence) {
@@ -627,7 +648,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             grants,
             workProjection: input.workProjection,
             works,
-            commitScope,
+            commitScope: (operation) => scope.commit(operation),
             acquireMutationScope: treeRuns.length
               ? async () => {
                   await acquireTreeScope(input.db, treeScopeRequest(treeRuns, attempt.ids));
@@ -1090,15 +1111,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     });
   }
 
-  /** The live documents' coordinator mutexes, sorted, around the commit scope only (live scope). */
-  async function withLiveDocuments<T>(ids: readonly string[], run: () => Promise<T>): Promise<T> {
-    const enter = async (index: number): Promise<T> => {
-      const id = ids[index];
-      return id ? input.coordinator.withDocument(id, () => enter(index + 1)) : run();
-    };
-    return enter(0);
-  }
-
   return createTurnInverseService(store);
 }
 
@@ -1112,9 +1124,26 @@ type InverseCapture = {
   ids: DocumentId[];
   draftIds: string[];
   documents: InverseDocument[];
-  /** Each document's live head (`max(document_yjs_updates.id)`) at the capture. */
-  heads: Map<DocumentId, number>;
+  /** What every read of the capture returned, hashed: `confirmCapture` compares it. */
+  fingerprint: string;
 };
+
+/** A stable hash of the capture's reads: maps as entries, bytes and bigints as text. */
+function fingerprintOf(facts: unknown[]): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(facts, (_key, value) =>
+        value instanceof Map
+          ? [...value]
+          : value instanceof Uint8Array
+            ? Buffer.from(value).toString("base64")
+            : typeof value === "bigint"
+              ? value.toString()
+              : value,
+      ),
+    )
+    .digest("hex");
+}
 
 /** What a step's payload committed, for `recordStep`: its text receipts, or its tree transition. */
 type CommittedStep =

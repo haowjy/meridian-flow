@@ -6,7 +6,7 @@ the evidence rows (observation frontiers) each end up exactly once ([design][des
 [model edits](../model-edits.md), [recovery](../../../runtime/.context/recovery.md)).
 
 ```sh
-pnpm test:probes model-edit-kills model-edit-takeover model-edit-drafts model-edit-tree model-edit-evidence
+pnpm test:probes model-edit-kills model-edit-takeover model-edit-drafts model-edit-tree model-edit-evidence model-edit-locks
 ```
 
 (`pnpm test:probes` runs every `tools/qa/probes/<name>/run.mts`, as CI does; names pick some.) Each
@@ -18,6 +18,7 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
 | `model-edit-takeover` | A stale process storing a response or a result block after its run was taken over; the sweep; recovery waiting on a held key; two chats on one document; a chat card's Undo sent twice after a kill. |
 | `model-edit-drafts` | The same steps in draft mode, plus a writer typing during the edit, a Discard between two calls, a write after a Discard, a new draft after a Discard, two chats on one Work's draft. |
 | `model-edit-tree` | `move`, `delete`, `create`, `copy` and the model's `undo` killed after commit; a refused `create`; an aborted `create`; a duplicate call id; all four tree calls in a draft-mode chat. |
+| `model-edit-locks` | The lock order (`../CONTEXT.md`): a draft-mode chat's first write racing an Undo for its Work, a writer typing while an Undo captures, and a card Undo's Work receipt waiting on a Work whose holder then wants the document. The probe holds a lock on its own connection to line the racers up. |
 | `model-edit-evidence` | What the model was shown: an edit's frontier survives a kill after commit, a read's is lost between its block and `resultStored`. |
 
 ## The harness
@@ -51,11 +52,13 @@ response's id and the call id, so cases share no command rows.
   promise rejects). The takeover cases kill such a child instead of stopping it cleanly.
 - **Takeover**: a second child runs `sweep` (orphan repair and wake scan), the real recovery.
 
-`CASE=<text>` runs only the cases whose name contains it.
+`CASE=<text>` runs only the cases whose name contains it. `start(pool)` gives a child more
+connections than 2, for a case that runs two commands in one process (`model-edit-locks`).
 
 Hook points are in `shared/test-hooks.ts`: `response.beforeStore`, `command.*`,
-`draft.append.beforeCommit`, `block.*` and `recovery.beforeResolve`. `command.afterCommit` also
-fires after a top-level `DocumentCommands.run` (a chat card's Undo).
+`draft.append.beforeCommit`, `inverse.afterCaptureRead`, `block.*` and `recovery.beforeResolve`.
+The `command.*` points fire for every command kind (`runCommand`), so a chat card's Undo passes
+them too, twice: its documents' command, then its Work receipts' command.
 
 The pool of 2 means a held transaction and the session lock use both connections, so a second
 operation in the same child waits for a connection, not for a database lock. A case that needs

@@ -1,7 +1,6 @@
 /**
  * Postgres branch tree writes for one source: the tree owner's hidden-node lifecycle and
- * drafted placement, with the collab half injected (the branch's document draft is ensured and
- * retracted by collab, which owns draft lifecycle, journals and pooled cores).
+ * drafted placement, with the collab half injected (the branch's document draft is ensured by collab, which owns draft lifecycle, journals and pooled cores).
  */
 import type { Database } from "@meridian/database";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";

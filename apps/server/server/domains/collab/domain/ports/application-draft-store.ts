@@ -25,6 +25,14 @@ export type ApplicationDraftStore = DraftStore & {
     liveRoom: string | null;
     livePosition?: number;
   }): Promise<DraftSnapshot>;
+  /**
+   * The branch's draft of a living document, made from its live journal in the caller's
+   * transaction if absent. Takes no room mutex: a command calls it under its own locks.
+   */
+  ensureLiveDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<DraftSnapshot>;
   /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
   ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;

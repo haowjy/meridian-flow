@@ -119,8 +119,7 @@ rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as i
 fixtures without rooms, it retires nothing. A caller whose commit happens inside
 process-level live scopes (Discard) runs under `holdRetirement`, so retirement,
 and a save racing it, never wait on scopes the committer still holds.
-Retraction takes the same lock order before checking for other contributions
-and closes rather than deleting. Removed documents refuse new Work drafts under
+Removed documents refuse new Work drafts under
 their document mutation lock, after Work/thread and branch admission; an
 existing active Work draft is returned whatever the document's state, and a
 write forks one that outlived a live delete (`requireDraftableDocument`).
@@ -447,21 +446,21 @@ runs once, and its Work rows and branch-row and live advisory locks are taken fi
 (`enterDraftSeam`, `approveBranchWriteJoin`).
 
 An inverse (Undo, Redo, revert, and the model's `undo`/`redo`)
-captures without any lock: one read-only snapshot of each document's live
-head, each committed draft at its revision without merging live identity, the
-history and each draft's lifecycle. It plans on that capture, then commits in
-one scope: the live mutexes of its live destinations, then a seam boundary
+captures without any lock: each document's live state, each committed draft at
+its revision without merging live identity, the history and each draft's
+lifecycle. Those reads need not agree with each other. It plans on that capture,
+then commits in one scope: a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
 grant Work). Tree inverses use the context domain's shared tree-edit admission;
 the inverse still owns retry so a moved tree scope causes a complete recapture.
-Then its documents' mutation locks in id order,
-the live head check, and each draft destination's exact checkpoint rewrite at
-its captured revision. Those captured fences, not a lock of the inverse's own,
+Then its documents' mutation locks in id order, its drafts' rows, the capture
+taken again under them and compared (`confirmCapture`), and each draft
+destination's exact checkpoint rewrite at its captured revision. Those captured fences, not a lock of the inverse's own,
 order two inverses of the same edit: the second misses, recaptures and finds
 the edit already reversed (probe `d22-concurrent-undo` in
-[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
+[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or capture unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. Historical disposition reads include closed drafts; the
@@ -507,8 +506,22 @@ sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
 ID order), then draft rows in ID order. No path takes a Work row, a
 live lock or a namespace lock after a draft row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set
-first and revalidates. Live mutexes are held around a commit scope (an
-inverse's live destinations). No writer-ingress epoch barrier remains.
+first and revalidates. No writer-ingress epoch barrier remains.
+
+A document command (a model edit, `reverse_turn`, Apply, Un-Apply, Discard, Copy) runs in
+`runCommand` (`adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
+whose first write is the claim, then the list above from the Work rows on. It takes no
+`withDocument` mutex: a command that needs a live room reads its journal in the transaction
+under the document key (`ensureLiveDocumentDraft`, `committedCopy` under `inLockedWrite()`). A
+read a command plans on is taken, or taken again, under the locks of what it read: the inverse
+captures off-lock, then `confirmCapture` repeats the capture under its Works, document keys and
+draft rows and writes nothing unless the two agree. A miss the server retries (a deadlock, a
+serialization failure, a moved capture or revision) rolls back past the claim and is never stored
+as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
+transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
+Postgres and can hang both sides for good. A card Undo's Work receipts are a second command
+after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
+document key.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. Background timers remain armed across failed
 pulls; only a committed run with no newer work may clear them.
