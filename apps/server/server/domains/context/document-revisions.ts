@@ -43,8 +43,11 @@ export function createDocumentRevisions(deps: {
       work && thread
         ? { owner: threadExecutionContext(work, thread).branchOwner, handle: work.handle }
         : null;
-    const owner = branchOwner?.owner ?? null;
-    const view = owner ? await deps.branches.viewForOwner(owner) : LIVE_TREE;
+    // Draft mode reads its branch's tree; an auto-apply chat reads live, as its writes land.
+    const view =
+      branchOwner && thread?.aiWriteMode === "draft"
+        ? await deps.branches.viewForOwner(branchOwner.owner)
+        : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
@@ -56,18 +59,17 @@ export function createDocumentRevisions(deps: {
         const parsed = source ? parseUnifiedContextUri(source.entry.uri) : null;
         if (parsed?.ok) {
           // The revision of the version this thread's writes change, per document.
-          const drafted =
-            sourceDestination(
-              parsed.value.scheme,
-              owner ? { owner, handle: branchOwner?.handle ?? null } : null,
-            ).kind === "draft";
+          const at =
+            branchOwner && thread
+              ? sourceDestination(thread.aiWriteMode, parsed.value.scheme, branchOwner)
+              : null;
           revision = await deps.documents.readEffectiveRevision(
-            drafted && owner
+            at?.kind === "draft"
               ? {
                   documentId: documentId as DocumentId,
                   threadId,
                   destination: "draft",
-                  owner,
+                  owner: at.owner,
                 }
               : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
           );

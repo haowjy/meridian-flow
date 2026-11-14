@@ -26,7 +26,7 @@ function emptyWorkContext(projectId: string): WorkContextReader {
               workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct",
-            branchOwner: null,
+            branchOwner: { kind: "work" as const, workId: "00000000-0000-0000-0000-000000000002" },
           },
         },
       };

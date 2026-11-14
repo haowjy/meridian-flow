@@ -61,7 +61,7 @@ import {
   fileAccessDeniedError,
   firstRefusal,
   inContainer,
-  keptDraftReader,
+  keptDraft,
   removalBehind,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
@@ -362,18 +362,23 @@ export async function readTrackedDocument(
       ),
       revision: null,
     };
-  const reader =
+  let grant = await documentGrant(deps, call.principal, "read", address, "read");
+  if (isToolError(grant)) return { ...grant, revision: null };
+  const kept =
     version === "draft"
-      ? await keptDraftReader(
+      ? await keptDraft(
           deps,
-          call.principal,
+          grant,
           call.execution,
           call.context.resolution.thread,
           address.documentId,
         )
-      : call.principal;
-  const grant = await documentGrant(deps, reader, "read", address, "read");
-  if (isToolError(grant)) return { ...grant, revision: null };
+      : null;
+  if (kept) {
+    const keptGrant = await documentGrant(deps, call.principal, "read", address, "read", kept);
+    if (isToolError(keptGrant)) return { ...keptGrant, revision: null };
+    grant = keptGrant;
+  }
   const outcome = await readDocument(
     deps,
     grant,

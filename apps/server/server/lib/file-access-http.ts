@@ -48,6 +48,7 @@ export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">):
       );
     case "agent_read_only":
     case "uploads_read_only":
+    case "ai_access_denied":
       // Agent terms; a person never meets them.
       throw createError({ statusCode: 403, message: denial.reason });
   }
@@ -63,7 +64,12 @@ export function isFileAccessRefusal(cause: unknown): boolean {
   const { statusCode, message } = cause as { statusCode?: unknown; message?: unknown };
   if (statusCode === 404) return true;
   if (statusCode !== 403) return false;
-  if (message === "agent_read_only" || message === "uploads_read_only") return true;
+  if (
+    message === "agent_read_only" ||
+    message === "uploads_read_only" ||
+    message === "ai_access_denied"
+  )
+    return true;
   const data = (cause as { data?: Record<string, unknown> }).data;
   const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
   return (

@@ -162,9 +162,12 @@ Work lifecycle rows, the list's key, then namespace keys (an arrival settling ah
 document keys; a caller holds no document or namespace key when it submits. `context-fs/tree-writes.ts`
 (`SourceTree`) is the one place ContextFS makes records.
 
-- **Placement.** People and auto-apply chats write live (`LIVE`). A draft-mode chat on a drafted
-  source writes the Work's branch (`{ draft: branchId }`); the command transaction ensures and
-  locks the branch (`runInBranch`). Scratch content writes stay live in draft mode, while its tree
+- **Placement.** People write live (`LIVE`), and so does an auto-apply chat in a place whose AI access
+  is auto-apply. A chat whose write mode is draft, or whose place asks for review, writes a drafted
+  source to the chat's branch (`{ draft: branchId }`; the owner is set in both modes and
+  `sourceDestination(writeMode, scheme, owner)` decides); the command transaction ensures and
+  locks the branch (`runInBranch`). A port built with a `destination` (a person's write, an Undo, a
+  tool call holding its grants) places every write there and ignores the chat's mode. Scratch content writes stay live in draft mode, while its tree
   writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
   seeds live Yjs: whole-file seed is a live-only command.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit

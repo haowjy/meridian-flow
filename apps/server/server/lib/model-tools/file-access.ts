@@ -13,8 +13,8 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import {
-  type BranchOwnerRef,
   type FileAccessDenied,
+  type FileDestination,
   type FileEditRefusedError,
   type FileGrant,
   type FileNeed,
@@ -37,13 +37,6 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/** The principal with its drafted writes routed to `owner`'s drafts, or live for null. */
-export function withBranchOwner(principal: Principal, owner: BranchOwnerRef | null): Principal {
-  return principal.agent
-    ? { ...principal, agent: { ...principal.agent, branchOwner: owner } }
-    : principal;
-}
-
 /**
  * The agent a tool call acts as (file-access §8): the thread's person, its
  * delegation chain read fresh, and the Work whose drafts its drafted writes
@@ -59,47 +52,49 @@ export async function agentPrincipal(
     accountId: thread.userId as Principal["accountId"],
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      branchOwner: execution.branchOwner
-        ? { owner: execution.branchOwner, handle: execution.scope.workHandle }
-        : null,
+      branchOwner: { owner: execution.branchOwner, handle: execution.scope.workHandle },
+      writeMode: execution.aiWriteMode,
     },
   };
 }
 
 /**
- * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept (a chat switched to auto-apply, or another chat writes drafts there),
- * so the result says `draft`. With
- * no kept draft of this document it reads live, as `draft` always did there.
+ * Where an explicit `version: "draft"` read goes when its document's own destination is live
+ * (an auto-apply chat, or another chat drafted there): the draft the Work kept of it, so the
+ * result says `draft`. With no kept draft it reads live, as `draft` always did there.
  */
-export async function keptDraftReader(
+export async function keptDraft(
   deps: Pick<ToolWiringDeps, "branches">,
-  principal: Principal,
+  grant: FileGrant<"read">,
   execution: ThreadExecutionContext,
   thread: Pick<Thread, "projectId" | "rootThreadId">,
   documentId: string,
-): Promise<Principal> {
-  if (!principal.agent || principal.agent.branchOwner || execution.branchOwner) return principal;
+): Promise<FileDestination | null> {
+  if (grant.destination.kind === "draft") return null;
   const { workId, workHandle } = execution.scope;
   const owner = chatOwner(thread, { id: workId, isNoWork: workHandle === null });
   const drafts = await deps.branches.draftReview.list({ owner });
-  if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withBranchOwner(principal, { owner, handle: workHandle });
+  return drafts.some((draft) => draft.documentId === documentId)
+    ? { kind: "draft", owner, ownerHandle: workHandle }
+    : null;
 }
 
-/** The file policy's grant on a document; a denial comes back as the tool's error. */
+/**
+ * The file policy's grant on a document, at the destination its access gives or at `at`; a
+ * denial comes back as the tool's error.
+ */
 export async function documentGrant<N extends FileNeed>(
   deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
   command: DocumentCommandName,
   address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
   need: N,
+  at?: FileDestination,
 ): Promise<FileGrant<N> | WriteToolErrorOutput> {
-  const grant = await deps.fileAccess.authorize(
-    principal,
-    { kind: "document", documentId: address.documentId as never },
-    need,
-  );
+  const target = { kind: "document", documentId: address.documentId as never } as const;
+  const grant = at
+    ? await deps.fileAccess.authorizeAt(principal, target, at, need)
+    : await deps.fileAccess.authorize(principal, target, need);
   return isFileAccessDenied(grant)
     ? fileAccessDeniedError(
         command,
@@ -195,8 +190,17 @@ export async function containerReadonly(
   principal: Principal,
   context: ResolvedModelContextPort,
   path: string,
+  at?: FileDestination,
 ): Promise<boolean | undefined> {
   const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
-  return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
+  const grant = at
+    ? await deps.fileAccess.authorizeAt(principal, target, at, "edit")
+    : await deps.fileAccess.authorize(principal, target, "edit");
+  return isFileAccessDenied(grant);
+}
+
+/** A `version: "live"` read of a listing or search: its documents are decided live, not in a draft. */
+export function liveListing(version: "draft" | "live" | undefined): FileDestination | undefined {
+  return version === "live" ? { kind: "live" } : undefined;
 }

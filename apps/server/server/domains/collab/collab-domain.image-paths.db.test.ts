@@ -138,6 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadView: {
           threadId: THREAD_ID,
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
+          writeMode: "draft",
         },
         documentSync: {
           ...collab,
@@ -314,6 +315,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadView: {
           threadId: THREAD_ID,
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
+          writeMode: "draft",
         },
         documentSync: collab,
       }).grep(grepQuery("See created"));

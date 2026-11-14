@@ -6,12 +6,37 @@ permission][agent-permission].
 
 ## Policy
 
-Agent refusals are `permission_denied` with reason `agent_read_only` or
-`uploads_read_only` (`@meridian/contracts` `protocol/file-access.ts`; wording in
+Agent refusals are `permission_denied` with reason `agent_read_only`, `uploads_read_only`
+or `ai_access_denied` (`@meridian/contracts` `protocol/file-access.ts`; wording in
 `server/lib/file-access-denial-copy.ts`). A `read` chain's system prompt says so
 (`runtime/tools/agent-thread-context.ts`). The built-in Critic,
 Continuity-checker and Reader-sim agents declare `permission: read`; the other
 built-ins take the default `edit`.
+
+## AI access
+
+`placeAccess(facts)` is what a place does with an AI write: `auto-apply`, `ask` or `deny`. It takes
+the nearest stored setting on the file's *live* folder chain (`FileFacts.aiAccessSettings`, nearest
+first, never from a draft's view, or a draft move of a file out of a `deny` folder escapes it), then
+the source's fixed rule (`FIXED_AI_ACCESS`, empty), then `auto-apply`. `ask` on a source that can't
+hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the review it asks for.
+
+- **Destination.** `Principal.agent` always has `branchOwner` and `writeMode`. A write goes to a draft
+  when the chat's mode is draft or the place asks, and the source is drafted; otherwise live.
+  `destinationFor` decides it per document from facts; `sourceDestination` decides it per source for
+  creates and tree views, from the fixed rule alone. Callers that hold a decision or a grant read the
+  destination from it. A stored per-folder setting needs creates to ask per path, and `placementFor`
+  (context) must change before then.
+- **Facts follow the destination.** An auto-apply chat loads live facts. Only a place whose
+  destination is a draft loads the branch's view, `branchOwner` lifecycle and locks (`loadFor`,
+  `loadListFor` in `file-access.ts`), and a document only the branch holds is found there. Draft mode
+  loads the branch's view for every document, as before.
+- **Deny.** A `deny` place caps an agent at `read` with `ai_access_denied`, a `permission_denied`
+  refusal that no retry or re-read helps. A person never meets it.
+- **Not built yet.** Stored settings (written only by the writer's tree command, never a model tool);
+  the widening check on `agents://`; a rule for another Work's Scratch; a setting that changes
+  between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
+  destination: that waits for the executor's rerun of a failed effect).
 
 A branch move changes the document's presented `scheme`, not its physical
 `contentScheme`. File policy routes content writes from the physical scheme

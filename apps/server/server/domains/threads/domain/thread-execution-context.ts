@@ -4,8 +4,9 @@ import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
 import { chatOwner } from "../../../shared/draft-owner.js";
 
 /**
- * Draft mode writes drafts into the branch of the chat's owner at the time of the call:
- * the Work it is bound to, or its conversation lineage when that Work is No Work.
+ * A chat's drafts, in draft mode or where a place asks for review, go into the branch of its owner
+ * at the time of the call: the Work it is bound to, or its conversation lineage when that Work is
+ * No Work. Every chat has the owner; its write mode says whether all its writes draft.
  */
 export function threadExecutionContext(
   work: Pick<Work, "id" | "handle" | "isNoWork">,
@@ -14,6 +15,6 @@ export function threadExecutionContext(
   return {
     scope: { workId: work.id, workHandle: work.handle },
     aiWriteMode: thread.aiWriteMode,
-    branchOwner: thread.aiWriteMode === "draft" ? chatOwner(thread, work) : null,
+    branchOwner: chatOwner(thread, work),
   };
 }
