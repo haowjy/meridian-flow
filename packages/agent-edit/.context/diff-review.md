@@ -26,6 +26,21 @@ other hunk. Its row never includes another hunk's replacement. The painter uses 
 ranges, with a whole-block mark only for a standalone attribute change. Raw token
 ranges, identity and composition never expand.
 
+`ReviewHunk.attributes` says what the painter needs from a block's attribute change:
+`only` (no text or mark changed, so the painter draws no struck copy) and `nested` (draft
+positions of blocks whose `path`, `kind`, `marker`, `start` or `loose` changed; the painter
+tints that block's marker, indent and bar and puts no mark over its text). A change with no
+marker to paint (a heading level, alignment, a rule, figure or table) keeps the whole-block
+mark. `hunkKind` calls a one-for-one replacement of a rule, figure or table by one of the
+same type and content a "format" hunk. The hunk is the same hunk to Apply, Discard and the
+count.
+
+`ReviewHunk.inner` is set when a hunk replaced a table by its own edited copy whose rows and
+cells pair by id one for one with the same attributes: the changes inside each cell, diffed as
+a document of its own and placed in the draft. The painter paints those instead of the whole
+table; the hunk is still the whole table to Apply and Discard. A table whose rows or cells
+were added, removed or reordered, or whose cell attributes changed, paints whole.
+
 ## Only diff the units whose nodes changed
 
 `correspond` (`src/diff/correspond.ts`) decides which block of one version is which block of the
@@ -161,7 +176,7 @@ same function plans a content Apply's live update, with the patch as the draft s
 insertions at either edge of an adjacent replacement peel off before clustering, so
 `The → A big black` and `+big black` keep one copy.
 
-A table is one token to `align`, so a cluster in which both sides changed containers is
+A table is one token to `align` (review paints its cells apart: `ReviewHunk.inner`), so a cluster in which both sides changed containers is
 merged over their children (`mergeContainers`), pairwise when each side replaced a run of the same
 containers, and at every depth. It falls back to a clash of the whole block (`whole-block-unit`)
 when the types or counts differ, when the merged node fails `check()`, or when a merged table's
@@ -190,10 +205,29 @@ which: `correspond(old, next, { byId: true })`.
    paragraph typed twice): one block, with live's id, because live is the next review base
    (`unifyAdded`). Two similar but unequal paragraphs typed on both sides are two blocks.
 
-**Guess mode** (`correspond(old, next)`) is what the model's write (its Markdown has no ids), the
-Yjs writer and review use. The ends and anchors pair first, then each gap by same content, then the
-share of words in common; a gap too large to score is cut at its similar pairs. Review pairs by
-guess until flat PR 3 gives it ids.
+**Guess mode** (`correspond(old, next)`) is what the model's write (its Markdown has no ids) and a
+block with no id use; review (`diffBlocks`) and the Yjs writer (`writeChildren`) call the id mode and
+guess only for blocks without an id. The ends and anchors pair first, then each gap by same content, then the
+share of words in common; a gap too large to score is cut at its similar pairs. 
+
+Review and the Yjs writer use the same pairing. A block the id pairing found moved is, to `align`, a
+removal where it was and an addition where it is; `Alignment.moves` names the pair and
+`projectReview` joins both hunks into one `move` group, so Apply and Discard cannot take half of a
+move (the earlier text-similarity scoring of removals against additions is gone). Of two swapped
+blocks review keeps the first found in place; the merge's `stays` rule is not used. `writeChildren`
+keeps the Yjs element whose block has the same id and edits it in place; a block that moved, or whose
+id now names another type of element, is deleted where it was and inserted where it is, still with
+its one id.
+
+### Block attributes: `block-attributes-merged`
+
+Before the token merge (`mergeAttributes` in `merge.ts`), a block both sides kept (paired by id,
+one type on all three) takes each attribute from the side that changed it, and the draft's where both
+changed it to different values (one `attributes` conflict for the block). The three versions then
+carry the same attributes, so the token merge sees none changed and a text edit or an inserted block
+beside it merges as if no attribute had changed: live indents an item and the draft checks it, and
+both land. A block one side removed is left to the token merge. A table's rows and cells are not
+reached (`mergeContainers` has its own attribute rule).
 
 A removal of several blocks is one removal per block in the merge, so one side's removal of a
 run meets the other side's edit or removal of each block separately. A run of removed blocks and
