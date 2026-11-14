@@ -17,6 +17,7 @@ import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
+import { treeListCopyPrefix } from "../tree-list/copy-names";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
 const DRAFT_PREFIX = `meridian:document:${collabSchemaKeyTag()}:draft/`;
@@ -145,6 +146,13 @@ export class LocalDocumentCopies {
           throw cause;
         }
       }),
+    );
+    // The account's lists go with its documents: they hold its tree and records not yet sent.
+    const prefix = treeListCopyPrefix(this.accountId);
+    await Promise.all(
+      (await this.names())
+        .filter((name) => name.startsWith(prefix))
+        .map((name) => this.deleteDatabase(name)),
     );
     return results.every(Boolean);
   }
