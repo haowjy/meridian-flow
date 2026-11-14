@@ -423,11 +423,6 @@
         "count": 1
       },
       {
-        "path": "packages/gateway/src/helpers/serialize.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "packages/markup/src/escape.ts",
         "line": "} catch {",
         "count": 1
