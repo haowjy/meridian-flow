@@ -15,6 +15,14 @@ documents, often at once, and their writes land: no approval gates, refusals or
 take it back. In the app, teach a concept once, then show state, not standing
 explanations. See [trust the LLM][trust-llm] and [trust the user][trust-user].
 
+**Trust every client, like a game client the player owns.** A client acts for its writer, so
+the server neither refuses what a client sends nor re-checks it against attacks. The client
+shows the result at once; the server stores it and settles conflicts by a rule every client
+reaches on its own (two writes to one name keep both, a move of a deleted document restores it,
+typing into a closed draft comes back with Copy). Each refusal is a design to replace, and the
+writer never has to send something again. The server still checks who is signed in and
+everything that costs money.
+
 ## Engineering
 
 **Choose the simpler system, not the smaller change.** When a case doesn't fit, change the
