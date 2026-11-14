@@ -1,4 +1,5 @@
 /** Draft capabilities consumed by collab application services. */
+import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { BranchId, DraftOwner } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
@@ -32,6 +33,8 @@ export type ApplicationDraftStore = DraftStore & {
   ensureLiveDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
+    /** The live cut the writing model last saw: a new draft seeds from it, not from live's head. */
+    seen?: ObservationFrontier | null;
   }): Promise<DraftSnapshot>;
   /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
   ensureCreatedDocumentDraft(input: {

@@ -19,6 +19,7 @@ export type {
 export {
   createReplyMutations,
   decodeSnapshot,
+  docAtFrontier,
   frontierBlockId,
   frontierDelta,
   projectSeedFrontier,
