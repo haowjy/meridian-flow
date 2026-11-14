@@ -110,12 +110,9 @@ async function requireBranchIdentity(
   deps: Pick<BranchRouteServices, "projects" | "documentSync">,
   input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
 ): Promise<BranchAccess> {
-  await requireProjectOwned(deps, input);
-  const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
-  if (!found || found.branch.projectId !== input.projectId) {
-    throw createError({ statusCode: 404, message: "Branch not found" });
-  }
-  return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
+  const access = await branchIdentityOrGone(deps, input);
+  if (!access) throw createError({ statusCode: 404, message: "Branch not found" });
+  return access;
 }
 
 /** `requireBranchIdentity`, or null when the branch is gone (its Work was purged). */
@@ -125,9 +122,10 @@ async function branchIdentityOrGone(
 ): Promise<BranchAccess | null> {
   await requireProjectOwned(deps, input);
   const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
-  return found && found.branch.projectId === input.projectId
-    ? { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle }
-    : null;
+  if (!found) return null;
+  if (found.branch.projectId !== input.projectId)
+    throw createError({ statusCode: 404, message: "Branch not found" });
+  return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
 }
 
 /** `requireBranchIdentity`, and the owner is not deleted. */

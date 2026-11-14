@@ -110,12 +110,17 @@ text draft with `closed_by` = the Discard is **reopened as the same row**, moved
 the draft id, and the model's next write finds an active draft, not a closed one. If the Work has
 a newer active draft of the document, the restore closes it first with `closed_by` = the restore's
 own command id (`swapped` in the answer): that draft is a member of the restore's entry, and
-restoring that entry swaps it back. Nothing is refused because a newer draft exists. A second
-restore finds no draft closed by the command: `nothing_to_restore` (or `already_restored`, when
-the tree says its records were taken). Other refusals: `expired` (the command is older than
-`DELETION_RETENTION_DAYS`), `document_purged` (everything left was purged), `work_purged` (the
-Work and its branches are gone; the route lets the command through instead of answering 404 so the
-refusal is stored). `listDiscards(projectId)` is the document half of Trash's Discard entries.
+restoring that entry swaps it back. Nothing is refused because a newer draft exists. The restore marks the owner's
+current drafts changed (`draftMembershipChanged`), so the Work's revision moves and its owner hint
+goes out even when the pending count stays the same (a swap). A second restore finds no member:
+`already_restored` (the tree took its records, or a stored restore named this command). Other
+refusals: `expired` (the command is older than `DELETION_RETENTION_DAYS`), `document_purged`
+(what the entry held was purged: a node, or text drafts a document purge deleted),
+`nothing_to_restore` (its tree records belong to another Work), `work_purged` (the Work and its
+branches are gone; the route lets the command through instead of answering 404 so the refusal is
+stored). A branch of another project is a 404 at the route and `not_found` in the store. A Work or
+chat that cannot take the restore (archived, deleted, frozen) is a stored refusal too:
+`asLifecycleRefusal` runs inside each command's refusal mapper, before the claim settles. `listDiscards(projectId)` is the document half of Trash's Discard entries.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows. The browser rejoining a restored draft's room is the
 client's.

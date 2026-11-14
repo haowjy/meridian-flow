@@ -1,5 +1,5 @@
 /**
- * What the app says when documents it showed were deleted or discarded by
+ * What the app says when documents it showed were deleted by
  * something other than this tab. The sentence owns the copy rules; the notice
  * sits in blank space the closed document left: main's header beside the title, the
  * landing's top margin, or the phone's notice row.
@@ -25,20 +25,19 @@ export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRe
  * user with no display name, a purged actor, or no record read passively.
  */
 export type RemovalVoice =
-  | { kind: "person"; name: string; reason: DocumentRemovalRecord["reason"] }
+  | { kind: "person"; name: string }
   | { kind: "work"; name: string }
   /** The model of a chat deleted it; null `chat` when that chat has no title. */
   | { kind: "agent"; chat: string | null }
-  | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
+  | { kind: "anonymous" };
 
 export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice {
-  const reason = record?.reason ?? "deleted";
   const actor = record?.actor;
   if (actor?.kind === "user" && actor.displayName)
-    return { kind: "person", name: actor.displayName, reason };
+    return { kind: "person", name: actor.displayName };
   if (actor?.kind === "work") return { kind: "work", name: actor.name };
   if (actor?.kind === "agent") return { kind: "agent", chat: actor.chatTitle };
-  return { kind: "anonymous", reason };
+  return { kind: "anonymous" };
 }
 
 function sameVoice(left: RemovalVoice, right: RemovalVoice): boolean {
@@ -50,9 +49,7 @@ function thisDocumentSentence(voice: RemovalVoice): string {
   switch (voice.kind) {
     case "person": {
       const { name } = voice;
-      return voice.reason === "discarded"
-        ? t`${name} discarded this document from the draft.`
-        : t`${name} deleted this document.`;
+      return t`${name} deleted this document.`;
     }
     case "work": {
       const { name } = voice;
@@ -65,9 +62,7 @@ function thisDocumentSentence(voice: RemovalVoice): string {
         : t`The AI in a chat deleted this document.`;
     }
     case "anonymous":
-      return voice.reason === "discarded"
-        ? t`This document was discarded from the draft.`
-        : t`This document was deleted.`;
+      return t`This document was deleted.`;
   }
 }
 
@@ -75,9 +70,7 @@ function oneSentence(title: string, voice: RemovalVoice): string {
   switch (voice.kind) {
     case "person": {
       const { name } = voice;
-      return voice.reason === "discarded"
-        ? t`${name} discarded ${title} from the draft.`
-        : t`${name} deleted ${title}.`;
+      return t`${name} deleted ${title}.`;
     }
     case "work": {
       const { name } = voice;
@@ -88,9 +81,7 @@ function oneSentence(title: string, voice: RemovalVoice): string {
       return chat ? t`The AI in ${chat} deleted ${title}.` : t`The AI in a chat deleted ${title}.`;
     }
     case "anonymous":
-      return voice.reason === "discarded"
-        ? t`${title} was discarded from the draft.`
-        : t`${title} was deleted.`;
+      return t`${title} was deleted.`;
   }
 }
 
@@ -101,9 +92,7 @@ function oneSentence(title: string, voice: RemovalVoice): string {
 function manySentence(count: number, names: string, voice: RemovalVoice | null): string {
   if (voice?.kind === "person") {
     const { name } = voice;
-    return voice.reason === "discarded"
-      ? t`${name} discarded ${count} documents from the draft (${names}).`
-      : t`${name} deleted ${count} documents (${names}).`;
+    return t`${name} deleted ${count} documents (${names}).`;
   }
   if (voice?.kind === "work") {
     const { name } = voice;
@@ -115,10 +104,7 @@ function manySentence(count: number, names: string, voice: RemovalVoice | null):
       ? t`The AI in ${chat} deleted ${count} documents (${names}).`
       : t`The AI in a chat deleted ${count} documents (${names}).`;
   }
-  if (voice?.kind === "anonymous")
-    return voice.reason === "discarded"
-      ? t`${count} documents were discarded from the draft (${names}).`
-      : t`${count} documents were deleted (${names}).`;
+  if (voice?.kind === "anonymous") return t`${count} documents were deleted (${names}).`;
   return t`${count} documents were removed (${names}).`;
 }
 
@@ -165,19 +151,7 @@ export function deletedFromManuscriptSentence(
 
 /** What a chip says when only a short sentence fits: the count and what happened. */
 function shortRemovalSentence(documents: readonly Removal[]): string {
-  const count = documents.length;
-  const reasons = new Set(
-    documents.map((document) => {
-      const voice = removalVoice(document.record);
-      return voice.kind === "work" || voice.kind === "agent" ? "deleted" : voice.reason;
-    }),
-  );
-  const [reason] = reasons;
-  if (reasons.size === 1 && reason === "deleted")
-    return plural(count, { one: "# document deleted", other: "# documents deleted" });
-  if (reasons.size === 1 && reason === "discarded")
-    return plural(count, { one: "# document discarded", other: "# documents discarded" });
-  return plural(count, { one: "# document removed", other: "# documents removed" });
+  return plural(documents.length, { one: "# document deleted", other: "# documents deleted" });
 }
 
 export function RemovedDocumentSentence({ documents }: { documents: readonly Removal[] }) {

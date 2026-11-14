@@ -11,12 +11,10 @@ export type RemovalAnswer =
 export function removalRecordOf(actor: string | null): DocumentRemovalRecord | null {
   if (actor?.startsWith("user:"))
     return {
-      reason: "deleted",
       actor: { kind: "user", userId: actor.slice(5) as never, displayName: null },
       time: "",
     };
-  if (actor?.startsWith("agent:"))
-    return { reason: "deleted", actor: { kind: "agent", chatTitle: null }, time: "" };
+  if (actor?.startsWith("agent:")) return { actor: { kind: "agent", chatTitle: null }, time: "" };
   return null;
 }
 

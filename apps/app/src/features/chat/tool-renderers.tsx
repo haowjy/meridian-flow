@@ -361,47 +361,37 @@ function documentFailureRejected(tool: ToolView): string | null {
  * record with a `removed` rejection. A named person or Work is named; anyone
  * else reads passively.
  */
-function documentFailureRemoval(tool: ToolView): {
-  by: { kind: "person" | "work"; name: string } | { kind: "agent"; chat: string | null } | null;
-  reason: "deleted" | "discarded";
-} {
+function documentFailureRemoval(
+  tool: ToolView,
+): { kind: "person" | "work"; name: string } | { kind: "agent"; chat: string | null } | null {
   const result = tool.result;
   const removal =
     result && typeof result === "object" && !Array.isArray(result) ? result.removal : null;
-  if (!removal || typeof removal !== "object" || Array.isArray(removal))
-    return { by: null, reason: "deleted" };
+  if (!removal || typeof removal !== "object" || Array.isArray(removal)) return null;
   const actor = removal.actor;
   const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
   const name = (value: unknown) => (typeof value === "string" && value ? value : null);
   const person = record?.kind === "user" ? name(record.displayName) : null;
   const work = record?.kind === "work" ? name(record.name) : null;
-  return {
-    by: person
-      ? { kind: "person", name: person }
-      : work
-        ? { kind: "work", name: work }
-        : record?.kind === "agent"
-          ? { kind: "agent", chat: name(record.chatTitle) }
-          : null,
-    reason: removal.reason === "discarded" ? "discarded" : "deleted",
-  };
+  return person
+    ? { kind: "person", name: person }
+    : work
+      ? { kind: "work", name: work }
+      : record?.kind === "agent"
+        ? { kind: "agent", chat: name(record.chatTitle) }
+        : null;
 }
 
 /** A write refused because its document was removed before the write ran. */
 function removedWriteCopy(
   name: string | null,
-  removal: ReturnType<typeof documentFailureRemoval>,
+  by: ReturnType<typeof documentFailureRemoval>,
 ): string {
-  const { by } = removal;
   if (by?.kind === "person") {
     const who = by.name;
-    return removal.reason === "discarded"
-      ? name
-        ? t`${who} discarded ${name} from the draft before this change could be made.`
-        : t`${who} discarded this document from the draft before this change could be made.`
-      : name
-        ? t`${who} deleted ${name} before this change could be made.`
-        : t`${who} deleted this document before this change could be made.`;
+    return name
+      ? t`${who} deleted ${name} before this change could be made.`
+      : t`${who} deleted this document before this change could be made.`;
   }
   if (by?.kind === "work") {
     const work = by.name;
@@ -419,13 +409,9 @@ function removedWriteCopy(
         ? t`The AI in a chat deleted ${name} before this change could be made.`
         : t`The AI in a chat deleted this document before this change could be made.`;
   }
-  return removal.reason === "discarded"
-    ? name
-      ? t`${name} was discarded from the draft before this change could be made.`
-      : t`This document was discarded from the draft before this change could be made.`
-    : name
-      ? t`${name} was deleted before this change could be made.`
-      : t`This document was deleted before this change could be made.`;
+  return name
+    ? t`${name} was deleted before this change could be made.`
+    : t`This document was deleted before this change could be made.`;
 }
 
 function rejectionCopy(rejected: string | null): string | null {

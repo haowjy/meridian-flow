@@ -176,6 +176,8 @@ export type UndoDiscardResult =
   | {
       status: "restored";
       commandId: DocumentCommandId;
+      /** The Discard (or earlier restore) this took the members of. */
+      discardCommandId: DocumentCommandId;
       /** The Work's current branch: where the copies and the reopened drafts are. */
       branchId: BranchId;
       /** What came back: tree records copied and text drafts reopened. */
@@ -189,9 +191,10 @@ export type UndoDiscardResult =
       status: "refused";
       commandId: DocumentCommandId;
       /**
-       * `already_restored`: the tree half was taken by a restore already. `nothing_to_restore`:
-       * the entry has no member left. `expired`: older than the Trash retention.
-       * `document_purged`: everything left was purged. `work_purged`: the Work is gone.
+       * `already_restored`: a restore took the entry's members already. `nothing_to_restore`: the
+       * entry's records belong to another Work. `expired`: older than the Trash retention.
+       * `document_purged`: what the entry held was purged, nodes or text. `work_purged`: the Work
+       * is gone.
        */
       reason:
         | "already_restored"

@@ -197,7 +197,6 @@ function deletedSentence(
   if (entry.actor?.kind === "user" && entry.actor.userId === accountId)
     return t`Deleted from ${place} by you on ${deleted}.`;
   const voice: RemovalVoice = removalVoice({
-    reason: "deleted",
     actor: entry.actor,
     time: entry.removal.time,
   });

@@ -84,9 +84,8 @@ export type TurnInverseSkipCause =
   | "deleted_since"
   | "moved_since"
   | "changed_since"
-  /** Text in a document that is deleted (or discarded) now. */
+  /** Text in a document that is deleted now. */
   | "document_deleted"
-  | "document_discarded"
   | "draft_archived"
   | "paragraph_removed"
   | "edited_since"

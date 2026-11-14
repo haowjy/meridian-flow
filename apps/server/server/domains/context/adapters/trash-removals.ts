@@ -21,7 +21,6 @@ export function createTrashRemovals(db: Database): DocumentRemovals {
         .where(and(inArray(treeNodes.id, [...documentIds]), isNotNull(treeNodes.trashRecord)));
       for (const row of rows)
         out.set(row.id, {
-          reason: "deleted",
           actor: null,
           time: (row.trashedAt as Date).toISOString(),
         });
@@ -31,7 +30,6 @@ export function createTrashRemovals(db: Database): DocumentRemovals {
         .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.contentPurgedAt)));
       for (const row of purged)
         out.set(row.id, {
-          reason: "deleted",
           actor: null,
           time: (row.purgedAt as Date).toISOString(),
         });

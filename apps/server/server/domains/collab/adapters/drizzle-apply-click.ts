@@ -272,14 +272,16 @@ export function createDrizzleApplyClick(
       const applyCommandId = command.request.applyCommandId;
       const by = `user:${command.envelope.accountId}`;
       const closed = (): UnapplyClickResult => ({ status: "closed", commandId });
-      const unapplyRefusal = (cause: unknown): UnapplyClickResult | undefined =>
-        cause instanceof TreeRefusal
+      const unapplyRefusal = (raised: unknown): UnapplyClickResult | undefined => {
+        const cause = asLifecycleRefusal(raised);
+        return cause instanceof TreeRefusal
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof ApplyClickRefused
             ? { status: "refused", commandId }
             : cause instanceof DraftStaleUpdateError
               ? closed()
               : undefined;
+      };
       const lives: Y.Doc[] = [];
       try {
         return await runCommand(
@@ -524,8 +526,6 @@ export function createDrizzleApplyClick(
             ),
           unapplyRefusal,
         );
-      } catch (cause) {
-        throw asLifecycleRefusal(cause);
       } finally {
         for (const live of lives) live.destroy();
       }
@@ -536,12 +536,14 @@ export function createDrizzleApplyClick(
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
       const closed = (): ApplyClickResult => ({ status: "closed", commandId });
-      const applyRefusal = (cause: unknown): ApplyClickResult | undefined =>
-        cause instanceof ApplyClickRefused
+      const applyRefusal = (raised: unknown): ApplyClickResult | undefined => {
+        const cause = asLifecycleRefusal(raised);
+        return cause instanceof ApplyClickRefused
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof DraftStaleUpdateError
             ? closed()
             : undefined;
+      };
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
@@ -620,8 +622,6 @@ export function createDrizzleApplyClick(
             applyRefusal,
           ),
         );
-      } catch (cause) {
-        throw asLifecycleRefusal(cause);
       } finally {
         deps.measured({
           commandId,

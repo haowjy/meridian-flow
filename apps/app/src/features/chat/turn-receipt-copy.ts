@@ -152,8 +152,6 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
       return t`Changed since`;
     case "document_deleted":
       return t`This document was deleted`;
-    case "document_discarded":
-      return t`This document was discarded from the draft`;
     case "draft_archived":
       return t`This draft is archived`;
     case "paragraph_removed":

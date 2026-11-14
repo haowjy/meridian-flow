@@ -113,6 +113,11 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: documents.length
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{0, plural, one {# document deleted} other {# documents deleted}}"
+msgstr ""
+
 #. placeholder {0}: result.pendingDrafts
 #: src/features/export/ExportProjectDialog.tsx
 msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
@@ -346,16 +351,16 @@ msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document deleted} other {# documents deleted}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document deleted} other {# documents deleted}}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document discarded} other {# documents discarded}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document discarded} other {# documents discarded}}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document removed} other {# documents removed}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document removed} other {# documents removed}}"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "{count, plural, one {# document to review} other {# documents to review}}"
@@ -411,8 +416,8 @@ msgid "{count} documents were deleted with the Work {name} ({names})."
 msgstr "{count} 份文档随工作区 {name} 一并删除（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were discarded from the draft ({names})."
-msgstr ""
+#~ msgid "{count} documents were discarded from the draft ({names})."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{count} documents were removed ({names})."
@@ -568,16 +573,16 @@ msgid "{name} deleted this document."
 msgstr "{name} 删除了这份文档。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded {count} documents from the draft ({names})."
-msgstr "{name} 从草稿中放弃了 {count} 份文档（{names}）。"
+#~ msgid "{name} discarded {count} documents from the draft ({names})."
+#~ msgstr "{name} 从草稿中放弃了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded {title} from the draft."
-msgstr "{name} 从草稿中放弃了{title}。"
+#~ msgid "{name} discarded {title} from the draft."
+#~ msgstr "{name} 从草稿中放弃了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded this document from the draft."
-msgstr "{name} 从草稿中放弃了这份文档。"
+#~ msgid "{name} discarded this document from the draft."
+#~ msgstr "{name} 从草稿中放弃了这份文档。"
 
 #: src/lib/upload-limit.ts
 msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
@@ -600,8 +605,8 @@ msgid "{name} was deleted with the Work {work} before this change could be made.
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was discarded from the draft before this change could be made."
-msgstr ""
+#~ msgid "{name} was discarded from the draft before this change could be made."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
@@ -715,8 +720,8 @@ msgid "{title} was deleted."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was discarded from the draft."
-msgstr ""
+#~ msgid "{title} was discarded from the draft."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{toReview} to review"
@@ -735,12 +740,12 @@ msgid "{who} deleted this document before this change could be made."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded {name} from the draft before this change could be made."
-msgstr ""
+#~ msgid "{who} discarded {name} from the draft before this change could be made."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded this document from the draft before this change could be made."
-msgstr ""
+#~ msgid "{who} discarded this document from the draft before this change could be made."
+#~ msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -5944,16 +5949,16 @@ msgid "This document was deleted."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This document was discarded from the draft"
-msgstr ""
+#~ msgid "This document was discarded from the draft"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was discarded from the draft before this change could be made."
-msgstr ""
+#~ msgid "This document was discarded from the draft before this change could be made."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was discarded from the draft."
-msgstr ""
+#~ msgid "This document was discarded from the draft."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
