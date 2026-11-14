@@ -20,14 +20,6 @@ export const WS_CLOSE = {
   /** Terminal: the document was removed. Never reconnect. */
   DOCUMENT_DELETED: { code: 4208, reason: "document-deleted" },
   /**
-   * A tree list's room refused an update whole, or a client's copy cannot be the server's.
-   * Not terminal and not a plain reconnect: the client throws its copy away, rebuilds from the
-   * server's under a new Yjs client id and appends again what the rebuilt copy lacks. When one
-   * record earned the refusal the reason is `list-rebuild:<record id>` (`listRebuildReason`): the
-   * client gives that record up. A reason is at most 123 bytes; a record id is at most 64.
-   */
-  LIST_REBUILD: { code: 4210, reason: "list-rebuild" },
-  /**
    * Terminal: a tree list's room found this client's copy does something an honest client's
    * never does (a deletion, a struct that can't be placed, a server-only kind). Never reconnect:
    * the same bytes would be sent again. The client keeps the broken copy and loads a fresh one.
@@ -61,20 +53,4 @@ export function listChangedId(event: { code: number; reason: string }): string |
   return event.code === code && event.reason.startsWith(`${reason}:`)
     ? event.reason.slice(reason.length + 1)
     : undefined;
-}
-
-const REBUILD_RECORD = /^list-rebuild:([0-9a-zA-Z_-]{1,64})$/;
-
-/** The close of a list's whole refusal, naming the record that earned it when there is one. */
-export function listRebuildClose(record: string | undefined) {
-  const { code, reason } = WS_CLOSE.LIST_REBUILD;
-  return {
-    code,
-    reason: record && REBUILD_RECORD.test(`${reason}:${record}`) ? `${reason}:${record}` : reason,
-  };
-}
-
-/** The record a list-rebuild close names, if it names one. */
-export function listRebuildRecord(reason: string): string | undefined {
-  return REBUILD_RECORD.exec(reason)?.[1];
 }

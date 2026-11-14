@@ -3,7 +3,7 @@
  * gateway and store, on postgres, joined by a socket that carries frames in memory.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a refusal closes the socket with its own code, and the client reconnects or rebuilds by it
+ * - a fault closes the socket with its own code, and the client recovers or loads from nothing by it
  * - a long history travels to the server in parts of a few hundred records
  * - a commit on one process reaches the rooms of every other through Postgres NOTIFY
  */
@@ -54,8 +54,9 @@ const until = (condition: () => boolean | Promise<boolean>, what: string, ms = 1
   );
 
 /** What the browser sees of its copy: a fresh Yjs client id each time it is replaced. */
-function memoryCopy(): ListCopy & { doc: Y.Doc } {
+function memoryCopy(listId: string | null = null): ListCopy & { doc: Y.Doc } {
   let carried: readonly TreeRecord[] = [];
+  let list = listId;
   const make = () => {
     const doc = new Y.Doc({ gc: false });
     doc.clientID = 1000 + Math.floor(Math.random() * 1e9);
@@ -63,8 +64,13 @@ function memoryCopy(): ListCopy & { doc: Y.Doc } {
   };
   const copy = {
     doc: make(),
-    async replace() {
-      carried = recordsOf(copy.doc).toArray();
+    listId: () => list,
+    async setListId(id: string) {
+      list = id;
+    },
+    async replace(records: readonly TreeRecord[], id: string | null) {
+      carried = records;
+      list = id;
       copy.doc = make();
     },
     carried: () => carried,
@@ -113,14 +119,14 @@ describe("a tree list's room (postgres)", () => {
     const copy = options.copy ?? memoryCopy();
     const wire: Wire = { toClient: [] };
     const states: ListSyncState[] = [];
-    const rejected: unknown[] = [];
+    const dropped: TreeRecord[] = [];
 
     class BridgeSocket extends EventTarget {
       readyState = 0;
       binaryType = "arraybuffer";
       identifier = 0;
       private connection: ReturnType<YjsGateway["connect"]>;
-      constructor() {
+      constructor(url: string) {
         super();
         const closeFromServer = (code?: number, reason?: string) => {
           if (this.readyState === 3) return;
@@ -129,7 +135,7 @@ describe("a tree list's room (postgres)", () => {
           this.dispatchEvent(Object.assign(new Event("close"), { code, reason }));
         };
         this.connection = server.gateway.connect({
-          request: new Request("https://server.localhost/ws/yjs", {
+          request: new Request(`https://server.localhost/ws/yjs${new URL(url).search}`, {
             headers: {
               "sec-websocket-protocol": formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION),
             },
@@ -168,18 +174,18 @@ describe("a tree list's room (postgres)", () => {
 
     const connection = connectTreeList({
       roomName: options.room ?? ROOM,
-      url: "ws://bridge",
+      url: (listId) => `ws://bridge${listId === null ? "" : `?list=${listId}`}`,
       WebSocketPolyfill: BridgeSocket,
       copy,
       onState: (state) => states.push(state),
-      onRejected: (records) => rejected.push(...records),
+      onDropped: (records) => dropped.push(...records),
     });
     connections.push(connection);
     return {
       copy,
       wire,
       states,
-      rejected,
+      dropped,
       get state() {
         return states.at(-1);
       },
@@ -263,6 +269,64 @@ describe("a tree list's room (postgres)", () => {
     expect(rows.map((row) => row.name).sort()).toEqual(
       tabs.flatMap((_, at) => [0, 1, 2, 3].map((n) => `chapter ${at}-${n}`)).sort(),
     );
+  });
+
+  it("closes a forged update's connection, takes the honest records into a fresh copy and drops the forged one", async () => {
+    const server = serverProcess();
+    const tab = browser(server);
+    await until(() => tab.state === "synced", "synced");
+    createDocument(tab.copy, "first");
+    await until(async () => (await journalRecords(server)).length === 1, "first admitted");
+
+    // A `purge` is the server's alone: it sits between two honest records, each its own update.
+    const forged: TreeRecord = {
+      ...(recordsOf(tab.copy.doc).get(0) as TreeRecord),
+      id: crypto.randomUUID(),
+      type: "purge",
+    } as TreeRecord;
+    const brokenDoc = tab.copy.doc;
+    createDocument(tab.copy, "second");
+    brokenDoc.transact(() => recordsOf(brokenDoc).push([forged]));
+    createDocument(tab.copy, "third");
+
+    await until(
+      () => tab.copy.doc !== brokenDoc && tab.state === "synced" && tab.dropped.length === 1,
+      "a fresh copy, synced, with the forged record left out",
+    );
+    await until(async () => (await journalRecords(server)).length === 3, "the honest records");
+    expect((await db.select().from(treeNodes)).map((row) => row.name).sort()).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+    expect(await journalRecords(server)).not.toContainEqual(
+      expect.objectContaining({ id: forged.id }),
+    );
+    expect(tab.dropped[0]?.id).toBe(forged.id);
+    // The fresh copy has a Yjs client id of its own, and the session never said `broken`.
+    expect(tab.copy.doc.clientID).not.toBe(brokenDoc.clientID);
+    expect(tab.states).not.toContain("broken");
+  }, 60_000);
+
+  it("learns the list's id on a first connect, and a copy of another list loads from nothing", async () => {
+    const server = serverProcess();
+    const first = browser(server);
+    await until(() => first.state === "synced", "synced");
+    const access = await server.store.open({
+      list: { kind: "project", projectId: PROJECT },
+      accountId: ACCOUNT,
+    });
+    await until(() => first.copy.listId() === access?.listId, "the list id from the room");
+
+    // A copy of a list the server no longer has: its records name nodes that are gone.
+    const stale = memoryCopy(crypto.randomUUID());
+    createDocument(stale, "of a list that is gone");
+    const staleDoc = stale.doc;
+    const tab = browser(server, { copy: stale });
+    await until(() => tab.copy.doc !== staleDoc && tab.state === "synced", "loaded from nothing");
+    expect(tab.copy.listId()).toBe(access?.listId);
+    expect(tab.ids()).toEqual([]);
+    expect(await journalRecords(server)).toEqual([]);
   });
 
   it("sends a long offline session up in parts, and a new client takes the whole history", async () => {

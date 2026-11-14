@@ -30,7 +30,6 @@ import { copyRows } from "./entry-drag/execute-copy";
 import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { moveRepairTrail } from "./move-repair-trail";
-import { treeActionMessage } from "./tree-action-message";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
@@ -219,14 +218,13 @@ function OpenPicker({
       ({ at: here }) => here && (here.scheme === "user") !== (destination.scheme === "user"),
     );
     const within = moving.filter((row) => !crossing.includes(row));
-    const result = actions.moveAll(
+    actions.moveAll(
       within.map(({ row }) => ({
         node: row.ref.id,
         parentId: destination.entryId,
         ...(at === undefined ? {} : { index: at }),
       })),
     );
-    if (!result.ok) return setError(treeActionMessage(result.reason, "folder"));
     const moved = moving.map(({ row }) => row.ref);
     const finish = () => {
       selectRows(selection, moved);

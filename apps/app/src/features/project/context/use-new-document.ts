@@ -9,7 +9,6 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "../routing/ProjectNavigationContext";
-import { treeActionMessage } from "./tree-action-message";
 
 /**
  * New document: an Untitled document in Unfiled, opened in main with the caret. The writer mints
@@ -39,7 +38,6 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
-    if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
     // The replay's name for the node, at the top of Unfiled: its address.
     const name =
       session?.replay(version.view, version.pendingText).nodes.get(documentId)?.displayName ??

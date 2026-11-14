@@ -41,8 +41,8 @@ type Discarded = { discardedBy?: string | null };
 
 const ANSWERS: ReadonlySet<TreeListSnapshot["status"]> = new Set([
   "synced",
-  "read-only",
   "offline",
+  "broken",
   "unauthenticated",
 ]);
 

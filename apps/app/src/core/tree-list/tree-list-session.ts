@@ -26,31 +26,29 @@ import { StoredListCopy } from "./stored-copy";
  * - `synced`: the copy holds the server's list and the server holds the copy's records
  * - `offline`: the connection dropped after a sync; the copy still shows what it had and takes
  *   records, which the next connection sends
- * - `rebuilding`: the server refused the copy whole; it is being rebuilt from the server's
- * - `read-only`: synced, but the account may not write the list: the server keeps none of the
- *   copy's records
+ * - `broken`: the server closed the connection for what the copy holds, and the fresh copy it
+ *   was replaced with broke too; the writer's records stay in the copy and nothing connects again
  * - `unauthenticated`: the sign-in did not hold; the writer signs in again. Nothing is known about access.
  * - `denied`: this account has no access to the list
  */
 export type TreeListStatus =
   | "waiting"
   | "synced"
-  | "read-only"
   | "offline"
-  | "rebuilding"
+  | "broken"
   | "unauthenticated"
   | "denied";
 
 export type TreeListSnapshot = {
-  /** The copy. A rebuild replaces it with a new document: read it from the snapshot each time. */
+  /** The copy. A fresh copy replaces it with a new document: read it from the snapshot each time. */
   readonly doc: Y.Doc;
   /** Counts the changes to `doc` (records appended here, in another tab or by the server) and its replacements: what a reader of the replay recomputes on. */
   readonly version: number;
   readonly status: TreeListStatus;
   /** Whether this tab holds the list's connection or follows the tab that does. */
   readonly role: "owner" | "follower";
-  /** Records the server kept refusing after rebuilds, dropped from the copy's sends: the writer's work it never kept. */
-  readonly rejected: readonly TreeRecord[];
+  /** Records a fresh copy left out of the broken one's: written by a client of another build, kept nowhere. */
+  readonly dropped: readonly TreeRecord[];
 };
 
 const statusOf = (state: ListSyncState): TreeListStatus =>
@@ -83,7 +81,7 @@ export class TreeListSession {
       version: 0,
       status: "waiting",
       role: "follower",
-      rejected: [],
+      dropped: [],
     };
     this.observe(this.copy.doc);
     this.copy.subscribe(() => {
@@ -121,7 +119,10 @@ export class TreeListSession {
       this.publish({ role: "owner" });
       const connection = connectTreeList({
         roomName: treeRoomName(this.list),
-        url: buildSameOriginWsUrl(yjsWsPath()),
+        url: (listId) =>
+          buildSameOriginWsUrl(
+            `${yjsWsPath()}${listId === null ? "" : `?list=${encodeURIComponent(listId)}`}`,
+          ),
         WebSocketPolyfill: CollabSchemaWebSocket,
         copy: this.copy,
         onState: (state) => {
@@ -129,7 +130,7 @@ export class TreeListSession {
           this.copy.announceStatus(this.ownStatus);
           this.publish({ status: this.ownStatus });
         },
-        onRejected: (records) => this.publish({ rejected: [...this.current.rejected, ...records] }),
+        onDropped: (records) => this.publish({ dropped: [...this.current.dropped, ...records] }),
       });
       // The connection lives as long as the lock: the lock is released when the session closes.
       await this.closed.promise;
@@ -158,7 +159,7 @@ export class TreeListSession {
       next.version === this.current.version &&
       next.status === this.current.status &&
       next.role === this.current.role &&
-      next.rejected === this.current.rejected
+      next.dropped === this.current.dropped
     )
       return;
     this.current = next;

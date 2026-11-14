@@ -101,12 +101,9 @@ export function TrashedDocument({
     );
   }
   const name = standing.kind === "in-trash" ? standing.node.displayName : "";
-  const failure =
-    state?.kind === "failed"
-      ? state.message
-      : openFailed
-        ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
-        : null;
+  const failure = openFailed
+    ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
+    : null;
   return (
     <ReadOnlyViewerFrame className="bg-transparent">
       <div className="flex h-full min-h-0 flex-col">
@@ -174,7 +171,7 @@ function useSessionText(document: Y.Doc | null): string {
 function useOpenOnceLiving(
   projectId: string,
   documentId: string,
-  restore: "restored" | "failed" | undefined,
+  restore: "restored" | undefined,
   living: boolean,
 ): boolean {
   const openDocument = useOpenProjectDocument(projectId);

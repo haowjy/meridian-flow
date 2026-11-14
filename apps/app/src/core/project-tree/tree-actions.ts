@@ -1,14 +1,15 @@
 /**
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
  * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
- * when the clash is visible in the copy (`TreeWriter`). There is no request to wait on and none
- * to replay: a dropped create comes back as a `dropped` settlement on the record (`tree-failures.ts`).
+ * when the clash is visible in the copy (`TreeWriter`). No action is refused: a node or parent the
+ * copy lacks is made as asked and the replay places it or skips it, and a dropped create comes
+ * back as a `dropped` settlement on the record (`tree-failures.ts`). An action on a Work that has
+ * ended (`TreeVersion.ended`) throws: the shell offers no control for it.
  * Copy and a move between two lists stay server routes. Each acts in the version the writer is
  * looking at: live, or on Draft the Work's tree, whose records carry the Work's `draft`. Each
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).
  */
 import {
-  isSourceRoot,
   type NodeKind,
   sourceRoot,
   type TreeProjection,
@@ -20,24 +21,6 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import { endWhenRestored, pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
-/**
- * Why an action did not append. Each is something the writer can act on: the list is read-only,
- * denied or not open yet, the name is not one a node may have, or the folder or node the action
- * names is not in the list (it was deleted, or never was).
- */
-export type TreeActionRefusal =
-  | "read-only"
-  | "archived"
-  | "deleted"
-  | "denied"
-  | "no-list"
-  | "name"
-  | "missing";
-
-export type TreeActionResult<T = unknown> =
-  | ({ ok: true } & T)
-  | { ok: false; reason: TreeActionRefusal };
-
 export class TreeActions {
   constructor(
     /** The list's session, read at each call: a rebuild gives it a new document. */
@@ -47,23 +30,21 @@ export class TreeActions {
     private readonly version: () => TreeVersion = () => LIVE_VERSION,
   ) {}
 
-  /** The writer on the copy as it stands, or why none may write. */
-  private writable(): TreeActionResult<{
+  /** The writer on the copy as it stands. */
+  private writable(): {
     writer: TreeWriter;
     session: TreeListSession;
     view: View;
     replay: () => TreeProjection;
-  }> {
+  } {
     const session = this.session();
-    if (!session) return { ok: false, reason: "no-list" };
-    const { doc, status } = session.getSnapshot();
-    if (status === "read-only" || status === "denied") return { ok: false, reason: status };
+    if (!session) throw new Error("There is no tree list to change here.");
+    const { doc } = session.getSnapshot();
     const { view, pendingText, ended } = this.version();
-    if (ended) return { ok: false, reason: ended };
+    if (ended) throw new Error(`This Work is ${ended}.`);
     const replay = () => session.replay(view, pendingText);
     // The session's replay is the one every view reads: the writer numbers and ranks against it.
     return {
-      ok: true,
       writer: new TreeWriter(doc, "local", (asked) => (asked === view ? replay() : null)),
       session,
       view,
@@ -116,12 +97,9 @@ export class TreeActions {
     provisional?: true;
     kind: Exclude<NodeKind, "file">;
     filetype?: string;
-  }): TreeActionResult<{ node: string; name: string }> {
+  }): { node: string; name: string } {
     const made = this.writable();
-    if (!made.ok) return made;
-    const replay = made.replay();
-    const parent = this.parentOf(replay, input.parentId);
-    if (!holds(replay, parent)) return { ok: false, reason: "missing" };
+    const parent = this.parentOf(made.replay(), input.parentId);
     const record = made.writer.create(made.view, this.actor, {
       name: input.name,
       parent,
@@ -133,67 +111,45 @@ export class TreeActions {
         : { kind: "document" as const, filetype: input.filetype ?? "markdown" }),
     });
     this.remember(made, [record]);
-    return { ok: true, node: record.node, name: record.name };
+    return { node: record.node, name: record.name };
   }
 
-  rename(node: string, name: string, filetype?: string): TreeActionResult<{ name: string }> {
+  rename(node: string, name: string, filetype?: string): { name: string } {
     const made = this.writable();
-    if (!made.ok) return made;
-    const current = made.replay().nodes.get(node);
-    if (!current) return { ok: false, reason: "missing" };
     const record = made.writer.rename(made.view, this.actor, node, name, filetype);
     this.remember(made, [record]);
-    return { ok: true, name: record.name };
+    return { name: record.name };
   }
 
-  move(node: string, parentId: string, index?: number): TreeActionResult {
-    return this.moveAll([{ node, parentId, ...(index === undefined ? {} : { index }) }]);
+  move(node: string, parentId: string, index?: number): void {
+    this.moveAll([{ node, parentId, ...(index === undefined ? {} : { index }) }]);
   }
 
   /** One gesture's moves, each placed among the siblings the ones before it left. */
-  moveAll(moves: readonly { node: string; parentId: string; index?: number }[]): TreeActionResult {
+  moveAll(moves: readonly { node: string; parentId: string; index?: number }[]): void {
     const made = this.writable();
-    if (!made.ok) return made;
     const replay = made.replay();
     const parents = moves.map((move) => this.parentOf(replay, move.parentId));
-    if (
-      moves.some((move) => !replay.nodes.has(move.node)) ||
-      parents.some((parent) => !holds(replay, parent))
-    )
-      return { ok: false, reason: "missing" };
     const records = made.writer.moveAll(
       made.view,
       this.actor,
       moves.map((move, at) => ({ ...move, parent: parents[at] as string })),
     );
     this.remember(made, records);
-    return { ok: true };
   }
 
-  /** One gesture's deletes as one update; `step` is its Undo. */
-  remove(nodes: readonly string[]): TreeActionResult<{ step: TreeStep }> {
+  /** One gesture's deletes as one update; the step is its Undo. */
+  remove(nodes: readonly string[]): TreeStep {
     const made = this.writable();
-    if (!made.ok) return made;
-    const replay = made.replay();
-    if (nodes.some((node) => !replay.nodes.has(node))) return { ok: false, reason: "missing" };
-    return {
-      ok: true,
-      step: this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes)),
-    };
+    return this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes));
   }
 
-  restore(nodes: readonly string[]): TreeActionResult {
+  restore(nodes: readonly string[]): void {
     const made = this.writable();
-    if (!made.ok) return made;
     const records: TreeRecord[] = [];
     made.writer.transact(() => {
       for (const node of nodes) records.push(made.writer.restore(made.view, this.actor, node));
     });
     this.remember(made, records);
-    return { ok: true };
   }
 }
-
-/** Whether `parent` is a node of the view or the top of a source. */
-const holds = (replay: TreeProjection, parent: string): boolean =>
-  isSourceRoot(parent) || replay.nodes.has(parent);

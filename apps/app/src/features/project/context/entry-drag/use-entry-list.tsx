@@ -83,7 +83,7 @@ export function useEntryList({
 
   const runListMove = useCallback(
     (move: ReadyMove) =>
-      void runMove({ actions, projectId, removal }, move.moves, move.destinationName, (moved) =>
+      runMove({ actions, projectId, removal }, move.moves, (moved) =>
         selectRows(latest.current.selection, moved),
       ),
     [actions, projectId, removal],

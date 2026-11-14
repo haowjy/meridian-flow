@@ -12,7 +12,7 @@ import { leaveSelections } from "./entry-drag/selection";
 /** What a restore needs of a Trash entry: the record names the node, the notices its name. */
 export type Restorable = { ref: EntryRef; name: string };
 
-export type TrashRestoreState = { kind: "restored" } | { kind: "failed"; message: string };
+export type TrashRestoreState = { kind: "restored" };
 
 /** `restored`: the node is back in the tree, so a view of it in Trash follows it there. */
 type RestoreContextValue = {
@@ -79,24 +79,13 @@ export function DocumentTrashRestoreProvider({
     [setState],
   );
 
-  const fail = useCallback(
-    (entry: Restorable) => {
-      setState(entry.ref.id, {
-        kind: "failed",
-        message: t`Couldn't restore ${entry.name}. Try again.`,
-      });
-    },
-    [setState],
-  );
-
-  /** Appends the entries' `restore` records, one update per list; returns whether the lists took them. */
+  /** Appends the entries' `restore` records, one update per list. */
   const append = useCallback(
     (entries: readonly Restorable[], destination?: TreeDestination) => {
       const held = entries.map((entry) => ({ entry, ...actions.holding(entry.ref.id) }));
       for (const list of new Set(held.map((item) => item.list))) {
         const mine = held.filter((item) => item.list === list);
-        const result = list.restore(mine.map(({ entry }) => entry.ref.id));
-        if (!result.ok) return false;
+        list.restore(mine.map(({ entry }) => entry.ref.id));
         for (const [index, { entry }] of mine.entries()) {
           if (destination)
             list.move(
@@ -106,7 +95,6 @@ export function DocumentTrashRestoreProvider({
             );
         }
       }
-      return true;
     },
     [actions],
   );
@@ -116,10 +104,7 @@ export function DocumentTrashRestoreProvider({
       const entries = requested;
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ ref }) => ref));
-      if (!append(entries)) {
-        for (const entry of entries) fail(entry);
-        return;
-      }
+      append(entries);
       markRestored(entries.map(({ ref }) => ref.id));
       setNotice({
         id: Date.now(),
@@ -129,7 +114,7 @@ export function DocumentTrashRestoreProvider({
             : plural(entries.length, { one: "Restored # item.", other: "Restored # items." }),
       });
     },
-    [append, fail, markRestored],
+    [append, markRestored],
   );
 
   const restoreInto = useCallback(
@@ -137,10 +122,7 @@ export function DocumentTrashRestoreProvider({
       const entries = dragged;
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ ref }) => ref));
-      if (!append(entries, destination)) {
-        for (const entry of entries) fail(entry);
-        return;
-      }
+      append(entries, destination);
       markRestored(entries.map(({ ref }) => ref.id));
       setNotice({
         id: Date.now(),
@@ -152,7 +134,7 @@ export function DocumentTrashRestoreProvider({
           ),
       });
     },
-    [actions, append, fail, markRestored, projectId, removal],
+    [actions, append, markRestored, projectId, removal],
   );
 
   const value = useMemo(() => ({ states, restore, restoreInto }), [states, restore, restoreInto]);
