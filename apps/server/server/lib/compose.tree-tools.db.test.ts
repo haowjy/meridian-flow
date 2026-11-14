@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
@@ -453,13 +454,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(deleted)).toMatch(
         /^status: success; write: e\d+; version: live; deleted: 2 inside$/,
       );
-      const { trashEntries } = script.runtime.ports;
-      const lists = [await treeListOfSource(db, SOURCE_ID)];
-      const entries = await trashEntries.list({ lists, view: LIVE });
-      expect(entries).toMatchObject([{ name: "Arc 2", took: { documents: 2, folders: 1 } }]);
+      const { documentTrash } = script.runtime.ports;
+      const entries = await documentTrash.list(PROJECT_ID as ProjectId);
+      expect(entries).toMatchObject([{ name: "Arc 2", kind: "folder", documents: 2 }]);
       const restored = await call("write", { command: "restore", path: "Arc 2/" });
       expect(restored.isError, text(restored)).toBeFalsy();
-      expect(await trashEntries.list({ lists, view: LIVE })).toEqual([]);
+      expect(await documentTrash.list(PROJECT_ID as ProjectId)).toEqual([]);
       expect((await placement(CH2))?.deletedAt).toBeNull();
       // An undo of a delete names the path the model deleted.
       await call("write", { command: "delete", path: "Arc 2/" });

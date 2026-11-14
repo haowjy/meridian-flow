@@ -12,7 +12,7 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextSourcesResult,
   DocumentTrashEntry,
-  ListDocumentTrashResponse,
+  ListTrashResponse,
   ProjectChatFeedPage,
   RestoreContextDocumentsRequest,
   RestoreContextDocumentsResponse,
@@ -368,10 +368,7 @@ export function restoreContextDocuments(
   );
 }
 
-export function getDocumentTrash(
-  projectId: string,
-  init?: RequestInitOptions,
-): Promise<ListDocumentTrashResponse> {
+export function getTrash(projectId: string, init?: RequestInitOptions): Promise<ListTrashResponse> {
   return getJson(urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/trash`, init), {
     headers: init?.headers,
     signal: init?.signal,

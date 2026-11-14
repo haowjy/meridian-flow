@@ -1,16 +1,18 @@
-/** React Query ownership for a project's restorable document trash. */
+/** React Query ownership for a project's Trash entries. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { useAccountId } from "@/features/project/context/account-feature-context";
-import { getDocumentTrash, getTrashedDocument } from "../api/projects-api";
+import { getTrash, getTrashedDocument } from "../api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
 /**
- * What is in Trash is a fact of the lists: an entry shows while its node is trashed in the
- * replay, so a restore leaves Trash at once and a refused one comes back. The query keeps what
- * the server owns (the entry's retention) and is read again whenever the list changes.
+ * What is in Trash is a fact of the lists: an entry shows while the replay has a delete of its
+ * node in force, so a restore leaves Trash at once and a refused one comes back. A deleted folder
+ * that something brought back stands in the tree and stays an entry for the rest of what it took.
+ * The query keeps what the server owns (the entry's time and retention) and is read again
+ * whenever the list changes.
  */
 export function useDocumentTrash(projectId: string) {
   const queryClient = useQueryClient();
@@ -26,28 +28,27 @@ export function useDocumentTrash(projectId: string) {
     version.current = changed;
     if (first) return;
     void queryClient.invalidateQueries(
-      { queryKey: projectQueryKeys.documentTrash(projectId), exact: true },
+      { queryKey: projectQueryKeys.trash(projectId), exact: true },
       { cancelRefetch: false },
     );
   }, [changed, projectId, queryClient]);
   const query = useQuery({
-    queryKey: projectQueryKeys.documentTrash(projectId),
-    queryFn: ({ signal }) => getDocumentTrash(projectId, { signal }),
+    queryKey: projectQueryKeys.trash(projectId),
+    queryFn: ({ signal }) => getTrash(projectId, { signal }),
     staleTime: 30_000,
   });
-  const documents = query.data?.documents;
+  const listed = query.data?.entries;
   const data = useMemo(() => {
-    if (!documents) return undefined;
+    if (!listed) return undefined;
     return {
-      documents: documents.filter((entry) => {
+      entries: listed.filter((entry) => {
         const list = entry.scheme === "user" ? account : project;
         if (!list.session || !list.snapshot || !listIsComplete(list.snapshot.status)) return true;
-        const node = list.session.replay().nodes.get(entry.documentId);
-        return node?.trashed === true && !node.purged;
+        return list.session.replay().trash.some((each) => each.node === entry.nodeId);
       }),
     };
     // `version` is the replay's input
-  }, [documents, account, project, account.snapshot?.version, project.snapshot?.version]);
+  }, [listed, account, project, account.snapshot?.version, project.snapshot?.version]);
   return { data, isError: query.isError, isPending: query.isPending, refetch: query.refetch };
 }
 

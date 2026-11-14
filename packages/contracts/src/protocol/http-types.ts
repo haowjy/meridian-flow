@@ -274,7 +274,12 @@ export type RestoreContextDocumentsResponse = {
   documents: RestoreContextDocumentResult[];
 };
 
-/** One restorable document in a project's trash. */
+/** How long Trash keeps an entry: until a date, or while Works have changes to it. */
+export type TrashRetention =
+  | { kind: "scheduled"; purgeAt: string }
+  | { kind: "held"; works: Array<{ id: string; name: string }> };
+
+/** One document in a project's trash, on its own or inside a deleted folder. */
 export type DocumentTrashEntry = {
   documentId: string;
   name: string;
@@ -283,13 +288,31 @@ export type DocumentTrashEntry = {
   formerPath: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
-  retention:
-    | { kind: "scheduled"; purgeAt: string }
-    | { kind: "held"; works: Array<{ id: string; name: string }> };
+  retention: TrashRetention;
 };
 
-export type ListDocumentTrashResponse = {
-  documents: DocumentTrashEntry[];
+/**
+ * One Trash entry, restored whole: a document deleted on its own, or a folder with what its
+ * delete took (an empty folder included).
+ */
+export type TrashEntry = {
+  /** The deleted document's or folder's id: what a restore names. */
+  nodeId: string;
+  kind: "document" | "folder";
+  name: string;
+  scheme: ProjectContextTreeScheme;
+  /** Source-relative path, without a leading slash; a folder's ends in `/`. */
+  formerPath: string;
+  removal: RemovalIdentity;
+  actor: DocumentRemovalRecord["actor"];
+  /** A folder is held while a Work has changes to any document it took. */
+  retention: TrashRetention;
+  /** The documents a folder's delete took with it; 0 for a document. */
+  documents: number;
+};
+
+export type ListTrashResponse = {
+  entries: TrashEntry[];
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */

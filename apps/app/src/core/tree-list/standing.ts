@@ -4,6 +4,7 @@
  * cannot disagree with the tree.
  */
 import {
+  isSourceRoot,
   lastSettlements,
   listRecords,
   type TreeNode,
@@ -15,8 +16,18 @@ export type DocumentStanding =
   /** The list has not been read in this session: an absence now proves nothing. */
   | { kind: "waiting" }
   | { kind: "in-tree"; node: TreeNode }
-  /** Deleted, and `deletedBy` is the delete record's actor (`user:<id>`, `agent:<chat>/<turn>`). */
-  | { kind: "in-trash"; node: TreeNode; deletedBy: string | null }
+  /**
+   * Deleted: `deletedBy` is the delete record's actor (`user:<id>`, `agent:<chat>/<turn>`),
+   * `folders` the names of the folders above it, and `entry` the node its Trash entry names (it,
+   * or the deleted folder that took it).
+   */
+  | {
+      kind: "in-trash";
+      node: TreeNode;
+      deletedBy: string | null;
+      folders: readonly string[];
+      entry: string;
+    }
   /** Its content is gone. */
   | ({ kind: "purged" } & Discarded)
   | ({ kind: "not-in-list" } & Discarded);
@@ -56,7 +67,25 @@ export function standingIn(
     (each) => each.node === documentId || each.cascade.includes(documentId),
   );
   const deleted = entry && listRecords(snapshot.doc).find((record) => record.id === entry.id);
-  return { kind: "in-trash", node, deletedBy: deleted?.actor ?? null };
+  return {
+    kind: "in-trash",
+    node,
+    deletedBy: deleted?.actor ?? null,
+    folders: foldersAbove(projection, node),
+    entry: entry?.node ?? documentId,
+  };
+}
+
+/** The names of the folders above a node, top first, as the replay shows them. */
+function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
+  const names: string[] = [];
+  for (
+    let at = projection.nodes.get(node.parent);
+    at && !isSourceRoot(node.parent);
+    at = isSourceRoot(at.parent) ? undefined : projection.nodes.get(at.parent)
+  )
+    names.unshift(at.displayName);
+  return names;
 }
 
 /** The Discard that took away the node's latest create, when that is what happened to it. */

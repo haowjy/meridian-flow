@@ -9,7 +9,7 @@
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
  * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
-import type { DocumentTrashEntry, ListDocumentTrashResponse } from "@meridian/contracts/protocol";
+import type { ListTrashResponse, TrashEntry } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -34,6 +34,7 @@ import {
   noLongerThere,
   type PendingChoice,
 } from "./drop-choice";
+import { trashRef } from "./entry";
 import { useEntryActions } from "./entry-actions";
 import { runCopy, runMove } from "./entry-failure";
 import { renamesOnArrival } from "./execute-move";
@@ -105,14 +106,13 @@ export function useEntryList({
     // Trash rows the drag carries, as Trash lists them now; a row Trash no longer lists is gone.
     const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
       const listed =
-        queryClient.getQueryData<ListDocumentTrashResponse>(
-          projectQueryKeys.documentTrash(projectId),
-        )?.documents ?? [];
+        queryClient.getQueryData<ListTrashResponse>(projectQueryKeys.trash(projectId))?.entries ??
+        [];
       const entries = drag.entries.flatMap(({ ref }) => {
-        const found = listed.find(({ documentId }) => documentId === ref.id);
+        const found = listed.find(({ nodeId }) => nodeId === ref.id);
         return found ? [found] : [];
       });
-      return entries.length === drag.entries.length ? entries : ([] as DocumentTrashEntry[]);
+      return entries.length === drag.entries.length ? entries : ([] as TrashEntry[]);
     };
     const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
       const dragging = activeDragSession();
@@ -167,7 +167,11 @@ export function useEntryList({
         if (dragging?.source === "trash") {
           const plan = planRestore(latest.current, trashed(dragging), target);
           if (plan.kind === "ready")
-            restoreInto(plan.entries, plan.destination, plan.destinationName);
+            restoreInto(
+              plan.entries.map((entry) => ({ ref: trashRef(entry), name: entry.name })),
+              plan.destination,
+              plan.destinationName,
+            );
           return;
         }
         const drop = resolve(target);
