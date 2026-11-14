@@ -24,7 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { eq } = await import("drizzle-orm");
+    const { eq, sql } = await import("drizzle-orm");
     const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDetachedWorkTracker } = await import("../../../../shared/detached-work.js");
     const { currentDrizzleDb, runInDrizzleTransaction } = await import(
@@ -147,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
       const handled: string[] = [];
       const slow = async (effect: { kind: string }) => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await db.execute(sql`select pg_sleep(0.02)`);
         handled.push(effect.kind);
       };
       const a = outboxFor(slow).outbox;
