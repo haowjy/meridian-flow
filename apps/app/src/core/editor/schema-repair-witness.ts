@@ -11,16 +11,17 @@ import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
-
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   deletedClockCount,
   extractEvidenceFromFragment,
   extractSchemaRepairEvidence,
   type SchemaRepairEvidence,
-} from "./schema-repair-evidence";
+} from "./rescued-text";
+import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type SchemaRepairEvent = {
+  /** This repair's own: its rescued words are counted once under it. */
+  id: string;
   phase: "open" | "live";
   detectedAt: string;
   deletedNodeTypes: string[];
@@ -157,9 +158,9 @@ export function createSchemaRepairWitness({
   let batchToken = 0;
   let destroyed = false;
 
-  const report = (event: SchemaRepairEvent) => {
+  const report = (event: Omit<SchemaRepairEvent, "id">) => {
     countSchemaRepair("editor");
-    onRepair(event);
+    onRepair({ id: crypto.randomUUID(), ...event });
   };
 
   const reportLiveRepairs = (repairs: PendingLiveRepair[]) => {

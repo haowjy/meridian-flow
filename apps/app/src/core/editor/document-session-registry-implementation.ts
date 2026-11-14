@@ -13,7 +13,11 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import {
+  DocumentSession,
+  type DocumentSessionSnapshot,
+  type ResetDisposition,
+} from "./document-session";
 import {
   compareAvailabilityGeneration,
   documentSessionPersistenceKey,
@@ -36,6 +40,8 @@ import type {
   LiveSessionIncarnationPort,
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
+  UnsentTyping,
+  UnsentTypingCause,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool } from "./draft-room-pool";
@@ -44,6 +50,23 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
+
+/**
+ * The resets whose teardown clears the room's local copy (`DocumentSession.destroy`). A refused
+ * room is not among them: a live one loses its copy through `drainAccess`, which hands back
+ * there, and a draft one is rebuilt from its IndexedDB copy, typing included.
+ */
+const UNSENT_CAUSE_OF_RESET: Readonly<
+  Record<ResetDisposition | "none", UnsentTypingCause | undefined>
+> = {
+  closed: "closed",
+  removed: "removed",
+  refused: undefined,
+  superseded: undefined,
+  rebuild: undefined,
+  schema: undefined,
+  none: undefined,
+};
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -116,6 +139,8 @@ export class DocumentSessionRegistry
   >();
   /** Live rooms whose current 4208 was reported; a restart that leaves `removed` clears it. */
   private readonly reportedRemovedRooms = new WeakSet<DocumentSession>();
+  private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
+  private readonly handedBack = new WeakSet<DocumentSession>();
 
   constructor(
     private readonly createCoordination: (
@@ -324,6 +349,8 @@ export class DocumentSessionRegistry
   }
 
   closeDraftRoom(roomKey: string): Promise<void> {
+    const session = this.draftRooms.peek(roomKey);
+    if (session) this.handBackUnsent(session, "closed");
     return this.draftRooms.close(roomKey);
   }
 
@@ -522,6 +549,7 @@ export class DocumentSessionRegistry
     if (retainedChanged) this.publishRetainedLiveDocuments();
     this.liveRooms.delete(input.documentId);
     if (state.session) {
+      this.handBackUnsent(state.session, "removed");
       await this.teardownOwner.retire({ kind: "live", roomKey: input.documentId }, state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
@@ -552,6 +580,7 @@ export class DocumentSessionRegistry
     this.cancelPendingTeardown(input.documentId);
     this.liveRooms.delete(input.documentId);
     if (state.session) {
+      this.handBackUnsent(state.session, "access-changed");
       await this.teardownOwner.retire({ kind: "live", roomKey: input.documentId }, state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
@@ -640,6 +669,12 @@ export class DocumentSessionRegistry
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
+    // Before any other observer: the draft pool and the refused drop retire the room, and its
+    // unsent typing, on this same notification.
+    session.subscribe(() => {
+      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      if (cause) this.handBackUnsent(session, cause);
+    });
     // Subscribed before any host can be, so a refusal's drop is already
     // running when a host hears of it (`whenRefusedRoomDropped`).
     if (session.room.kind === "live")
@@ -699,6 +734,22 @@ export class DocumentSessionRegistry
         ),
       ).then(settle, settle),
     );
+  }
+
+  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void {
+    this.unsentTypingObservers.add(observer);
+    return () => {
+      this.unsentTypingObservers.delete(observer);
+    };
+  }
+
+  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): void {
+    if (this.handedBack.has(session)) return;
+    const text = session.unsentText();
+    if (!text) return;
+    this.handedBack.add(session);
+    const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
+    for (const observer of this.unsentTypingObservers) observer(typing);
   }
 
   private reportRemovedRoom(session: DocumentSession): void {

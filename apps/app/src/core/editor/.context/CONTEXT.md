@@ -137,7 +137,7 @@ verdict. Mixed delete-and-insert normalization is intentionally not classified.
 Repairs are reported in the snapshot; they do not fence, quarantine, pause, or
 change connection status. The witness counts each report with `countSchemaRepair("editor")`
 (`@meridian/agent-edit`); the removed-text extraction it reports lives in
-`schema-repair-evidence.ts`. The binding's delete reaches the server as an ordinary Yjs update,
+`rescued-text.ts`. The binding's delete reaches the server as an ordinary Yjs update,
 and the server journals it under no name (`isSchemaRepairUpdate`); Undo still reaches it, which
 re-inserts the element and has the binding delete it again.
 
@@ -475,6 +475,24 @@ keyboard, pointer, drop, or draft-recovery answer.
 - Restarting a removed or unavailable room cancels its pending teardown and schedules
   it again when no host retains the room.
 
+### Unsent typing handed back
+
+- Before a room's local copy goes with typing the server never acknowledged, the registry
+  reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
+  updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
+  `observeUnsentTyping` once per session. It reads them on a closing or removing reset
+  (its own subscription, made before the draft pool's, which retires the room on that same
+  notification) and in `drainDocument`, `drainAccess` (a refused live room's drop ends there)
+  and `closeDraftRoom`. A refused draft room hands nothing back: its rebuild keeps the typing
+  from IndexedDB. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
+  the words back: an Undo or a Restore after it cannot.
+- What it cannot reach: a room with no session in this tab (the copy lives only in
+  IndexedDB, for a document no tab has open), and typing from before this tab's transport
+  existed (an offline reload replays it from IndexedDB, outside the transport's
+  unacknowledged updates). Both are known losses on
+  [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
+
 ### Draft room retirement
 
 - `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last
@@ -494,7 +512,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   the room, selection or UndoManager.
 - A draft update refusal (`1008`) is bounded: after three consecutive refusals
   without acknowledgement, the transport ends `DRAFT_UPDATES_REFUSED`
-  (`updatesRefused`). A retained room stays read-only with its unsent text and
-  offers Reopen draft; it does not retry indefinitely. A `4207
+  (`updatesRefused`). A retained room stays open read-only with the unsent text on
+  screen: `readDraftRoom` keeps it as `fenced`, and the status says "Couldn't save
+  your latest changes" with Try again, which rebuilds the room from IndexedDB and
+  resends the edits. It never retries on its own. A `4207
   draft-prefix-missing` close is an ordinary reconnect, not a refusal. The next
   handshake's SyncStep2 supplies missing bytes before held keystrokes.

@@ -132,11 +132,13 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
           roomName: name ?? null,
           session: current?.session ?? null,
           usable: current?.read.usable() ?? null,
-          retry: roomFailed
-            ? current!.read.retry
-            : meta?.isError
-              ? () => void meta.refetch()
-              : () => {},
+          // A fenced room retries only when its updates were refused (`readDraftRoom`).
+          retry:
+            roomFailed || fault === "fenced"
+              ? current!.read.retry
+              : meta?.isError
+                ? () => void meta.refetch()
+                : () => {},
         } as const;
       }),
     [held, metadataKey, namesKey],

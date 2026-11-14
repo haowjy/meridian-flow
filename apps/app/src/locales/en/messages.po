@@ -1817,7 +1817,7 @@ msgstr "Conversation compacted automatically"
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
 msgstr "Copied"
@@ -1839,7 +1839,7 @@ msgid "Copied from {source} into"
 msgstr "Copied from {source} into"
 
 #: src/features/chat/AssistantTurnActions.tsx
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr "Copy"
@@ -1889,8 +1889,8 @@ msgid "Copy to…"
 msgstr "Copy to…"
 
 #: src/features/draft-review/ReviewToast.tsx
-msgid "Copy unsent text"
-msgstr "Copy unsent text"
+#~ msgid "Copy unsent text"
+#~ msgstr "Copy unsent text"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -1968,7 +1968,7 @@ msgstr "Couldn't copy {only} to {destination}."
 msgid "Couldn't copy {only}."
 msgstr "Couldn't copy {only}."
 
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 msgid "Couldn't copy. Select the text to copy it."
 msgstr "Couldn't copy. Select the text to copy it."
 
@@ -2296,8 +2296,12 @@ msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Couldn't save your latest changes (copy them before you reopen)"
-msgstr "Couldn't save your latest changes (copy them before you reopen)"
+msgid "Couldn't save your latest changes"
+msgstr "Couldn't save your latest changes"
+
+#: src/features/editor/SyncStatus.tsx
+#~ msgid "Couldn't save your latest changes (copy them before you reopen)"
+#~ msgstr "Couldn't save your latest changes (copy them before you reopen)"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
@@ -2672,9 +2676,8 @@ msgstr "Discarding"
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
@@ -3338,6 +3341,10 @@ msgstr "Invoking a skill…"
 #: src/features/import/ImportPanel.tsx
 msgid "It finished before it could stop."
 msgstr "It finished before it could stop."
+
+#: src/features/editor/RescuedText.tsx
+msgid "It isn't in the document."
+msgstr "It isn't in the document."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
@@ -4596,8 +4603,8 @@ msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Reopen draft"
-msgstr "Reopen draft"
+#~ msgid "Reopen draft"
+#~ msgstr "Reopen draft"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens the documents you had open when you switch devices."
@@ -6013,7 +6020,7 @@ msgstr "This note is empty. Open it in the Editor to write."
 msgid "This part of the message can’t hold mentions"
 msgstr "This part of the message can’t hold mentions"
 
-#: src/features/editor/SchemaNotices.tsx
+#: src/features/editor/RescuedText.tsx
 msgid "This passage couldn't be recovered."
 msgstr "This passage couldn't be recovered."
 
@@ -6135,6 +6142,7 @@ msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
+#: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -6586,6 +6594,18 @@ msgstr "Your files"
 #: src/features/import/ImportPanel.tsx
 msgid "Your imports in this project, with their controls."
 msgstr "Your imports in this project, with their controls."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before the document was removed."
+msgstr "Your latest typing didn't reach the server before the document was removed."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before the draft closed."
+msgstr "Your latest typing didn't reach the server before the draft closed."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before your access to the document changed."
+msgstr "Your latest typing didn't reach the server before your access to the document changed."
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"

@@ -200,9 +200,25 @@ A rescue gives typed text back to its author after something else took it away. 
   under it, and `diff/late-peer-recovery.ts` writes it back with the typist's byline or none.
   `draft-runtime.ts` and `draft-receipts.ts` call them.
 - **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
-  witness (`schema-repair-witness.ts`) reports the removed prose so it is not silently gone.
-- **A closed draft's "Copy unsent text"**, in the browser: the writer takes the text a closed draft
-  never delivered.
+  witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
+  bar's Details show it.
+- **Unsent typing**, in the browser: before a room's local copy goes with typing the server never
+  acknowledged (a draft closed or removed, a document removed, the writer's access changed), the
+  session registry reads the words that typing inserted and a toast hands them back
+  (`observeUnsentTyping`; the editor's [CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md),
+  "Unsent typing handed back"). It hands back only those words, not the whole document.
+
+The two browser rescues show their words in one body, `RescuedText`
+(`apps/app/src/features/editor/RescuedText.tsx`): each passage with Copy, then Dismiss, so the
+writer cannot clear words they have not seen. Each counts once through the client diagnostics
+channel (`/api/diagnostics/failures`), logged as `rescue.handed_back` with `rescue`
+(`schema-removed-text` or `unsent-typing`), `endedBy` for unsent typing, and `chars` and
+`passages`; never the words.
+
+Not a rescue, because the text never leaves: a draft room whose updates the server refused three
+times in a row stays on screen read-only with the words, under "Couldn't save your latest changes"
+with Try again, which reopens the room from IndexedDB and resends them. That is delivery that
+failed visibly.
 
 ## Other writes that are not merges
 
@@ -236,7 +252,13 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   text under the splitter's byline.
 - The model rewriting a paragraph so that no word survives while a person types in it rebuilds the
   paragraph and loses the typing.
-- A closed or removed room's local copy is cleared with the room, so text typed into a Work's
-  draft room and not delivered is lost if its Discard is undone after the room closed.
+- Unsent typing in a room this tab has no session for: a document or draft not open in any tab
+  keeps its unsent typing only in IndexedDB, and a removal, a close or an access change clears it
+  with no hand-back. So does typing from before the tab's connection began (typed offline, then
+  the tab reloaded), which the connection never counted as unacknowledged.
+- The words a schema repair removed, after a reload: the notice lives in the session's memory, and
+  the words are no longer in the document.
+- Undoing a Discard, or restoring a document, after its room closed brings back the server's text
+  without the unsent typing; the toast at the close is the only copy.
 
 [edge]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/release-coordination/EDGE-CASES.md

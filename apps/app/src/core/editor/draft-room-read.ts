@@ -5,15 +5,20 @@
  * - `usable`: a live session. Commands and editors may read and write it.
  * - `rebuilding`: the server refused the writer's edits, or the previous session is still being torn
  *   down. The read joins the pool's one rebuild and becomes `usable` again; refused edits are never replayed.
- * - `fenced`: a schema reset. Its terminal session is kept so an editor can paint the notice, and it is
- *   never a target for a command.
+ * - `fenced`: a schema reset, or a room whose updates the server kept refusing (`updatesRefused`). Its
+ *   terminal session is kept so an editor can paint it read-only with its notice, and it is never a
+ *   target for a command. `retry()` rebuilds a refused one, which resends its edits from IndexedDB.
  * - `unavailable`: the draft closed, its room was superseded, or the session ended. Ask what the draft is now.
  * - `error`: opening or rebuilding the room failed. `retry()` asks again.
  *
  * Editors, row readers and command-time readers all take a room through it; none of them retains, gets or
  * replaces a session itself. Readiness belongs to the room runtime, not to this acquisition.
  */
-import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import {
+  type DocumentSession,
+  type DocumentSessionSnapshot,
+  updatesRefused,
+} from "./document-session";
 import type { LiveDocumentSessionRegistry } from "./document-session-registry";
 
 export type DraftRoomRegistry = Pick<
@@ -52,6 +57,7 @@ function judge(snapshot: DocumentSessionSnapshot): Verdict {
     if (connection.disposition === "schema") return "fenced";
     return connection.disposition === "refused" ? "refused" : "gone";
   }
+  if (updatesRefused(connection)) return "fenced";
   if (
     snapshot.status === "destroyed" ||
     connection?.kind === "terminal" ||
@@ -151,7 +157,12 @@ export function readDraftRoom(registry: DraftRoomRegistry, roomKey: string): Dra
     },
     retry() {
       if (disposed) return;
-      if (state.kind === "error" || state.kind === "unavailable") rebuild();
+      if (
+        state.kind === "error" ||
+        state.kind === "unavailable" ||
+        (state.kind === "fenced" && updatesRefused(state.session.getSnapshot().connectionState))
+      )
+        rebuild();
     },
     dispose() {
       if (disposed) return;

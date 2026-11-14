@@ -54,7 +54,6 @@ export type DraftCommandState = {
   closed: boolean;
   checkingClose: boolean;
   removed: boolean;
-  unsentText: string | null;
   liveUri: string | null;
 };
 const EMPTY: DraftCommandState = {
@@ -68,7 +67,6 @@ const EMPTY: DraftCommandState = {
   closed: false,
   checkingClose: false,
   removed: false,
-  unsentText: null,
   liveUri: null,
 };
 export type CommandOutcome =
@@ -508,11 +506,6 @@ export class DraftCommandOwner {
     const record = this.records.get(id) ?? EMPTY;
     if (!this.active || record.closed) return;
     const entry = this.entries.get(id);
-    const frame = entry?.binding?.runtime.projectNow();
-    const unsentText =
-      disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
-        ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
-        : null;
     if (disposition === "removed") this.lifecycle.removed?.(ref);
     this.setState(
       ref.itemKey,
@@ -520,7 +513,6 @@ export class DraftCommandOwner {
         closed: true,
         checkingClose: false,
         removed: disposition === "removed",
-        unsentText,
         liveUri: liveUri ?? null,
       },
       id,
