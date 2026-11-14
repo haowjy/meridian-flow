@@ -205,6 +205,8 @@ export type TreeReceipt = {
   turnId: string | null;
   /** The path the model gave for it. */
   shownAt: string | null;
+  /** The command that made it: a create with content is one command, so one Undo step. */
+  commandId: string | null;
   /** The write ordinal of the node this receipt was found by. */
   wId: number;
   /** The write ordinal on the subject's counter: the handle the model was given. */
@@ -228,7 +230,12 @@ export type NodeHistory = {
   /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
   /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
-  text: { undo: number[]; redo: number | null };
+  text: {
+    undo: number[];
+    redo: number | null;
+    /** The command of each text edit by ordinal, where it has one: what makes a step of a tree receipt's command. */
+    commands: Record<number, string>;
+  };
 };
 
 export type AgentTreeHistory = {
