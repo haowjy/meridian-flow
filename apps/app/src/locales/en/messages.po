@@ -6009,6 +6009,10 @@ msgstr "This diagram stopped parsing. Showing the last version that rendered."
 msgid "This diagram stopped parsing. The preview is the last version that rendered."
 msgstr "This diagram stopped parsing. The preview is the last version that rendered."
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document can't be edited now, so this change can't be reversed."
+msgstr "This document can't be edited now, so this change can't be reversed."
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
 msgstr "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
@@ -6065,6 +6069,14 @@ msgstr "This document was discarded from the draft before this change could be m
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
 msgstr "This document was discarded from the draft."
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document, or the Work it belongs to, was deleted or isn't available to you, so this change can't be reversed."
+msgstr "This document, or the Work it belongs to, was deleted or isn't available to you, so this change can't be reversed."
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's chat was deleted. Restore the chat to reverse this change."
+msgstr "This document's chat was deleted. Restore the chat to reverse this change."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."

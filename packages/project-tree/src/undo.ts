@@ -39,6 +39,24 @@ function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, re
   });
 }
 
+/** Whether the delete record's Trash entry, or an Undo's copy of it, is still in Trash. */
+function inTrashOf(projection: TreeProjection, record: TreeRecord): boolean {
+  const root = record.carries ?? record.id;
+  return projection.trash.some(
+    (entry) => entry.id === record.id || (entry.from ?? entry.id) === root,
+  );
+}
+
+/**
+ * Whether the delete `recordId` can still be undone: its Trash entry survives in the view (not
+ * lifted by a restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
+ */
+export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
+  const record = inForce(writer.doc, asked, recordId);
+  if (!record || record === "unknown" || record.type !== "delete") return false;
+  return inTrashOf(writer.view(record.draft === null ? LIVE : asked), record);
+}
+
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
  * back, restore what was deleted, delete what was created). A move or rename goes back to the
@@ -148,10 +166,7 @@ export function undoChange(
     }
     case "delete": {
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
-      const inTrash = projection.trash.some(
-        (entry) => entry.id === record.id || (entry.from ?? entry.id) === extra.undoes,
-      );
-      if (!inTrash) return "superseded";
+      if (!inTrashOf(projection, record)) return "superseded";
       return writer.author(view, actor, { type: "restore", node: record.node }, extra);
     }
     case "restore":

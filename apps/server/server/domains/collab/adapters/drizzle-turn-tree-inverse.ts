@@ -6,7 +6,7 @@
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
  */
 
-import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { BranchId, DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
@@ -14,6 +14,7 @@ import { LIVE, undoChange, type View } from "@meridian/project-tree";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
+import { createTreeReader } from "../../context/tree/tree-view.js";
 import type {
   AgentTreeHistory,
   MoveBackAcrossLists,
@@ -24,7 +25,10 @@ import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
+  /** The steps to reverse. */
   steps: TreeReceipt[];
+  /** Drafted steps whose Work's branch no longer holds the node (a Discard took it): skipped, never run. */
+  gone: TreeReceipt[];
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
   /** The Works whose branches a drafted step writes. */
@@ -33,7 +37,13 @@ export type TreePlan = {
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
 };
 
-export const NO_TREE_STEPS: TreePlan = { steps: [], lists: [], branches: [], documents: [] };
+export const NO_TREE_STEPS: TreePlan = {
+  steps: [],
+  gone: [],
+  lists: [],
+  branches: [],
+  documents: [],
+};
 
 export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
 
@@ -62,8 +72,31 @@ export function createTurnTreeInverse(deps: {
     turnId: TurnId,
     direction: "undo" | "redo",
   ): Promise<TreePlan> {
-    const steps = await deps.history().turnSteps(threadId, turnId, direction);
-    if (steps.length === 0) return NO_TREE_STEPS;
+    const all = await deps.history().turnSteps(threadId, turnId, direction);
+    if (all.length === 0) return NO_TREE_STEPS;
+    // A drafted step is applicable while its branch still places the node; once a Discard took it
+    // out there is no file to ask a grant about and nothing to reverse. Every other denial of a
+    // step's document refuses the reversal.
+    const held = new Set<string>();
+    const draftedIn = new Map<string, string[]>();
+    for (const step of all)
+      if (step.draftBranchId)
+        draftedIn.set(step.draftBranchId, [
+          ...(draftedIn.get(step.draftBranchId) ?? []),
+          step.subject,
+        ]);
+    for (const [branchId, ids] of draftedIn)
+      for (const id of (
+        await createTreeReader(deps.db).lineages(
+          { kind: "branch", branchId: branchId as BranchId },
+          ids as DocumentId[],
+        )
+      ).keys())
+        held.add(`${branchId}:${id}`);
+    const gone = all.filter(
+      (step) => step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`),
+    );
+    const steps = all.filter((step) => !gone.includes(step));
     const lists = new Map<string, TreeList>();
     for (const step of steps) {
       const list = await treeListOfNode(deps.db, step.subject);
@@ -90,6 +123,7 @@ export function createTurnTreeInverse(deps: {
     );
     return {
       steps,
+      gone,
       lists: [...lists.values()],
       branches: [
         ...new Set(steps.flatMap((step) => (step.draftBranchId ? [step.draftBranchId] : []))),
@@ -116,7 +150,7 @@ export function createTurnTreeInverse(deps: {
    * showing the list redraws its tree once for the whole Undo, not once a receipt.
    */
   async function run(
-    steps: readonly TreeReceipt[],
+    plan: Pick<TreePlan, "steps" | "gone">,
     direction: "undo" | "redo",
     input: {
       threadId: ThreadId;
@@ -148,6 +182,8 @@ export function createTurnTreeInverse(deps: {
         reverses: { kind: direction, receipt: receipt.id },
         ...fields,
       });
+
+    for (const receipt of plan.gone) skips.push(skip(receipt, "superseded"));
 
     // Consecutive receipts in one list, taken back together.
     let batch: { list: TreeList; receipts: TreeReceipt[] } | null = null;
@@ -188,7 +224,7 @@ export function createTurnTreeInverse(deps: {
       }
     };
 
-    for (const receipt of steps) {
+    for (const receipt of plan.steps) {
       const list = await treeListOfNode(deps.db, receipt.subject);
       if (!list) {
         skips.push(skip(receipt, "superseded"));

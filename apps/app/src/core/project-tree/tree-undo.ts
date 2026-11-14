@@ -8,6 +8,7 @@
  * no Redo: an Undo's own records go on no stack.
  */
 import {
+  deleteStands,
   isSourceRoot,
   LIVE,
   sourceIdOf,
@@ -159,14 +160,15 @@ export function undoStep(
 }
 
 /**
- * Ends `step` when none of its nodes is in Trash any more (restored by anyone, or purged): a
- * delete's notice offers an Undo that no longer applies. Returns the stop for the watch.
+ * Ends the delete `step` when none of its records can be undone any more (their Trash entries
+ * are gone: restored by anyone, or purged): a notice offers an Undo that no longer applies. A
+ * folder's other children still in the entry keep it standing. Returns the stop for the watch.
  */
 export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
   const stop = session.subscribe(() => {
-    const projection = session.replay(view);
-    if (step.nodes.some((node) => projection.nodes.get(node)?.trashed)) return;
+    const writer = writerOf(session, view);
+    if (step.records.some((record) => deleteStands(writer, view, record))) return;
     stop();
     const stack = stackOf(session);
     const at = stack.indexOf(step);
@@ -177,6 +179,17 @@ export function endWhenRestored(session: TreeListSession, step: TreeStep): () =>
   return stop;
 }
 
+function writerOf(session: TreeListSession, view: View, pendingText?: ReadonlySet<string>) {
+  const { doc } = session.getSnapshot();
+  return new TreeWriter(doc, "local", (asked) =>
+    asked.draft === null
+      ? session.replay(LIVE)
+      : asked.draft === view.draft
+        ? session.replay(asked, pendingText)
+        : null,
+  );
+}
+
 /** Writes the step's opposite records; true when any was written. */
 function takeBack(
   session: TreeListSession,
@@ -185,14 +198,7 @@ function takeBack(
   actor: string,
   pendingText?: ReadonlySet<string>,
 ): boolean {
-  const { doc } = session.getSnapshot();
-  const writer = new TreeWriter(doc, "local", (asked) =>
-    asked.draft === null
-      ? session.replay(LIVE)
-      : asked.draft === view.draft
-        ? session.replay(asked, pendingText)
-        : null,
-  );
+  const writer = writerOf(session, view, pendingText);
   let undone = 0;
   // One update per opposite record: each is judged against the replay the one before it left.
   for (const record of [...step.records].reverse()) {

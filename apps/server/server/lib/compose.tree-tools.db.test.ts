@@ -184,6 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db
           .select({
             name: schema.treeNodes.name,
+            parentId: schema.treeNodes.parentId,
             sourceId: schema.treeNodes.contextSourceId,
             deletedAt: schema.treeNodes.trashedAt,
           })
@@ -527,6 +528,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.name).toBe("ch1");
       });
 
+      const cardUndo = () =>
+        reverseTurnCard(
+          {
+            ...composed.ports,
+            workContextNotices: { workChanged: async () => {} },
+            stopThreads: async () => {},
+          },
+          {
+            threadId: OTHER.threadId as never,
+            turnId: OTHER.turnId as never,
+            userId: USER_ID as never,
+            direction: "undo",
+            commandId: randomUUID() as never,
+          },
+        );
+
       it("the card's Undo after an Apply takes the applied moves back though one drafted document was discarded", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
@@ -554,29 +571,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             })),
           },
         } as never);
-        expect((await placement(CH1))?.name).toBe("ch1");
-        const undone = await reverseTurnCard(
-          {
-            ...composed.ports,
-            workContextNotices: { workChanged: async () => {} },
-            stopThreads: async () => {},
-          },
-          {
-            threadId: OTHER.threadId as never,
-            turnId: OTHER.turnId as never,
-            userId: USER_ID as never,
-            direction: "undo",
-            commandId: randomUUID() as never,
-          },
-        );
+        const [part1] = await placementsNamed("part1");
+        expect((await placement(CH1))?.parentId).toBe(part1?.id);
+        const undone = await cardUndo();
         expect(undone.status, JSON.stringify(undone)).not.toBe("permission_denied");
-        expect(await placement(CH1)).toMatchObject({ name: "ch1" });
+        expect((await placement(CH1))?.parentId).toBeNull();
+        expect(await placementsNamed("fresh")).toEqual([]);
         expect(
           await composed.ports.documentSync.getTurnReceiptChip(
             OTHER.threadId as never,
             OTHER.turnId as never,
           ),
         ).toMatchObject({ control: "redo" });
+      });
+
+      it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        });
+        await db
+          .update(schema.works)
+          .set({ deletedAt: new Date() })
+          .where(eq(schema.works.id, OTHER_WORK_ID));
+        const undone = await cardUndo();
+        expect(undone).toMatchObject({ status: "permission_denied", denial: "not_found" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {

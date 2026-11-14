@@ -120,8 +120,10 @@ notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the s
 delete made there, on Recently opened for one made there, and on the page main goes back to when
 the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
 (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
-applies: once the deleted nodes are out of Trash (a Trash Restore, a peer's, a purge) the step
-leaves the stack and the notice with it (`endWhenRestored`).
+applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
+a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
+(`endWhenRestored`). A delete across the project and account lists is one notice, ended with the
+last of its steps.
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing
 moves on Enter. The source header's New file and New folder name the folder the writer last

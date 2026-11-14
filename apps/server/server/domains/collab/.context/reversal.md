@@ -17,9 +17,11 @@ under an id derived from the click's, on the documents' outcome: their Work and 
 never wait under a document key. Its stored outcome is the click's answer. A resend under the id
 answers the stored outcomes and changes nothing; a kill between the two runs the second on the
 resend; another request under the id is `command_conflict` (409). The receipts the reversal
-writes carry `document_edits.command_id`. A tree step on a node a Discard took out of its draft finds no file to authorize
-(`not_found`): it is skipped as changed since, and the rest of the reply still reverses; any other
-denial refuses the whole reversal. A miss the server retries (a moved capture, a deadlock)
+writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
+dropped from the grants and never run: it reports as skipped, and the rest of the reply still
+reverses (`TreePlan.gone`). Every other denial of a step's document refuses the whole reversal,
+a deleted Work's included, and the outcome carries the policy's reason (`denial`) for the card to
+word: archived Work, deleted chat, deleted document or Work, or no longer editable. A miss the server retries (a moved capture, a deadlock)
 rolls back past the claim; exhausting the inverse's attempts is `ReversalConflictError` and
 stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
