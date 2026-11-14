@@ -5,9 +5,11 @@ import { Trans } from "@lingui/react/macro";
 import { type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Chip } from "@/components/ui/chip";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { hidesSentence, levelLabel } from "./AgentFileNotice";
 import type { CreationAgent, PickableAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {
@@ -83,7 +85,19 @@ export function AgentPickerPanel({
                           })
                         }
                         title={agent.name}
-                        meta={agent.model ?? t`No model`}
+                        meta={
+                          // The level, only where a writer could wonder which one this is.
+                          agent.shadows.length > 0 ? (
+                            <>
+                              <Chip kind="label" className="mr-1.5">
+                                {levelLabel(agent.level)}
+                              </Chip>
+                              {agent.model ?? t`No model`}
+                            </>
+                          ) : (
+                            (agent.model ?? t`No model`)
+                          )
+                        }
                         detail={agent.description}
                         wrapControl={(button) => (
                           <Tooltip
@@ -112,6 +126,9 @@ export function AgentPickerPanel({
                                 {agent.name}
                                 {agent.model ? ` (${agent.model})` : ""}
                               </p>
+                              {agent.shadows.length > 0 ? (
+                                <p>{hidesSentence(agent.level, agent.shadows)}</p>
+                              ) : null}
                               {agent.description ? <p>{agent.description}</p> : null}
                             </TooltipContent>
                           </Tooltip>

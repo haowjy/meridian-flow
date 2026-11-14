@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
   Ellipsis,
@@ -58,6 +59,7 @@ import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
 import { useOptionalMainItem } from "../../views";
+import { AgentsSource } from "./AgentsSource";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
 import type { SourceDrop } from "./SourcePane";
@@ -186,7 +188,26 @@ const SOURCES: Record<SourceKey, Source> = {
   manuscript: treeSource("manuscript"),
   kb: treeSource("kb"),
   user: treeSource("user"),
-  agents: treeSource("agents"),
+  agents: {
+    label: () => t`Agents`,
+    icon: schemeIcon("agents"),
+    useDrop: (reveal) => useRootDrop("agents", reveal),
+    Body: ({ drop }) => {
+      const sources = useWriteSources();
+      return (
+        <AgentsSource
+          projectId={sources.projectId}
+          editorWorkId={sources.editorWorkId}
+          activeDocumentId={sources.activeDocumentId}
+          onSelectFile={sources.onSelectFile}
+          onPicked={sources.onPicked}
+          trees={{ agents: sources.catalogs.agents, user: sources.catalogs.user }}
+          writable={sources.writable.agents}
+          drop={drop}
+        />
+      );
+    },
+  },
   scratch: treeSource("scratch"),
   unfiled: treeSource("unfiled"),
   trash: {
@@ -301,10 +322,6 @@ export function SourcesBody({
     [showTab],
   );
   useEffect(() => {
-    const source = activeScheme && sourceOfScheme(activeScheme);
-    if (source) follow(source);
-  }, [activeScheme, follow]);
-  useEffect(() => {
     if (mainChatKey) follow("chat");
   }, [mainChatKey, follow]);
   // A deleted document main shows is Trash's, so Trash shows, as a document shows its tree.
@@ -356,6 +373,24 @@ export function SourcesBody({
     enabled: contextLive,
     version,
   });
+  // A file of `~/.agents/` is listed by Agents and by Your files: Agents shows it, unless Your
+  // files already does.
+  const activePath =
+    activeScheme === "user" && activeDocumentId
+      ? (catalogs.user.tree?.findDocument(activeDocumentId)?.path ?? null)
+      : null;
+  const inAgents = activePath !== null && agentsLocationOf("user", activePath.slice(1)) !== null;
+  const shownRef = useRef(picked);
+  shownRef.current = picked;
+  // Which tab lists a document of yours is known once the account's tree shows it.
+  const placed = activeScheme !== "user" || activePath !== null;
+  useEffect(() => {
+    const source = activeScheme && sourceOfScheme(activeScheme);
+    if (!source || !placed) return;
+    if (inAgents) {
+      if (shownRef.current !== "user") follow("agents");
+    } else follow(source);
+  }, [activeScheme, placed, inAgents, follow]);
   const undo = useSidebarUndo(projectId, version);
   const deleted = useDraftNotice(deleteNoticeKey(projectId));
   const { openReviewFile } = useAiDraftLauncher();

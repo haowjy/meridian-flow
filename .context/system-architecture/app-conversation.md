@@ -1,11 +1,11 @@
 # App: conversation
 
-Chat on the screen. The composer sends the message through the client (1), which posts it (2); the server streams the events back (3) and the transcript draws them from the thread store (4). The Agent picker records which Agent and revision a new chat uses. Back to the [app](app.md).
+Chat on the screen. The composer sends the message through the client (1), which posts it (2); the server streams the events back (3) and the transcript draws them from the thread store (4). The Agent picker records which Agent and revision a new chat uses; the Agents tab and an open Agent file show what Mars made of each file. Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
   chat["chat<br/><small>the transcript and the composer</small>"]:::feature
-  agents["agents<br/><small>the Agent picker</small>"]:::feature
+  agents["agents<br/><small>the Agent picker and file verdicts</small>"]:::feature
   project["project<br/><small>the workspace shell</small>"]:::context
   client["client<br/><small>HTTP clients and the thread store</small>"]:::context
   shared["shared<br/><small>UI and rich text</small>"]:::context
@@ -17,6 +17,7 @@ flowchart LR
   chat -->|"4. draws the transcript from the thread store"| client
   chat -->|"picks the Agent with"| agents
   project -->|"shows the chat beside the document"| chat
+  project -->|"shows an Agent file's verdict with"| agents
   chat -->|"renders Markdown with"| shared
   chat -->|"shows Drafted-documents cards from"| documents
 ```
@@ -34,9 +35,11 @@ The transcript is drawn from the same view model `./mf` prints.
 
 ## agents
 
-The Agent picker and Agent identity.
+The Agent picker, Agent identity, and what Mars made of each Agent or skill file.
 
-A new chat records exactly which Agent, and which revision of it, the writer picked.
+A new chat records exactly which Agent, and which revision of it, the writer picked. The Agents
+tab (in the project's sidebar) and an open Agent file read each file's verdict from here; a new
+Agent or skill file starts from a template written here.
 
 - Kind: feature
 - Paths: `apps/app/src/features/agents`

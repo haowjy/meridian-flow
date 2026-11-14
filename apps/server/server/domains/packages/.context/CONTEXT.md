@@ -47,6 +47,11 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   invoked, so a picker's selection (`{slug, definitionRevisionId}`) names a stored row. Rows are
   immutable and shared by every account that has the same bytes; they grow with observed edits
   and are not collected yet (they are small; a chat binding is the only reference).
+- `files` is every level's Agent and skill file, winner or not, with its reasons, whether the
+  writer picks it (`pickable`: false for a subagent or a model-only skill, which are not
+  broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners). A
+  file's own findings drop the file name. `builtinFile` reads a built-in's text by that path.
+  Routes: `GET /api/agents/files`, `GET /api/agents/builtin`.
 - A selection pins the revision it showed: a chat binds exactly that revision, whatever the
   files say now. A skill invoked with `/` pins the files it was first read from; invoking it
   again reads the pin.

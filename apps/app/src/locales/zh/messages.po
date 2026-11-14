@@ -508,6 +508,10 @@ msgstr ""
 msgid "{full}, summary"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "{head} and {last}"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr ""
@@ -915,6 +919,10 @@ msgstr ""
 msgid "A picture cannot go there."
 msgstr "图片不能放在这里。"
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "A skill named {name} is already here."
+msgstr ""
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr ""
@@ -1023,6 +1031,10 @@ msgstr ""
 msgid "Agent"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Agent name"
+msgstr ""
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Agent:"
 msgstr ""
@@ -1032,7 +1044,8 @@ msgstr ""
 msgid "Agent: {0}"
 msgstr ""
 
-#: src/features/project/context/context-schemes.ts
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Agents"
 msgstr ""
 
@@ -1119,6 +1132,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "An Agent named {name} is already here."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -1239,6 +1256,18 @@ msgstr ""
 msgid "Auto-apply"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available to Agents; it isn't in the / menu."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available to other Agents; it isn't in the picker."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available."
+msgstr ""
+
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
@@ -1311,6 +1340,21 @@ msgstr "一起头脑风暴吧"
 
 #: src/features/project/mobile/MobileBreadcrumb.tsx
 msgid "Breadcrumb"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Built-in"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/BuiltinAgentFileDialog.tsx
+msgid "Built-in Agent, read-only"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/BuiltinAgentFileDialog.tsx
+msgid "Built-in skill, read-only"
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2184,6 +2228,7 @@ msgstr ""
 msgid "Couldn't load this draft."
 msgstr ""
 
+#: src/features/agents/BuiltinAgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -3273,6 +3318,10 @@ msgstr ""
 #~ msgid "Heading 3"
 #~ msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Hidden"
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."
 msgstr ""
@@ -3471,6 +3520,10 @@ msgstr ""
 msgid "It finished before it could stop."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "It hides {hides}."
+msgstr ""
+
 #: src/features/editor/RescuedText.tsx
 msgid "It isn't in the document."
 msgstr ""
@@ -3637,6 +3690,10 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Loading Agents…"
+msgstr ""
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Loading changes…"
 msgstr ""
@@ -3707,6 +3764,7 @@ msgstr ""
 msgid "Loading Works…"
 msgstr ""
 
+#: src/features/agents/BuiltinAgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -3983,6 +4041,10 @@ msgstr ""
 msgid "New"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New Agent"
+msgstr ""
+
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -4010,16 +4072,26 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "New file"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "New folder"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New in {address}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "New in {place}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New skill"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -4044,6 +4116,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "No Agents or skills in this project yet."
 msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
@@ -4169,6 +4245,10 @@ msgstr ""
 msgid "None"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "None of your own yet. Yours show in every project."
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -4202,6 +4282,11 @@ msgstr ""
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Not sent: {0}"
+msgstr ""
+
+#. placeholder {0}: whose(file.hiddenBy, file.slug)
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Not used: {0} hides it."
 msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
@@ -4528,12 +4613,25 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Project"
+msgstr ""
+
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "Project actions"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Project Agent"
+msgstr ""
+
 #: src/features/project/ProjectCreationNotice.tsx
 msgid "Project creation failed."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Project skill"
 msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
@@ -5180,6 +5278,10 @@ msgstr ""
 msgid "Signed in"
 msgstr "已登录"
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Skill name"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 msgid "Skills"
 msgstr ""
@@ -5719,6 +5821,14 @@ msgstr "助手在这里无法使用这个工具。"
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the built-in {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the built-in one"
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The change could not be confirmed. Try again."
@@ -5774,6 +5884,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the project's"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -6206,6 +6320,14 @@ msgstr "此项目为只读，无法在此做任何更改。"
 msgid "This project was deleted."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "this project's {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "This project's own; it hides {below}."
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
 msgstr ""
@@ -6407,6 +6529,7 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/DesktopProject.tsx
 msgid "Unavailable"
@@ -6414,6 +6537,14 @@ msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Unavailable Work"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Unavailable, and it still hides {hides}:"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Unavailable:"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -6801,6 +6932,14 @@ msgstr ""
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "your {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your Agent, in every project"
+msgstr ""
+
 #: src/features/import/ImportProvider.tsx
 msgid "your files"
 msgstr ""
@@ -6849,6 +6988,10 @@ msgstr ""
 msgid "Your own answer"
 msgstr "你自己的回答"
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your own; it hides {below}."
+msgstr ""
+
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"
 msgstr ""
@@ -6869,12 +7012,25 @@ msgstr ""
 msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your skill, in every project"
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "your User files"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "yours"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Yours"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ViewerCanvas.tsx

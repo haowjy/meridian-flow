@@ -52,6 +52,49 @@ export const agentCatalogSchema = z.object({
   ),
 }) satisfies z.ZodType<AgentCatalog>;
 
+/**
+ * What Mars made of one Agent or skill file, at its level, whether or not it wins its name. The
+ * Agents tab and an open Agent file read this; the picker reads the catalog.
+ */
+export interface AgentFileStatus {
+  kind: "agent" | "skill";
+  /** The name the writer picks by: the file's, or `name__package` after a clash. */
+  slug: string;
+  level: AgentLevel;
+  /** Relative to the level's root (`agentsUriOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
+  path: string;
+  /** Why it can't be used, in Mars's words; empty when it can. */
+  unavailableReasons: string[];
+  /**
+   * Whether the writer picks it: from the Agent picker for an Agent, the `/` menu for a skill.
+   * False for one only Agents use (a subagent, a skill the model loads).
+   */
+  pickable: boolean;
+  /** Levels below this one that have the same name, which this file hides. */
+  shadows: AgentLevel[];
+  /** The level above that has the same name and hides this file; null when this file is used. */
+  hiddenBy: AgentLevel | null;
+}
+export interface AgentFiles {
+  files: AgentFileStatus[];
+}
+export const agentFilesSchema = z.object({
+  files: z.array(
+    z.object({
+      kind: z.enum(["agent", "skill"]),
+      slug: z.string().min(1),
+      level: agentLevelSchema,
+      path: z.string().min(1),
+      unavailableReasons: z.array(z.string()),
+      pickable: z.boolean(),
+      shadows: z.array(agentLevelSchema),
+      hiddenBy: agentLevelSchema.nullable(),
+    }),
+  ),
+}) satisfies z.ZodType<AgentFiles>;
+/** A built-in file's text: built-ins are not documents, so they are read here. */
+export const agentBuiltinFileSchema = z.object({ text: z.string() });
+
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {
   appendSystemPrompt?: string;
