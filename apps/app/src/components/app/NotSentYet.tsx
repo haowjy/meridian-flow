@@ -20,9 +20,9 @@ export function NotSentYet() {
           : t`Changes are waiting to be sent. They go out on their own.`
       }
       style={{ top: "env(safe-area-inset-top)" }}
-      className="fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-1 rounded-b-md bg-background/90 px-2 py-0.5 text-muted-foreground text-xs"
+      className="fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-1 h-3.5 rounded-b-sm bg-background/90 px-1.5 text-[10px] text-muted-foreground leading-none"
     >
-      <CloudOff className="size-3.5" aria-hidden />
+      <CloudOff className="size-2.5" aria-hidden />
       {paused ? t`Not sent, signed out` : t`Not sent`}
     </div>
   );
