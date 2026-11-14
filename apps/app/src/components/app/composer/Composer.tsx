@@ -203,7 +203,6 @@ export type ComposerHandle = {
    */
   hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
-  restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
   /** Adds plain text after the draft, as its own paragraph when the draft holds anything. */
   appendText: (text: string) => void;
 };
@@ -400,33 +399,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     );
     return envelope.draft;
   }, [editor]);
-  const restoreSnapshot = useCallback(
-    (value: ComposerDraftSnapshot, expectedRevision?: number) => {
-      if (
-        !editor ||
-        editor.isDestroyed ||
-        (expectedRevision !== undefined && expectedRevision !== revision.current)
-      )
-        return false;
-      suppressDraftChangeRef.current = true;
-      editor.commands.setContent(value.doc, { emitUpdate: false });
-      restoreComposerSelection(editor, value.selection);
-      suppressDraftChangeRef.current = false;
-      revision.current += 1;
-      {
-        const projection = serializeComposerDraft(editor.getJSON());
-        setHasContent(projection.text.length > 0 || projection.references.length > 0);
-      }
-      const envelope = serializeComposerDraft(
-        editor.getJSON(),
-        revision.current,
-        composerSelection(editor.state.selection),
-      );
-      onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
-      return true;
-    },
-    [editor, onDraftChange],
-  );
   useImperativeHandle(
     ref,
     () => ({
@@ -444,25 +416,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       startWith: (reference, fileKind, replaces) => {
         if (!editor || editor.isDestroyed) return false;
-        const doc = editor.state.doc;
-        const only = doc.childCount === 1 ? doc.firstChild : null;
-        const chip =
-          only?.type.name === "paragraph" &&
-          only.childCount === 1 &&
-          only.firstChild?.type.name === "composerReference"
-            ? (only.firstChild.attrs.reference as ComposerReferenceAttrs)
-            : null;
-        const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
-        if (chipOf === reference.documentId) return true;
-        // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
-        const empty = only?.type.name === "paragraph" && only.childCount === 0;
-        if (!empty && (chipOf === null || chipOf !== replaces)) return false;
+        // Empty, or holding only the chip this one replaces. Checked again when the insert runs,
+        // because the insert replaces the whole draft.
+        const fits = () => {
+          const doc = editor.state.doc;
+          const only = doc.childCount === 1 ? doc.firstChild : null;
+          const chip =
+            only?.type.name === "paragraph" &&
+            only.childCount === 1 &&
+            only.firstChild?.type.name === "composerReference"
+              ? (only.firstChild.attrs.reference as ComposerReferenceAttrs)
+              : null;
+          const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
+          if (chipOf === reference.documentId) return "already";
+          // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
+          const empty = only?.type.name === "paragraph" && only.childCount === 0;
+          return empty || (chipOf !== null && chipOf === replaces) ? "fits" : "taken";
+        };
+        const now = fits();
+        if (now !== "fits") return now === "already";
         // The caller runs this from an effect, and Tiptap `flushSync`es the chip's React node
         // view when it mounts, which React forbids inside a commit; a microtask is outside it.
         // `setContent` leaves the whole draft selected, so the next keystroke would replace the
         // chip; the caret goes after it instead.
         queueMicrotask(() => {
-          if (editor.isDestroyed) return;
+          if (editor.isDestroyed || fits() !== "fits") return;
           editor
             .chain()
             .setContent({
@@ -504,7 +482,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",
       hasContent: () => hasContent,
       snapshot,
-      restoreSnapshot,
       appendText: (text) => {
         if (!editor || editor.isDestroyed || !text) return;
         const [paragraph] = plainComposerDoc(text).content ?? [];
@@ -513,7 +490,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         else editor.commands.setContent({ type: "doc", content: [paragraph] });
       },
     }),
-    [editor, hasContent, restoreSnapshot, snapshot],
+    [editor, hasContent, snapshot],
   );
   // The store takes back an upload whose chip has left the text, so an undo brings back one that
   // is still sending or ready to retry. Send waits while any chip here is sending, and refuses
