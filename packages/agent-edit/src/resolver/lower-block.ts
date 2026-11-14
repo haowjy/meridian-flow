@@ -1,8 +1,10 @@
+import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
+import { correspond } from "../diff/correspond.js";
+import { wordDiff } from "../diff/tokens.js";
 import type { EditOp, FormatRange, TextSplice } from "../ports/model.js";
-import { wordHunks } from "../word-hunks.js";
 import type { TextWindow } from "./find.js";
 
 /** A model change: base units [from, to) become the model's units [at, end). */
@@ -14,9 +16,6 @@ interface Hunk {
   at: number;
   end: number;
 }
-
-/** The pair has a shape the lowering cannot keep: a node was added, removed or retyped. */
-class Unsupported extends Error {}
 
 /** A block's Markdown as it sits in the document, with its `open` (see `ParseOptions`). */
 export interface Where {
@@ -39,11 +38,11 @@ interface Walk {
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * units and attributes the model saw. A replaced stretch is written whole, never trimmed.
- * Every textblock at any depth is lowered by the same code, and the room is never read.
- * `placed` is a find's windows in the two blocks' text. Null for a shape this
- * lowering does not keep (a node added, removed or retyped, an inline atom put inside a run
- * of text), which the caller rewrites as a whole block.
+ * nodes, units and attributes the model saw. A replaced stretch is written whole, never trimmed.
+ * Every node at any depth is lowered by the same code, and the room is never read. The two
+ * blocks have one type; any other difference lowers: children that pair are edited in place,
+ * the rest are deleted or inserted, and an inline atom may go into the middle of a run of text.
+ * `placed` is a find's windows in the two blocks' text.
  */
 export function lowerBlock(
   codec: AgentEditCodec,
@@ -51,8 +50,7 @@ export function lowerBlock(
   after: Block,
   placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
   place: () => Where,
-): EditOp[] | null {
-  if (!sameShape(before, after)) return null;
+): EditOp[] {
   const walk: Walk = {
     codec,
     top: before,
@@ -60,22 +58,8 @@ export function lowerBlock(
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
   };
-  try {
-    lowerNode(walk, before, after, []);
-  } catch (cause) {
-    if (cause instanceof Unsupported) return null;
-    throw cause;
-  }
+  lowerNode(walk, before, after, []);
   return walk.ops;
-}
-
-function sameShape(before: Block, after: Block): boolean {
-  if (before.type !== after.type) return false;
-  if (before.isTextblock) return true;
-  if (before.childCount !== after.childCount) return false;
-  for (let index = 0; index < before.childCount; index += 1)
-    if (!sameShape(before.child(index), after.child(index))) return false;
-  return true;
 }
 
 function lowerNode(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
@@ -86,8 +70,51 @@ function lowerNode(walk: Walk, before: Block, after: Block, path: readonly numbe
     lowerTextblock(walk, before, after, path);
     return;
   }
-  for (let index = 0; index < before.childCount; index += 1)
-    lowerNode(walk, before.child(index), after.child(index), [...path, index]);
+  lowerChildren(walk, before, after, path);
+}
+
+/**
+ * A container's children pair by `correspond` (by id where nodes have ids, by guess where they
+ * do not); a pair of one type is edited in place, a child with no pair is deleted, and a run of
+ * new children with none goes in after the last pair before it.
+ */
+function lowerChildren(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
+  const olds = childrenOf(before);
+  const news = childrenOf(after);
+  const { partner, moved } = correspond(olds, news, { byId: true });
+  const paired = partner.map((next, old) =>
+    next >= 0 && !moved.has(old) && olds[old].type === news[next].type ? next : -1,
+  );
+  const back = new Int32Array(news.length).fill(-1);
+  paired.forEach((next, old) => {
+    if (next >= 0) back[next] = old;
+  });
+  let run: { after: number; nodes: Block[] } | undefined;
+  let anchor = -1;
+  for (const [next, node] of news.entries()) {
+    if (back[next] >= 0) {
+      anchor = back[next];
+      run = undefined;
+      continue;
+    }
+    if (!run) {
+      run = { after: anchor, nodes: [] };
+      walk.ops.push({ kind: "insert", path, after: anchor, nodes: run.nodes });
+    }
+    run.nodes.push(node);
+  }
+  for (const [old, next] of paired.entries()) {
+    if (next >= 0) lowerNode(walk, olds[old], news[next], [...path, old]);
+    else walk.ops.push({ kind: "delete", path: [...path, old] });
+  }
+}
+
+function childrenOf(node: Block): Block[] {
+  const found: Block[] = [];
+  node.forEach((child) => {
+    found.push(child);
+  });
+  return found;
 }
 
 /**
@@ -95,14 +122,20 @@ function lowerNode(walk: Walk, before: Block, after: Block, path: readonly numbe
  * shows of the node it saw. An attribute the codec does not write (an upload in flight)
  * comes back the same from both, so the model never overwrites what it was never shown.
  */
-function changedAttrs(before: Block, after: Block, shownOf: () => Block): Record<string, unknown> {
+function changedAttrs(
+  before: Block,
+  after: Block,
+  shownOf: () => Block | null,
+): Record<string, unknown> {
   const differs = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
   const candidates = Object.keys(after.attrs).filter((key) =>
     differs(before.attrs[key], after.attrs[key]),
   );
   const changed: Record<string, unknown> = {};
   if (candidates.length === 0) return changed;
+  // A node the codec's round trip has no counterpart of shows nothing: write no attribute.
   const shown = shownOf();
+  if (!shown) return changed;
   for (const key of candidates)
     if (differs(shown.attrs[key], after.attrs[key])) changed[key] = after.attrs[key];
   return changed;
@@ -113,26 +146,23 @@ function changedAttrs(before: Block, after: Block, shownOf: () => Block): Record
  * further paragraph of an item read alone would start an item. A block that opens two lists at
  * once parses after the empty paragraph that carries the outer item, so its block is the last.
  */
-function shownNode(walk: Walk, path: readonly number[]): Block {
+function shownNode(walk: Walk, path: readonly number[]): Block | null {
   if (!walk.shown) {
     const { body, open } = walk.place();
     walk.shown = walk.codec.parse(body, { within: open }).blocks.at(-1);
   }
   let node: Block | null | undefined = walk.shown;
   for (const index of path) node = node?.maybeChild(index);
-  if (!node) throw new Unsupported();
-  return node;
+  return node ?? null;
 }
 
 /** The `ordinal`th inline atom of the textblock at `path` in the codec's round trip. */
-function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block {
+function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block | null {
   const atoms: Block[] = [];
-  shownNode(walk, path).forEach((child) => {
+  shownNode(walk, path)?.forEach((child) => {
     if (!child.isText) atoms.push(child);
   });
-  const atom = atoms[ordinal];
-  if (!atom) throw new Unsupported();
-  return atom;
+  return atoms[ordinal] ?? null;
 }
 
 function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
@@ -193,7 +223,6 @@ function lowerText(
   placed: [TextWindow[], TextWindow[]] | undefined,
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
-  const size = a.length;
 
   // A find's window is one change, placed by the model; otherwise the word diff places them.
   let hunks: Hunk[] = [];
@@ -217,61 +246,11 @@ function lowerText(
       });
     }
   } else {
-    let shift = 0;
-    for (const hunk of wordHunks(a, b)) {
-      hunks.push({
-        from: hunk.from,
-        to: hunk.to,
-        at: hunk.from + shift,
-        end: hunk.from + shift + hunk.text.length,
-      });
-      shift += hunk.text.length - (hunk.to - hunk.from);
-    }
+    hunks = wordHunks(a, b);
   }
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
-
-  // An inline atom is a child of the textblock, not a character of a run of text, so a
-  // change that puts one in goes between runs: an insert slides over equal text to the
-  // nearest edge; any other is a shape this lowering does not keep.
-  const hasAtom = (hunk: Hunk) =>
-    [...b.slice(hunk.at, hunk.end)].some((_, i) => isAtom(b, hunk.at + i));
-  const midRun = (from: number, to: number) => {
-    if (from === 0 || to === size || isAtom(a, from - 1) || isAtom(a, to)) return false;
-    for (let at = from; at < to; at += 1) if (isAtom(a, at)) return false;
-    return true;
-  };
-  for (const [index, hunk] of hunks.entries()) {
-    if (!hasAtom(hunk) || !midRun(hunk.from, hunk.to)) continue;
-    if (hunk.from !== hunk.to || hunk.anchored) throw new Unsupported();
-    const floor = hunks[index - 1]?.to ?? 0;
-    const ceiling = hunks[index + 1]?.from ?? size;
-    let slid = false;
-    for (let k = 1; k <= hunk.end - hunk.at && !slid; k += 1) {
-      if (
-        hunk.from - k >= floor &&
-        !midRun(hunk.from - k, hunk.from - k) &&
-        a.slice(hunk.from - k, hunk.from) === b.slice(hunk.end - k, hunk.end)
-      ) {
-        slid = true;
-        hunk.from -= k;
-        hunk.to -= k;
-        hunk.at -= k;
-        hunk.end -= k;
-      } else if (
-        hunk.from + k <= ceiling &&
-        !midRun(hunk.from + k, hunk.from + k) &&
-        a.slice(hunk.from, hunk.from + k) === b.slice(hunk.at, hunk.at + k)
-      ) {
-        slid = true;
-        hunk.from += k;
-        hunk.to += k;
-        hunk.at += k;
-        hunk.end += k;
-      }
-    }
-    if (!slid) throw new Unsupported();
-  }
+  slideAtomInserts(hunks, a, b, isAtom);
 
   const splices: TextSplice[] = hunks.map((hunk) => ({
     from: hunk.from,
@@ -280,6 +259,71 @@ function lowerText(
   }));
   const { formats, kept } = keptUnits(before, after, hunks);
   return { splices, formats, kept };
+}
+
+/**
+ * An inline atom is a child of the textblock, not a character of a run of text, and a run
+ * cannot be cut without moving its tail to a run of its own, which sends a peer's typing in the
+ * tail elsewhere. So an insert that puts an atom inside a run slides over equal text to the
+ * nearest run edge; the model's own find insert, and any change that replaces text, cut the run.
+ */
+function slideAtomInserts(
+  hunks: Hunk[],
+  a: string,
+  b: string,
+  isAtom: (units: string, at: number) => boolean,
+): void {
+  const size = a.length;
+  const midRun = (at: number) => at > 0 && at < size && !isAtom(a, at - 1) && !isAtom(a, at);
+  for (const [index, hunk] of hunks.entries()) {
+    if (hunk.from !== hunk.to || hunk.anchored || !midRun(hunk.from)) continue;
+    if (![...b.slice(hunk.at, hunk.end)].some((_, i) => isAtom(b, hunk.at + i))) continue;
+    const floor = hunks[index - 1]?.to ?? 0;
+    const ceiling = hunks[index + 1]?.from ?? size;
+    for (let k = 1; k <= hunk.end - hunk.at; k += 1) {
+      const back =
+        hunk.from - k >= floor &&
+        !midRun(hunk.from - k) &&
+        a.slice(hunk.from - k, hunk.from) === b.slice(hunk.end - k, hunk.end);
+      const forward =
+        hunk.from + k <= ceiling &&
+        !midRun(hunk.from + k) &&
+        a.slice(hunk.from, hunk.from + k) === b.slice(hunk.at, hunk.at + k);
+      if (!back && !forward) continue;
+      const by = back ? -k : k;
+      hunk.from += by;
+      hunk.to += by;
+      hunk.at += by;
+      hunk.end += by;
+      break;
+    }
+  }
+}
+
+/** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
+function wordHunks(a: string, b: string): Hunk[] {
+  const hunks: Hunk[] = [];
+  let base = 0;
+  let model = 0;
+  let open: Hunk | undefined;
+  for (const [op, text] of wordDiff(a, b)) {
+    if (op === DIFF_EQUAL) {
+      open = undefined;
+      base += text.length;
+      model += text.length;
+      continue;
+    }
+    open ??= hunks[hunks.push({ from: base, to: base, at: model, end: model }) - 1];
+    if (op === DIFF_DELETE) {
+      base += text.length;
+      open.to = base;
+    }
+    if (op === DIFF_INSERT) {
+      model += text.length;
+      open.end = model;
+    }
+  }
+  return hunks;
 }
 
 /**

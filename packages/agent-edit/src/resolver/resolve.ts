@@ -715,27 +715,16 @@ function replaceScope(
         );
         anchor = oldBlocks[step.old];
         insertionRun = {};
-        if (lowered) {
-          if (lowered.length === 0) keptBlocks = true;
-          else
-            edits.push({
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              block: oldBlocks[step.old],
-              structuralBoundary: step.structuralBoundary,
-              kind: "ops",
-              ops: lowered,
-            });
-          break;
-        }
-        edits.push({
-          documentId: params.documentAddress.documentId,
-          file: params.documentAddress.filePath,
-          block: oldBlocks[step.old],
-          structuralBoundary: step.structuralBoundary,
-          kind: "block",
-          replacement: after,
-        });
+        if (lowered.length === 0) keptBlocks = true;
+        else
+          edits.push({
+            documentId: params.documentAddress.documentId,
+            file: params.documentAddress.filePath,
+            block: oldBlocks[step.old],
+            structuralBoundary: step.structuralBoundary,
+            kind: "ops",
+            ops: lowered,
+          });
         break;
       }
       case "keep":
@@ -777,22 +766,28 @@ function semanticIrForResolvedEdits(
   const mappedEdits = edits.map((edit) => {
     let outputRuns: SemanticOutputRun[] = [];
     if (edit.kind === "ops") {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      const lineage = ctx.model.nodeLineage(edit.block, []);
       scope.push(...lineage);
       let output = 0;
+      const fresh = (text: string) => {
+        if (text.length > 0)
+          outputRuns.push({
+            kind: "fresh",
+            payload: text,
+            output: { from: output, to: output + text.length },
+          });
+        output += text.length;
+      };
       for (const op of edit.ops) {
-        if (op.kind !== "text") continue;
-        for (const splice of op.splices) {
-          deleted.push(...ctx.model.textblockLineage(edit.block, op.path, splice.from, splice.to));
-          const text = splice.content.textBetween(0, splice.content.size, "");
-          if (text.length > 0)
-            outputRuns.push({
-              kind: "fresh",
-              payload: text,
-              output: { from: output, to: output + text.length },
-            });
-          output += text.length;
-        }
+        if (op.kind === "delete") deleted.push(...ctx.model.nodeLineage(edit.block, op.path));
+        else if (op.kind === "insert") for (const node of op.nodes) fresh(node.textContent);
+        else if (op.kind === "text")
+          for (const splice of op.splices) {
+            deleted.push(
+              ...ctx.model.textblockLineage(edit.block, op.path, splice.from, splice.to),
+            );
+            fresh(splice.content.textBetween(0, splice.content.size, ""));
+          }
       }
     } else if (edit.kind === "insert") {
       if (edit.newText.length > 0) {
@@ -805,18 +800,9 @@ function semanticIrForResolvedEdits(
         ];
       }
     } else {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      const lineage = ctx.model.nodeLineage(edit.block, []);
       scope.push(...lineage);
       deleted.push(...lineage);
-      if (edit.kind === "block" && edit.replacement.textContent.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.replacement.textContent,
-            output: { from: 0, to: edit.replacement.textContent.length },
-          },
-        ];
-      }
     }
     return { edit, outputRuns };
   });

@@ -1,4 +1,4 @@
-// Preflight and mutation of resolved inline, whole-block, and structural edits.
+// Preflight and mutation of resolved block-operation and structural edits.
 
 import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef, DocHandle } from "../handles.js";
@@ -24,11 +24,6 @@ type PlannedEdit =
       edit: Extract<ResolvedEdit, { kind: "delete" }>;
       blockId: string;
       removesBlock: boolean;
-    }
-  | {
-      kind: "block";
-      edit: Extract<ResolvedEdit, { kind: "block" }>;
-      blockId: string;
     };
 
 interface ApplyAccumulator {
@@ -126,8 +121,6 @@ function preflightEdit(
       return preflightInsert(doc, model, edit);
     case "delete":
       return preflightDelete(doc, model, edit);
-    case "block":
-      return preflightBlockReplacement(doc, model, edit);
   }
 }
 
@@ -142,27 +135,6 @@ function preflightOps(
     return { ok: false, code: "invalid_write", message: "Edits require at least one operation" };
   }
   return { ok: true, plan: { kind: "ops", edit, blockId: model.getBlockId(edit.block) } };
-}
-
-function preflightBlockReplacement(
-  doc: DocHandle,
-  model: AgentEditModel,
-  edit: Extract<ResolvedEdit, { kind: "block" }>,
-): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.block, "target");
-  if (!live.ok) return live;
-  const actual = model.getBlockType(edit.block);
-  if (actual !== edit.replacement.type.name) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Cannot update ${actual} block with ${edit.replacement.type.name} content`,
-    };
-  }
-  return {
-    ok: true,
-    plan: { kind: "block", edit, blockId: model.getBlockId(edit.block) },
-  };
 }
 
 function preflightInsert(
@@ -240,10 +212,6 @@ function executePlan(
         accumulator.touchedHashes.add(plan.blockId);
       }
       break;
-    case "block":
-      model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
-      accumulator.touchedHashes.add(plan.blockId);
-      break;
   }
 }
 
@@ -281,7 +249,6 @@ function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
     case "ops":
     case "delete":
-    case "block":
       return [edit.block];
     case "insert":
       return edit.after ? [edit.after] : [];

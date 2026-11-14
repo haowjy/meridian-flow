@@ -18,8 +18,8 @@ export interface ContentLineage {
 
 /**
  * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
- * `content` may hold inline atoms (a line break, an image) only where it lands between
- * runs of text, never inside one.
+ * `content` may hold inline atoms (a line break, an image); one that lands inside a run of
+ * text splits the run.
  */
 export interface TextSplice {
   from: number;
@@ -42,6 +42,15 @@ export interface FormatRange {
  */
 export type EditOp =
   | { kind: "text"; path: readonly number[]; splices: TextSplice[]; formats: FormatRange[] }
+  | {
+      /** `nodes` go into the container at `path`, after its child `after` (-1: first). */
+      kind: "insert";
+      path: readonly number[];
+      after: number;
+      nodes: readonly Block[];
+    }
+  /** The node at `path` goes, with everything in it. */
+  | { kind: "delete"; path: readonly number[] }
   | {
       kind: "attrs";
       path: readonly number[];
@@ -84,9 +93,6 @@ export interface DocumentModel {
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
 
-  /** Immutable CRDT identities for the currently visible prose units in this block. */
-  getVisibleContentLineage(block: BlockRef): ContentLineage[];
-
   /**
    * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
    * the model's view; an inline atom is a unit with no identity.
@@ -97,6 +103,9 @@ export interface DocumentModel {
     from: number,
     to: number,
   ): ContentLineage[];
+
+  /** Immutable CRDT identities of the visible text under the node at `path` under `block`. */
+  nodeLineage(block: BlockRef, path: readonly number[]): ContentLineage[];
 
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
@@ -135,12 +144,10 @@ export interface AgentEditModel extends DocumentModel {
   /**
    * Apply operations to one top-level block, addressed on its state before any of them.
    * Every path and offset is checked before anything changes; a write that does not fit
-   * the block fails and leaves it as it was.
+   * the block fails and leaves it as it was. An edited block keeps its element and its id;
+   * an inserted node takes a new id.
    */
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
-
-  /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
-  applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

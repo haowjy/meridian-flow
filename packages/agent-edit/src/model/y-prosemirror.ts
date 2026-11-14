@@ -1,6 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
 import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
-import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
@@ -31,8 +30,6 @@ interface TextSegment {
   start: number;
   length: number;
 }
-
-type BindingMetadata = Parameters<typeof updateYFragment>[3];
 
 export type YProsemirrorDocumentModel = AgentEditModel & {
   schema: Schema;
@@ -77,8 +74,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectText(unwrapBlock(block));
     },
 
-    getVisibleContentLineage(block) {
-      return collectVisibleContentLineage(unwrapBlock(block));
+    nodeLineage(block, path) {
+      return collectVisibleContentLineage(nodeAt(unwrapBlock(block), path));
     },
 
     textblockLineage(block, path, from, to) {
@@ -111,10 +108,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     applyOps(_doc, block, ops) {
       return applyOps(unwrapBlock(block), ops);
-    },
-
-    applyBlockReplacement(doc, block, replacement) {
-      applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
     },
 
     projectBlocks(doc) {
@@ -218,54 +211,50 @@ function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
-/**
- * Rewrites a block as `replacement` in place: its attributes are written and
- * its content is diffed against the current children, so equal text keeps its
- * items, anchors and attribution.
- */
-export function applyBlockDiff(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  replacement: PMNode,
-): void {
-  const element = unwrapBlock(toRef(block));
-  if (element.nodeName !== replacement.type.name) {
-    throw new Error(
-      `Cannot update ${element.nodeName} block with ${replacement.type.name} content`,
-    );
-  }
-  // A block the model rewrites whole is a new block to the merge: it takes a fresh id.
-  writePmBlock(doc, element, withBlockIds(replacement));
-}
-
-function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
-  updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
-}
+/** An operation with the elements it addresses, found before anything changed. */
+type Resolved =
+  | { op: Extract<EditOp, { kind: "text" }>; node: Y.XmlElement }
+  | { op: Extract<EditOp, { kind: "attrs" }>; node: Y.XmlElement }
+  | { op: Extract<EditOp, { kind: "insert" }>; node: Y.XmlElement; anchor: Y.XmlElement | null }
+  | { op: Extract<EditOp, { kind: "delete" }>; node: Y.XmlElement };
 
 /**
  * Every path and offset is checked before anything changes, so an operation means the
  * block as planned whatever ran before it, and a write that does not fit leaves it alone.
+ * Text and attributes go first, then inserts (each after an element found beforehand, which
+ * a delete may remove next), then deletes.
  */
 function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
-  const targets: Y.XmlElement[] = [];
+  const resolved: Resolved[] = [];
   for (const op of ops) {
     const node = findNode(block, op.path);
     const problem = node ? opProblem(node, op) : "its path does not address an element";
     if (!node || problem) return invalidOp(`Cannot apply a ${op.kind} operation: ${problem}`);
-    targets.push(
-      op.kind === "attrs" && op.unit !== undefined ? (atomAt(node, op.unit) ?? node) : node,
-    );
+    if (op.kind === "insert") {
+      const anchor = op.after < 0 ? null : node.get(op.after);
+      resolved.push({ op, node, anchor: anchor instanceof Y.XmlElement ? anchor : null });
+    } else if (op.kind === "attrs" && op.unit !== undefined) {
+      resolved.push({ op, node: atomAt(node, op.unit) ?? node });
+    } else resolved.push({ op, node } as Resolved);
   }
-  for (const [index, op] of ops.entries()) {
-    const target = targets[index];
-    if (op.kind === "text") {
-      applyTextOp(target, op);
-      continue;
-    }
+  const of = <K extends EditOp["kind"]>(kind: K) =>
+    resolved.filter(
+      (entry): entry is Extract<Resolved, { op: { kind: K } }> => entry.op.kind === kind,
+    );
+  for (const { op, node } of of("text")) applyTextOp(node, op);
+  for (const { op, node } of of("attrs"))
     for (const [key, value] of Object.entries(op.attrs)) {
-      if (value === null || value === undefined) target.removeAttribute(key);
-      else target.setAttribute(key, value as string);
+      if (value === null || value === undefined) node.removeAttribute(key);
+      else node.setAttribute(key, value as string);
     }
+  for (const { op, node, anchor } of of("insert"))
+    node.insert(
+      anchor ? node.toArray().indexOf(anchor) + 1 : 0,
+      op.nodes.map((child) => pmNodeToYElement(withBlockIds(child))),
+    );
+  for (const { node } of of("delete")) {
+    const parent = node.parent as Y.XmlElement;
+    parent.delete(parent.toArray().indexOf(node), 1);
   }
   return { ok: true };
 }
@@ -307,22 +296,17 @@ function atomAt(leaf: Y.XmlElement, unit: number): Y.XmlElement | undefined {
 function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   if (op.kind === "attrs")
     return op.unit === undefined || atomAt(node, op.unit) ? undefined : "no atom at its unit";
+  if (op.kind === "insert")
+    return op.after < 0 || node.get(op.after) instanceof Y.XmlElement
+      ? undefined
+      : "no child to insert after";
+  if (op.kind === "delete")
+    return op.path.length > 0 ? undefined : "a block does not delete itself";
   const slots = slotsOf(node);
   const size = slots.reduce((sum, slot) => sum + slot.length, 0);
-  const slotAt = (unit: number) =>
-    slots.find((slot) => unit >= slot.start && unit < slot.start + slot.length);
   let cursor = 0;
-  for (const { from, to, content } of op.splices) {
+  for (const { from, to } of op.splices) {
     if (from < cursor || to < from || to > size) return `invalid splice ${from}..${to} of ${size}`;
-    let atoms = false;
-    content.forEach((child) => {
-      atoms ||= !child.isText;
-    });
-    // Replacing [from, to) leaves a run of text whole around the insertion point; an atom
-    // cannot go into one, since a run of text cannot be cut in two.
-    const inside = from > 0 && to < size ? slotAt(from - 1) : undefined;
-    if (atoms && inside && inside === slotAt(to) && inside.child instanceof Y.XmlText)
-      return "an inline atom cannot go inside a run of text";
     cursor = to;
   }
   for (const { from, to } of op.formats)
@@ -394,19 +378,46 @@ function insertContent(leaf: Y.XmlElement, at: number, content: Fragment): void 
       ]);
     return;
   }
-  const previous = runs.find((slot) => slot.length > 0 && slot.start + slot.length === at);
-  const next = runs.find((slot) => slot.length > 0 && slot.start === at);
+  // An atom cannot go inside a run of text, so the run is cut there: its tail moves to a run
+  // of its own after the atom, the way a peer's typed break would split it.
+  const inside = runs.find((slot) => slot.start < at && at < slot.start + slot.length);
+  let tail: Y.XmlText | undefined;
+  if (inside) {
+    tail = new Y.XmlText();
+    let seen = 0;
+    let end = 0;
+    for (const part of inside.child.toDelta() as Array<{
+      insert: string;
+      attributes?: Record<string, unknown>;
+    }>) {
+      const skip = Math.max(0, at - inside.start - seen);
+      seen += part.insert.length;
+      if (skip >= part.insert.length) continue;
+      const rest = part.insert.slice(skip);
+      tail.insert(end, rest, part.attributes);
+      end += rest.length;
+    }
+    inside.child.delete(at - inside.start, inside.length - (at - inside.start));
+  }
+  const previous =
+    inside ?? runs.find((slot) => slot.length > 0 && slot.start + slot.length === at);
+  const next: { child: Y.XmlText } | undefined = tail
+    ? { child: tail }
+    : runs.find((slot) => slot.length > 0 && slot.start === at);
   const children: Array<Y.XmlText | Y.XmlElement> = [];
-  const meta = createBindingMetadata();
   for (const [index, nodes] of texts.entries()) {
-    if (index > 0) children.push(pmNodeToYElement(atoms[index - 1], meta));
+    if (index > 0) children.push(pmNodeToYElement(atoms[index - 1]));
     if (nodes.length === 0) continue;
-    if (index === 0 && previous) insertInto(previous.child, previous.length, nodes);
+    if (index === 0 && previous) insertInto(previous.child, at - previous.start, nodes);
     else if (index === texts.length - 1 && next) insertInto(next.child, 0, nodes);
     else children.push(textNodesToYText(nodes));
   }
+  if (tail) children.push(tail);
+  const anchor = inside ?? undefined;
   leaf.insert(
-    slots.filter((slot) => slot !== next && slot.start + slot.length <= at).length,
+    anchor
+      ? anchor.index + 1
+      : slots.filter((slot) => slot !== next && slot.start + slot.length <= at).length,
     children,
   );
 }
@@ -424,9 +435,7 @@ export function insertBlocks(
     throw new Error("Cannot insert after a block that is not in the document");
   }
   // The codec's blocks have no ids: this is where they become stored blocks.
-  const inserted = parsed.blocks.map((block) =>
-    pmNodeToYElement(withBlockIds(block), createBindingMetadata()),
-  );
+  const inserted = parsed.blocks.map((block) => pmNodeToYElement(withBlockIds(block)));
   if (inserted.length > 0) fragment.insert(index, inserted);
   return inserted;
 }
@@ -597,17 +606,16 @@ function insertionPoint(
   return { text, offset: 0 };
 }
 
-function pmNodeToYElement(node: PMNode, meta: BindingMetadata): Y.XmlElement {
+function pmNodeToYElement(node: PMNode): Y.XmlElement {
   const element = new Y.XmlElement(node.type.name);
   for (const key of Object.keys(node.attrs)) {
     const value = node.attrs[key];
     if (value !== null && key !== "ychange") element.setAttribute(key, value);
   }
   const children = normalizeContent(node).map((child) =>
-    Array.isArray(child) ? textNodesToYText(child) : pmNodeToYElement(child, meta),
+    Array.isArray(child) ? textNodesToYText(child) : pmNodeToYElement(child),
   );
   if (children.length > 0) element.insert(0, children);
-  meta.mapping.set(element, node);
   return element;
 }
 
@@ -645,8 +653,4 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
-}
-
-function createBindingMetadata(): BindingMetadata {
-  return { mapping: new Map(), isOMark: new Map() };
 }

@@ -171,7 +171,6 @@ export {
   structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
-export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

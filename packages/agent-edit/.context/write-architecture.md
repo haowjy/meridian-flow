@@ -22,8 +22,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - A find write rewrites only its matches. It splices the content into the serialized
   block group, reparses it, and replaces each match's text window whole at its
-  position (`cutTextWindows`); a find whose windows can't be mapped is word-diffed, and a
-  block the lowering does not keep (below) is block-diffed instead.
+  position (`cutTextWindows`); a find whose windows can't be mapped is word-diffed.
 - The model's text is parsed where it lands, never alone. Every parse of it (a write's
   content, a find's spliced group and the windows cut in it, `shownNode`'s round trip) takes
   `{ within: open }`, the `open` of the block it lands beside: the first block a replace or
@@ -40,10 +39,12 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
   table cell; a list item or a quoted paragraph is a paragraph with nesting attributes), text splices with format ranges; per node at any depth,
   attribute sets (a paragraph's heading level, a task item's `checked`, a code block's language);
-  and for an inline atom the model kept (an image, a line break), attribute sets
-  addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
-  model's changes come from a find's window, otherwise from the word diff (`wordHunks`;
-  an atom is one token, compared by type, and a changed attribute is an attribute set;
+  for an inline atom the model kept (an image, a line break), attribute sets
+  addressed by its unit; and for a container whose children differ (a table that gains a row),
+  `insert` and `delete` of nodes, the children paired by `correspond`. A unit is one UTF-16 code unit of text, or one inline atom. The
+  model's changes come from a find's window, otherwise from the word diff (`wordDiff`, the Yjs writer's own: it splits words with
+  `Intl.Segmenter`, so an unspaced Chinese clause is several words, and the word the model
+  changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
   formatting is not part of a token). A replace is not trimmed: the model's whole new text
   is written. Every operation is made and Yjs merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
@@ -64,13 +65,15 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   paragraph leaves an image whose upload is in flight alone.
 - Block ids (`id` on every block): the model's Markdown has none, so `projectBlocks` hands the
   resolver nodes with ids removed, and a block it leaves alone still compares equal to its own
-  Markdown. A block edited by operations keeps its element and id; an inserted block, and a block
-  rewritten whole (`applyBlockDiff`), take fresh ids. `insertBlocks` is the door where the codec's
+  Markdown. A block edited by operations keeps its element and id; an inserted block, and a node
+  inserted inside it, take fresh ids. `insertBlocks` is the door where the codec's
   id-free blocks become stored blocks, so it assigns ids; `writeBlocks` refuses a block with none.
-- Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
-  there were no room: a node added, removed or retyped inside the block (a table
-  row), and an inline atom put into
-  the middle of a run of text (a verse line broken in two). An atom added or removed at
+- `lowerBlock` is total for two blocks of one type: a block is never rebuilt, so it keeps its
+  element and id. An inline atom put into the middle of a run of text (a verse line broken in
+  two) slides to the nearest run edge over equal text when it is a pure insert; otherwise the
+  run is cut: its tail moves to a text of its own after the atom, re-created from the model's
+  view, so typing the writer did in that tail lands before the break and a word they deleted
+  there comes back (a `Y.XmlText` cannot be split). An atom added or removed at
   the edge of a run of text is an operation. Deleting an atom between two runs leaves
   them as two adjacent `Y.XmlText` children, which the editor's binding never writes;
   merging them would re-insert the writer's text as the model's, so they stay
@@ -89,10 +92,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   word diff would then place the model's text at the dropped run's edge, where Yjs
   orders it against what the writer typed there by client id (`He  loudlygroaned.`).
 - What the lowering does not cover:
-  - A block the lowering does not keep (above): a model change there that meets text the
-    writer deleted since its read can bring that text back, and an insert beside a
-    deleted line can land split, by client id
-    ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
+  - A line break or image put into the middle of a run while the writer types or deletes
+    after that point (above).
   - A write that removes a block and adds another (merging or splitting top-level
     paragraphs): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.
