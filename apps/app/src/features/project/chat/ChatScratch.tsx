@@ -11,10 +11,8 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
-import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
-import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -29,6 +27,7 @@ import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchTrees } from "../context/use-scratch-trees";
 import { useTreeExpansion } from "../context/use-tree-expansion";
+import { useWorkSourceWritable } from "../context/use-work-source-writable";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
@@ -43,13 +42,8 @@ function useOpenDocumentId(): string | undefined {
 function useChatScratch(projectId: string, threadId: string | null) {
   const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchTrees(projectId, source);
-  const { works, noWork } = useWorks(projectId);
-  const work =
-    source?.owner.workId === noWork?.id
-      ? noWork
-      : works?.find((work) => work.id === source?.owner.workId);
-  // An archived Work's Scratch can be copied from, not changed.
-  const editable = !source?.owner.workId || Boolean(work && !isWorkArchived(work));
+  // An ended Work's Scratch can be copied from, not changed.
+  const editable = useWorkSourceWritable(projectId, source?.owner.workId);
   const areas = useMemo<MoveArea[]>(
     () => [
       ...(primary.tree && source
@@ -58,7 +52,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
               scheme: "scratch" as const,
               owner: source.owner,
               tree: primary.tree,
-              accepts: editable,
+              writable: editable,
             },
           ]
         : []),
@@ -68,7 +62,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
               scheme: "scratch" as const,
               owner: { rootThreadId: source.earlierRootThreadId },
               tree: earlier.tree,
-              accepts: true,
+              writable: true,
             },
           ]
         : []),

@@ -11,7 +11,6 @@ import type {
   NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { TreeDestination, TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
@@ -22,20 +21,15 @@ export type MoveArea = {
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   tree: TreeView;
-  /** The owner accepts arrivals, by move or copy (an archived Work's Scratch does not). */
-  accepts: boolean;
+  /**
+   * The owner takes changes: arrivals by move or copy, and its rows moved out. An archived or
+   * deleted Work's Scratch takes none (`useWorkSourceWritable`): it can be copied from.
+   */
+  writable: boolean;
 };
 
 /** The trees a list shows: what a drop is judged against. */
 export type PlacementView = { areas: readonly MoveArea[] };
-
-type WorkDirectory = readonly Pick<Work, "id" | "handle" | "archivedAt">[] | null | undefined;
-type NoWork = { id: string } | null | undefined;
-
-export type MoveView = PlacementView & {
-  works: WorkDirectory;
-  noWork: NoWork;
-};
 
 /** An entry as the trees place it now. */
 export type PlacedEntry = {
@@ -196,8 +190,8 @@ export type ResolvedDrop = {
   /** The target's scheme, for the records a Copy makes there. */
   scheme: ProjectContextTreeScheme;
   /**
-   * Every carried row may Move. A row in the Scratch of an archived Work, or of a Work the project
-   * doesn't list, is frozen: it can be copied from, not moved out of.
+   * Every carried row may Move: its area is writable. A row in an ended Work's Scratch can be
+   * copied from, not moved out of.
    */
   canMove: boolean;
   /** A carried row is in the account's files and the target in a project, or the other way: a move there is a command the browser does not send, a copy is. */
@@ -205,30 +199,17 @@ export type ResolvedDrop = {
 };
 
 /**
- * Fails closed: a row in a Work's Scratch may Move only when that Work is found and not
- * archived (No Work is never archived). A Work the project doesn't list (deleted, or the list
- * not loaded) freezes its Scratch rather than opening it.
- */
-function movable(view: MoveView, { area }: PlacedEntry): boolean {
-  const workId = area.owner.workId;
-  if (area.scheme !== "scratch" || !workId) return true;
-  if (workId === view.noWork?.id) return true;
-  const work = view.works?.find((candidate) => candidate.id === workId);
-  return Boolean(work && !isWorkArchived(work));
-}
-
-/**
  * Resolves dropping `drag` on `target` from the trees as they are now; null when the target
  * isn't a place a drop can land (no such area, an owner that accepts no arrivals, a folder that
  * is gone).
  */
 export function resolveDrop(
-  view: MoveView,
+  view: PlacementView,
   drag: EntryDrag,
   target: TreeDropTarget,
 ): ResolvedDrop | null {
   const area = view.areas.find((candidate) => candidate.tree.root.entryId === target.treeRootId);
-  if (!area?.accepts || target.scheme !== area.scheme) return null;
+  if (!area?.writable || target.scheme !== area.scheme) return null;
   const folder = target.folder ? area.tree.entry(target.folder.entryId) : null;
   if (target.folder && folder?.kind !== "dir") return null;
   const into = folder?.entryId ?? area.tree.root.entryId;
@@ -252,7 +233,7 @@ export function resolveDrop(
     insideItself: sources.some((source) => insideItself(source, into)),
     unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
     scheme: area.scheme,
-    canMove: sources.every((source) => movable(view, source)),
+    canMove: sources.every((source) => source.area.writable),
     crossesLists: sources.some((source) => isAccountArea(source.area) !== isAccountArea(area)),
   };
 }

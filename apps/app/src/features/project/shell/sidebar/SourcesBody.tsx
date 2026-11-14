@@ -1,6 +1,5 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { workLifecycleState } from "@meridian/contracts/works";
 import {
   Ellipsis,
   FileDiff,
@@ -51,6 +50,7 @@ import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
@@ -95,6 +95,8 @@ type WriteSources = {
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
   catalogs: Record<TreeKey, TreeViewResult>;
+  /** Whether each tree shown takes changes: an ended Work's Scratch takes none. */
+  writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkBranchCommands;
@@ -144,6 +146,7 @@ function treeSource(scheme: TreeKey): Source {
         <ContextTreePanel
           scheme={scheme}
           treeState={sources.catalogs[scheme]}
+          writable={sources.writable[scheme]}
           projectId={sources.projectId}
           editorWorkId={sources.editorWorkId}
           activeDocumentId={sources.activeDocumentId}
@@ -252,18 +255,20 @@ export function SourcesBody({
   activeWorkId,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands" | "activeDocumentId"> & {
+}: Omit<
+  WriteSources,
+  "catalogs" | "writable" | "changes" | "changesCommands" | "activeDocumentId"
+> & {
   contextLive: boolean;
   /** Who owns main's document when it is a Work's Scratch note. */
   activeWorkId: string | null;
 }) {
   // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
   // in its Files menu, and the foot has no Scratch.
-  const { works, noWork } = useWorks(projectId);
+  const { noWork } = useWorks(projectId);
   const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
-  // An archived or deleted Work's Scratch shows, and takes nothing new until it is back.
-  const scratchWork = works?.find((work) => work.id === scratchWorkId);
-  const scratchOpen = Boolean(scratchWork && workLifecycleState(scratchWork) === "active");
+  // An archived or deleted Work's Scratch shows, and takes no change until it is back.
+  const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
   // Another owner's note (another Work's, a chat's) is in no list here.
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
@@ -359,14 +364,22 @@ export function SourcesBody({
     },
     [drafting, shell, onSelectFile, openReviewFile, onPicked],
   );
+  const writable = useMemo(
+    () =>
+      Object.fromEntries(
+        TREE_SCHEMES.map((scheme) => [scheme, scheme !== "scratch" || scratchWritable]),
+      ) as Record<TreeKey, boolean>,
+    [scratchWritable],
+  );
   const areas = useMemo<MoveArea[]>(
     () =>
       TREE_SCHEMES.flatMap((scheme) => {
         const tree = catalogs[scheme].tree;
-        const accepts = scheme !== "scratch" || scratchOpen;
-        return tree ? [{ scheme, owner: { workId: editorWorkId }, tree, accepts }] : [];
+        return tree
+          ? [{ scheme, owner: { workId: editorWorkId }, tree, writable: writable[scheme] }]
+          : [];
       }),
-    [catalogs, editorWorkId, scratchOpen],
+    [catalogs, editorWorkId, writable],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;
@@ -394,6 +407,7 @@ export function SourcesBody({
       onSelectFile: selectFile,
       onPicked,
       catalogs,
+      writable,
       changes,
       changesCommands,
     }),
@@ -407,6 +421,7 @@ export function SourcesBody({
       selectFile,
       onPicked,
       catalogs,
+      writable,
       changes,
       changesCommands,
     ],

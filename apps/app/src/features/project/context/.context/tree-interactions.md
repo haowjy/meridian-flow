@@ -205,7 +205,7 @@ lineage tree, not a menu-node projection or a mutable folder. Selected
 files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
-and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
+and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`useWorkSourceWritable`, the one answer for a Work's source, which the sidebar's Scratch pane reads too); an archived, deleted or unlisted Work's Scratch remains navigable, its rows offer only Copy to…, and its area is not `writable`. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.
 
 ## Selecting and dragging rows
@@ -242,7 +242,7 @@ they can carry).
 
 Dragging a selected row carries the selection in screen order, minus rows inside
 a selected folder; dragging an unselected row carries only it. Each row carries
-what its surface grants (`EntryGrant`: `move`, `copy`; an archived Work's Scratch
+what its surface grants (`EntryGrant`: `move`, `copy`; an ended Work's Scratch
 grants Copy, not Move), and a drag starts when the row has either. A selection
 that holds a row without the grant an action needs, or one that lost a row (a peer
 deleted it, or its parent isn't known yet), does nothing for that action rather
@@ -334,9 +334,9 @@ is a new item there and a branch in the list's `choose`. The contract:
   views, `into` (a folder's id, or the source's id), `scheme`, `destinationName` (the tree's current name), `area` (the tree it lands in), `position`,
   `asks` (a reference, or a source in another system than the target), `insideItself`,
   `unavailable` (carried entries no shown tree places), `crossesLists` (an account row into a project, or the reverse) and `canMove`. Copy has no
-  condition; Move is refused for a row in the Scratch of an archived Work or of one the project
-  doesn't list (it fails closed), judged here from each source's placement so a new drag
-  source never says it. `resolveDrop` returns null
+  condition; Move is refused for a row whose area is not `writable` (an ended Work's Scratch, or
+  one the project doesn't list: it fails closed), judged here from each source's placement so a
+  new drag source never says it. A drop on such an area lands nowhere. `resolveDrop` returns null
   when the target isn't a place a drop can land. `planMove` and `planCopy` turn it
   into a plan; an action plans from the resolution and never resolves identities
   again.

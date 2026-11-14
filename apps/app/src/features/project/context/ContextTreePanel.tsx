@@ -33,14 +33,20 @@ import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
+import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
+
+/** What a row offers in a tree that takes no change: its documents still copy out. */
+const READ_ONLY: EntryCapabilities = ["copy"];
 
 /**
  * An area's rows under its name, with New file, New folder and Import in the
- * heading. Creation requests come from the shell's `TreeCreationProvider`.
+ * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
+ * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
  */
 export function ContextTreePanel({
   treeState,
+  writable,
   projectId,
   editorWorkId,
   scheme,
@@ -49,6 +55,7 @@ export function ContextTreePanel({
   drop,
 }: {
   treeState: TreeViewResult;
+  writable: boolean;
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
@@ -174,7 +181,8 @@ export function ContextTreePanel({
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
-  const importScheme = imports !== null && isImportScheme(scheme) ? scheme : null;
+  const importScheme = writable && imports !== null && isImportScheme(scheme) ? scheme : null;
+  const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
@@ -184,15 +192,12 @@ export function ContextTreePanel({
             projectId,
             owner,
             scheme,
-            capabilities: [
-              "rename",
-              "move",
-              "copy",
-              ...(scheme !== "uploads" ? (["delete"] as const) : []),
-            ],
+            capabilities: writable
+              ? ["rename", "move", "copy", ...(scheme !== "uploads" ? (["delete"] as const) : [])]
+              : READ_ONLY,
             activeDocumentId,
             changed,
-            creation: schemeAllowsCreation(scheme)
+            creation: creates
               ? {
                   creating,
                   request: requestCreate,
@@ -223,6 +228,8 @@ export function ContextTreePanel({
       projectId,
       owner,
       scheme,
+      writable,
+      creates,
       activeDocumentId,
       changed,
       creating,
@@ -240,7 +247,7 @@ export function ContextTreePanel({
     ],
   );
 
-  const actions = schemeAllowsCreation(scheme) ? (
+  const actions = creates ? (
     <>
       <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
         <FilePlus aria-hidden />
