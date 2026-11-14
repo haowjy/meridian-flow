@@ -98,13 +98,15 @@ export class ProjectStandings {
     if (!answer) {
       const { session } = watched.handle;
       answer = standingIn(session.getSnapshot(), session.replay(), documentId);
-      if (answer.kind === "not-in-list") {
-        // Not in the project's list: it may have moved to the account's.
+      if (answer.kind !== "in-tree") {
+        // Gone from the project's list, it may have moved to the account's: a move out of a list
+        // is a delete and a purge there, and a create in the other.
         const mine = watched.account.session;
         const there = standingIn(mine.getSnapshot(), mine.replay(), documentId);
+        if (there.kind === "in-tree") answer = there;
         // An account list not yet read cannot say the document is nowhere.
-        if (there.kind === "waiting") answer = WAITING;
-        else if (there.kind !== "not-in-list") answer = there;
+        else if (answer.kind === "not-in-list" && there.kind === "waiting") answer = WAITING;
+        else if (answer.kind === "not-in-list" && there.kind !== "not-in-list") answer = there;
       }
       watched.answers.set(documentId, answer);
     }

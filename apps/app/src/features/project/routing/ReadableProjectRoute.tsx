@@ -349,13 +349,15 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         presented: () => presented?.documents(projectId) ?? [],
         isDraftOnly: (documentId) =>
           draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
+        leaveRoute: routeDocument.forget,
       }),
-    [draftOnlyDocuments, presented, projectId, user.userId],
+    [draftOnlyDocuments, presented, projectId, user.userId, routeDocument.forget],
   );
   const holdsBound = replayAddress?.kind === "held";
   // The route is bound to a document this source's tree lacks. Once the list has synced the
-  // replay says where it is now: found in another source, the route goes there; anywhere else
-  // (removed, out of sight) ends the binding and the address decides.
+  // replay says where it is now: found in another source (a move between two lists leaves it in
+  // neither for a moment), the route goes there. Until then the route holds; removal is the
+  // observer's (main opens the Trash view), and the writer pointing the route elsewhere ends it.
   const movedTo =
     holdsBound && addressTree.isComplete && boundDocumentId
       ? documentTree.findDocument(boundDocumentId)
@@ -371,12 +373,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     const ticket = navigation?.capture();
     const current = () => !!ticket && !!navigation?.isCurrent(ticket);
     const located = movedTo ? parseContextUri(movedTo.uri) : null;
-    if (
-      !located ||
-      (located.scheme === documentDestination.scheme &&
-        canonicalDocumentPath(located.path) === canonicalDocumentPath(documentDestination.path))
-    )
-      return routeDocument.forget();
+    if (!located) return;
     void openContext(
       contextRouteRequest({
         scheme: located.scheme,

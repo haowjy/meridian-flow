@@ -49,6 +49,7 @@ function setup(
     }),
     presented: () => presented,
     isDraftOnly: (documentId) => draftOnly.includes(documentId),
+    leaveRoute: () => undefined,
   });
   return { open, history };
 }

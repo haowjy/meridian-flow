@@ -32,6 +32,7 @@ export function createEditorDocumentCommand({
   read,
   presented,
   isDraftOnly,
+  leaveRoute,
 }: {
   projectId: string;
   accountId: string;
@@ -40,6 +41,8 @@ export function createEditorDocumentCommand({
   presented: () => readonly OpenDocument[];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
+  /** The writer points the route elsewhere: it is no longer the document it last resolved. */
+  leaveRoute: () => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -106,6 +109,7 @@ export function createEditorDocumentCommand({
       );
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
+        leaveRoute();
         const focused = target.documentId ?? preparedTab?.documentId;
         if (options?.focus && focused) armEditorFocus(focused);
       };
