@@ -260,6 +260,9 @@ export type DraftNoticeWords = {
  * A notice said on the rows it concerns (`RowWord`), for a list that has rows: a Discard's Undo
  * on every row it took, or each fact an Apply brought on its document's row.
  */
+const focused = new Set<number>();
+const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
+
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
   const undo = useNoticeUndo();
@@ -280,6 +283,9 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             label={renamed ? t`${name}, renamed` : t`${name}, applied`}
             word={renamed ? <Trans>Renamed</Trans> : <Trans>Applied</Trans>}
             sentence={facts.map(factSentence).join(" ")}
+            // The pressed ✓ or Apply all left with its row: the first row the Apply took has
+            // the focus, as a delete's Undo does.
+            focus={{ take: () => takeOnce(notice.id) }}
           />
         );
       },
