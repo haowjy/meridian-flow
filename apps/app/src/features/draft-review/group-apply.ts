@@ -77,12 +77,12 @@ export class GroupApply {
   private async postAlone() {
     for (const delay of [0, 1000, 2000, 4000]) {
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      try {
-        await this.post();
-        return;
-      } catch {
-        // Unknown delivery: the same id again.
-      }
+      // An unknown delivery is sent again with the same id; the server answers it once.
+      const delivered = await this.post().then(
+        () => true,
+        () => false,
+      );
+      if (delivered) return;
     }
     this.settle(null);
   }
