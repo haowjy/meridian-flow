@@ -44,7 +44,9 @@ ProseMirror's commands run over every range.
 
 `turnIntoBlockType` is a true toggle: choosing the current type returns the block to a paragraph. Heading levels
 are the schema's `HEADING_LEVELS`; Turn into, the toolbar's heading menu and slash all run the paragraph's
-`toggleHeadingLevel`, which retypes through `block-type.ts` so the block keeps its id and Yjs element. The heading menu
+`toggleHeadingLevel`, which changes only paragraphs, in every selection range, through `block-type.ts`, so each
+keeps its id and Yjs element and a fence under the selection is never a heading. Paragraph runs `setParagraph`, which
+also leaves a fence. The heading menu
 marks its current row by level alone, so a heading inside a list or quote still shows its level.
 
 Alignment has no fence: a select-all centers the chapter. A caret in a table cell aligns the table, because
