@@ -3,8 +3,10 @@
  * bound for open editors, and a script that drives model replies through the
  * real tool executor and the reply's save.
  */
+
 import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
+import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { modelResponses } from "@meridian/database/schema";
 import { afterEach } from "vitest";
@@ -158,7 +160,7 @@ export function useComposedRuntimes(db: () => Database) {
       const { call, save } = await begin();
       await steps(async (name, args) => {
         const result = await call(name, args);
-        const output = String(result.output);
+        const output = String(toolContentText(result.content));
         if (result.isError) throw new Error(`${name} failed:\n${output}`);
         return output;
       });

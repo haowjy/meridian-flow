@@ -2,11 +2,12 @@
  * The minimal Yjs writer: writes target blocks into an XmlFragment as per-word edits so every item the
  * target leaves alone keeps its identity, and a peer's concurrent edits to those items survive.
  *
- * Blocks are matched by key (equal blocks are untouched); a changed block pairs with the most similar
- * target block in its gap and is edited in place when both have the same type; a container is written
- * the same way over its children. Text is diffed by word and written as inserts and deletes (insert
- * first, as `applyTextEdit` does), marks by `format`, attributes by set or remove. Only a type change
- * or inline content of a different shape rebuilds the element. Never use
+ * `correspond` says which block is which (equal blocks are untouched); a paired block is edited in
+ * place, and a container is written the same way over its children. Inside a paragraph its atoms
+ * (breaks, images) pair the same way, and the text run in each gap between them is reconciled where
+ * it is. Text is diffed by word and written as inserts and deletes (insert first, as
+ * `applyTextEdit` does), marks by `format`, attributes by set or remove. Only a block that pairs
+ * with nothing (a type change) is deleted and rebuilt. Never use
  * `updateYFragment` here: its one prefix/suffix diff per text retypes everything between two edits, so a
  * peer's deletion in the middle would be undone.
  */
@@ -14,10 +15,11 @@ import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { splitTextBoundaries } from "../yjs-mutation.js";
-import { groupChildren, TextRun } from "../yjs-text-runs.js";
+import { TextRun } from "../yjs-text-runs.js";
+import { correspond } from "./correspond.js";
 import { readBlocks } from "./fragments.js";
 import { type RestorationLink, recordWriteBack } from "./restorations.js";
-import { blockKey, diffKeys, similarity, splitWords, wordDiff } from "./tokens.js";
+import { diffKeys, splitWords, wordDiff } from "./tokens.js";
 
 type Attrs = Record<string, unknown>;
 
@@ -54,12 +56,9 @@ export function pmToY(node: PMNode): Y.XmlElement {
 export interface WriteStats {
   kept: number;
   edited: number; // written in place: text/attr edits on the existing element
-  replaced: number; // element deleted and rebuilt (type change, different inline shape)
   inserted: number;
   deleted: number;
 }
-
-const flat = (b: PMNode) => b.isTextblock && b.content.size === b.textContent.length;
 
 /** Edits one run of adjacent Y.XmlText into the target text and marks, touching only what changed. */
 function editText(text: TextRun, target: readonly PMNode[]) {
@@ -150,7 +149,7 @@ export function writeBlocks(
   target: readonly PMNode[],
   copies?: RestorationLink[],
 ): WriteStats {
-  const stats: WriteStats = { kept: 0, edited: 0, replaced: 0, inserted: 0, deleted: 0 };
+  const stats: WriteStats = { kept: 0, edited: 0, inserted: 0, deleted: 0 };
   writeChildren(frag, readBlocks(frag, schema), target, stats, copies, true);
   return stats;
 }
@@ -173,73 +172,26 @@ function writeChildren(
   copies: RestorationLink[] | undefined,
   record: boolean,
 ): void {
-  const preserve = copies !== undefined;
+  const { partner } = correspond(current, target);
   // Gaps between equal blocks, as [curFrom, curTo, tgtFrom, tgtTo].
   const gaps: Array<[number, number, number, number]> = [];
-  let ci = 0;
-  let ti = 0;
-  let g: [number, number, number, number] | null = null;
-  for (const [op, n] of diffKeys(current.map(blockKey), target.map(blockKey))) {
-    if (op === DIFF_EQUAL) {
-      if (g) gaps.push(g);
-      g = null;
-      ci += n;
-      ti += n;
-      stats.kept += n;
-    } else {
-      g ??= [ci, ci, ti, ti];
-      if (op === DIFF_DELETE) g[1] = ci += n;
-      else g[3] = ti += n;
-    }
-  }
-  if (g) gaps.push(g);
+  let [ci, ti] = [0, 0];
+  const close = (c1: number, t1: number) => {
+    if (c1 > ci || t1 > ti) gaps.push([ci, c1, ti, t1]);
+  };
+  partner.forEach((t, c) => {
+    if (t < 0 || !current[c].eq(target[t])) return;
+    close(c, t);
+    [ci, ti] = [c + 1, t + 1];
+    stats.kept++;
+  });
+  close(current.length, target.length);
   const doc = parent.doc as Y.Doc;
   // Right to left, so earlier element indexes stay valid.
   for (const [c0, c1, t0, t1] of gaps.reverse()) {
-    // Pair old and new blocks in order by similarity: an edited block is written in place.
     const pairs: Array<[number, number]> = [];
-    let from = c0;
-    for (let t = t0; t < t1; t++) {
-      let best = -1;
-      // A lone rewrite has no competing alignment: retain its element even when no words
-      // survived, so a late key still has a live parent.
-      const oneToOne =
-        c1 - c0 === 1 &&
-        t1 - t0 === 1 &&
-        current[c0].type === target[t].type &&
-        ((flat(current[c0]) && flat(target[t])) || nests(current[c0], target[t]));
-      let bestSim = preserve || oneToOne ? -1 : 0.3;
-      for (let c = from; c < c1; c++) {
-        // Same type only: a cross-type pair can never be edited in place, and would steal the
-        // slot of the block that can.
-        const sim =
-          current[c].type === target[t].type
-            ? similarity(current[c], target[t], true, Math.max(bestSim, 0))
-            : 0;
-        if (
-          sim > bestSim ||
-          (current[c].textContent === "" &&
-            target[t].type === current[c].type &&
-            best < 0 &&
-            c1 - c0 === t1 - t0)
-        ) {
-          bestSim = Math.max(sim, bestSim);
-          best = c;
-        }
-      }
-      if (best >= 0) {
-        pairs.push([best, t]);
-        from = best + 1;
-      }
-    }
-    const rebuilt =
-      preserve &&
-      (pairs.length !== c1 - c0 ||
-        pairs.length !== t1 - t0 ||
-        pairs.some(
-          ([c, t]) =>
-            !nests(current[c], target[t]) && !align(parent.get(c) as Y.XmlElement, target[t]),
-        ));
+    for (let c = c0; c < c1; c++) if (partner[c] >= 0) pairs.push([c, partner[c]]);
+    const rebuilt = copies !== undefined && (pairs.length !== c1 - c0 || pairs.length !== t1 - t0);
     // Only a structural gap needs a source map; capture it before deleting containers can
     // collect their descendants.
     const before =
@@ -290,13 +242,9 @@ function writeChildren(
         editAttrs(el, tgt);
         writeChildren(el, children(current[c]), children(tgt), stats, copies, record && !rebuilt);
         stats.edited++;
-      } else if (align(el, tgt)) {
-        editContent(el, tgt);
-        stats.edited++;
       } else {
-        parent.delete(c, 1);
-        parent.insert(c, [pmToY(tgt)]);
-        stats.replaced++;
+        editContent(el, current[c], tgt);
+        stats.edited++;
       }
     }
     if (before && copies)
@@ -319,64 +267,123 @@ const children = (node: PMNode): PMNode[] => {
   return out;
 };
 
-/** Adjacent marked PM text nodes share one XmlText. Atoms split runs, not whole paragraphs. */
-function runs(node: PMNode): Array<PMNode | PMNode[]> {
-  const out: Array<PMNode | PMNode[]> = [];
-  node.forEach((child) => {
-    const last = out.at(-1);
-    if (!child.isText) out.push(child);
-    else if (Array.isArray(last)) last.push(child);
-    else out.push([child]);
-  });
-  return out;
+/** An XmlText holding `nodes`, text with its marks. */
+function textOf(nodes: readonly PMNode[]): Y.XmlText {
+  const text = new Y.XmlText();
+  let at = 0;
+  for (const n of nodes) {
+    text.insert(at, n.text ?? "", markAttrs(n));
+    at += n.text?.length ?? 0;
+  }
+  return text;
 }
-
-/** Where one child of an element goes in the target: a run of text (none yet, or all of it) or an element. */
-type Pair =
-  | { texts: Y.XmlText[] | undefined; nodes: PMNode[] }
-  | { element: Y.XmlElement; node: PMNode };
 
 /**
- * Pairs the element's children with the target's, or undefined when the target needs a different
- * structure. Adjacent texts are one run, so a paragraph that two peers typed into is still one
- * run. A text emptied beside an atom has no counterpart in the target and stays; a run the target
- * drops is edited to nothing, and a run the target adds after the last child is created.
+ * Edits an element to `target`, which has the type of the node `cur` it was read as. Its atoms
+ * (breaks, images, inline nodes) pair with the target's by `correspond` and are edited in place,
+ * an unpaired one is deleted or inserted where it stands. In each gap between two paired atoms
+ * the text there is one run, because adjacent texts are one run (`yjs-text-runs.ts`), and it is
+ * reconciled with the target's text of the gap: a run only the target has is created there, a run
+ * only the element has is emptied, never deleted.
  */
-function align(el: Y.XmlElement, target: PMNode): Pair[] | undefined {
-  if (el.nodeName !== target.type.name) return undefined;
-  const groups = groupChildren(el);
-  const pairs: Pair[] = [];
-  let at = 0;
-  for (const node of runs(target)) {
-    let group = groups[at];
-    if (Array.isArray(node)) {
-      if (group !== undefined && !Array.isArray(group)) return undefined;
-      pairs.push({ texts: group, nodes: node });
-    } else {
-      if (Array.isArray(group) && group.every((text) => text.length === 0)) group = groups[++at];
-      if (!(group instanceof Y.XmlElement) || !align(group, node)) return undefined;
-      pairs.push({ element: group, node });
+function editContent(el: Y.XmlElement, cur: PMNode, target: PMNode): void {
+  editAttrs(el, target);
+  const atoms = el
+    .toArray()
+    .filter((child): child is Y.XmlElement => child instanceof Y.XmlElement);
+  const [curAtoms, targetKids] = [children(cur).filter((kid) => !kid.isText), children(target)];
+  const tgtAtoms = targetKids.filter((kid) => !kid.isText);
+  const { partner } = correspond(curAtoms, tgtAtoms);
+  const atomAt = targetKids.flatMap((kid, at) => (kid.isText ? [] : [at]));
+  const paired: Array<[number, number]> = [];
+  partner.forEach((b, a) => {
+    if (b >= 0) {
+      editContent(atoms[a], curAtoms[a], tgtAtoms[b]);
+      paired.push([a, b]);
     }
-    at++;
+  });
+  // Gaps right to left: [first atom, end atom] on each side, among the unpaired ones.
+  const bounds = [...paired, [atoms.length, tgtAtoms.length] as [number, number]];
+  for (let g = bounds.length - 1; g >= 0; g--) {
+    const [aEnd, bEnd] = bounds[g];
+    const [aFrom, bFrom] = g > 0 ? [bounds[g - 1][0] + 1, bounds[g - 1][1] + 1] : [0, 0];
+    for (let a = aEnd - 1; a >= aFrom; a--) el.delete(el.toArray().indexOf(atoms[a]), 1);
+    const kids = el.toArray();
+    const from = g > 0 ? kids.indexOf(atoms[bounds[g - 1][0]]) + 1 : 0;
+    const to = aEnd < atoms.length ? kids.indexOf(atoms[aEnd]) : kids.length;
+    const texts = kids.slice(from, to) as Y.XmlText[];
+    // The target's nodes in this gap, with its atoms and where they fall in its text.
+    const [tStart, tEnd] = [
+      bFrom > 0 ? atomAt[bFrom - 1] + 1 : 0,
+      bEnd < tgtAtoms.length ? atomAt[bEnd] : targetKids.length,
+    ];
+    const wanted = targetKids.slice(tStart, tEnd);
+    const wantedText = wanted.filter((n) => n.isText);
+    if (texts.length === 0) {
+      let run: PMNode[] = [];
+      const made: Array<Y.XmlText | Y.XmlElement> = [];
+      const flush = () => {
+        if (run.length) made.push(textOf(run));
+        run = [];
+      };
+      for (const n of wanted) {
+        if (n.isText) run.push(n);
+        else {
+          flush();
+          made.push(pmToY(n));
+        }
+      }
+      flush();
+      if (made.length) el.insert(from, made);
+      continue;
+    }
+    editText(new TextRun(texts), wantedText);
+    let offset = wantedText.reduce((sum, n) => sum + (n.text?.length ?? 0), 0);
+    // Atoms from the last, so an earlier position is unmoved by a later split.
+    for (let k = wanted.length - 1; k >= 0; k--) {
+      if (wanted[k].isText) offset -= wanted[k].text?.length ?? 0;
+      else insertAtom(el, texts, offset, pmToY(wanted[k]), from);
+    }
   }
-  const rest = groups.slice(at);
-  if (rest.length > 1 || (rest[0] !== undefined && !Array.isArray(rest[0]))) return undefined;
-  if (rest[0]) pairs.push({ texts: rest[0], nodes: [] });
-  return pairs;
 }
 
-function editContent(el: Y.XmlElement, target: PMNode): void {
-  editAttrs(el, target);
-  for (const pair of align(el, target) as Pair[]) {
-    if ("element" in pair) editContent(pair.element, pair.node);
-    else {
-      let texts = pair.texts;
-      if (!texts) {
-        texts = [new Y.XmlText()];
-        el.insert(el.length, texts);
+/**
+ * Puts `atom` at `offset` in the run of `texts`, which starts at child `from` of `el`; inside a text,
+ * its tail moves to a text after the atom. Atoms at one offset go in from the last, each before the
+ * one inserted before it.
+ */
+function insertAtom(
+  el: Y.XmlElement,
+  texts: readonly Y.XmlText[],
+  offset: number,
+  atom: Y.XmlElement,
+  from: number,
+): void {
+  let start = 0;
+  for (const text of texts) {
+    const end = start + text.length;
+    if (offset <= end) {
+      const index = el.toArray().indexOf(text);
+      if (offset === end) el.insert(index + 1, [atom]);
+      else if (offset === start) el.insert(from, [atom]);
+      else {
+        const tail = new Y.XmlText();
+        let at = 0;
+        let seen = 0;
+        for (const part of text.toDelta() as Array<{ insert: string; attributes?: Attrs }>) {
+          const skip = Math.max(0, offset - start - seen);
+          seen += part.insert.length;
+          if (skip >= part.insert.length) continue;
+          const rest = part.insert.slice(skip);
+          tail.insert(at, rest, part.attributes);
+          at += rest.length;
+        }
+        text.delete(offset - start, end - offset);
+        el.insert(index + 1, [atom, tail]);
       }
-      editText(new TextRun(texts), pair.nodes);
+      return;
     }
+    start = end;
   }
 }
 

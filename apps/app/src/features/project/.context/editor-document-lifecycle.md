@@ -18,7 +18,8 @@ not authorization for the requested document.
 - **Stable document ID:** `ProjectDocumentNavigationAdapter` opens known initialized content through
   the resource owner and commits main's address. Every door opens in main, a chat's included. A
   cancelled decision publishes nothing.
-- **Uploads** have no editor address. No door opens them in main.
+- **Uploads** have no editor address. Every door opens one in `UploadViewerDialog`, not in main
+  or the side.
 - **A new document** is a node of the list at once, in Unfiled: its address is its placement, and
   the route is bound to its id, so a rename or a move repairs the URL to the same document.
 

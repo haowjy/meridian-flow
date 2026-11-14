@@ -77,6 +77,7 @@ import type {
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
+  ToolContentPart,
   Turn,
 } from "@meridian/contracts/threads";
 import type {
@@ -112,7 +113,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
-import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+import { MediaResolutionError, type MediaResolverPort } from "../ports/media-resolver.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -120,6 +121,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { admitRun, readContinuation } from "../spawn/run-admission.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { jsonContent, textContent } from "../tools/tool-content.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -154,6 +156,7 @@ import {
   readCompactionTrigger,
   reservationTurn,
 } from "./local-turn.js";
+import { requestCarriesMediaLink } from "./media-link-window.js";
 import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
@@ -163,7 +166,11 @@ import {
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
-import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
+import {
+  createPrefixCacheStateService,
+  linkWindowSeconds,
+  type PrefixCacheState,
+} from "./prefix-cache-state.js";
 import {
   loadReferenceReads,
   type ReferenceEvidence,
@@ -199,6 +206,7 @@ import {
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
+  lazyThreadModel,
   persistPreparedPromptBake,
 } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -235,7 +243,7 @@ export interface OrchestratorRepositories {
   threads: ThreadRepository;
   turns: TurnRepository;
   promptBakes: ThreadRepositories["promptBakes"];
-  imageInclusions: ThreadRepositories["imageInclusions"];
+  mediaInclusions: ThreadRepositories["mediaInclusions"];
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ThreadRepositories["executionReports"];
@@ -288,7 +296,9 @@ export interface OrchestratorDeps {
   handoffBriefs: HandoffBriefStopper;
   /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
-  imageAssets: ImageAssetPort;
+  mediaResolver: MediaResolverPort;
+  /** Test seam: the span a signed media link stays identical for, instead of the cache lifetime. */
+  mediaLinkWindowSeconds?: number;
   /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
@@ -346,7 +356,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       const error =
         input.error instanceof RequestPreparationError ? input.error.original : input.error;
       const contextError = error instanceof ThreadConversationContextError ? error : null;
-      const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
+      const mediaResolutionError = error instanceof MediaResolutionError ? error : null;
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
       const failedTurn = await deps.repos.turns.findById(input.turnId);
@@ -370,8 +380,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   (error instanceof CompactionPreparationError
                     ? error.reason
                     : contextError?.code) ??
-                  (imageResolutionError
-                    ? "image_resolution_failed"
+                  (mediaResolutionError
+                    ? "media_resolution_failed"
                     : requestPreparationFailed
                       ? "request_preparation_failed"
                       : "execution_error"),
@@ -1160,9 +1170,11 @@ async function persistToolOutcome(input: {
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
       : { refusal: "notes_step" };
-  const output = denied
-    ? result
-    : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
+  const content = denied
+    ? jsonContent(result)
+    : textContent(
+        "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.",
+      );
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
       ? [
@@ -1182,7 +1194,7 @@ async function persistToolOutcome(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output,
+        content,
         result,
         isError: denied,
       },
@@ -1196,7 +1208,7 @@ async function persistToolOutcome(input: {
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output,
+          content,
           result,
           isError: denied,
         },
@@ -1216,8 +1228,11 @@ function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
 }
 
 /** A write's tool-result fields: the model's text and the typed result beside it. */
-function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
-  return { output: renderAgentEditResult(result), result: toJsonValue(result) };
+function writeResultContent(result: AgentEditResultV1): {
+  content: ToolContentPart[];
+  result: JsonValue;
+} {
+  return { content: textContent(renderAgentEditResult(result)), result: toJsonValue(result) };
 }
 
 async function persistUncommittedWriteResult(input: {
@@ -1239,7 +1254,7 @@ async function persistUncommittedWriteResult(input: {
   const toolCallId = content?.toolCallId ?? "";
   const staged = stagedWriteResult(input.block);
   const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
-  const { output, result } = writeResultContent(
+  const { content: resultContent, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
       status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
@@ -1262,7 +1277,7 @@ async function persistUncommittedWriteResult(input: {
         responseId: input.block.responseId,
         blockType: "tool_result",
         sequence: input.block.sequence,
-        content: { toolCallId, output, result, isError: true },
+        content: { toolCallId, content: resultContent, result, isError: true },
         provider: input.block.provider,
         status: "complete",
       });
@@ -1270,7 +1285,7 @@ async function persistUncommittedWriteResult(input: {
         result: localBlockFromEvent(block),
         events: [
           { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, output, result, isError: true },
+          { type: "tool.result", toolCallId, content: resultContent, result, isError: true },
         ],
       };
     },
@@ -1308,7 +1323,7 @@ async function persistCommittedWriteResult(input: {
   const toolCallId = content?.toolCallId ?? "";
   // The settled receipt describes the same document and destination the staged result named.
   const staged = stagedWriteResult(input.block);
-  const { output, result } = writeResultContent({
+  const { content: resultContent, result } = writeResultContent({
     ...input.result,
     ...(staged?.path ? { path: staged.path } : {}),
     ...(staged?.notice ? { notice: staged.notice } : {}),
@@ -1326,7 +1341,7 @@ async function persistCommittedWriteResult(input: {
         responseId: input.block.responseId,
         blockType: "tool_result",
         sequence: input.block.sequence,
-        content: toJsonValue({ toolCallId, output, result, metadata }),
+        content: toJsonValue({ toolCallId, content: resultContent, result, metadata }),
         provider: input.block.provider,
         status: "complete",
       });
@@ -1334,7 +1349,7 @@ async function persistCommittedWriteResult(input: {
         result: localBlockFromEvent(block),
         events: [
           { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, output, result },
+          { type: "tool.result", toolCallId, content: resultContent, result },
         ],
       };
     },
@@ -1353,6 +1368,7 @@ async function persistCommittedWriteResult(input: {
  */
 async function prepareReferenceReads(input: {
   deps: OrchestratorDeps;
+  thread: Thread;
   threadId: ThreadId;
   userTurnId: string;
   assistantTurnId: string;
@@ -1367,6 +1383,14 @@ async function prepareReferenceReads(input: {
     threadId: input.threadId,
     assistantTurnId: input.assistantTurnId,
     reader: input.deps.referenceReader,
+    model: lazyThreadModel({
+      thread: input.thread,
+      agentRevisions: input.deps.agentRevisions,
+      threads: input.deps.repos.threads,
+      toolRegistry: input.deps.toolRegistry,
+      gateway: input.deps.gateway,
+      baseTools: input.deps.toolExecutor.getDefinitions?.(),
+    }),
     signal: input.signal,
     recordingFrontier: frontierLookup(
       input.deps,
@@ -1886,6 +1910,7 @@ async function executeLoop({
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
+          thread,
           threadId: input.threadId,
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,
@@ -2285,6 +2310,15 @@ async function executeLoop({
             model: built.resolvedModel,
             now: Date.now(),
             knownLocalTurns: allTurns,
+            ...(requestCarriesMediaLink(request)
+              ? {
+                  mediaLinkWindowSeconds: linkWindowSeconds(
+                    built.resolvedModel,
+                    thread.kind,
+                    deps.mediaLinkWindowSeconds,
+                  ),
+                }
+              : {}),
           });
         } catch (cause) {
           predictedCacheState = { state: "cold", reason: "facts_unavailable" };
@@ -2643,6 +2677,7 @@ async function executeLoop({
                   batch,
                   credited,
                   replyMutations: scope.reply,
+                  ...(built.resolvedModel ? { model: built.resolvedModel } : {}),
                 },
               );
               blockSeq = blockSeqRef.value;
@@ -2753,7 +2788,7 @@ async function executeLoop({
         if (optional && !terminalControl) continue;
       } else if (
         err instanceof RequestPreparationError ||
-        err instanceof ImageAssetResolutionError ||
+        err instanceof MediaResolutionError ||
         err instanceof ThreadConversationContextError
       ) {
         throw err instanceof RequestPreparationError ? err : new RequestPreparationError(err);

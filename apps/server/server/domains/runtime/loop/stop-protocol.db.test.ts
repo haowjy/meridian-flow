@@ -985,7 +985,8 @@ else
         maxOutputTokens: 100,
         promptCache: { kind: "automatic", shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] },
-        capabilities: new Set(),
+        wire: "openai-compatible",
+        inputModalities: ["text"],
       };
       const base = scriptedGateway({ usage: lowUsage });
       // An endpoint that accepts the request and never answers: the provider output never starts.

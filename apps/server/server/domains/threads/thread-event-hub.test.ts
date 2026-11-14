@@ -316,7 +316,7 @@ describe("thread event hub committed invalidations", () => {
     await journal.appendEvent(THREAD_ID, {
       type: "tool.result",
       toolCallId: "tool-handoff",
-      output: "complete",
+      content: [{ type: "text", text: "complete" }],
       isError: false,
     });
     releaseReplayRead();

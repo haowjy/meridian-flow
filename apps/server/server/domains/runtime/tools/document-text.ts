@@ -19,12 +19,15 @@ export type DocumentRef = Pick<DocumentRevisionEvidence, "documentId" | "uri">;
 export interface DocumentTextPolicy {
   /** Whether the tool's results hold document text it read or text it wrote. */
   kind: "read" | "write";
-  /** `output` is what the model read; `result` the typed value beside it, when stored. */
+  /**
+   * `result` is the typed value the stored `content` was rendered from. The returned `text`
+   * replaces the whole `content`, so a media part in it goes with the text it came with.
+   */
   elide(
-    block: { input?: JsonObject; output?: JsonValue; result?: JsonValue },
+    block: { input?: JsonObject; result?: JsonValue },
     changed: readonly DocumentRef[],
     treatment: DocumentTextTreatment,
-  ): { input?: JsonObject; output?: JsonValue };
+  ): { input?: JsonObject; text: string };
 }
 
 export function reshownReadStub(documents: string): string {
@@ -54,30 +57,24 @@ export const readDocumentText: DocumentTextPolicy = {
   kind: "read",
   elide({ input = {} }, changed, treatment) {
     const documents = documentsLabel(changed, input);
-    return {
-      output: readStub(documents, treatment),
-    };
+    return { text: readStub(documents, treatment) };
   },
 };
 
 export const writeDocumentText: DocumentTextPolicy = {
   kind: "write",
-  elide({ input = {}, output }, changed, treatment) {
+  elide({ input = {} }, changed, treatment) {
     const documents = documentsLabel(changed, input);
     if (treatment === "history") {
-      return { output: `[edit applied to ${documents} (${input.command})]` };
+      return { text: `[edit applied to ${documents} (${input.command})]` };
     }
     const { content: _content, find: _find, around: _around, ...kept } = input;
     return {
       ...(["create", "insert", "replace"].includes(String(input.command)) ? { input: kept } : {}),
-      ...(output !== undefined
-        ? {
-            output:
-              treatment === "reshown"
-                ? `[Cleared at compaction: you edited ${documents} here (${input.command}); its current text is shown after the summary.]`
-                : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
-          }
-        : {}),
+      text:
+        treatment === "reshown"
+          ? `[Cleared at compaction: you edited ${documents} here (${input.command}); its current text is shown after the summary.]`
+          : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
     };
   },
 };
@@ -85,15 +82,14 @@ export const writeDocumentText: DocumentTextPolicy = {
 /** A grep's passages from changed files are cleared; its history form keeps files and counts. */
 export const grepDocumentText: DocumentTextPolicy = {
   kind: "read",
-  elide({ input = {}, output, result }, changed, treatment) {
-    const typed = isGrepResult(result) ? result : isGrepResult(output) ? output : undefined;
-    if (!typed)
-      return { output: `[Cleared at compaction: grep results; grep again for current text]` };
-    const grepped = typed as unknown as GrepToolResult;
-    if (treatment === "history") return { output: renderGrepFileList(grepped) };
+  elide({ input = {}, result }, changed, treatment) {
+    if (!isGrepResult(result))
+      return { text: `[Cleared at compaction: grep results; grep again for current text]` };
+    const grepped = result as unknown as GrepToolResult;
+    if (treatment === "history") return { text: renderGrepFileList(grepped) };
     const uris = new Set(changed.map((ref) => ref.uri));
     return {
-      output: renderGrepFiles(grepped, input, (hit) => changed.length === 0 || uris.has(hit.uri)),
+      text: renderGrepFiles(grepped, input, (hit) => changed.length === 0 || uris.has(hit.uri)),
     };
   },
 };
@@ -106,7 +102,7 @@ export const historyDocumentText: DocumentTextPolicy = {
   kind: "read",
   elide(_block, documents, treatment) {
     return {
-      output:
+      text:
         treatment === "history"
           ? "[thread_history output omitted]"
           : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}. Call thread_history again.]`,

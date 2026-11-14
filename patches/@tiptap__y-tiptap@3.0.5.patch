@@ -20,7 +20,7 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c65754a9c 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658e69e242f 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
 @@ -753,35 +753,14 @@ class ProsemirrorBinding {
@@ -84,7 +84,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1104,11 +1070,46 @@ const normalizePNodeContent = (pnode) => {
+@@ -1104,11 +1070,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -95,17 +95,32 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
 + * @return {Array<Y.XmlElement|Y.XmlHook|Array<Y.XmlText>>}
 + */
 +const groupYChildren = (yChildren) => {
-+  const groups = [];
++  const all = [];
 +  for (const child of yChildren) {
-+    const last = groups[groups.length - 1];
++    const last = all[all.length - 1];
 +    if (!(child instanceof Y__namespace.XmlText)) {
-+      groups.push(child);
++      all.push(child);
 +    } else if (last instanceof Array) {
 +      last.push(child);
 +    } else {
-+      groups.push([child]);
++      all.push([child]);
 +    }
 +  }
++  // A run of texts that are all empty is left by a writer that emptied a run beside an element
++  // (an empty text is kept, never deleted, so a peer's concurrent insert into it survives). The
++  // editor never holds an empty text, so it is not a child to compare; `gapBefore` counts the
++  // ones before each group, and after the last, so fragment indices still count them.
++  const groups = [];
++  const gapBefore = [0];
++  for (const group of all) {
++    if (group instanceof Array && group.every((ytext) => ytext.length === 0)) {
++      gapBefore[gapBefore.length - 1] += group.length;
++    } else {
++      groups.push(group);
++      gapBefore.push(0);
++    }
++  }
++  groups.gapBefore = gapBefore;
 +  return groups
 +};
 +
@@ -134,7 +149,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1131,7 +1132,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1131,7 +1147,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -143,7 +158,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1140,13 +1141,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1140,13 +1156,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -161,7 +176,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1168,7 +1170,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1168,7 +1185,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -170,7 +185,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1179,7 +1181,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1179,7 +1196,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -179,7 +194,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1188,7 +1190,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1188,7 +1205,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -188,7 +203,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1233,22 +1235,50 @@ const ytextTrans = (ytext) => {
+@@ -1233,22 +1250,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -249,7 +264,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1334,19 +1364,22 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1334,19 +1379,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -261,7 +276,8 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
    let right = 0;
 +  // Groups to fragment indices: the left side may replace a group of n texts with one node.
 +  let leftShift = 0;
-+  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + leftShift;
++  const gapBefore = yChildren.gapBefore;
++  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + gapBefore.slice(0, groupIndex + 1).reduce((n, g) => n + g, 0) + leftShift;
    // find number of matching elements from left
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
@@ -275,7 +291,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        } else {
          break
        }
-@@ -1356,10 +1389,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1356,10 +1405,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -288,7 +304,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        } else {
          break
        }
-@@ -1372,7 +1405,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1372,7 +1421,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -297,7 +313,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
          if (!equalYTextPText(leftY, leftP)) {
            updateYText(leftY, leftP, meta);
          }
-@@ -1427,33 +1460,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1427,33 +1476,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -329,7 +345,8 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
 -      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
 -      yDomFragment.delete(left, yDelLen);
 +      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
-+      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - rawIndex(left));
++      // Delete the groups, not the span between them: an empty text there is kept for a peer to type into.
++      for (let g = left + yDelLen - 1; g >= left; g--) yDomFragment.delete(rawIndex(g), yGroupLength(yChildren[g]));
      }
      if (left + right < pChildCnt) {
        const ins = [];
@@ -341,7 +358,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
      }
    }, ySyncPluginKey);
  };
-@@ -1797,6 +1831,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +1848,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -385,7 +402,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2422,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2439,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -435,7 +452,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
        }
      }
    }
-@@ -2388,6 +2471,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2488,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -444,7 +461,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..7312623516e5088b9cf040c842a5c63c
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a021a7391f 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..5ab1f0c4e20b9e8a413f9db355b02f6afef33ed6 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
 @@ -719,35 +719,14 @@ class ProsemirrorBinding {
@@ -508,7 +525,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1070,11 +1036,46 @@ const normalizePNodeContent = (pnode) => {
+@@ -1070,11 +1036,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -519,17 +536,32 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
 + * @return {Array<Y.XmlElement|Y.XmlHook|Array<Y.XmlText>>}
 + */
 +const groupYChildren = (yChildren) => {
-+  const groups = [];
++  const all = [];
 +  for (const child of yChildren) {
-+    const last = groups[groups.length - 1];
++    const last = all[all.length - 1];
 +    if (!(child instanceof Y.XmlText)) {
-+      groups.push(child);
++      all.push(child);
 +    } else if (last instanceof Array) {
 +      last.push(child);
 +    } else {
-+      groups.push([child]);
++      all.push([child]);
 +    }
 +  }
++  // A run of texts that are all empty is left by a writer that emptied a run beside an element
++  // (an empty text is kept, never deleted, so a peer's concurrent insert into it survives). The
++  // editor never holds an empty text, so it is not a child to compare; `gapBefore` counts the
++  // ones before each group, and after the last, so fragment indices still count them.
++  const groups = [];
++  const gapBefore = [0];
++  for (const group of all) {
++    if (group instanceof Array && group.every((ytext) => ytext.length === 0)) {
++      gapBefore[gapBefore.length - 1] += group.length;
++    } else {
++      groups.push(group);
++      gapBefore.push(0);
++    }
++  }
++  groups.gapBefore = gapBefore;
 +  return groups
 +};
 +
@@ -558,7 +590,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1097,7 +1098,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1097,7 +1113,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -567,7 +599,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1106,13 +1107,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1106,13 +1122,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -585,7 +617,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1134,7 +1136,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1134,7 +1151,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -594,7 +626,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1145,7 +1147,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1145,7 +1162,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -603,7 +635,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1154,7 +1156,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1154,7 +1171,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -612,7 +644,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1199,22 +1201,50 @@ const ytextTrans = (ytext) => {
+@@ -1199,22 +1216,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -673,7 +705,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1300,19 +1330,22 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1300,19 +1345,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -685,7 +717,8 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
    let right = 0;
 +  // Groups to fragment indices: the left side may replace a group of n texts with one node.
 +  let leftShift = 0;
-+  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + leftShift;
++  const gapBefore = yChildren.gapBefore;
++  const rawIndex = (groupIndex) => yChildren.slice(0, groupIndex).reduce((n, g) => n + yGroupLength(g), 0) + gapBefore.slice(0, groupIndex + 1).reduce((n, g) => n + g, 0) + leftShift;
    // find number of matching elements from left
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
@@ -699,7 +732,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
        } else {
          break
        }
-@@ -1322,10 +1355,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1322,10 +1371,10 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -712,7 +745,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
        } else {
          break
        }
-@@ -1338,7 +1371,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1338,7 +1387,7 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -721,7 +754,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
          if (!equalYTextPText(leftY, leftP)) {
            updateYText(leftY, leftP, meta);
          }
-@@ -1393,33 +1426,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1393,33 +1442,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -753,7 +786,8 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
 -      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
 -      yDomFragment.delete(left, yDelLen);
 +      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
-+      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - rawIndex(left));
++      // Delete the groups, not the span between them: an empty text there is kept for a peer to type into.
++      for (let g = left + yDelLen - 1; g >= left; g--) yDomFragment.delete(rawIndex(g), yGroupLength(yChildren[g]));
      }
      if (left + right < pChildCnt) {
        const ins = [];
@@ -765,7 +799,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
      }
    }, ySyncPluginKey);
  };
-@@ -1763,6 +1797,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +1814,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -809,7 +843,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..02ebc486cfe88619702bc3eb8086a4a0
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2388,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2405,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;

@@ -37,7 +37,7 @@ export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
   {
     type: "tool.result",
     toolCallId: GOLDEN_TOOL_CALL_ID,
-    output: "file contents",
+    content: [{ type: "text", text: "file contents" }],
   },
   {
     type: "turn.completed",

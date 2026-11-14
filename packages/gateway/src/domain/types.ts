@@ -29,12 +29,8 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
 /** Tokenizer family used for conservative model-input estimation. */
 export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
 
-/**
- * Declared LLM capability flags, from the model's row in config/registry.ts.
- * Only `image_input` is read today (the context builder keeps images for models
- * that take them); add a value when something branches on it.
- */
-export type Capability = "image_input";
+/** What a model reads as input, in the models.dev vocabulary. */
+export type InputModality = "text" | "image" | "pdf" | "audio" | "video";
 
 /** Provider cache lifetimes are recorded as the provider states them, in seconds. Anything that must beat a lifetime computes its buffer from these values. */
 export const DEFAULT_SUBAGENT_PROMPT_CACHE_TTL = 5 * 60;
@@ -89,6 +85,8 @@ export interface ReasoningSupport {
  * ProviderConfig that declares the model.
  */
 export interface ModelInfo {
+  /** The serving provider's adapter, which decides how media is placed and whether a link works. Set by the gateway. */
+  wire: BuiltinAdapter;
   reasoning: ReasoningSupport;
   /** The serving provider wants Anthropic's tool-schema projection (`anthropicToolSchema`); others get the schema as given. */
   projectToolSchema?: true;
@@ -102,8 +100,16 @@ export interface ModelInfo {
   contextWindow: number;
   maxOutputTokens: number;
   promptCache: PromptCacheDescriptor;
-  capabilities: Set<Capability>;
+  /** Input kinds the model takes, copied from models.dev `modalities.input`. */
+  inputModalities: readonly InputModality[];
+  /** Largest file in bytes its provider fetches by link, where the provider documents one. */
+  maxLinkBytes?: number;
+  /** The serving host fetches image links on a wire that doesn't by default (`ProviderConfig.imageLinks`). Set by the gateway. */
+  imageLinks?: true;
 }
+
+/** A model as configured on a provider; the gateway adds the provider's wire format and link setting. */
+export type ProviderModel = Omit<ModelInfo, "wire" | "imageLinks">;
 
 /**
  * Canonical content part — the building block of every gateway Message.
@@ -111,8 +117,9 @@ export interface ModelInfo {
  * Each variant corresponds to one provider concept:
  * - TextPart: Anthropic `text` block, OpenAI Responses `output_text` item,
  *   OpenAI-Chat `delta.content`.
- * - ImagePart: Anthropic `image` block, OpenAI `image_url` content part.
- * - FilePart: provider file attachments (pdf, docx, etc.).
+ * - MediaPart: an image or PDF: Anthropic `image`/`document` block, OpenAI
+ *   `input_image`/`input_file` or Chat `image_url`/`file`, Gemini `fileData`/`inlineData`. Allowed in a user message and
+ *   inside a tool result.
  * - ReasoningPart: Anthropic `thinking` / OpenAI `reasoning` items.
  *   Provider metadata (signature, encrypted_content) lives in providerOptions.
  * - ToolUsePart: Anthropic `tool_use` / OpenAI `function_call` items.
@@ -127,19 +134,18 @@ export interface TextPart {
   providerOptions?: ProviderOptions;
 }
 
-export interface ImagePart {
-  type: "image";
-  data: string | URL;
-  mediaType: string;
-  providerOptions?: ProviderOptions;
-}
-
-export interface FilePart {
-  type: "file";
-  data: string | URL;
+/**
+ * A file the model reads. `mediaType` is required, never guessed from a URL. A link is `https`
+ * (a data URL is refused); bytes go in `data` as base64. A `reference` is a provider's own file
+ * id, sent only to the provider that issued it; no mapper sends one yet.
+ */
+export interface MediaPart {
+  type: "media";
   mediaType: string;
   filename?: string;
-  providerOptions?: ProviderOptions;
+  /** A PDF's page count. No adapter sends it; callers use it to estimate what the part costs. */
+  pageCount?: number;
+  source: { url: string } | { data: string } | { reference: { provider: string; id: string } };
 }
 
 export interface ReasoningPart {
@@ -166,18 +172,12 @@ export interface ToolUsePart {
 export interface ToolResultPart {
   type: "tool_result";
   toolCallId: string;
-  output: unknown;
+  content: Array<TextPart | MediaPart>;
   isError?: boolean;
   providerOptions?: ProviderOptions;
 }
 
-export type ContentPart =
-  | TextPart
-  | ImagePart
-  | FilePart
-  | ReasoningPart
-  | ToolUsePart
-  | ToolResultPart;
+export type ContentPart = TextPart | MediaPart | ReasoningPart | ToolUsePart | ToolResultPart;
 
 /**
  * A canonical chat message — maps directly to Anthropic Messages and OpenAI
@@ -378,7 +378,7 @@ export interface ModelCallTiming {
 }
 
 /** The provider adapters createAdapter (create-gateway.ts) can build. */
-export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
+export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "gemini";
 
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory
@@ -393,7 +393,13 @@ export interface ProviderConfig {
     headers?: Record<string, string>;
   };
   baseUrl?: string;
-  models: ModelInfo[];
+  /**
+   * The host fetches image links. Whether an OpenAI-compatible host does is its own fact, so
+   * the wire defaults to bytes only (as the Vercel AI SDK does); the other wires decide for
+   * themselves and ignore this.
+   */
+  imageLinks?: true;
+  models: ProviderModel[];
 }
 
 /**

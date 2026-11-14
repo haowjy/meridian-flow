@@ -5,7 +5,7 @@
  * that ran (helper-result card). A queued or failed thread_message shows as a
  * row once it settles; `partitionTurn` hides a failed one whose helper card is
  * in the turn. A child return_result is rendered as the child's report.
- * Reads the typed `tool.result`, never the model's `tool.output` text.
+ * Reads the typed `tool.result`, never the model's `tool.content`.
  */
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import type { ToolView } from "./group-delivery-segments";

@@ -34,6 +34,24 @@ export function previewObjectKey(key: string): string {
   return `${key}.preview`;
 }
 
+/**
+ * Where the text extracted from an EPUB or PDF lives: Markdown beside the original, made by the
+ * first `read` that needs it. The original's bytes never change (an upload's key is
+ * `uploads/<project>/<doc>` and a copy gets a new key; nothing replaces an object in place), so
+ * a text found at this key is the original's text for good.
+ */
+export function textObjectKey(key: string): string {
+  return `${key}.text`;
+}
+
+/**
+ * Every file derived from an original, the one list release, copy and the import sweep use so
+ * none leaves a derived file behind or loses one. A new derived file is added here.
+ */
+export function derivedObjectKeys(key: string): string[] {
+  return [previewObjectKey(key), textObjectKey(key)];
+}
+
 /** Image types every supported browser draws from the original. */
 const BROWSER_DRAWABLE = new Set([
   "image/png",

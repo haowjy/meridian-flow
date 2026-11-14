@@ -67,7 +67,7 @@ async function wireTools(
                 providerId === "deepseek"
                   ? { kind: "automatic" as const, shortTtlSeconds: null, longTtlSeconds: null }
                   : { kind: "explicit" as const, shortTtlSeconds: 300, longTtlSeconds: 3600 },
-              capabilities: new Set(),
+              inputModalities: ["text"],
             },
           ],
         },

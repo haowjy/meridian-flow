@@ -9,7 +9,7 @@
 
 ## Other
 
-- Uploads from a chat: uploads have no editor address and no desktop door opens them; a chat-launched Uploads viewer with intake controls is still deferred (#625, #631).
+- Uploads from a chat: uploads open read-only in `UploadViewerDialog`; a chat-launched Uploads viewer with intake controls is still deferred (#625, #631).
 
 - Review the inherited session-authority exception that terminalizes adopted local-origin lineage from availability; it is explicitly out of scope for PR #754.
 

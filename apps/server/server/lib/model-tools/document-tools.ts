@@ -22,6 +22,7 @@ import {
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import type { ModelInfo } from "@meridian-flow/gateway";
 import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
@@ -39,6 +40,7 @@ import {
 } from "../../domains/runtime/index.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
+import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
   type CopiedSource,
@@ -308,7 +310,14 @@ export async function readTrackedDocument(
   input: ReadToolInput,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId"> &
     Partial<Pick<ToolHandlerContext, "frontiers" | "shownNames">>,
-  options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
+  options: {
+    expectedDocumentId?: string;
+    recordingFrontier?: FrontierLookup;
+    /** The thread's model, asked for only when the file is binary and what to show depends on it. */
+    model?: () => Promise<ModelInfo | undefined>;
+    /** Where the file is shown: a writer's mention goes in the user message, the agent's read in the tool result. */
+    placement?: ReadPlacement;
+  } = {},
 ): Promise<{
   output: AgentEditResultV1;
   revision: string | null;
@@ -327,7 +336,17 @@ export async function readTrackedDocument(
   if (wrongKind)
     return { ...writeToolError("read", wrongKind, "document_not_found", { path }), revision: null };
   const address = await resolveDocumentAddress(call.context, "read", reached.path);
-  if (isToolError(address)) return { ...address, revision: null };
+  if (isToolError(address)) {
+    if (address.output.status === "binary_file")
+      return readBinaryFile(
+        deps,
+        call,
+        { ...input, path: reached.path },
+        await options.model?.(),
+        options.placement ?? "tool-result",
+      );
+    return { ...address, revision: null };
+  }
   if (options.expectedDocumentId !== undefined && address.documentId !== options.expectedDocumentId)
     return {
       ...writeToolError(
@@ -393,6 +412,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     const parsed = input as ReadToolInput;
     if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
     const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
+      model: async () => ctx.model,
       ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
     });
     return result;

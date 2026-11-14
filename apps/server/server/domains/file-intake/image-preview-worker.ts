@@ -2,8 +2,8 @@
  * Worker thread that converts one image to a WebP preview, so the synchronous HEIC (libheif
  * WASM) and BMP decoders and libvips never run on the server's event loop. `image-preview.ts`
  * starts it with `new URL("./image-preview-worker.ts", import.meta.url)`, which `nitro.config.ts`
- * bundles into its own chunk; it imports only packages. `image-preview.ts` owns the pool and the message protocol:
- * `{ id, mime, bytes }` in, `{ id, preview }` or `{ id, reason }` (`too_large` | `decode_failed`) out.
+ * bundles into its own chunk; it imports only packages and types. `image-preview.ts` owns the
+ * pool and the `PreviewJob` / `PreviewReply` protocol.
  */
 import { parentPort } from "node:worker_threads";
 import { decode as decodeBmp } from "bmp-ts";
@@ -11,6 +11,7 @@ import { decode as decodeBmp } from "bmp-ts";
 // @ts-expect-error heic-decode ships no type declarations
 import decodeHeic from "heic-decode";
 import sharp from "sharp";
+import type { PreviewJob, PreviewReply } from "./image-preview.js";
 
 const PREVIEW_MAX_DIMENSION = 2048;
 const PREVIEW_QUALITY = 85;
@@ -49,27 +50,28 @@ async function toPipeline(mime: string, bytes: Uint8Array): Promise<ReturnType<t
   return sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
 }
 
-parentPort?.on(
-  "message",
-  async ({ id, mime, bytes }: { id: number; mime: string; bytes: Uint8Array }) => {
-    try {
-      const pipeline = await toPipeline(mime, bytes);
-      const preview = await pipeline
-        .resize({
-          width: PREVIEW_MAX_DIMENSION,
-          height: PREVIEW_MAX_DIMENSION,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: PREVIEW_QUALITY })
-        .toBuffer();
-      parentPort?.postMessage({ id, preview });
-    } catch (error) {
-      // sharp's own cap error for TIFF and other formats it decodes.
-      const tooLarge =
-        error instanceof TooLarge ||
-        /pixel limit/i.test(String((error as Error | undefined)?.message));
-      parentPort?.postMessage({ id, reason: tooLarge ? "too_large" : "decode_failed" });
-    }
-  },
-);
+async function convert({ mime, bytes }: PreviewJob): Promise<PreviewReply> {
+  try {
+    const pipeline = await toPipeline(mime, bytes);
+    const preview = await pipeline
+      .resize({
+        width: PREVIEW_MAX_DIMENSION,
+        height: PREVIEW_MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: PREVIEW_QUALITY })
+      .toBuffer();
+    return { preview };
+  } catch (error) {
+    // sharp's own cap error for TIFF and other formats it decodes.
+    const tooLarge =
+      error instanceof TooLarge ||
+      /pixel limit/i.test(String((error as Error | undefined)?.message));
+    return { reason: tooLarge ? "too_large" : "decode_failed" };
+  }
+}
+
+parentPort?.on("message", async ({ id, input }: { id: number; input: PreviewJob }) => {
+  parentPort?.postMessage({ id, reply: await convert(input) });
+});

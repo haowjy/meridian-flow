@@ -10,7 +10,7 @@
  * so the durable message joins the same commit and its post-commit wake is
  * scheduled by the outer transaction.
  */
-import type { UserMessageBlock } from "@meridian/contracts/protocol";
+import type { AdmittedMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { BlockUpsertedRow, JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
@@ -46,7 +46,7 @@ export async function persistWriterTurn(input: {
   persistence: PersistenceDeps;
   threadId: ThreadId;
   userTurnId: TurnId;
-  userBlocks: readonly UserMessageBlock[];
+  userBlocks: readonly AdmittedMessageBlock[];
   userTurnMetadata?: JsonValue | null;
   seedBlocks?: BlockUpsertedRow[];
   origin: "system" | "writer";
@@ -110,7 +110,7 @@ export async function persistWriterEnqueue<T>(input: {
   hub: { headSeq(threadId: ThreadId): Promise<bigint> };
   threadId: ThreadId;
   userTurnId: TurnId;
-  userBlocks: readonly UserMessageBlock[];
+  userBlocks: readonly AdmittedMessageBlock[];
   /**
    * Which reply this message joins, decided under the thread lock on every
    * attempt so it sees the inbox order the message lands in. The stamp and

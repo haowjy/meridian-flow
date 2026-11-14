@@ -261,12 +261,29 @@ function quotedMarkdown(value: string, heading = ""): string {
   });
 }
 
+function omittedData(data: string): string {
+  return `[${data.length} characters omitted from readable view; use the raw view for exact data]`;
+}
+
+/** A media part with long base64 `source.data` elided; a tool result's media parts likewise. */
 function readableMediaPart(part: JsonObject): JsonObject {
-  const data = part.data;
+  const source = part.source;
+  if (source === null || typeof source !== "object" || Array.isArray(source)) return part;
+  const data = (source as JsonObject).data;
   if (typeof data !== "string" || data.length <= 512) return part;
+  return { ...part, source: { ...source, data: omittedData(data) } };
+}
+
+function readableToolResult(part: JsonObject): JsonObject {
+  const content = part.content;
+  if (!Array.isArray(content)) return part;
   return {
     ...part,
-    data: `[${data.length} characters omitted from readable view; use the raw view for exact data]`,
+    content: content.map((item) =>
+      item !== null && typeof item === "object" && !Array.isArray(item)
+        ? readableMediaPart(item as JsonObject)
+        : item,
+    ),
   };
 }
 
@@ -281,14 +298,11 @@ function readablePart(part: JsonObject, partIndex: number): string {
     return fencedJson(part, `### Tool call: ${toolName}\n\n`);
   }
   if (type === "tool_result") {
-    return fencedJson(part, "### Tool result\n\n");
+    return fencedJson(readableToolResult(part), "### Tool result\n\n");
   }
-  if (type === "image" || type === "file") {
+  if (type === "media") {
     const mediaType = readableLabel(objectString(part, "mediaType") ?? "", "unknown media type");
-    return fencedJson(
-      readableMediaPart(part),
-      `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n`,
-    );
+    return fencedJson(readableMediaPart(part), `### Media\n\n${mediaType}\n\n`);
   }
   return fencedJson(part, `### ${readableLabel(type, "unknown")}\n\n`);
 }

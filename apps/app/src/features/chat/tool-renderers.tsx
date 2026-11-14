@@ -30,7 +30,13 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import { namespaceRefusalCopy } from "./namespace-refusal-copy";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
-import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import {
+  type OutlineHeading,
+  type ReadFile,
+  readPayloadFile,
+  readPayloadMarkup,
+  readPayloadOutline,
+} from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
 import {
@@ -478,7 +484,11 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
     <CommandTitle
       verb={phrase.verb}
       parameter={
-        <DocumentName path={path} name={command === "move" ? phrase.parameter : undefined} />
+        <DocumentName
+          path={path}
+          name={command === "move" ? phrase.parameter : undefined}
+          documentId={readPayloadFile(tool.result)?.documentId}
+        />
       }
     />
   );
@@ -496,7 +506,29 @@ function documentExpand(tool: ToolView): ToolExpand | null {
   if (documentToolFailed(tool)) {
     return () => <DocumentFailureText tool={tool} />;
   }
+  const file = readPayloadFile(tool.result);
+  if (file) {
+    const text = COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
+    return () => (
+      <>
+        <p className="text-compact text-muted-foreground">{fileGivenLine(file)}</p>
+        {text?.()}
+      </>
+    );
+  }
   return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
+}
+
+/** What the AI was given of a file that isn't a document, in one line. */
+function fileGivenLine(file: ReadFile): string {
+  switch (file.given) {
+    case "media":
+      return t`The AI saw this file.`;
+    case "text":
+      return t`The AI read the text extracted from this file.`;
+    case "description":
+      return t`The AI can't view this file.`;
+  }
 }
 
 function DocumentFailureText({ tool }: { tool: ToolView }) {
