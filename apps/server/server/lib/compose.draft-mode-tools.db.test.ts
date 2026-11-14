@@ -10,7 +10,7 @@ import { type ToolContentPart, toolContentText } from "@meridian/contracts/threa
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
-import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import { processDetachedWork } from "../shared/detached-work.js";
 import type { ToolCall } from "../test-support/composed-runtime.js";
 import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
 import { treeSeeder } from "../test-support/tree-seed.js";

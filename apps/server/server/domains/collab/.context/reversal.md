@@ -8,22 +8,31 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
 accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
-`commandId` for each click and each Try again. It is a `reverse_turn` row in `document_commands`:
+`commandId` for each click and each Try again. It is a `reverse_turn` row in `commands`:
 `DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
 its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired`,
 `permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,
-`lib/work-receipt-reversal.ts`) are a second `reverse_turn` command once that one committed,
-under an id derived from the click's, on the documents' outcome: their Work and thread locks
-never wait under a document key. Its stored outcome is the click's answer. A resend under the id
-answers the stored outcomes and changes nothing; a kill between the two runs the second on the
-resend; another request under the id is `command_conflict` (409). The receipts the reversal
-writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
+`lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
+both halves or neither; its one stored outcome answers a resend, and another request under the id
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
 dropped from the grants and never run: it reports as skipped, and the rest of the reply still
 reverses (`TreePlan.gone`). Every other denial of a step's document refuses the whole reversal,
 a deleted Work's included, and the outcome carries the policy's reason (`denial`) for the card to
-word: archived Work, deleted chat, deleted document or Work, or no longer editable. A miss the server retries (a moved capture, a deadlock)
-rolls back past the claim; exhausting the inverse's attempts is `ReversalConflictError` and
-stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
+word: archived Work, deleted chat, deleted document or Work, or no longer editable.
+A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
+command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
+and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each
+document's own Work) and the service adds the receipts' Works; `lockWorkThreadTrees` takes the
+threads of the receipt Works (marked ones included) and the chat's own, parents first, each as the
+runtime's thread lock does, so the Work step's `stopThreads` re-enters locks it already holds; then
+all the Works by id, the lineages and, when receipts exist, the project's tree lists and the
+namespace keys a restore takes (`works.lockRestoreNamespaces`). The documents' Works are locked as
+rows only. The commit scope compares the Works it would lock with that set
+before taking any lock; a Work outside it throws `ReversalOwnersMoved`, which rolls back past the
+claim and reruns the command with the larger set (four attempts). A miss the server retries (a
+moved capture, a deadlock) rolls back past the claim; four misses of the owners answer 503 with
+`Retry-After` and store nothing; exhausting the inverse's attempts is
+`ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use

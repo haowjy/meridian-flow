@@ -6,34 +6,35 @@
  * outcome to HTTP. Nothing here decides an effect.
  */
 
-import type { BranchId, DocumentCommandId, DraftOwner } from "@meridian/contracts";
+import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
 import {
   type DraftOwnerKey,
   draftItemKey,
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import {
-  type ApplyClickAnswer,
-  type ApplyClickResult,
-  type ApplyItemsClick,
-  type ApplyTextCut,
-  type BranchDiscardRequest,
-  type DiscardCommandResult,
-  DOCUMENT_COMMAND_CONFLICT_CODE,
-  DocumentCommandIdSchema,
-  type DocumentCommandKind,
-  type DocumentCommandLookupResponse,
-  type DocumentDraftHint,
-  type DocumentDraftHintsResponse,
-  type DraftMetadataResponse,
-  type ThreadDraftListItem,
-  type ThreadDraftListResponse,
-  type UnapplyClickAnswer,
-  type UnapplyClickResult,
-  type UndoDiscardAnswer,
-  type UndoDiscardResult,
+import type {
+  ApplyClickAnswer,
+  ApplyClickResult,
+  ApplyItemsClick,
+  ApplyTextCut,
+  BranchDiscardRequest,
+  DiscardCommandResult,
+  DocumentDraftHint,
+  DocumentDraftHintsResponse,
+  DraftMetadataResponse,
+  ThreadDraftListItem,
+  ThreadDraftListResponse,
+  UnapplyClickAnswer,
+  UnapplyClickResult,
+  UndoDiscardAnswer,
+  UndoDiscardResult,
 } from "@meridian/contracts/branches";
+import {
+  COMMAND_CONFLICT_CODE,
+  CommandIdSchema,
+  type CommandKind,
+} from "@meridian/contracts/commands";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -42,11 +43,6 @@ import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
 import type { DiscardSelection } from "../domains/collab/domain/branch-discard.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
-import {
-  commandDigest,
-  type DocumentCommandEnvelope,
-  replay,
-} from "../domains/collab/domain/document-commands.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import {
@@ -57,6 +53,7 @@ import {
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
+import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
@@ -153,7 +150,7 @@ async function requireListedOwner(
 const Base = {
   branchId: z.string().uuid(),
   itemKey: z.string().max(80),
-  commandId: DocumentCommandIdSchema,
+  commandId: CommandIdSchema,
 };
 const RangeBody = z
   .strictObject({
@@ -171,7 +168,7 @@ const BaseViewDeltaBody = z.array(
 const ApplyClickBody = z
   .strictObject({
     draftId: z.string().min(1).max(128).optional(),
-    commandId: DocumentCommandIdSchema,
+    commandId: CommandIdSchema,
     snapshot: z.string().min(1).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
@@ -188,8 +185,8 @@ const ApplyClickBody = z
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
 const UnapplyClickBody = z.strictObject({
-  commandId: DocumentCommandIdSchema,
-  applyCommandId: DocumentCommandIdSchema,
+  commandId: CommandIdSchema,
+  applyCommandId: CommandIdSchema,
 });
 const ApplyTextBody = z.strictObject({
   draftId: z.string().min(1).max(128),
@@ -201,7 +198,7 @@ const ApplyTextBody = z.strictObject({
     .refine((ids) => new Set(ids).size === ids.length),
 });
 const ApplyItemsBody = z.strictObject({
-  commandId: DocumentCommandIdSchema,
+  commandId: CommandIdSchema,
   items: z
     .array(
       z
@@ -225,8 +222,8 @@ const ApplyItemsBody = z.strictObject({
   restore: z.literal(true).optional(),
 });
 const UndoDiscardBody = z.strictObject({
-  commandId: DocumentCommandIdSchema,
-  discardCommandId: DocumentCommandIdSchema,
+  commandId: CommandIdSchema,
+  discardCommandId: CommandIdSchema,
 });
 const DiscardBody = z.discriminatedUnion("ends", [
   z.strictObject({ ...Base, ends: z.literal("tree") }),
@@ -253,14 +250,14 @@ function envelopeOf(
   scope: CommandScope,
   command: {
     commandId: string;
-    kind: DocumentCommandKind;
+    kind: CommandKind;
     branchId: string;
     selectors: Record<string, string | null>;
     body: unknown;
   },
-): DocumentCommandEnvelope {
+): CommandEnvelope {
   return {
-    commandId: command.commandId as DocumentCommandId,
+    commandId: command.commandId as CommandId,
     accountId: scope.userId,
     projectId: scope.projectId,
     kind: command.kind,
@@ -283,7 +280,7 @@ function respond(outcome: CommandOutcome): CommandRouteResult {
     case "conflict":
       return throwHttpInterrupt(
         meridianErrorFromSystem(
-          DOCUMENT_COMMAND_CONFLICT_CODE,
+          COMMAND_CONFLICT_CODE,
           "That command id was used for a different command",
           false,
         ),
@@ -298,7 +295,7 @@ function respond(outcome: CommandOutcome): CommandRouteResult {
 /** The stored answer of a command id this account already used, looked up before any grant. */
 async function recorded(
   deps: BranchRouteServices,
-  envelope: DocumentCommandEnvelope,
+  envelope: CommandEnvelope,
 ): Promise<CommandRouteResult | null> {
   const stored = replay<DiscardCommandResult>(
     await deps.documentSync.draftReview.lookupCommand(envelope),
@@ -308,25 +305,6 @@ async function recorded(
   return respond(
     stored.status === "conflict" ? { kind: "conflict" } : { kind: "result", result: stored },
   );
-}
-
-/**
- * GET /api/document-commands/:id: what a command settled as, never a guess from the list.
- * Another account's id answers `none`, revealing nothing.
- */
-export async function handleDocumentCommandLookup(
-  deps: Pick<BranchRouteServices, "documentSync">,
-  input: { userId: UserId; commandId: string },
-): Promise<DocumentCommandLookupResponse> {
-  const id = DocumentCommandIdSchema.safeParse(input.commandId);
-  if (!id.success) return { status: "none" };
-  const found = await deps.documentSync.draftReview.lookupCommand({
-    commandId: id.data as DocumentCommandId,
-    accountId: input.userId,
-  });
-  return found.kind === "stored"
-    ? { status: "stored", kind: found.commandKind, outcome: found.outcome }
-    : { status: "none" };
 }
 
 // --- Grants ------------------------------------------------------------------------------------
@@ -590,7 +568,7 @@ type PreparedCommand =
 async function commandIngress(
   deps: BranchRouteServices,
   input: CommandScope,
-  envelope: DocumentCommandEnvelope,
+  envelope: CommandEnvelope,
   prepare: (access: BranchAccess) => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
   const access = await requireBranchAccess(deps, input);
@@ -640,7 +618,7 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyIt
   if (!textCut && !click.tree) return null;
   if (textCut && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
   return {
-    commandId: click.commandId as DocumentCommandId,
+    commandId: click.commandId as CommandId,
     items: [
       {
         node: documentId,
@@ -672,7 +650,7 @@ async function applyItems(
   deps: BranchRouteServices,
   input: CommandScope,
   request: ApplyItemsClick | null,
-  envelope: DocumentCommandEnvelope,
+  envelope: CommandEnvelope,
   /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
 ): Promise<ApplyClickAnswer> {
@@ -769,7 +747,7 @@ export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
 ): Promise<ApplyClickAnswer> {
-  const parsedId = DocumentCommandIdSchema.safeParse(
+  const parsedId = CommandIdSchema.safeParse(
     input.request && typeof input.request === "object" && "commandId" in input.request
       ? input.request.commandId
       : undefined,
@@ -795,12 +773,12 @@ async function branchCommand<Request extends { commandId: string }, Answer>(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
   command: {
-    kind: DocumentCommandKind;
+    kind: CommandKind;
     what: string;
     schema: z.ZodType<Request>;
     run(call: {
       request: Request;
-      envelope: DocumentCommandEnvelope;
+      envelope: CommandEnvelope;
       access: BranchAccess;
     }): Promise<Answer>;
   },
@@ -903,11 +881,11 @@ export function handleUnapplyClickRequest(
       const refused = async (): Promise<UnapplyClickAnswer> =>
         (await lookup()) ?? {
           status: "refused",
-          commandId: request.commandId as DocumentCommandId,
+          commandId: request.commandId as CommandId,
         };
       const grants: FileGrant<"edit">[] = [];
       for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
-        applyCommandId: request.applyCommandId as DocumentCommandId,
+        applyCommandId: request.applyCommandId as CommandId,
         accountId: input.userId,
         branchId: input.branchId,
       })) {
@@ -933,7 +911,7 @@ export function handleUndoDiscardRequest(
     what: "Undo of a Discard",
     schema: UndoDiscardBody,
     run: async ({ request, envelope, access }) => {
-      const commandId = request.commandId as DocumentCommandId;
+      const commandId = request.commandId as CommandId;
       const lookup = async () =>
         replay<UndoDiscardResult>(
           await deps.documentSync.draftReview.lookupCommand(envelope),
@@ -943,7 +921,7 @@ export function handleUndoDiscardRequest(
       if (recorded) return recorded;
       const grants: FileGrant<"edit">[] = [];
       for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofDiscard({
-        discardCommandId: request.discardCommandId as DocumentCommandId,
+        discardCommandId: request.discardCommandId as CommandId,
         accountId: input.userId,
         branchId: input.branchId,
       })) {

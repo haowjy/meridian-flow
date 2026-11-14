@@ -6,7 +6,10 @@
  * route handlers from accidentally authenticating a request without ensuring
  * the authenticated user exists in the app database.
  */
+import { EXPECTED_ACCOUNT_HEADER, WRONG_ACCOUNT_CODE } from "@meridian/contracts/commands";
+import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { HTTPError } from "nitro/h3";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { type AppServices, getApp } from "./app.js";
 import type { ResolvedUser } from "./auth.js";
 import { provisionAuthenticatedUser, resolveUser } from "./auth.js";
@@ -20,8 +23,26 @@ export interface AppUserEvent {
   req: Request;
 }
 
+/**
+ * The gate every HTTP route passes through. A request that names the account its sender
+ * believes it is signed in as (`x-meridian-account`) and is not that account is answered 409
+ * `wrong_account` before anything runs: a sender that outlives a sign-in switch must not act
+ * for the new account. A request that names none is not checked. WebSocket upgrades cannot
+ * carry the header, so they and `/api/auth/me` (which tells a client who it is) do not come here.
+ */
 export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
-  return requireAppUserFromRequest(event.req);
+  const signedIn = await requireAppUserFromRequest(event.req);
+  const expected = event.req.headers.get(EXPECTED_ACCOUNT_HEADER);
+  if (expected !== null && expected !== signedIn.user.userId)
+    return throwHttpInterrupt(
+      meridianErrorFromSystem(
+        WRONG_ACCOUNT_CODE,
+        "This request was sent for another account",
+        false,
+      ),
+      409,
+    );
+  return signedIn;
 }
 
 /**

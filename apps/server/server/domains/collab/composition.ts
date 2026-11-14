@@ -78,6 +78,7 @@ import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
+import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -140,7 +141,7 @@ import { createThreadCores } from "./thread-cores.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-import type { DetachedWorkTracker } from "../runtime/detached-work.js";
+import type { DetachedWorkTracker } from "../../shared/detached-work.js";
 
 type CollabDomainDeps = {
   backgroundTasks?: DetachedWorkTracker;
@@ -589,6 +590,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const turnReversal = createTurnReversalService({
     turnInverse,
+    lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     commands,

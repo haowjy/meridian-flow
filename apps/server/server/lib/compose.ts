@@ -170,10 +170,6 @@ import {
   refusingPermissionExecutor,
 } from "../domains/runtime/asks/ask-service.js";
 import type { ModelTokenRateSource } from "../domains/runtime/costing/pricing.js";
-import {
-  createDetachedWorkTracker,
-  type DetachedWorkTracker,
-} from "../domains/runtime/detached-work.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
   createHandoffBriefs,
@@ -184,7 +180,6 @@ import {
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
-  createContextMediaResolver,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
@@ -192,6 +187,7 @@ import {
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
+  createHostEffectOutbox,
   createInMemoryInbox,
   createInMemoryRunClaim,
   createInMemoryRunStarter,
@@ -276,6 +272,8 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
+import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
@@ -286,6 +284,8 @@ import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createHostEffects } from "./runtime-host/host-effects.js";
+import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export type AppServices = {
@@ -302,6 +302,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The command record every kind of request claims its id in. */
+  commands: CommandStore;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
@@ -346,6 +348,7 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
+    deliverHostEffects(signal?: AbortSignal): Promise<number>;
     purgeDocuments(): Promise<number>;
     expireAsks(): Promise<number>;
   };
@@ -994,6 +997,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
+  const hostEffects = createHostEffectOutbox({
+    db: ports.db,
+    host: createHostEffects({ db: ports.db, uploadIntake: ports.uploadIntake }),
+    eventSink: ports.eventSink,
+    backgroundTasks: ports.backgroundTasks,
+  });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
     async scanWakes() {
@@ -1011,6 +1020,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
+    deliverHostEffects: hostEffects.deliver,
     purgeDocuments: () => ports.documentTrash.purge(),
     expireAsks: () => asks.expireDue(),
   };
@@ -1037,9 +1047,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    async consumeUploads(documentIds, threadId) {
+    async uploadsUsed(documentIds, threadId) {
       const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
-      if (chat) await ports.uploadIntake.consume(documentIds, chat.chatId);
+      if (chat && documentIds.length > 0) {
+        await hostEffects.record(threadId, "uploads.used", {
+          documentIds: [...documentIds],
+          chatId: chat.chatId,
+        });
+      }
     },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
@@ -1223,6 +1238,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    commands: createCommandStore(ports.db),
     treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
@@ -1407,6 +1423,9 @@ export function createInMemoryAppServices(): AppServices {
     async purgeWorks() {
       return 0;
     },
+    async deliverHostEffects() {
+      return 0;
+    },
     async purgeDocuments() {
       return 0;
     },
@@ -1565,6 +1584,17 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    commands: {
+      async lookup() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async resolve() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async run() {
+        throw new Error("The command record requires durable persistence");
+      },
+    },
     treeLists: {
       async open() {
         throw new Error("Tree lists are unavailable in memory");
@@ -1717,6 +1747,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1801,6 +1832,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },

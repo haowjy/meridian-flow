@@ -32,7 +32,7 @@ a paragraph break, the next adds one nearby) would undo each other. Un-Apply inv
 group first, because a group's update builds on the earlier groups' items; an earlier group stays
 when a later one was edited in live.
 
-Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
+Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
 enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
 append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
@@ -40,8 +40,10 @@ outcome, so a resend under the same id gets the same refusal and "Try again" nee
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
 turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
-reads only the effects whose draft's branch is the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
-account that sent it.
+reads only the effects whose draft's branch is the URL's. `GET /api/commands/:id` returns the stored outcome to the
+account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
+answers the stored outcome, or stores `never` where there is no row (a late request under the id then
+answers `command_conflict` on an old-shape route).
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta

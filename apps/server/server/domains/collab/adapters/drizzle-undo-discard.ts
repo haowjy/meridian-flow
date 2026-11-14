@@ -20,6 +20,7 @@ import { discardedBy, restoreDiscard } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
+import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -29,7 +30,7 @@ import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discard.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
-import { lookupCommand, runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
 type Refusal = Extract<UndoDiscardResult, { status: "refused" }>["reason"];
@@ -55,7 +56,7 @@ export function createDrizzleUndoDiscard(
       const commandId = envelope.commandId;
       const refused = (reason: Refusal) => ({ status: "refused", commandId, reason }) as const;
       try {
-        return await runCommand(
+        return await runDocumentCommand(
           db,
           envelope,
           () =>

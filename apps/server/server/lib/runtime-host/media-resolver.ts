@@ -1,18 +1,21 @@
 /** The media resolver for Meridian Flow: file identity and access from the project, bytes or links from the object store. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
-import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
-import { PREVIEW_MIME_TYPE } from "../../file-intake/image-preview.js";
-import { type FileAccess, isFileAccessDenied } from "../../file-policy/index.js";
-import { type EventSink, emitEvent } from "../../observability/index.js";
-import type { ObjectStorePort } from "../../storage/index.js";
-import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../storage/index.js";
-import { linkExpirySeconds } from "../loop/media-link-window.js";
+import type {
+  ProjectContextAvailabilityPort,
+  UploadIdentityPort,
+} from "../../domains/context/index.js";
+import { PREVIEW_MIME_TYPE } from "../../domains/file-intake/image-preview.js";
+import { type FileAccess, isFileAccessDenied } from "../../domains/file-policy/index.js";
+import { type EventSink, emitEvent } from "../../domains/observability/index.js";
 import {
   type LinkWindow,
+  linkExpirySeconds,
   MediaResolutionError,
   type MediaResolverPort,
   type ResolvedMedia,
-} from "../ports/media-resolver.js";
+} from "../../domains/runtime/index.js";
+import type { ObjectStorePort } from "../../domains/storage/index.js";
+import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../domains/storage/index.js";
 
 /** The image types every wire takes as they are; any other image is sent as its preview. */
 const UNIVERSAL_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);

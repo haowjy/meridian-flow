@@ -18,7 +18,7 @@ The edit holds its document's lock while it plans, so a second connection or a p
 | Room read (`committedCopy`) stepped outside the transaction | reads inside it while `inLockedWrite()` |
 | A drafted first write's draft, made from the live room under `withDocument` | `ensureLiveDocumentDraft`: the live journal read in the transaction, after the Work, under the document key |
 | Draft live pull in `readRoom` | `catchUp`, before the claim |
-| Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock |
+| Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock: the one place the order is reversed, because the refs a write mints are known only while it plans (lock order in `CONTEXT.md`) |
 | `runInRootDrizzleReadSnapshot` in address resolution | joins the command transaction |
 | The model undo's capture snapshot | gone: the capture is taken again under the commit's locks and compared (`confirmCapture`) |
 

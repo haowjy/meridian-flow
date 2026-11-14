@@ -15,6 +15,14 @@ The server normalizes the cutoff to the last settled turn at or before it. `Chat
 provides a `TurnDerivation` only for a primary chat the server already has
 (`canDeriveFrom`).
 
+The composer's Agent control is the third door: a started chat is bound to its Agent, so
+picking another there hands off from the last complete turn that isn't queued. A writer
+message counts, so during a running reply the cut is the message that reply answers, as Hand
+off under that message would make it. Picking the bound Agent there changes nothing, while
+the picker under a turn hands off to the same Agent. The control is busy while the server has
+yet to accept the chat's first send, and shows the Agent read-only when there is no complete
+turn to hand off from.
+
 Hand off opens the shared `AgentPickerPanel` with the source's Agent focused, by
 revision then by name, so Enter hands off to the same Agent. A row's tooltip waits
 until the writer moves through the list, and one Escape closes the picker even with a

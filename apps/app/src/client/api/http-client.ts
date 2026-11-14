@@ -205,8 +205,17 @@ export async function patchJson<T>(
   return decodeResponse(payload, response, options?.schema);
 }
 
-export async function deleteRequest(url: string, init?: { signal?: AbortSignal }): Promise<void> {
-  const response = await fetch(url, { method: "DELETE", signal: init?.signal });
+export async function deleteRequest(
+  url: string,
+  init?: { body?: unknown; signal?: AbortSignal },
+): Promise<void> {
+  const response = await fetch(url, {
+    method: "DELETE",
+    ...(init?.body === undefined
+      ? {}
+      : { headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) }),
+    signal: init?.signal,
+  });
   if (response.status === 204) return;
 
   const payload = await readResponsePayload(response);

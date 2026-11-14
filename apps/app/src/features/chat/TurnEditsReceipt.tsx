@@ -256,7 +256,7 @@ export function TurnEditsReceipt({
         <div id={panelId} className="border-border-subtle border-t">
           {skips.length > 0 ? (
             <div
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-muted-foreground"
               data-turn-skips
               role="status"
             >

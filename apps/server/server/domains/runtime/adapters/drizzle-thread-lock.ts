@@ -9,20 +9,13 @@
  * thread's lock.
  */
 import type { Database } from "@meridian/database";
-import { sql } from "drizzle-orm";
 import {
-  currentDrizzleDb,
   getDrizzleTransactionLocal,
   runInDrizzleTransaction,
   setDrizzleTransactionLocal,
 } from "../../../shared/drizzle-transaction.js";
-import { lockThreadAsks, lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import {
-  isMultiThreadLocker,
-  THREAD_LOCK_SEED,
-  type ThreadLock,
-  threadLockKey,
-} from "../loop/thread-lock.js";
+import { lockThreadAsRuntime } from "../../../shared/thread-work-lock.js";
+import { isMultiThreadLocker, type ThreadLock } from "../loop/thread-lock.js";
 import { noteThreadLocked, type RunStatePublisher } from "./drizzle-run-state.js";
 
 export function createDrizzleThreadLock(
@@ -33,11 +26,7 @@ export function createDrizzleThreadLock(
     withThreadLock(threadId, operation) {
       return runInDrizzleTransaction(db, async () => {
         const later = noteThreadLock(threadId);
-        await lockThreadAsks(db, [threadId], { skipLocked: later });
-        await currentDrizzleDb(db).execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${threadLockKey(threadId)}, ${THREAD_LOCK_SEED}))`,
-        );
-        await lockThreadForMutation(db, threadId);
+        await lockThreadAsRuntime(db, threadId, { skipLockedAsks: later });
         noteThreadLocked(threadId, events && { db, events });
         return operation();
       });
