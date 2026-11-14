@@ -148,8 +148,7 @@ export function diffBlocks(
 ): BlockDiff {
   const B = buildSide(base);
   const D = buildSide(draft);
-  const correspondence = correspond(base, draft);
-  const alignment = align(B, D, correspondence);
+  const alignment = align(B, D, correspond(base, draft));
   let hunks = alignment.hunks;
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);

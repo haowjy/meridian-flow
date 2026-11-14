@@ -1685,7 +1685,7 @@ export const CASES: Case[] = [
   },
   {
     row: "r1 B1: live rewrites a paragraph, the draft extends it",
-    name: "unsure-lone",
+    name: "id-rewrite-in-place",
     base: "p#m:Mara opened the door",
     live: "p#m:Rain fell on the roof",
     draft: "p#m:Mara opened the door tonight",
@@ -1694,7 +1694,7 @@ export const CASES: Case[] = [
   },
   {
     row: "r1 B1, sides exchanged",
-    name: "unsure-lone-rev",
+    name: "id-rewrite-in-place-rev",
     base: "p#m:Mara opened the door",
     live: "p#m:Mara opened the door tonight",
     draft: "p#m:Rain fell on the roof",
@@ -1703,7 +1703,7 @@ export const CASES: Case[] = [
   },
   {
     row: "both rewrite one paragraph",
-    name: "unsure-lone-both",
+    name: "id-rewrite-in-place-both",
     base: "p#m:Mara opened the door",
     live: "p#m:Rain fell on the roof",
     draft: "p#m:Snow lay on the hill",
@@ -1712,7 +1712,7 @@ export const CASES: Case[] = [
   },
   {
     row: "rewrite against an edit",
-    name: "unsure-rewrite-vs-edit",
+    name: "id-rewrite-vs-edit",
     base: "p:aa bb cc dd | p:zz",
     live: "p:qq rr ss tt | p:zz",
     draft: "p:aa bb cc DD | p:zz",
@@ -1721,7 +1721,7 @@ export const CASES: Case[] = [
   },
   {
     row: "an edit against a rewrite",
-    name: "unsure-edit-vs-rewrite",
+    name: "id-edit-vs-rewrite",
     base: "p:aa bb cc dd | p:zz",
     live: "p:aa bb cc DD | p:zz",
     draft: "p:qq rr ss tt | p:zz",

@@ -32,8 +32,9 @@ document.
 
 ## Block correspondence
 
-`src/diff/correspond.ts` decides which old block is which new block, in guess mode, for
-every writer of a sequence of blocks: `resolver/block-alignment.ts` (the model's write),
+`src/diff/correspond.ts` decides which old block is which new block. The content merge asks by
+id (`byId`: [diff-review](diff-review.md#block-correspondence-by-id)). Everyone else asks in guess
+mode, for every writer of a sequence of blocks: `resolver/block-alignment.ts` (the model's write),
 `writeChildren` (the Yjs writer, at each level) and, inside a block, the writer's atoms
 (breaks, images). Identity comes from content with attributes left out, chosen over the
 whole run, so an attribute-only change (an indent) pairs a block with itself; blocks of
