@@ -133,13 +133,14 @@ export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): Fil
  * Deleted anywhere up the chain: none, except at a draft destination whose
  * draft outlived the document's own delete (`survivingDraft`, keyed on the
  * destination, never on which view supplied the facts: a writer's review list
- * reads branch views for a live destination). Its owning Work archived: read.
- * A draft also takes its own owner's lifecycle (§2).
+ * reads branch views for a live destination). Its owning Work archived, or
+ * deleted and not yet purged: read. A draft also takes its own owner's
+ * lifecycle (§2).
  */
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
   const deleted = facts.deleted && !(at.kind === "draft" && facts.survivingDraft);
-  if (facts.projectDeleted || deleted || facts.ownerWork?.deleted) {
+  if (facts.projectDeleted || deleted) {
     terms.push({ cap: "none", limit: "not_found" });
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
@@ -154,14 +155,16 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 
 /** A lineage with no live member is read-only until a chat in it is restored. */
 function branchOwnerTerms(owner: FileBranchOwnerFacts): Term[] {
+  if (owner.purged) return [{ cap: "none", limit: "not_found" }];
   if (owner.owner.kind === "lineage") {
     return owner.frozen ? [{ cap: "read", limit: "chat_frozen" }] : [];
   }
   return workTerms({ id: owner.owner.workId, ...owner });
 }
 
+/** A deleted Work's files read until its purge; a write to one is refused as if it were gone. */
 function workTerms(work: FileWorkFacts): Term[] {
-  if (work.deleted) return [{ cap: "none", limit: "not_found" }];
+  if (work.deleted) return [{ cap: "read", limit: "not_found" }];
   if (work.archived) {
     return [{ cap: "read", limit: "work_archived", work: { id: work.id, handle: work.handle } }];
   }

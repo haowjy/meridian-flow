@@ -455,7 +455,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.restore(nameOwner.id)).rejects.toEqual(new WorkRestoreConflictError());
     });
 
-    it("ends a Work's sources without touching its nodes, and restores them as they were", async () => {
+    it("keeps a Work's sources and nodes through its delete and restore", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await expect(works.softDelete(empty.id)).resolves.toMatchObject({
         after: { deletedAt: expect.any(String) },
@@ -491,8 +491,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(deletion.after?.deletedAt).toBeTruthy();
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
-      ).resolves.toMatchObject([{ deletedAt: expect.any(Date), deletedByWorkId: withFile.id }]);
-      // The cascade writes no node: the list's replay follows the source row.
+      ).resolves.toMatchObject([{ deletedAt: null }]);
+      // The delete writes no node: a deleted Work's Scratch reads as it was until the purge.
       expect(await nodes()).toEqual(before);
       await works.softDelete(withFile.id);
       expect(await nodes()).toEqual(before);
@@ -503,7 +503,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
-      ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
+      ).resolves.toMatchObject([{ deletedAt: null }]);
       // What was deleted on its own stays in Trash through the Work's delete and restore.
       expect(await nodes()).toEqual(before);
     });
@@ -960,6 +960,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
         branches: createPostgresWorkBranchDisposal(db),
+        works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
       });
       await expect(purger.sweep()).resolves.toBe(1);
@@ -996,6 +997,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore,
         eventSink,
         branches: createPostgresWorkBranchDisposal(db),
+        works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
       });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });

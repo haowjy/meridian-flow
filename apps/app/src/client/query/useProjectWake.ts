@@ -1,8 +1,8 @@
 /**
  * The project's one live subscription to the server's wake hints. A hint carries no state: it says
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
- * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and a
- * Work's count with it) and the project's sources.
+ * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
+ * for a Work, its row in the Works list: its count and its lifecycle) and the project's sources.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
-import { refreshWorksSnapshot, repairWorksSnapshot } from "./works-projection-acquisition";
+import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export function useProjectWake(projectId: string): void {
   const queryClient = useQueryClient();
@@ -53,26 +53,18 @@ export function useProjectWake(projectId: string): void {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
         });
-        // A Work's count is the Works list's: the picker and Changes read it there.
+        // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
         if (workIdOfDraftOwnerKey(hint.owner)) void repairWorksSnapshot(queryClient, projectId);
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
         });
         bumpLinkResolutionEpoch(projectId);
       } else if ((hint.type as string) === "context-sources-hint") {
-        // A Work or a chat gained or lost a source (Scratch, uploads): which trees exist changed,
-        // and a Work that ended or came back is a change to the Works list.
+        // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.contextSources(projectId),
         });
         void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
-        void refreshWorksSnapshot(queryClient, projectId).catch(() =>
-          queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.works(projectId),
-            exact: true,
-            refetchType: "none",
-          }),
-        );
         bumpLinkResolutionEpoch(projectId);
       }
     });

@@ -4420,31 +4420,9 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "deleted_by_work_id": {
-          "name": "deleted_by_work_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "context_sources_deleted_by_work_idx": {
-          "name": "context_sources_deleted_by_work_idx",
-          "columns": [
-            {
-              "expression": "deleted_by_work_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"context_sources\".\"deleted_by_work_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "context_sources_project_scope_slug": {
           "name": "context_sources_project_scope_slug",
           "columns": [
@@ -4581,19 +4559,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "context_sources_deleted_by_work_id_works_id_fk": {
-          "name": "context_sources_deleted_by_work_id_works_id_fk",
-          "tableFrom": "context_sources",
-          "tableTo": "works",
-          "columnsFrom": [
-            "deleted_by_work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
