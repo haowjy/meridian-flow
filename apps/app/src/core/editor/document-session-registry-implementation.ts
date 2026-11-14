@@ -745,13 +745,7 @@ export class DocumentSessionRegistry
     if (!text) return;
     this.handedBack.add(session);
     const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
-    for (const observer of this.unsentTypingObservers) {
-      try {
-        observer(typing);
-      } catch {
-        // An observer cannot interrupt the room's teardown.
-      }
-    }
+    for (const observer of this.unsentTypingObservers) observer(typing);
   }
 
   private reportRemovedRoom(session: DocumentSession): void {
