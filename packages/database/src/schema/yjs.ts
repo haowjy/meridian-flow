@@ -55,6 +55,13 @@ export const documentDrafts = pgTable(
       .references(() => branches.id, { onDelete: "cascade" }),
     status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
     closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
+    /**
+     * The Discard or restore command that closed the draft, null for any other close. A restore
+     * reopens the same row and clears it; a retirement acts on the draft only while it still
+     * names the command it retires for. A command id, no foreign key: purging a command must not
+     * touch the draft.
+     */
+    closedBy: uuid("closed_by").$type<DocumentCommandId>(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     /** Immutable live→draft block addresses captured when a Work draft is seeded. */
@@ -91,6 +98,7 @@ export const documentDrafts = pgTable(
     uniqueIndex("document_drafts_active_branch_document")
       .on(table.documentId, table.branchId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
+    index("document_drafts_closed_by").on(table.closedBy).where(sql`${table.closedBy} IS NOT NULL`),
     index("document_drafts_active_work_draft_by_branch")
       .on(table.branchId, table.id)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
@@ -98,6 +106,10 @@ export const documentDrafts = pgTable(
     check(
       "document_drafts_closed_cause_presence",
       sql`(${table.status} = 'closed') = (${table.closedCause} IS NOT NULL)`,
+    ),
+    check(
+      "document_drafts_closed_by_closed",
+      sql`${table.closedBy} IS NULL OR ${table.status} = 'closed'`,
     ),
     check(
       "document_drafts_closed_cause_valid",
@@ -403,28 +415,6 @@ export const applyCommandTrees = pgTable(
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
-);
-
-/**
- * The text drafts a Discard command closed: what its Undo copies back onto the Work's branch,
- * once (`restoredBy`). The drafts keep their bytes after closing, until their document's content
- * is purged (which deletes them and this row with them).
- */
-export const discardCommandDrafts = pgTable(
-  "discard_command_drafts",
-  {
-    commandId: uuid("command_id")
-      .$type<DocumentCommandId>()
-      .notNull()
-      .references(() => documentCommands.id, { onDelete: "cascade" }),
-    draftId: text("draft_id")
-      .notNull()
-      .references(() => documentDrafts.id, { onDelete: "cascade" }),
-    restoredBy: uuid("restored_by")
-      .$type<DocumentCommandId>()
-      .references(() => documentCommands.id, { onDelete: "set null" }),
-  },
-  (table) => [primaryKey({ columns: [table.commandId, table.draftId] })],
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */

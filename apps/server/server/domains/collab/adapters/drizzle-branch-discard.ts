@@ -15,10 +15,10 @@
  * Every draft the kernel closes retires after commit through the one close.
  */
 
-import type { BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, DocumentCommandId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { discardCommandDrafts, documentDrafts } from "@meridian/database/schema";
+import { documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords } from "@meridian/project-tree";
 import { and, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -98,8 +98,8 @@ async function discardTreeRecords(
 }
 
 /**
- * Closes the branch's drafts on these documents, or on all of them, and records them on the
- * Discard command, whose Undo copies them back. Closing keeps each draft's bytes and apply
+ * Closes the branch's drafts on these documents, or on all of them, each naming the Discard
+ * command (`closed_by`), whose restore reopens them. Closing keeps each draft's bytes and apply
  * record: the receipt and model `write undo` read them to tell applied parts
  * (`cant_undo_applied`) from discarded ones (`cant_undo_discarded`).
  */
@@ -112,17 +112,12 @@ async function closeBranchDrafts(
 ): Promise<void> {
   if (documentIds?.length === 0) return;
   const { branchId } = input;
-  const closed = await deps.close.closeDrafts(
+  await deps.close.closeDrafts(
     currentDrizzleDb(db),
     documentIds ? { documentIds, branchId } : { branchId },
     cause,
+    input.command as DocumentCommandId | undefined,
   );
-  if (input.command && closed.length > 0)
-    await currentDrizzleDb(db)
-      .insert(discardCommandDrafts)
-      .values(
-        closed.map((draft) => ({ commandId: input.command as never, draftId: draft.draftId })),
-      );
 }
 
 /**

@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { BranchId, DocumentCommandId, DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
@@ -68,11 +68,13 @@ export type DraftClose = {
   /**
    * Close exactly the selection's active drafts and retire them after the root transaction
    * commits. Already-closed rows keep their cause. A removal cause registers its selection's documents too.
+   * `by` is the Discard or restore command doing the close; each row names it until a restore reopens it.
    */
   closeDrafts(
     db: DrizzleDb,
     selection: DraftSelection,
     cause: DraftCloseCause,
+    by?: DocumentCommandId,
   ): Promise<readonly (ClosedDraft & { branchId: string })[]>;
   /**
    * Runs `run`, holding back the retirements its commits schedule until it settles. A caller
@@ -87,6 +89,24 @@ export type DraftClose = {
 /** Work started inside a hold may commit after it settled; that work retires at once. */
 type Hold = { effects: Array<() => Promise<void>>; open: boolean };
 const retirementHold = new AsyncLocalStorage<Hold>();
+
+/** Which of these drafts still name the command that closed them (a restore clears it). */
+export async function draftsStillClosedBy(
+  db: DrizzleDb,
+  drafts: readonly { draftId: string; by: string }[],
+): Promise<ReadonlySet<string>> {
+  const rows = await db
+    .select({ id: documentDrafts.id, by: documentDrafts.closedBy })
+    .from(documentDrafts)
+    .where(
+      inArray(
+        documentDrafts.id,
+        drafts.map((draft) => draft.draftId),
+      ),
+    );
+  const by = new Map(drafts.map((draft) => [draft.draftId, draft.by]));
+  return new Set(rows.filter((row) => row.by === by.get(row.id)).map((row) => row.id));
+}
 
 export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"> }): DraftClose {
   let sink: { retire: DraftRetirement; onError(error: unknown): void } | null = null;
@@ -129,7 +149,7 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
 
   return {
     registerRemoved,
-    async closeDrafts(db, selection, cause) {
+    async closeDrafts(db, selection, cause, by) {
       const batch = enlistDrizzleTransactionParticipant(participant);
       if (typeof cause === "object") {
         if (!("documentIds" in selection))
@@ -143,6 +163,7 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
             .set({
               status: "closed",
               closedCause: typeof cause === "object" ? "document_removed" : "discarded",
+              closedBy: by ?? null,
               updatedAt: new Date(),
               revision: sql`${documentDrafts.revision} + 1`,
             })
@@ -174,6 +195,7 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
         documentId: row.documentId as DocumentId,
         branchId: row.branchId,
         cause,
+        by,
       }));
       batch.closed.push(...ended);
       return ended;

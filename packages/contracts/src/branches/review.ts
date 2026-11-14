@@ -163,9 +163,10 @@ export type ApplyItemsClick = {
 };
 
 /**
- * Take back a Discard: fresh pending copies, on the Work's current branch (the Discard's own
- * branch when it is still open, else the Work's new one), of the tree records it settled and of
- * the text drafts it closed.
+ * Restore a Discard, from the notice right after it or from Trash: the Work gets fresh pending
+ * copies of the tree records it settled, and the text drafts it closed reopen as the same rows
+ * in the Work's current branch. `discardCommandId` may name a restore too, which swaps the text
+ * it closed back in.
  */
 export type UndoDiscardClick = {
   commandId: DocumentCommandId;
@@ -175,22 +176,29 @@ export type UndoDiscardResult =
   | {
       status: "restored";
       commandId: DocumentCommandId;
+      /** The Work's current branch: where the copies and the reopened drafts are. */
       branchId: BranchId;
-      /** The copies made: tree records and text drafts. */
+      /** What came back: tree records copied and text drafts reopened. */
       restored: number;
-      /** What the Discard held that could not come back: a node or document that is gone, or a document the Work drafted again since. */
+      /** Newer drafts of the same documents this restore closed, now members of its own entry. */
+      swapped: number;
+      /** What the Discard held that could not come back: a node or document that has been purged. */
       leftOut: number;
     }
   | {
       status: "refused";
       commandId: DocumentCommandId;
       /**
-       * `already_restored`: an Undo of this Discard already made its copies. `nothing_to_restore`:
-       * the Discard settled no record and closed no draft that still exists.
+       * `already_restored`: the tree half was taken by a restore already. `nothing_to_restore`:
+       * the entry has no member left. `expired`: older than the Trash retention.
+       * `document_purged`: everything left was purged. `work_purged`: the Work is gone.
        */
       reason:
         | "already_restored"
         | "nothing_to_restore"
+        | "expired"
+        | "document_purged"
+        | "work_purged"
         | "not_found"
         | "work_archived"
         | "chat_frozen"

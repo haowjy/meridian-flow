@@ -7,7 +7,6 @@ import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
   applyCommandTrees,
-  discardCommandDrafts,
   documentCommands,
   documentDrafts,
   documents,
@@ -64,7 +63,7 @@ export function createDrizzleCommandDocuments(
       return documentsAmong([...text.map((row) => row.id), ...trees.flatMap((row) => row.nodes)]);
     },
 
-    /** The documents a Discard command settled records of or closed text drafts on. */
+    /** The documents a Discard command settled records of or closed text drafts on (the ones still closed by it). */
     async ofDiscard(input: {
       discardCommandId: DocumentCommandId;
       accountId: UserId;
@@ -73,12 +72,11 @@ export function createDrizzleCommandDocuments(
       const tx = currentDrizzleDb(db);
       const text = await tx
         .select({ id: documentDrafts.documentId })
-        .from(discardCommandDrafts)
-        .innerJoin(documentDrafts, eq(documentDrafts.id, discardCommandDrafts.draftId))
-        .innerJoin(documentCommands, eq(documentCommands.id, discardCommandDrafts.commandId))
+        .from(documentDrafts)
+        .innerJoin(documentCommands, eq(documentCommands.id, documentDrafts.closedBy))
         .where(
           and(
-            eq(discardCommandDrafts.commandId, input.discardCommandId),
+            eq(documentDrafts.closedBy, input.discardCommandId),
             eq(documentCommands.accountId, input.accountId),
             eq(documentDrafts.branchId, input.branchId),
           ),

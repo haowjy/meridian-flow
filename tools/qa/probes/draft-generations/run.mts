@@ -112,6 +112,7 @@ try {
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),
       closeRemovedRooms: async () => {},
+      stillClosedBy: async () => new Set(),
     }),
     (cause) => {
       throw cause;

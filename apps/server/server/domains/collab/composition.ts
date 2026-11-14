@@ -71,7 +71,7 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDocumentPurgeDisposal } from "./adapters/drizzle-document-purge-disposal.js";
-import type { DraftClose } from "./adapters/drizzle-draft-close.js";
+import { type DraftClose, draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
@@ -463,6 +463,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           draftIds,
           removalRecords.lookup,
         ),
+      stillClosedBy: (drafts) => draftsStillClosedBy(currentDrizzleDb(deps.db), drafts),
     }),
     (error) => {
       if (deps.eventSink)
@@ -523,7 +524,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
-      coordinator: draftCoordinator,
+      close: deps.draftClose,
     }),
   });
   const branches = createWorkBranchReviewService({
