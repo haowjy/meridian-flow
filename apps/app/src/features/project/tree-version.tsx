@@ -10,7 +10,7 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
-import { pendingRecords } from "@meridian/project-tree";
+import { branchRows, LIVE, pendingRecords, projectedRows } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -107,27 +107,35 @@ export function TreeVersionProvider({
   const { branchId, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
-  const projectVersion = project.snapshot?.version;
-  const accountVersion = account.snapshot?.version;
-  // A change to a folder alone lists no document, so the list says what else the Work changes.
-  const rows = drafts.drafts;
+  const { drafts: rows } = drafts;
+  const draftVersion = useDraftTreeVersion(
+    branchId,
+    rows,
+    work ? workLifecycleState(work) : "active",
+  );
+  // A change to a folder alone lists no document, so the lists say what else the Work changes:
+  // the nodes its view shows differently from live, as the server's rows do. A change and its
+  // Undo leave records and no difference, so they count for nothing.
   const changed = useMemo(() => {
     const nodes = new Set(rows?.map((row) => row.documentId));
-    if (branchId === null) return nodes;
-    for (const snapshot of [project.snapshot, account.snapshot])
-      if (snapshot)
-        for (const record of pendingRecords(snapshot.doc, branchId)) nodes.add(record.node);
+    if (branchId === null || !draftVersion) return nodes;
+    for (const list of [project, account]) {
+      const { session, snapshot } = list;
+      if (!session || !snapshot) continue;
+      const differing = branchRows(
+        projectedRows(session.replay(LIVE)),
+        projectedRows(session.replay(draftVersion.view, draftVersion.pendingText)),
+      );
+      for (const record of pendingRecords(snapshot.doc, branchId)) {
+        const row = differing.get(record.node);
+        if (row && !(row.existsOnlyInDraft && row.deleted)) nodes.add(record.node);
+      }
+    }
     return nodes;
-    // `version` is what changes when the copy does.
-  }, [branchId, rows, project.snapshot, account.snapshot, projectVersion, accountVersion]);
+  }, [branchId, rows, draftVersion, project, account]);
   const offered = branchId !== null && changed.size > 0;
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
-  const draftVersion = useDraftTreeVersion(
-    branchId,
-    drafts.drafts,
-    work ? workLifecycleState(work) : "active",
-  );
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
   // Every page follows the choice (`shownDraft`): writing it is the whole flip.

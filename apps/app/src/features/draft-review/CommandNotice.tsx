@@ -147,6 +147,7 @@ export function DraftNoticeLine({
           single
             ? {
                 label: <Trans>Open {name}</Trans>,
+                title: t`Open ${name}`,
                 onClick: () => void openDocument({ documentId: only.documentId }),
               }
             : undefined
