@@ -31,7 +31,7 @@ const THREAD_ID = "critic-thread";
 async function launchAgentsSource(): Promise<AgentSourceSnapshot> {
   const files: Record<string, string> = {};
   for (const entry of await readdir(LAUNCH_AGENTS, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || entry.name === "mars.toml") continue;
+    if (!entry.isFile()) continue;
     const absolute = path.join(entry.parentPath, entry.name);
     files[path.relative(LAUNCH_AGENTS, absolute)] = await readFile(absolute, "utf8");
   }
