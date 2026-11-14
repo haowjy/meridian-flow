@@ -1545,6 +1545,10 @@ msgstr ""
 msgid "Check your connection."
 msgstr ""
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checkbox"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr ""
@@ -1555,6 +1559,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
+msgstr ""
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checklist"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -5266,6 +5274,10 @@ msgstr "说出来理一理"
 msgid "Tap a change to go to it in the manuscript."
 msgstr ""
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "task"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
@@ -6032,6 +6044,10 @@ msgstr "首个词元耗时"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
+msgstr ""
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "To-do list"
 msgstr ""
 
 #: src/features/project/RecencyGroupedList.tsx

@@ -56,6 +56,7 @@ import {
 } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
+import { landSlice } from "./nesting";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -163,15 +164,19 @@ const unclosed = new WeakMap<Slice, Slice>();
  * merging into it, when the pasted node type is `defining`. That is a flag on
  * the type, and a heading is no longer a type: closing the slice's open start
  * for a leveled paragraph gives replaceRange the same input a `defining`
- * heading gave it. A destination with the same level and alignment still takes
- * the content in place, as `defining` also lets it.
+ * heading gave it. A list item replaces only an empty line, so a list pasted
+ * there keeps its first item. A destination with the same attributes still
+ * takes the content in place, as `defining` also lets it.
  */
-function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
+function closeShapedSlice(slice: Slice, $dest: ResolvedPos): Slice {
   const first = slice.content.firstChild;
+  const replaces =
+    first?.attrs.level != null ||
+    (first?.attrs.path != null && $dest.parent.isTextblock && $dest.parent.content.size === 0);
   if (
     slice.openStart !== 1 ||
     first?.type.name !== "paragraph" ||
-    first.attrs.level === null ||
+    !replaces ||
     first.sameMarkup($dest.parent)
   ) {
     return slice;
@@ -179,9 +184,13 @@ function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
   return new Slice(slice.content, 0, slice.openEnd);
 }
 
+function shapeForDestination(slice: Slice, $dest: ResolvedPos): Slice {
+  return closeShapedSlice(landSlice(slice, $dest), $dest);
+}
+
 /** A slice shaped for the block it will land in, whatever shaping the paste hook already gave it. */
 export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
-  return closeLeveledSlice(unclosed.get(slice) ?? slice, $dest);
+  return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
 /**
@@ -277,7 +286,7 @@ export const MeridianParagraph = Paragraph.extend({
           // A paste lands at the selection. A drop is shaped again where it lands
           // (`slice-drop.ts`), from the slice as it was before this ran.
           transformPasted: (slice, view) => {
-            const shaped = closeLeveledSlice(slice, view.state.selection.$from);
+            const shaped = shapeForDestination(slice, view.state.selection.$from);
             if (shaped !== slice) unclosed.set(shaped, slice);
             return shaped;
           },

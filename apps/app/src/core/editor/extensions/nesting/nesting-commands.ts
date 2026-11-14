@@ -16,6 +16,9 @@ import { NodeSelection, type Transaction } from "@tiptap/pm/state";
 
 export type ListKindName = "bullet" | "ordered";
 
+/** What a block out of every list keeps of its item: nothing. */
+export const NO_LIST = { kind: null, marker: null, start: null, loose: null } as const;
+
 /** Tab stops at this many list levels; the path is still read and written in full beyond it. */
 export const MAX_LIST_DEPTH = 8;
 
@@ -94,14 +97,22 @@ export function selectionListKind(sequence: Sequence): ListKindName | null {
   return kind;
 }
 
-/** Makes every selected block an item of this kind, or changes the kind of the items it already is. */
-export function setList(tr: Transaction, kind: ListKindName): boolean {
+/**
+ * Makes every selected block an item of this kind, or changes the kind of the items it already
+ * is. With `keepKind`, items keep their kind and only blocks in no list become items.
+ */
+export function setList(
+  tr: Transaction,
+  kind: ListKindName,
+  { keepKind = false }: { keepKind?: boolean } = {},
+): boolean {
   const sequence = selectedSequence(tr.selection);
   let changed = false;
   for (let i = sequence.from; i < sequence.to; i++) {
     const facts = sequence.facts[i];
     const level = innermostListStep(facts.steps);
     const own = { kind: kind === "ordered" ? "ordered" : null };
+    if (keepKind && level >= 0) continue;
     if (level < 0) {
       const steps = readPath(sequence.blocks[i].attrs.path);
       steps.push({ type: "list", fresh: false });
@@ -113,6 +124,30 @@ export function setList(tr: Transaction, kind: ListKindName): boolean {
       write(tr, sequence, i, own);
       changed = true;
     }
+  }
+  return changed;
+}
+
+/** True when every selected block starts or continues a task item. */
+export function selectionIsTaskList(sequence: Sequence): boolean {
+  for (let i = sequence.from; i < sequence.to; i++) {
+    const marker = sequence.facts[itemStart(sequence.facts, i)].marker;
+    if (marker !== "todo" && marker !== "done") return false;
+  }
+  return true;
+}
+
+/** Makes every selected block a task item, keeping the kind of the items it already is; a checked task stays checked. */
+export function setTaskList(tr: Transaction): boolean {
+  let changed = setList(tr, selectionListKind(selectedSequence(tr.selection)) ?? "bullet", {
+    keepKind: true,
+  });
+  const sequence = selectedSequence(tr.selection);
+  for (const start of selectedItems(sequence)) {
+    const marker = sequence.blocks[start].attrs.marker;
+    if (marker === "todo" || marker === "done") continue;
+    write(tr, sequence, start, { marker: "todo" });
+    changed = true;
   }
   return changed;
 }
@@ -159,12 +194,7 @@ export function outdent(tr: Transaction): boolean {
       steps.splice(level, 1);
       const path = pathOf(steps);
       const stillListed = steps.some((s) => s.type === "list");
-      write(
-        tr,
-        sequence,
-        i,
-        stillListed ? { path } : { path, kind: null, marker: null, start: null, loose: null },
-      );
+      write(tr, sequence, i, stillListed ? { path } : { path, ...NO_LIST });
     }
     changed = true;
   }

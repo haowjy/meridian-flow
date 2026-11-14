@@ -17,6 +17,7 @@ import { canJoin, dropPoint } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 
 import { sliceForDestination } from "../extensions/meridian-extensions";
+import { landSlice } from "../extensions/nesting";
 import type { DropDoor, DropPlan } from "./drop-plan";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 import { crossesTextblocks, removeRange } from "./range-removal";
@@ -209,7 +210,7 @@ function sliceDropTransaction(
   }
   const insertAt = transaction.steps.length;
   if (single) transaction.replaceRangeWith(gap, gap, single);
-  else transaction.replaceRange(gap, gap, blocks?.slice ?? slice);
+  else transaction.replaceRange(gap, gap, blocks ? landSlice(blocks.slice, $mapped) : slice);
   if (transaction.doc.eq(beforeInsert)) return null;
 
   let from = gap;

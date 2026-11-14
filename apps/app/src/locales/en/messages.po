@@ -1545,6 +1545,10 @@ msgstr "Chats without a Work"
 msgid "Check your connection."
 msgstr "Check your connection."
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checkbox"
+msgstr "checkbox"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr "Checked Work"
@@ -1556,6 +1560,10 @@ msgstr "Checking links…"
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
 msgstr "Checking Work…"
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "checklist"
+msgstr "checklist"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -5266,6 +5274,10 @@ msgstr "Talk it out"
 msgid "Tap a change to go to it in the manuscript."
 msgstr "Tap a change to go to it in the manuscript."
 
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "task"
+msgstr "task"
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
@@ -6033,6 +6045,10 @@ msgstr "Time to first token"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr "title"
+
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+msgid "To-do list"
+msgstr "To-do list"
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Today"

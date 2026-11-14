@@ -22,7 +22,9 @@ one side and fail on the other, so this package follows the editor's structural 
   the schema cannot build, so any value must read as something). `nesting.ts` is the one
   reader, `nest`, and is total: it never throws and nothing writes an attribute to repair a
   document. `numberOf` is the one ordered-number rule (0 to 999,999,999, held at the last
-  number Markdown can write).
+  number Markdown can write). `detach` and `landingBase` are the rules for blocks that
+  leave their place: a copied or moved run drops the levels outside it, and a moved run
+  keeps its depth, at most one level under the block it lands below.
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it

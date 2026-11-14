@@ -1,25 +1,26 @@
 /**
  * What a block move operates on, and every transaction that moves one.
  *
- * The movable unit is a TOP-LEVEL block: a direct child of the document. That
+ * The handle points at a TOP-LEVEL block: a direct child of the document. That
  * single choice is what makes the drop seams safe by construction — a seam
- * between two top-level children can never land inside a table, a figure, a
- * code fence, or a list item, so "never drop inside a protected node" is a
- * property of the geometry rather than a check somebody has to remember. The
- * handle in the margin points at the same unit, so the writer's target and the
- * drop target are one thing.
+ * between two top-level children can never land inside a table, a figure or a
+ * code fence, so "never drop inside a protected node" is a property of the
+ * geometry rather than a check somebody has to remember.
  *
- * Nested reordering (a list item among its siblings, a row inside a table) is
- * deliberately not here: rows belong to the table surface (§4, deepest owner)
- * and list items have no design yet. See `.context/FUTURE`.
+ * What moves is the block's run (`blockRun`): a list item with what is under
+ * it (`extentOf`), any other block alone. A moved run keeps its list depth
+ * where it lands, at most one level under the block above it (`moveUnder`).
+ * Rows belong to the table surface (§4, deepest owner).
  *
  * Pure over `EditorState` — every function returns a `Transaction` or a
  * reading, never dispatches. The surface beside it does the dispatching, so
  * the move itself is testable without a view.
  */
 
-import type { Node as PMNode } from "@tiptap/pm/model";
+import { type BlockFacts, extentOf, nestNodes } from "@meridian/prosemirror-schema";
+import { Fragment, type Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { moveUnder } from "@/core/editor/extensions/nesting";
 import { selectedObject } from "@/core/editor/objects";
 
 export type BlockTarget = {
@@ -127,11 +128,33 @@ export function selectionIsInsideTable(state: EditorState): boolean {
   return false;
 }
 
+/** The blocks that move with a block: the item it starts with what is under it, or the block alone. */
+export type BlockRun = {
+  /** Position before the run's first block, and after its last. */
+  pos: number;
+  end: number;
+  /** Index range among the document's top-level children, end exclusive. */
+  index: number;
+  endIndex: number;
+  nodes: PMNode[];
+};
+
+function topLevelFacts(doc: PMNode): BlockFacts[] {
+  return nestNodes(doc.content.content);
+}
+
+export function blockRun(doc: PMNode, source: BlockTarget): BlockRun {
+  const [index, endIndex] = extentOf(topLevelFacts(doc), source.index);
+  const nodes = doc.content.content.slice(index, endIndex);
+  const size = nodes.reduce((total, node) => total + node.nodeSize, 0);
+  return { pos: source.pos, end: source.pos + size, index, endIndex, nodes };
+}
+
 /**
- * Move the block at `source.index` to seam `seamIndex`. Null when the move
- * would not move anything: the seams on either side of a block are where it
- * already is, and a writer who drops a paragraph back onto its own edge has
- * asked for nothing rather than for an undo entry.
+ * Move the block's run to seam `seamIndex`. Null when the move would not move
+ * anything: the seams on either side of the run, and those inside it, are
+ * where it already is, and a writer who drops a paragraph back onto its own
+ * edge has asked for nothing rather than for an undo entry.
  */
 export function moveBlockToSeamTransaction(
   state: EditorState,
@@ -140,23 +163,37 @@ export function moveBlockToSeamTransaction(
 ): Transaction | null {
   const seams = blockSeams(state.doc);
   if (seamIndex < 0 || seamIndex >= seams.length) return null;
-  if (seamIndex === source.index || seamIndex === source.index + 1) return null;
+  const run = blockRun(state.doc, source);
+  if (seamIndex >= run.index && seamIndex <= run.endIndex) return null;
 
-  const size = source.node.nodeSize;
+  const above = seamIndex > 0 ? state.doc.child(seamIndex - 1) : null;
+  const moved = moveUnder(run.nodes, above);
+  const size = run.end - run.pos;
   const seam = seams[seamIndex];
   const tr = state.tr;
-  tr.delete(source.pos, source.pos + size);
+  tr.delete(run.pos, run.end);
   // The seam was measured on the document before the lift, so a seam below the
-  // block has shifted up by exactly the block's size.
-  const landing = seam < source.pos ? seam : seam - size;
-  tr.insert(landing, source.node);
+  // run has shifted up by exactly the run's size.
+  const landing = seam < run.pos ? seam : seam - size;
+  tr.insert(landing, Fragment.fromArray(moved));
 
-  return carrySelection(state, tr, source, landing).scrollIntoView();
+  return carrySelection(state, tr, run, landing).scrollIntoView();
+}
+
+function listDepth(facts: BlockFacts): number {
+  return facts.steps.filter((step) => step.type === "list").length;
+}
+
+/** The block continues an item at this list step, rather than starting one or standing outside it. */
+function continuesAt(facts: BlockFacts | undefined, level: number): boolean {
+  const step = facts?.steps[level];
+  return Boolean(step && step.type === "list" && !step.opens && !step.startsItem);
 }
 
 /**
- * One step up or down: over the neighbour, not merely past this block's own
- * edge. Null at the ends of the document, which is the no-op the boundary
+ * One step up or down: over the neighbouring item with what is under it, not
+ * merely past this run's own edge, so a move never takes another item's
+ * children. Null at the ends of the document, which is the no-op the boundary
  * asks for — the key is left unconsumed and nothing errors.
  */
 export function moveBlockStepTransaction(
@@ -164,51 +201,66 @@ export function moveBlockStepTransaction(
   source: BlockTarget,
   direction: BlockMoveDirection,
 ): Transaction | null {
-  const seamIndex = direction === "up" ? source.index - 1 : source.index + 2;
-  return moveBlockToSeamTransaction(state, source, seamIndex);
+  const facts = topLevelFacts(state.doc);
+  const run = blockRun(state.doc, source);
+  // The list step the neighbouring item is read at: this run's own, or the outermost for a block in no list.
+  const level = Math.max(listDepth(facts[run.index]), 1) - 1;
+  if (direction === "up") {
+    if (run.index === 0) return null;
+    let start = run.index - 1;
+    while (start > 0 && continuesAt(facts[start], level)) start--;
+    return moveBlockToSeamTransaction(state, source, start);
+  }
+  if (run.endIndex >= facts.length) return null;
+  let end = run.endIndex + 1;
+  while (end < facts.length && continuesAt(facts[end], level)) end++;
+  return moveBlockToSeamTransaction(state, source, end);
 }
 
 /**
- * A copy of the block, immediately after it. A writer standing in the block
- * lands in the copy, because the copy is the one they are about to rewrite.
+ * A copy of the block's run, immediately after it. A writer standing in the
+ * block lands in the copy, because the copy is the one they are about to rewrite.
  */
 export function duplicateBlockTransaction(
   state: EditorState,
   source: BlockTarget,
 ): Transaction | null {
-  const landing = source.pos + source.node.nodeSize;
-  const tr = state.tr.insert(landing, source.node);
-  return carrySelection(state, tr, source, landing).scrollIntoView();
+  const run = blockRun(state.doc, source);
+  const copy = moveUnder(run.nodes, run.nodes[run.nodes.length - 1]);
+  const tr = state.tr.insert(run.end, Fragment.fromArray(copy));
+  return carrySelection(state, tr, run, run.end).scrollIntoView();
 }
 
 /**
- * Remove the block. The last block standing becomes an empty paragraph rather
- * than nothing: the schema needs a block, and a writer who deleted their only
- * paragraph still expects somewhere to type.
+ * Remove the block's run. A document left with nothing becomes an empty
+ * paragraph rather than nothing: the schema needs a block, and a writer who
+ * deleted their only paragraph still expects somewhere to type.
  */
 export function deleteBlockTransaction(
   state: EditorState,
   source: BlockTarget,
 ): Transaction | null {
   const { doc, schema } = state;
-  const end = source.pos + source.node.nodeSize;
+  const run = blockRun(doc, source);
 
-  if (doc.childCount === 1) {
+  if (run.index === 0 && run.endIndex === doc.childCount) {
     const paragraph = schema.nodes.paragraph;
     if (!paragraph) return null;
-    // An empty heading is not "already empty": deleting it leaves body text.
+    const only = run.nodes.length === 1 ? run.nodes[0] : null;
+    // An empty heading or item is not "already empty": deleting it leaves body text.
     if (
-      source.node.type === paragraph &&
-      source.node.attrs.level == null &&
-      source.node.content.size === 0
+      only?.type === paragraph &&
+      only.attrs.level == null &&
+      only.attrs.path == null &&
+      only.content.size === 0
     )
       return null;
-    const tr = state.tr.replaceWith(source.pos, end, paragraph.create());
-    return tr.setSelection(TextSelection.near(tr.doc.resolve(source.pos + 1))).scrollIntoView();
+    const tr = state.tr.replaceWith(run.pos, run.end, paragraph.create());
+    return tr.setSelection(TextSelection.near(tr.doc.resolve(run.pos + 1))).scrollIntoView();
   }
 
-  const tr = state.tr.delete(source.pos, end);
-  const landing = Math.min(source.pos, tr.doc.content.size);
+  const tr = state.tr.delete(run.pos, run.end);
+  const landing = Math.min(run.pos, tr.doc.content.size);
   return tr.setSelection(TextSelection.near(tr.doc.resolve(landing), 1)).scrollIntoView();
 }
 
@@ -228,24 +280,23 @@ export function deleteBlockTransaction(
 function carrySelection(
   state: EditorState,
   tr: Transaction,
-  source: BlockTarget,
+  run: BlockRun,
   landing: number,
 ): Transaction {
   const { selection } = state;
-  const size = source.node.nodeSize;
-  const inside = selection.from >= source.pos && selection.to <= source.pos + size;
+  const inside = selection.from >= run.pos && selection.to <= run.end;
   if (!inside) return tr;
 
   const object = selectedObject(state);
   if (object) {
-    const at = landing + (object.pos - source.pos);
+    const at = landing + (object.pos - run.pos);
     const node = tr.doc.nodeAt(at);
     if (node && NodeSelection.isSelectable(node)) {
       return tr.setSelection(NodeSelection.create(tr.doc, at));
     }
   }
 
-  const from = tr.doc.resolve(landing + (selection.from - source.pos));
-  const to = tr.doc.resolve(landing + (selection.to - source.pos));
+  const from = tr.doc.resolve(landing + (selection.from - run.pos));
+  const to = tr.doc.resolve(landing + (selection.to - run.pos));
   return tr.setSelection(TextSelection.between(from, to));
 }

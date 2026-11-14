@@ -117,6 +117,14 @@
   background: var(--color-primary);
 }
 
+/* The box is a control: a press on it checks the task (`NestingExtension`). The
+   press lands on the block's own element, so the pointer is all CSS adds. */
+.meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="todo"]::before,
+.meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="done"]::before {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .meridian-editor .ProseMirror .meridian-listed[data-item="done"]::after {
   content: "";
   position: absolute;
