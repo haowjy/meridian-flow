@@ -2,7 +2,7 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
-import type { Block, Span } from "../codec-types.js";
+import type { Block } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 
 export interface CanonicalBlockIdentity {
@@ -115,13 +115,6 @@ export interface DocumentModel {
 
   /** Apply a concurrent CRDT update with its persisted origin metadata. */
   applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
-
-  /**
-   * Replace plain text within a block, keeping unchanged text at the span's edges.
-   * Undo repair's verb; agent writes go through `applyOps`.
-   * Mutates doc in place; span must refer to valid offsets in getText(block).
-   */
-  applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
 
   /**
    * Insert new blocks after a reference block.

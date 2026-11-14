@@ -23,13 +23,19 @@ export interface Where {
   open: string;
 }
 
-interface Walk {
+/**
+ * What the model saw of the block: the codec that wrote it and where it sits. Its round trip
+ * shows which attributes the model could have changed.
+ */
+export interface ShownBy {
   codec: AgentEditCodec;
-  /** The top-level block as the model saw it. */
-  top: Block;
-  /** `top` as the document writes it, and the containers it sits in. */
+  /** The block as the document writes it, and the containers it sits in. */
   place: () => Where;
-  /** What the codec shows of `top`: the attributes the model could have seen. */
+}
+
+interface Walk {
+  shownBy?: ShownBy;
+  /** What the codec shows of the block: the attributes the model could have seen. */
   shown?: Block;
   /** A find's windows as units, by the path of the textblock that holds them. */
   windows: Map<string, [TextWindow[], TextWindow[]]> | null;
@@ -42,19 +48,22 @@ interface Walk {
  * Every node at any depth is lowered by the same code, and the room is never read. The two
  * blocks have one type; any other difference lowers: children that pair are edited in place,
  * the rest are deleted or inserted, and an inline atom may go into the middle of a run of text.
- * `placed` is a find's windows in the two blocks' text.
+ * `placed` is a find's windows in the two blocks' text. With `shownBy`, an attribute counts as
+ * changed only where the model's node differs from what the codec shows of the node it saw
+ * (the model's node lacks what the codec does not write); without it, `after` is a stored
+ * node and every differing attribute is a change.
  */
 export function lowerBlock(
-  codec: AgentEditCodec,
   before: Block,
   after: Block,
-  placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
-  place: () => Where,
+  options: {
+    placed?: [TextWindow[] | undefined, TextWindow[] | undefined] | null;
+    shownBy?: ShownBy;
+  } = {},
 ): EditOp[] {
+  const { placed, shownBy } = options;
   const walk: Walk = {
-    codec,
-    top: before,
-    place,
+    shownBy,
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
   };
@@ -64,7 +73,7 @@ export function lowerBlock(
 
 function lowerNode(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
   if (before.eq(after)) return;
-  const attrs = changedAttrs(before, after, () => shownNode(walk, path));
+  const attrs = changedAttrs(before, after, walk.shownBy && (() => shownNode(walk, path)));
   if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
   if (before.isTextblock) {
     lowerTextblock(walk, before, after, path);
@@ -125,13 +134,17 @@ function childrenOf(node: Block): Block[] {
 function changedAttrs(
   before: Block,
   after: Block,
-  shownOf: () => Block | null,
+  shownOf: (() => Block | null) | undefined,
 ): Record<string, unknown> {
   const differs = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
   const candidates = Object.keys(after.attrs).filter((key) =>
     differs(before.attrs[key], after.attrs[key]),
   );
   const changed: Record<string, unknown> = {};
+  if (!shownOf) {
+    for (const key of candidates) changed[key] = after.attrs[key];
+    return changed;
+  }
   if (candidates.length === 0) return changed;
   // A node the codec's round trip has no counterpart of shows nothing: write no attribute.
   const shown = shownOf();
@@ -147,9 +160,9 @@ function changedAttrs(
  * once parses after the empty paragraph that carries the outer item, so its block is the last.
  */
 function shownNode(walk: Walk, path: readonly number[]): Block | null {
-  if (!walk.shown) {
-    const { body, open } = walk.place();
-    walk.shown = walk.codec.parse(body, { within: open }).blocks.at(-1);
+  if (!walk.shown && walk.shownBy) {
+    const { body, open } = walk.shownBy.place();
+    walk.shown = walk.shownBy.codec.parse(body, { within: open }).blocks.at(-1);
   }
   let node: Block | null | undefined = walk.shown;
   for (const index of path) node = node?.maybeChild(index);
@@ -174,7 +187,7 @@ function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly 
     const was = before.nodeAt(unit);
     const now = after.nodeAt(modelUnit);
     if (!was || !now) continue;
-    const attrs = changedAttrs(was, now, () => shownAtom(walk, path, ordinal));
+    const attrs = changedAttrs(was, now, walk.shownBy && (() => shownAtom(walk, path, ordinal)));
     if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs, unit });
   }
 }

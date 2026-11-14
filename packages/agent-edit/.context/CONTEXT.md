@@ -36,10 +36,10 @@ that transaction's update: read before a capture starts.
 
 Adjacent `Y.XmlText` children of a block are one run of text, as in the patched
 `@tiptap/y-tiptap` this package shares with the server and the browser (see the editor's
-`.context/CONTEXT.md`). `src/yjs-text-runs.ts` routes an edit to the text that owns its
-offset. Every walker of a block's children follows it: the writer pairs a run, never a
-text, with a target run, and the model's unit addressing skips empty texts, which are
-zero units wide and share a unit with the atom after them. A read never writes to the
+`.context/CONTEXT.md`). `applyOps` (`model/y-prosemirror.ts`) addresses units across a block's
+texts, so an edit goes to the text that owns its offset and an insert at a boundary joins
+the earlier one. Every walker of a block's children follows it: unit addressing skips empty
+texts, which are zero units wide and share a unit with the atom after them. A read never writes to the
 document.
 
 ## Block correspondence
@@ -61,9 +61,9 @@ place, counted from the gap's start, from its end and in proportion, so misleadi
 never leave an edited block unpaired. Each piece between them is treated the same way. A piece
 still too large pairs nothing new: never by position, never by weak overlap, and never does the
 budget remove a pair the cut found. An unpaired block is deleted or inserted, and nothing else
-rebuilds an element. Inside a block the writer pairs atoms the
-same way, then reconciles the one text run in each gap between paired atoms with the run
-rule above. The write path has no ids for the blocks it writes (the model writes text), so
+rebuilds an element. Inside a block the model's write and the Yjs writer share one lowering
+(`resolver/lower-block.ts`) and one adapter (`applyOps`): a container's children pair here
+too (by id where they have ids), and text is word-diffed as units. The write path has no ids for the blocks it writes (the model writes text), so
 pairing is by content only.
 
 What this keeps is the element, not every character's author: an image or break inserted

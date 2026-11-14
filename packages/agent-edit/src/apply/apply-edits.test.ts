@@ -20,6 +20,7 @@ import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { joinEntries } from "../resolver/find.js";
+import { applyTextEdit } from "../test-support/text-edit.js";
 import { applyEdits } from "./apply-edits.js";
 import { computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
@@ -265,7 +266,7 @@ function remoteTextUpdate(
 ): Uint8Array {
   const before = Y.encodeStateVector(doc);
   const block = baseModel.getBlocks(doc)[blockIndex];
-  doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
+  doc.transact(() => applyTextEdit(block, span, newText), transactionOrigin);
   return Y.encodeStateAsUpdate(doc, before);
 }
 
