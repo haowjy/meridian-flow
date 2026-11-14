@@ -184,6 +184,31 @@ const cases: ModelEditCase[] = [
     },
   },
   {
+    name: "recovery waits on a held draft-mode key while holding the thread lock",
+    expected:
+      "the edit takes no thread row inside its transaction: recovery and the edit do not wait on each other in a cycle",
+    async run({ h, start }) {
+      const { thread, documentId, path } = await seedCase(h, "wait-held-draft", "draft");
+      const first = await start();
+      await first.arm("command.afterClaim", "hold");
+      await first.script([{ toolCalls: [insertCall("call-1", path, "Added.")] }, reply]);
+      await send(first, h, thread);
+      await first.at("command.afterClaim");
+      await dropRunClaim(h, first);
+      const second = await start();
+      const swept = second.post({ op: "sweep" });
+      await waitForKeyWaiter(h);
+      await first.release("command.afterClaim");
+      await second.waitFor((m) => m.id === swept);
+      await waitForAssistantTurn(h, thread);
+      await sleep(1000);
+      await first.kill();
+      const after = await state(h, thread, documentId);
+      assert.equal(after.results.length, 1);
+      assert.deepEqual(after.turns, ["error"]);
+    },
+  },
+  {
     name: "two chats on one document serialize behind the document lock",
     expected: "both edits commit, once each, in the order the lock gave them",
     async run({ h, start }) {

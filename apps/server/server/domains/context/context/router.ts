@@ -822,6 +822,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
+    async flushMoveLinks(area) {
+      const source = await resolve(area);
+      if (source.ok) await treeMover.flushLinks(source.value);
+    },
+
     async commitWriterLocation(node, area, change) {
       const source = await resolve(area);
       if (!source.ok) return source;

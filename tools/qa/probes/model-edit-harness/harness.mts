@@ -409,6 +409,7 @@ export async function runCases(probe: string, cases: readonly ModelEditCase[]): 
   let failed = 0;
   try {
     for (const modelEditCase of cases) {
+      if (process.env.CASE && !modelEditCase.name.includes(process.env.CASE)) continue;
       const children: Child[] = [];
       const at = Date.now();
       try {

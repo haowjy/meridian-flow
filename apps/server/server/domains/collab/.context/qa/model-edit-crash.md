@@ -17,7 +17,7 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
 | `model-edit-kills` | A write to a live document at each step: before the response is stored, before and after the claim, before and after the commit, around the result block, between two calls, an old process held alive, a repeated key, a tool timeout before and after the claim. |
 | `model-edit-takeover` | A stale process storing a response or a result block after its run was taken over; the sweep; recovery waiting on a held key; two chats on one document; a chat card's Undo sent twice after a kill. |
 | `model-edit-drafts` | The same steps in draft mode, plus a writer typing during the edit, a Discard between two calls, a write after a Discard, a new draft after a Discard, two chats on one Work's draft. |
-| `model-edit-tree` | `move`, `delete`, `create`, `copy` and the model's `undo` killed after commit; a refused `create`; an aborted `create`; a duplicate call id. |
+| `model-edit-tree` | `move`, `delete`, `create`, `copy` and the model's `undo` killed after commit; a refused `create`; an aborted `create`; a duplicate call id; all four tree calls in a draft-mode chat. |
 | `model-edit-evidence` | What the model was shown: an edit's frontier survives a kill after commit, a read's is lost between its block and `resultStored`. |
 
 ## The harness
@@ -46,7 +46,12 @@ response's id and the call id, so cases share no command rows.
 - **Lost claim**: `dropRunClaim` terminates the backend that holds a child's session advisory
   lock, as a dropped connection does, so a second process can take over a chat whose first
   process is alive.
+  A child whose claim was cut dies with an uncaught `TypeError` from `postgres.js` when it next
+  uses the reserved session connection (the library writes to a closed socket from a timer; no
+  promise rejects). The takeover cases kill such a child instead of stopping it cleanly.
 - **Takeover**: a second child runs `sweep` (orphan repair and wake scan), the real recovery.
+
+`CASE=<text>` runs only the cases whose name contains it.
 
 Hook points are in `shared/test-hooks.ts`: `response.beforeStore`, `command.*`,
 `draft.append.beforeCommit`, `block.*` and `recovery.beforeResolve`. `command.afterCommit` also

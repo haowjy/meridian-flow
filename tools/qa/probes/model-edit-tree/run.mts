@@ -189,6 +189,36 @@ const cases: ModelEditCase[] = [
     },
   },
   {
+    name: "move, copy, create and delete in a draft-mode chat",
+    expected: "each answers committed on a pool of 2: none opens a second connection",
+    async run({ h, start }) {
+      const tag = `t${Math.random().toString(36).slice(2, 8)}`;
+      const { thread, documentId, path } = await seedCase(h, tag, "draft");
+      const child = await start();
+      await child.script([
+        {
+          toolCalls: [
+            write("call-1", { command: "copy", from: { path }, path: `manuscript://${tag}-copy` }),
+            write("call-2", { command: "create", path: `manuscript://${tag}-new`, content: "N." }),
+            write("call-3", { command: "move", from: { path }, path: `manuscript://${tag}-moved` }),
+            write("call-4", { command: "delete", path: `manuscript://${tag}-copy` }),
+          ],
+        },
+        reply,
+      ]);
+      await send(child, h, thread);
+      await waitForAssistantTurn(h, thread);
+      const after = await state(h, thread, documentId);
+      assert.deepEqual(after.results, [
+        "call-1:committed",
+        "call-2:committed",
+        "call-3:committed",
+        "call-4:committed",
+      ]);
+      assert.deepEqual(after.turns, ["complete"]);
+    },
+  },
+  {
     name: "a duplicate tool-call id in one response",
     expected: "the response is refused when stored: no call runs, the turn errors",
     async run({ h, start }) {

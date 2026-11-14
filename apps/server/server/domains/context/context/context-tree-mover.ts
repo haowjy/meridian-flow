@@ -171,12 +171,16 @@ export class ContextTreeMover {
     );
   }
 
+  async flushLinks(source: ContextTreeDispatch): Promise<void> {
+    await this.moveLinks?.flush(source);
+  }
+
   private async changeLocation(
     node: ContextEntryRef,
     source: ContextTreeDispatch,
     change: MoveChange,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    await this.moveLinks?.flush(source);
+    if (!change.linksFlushed) await this.flushLinks(source);
     const { destination: where } = change;
     let lockedFolder = where.kind === "at" ? where.folder : source;
     const scopeOf = (dispatch: ContextTreeDispatch) => ({
