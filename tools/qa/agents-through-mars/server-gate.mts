@@ -35,7 +35,13 @@ const http = (method: string, path: string, body?: unknown) => {
   const out = execFileSync(
     "curl",
     [
-      "-sk", "-X", method, "-H", "content-type: application/json", "-w", "\n%{http_code}",
+      "-sk",
+      "-X",
+      method,
+      "-H",
+      "content-type: application/json",
+      "-w",
+      "\n%{http_code}",
       ...(body === undefined ? [] : ["-d", JSON.stringify(body)]),
       `${serverUrl()}${path}`,
     ],
@@ -86,13 +92,23 @@ try {
     assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
   });
 
-  await check("Critic's write to a manuscript is refused and the document does not exist", async () => {
-    const id = threadId(mf("thread", "create", "--agent", "critic", "--title", "gate critic"));
-    const sent = mf("thread", "send", id, "write a scene", "--mock", "@tools/mf/fixtures/mock-write.json");
-    assert.match(sent, /permission_denied/);
-    assert.match(sent, /agent_read_only/);
-    assert.throws(() => mf("doc", "read", "manuscript://Scene"), /No live document/);
-  });
+  await check(
+    "Critic's write to a manuscript is refused and the document does not exist",
+    async () => {
+      const id = threadId(mf("thread", "create", "--agent", "critic", "--title", "gate critic"));
+      const sent = mf(
+        "thread",
+        "send",
+        id,
+        "write a scene",
+        "--mock",
+        "@tools/mf/fixtures/mock-write.json",
+      );
+      assert.match(sent, /permission_denied/);
+      assert.match(sent, /agent_read_only/);
+      assert.throws(() => mf("doc", "read", "manuscript://Scene"), /No live document/);
+    },
+  );
 
   await check("children Muse spawns that are read-only are bound read", async () => {
     const id = threadId(mf("thread", "create", "--agent", "muse", "--title", "gate muse"));
@@ -102,7 +118,10 @@ try {
     });
     const script = JSON.stringify({
       steps: [
-        { text: "Asking for checks.", toolCalls: [spawn("continuity-checker"), spawn("reader-sim")] },
+        {
+          text: "Asking for checks.",
+          toolCalls: [spawn("continuity-checker"), spawn("reader-sim")],
+        },
         { text: "Done." },
       ],
     });

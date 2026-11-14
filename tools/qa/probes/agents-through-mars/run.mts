@@ -111,7 +111,11 @@ const listed = async (slug: string) => {
 const resolved = async (slug: string) => {
   const item = await listed(slug);
   const result = await catalog.resolvePrimary(USER, item.selection);
-  assert.equal(result.ok, true, `${slug} did not resolve: ${JSON.stringify(item.unavailableReasons)}`);
+  assert.equal(
+    result.ok,
+    true,
+    `${slug} did not resolve: ${JSON.stringify(item.unavailableReasons)}`,
+  );
   if (!result.ok) throw new Error("unreachable");
   return result.configuration;
 };
@@ -126,49 +130,64 @@ try {
     createdByUserId: USER,
   });
 
-  await check("the built-in package: nine Agents, no diagnostics, read-only stays read-only", async () => {
-    await seedGeneralAgent(store, "fixture-model");
-    await seedLaunchAgentPackage(store);
-    const slugs = [
-      "general", "critic", "muse", "setup", "spark", "writer",
-      "continuity-checker", "reader-sim", "writer-helper",
-    ];
-    for (const slug of slugs) {
-      const entry = await store.readCatalogEntry(null, slug);
-      assert.ok(entry, `${slug} has no catalog entry`);
-      const row = await store.readCatalogRevision(entry.selectedRevisionId);
-      assert.ok(row?.definition, `${slug} has no definition`);
-      assert.deepEqual(row.diagnostics, [], `${slug} has diagnostics`);
-      assert.ok(await store.readRevision(row.id));
-    }
-    for (const slug of ["general", "critic", "muse", "setup", "spark", "writer"]) await resolved(slug);
-    assert.equal((await resolved("critic")).permission, "read");
-    const muse = await store.readCatalogEntry(null, "muse");
-    const museConfiguration = await resolved("muse");
-    assert.deepEqual(
-      museConfiguration.namedTargets.map((target) => target.name).sort(),
-      ["continuity-checker", "critic", "reader-sim", "writer-helper"],
-    );
-    assert.ok(muse);
-    for (const target of museConfiguration.namedTargets) {
-      const revision = await store.readRevision(target.definitionRevisionId);
-      assert.ok(revision, `${target.name} is not readable`);
-      const configuration = await resolveAgentConfiguration({
-        revision,
-        store,
-        defaultModel: "fixture-model",
-      });
-      if (["continuity-checker", "reader-sim", "critic"].includes(target.name)) {
-        assert.equal(configuration.permission, "read", `${target.name} is not read-only`);
+  await check(
+    "the built-in package: nine Agents, no diagnostics, read-only stays read-only",
+    async () => {
+      await seedGeneralAgent(store, "fixture-model");
+      await seedLaunchAgentPackage(store);
+      const slugs = [
+        "general",
+        "critic",
+        "muse",
+        "setup",
+        "spark",
+        "writer",
+        "continuity-checker",
+        "reader-sim",
+        "writer-helper",
+      ];
+      for (const slug of slugs) {
+        const entry = await store.readCatalogEntry(null, slug);
+        assert.ok(entry, `${slug} has no catalog entry`);
+        const row = await store.readCatalogRevision(entry.selectedRevisionId);
+        assert.ok(row?.definition, `${slug} has no definition`);
+        assert.deepEqual(row.diagnostics, [], `${slug} has diagnostics`);
+        assert.ok(await store.readRevision(row.id));
       }
-    }
-  });
+      for (const slug of ["general", "critic", "muse", "setup", "spark", "writer"])
+        await resolved(slug);
+      assert.equal((await resolved("critic")).permission, "read");
+      const muse = await store.readCatalogEntry(null, "muse");
+      const museConfiguration = await resolved("muse");
+      assert.deepEqual(museConfiguration.namedTargets.map((target) => target.name).sort(), [
+        "continuity-checker",
+        "critic",
+        "reader-sim",
+        "writer-helper",
+      ]);
+      assert.ok(muse);
+      for (const target of museConfiguration.namedTargets) {
+        const revision = await store.readRevision(target.definitionRevisionId);
+        assert.ok(revision, `${target.name} is not readable`);
+        const configuration = await resolveAgentConfiguration({
+          revision,
+          store,
+          defaultModel: "fixture-model",
+        });
+        if (["continuity-checker", "reader-sim", "critic"].includes(target.name)) {
+          assert.equal(configuration.permission, "read", `${target.name} is not read-only`);
+        }
+      }
+    },
+  );
 
   type Unavailable = { name: string; files: (slug: string) => Record<string, string> };
-  const alone = (content: (slug: string) => string): Unavailable["files"] => (slug) => ({
-    "mars.toml": MANIFEST,
-    [`agents/${slug}.md`]: content(slug),
-  });
+  const alone =
+    (content: (slug: string) => string): Unavailable["files"] =>
+    (slug) => ({
+      "mars.toml": MANIFEST,
+      [`agents/${slug}.md`]: content(slug),
+    });
   const fm = (frontmatter: string) => alone(() => `---\nname: A\n${frontmatter}---\n\nBody.\n`);
   const unavailable: Unavailable[] = [
     { name: "unparseable YAML", files: alone(() => "---\nname: [x\n---\n") },
@@ -263,23 +282,39 @@ try {
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.reason, "unavailable");
       assert.equal(await store.readRevision(item.selection.definitionRevisionId), undefined);
-      const [row] = await raw`select definition from agent_definition_revisions where id=${item.selection.definitionRevisionId}`;
+      const [row] =
+        await raw`select definition from agent_definition_revisions where id=${item.selection.definitionRevisionId}`;
       assert.equal(row?.definition, null);
     });
   }
 
   const never: Array<{ name: string; frontmatter: string; expect: Record<string, unknown> }> = [
-    { name: "sandbox: read-only", frontmatter: "sandbox: read-only\n", expect: { permission: "read" } },
     {
-      name: "model-policies override sandbox read-only",
-      frontmatter:
-        "model-policies:\n  - match: {model: m}\n    override: {sandbox: read-only}\n",
+      name: "sandbox: read-only",
+      frontmatter: "sandbox: read-only\n",
       expect: { permission: "read" },
     },
-    { name: "tools: write deny", frontmatter: "tools: {write: deny}\n", expect: { "disallowed-tools": ["write"] } },
-    { name: "tools: * deny, read allow", frontmatter: 'tools: {"*": deny, read: allow}\n', expect: { tools: ["read"] } },
+    {
+      name: "model-policies override sandbox read-only",
+      frontmatter: "model-policies:\n  - match: {model: m}\n    override: {sandbox: read-only}\n",
+      expect: { permission: "read" },
+    },
+    {
+      name: "tools: write deny",
+      frontmatter: "tools: {write: deny}\n",
+      expect: { "disallowed-tools": ["write"] },
+    },
+    {
+      name: "tools: * deny, read allow",
+      frontmatter: 'tools: {"*": deny, read: allow}\n',
+      expect: { tools: ["read"] },
+    },
     { name: "tools: * deny", frontmatter: 'tools: {"*": deny}\n', expect: { tools: [] } },
-    { name: "tools: * deny, bash allow", frontmatter: 'tools: {"*": deny, bash: allow}\n', expect: { tools: [] } },
+    {
+      name: "tools: * deny, bash allow",
+      frontmatter: 'tools: {"*": deny, bash: allow}\n',
+      expect: { tools: [] },
+    },
     {
       name: "tools: write allow, edit deny",
       frontmatter: "tools: {write: allow, edit: deny}\n",
@@ -289,7 +324,10 @@ try {
   for (const [index, entry] of never.entries()) {
     await check(`never wider: ${entry.name}`, async () => {
       const slug = `n${index}`;
-      await publish({ "mars.toml": MANIFEST, [`agents/${slug}.md`]: agent("N", entry.frontmatter) });
+      await publish({
+        "mars.toml": MANIFEST,
+        [`agents/${slug}.md`]: agent("N", entry.frontmatter),
+      });
       const configuration = await resolved(slug);
       assert.partialDeepStrictEqual(configuration, entry.expect);
       if (!("tools" in entry.expect)) assert.equal(configuration.tools, undefined);
@@ -309,7 +347,10 @@ try {
   });
 
   await check("fixing a broken Agent: save a valid file over an unavailable one", async () => {
-    const broken = await catalog.save(USER, { slug: "fix1", content: agent("Fix", "permission: read\n") });
+    const broken = await catalog.save(USER, {
+      slug: "fix1",
+      content: agent("Fix", "permission: read\n"),
+    });
     assert.ok(broken.unavailableReasons.length > 0);
     assert.equal((await catalog.resolvePrimary(USER, broken.selection)).ok, false);
     const fixed = await catalog.save(USER, {
@@ -321,67 +362,76 @@ try {
     assert.equal((await catalog.resolvePrimary(USER, fixed.selection)).ok, true);
   });
 
-  await check("a reader bump: new rows, held selection refused, bound chat keeps resolving, boot recompiles", async () => {
-    const files = {
-      "mars.toml": MANIFEST,
-      "agents/b1.md": agent("B", "subagents: [b1-child]\nskills: [b1-skill]\n"),
-      "agents/b1-child.md": agent("Child", "mode: subagent\n"),
-      "skills/b1-skill/SKILL.md": skill("b1-skill"),
-    };
-    const coordinate = await publish(files, OLD_READER);
-    const oldItem = await listed("b1");
-    const oldRevision = await store.readRevision(oldItem.selection.definitionRevisionId);
-    assert.equal(oldRevision?.grammarVersion, OLD_READER);
-    assert.ok(oldRevision);
-    const configuration = await resolveAgentConfiguration({
-      revision: oldRevision,
-      store,
-      defaultModel: "fixture-model",
-    });
-    assert.equal(await store.bindThread(THREAD, oldRevision.id, configuration, null), true);
+  await check(
+    "a reader bump: new rows, held selection refused, bound chat keeps resolving, boot recompiles",
+    async () => {
+      const files = {
+        "mars.toml": MANIFEST,
+        "agents/b1.md": agent("B", "subagents: [b1-child]\nskills: [b1-skill]\n"),
+        "agents/b1-child.md": agent("Child", "mode: subagent\n"),
+        "skills/b1-skill/SKILL.md": skill("b1-skill"),
+      };
+      const coordinate = await publish(files, OLD_READER);
+      const oldItem = await listed("b1");
+      const oldRevision = await store.readRevision(oldItem.selection.definitionRevisionId);
+      assert.equal(oldRevision?.grammarVersion, OLD_READER);
+      assert.ok(oldRevision);
+      const configuration = await resolveAgentConfiguration({
+        revision: oldRevision,
+        store,
+        defaultModel: "fixture-model",
+      });
+      assert.equal(await store.bindThread(THREAD, oldRevision.id, configuration, null), true);
 
-    await publishAgentSource({
-      store,
-      ownerUserId: USER,
-      source: { coordinate, files },
-      expectedRevisionId: (await store.listInstallations(USER)).find((i) => i.coordinate === coordinate)
-        ?.currentRevisionId,
-    });
-    const entry = await store.readCatalogEntry(USER, "b1");
-    assert.ok(entry);
-    assert.notEqual(entry.selectedRevisionId, oldRevision.id);
-    assert.equal(
-      (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion !== OLD_READER,
-      true,
-    );
-    assert.equal(await store.readSelection(USER, entry.id, oldRevision.id), undefined);
-    const binding = await store.readThreadBinding(THREAD);
-    assert.equal(binding?.revision?.id, oldRevision.id);
-    for (const target of binding?.configuration.namedTargets ?? []) {
-      const child = await store.readRevision(target.definitionRevisionId);
-      assert.ok(child);
-      await resolveAgentConfiguration({ revision: child, store, defaultModel: "fixture-model" });
-    }
+      await publishAgentSource({
+        store,
+        ownerUserId: USER,
+        source: { coordinate, files },
+        expectedRevisionId: (await store.listInstallations(USER)).find(
+          (i) => i.coordinate === coordinate,
+        )?.currentRevisionId,
+      });
+      const entry = await store.readCatalogEntry(USER, "b1");
+      assert.ok(entry);
+      assert.notEqual(entry.selectedRevisionId, oldRevision.id);
+      assert.equal(
+        (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion !== OLD_READER,
+        true,
+      );
+      assert.equal(await store.readSelection(USER, entry.id, oldRevision.id), undefined);
+      const binding = await store.readThreadBinding(THREAD);
+      assert.equal(binding?.revision?.id, oldRevision.id);
+      for (const target of binding?.configuration.namedTargets ?? []) {
+        const child = await store.readRevision(target.definitionRevisionId);
+        assert.ok(child);
+        await resolveAgentConfiguration({ revision: child, store, defaultModel: "fixture-model" });
+      }
 
-    const stale = {
-      "mars.toml": MANIFEST,
-      "agents/b2.md": agent("B2"),
-    };
-    await publish(stale, OLD_READER);
-    const before = await store.readCatalogEntry(USER, "b2");
-    assert.ok(before);
-    await recompileStalePackages(store);
-    const after = await store.readCatalogEntry(USER, "b2");
-    assert.ok(after);
-    assert.notEqual(after.selectedRevisionId, before.selectedRevisionId);
-    assert.notEqual(
-      (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion,
-      OLD_READER,
-    );
-    assert.equal((await store.listInstallationsWithoutRows(
-      (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion ?? "",
-    )).length, 0);
-  });
+      const stale = {
+        "mars.toml": MANIFEST,
+        "agents/b2.md": agent("B2"),
+      };
+      await publish(stale, OLD_READER);
+      const before = await store.readCatalogEntry(USER, "b2");
+      assert.ok(before);
+      await recompileStalePackages(store);
+      const after = await store.readCatalogEntry(USER, "b2");
+      assert.ok(after);
+      assert.notEqual(after.selectedRevisionId, before.selectedRevisionId);
+      assert.notEqual(
+        (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion,
+        OLD_READER,
+      );
+      assert.equal(
+        (
+          await store.listInstallationsWithoutRows(
+            (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion ?? "",
+          )
+        ).length,
+        0,
+      );
+    },
+  );
 } finally {
   await raw.end();
   await db.close();
