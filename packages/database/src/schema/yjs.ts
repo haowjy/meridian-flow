@@ -13,7 +13,6 @@ import type { DocumentCommandKind, DocumentCommandOutcome } from "@meridian/cont
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
