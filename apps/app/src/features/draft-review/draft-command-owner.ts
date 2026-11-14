@@ -57,9 +57,10 @@ export type DraftCommandState = {
   closed: boolean;
   checkingClose: boolean;
   removed: boolean;
-  unsentText: string | null;
   liveUri: string | null;
 };
+/** A closed draft's text, typed here, that its server room never took. */
+export type UnsentDraftText = { draftId: string; text: string };
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
@@ -71,7 +72,6 @@ const EMPTY: DraftCommandState = {
   closed: false,
   checkingClose: false,
   removed: false,
-  unsentText: null,
   liveUri: null,
 };
 export type CommandOutcome =
@@ -153,6 +153,8 @@ export class DraftCommandOwner {
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
+  /** Per document (`[projectId, documentId]`), until dismissed: the latest closed draft's. */
+  private readonly unsent = new Map<string, UnsentDraftText>();
   private readonly listeners = new Set<() => void>();
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
@@ -385,6 +387,8 @@ export class DraftCommandOwner {
         this.detach(entry);
         entry.item.queue.refuseUnsent(entry.draftId);
       }
+      // A released room is kept while it holds typing it can still send; this lets it go.
+      this.releaseIdle(entry);
     });
     // subscribe publishes synchronously, including an already retired session.
     if (entry.binding !== binding) stopSession();
@@ -513,13 +517,18 @@ export class DraftCommandOwner {
       disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
+    // The local copy stays (a Discard can be undone); this is the writer's way to the text now.
+    if (unsentText)
+      this.unsent.set(JSON.stringify([ref.projectId, ref.documentId]), {
+        draftId: id,
+        text: unsentText,
+      });
     this.setState(
       ref.itemKey,
       {
         closed: true,
         checkingClose: false,
         removed: disposition === "removed",
-        unsentText,
         liveUri: liveUri ?? null,
       },
       id,
@@ -531,9 +540,28 @@ export class DraftCommandOwner {
       void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
   }
 
+  /** The text a closed draft of this document held that its room never took, until dismissed. */
+  unsentText(projectId: string, documentId: string): UnsentDraftText | null {
+    return this.unsent.get(JSON.stringify([projectId, documentId])) ?? null;
+  }
+
+  dismissUnsentText(projectId: string, documentId: string): void {
+    if (this.unsent.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  }
+
+  /**
+   * A room nothing shows still holds typing the server hasn't taken: keep observing it, so a
+   * close that ends it (another device's Discard) still leaves the writer the text.
+   */
+  private holdsUnsentEdits(entry: Entry): boolean {
+    const session = entry.binding?.session;
+    return !!session && session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+  }
+
   private releaseIdle(entry: Entry) {
     if (
       entry.users ||
+      this.holdsUnsentEdits(entry) ||
       this.textClicks(entry).length ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId) ||
       this.entries.get(entry.draftId) !== entry
