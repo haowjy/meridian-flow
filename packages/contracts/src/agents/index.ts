@@ -61,7 +61,7 @@ export interface AgentFileStatus {
   /** The name the writer picks by: the file's, or `name__package` after a clash. */
   slug: string;
   level: AgentLevel;
-  /** Relative to the level's root (`agentsUriOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
+  /** Relative to the level's root (`agentsRootOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
   path: string;
   /** Why it can't be used, in Mars's words; empty when it can. */
   unavailableReasons: string[];

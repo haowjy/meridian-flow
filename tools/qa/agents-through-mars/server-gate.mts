@@ -77,8 +77,8 @@ try {
       "doc",
       "put",
       `agents://agents/${slug}.md`,
-      "--text",
-      "---\nname: Gate\npermission: read\n---\n\nBody.\n",
+      // `=` form: the parser reads a separate value that starts with a dash as another option.
+      "--text=---\nname: Gate\npermission: read\n---\n\nBody.\n",
     );
     const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
       (agent: { slug: string }) => agent.slug === slug,

@@ -1,7 +1,6 @@
 /** Where a level's Agent files live. The one place that spells those addresses. */
 
 import type { ContextUriScheme, ProjectScopedContextUriScheme } from "../context-uri.js";
-import { canonicalContextUri } from "../context-uri.js";
 
 export type AgentsLevel = "user" | "project";
 
@@ -35,12 +34,6 @@ export function agentsLocationOf(scheme: ContextUriScheme, path: string): Agents
     if (path.startsWith(`${root.path}/`)) return { level, path: path.slice(root.path.length + 1) };
   }
   return null;
-}
-
-/** The canonical address of a path in a level, for every place that prints one. */
-export function agentsUriOf(level: AgentsLevel, path: string): string {
-  const root = ROOTS[level];
-  return canonicalContextUri(root.scheme, [root.path, path].filter(Boolean).join("/"));
 }
 
 const AGENT_FILE = /^(?:packages\/[^/]+\/)?agents\/([^/]+)\.md$/;
