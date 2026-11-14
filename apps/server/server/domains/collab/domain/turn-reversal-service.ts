@@ -2,7 +2,7 @@
 
 import type { ReverseTurnCommandResult } from "@meridian/contracts/branches";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   CommandConflictError,
   type CommandEnvelope,
@@ -32,11 +32,13 @@ export type TurnReversalServiceDeps = {
   /**
    * Takes the owners' locks, then the chat's thread with them, in the order every Work mutation
    * keeps (threads, Works, lineages, then the project's tree list when `treeListProjectId` is
-   * given), all before the documents' locks. `changed` is a thread that joined a Work's tree
-   * meanwhile: the locks are not the tree's.
+   * given), all before the documents' locks. Only `receiptWorkIds` have their threads locked, as
+   * the runtime locks them: their step ends those chats. `changed` is a thread that joined such
+   * a Work's tree meanwhile: the locks are not the tree's.
    */
   lockOwners(input: {
     owners: OwnerLocks;
+    receiptWorkIds: readonly WorkId[];
     threadId: ThreadId;
     treeListProjectId: ProjectId | null;
   }): Promise<{ changed: boolean }>;
@@ -117,10 +119,12 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     });
     const { changed } = await input.lockOwners({
       owners,
+      receiptWorkIds: alongside?.workIds ?? [],
       threadId: command.threadId,
       treeListProjectId: alongside?.workIds.length ? projectId : null,
     });
     if (changed) throw new ReversalOwnersMoved(owners);
+    await alongside?.lockNamespaces();
     const documents = await reverseDocuments({ ...query, declared: owners }, targets);
     const outcome = alongside ? await alongside.run(documents) : documents;
     return { status: changedSomething(outcome) ? "reversed" : "refused", outcome };

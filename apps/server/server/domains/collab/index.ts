@@ -36,6 +36,7 @@ export {
   type LinkScopeKey,
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
+export { ReversalOwnersMoved } from "./domain/reversal-conflict.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

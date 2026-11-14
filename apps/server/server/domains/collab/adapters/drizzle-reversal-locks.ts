@@ -7,8 +7,13 @@ import { lockProjectTreeList } from "../../../shared/tree-list-lock.js";
 import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
 
 export function createDrizzleReversalLocks(db: Database): TurnReversalServiceDeps["lockOwners"] {
-  return async ({ owners, threadId, treeListProjectId }) => {
+  return async ({ owners, receiptWorkIds, threadId, treeListProjectId }) => {
+    // Only the receipt Works' chats lock, the way the runtime does and as restore finds them
+    // (`includeMarked`): the Work step ends them. The documents' Works lock as rows alone.
     const { changed } = await lockWorkThreadTrees(db, owners.workIds as WorkId[], {
+      threadWorkIds: receiptWorkIds,
+      includeMarked: true,
+      runtimeThreadLock: true,
       extraThreadIds: [threadId],
       lineageRootIds: owners.lineageRootIds,
     });

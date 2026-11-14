@@ -298,6 +298,8 @@ export type ReverseThreadContextInput = {
    */
   alongside?: {
     workIds: readonly WorkId[];
+    /** Takes the namespace keys the Work step needs, after the tree lists and before any document key. */
+    lockNamespaces(): Promise<void>;
     run(outcome: ReversalOutcome): Promise<ReversalOutcome>;
   };
   /** How a move between lists is taken back; without it, such a step is refused. */

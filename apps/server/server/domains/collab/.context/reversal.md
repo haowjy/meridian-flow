@@ -18,12 +18,16 @@ is `command_conflict` (409). The receipts the reversal writes carry `document_ed
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
 and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each
-document's own Work) and the service adds the receipts' Works; `lockWorkThreadTrees` takes the chat's
-thread, the Works' threads (parents first), the Works by id, the lineages and, when receipts
-exist, the project's tree lists. The commit scope compares the Works it would lock with that set
+document's own Work) and the service adds the receipts' Works; `lockWorkThreadTrees` takes the
+threads of the receipt Works (marked ones included) and the chat's own, parents first, each as the
+runtime's thread lock does, so the Work step's `stopThreads` re-enters locks it already holds; then
+all the Works by id, the lineages and, when receipts exist, the project's tree lists and the
+namespace keys a restore takes (`works.lockRestoreNamespaces`). The documents' Works are locked as
+rows only. The commit scope compares the Works it would lock with that set
 before taking any lock; a Work outside it throws `ReversalOwnersMoved`, which rolls back past the
 claim and reruns the command with the larger set (four attempts). A miss the server retries (a
-moved capture, a deadlock) rolls back past the claim; exhausting the inverse's attempts is
+moved capture, a deadlock) rolls back past the claim; four misses of the owners answer 503 with
+`Retry-After` and store nothing; exhausting the inverse's attempts is
 `ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured

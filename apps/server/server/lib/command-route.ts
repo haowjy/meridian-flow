@@ -96,6 +96,11 @@ export async function runRouteCommand<R extends { status: "done" | "refused" }>(
     userId: UserId;
     projectId: ProjectId;
     kind: CommandKind;
+    /**
+     * The command mints `projectId` (project create), so a resend carrying none would mint
+     * another: the digest covers the body, which holds the id when the sender chose it.
+     */
+    mintsProject?: boolean;
     selectors?: Record<string, string | null>;
     body: unknown;
   },
@@ -109,7 +114,7 @@ export async function runRouteCommand<R extends { status: "done" | "refused" }>(
     kind: input.kind,
     digest: commandDigest({
       accountId: input.userId,
-      projectId: input.projectId,
+      projectId: input.mintsProject ? "" : input.projectId,
       kind: input.kind,
       selectors: input.selectors ?? {},
       body: input.body,

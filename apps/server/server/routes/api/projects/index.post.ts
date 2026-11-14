@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const { project } = await runRouteCommand<{ status: "done"; project: ProjectDto }>(
     app.commands,
-    { commandId, userId, projectId: id, kind: "project_create", body },
+    { commandId, userId, projectId: id, kind: "project_create", mintsProject: true, body },
     async () => ({
       status: "done",
       project: projectDto(

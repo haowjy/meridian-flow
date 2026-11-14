@@ -1727,6 +1727,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1811,6 +1812,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },

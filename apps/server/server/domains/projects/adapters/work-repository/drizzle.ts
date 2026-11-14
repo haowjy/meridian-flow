@@ -7,7 +7,7 @@ import {
 } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, treeNodes, works } from "@meridian/database/schema";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -398,6 +398,17 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         }
         throw cause;
       }
+    },
+    async lockRestoreNamespaces(ids: readonly WorkId[]): Promise<void> {
+      if (!deps.arrivals || ids.length === 0) return;
+      const deleted = await currentDrizzleDb(db)
+        .select({ id: works.id })
+        .from(works)
+        .where(and(inArray(works.id, [...ids]), isNotNull(works.deletedAt)));
+      const arriving = (
+        await Promise.all(deleted.map(({ id }) => workSourceDocumentIds(id)))
+      ).flat();
+      if (arriving.length > 0) await deps.arrivals.lockNamespaces(arriving);
     },
     async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
       await runInDrizzleTransaction(db, async () => {

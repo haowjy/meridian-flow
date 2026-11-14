@@ -5,7 +5,7 @@
  */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { continuationOwedSql } from "./ask-continuation-owed.js";
 import { lockLineagesOfThreads } from "./draft-owner.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
@@ -37,6 +37,31 @@ export async function lockThreadAsks(
     )
     .orderBy(asc(asks.id));
   await (options.skipLocked ? query.for("update", { skipLocked: true }) : query.for("update"));
+}
+
+/** Distinct from the run-ownership lock seed (81); never share a seed across concerns. */
+export const THREAD_LOCK_SEED = 82n;
+
+export function threadLockKey(threadId: ThreadId): string {
+  return `meridian:thread-lock:${threadId}`;
+}
+
+/**
+ * The runtime's thread lock (`withThreadLock`), in its order: the thread's held asks, the inbox
+ * advisory lock, then the row. A transaction that takes a thread's row and later runs the
+ * runtime's lock on it (lineage cancellation) must take it this way, or it inverts against an
+ * inbox transaction holding the advisory lock and waiting for the row.
+ */
+export async function lockThreadAsRuntime(
+  db: DrizzleDb,
+  threadId: ThreadId,
+  options: { skipLockedAsks?: boolean } = {},
+) {
+  await lockThreadAsks(db, [threadId], { skipLocked: options.skipLockedAsks });
+  await currentDrizzleDb(db).execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${threadLockKey(threadId)}, ${THREAD_LOCK_SEED}))`,
+  );
+  return lockThreadForMutation(db, threadId);
 }
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */
@@ -147,6 +172,17 @@ export async function lockWorkThreadTrees(
   workIds: readonly WorkId[],
   options: {
     includeMarked?: boolean;
+    /**
+     * The Works whose thread forests lock; default `workIds`. A caller that locks Works it
+     * only reads (a document's owner) leaves their chats alone.
+     */
+    threadWorkIds?: readonly WorkId[];
+    /**
+     * Lock each thread as the runtime does (`lockThreadAsRuntime`), for a caller that later ends
+     * threads. Parents first, so the first thread's asks wait and the rest skip rows held
+     * elsewhere, as lineage cancellation's later locks do.
+     */
+    runtimeThreadLock?: boolean;
     extraThreadIds?: readonly ThreadId[];
     lineageRootIds?: readonly string[];
     /**
@@ -158,11 +194,16 @@ export async function lockWorkThreadTrees(
 ): Promise<LockedWorkThreadTrees> {
   const includeMarked = options.includeMarked ?? false;
   const extraThreadIds = options.extraThreadIds ?? [];
-  const initial = await findWorkThreadTrees(db, workIds, includeMarked, extraThreadIds);
+  const threadWorkIds = options.threadWorkIds ?? workIds;
+  const initial = await findWorkThreadTrees(db, threadWorkIds, includeMarked, extraThreadIds);
   await options.beforeLock?.(initial.threadIds);
-  for (const threadId of initial.threadIds) await lockThreadForMutation(db, threadId);
+  for (const [index, threadId] of initial.threadIds.entries()) {
+    if (options.runtimeThreadLock)
+      await lockThreadAsRuntime(db, threadId, { skipLockedAsks: index > 0 });
+    else await lockThreadForMutation(db, threadId);
+  }
   const lifecycles = await lockWorksInIdOrder(db, workIds);
-  const current = await findWorkThreadTrees(db, workIds, includeMarked, extraThreadIds);
+  const current = await findWorkThreadTrees(db, threadWorkIds, includeMarked, extraThreadIds);
   // Trashing or restoring the tree changes whether its lineages are live (draft writes decide that
   // under this lock), and it comes before the context namespaces the caller then takes.
   await lockLineagesOfThreads(db, current.threadIds, options.lineageRootIds);

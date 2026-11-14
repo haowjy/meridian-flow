@@ -15,6 +15,7 @@ import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { discardedTree } from "../domains/context/tree/trash-entries.js";
 import { runWorkLifecycleCommand } from "../domains/projects/index.js";
+import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
 import { setTestHook } from "../shared/test-hooks.js";
 import { race } from "../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
@@ -913,7 +914,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             ...script.runtime.ports,
             workContextNotices: { workChanged: async () => {} },
-            stopThreads: async () => {},
+            stopThreads: script.runtime.app.stopThreads,
           },
           {
             threadId: thread.threadId as never,
@@ -988,7 +989,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             undo: () => card(script, "undo"),
             delete: () =>
               runWorkLifecycleCommand(app.works.transaction, () =>
-                app.works.softDelete(NEW_WORK_ID as never, async () => {}),
+                app.works.softDelete(NEW_WORK_ID as never, app.stopThreads),
               ),
           },
           "undo",
@@ -999,6 +1000,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(raced.bWaited).toBe(true);
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
+      });
+
+      it("against the runtime's thread lock on the made Work's chat: neither deadlocks", async () => {
+        const script = await madeWorkAndEdited();
+        const threadLock = createDrizzleThreadLock(db);
+        const raced = await race<"undo" | "inbox">(
+          db,
+          {
+            undo: () => card(script, "undo"),
+            inbox: () => threadLock.withThreadLock(NEW_WORK_THREAD as never, async () => "held"),
+          },
+          "undo",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+        expect(raced.by.inbox, JSON.stringify(raced.by.inbox)).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await workDeleted()).toBe(true);
       });
 
       it("against a second reversal in the same chat: the second reads what the first left", async () => {

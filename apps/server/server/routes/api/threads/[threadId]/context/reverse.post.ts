@@ -11,6 +11,7 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { z } from "zod";
+import { ReversalOwnersMoved } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 import { reverseTurnCard } from "../../../../../lib/work-receipt-reversal.js";
@@ -47,6 +48,13 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 200);
     return outcome;
   } catch (cause) {
+    // The Works kept changing under the click's locks: nothing was stored, the same request may resend.
+    if (cause instanceof ReversalOwnersMoved)
+      throw createError({
+        statusCode: 503,
+        message: cause.message,
+        headers: { "Retry-After": "1" },
+      });
     if (!(cause instanceof CommandConflictError)) throw cause;
     return throwHttpInterrupt(
       meridianErrorFromSystem(

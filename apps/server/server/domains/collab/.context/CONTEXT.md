@@ -508,13 +508,23 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 2. In the database, the command's claim row (`runCommand`).
 3. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
    reverses a card's Work receipts (`lockWorkThreadTrees`: all the threads, then all the Works
-   and lineages, so several Works never interleave their phases). Then Work rows (only through
+   and lineages, so several Works never interleave their phases). A card's reversal locks only
+   its receipt Works' threads and the chat's own, and each as the runtime's thread lock does
+   (`lockThreadAsRuntime`: the thread's asks, the inbox advisory lock, the row), since its Work
+   step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
    the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
    takes), then the branch row.
 4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
    a document key. A list's key sorts before every document key, not among them by ID.
+   Then the namespace keys the command knows before it writes (`lockDocumentNamespaces`: a Work
+   restore's, which a card reversal takes here, ahead of its documents, through
+   `works.lockRestoreNamespaces`). One exception: a model edit's `registerInCommand` takes the
+   namespace keys of the ahead refs it mints, which exist only as the edit plans under its document
+   key, so they follow the document keys there. A path that takes namespace keys first and then a
+   document key can therefore cross with it; none does today (Apply's and a restore's settle
+   under the keys they hold).
 5. The sorted document advisory keys (`lockDocumentMutation`, in ID order).
 6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
    `branch_tree_nodes`, `tree_node_ids`, `documents`), then the draft rows, in ID order. Derivation

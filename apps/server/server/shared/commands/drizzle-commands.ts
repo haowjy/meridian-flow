@@ -30,10 +30,13 @@ export async function lookupCommand(db: DrizzleDb, key: CommandLookupKey): Promi
     .where(eq(commands.id, key.commandId))
     .limit(1);
   if (!row) return { kind: "none" };
-  // A `never` stored by a resolve has no digest and answers every attempt under its id.
+  if (row.accountId !== key.accountId) return { kind: "conflict" };
+  // A `never` is the id's final answer to its account, whatever digest its resolve stored.
   if (
-    row.accountId !== key.accountId ||
-    (key.digest !== undefined && row.requestDigest !== null && row.requestDigest !== key.digest)
+    row.outcome.status !== "never" &&
+    key.digest !== undefined &&
+    row.requestDigest !== null &&
+    row.requestDigest !== key.digest
   ) {
     return { kind: "conflict" };
   }

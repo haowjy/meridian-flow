@@ -278,7 +278,7 @@
     "apps/server/server/lib/compose.draft-mode-tools.db.test.ts": 9,
     "apps/server/server/lib/compose.file-access-tools.db.test.ts": 3,
     "apps/server/server/lib/compose.runtime-settlement.db.test.ts": 2,
-    "apps/server/server/lib/compose.tree-tools.db.test.ts": 29,
+    "apps/server/server/lib/compose.tree-tools.db.test.ts": 30,
     "apps/server/server/lib/document-address-route.test.ts": 6,
     "apps/server/server/lib/document-properties-route.db.test.ts": 6,
     "apps/server/server/lib/env.test.ts": 5,

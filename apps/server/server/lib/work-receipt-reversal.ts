@@ -140,7 +140,11 @@ export async function reverseTurnCard(
   };
   return app.documentSync.reverseThreadContext({
     ...input,
-    alongside: { workIds: receiptWorkIds, run: alongsideRun },
+    alongside: {
+      workIds: receiptWorkIds,
+      lockNamespaces: () => app.works.lockRestoreNamespaces(receiptWorkIds),
+      run: alongsideRun,
+    },
     moveBackAcrossLists: moveBack,
   });
 }
