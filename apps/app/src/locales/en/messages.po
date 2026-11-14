@@ -441,8 +441,8 @@ msgid "{count} documents were deleted ({names})."
 msgstr "{count} documents were deleted ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were deleted with the Work {name} ({names})."
-msgstr "{count} documents were deleted with the Work {name} ({names})."
+#~ msgid "{count} documents were deleted with the Work {name} ({names})."
+#~ msgstr "{count} documents were deleted with the Work {name} ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{count} documents were discarded from the draft ({names})."
@@ -642,8 +642,8 @@ msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and ca
 msgstr "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted with the Work {work} before this change could be made."
-msgstr "{name} was deleted with the Work {work} before this change could be made."
+#~ msgid "{name} was deleted with the Work {work} before this change could be made."
+#~ msgstr "{name} was deleted with the Work {work} before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was discarded from the draft before this change could be made."
@@ -757,8 +757,8 @@ msgid "{title} was deleted from the manuscript. Applying brings it back."
 msgstr "{title} was deleted from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted with the Work {name}."
-msgstr "{title} was deleted with the Work {name}."
+#~ msgid "{title} was deleted with the Work {name}."
+#~ msgstr "{title} was deleted with the Work {name}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
@@ -2668,12 +2668,12 @@ msgid "Deleted from {place} on {deleted}."
 msgstr "Deleted from {place} on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Deleted from {place} with the Work {name} on {deleted}."
-msgstr "Deleted from {place} with the Work {name} on {deleted}."
+#~ msgid "Deleted from {place} with the Work {name} on {deleted}."
+#~ msgstr "Deleted from {place} with the Work {name} on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Deleted from {place} with the Work {name}."
-msgstr "Deleted from {place} with the Work {name}."
+#~ msgid "Deleted from {place} with the Work {name}."
+#~ msgstr "Deleted from {place} with the Work {name}."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place}."
@@ -6134,12 +6134,12 @@ msgid "This document was deleted from the manuscript. Apply again to bring it ba
 msgstr "This document was deleted from the manuscript. Apply again to bring it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted with the Work {name}."
-msgstr "This document was deleted with the Work {name}."
+#~ msgid "This document was deleted with the Work {name}."
+#~ msgstr "This document was deleted with the Work {name}."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted with the Work {work} before this change could be made."
-msgstr "This document was deleted with the Work {work} before this change could be made."
+#~ msgid "This document was deleted with the Work {work} before this change could be made."
+#~ msgstr "This document was deleted with the Work {work} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."

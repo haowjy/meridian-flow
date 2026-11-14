@@ -801,11 +801,13 @@ CREATE TABLE "tree_nodes" (
 	"location_version" bigint DEFAULT 0 NOT NULL,
 	"trash_record" text,
 	"trashed_at" timestamp with time zone,
+	"trashed_by" text,
 	CONSTRAINT "tree_nodes_id_source" UNIQUE("id","context_source_id"),
 	CONSTRAINT "tree_nodes_kind_valid" CHECK ("tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "tree_nodes_file_type_of_document" CHECK (("tree_nodes"."kind" = 'folder') = ("tree_nodes"."file_type" IS NULL)),
 	CONSTRAINT "tree_nodes_rank_present" CHECK ("tree_nodes"."rank" <> ''),
-	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL))
+	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL)),
+	CONSTRAINT "tree_nodes_trashed_by_shape" CHECK ("tree_nodes"."trashed_by" IS NULL OR "tree_nodes"."trash_record" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "user_preferences" (

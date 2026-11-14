@@ -1,11 +1,10 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
-  ContextEntryRef,
+  ContextDestinationParent,
+  ContextSiblingPosition,
   CopyContextEntriesResult,
   CopyContextEntrySource,
-  DeleteContextEntryResult,
-  MoveContextEntryRequest,
 } from "./http-types.js";
 
 /**
@@ -51,39 +50,18 @@ export type ContextError =
       /**
        * `source_behind`: a Copy's source room has not received the edits the writer's client
        * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
-       * `namespace_changed`: the entry or its destination moved to another Work or area between
-       * the route's lookup and the locks. Nothing is recorded; a resend under the same operation
-       * id looks the entry up again.
        */
-      reason?: "source_behind" | "namespace_changed";
+      reason?: "source_behind";
     };
 
-export interface ContextMoveResult {
-  linkUpdate?: { links: number; documents: number };
-  /** Where the entry stands after the move: the address a receipt's refresh fences on. */
+export type ContextOperationCommand = {
+  kind: "copy";
+  /** Ordered roots by canonical address; the read view travels with each. */
+  sources: CopyContextEntryCommandSource[];
   destinationUri: string;
-  /** Per-entry namespace mutation revision produced by this exact operation. */
-  locationVersion?: string;
-}
-
-export type ContextOperationCommand =
-  | {
-      kind: "move";
-      expected: ContextEntryRef;
-      destinationParent?: MoveContextEntryRequest["destinationParent"];
-      position?: MoveContextEntryRequest["position"];
-      /** Only when the writer typed one; otherwise the row keeps its name. */
-      name?: string;
-    }
-  | { kind: "delete"; expected: ContextEntryRef }
-  | {
-      kind: "copy";
-      /** Ordered roots by canonical address; the read view travels with each. */
-      sources: CopyContextEntryCommandSource[];
-      destinationUri: string;
-      destinationParent?: MoveContextEntryRequest["destinationParent"];
-      position?: MoveContextEntryRequest["position"];
-    };
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+};
 
 /**
  * One root as the receipt remembers it. The client's state vector is deliberately absent:
@@ -94,20 +72,12 @@ export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" 
   expected: CopyContextEntrySource["expected"];
 };
 
-export type ContextOperationValue = {
-  move: ContextMoveResult;
-  delete: DeleteContextEntryResult;
-  copy: CopyContextEntriesResult;
-};
-
-export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =
-  | { ok: true; value: ContextOperationValue[K] }
+export type ContextOperationResult =
+  | { ok: true; value: CopyContextEntriesResult }
   | { ok: false; error: ContextError };
 
 export type ContextOperationReceipt = {
-  [K in ContextOperationCommand["kind"]]: {
-    operationId: string;
-    command: Extract<ContextOperationCommand, { kind: K }>;
-    result: ContextOperationResult<K>;
-  };
-}[ContextOperationCommand["kind"]];
+  operationId: string;
+  command: ContextOperationCommand;
+  result: ContextOperationResult;
+};

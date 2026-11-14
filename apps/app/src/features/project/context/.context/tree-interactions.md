@@ -271,8 +271,8 @@ when the drop will ask, see below), refuse ("Can't go inside
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
 navigation-only folder, or the selection holds a row that can't move or has gone). A taken name never refuses: each row arrives at the next free
 name (`chapter-2 (2)`), predicted (`arrivals` in `execute-move.ts`) against the destination's
-rows plus the rows placed before it in the same drop; the server decides the
-final name. The hover shows that prediction before a move: an accept whose rows
+rows plus the rows placed before it in the same drop; the record's writer numbers
+the name in the replay, so a concurrent create can still move it. The hover shows that prediction before a move: an accept whose rows
 would arrive renamed carries a warning, drawn as a second line under the hint
 ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed"). Letting
 go accepts it; Escape or another target declines it. A drop moves every carried row through

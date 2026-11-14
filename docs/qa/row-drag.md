@@ -1,9 +1,8 @@
 # Row selection and drag
 
-Named risks: a drop moves rows into the wrong catalog or folder, a folder lands
-inside its own subtree, a drop target stays lit
-after the drag ends, or a refused move or delete retries every 30s with the row
-stuck at the destination and no error. This recipe is not a current pass claim.
+Named risks: a drop moves rows into the wrong area or folder, a folder lands
+inside its own subtree, or a drop target stays lit after the drag ends. This recipe is not a
+current pass claim.
 
 ## Setup
 
@@ -102,72 +101,6 @@ top or bottom quarter.
     focus returns to the row. Repeat on the phone
     (393×852, coarse pointer per [Chat Files](../../apps/app/src/features/chat/.context/qa/chat-files.md)); its rows are
     not draggable.
-
-## Refused moves and deletes
-
-Named risk: a deterministic 400 from move or delete used to stay `submitted` and
-POST again every 30s. The row sat at the destination with no mark.
-
-The app no longer sends a payload the server refuses, so rewrite the first
-matching request in the page (`window.fetch`). Leave later POSTs unrewritten so
-a resend would show as a second request.
-
-- **Move:** on the first `POST …/context/entries/<id>/move`, parse the JSON body
-  and set `destinationParent` to `{"kind":"bogus"}`. The server answers 400
-  "Destination parent is invalid" as
-  `{kind:"error", error:{code:"bad_request", retryable:false, …}}`.
-- **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `kind`.
-  The server answers 400 "Entry kind is required" with the same envelope.
-
-One-shot move rewrite (swap the `if` for delete and `delete body.kind`):
-
-```js
-(() => {
-  const o = window.fetch;
-  let used = false;
-  window.fetch = async function (u, i) {
-    const url = String((u && u.url) || u);
-    if (
-      !used &&
-      url.includes("/context/entries/") && url.endsWith("/move") &&
-      i &&
-      i.method === "POST" &&
-      typeof i.body === "string"
-    ) {
-      used = true;
-      const body = JSON.parse(i.body);
-      body.destinationParent = { kind: "bogus" };
-      return o.call(this, u, { ...i, body: JSON.stringify(body) });
-    }
-    return o.apply(this, arguments);
-  };
-})();
-```
-
-1. Drag a Manuscript row into another folder with the move rewrite on. The row
-   first shows at the destination, then returns to its source with the warning
-   mark ("Couldn't move this entry. Try again."). A toast at the top right reads
-   "Couldn't move <name> to <folder>." with Retry and a close button, and stays
-   until closed. It covers no tree row. Exactly one POST. After 35s and after a
-   reload, still one POST; the reload shows the mark and no toast. In IndexedDB
-   (`meridian:resource-metadata:v4:<accountId>`, store `intents`) that intent is
-   `needs-repair` with a refusal outcome, not `submitted`.
-2. The same from the row's `…` menu, Move…. Retry with no rewrite: the row moves,
-   the mark and the toast go.
-3. Multi-row drag with only the first request rewritten: the other row lands and
-   the refused row stays at its source with the mark. With every request rewritten
-   the toast reads "Couldn't move 3 items to <folder>." and Retry moves all three.
-4. Refused delete: the row comes back with "Couldn't delete this document.
-   Try again." (folder: "Couldn't delete this folder. Try again.") and the toast
-   "Couldn't delete <name>." with Retry. Exactly one POST; no resend. Retry deletes it.
-5. Each refusal has its own toast: refuse a move, a delete, a Copy and a second move.
-   Three show, and closing one brings up the fourth. Refuse a move, rename the row, and
-   the toast closes. Refuse a move,
-   press Retry after renaming from another client: nothing happens to the row.
-6. Control: an un-rewritten move and delete succeed with no toast and no mark.
-7. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
-   No console errors beyond the expected 400s.
-8. On a phone the toast sits under the top bar, full width.
 
 ## Scratch and Work Files
 

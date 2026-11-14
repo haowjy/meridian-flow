@@ -26,7 +26,6 @@ export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRe
  */
 export type RemovalVoice =
   | { kind: "person"; name: string; reason: DocumentRemovalRecord["reason"] }
-  | { kind: "work"; name: string }
   /** The model of a chat deleted it; null `chat` when that chat has no title. */
   | { kind: "agent"; chat: string | null }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
@@ -36,7 +35,6 @@ export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice
   const actor = record?.actor;
   if (actor?.kind === "user" && actor.displayName)
     return { kind: "person", name: actor.displayName, reason };
-  if (actor?.kind === "work") return { kind: "work", name: actor.name };
   if (actor?.kind === "agent") return { kind: "agent", chat: actor.chatTitle };
   return { kind: "anonymous", reason };
 }
@@ -53,10 +51,6 @@ function thisDocumentSentence(voice: RemovalVoice): string {
       return voice.reason === "discarded"
         ? t`${name} discarded this document from the draft.`
         : t`${name} deleted this document.`;
-    }
-    case "work": {
-      const { name } = voice;
-      return t`This document was deleted with the Work ${name}.`;
     }
     case "agent": {
       const { chat } = voice;
@@ -79,10 +73,6 @@ function oneSentence(title: string, voice: RemovalVoice): string {
         ? t`${name} discarded ${title} from the draft.`
         : t`${name} deleted ${title}.`;
     }
-    case "work": {
-      const { name } = voice;
-      return t`${title} was deleted with the Work ${name}.`;
-    }
     case "agent": {
       const { chat } = voice;
       return chat ? t`The AI in ${chat} deleted ${title}.` : t`The AI in a chat deleted ${title}.`;
@@ -104,10 +94,6 @@ function manySentence(count: number, names: string, voice: RemovalVoice | null):
     return voice.reason === "discarded"
       ? t`${name} discarded ${count} documents from the draft (${names}).`
       : t`${name} deleted ${count} documents (${names}).`;
-  }
-  if (voice?.kind === "work") {
-    const { name } = voice;
-    return t`${count} documents were deleted with the Work ${name} (${names}).`;
   }
   if (voice?.kind === "agent") {
     const { chat } = voice;
@@ -169,7 +155,7 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
   const reasons = new Set(
     documents.map((document) => {
       const voice = removalVoice(document.record);
-      return voice.kind === "work" || voice.kind === "agent" ? "deleted" : voice.reason;
+      return voice.kind === "agent" ? "deleted" : voice.reason;
     }),
   );
   const [reason] = reasons;
