@@ -11,12 +11,13 @@
  *
  * A stack stops itself after DEV_IDLE_STOP_MINUTES unused (`dev-idle-watch.ts`);
  * --reap-idle applies the same idle rule with a shorter limit, or to stacks that
- * started without a watcher. Nothing is stopped unless --reap-idle is given with
+ * started without a watcher (shown as `unwatched`). Nothing is stopped unless --reap-idle is given with
  * --yes, because a stack belongs to whichever session started it. Databases and worktrees are never
  * touched: stopping a stack leaves both alone.
  */
 import { execFileSync } from "node:child_process";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
+import { readIdleStopRecord } from "./lib/dev-idle.ts";
 import { collectStacks, formatStackTable, mb } from "./lib/dev-stacks-report";
 
 function parseArgs(argv: string[]): {
@@ -43,8 +44,10 @@ function main(): void {
   }
 
   const stacks = collectStacks();
+  const stopRecord = readIdleStopRecord(resolveCurrentRepoRoot());
   if (stacks.length === 0) {
     console.log("dev:stacks: no dev stacks running");
+    if (stopRecord) console.log(stopRecord);
     return;
   }
 
@@ -77,6 +80,7 @@ function main(): void {
   const repoRoot = resolveCurrentRepoRoot();
   const own = stacks.find((stack) => repoRoot.endsWith(stack.label));
   if (own) console.log(`\nThis checkout: ${own.label}, ${mb(own.rssBytes)}`);
+  else if (stopRecord) console.log(`\n${stopRecord}`);
 }
 
 main();

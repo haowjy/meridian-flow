@@ -10,6 +10,7 @@ import path from "node:path";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 import { portlessCa } from "../../../dev/dev-readiness";
 import { resolveCheckoutRouteUrls } from "../../../dev/dev-session-state";
+import { readIdleStopRecord } from "../../../dev/lib/dev-idle.ts";
 import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -75,6 +76,12 @@ type RawResponse = { status: number; headers: IncomingHttpHeaders; body: string 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 const STACK_HINT = "Start this worktree's stack with `pnpm dev`, then retry.";
+
+/** Says why the stack is gone when it stopped itself for being idle. */
+function stackHint(repoRoot: string): string {
+  const stopped = readIdleStopRecord(repoRoot);
+  return stopped ? `${stopped} Then retry.` : STACK_HINT;
+}
 
 export function rawRequest(input: {
   url: string;
@@ -237,13 +244,13 @@ function resolvePortlessServerOrigin(repoRoot: string): string {
       timeout: 5_000,
     });
   } catch {
-    throw new CliError("unavailable", "Portless is not running", { hint: STACK_HINT });
+    throw new CliError("unavailable", "Portless is not running", { hint: stackHint(repoRoot) });
   }
   try {
     return resolveCheckoutRouteUrls(repoRoot, output).server;
   } catch (error) {
     throw new CliError("unavailable", error instanceof Error ? error.message : String(error), {
-      hint: STACK_HINT,
+      hint: stackHint(repoRoot),
     });
   }
 }

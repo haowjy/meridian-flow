@@ -1,12 +1,13 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { stackIdleMinutes } from "./dev-idle";
+import { readWatchedStacks } from "./dev-idle.ts";
 
 export type Stack = {
   worktree: string;
   label: string;
   rssBytes: number;
   processes: number;
+  /** Minutes since last use; null when no watcher is running for the stack. */
   idleMinutes: number | null;
 };
 
@@ -16,6 +17,7 @@ const WORKTREE_PATH = /(?:[\w./-]*\/)?meridian-flow(?:\.worktrees\/[\w.-]+)?/;
 export function collectStacks(): Stack[] {
   const rows = execFileSync("ps", ["-eo", "rss,args", "--no-headers"]).toString().split("\n");
   const byWorktree = new Map<string, Stack>();
+  const watched = readWatchedStacks();
   for (const row of rows) {
     const match = /^\s*(\d+)\s+(.*)$/.exec(row);
     if (!match || !DEV_PROCESS.test(match[2])) continue;
@@ -27,7 +29,7 @@ export function collectStacks(): Stack[] {
       label: worktree.split("/").pop() ?? worktree,
       rssBytes: 0,
       processes: 0,
-      idleMinutes: stackIdleMinutes(worktree),
+      idleMinutes: watched.get(worktree) ?? null,
     };
     stack.rssBytes += Number(match[1]) * 1024;
     stack.processes += 1;
@@ -50,7 +52,7 @@ export function memAvailableBytes(): number {
 export function formatStackTable(stacks: Stack[]): string {
   const lines = [`${"worktree".padEnd(30)}${"memory".padStart(10)}  ${"procs".padStart(5)}  idle`];
   for (const stack of stacks) {
-    const idle = stack.idleMinutes === null ? "unknown" : `${stack.idleMinutes} min`;
+    const idle = stack.idleMinutes === null ? "unwatched" : `${stack.idleMinutes} min`;
     lines.push(
       `${stack.label.padEnd(30)}${mb(stack.rssBytes).padStart(10)}  ${String(stack.processes).padStart(5)}  ${idle}`,
     );
