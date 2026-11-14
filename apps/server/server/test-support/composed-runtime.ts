@@ -8,7 +8,8 @@ import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { modelResponses } from "@meridian/database/schema";
+import { modelResponses, threads } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
@@ -129,12 +130,17 @@ export function useComposedRuntimes(db: () => Database) {
     const begin = async () => {
       await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
+      const [owner] = await db()
+        .select({ accountId: threads.createdByUserId, projectId: threads.projectId })
+        .from(threads)
+        .where(eq(threads.id, thread.threadId));
       const call: ToolCall = (name, args) =>
         runtime.app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
             responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            commandOwner: owner as never,
             agentSlug: null,
             // No one answers here: a `work` call the policy asks about gets the refusal.
             request: async () => ({

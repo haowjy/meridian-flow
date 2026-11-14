@@ -27,7 +27,6 @@ import type { DeliveryBoundary } from "./runtime-delivery.js";
 
 export async function executeCompaction({
   deps,
-  assertNoResponseScope,
   input,
   thread,
   currentTurn,
@@ -39,7 +38,6 @@ export async function executeCompaction({
   settleResponses,
 }: {
   deps: OrchestratorDeps;
-  assertNoResponseScope: () => void;
   input: RunLoopInput;
   thread: Thread;
   currentTurn: Turn;
@@ -61,7 +59,6 @@ export async function executeCompaction({
     projection,
     policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
     revisions: deps.documentRevisions,
-    assertNoResponseScope,
   });
   // The last check before the captured history reaches the summarizer. A Stop on another server has no
   // local abort: it flags the lease in the transaction that hands the adopted message back, so a set
@@ -138,7 +135,6 @@ export async function executeCompaction({
     prepareCurrent: () =>
       prepareCompactionSuccessor({
         deps,
-        assertNoResponseScope,
         input,
         thread,
         placeholder: currentTurn,

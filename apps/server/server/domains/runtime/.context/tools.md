@@ -137,9 +137,8 @@ own: the chat's mode is in its work context.
 Document inverse commands use `write undo/redo` and `write revert`; model-only
 handles select edits, and the command is all-or-nothing. `write move` and
 `write delete` (PR 3) are host commands (`lib/model-tools/namespace-commands.ts`):
-they run at the call, record a tree entry on the document's stack inside the
-mutation's own transaction, and mark the reply's scope as having writes
-(`treeWrite`), so a later save boundary rotates it. In an auto-apply chat they go
+they run at the call as a command, recording a tree entry on the document's stack inside
+the command's transaction. In an auto-apply chat they go
 through the live port. In a draft-mode chat their placement goes through the
 chat's branch (`ContextPort.changeInBranch`): facts live on the Work's branch
 row, never the mover, and live placement is untouched until the user applies

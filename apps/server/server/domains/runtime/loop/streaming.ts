@@ -68,11 +68,19 @@ export function mapStreamEvent(event: StreamEvent) {
   }
 }
 
+/** A response with two calls under one id cannot be stored: the id keys the call's result and its command. */
+export class DuplicateToolCallIdError extends Error {
+  constructor(readonly toolCallId: string) {
+    super(`The model reused tool call id ${toolCallId} in one response`);
+    this.name = "DuplicateToolCallIdError";
+  }
+}
+
 // Merges tool_use content parts + the flat toolCalls[] list, deduplicating
 // by toolCallId. The normal case is that tool calls already appear as
 // tool_use parts in content[] (Anthropic / OpenAI Responses). The
 // result.toolCalls[] list is a fallback for adapters that report calls
-// outside the content array.  Order: content[] parts come first (preserving
+// outside the content array. Two content parts under one id are refused.  Order: content[] parts come first (preserving
 // adapter output order), then any extra toolCalls[] entries appended.
 export function collectToolCalls(result: GenerateResult): ToolCall[] {
   const fromContent = result.content
@@ -83,7 +91,11 @@ export function collectToolCalls(result: GenerateResult): ToolCall[] {
       arguments: p.input,
       ...(p.inputParseError ? { argumentsParseError: p.inputParseError } : {}),
     }));
-  const seen = new Set(fromContent.map((c) => c.id));
+  const seen = new Set<string>();
+  for (const { id } of fromContent) {
+    if (seen.has(id)) throw new DuplicateToolCallIdError(id);
+    seen.add(id);
+  }
   for (const call of result.toolCalls) {
     if (!seen.has(call.id)) {
       fromContent.push(call);

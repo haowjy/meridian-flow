@@ -168,6 +168,21 @@ async function harness(
   };
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
+  const agentEdit = {
+    // A copy's source read asks for nodes; a plain read shows facts spelled
+    // in a reply's pinned branch view, not the live grant it was routed with.
+    read: async (_command: unknown, context: { includeNodes?: boolean }) => {
+      if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
+      const n = plainReads++;
+      await options.read?.();
+      return success("read", [fact(91 + 10 * n)], BRANCH);
+    },
+    write: async (
+      _command: unknown,
+      context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+    ) =>
+      options.write ? options.write(context) : success("insert", [fact(92)], undefined, TARGET_URI),
+  };
   const documentSync = {
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
@@ -192,22 +207,21 @@ async function harness(
     }),
     refreshDocumentProjection: async () => {},
     branches: { viewForWork: async () => ({ kind: "live" }) },
-    agentEdit: () => ({
-      // A copy's source read asks for nodes; a plain read shows facts spelled
-      // in a reply's pinned branch view, not the live grant it was routed with.
-      read: async (_command: unknown, context: { includeNodes?: boolean }) => {
-        if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
-        const n = plainReads++;
-        await options.read?.();
-        return success("read", [fact(91 + 10 * n)], BRANCH);
+    agentEdit: () => agentEdit,
+    // Every `write` is a command; this fake runs its effect and answers its result as the outcome.
+    modelEdits: () => ({
+      ...agentEdit,
+      catchUp: async () => {},
+      run: async (input: { effect(): Promise<{ toolResult: unknown; evidence?: unknown }> }) => {
+        const rendered = await input.effect();
+        return {
+          outcome: {
+            status: "done",
+            result: { status: "edited", toolResult: rendered.toolResult },
+          },
+          evidence: rendered.evidence,
+        };
       },
-      write: async (
-        _command: unknown,
-        context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
-      ) =>
-        options.write
-          ? options.write(context)
-          : success("insert", [fact(92)], undefined, TARGET_URI),
     }),
   };
   const names: Record<string, string> = {
@@ -297,7 +311,6 @@ async function runTurn(
     during?: (rig: Rig) => Promise<void>;
     userBlocks?: UserMessageBlock[];
     referenceReader?: ReferenceReader;
-    responseWrites?: Parameters<typeof runtimeScenario>[0]["responseWrites"];
     history?: (rig: Rig) => Promise<void>;
   } = {},
 ) {
@@ -319,11 +332,12 @@ async function runTurn(
   const rig = await runtimeScenario({
     gateway,
     toolRegistry,
-    toolExecutor: createToolExecutor(toolRegistry),
+    toolExecutor: createToolExecutor(toolRegistry, {
+      resolveCommand: async () => ({ status: "never" }),
+    }),
     shownLinks: h.store,
     transactionOwner: h.transactionOwner,
     referenceReader: control.referenceReader ?? h.referenceReader,
-    ...(control.responseWrites ? { responseWrites: control.responseWrites } : {}),
   });
   inspection.repos = rig.repos;
   await control.history?.(rig);
@@ -473,65 +487,6 @@ const rows: Array<{
         store: whole.store,
         threadId: verbose.threadId,
         shown: { [SOURCE]: expected([fact(80), fact(81)]) },
-      };
-    },
-  },
-  {
-    name: "a staged echo and its settled receipt each keep the holder their own render spelled from",
-    async act(check) {
-      const MOVED = "user://moved/target";
-      const h = await harness({
-        write: async (context) => ({
-          ...success("insert", [fact(94)], undefined, TARGET_URI),
-          phase: "staged",
-          ...(context.responseIdentity?.editScopeId ? { writeId: "e1", settlementId: "s1" } : {}),
-        }),
-      });
-      const receipt = {
-        ...success("insert", [fact(95)], undefined, MOVED),
-        writeId: "e1",
-        settlementId: "s1",
-      };
-      const { threadId, results } = await runTurn(
-        h,
-        [toolCall("write", { command: "insert", path: TARGET_URI, content: "x" })],
-        {
-          // The holder moved between the echo and the save: the receipt spells from its new folder.
-          responseWrites: {
-            async commitResponse(_id, _ctx, beforeCommit) {
-              const settled = {
-                status: "committed" as const,
-                receipts: [{ documentId: TARGET, receipt: receipt as never }],
-                concurrentEdits: [],
-                refused: [],
-              };
-              await beforeCommit(settled);
-              return settled;
-            },
-            async rollbackResponse() {},
-          },
-        },
-      );
-      check(results, "the staged echo, then the settled receipt").toEqual([
-        expect.not.objectContaining({ isError: true }),
-        expect.not.objectContaining({ isError: true }),
-      ]);
-      check(JSON.stringify(results), "echo and receipt results carry no host facts").not.toMatch(
-        HOST_FACTS,
-      );
-      const bases = (await h.store.forDocument(threadId, TARGET))
-        .map((link) => `${link.ref.slice(4, 12)}@${link.holderUri}`)
-        .sort();
-      check(bases, "each showing's base").toEqual(
-        [
-          `${fact(94).ref.slice(4, 12)}@${TARGET_URI}`,
-          `${fact(95).ref.slice(4, 12)}@${MOVED}`,
-        ].sort(),
-      );
-      return {
-        store: h.store,
-        threadId,
-        shown: { [TARGET]: expected([fact(94), fact(95)]) },
       };
     },
   },

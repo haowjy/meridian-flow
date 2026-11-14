@@ -136,9 +136,6 @@ function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "fa
   };
 }
 
-/** Until document commands run in the loop, nothing is left unanswered to recover. */
-export const noCommandRecovery = async () => {};
-
 /**
  * Finalize one execution under the thread lock; nested persistence joins its transaction.
  * Failed turns derive generic writer copy from their role; `cause.error` remains diagnostic data.

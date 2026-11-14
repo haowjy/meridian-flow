@@ -1,6 +1,6 @@
 # Model edits as commands
 
-Built in M10 part 2a beside the held writes ([design](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/document-commands/design.md)); nothing in production sets `ctx.modelEdit` until the loop part lands, so the thread-peer pool still serves every call.
+Built in M10 part 2a ([design](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/document-commands/design.md)); the runtime's executor sets `ctx.modelEdit` for every `documentCommand` call (part 2b), so these are the production path. The held machinery (thread-peer pool, response write lifecycle) is no longer called by the loop and goes in part 2c.
 
 A model's document-changing tool call (`write`: text, `undo`/`redo`/`revert`, `move`, `delete`, `create`, `copy`) is one command, keyed by `modelEditIds(key)` (`shared/model-edit-ids.ts`: response id and tool-call id, so a retry and a recovering process derive the same id).
 

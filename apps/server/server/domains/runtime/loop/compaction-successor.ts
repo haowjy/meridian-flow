@@ -116,7 +116,6 @@ function fittingEstimate(context: AssembledNextTurnContext) {
  */
 async function reshowImportantFiles(args: {
   deps: OrchestratorDeps;
-  assertNoResponseScope: () => void;
   input: RunLoopInput;
   placeholder: Turn;
   allTurns: Turn[];
@@ -155,7 +154,6 @@ async function reshowImportantFiles(args: {
     budgetTokens: args.budgetTokens,
     tokenizer: args.tokenizer,
     read: async (reference, readInput) => {
-      args.assertNoResponseScope();
       input.signal?.throwIfAborted();
       try {
         const read = await deps.referenceReader.read(reference, {
@@ -221,7 +219,6 @@ async function reshowImportantFiles(args: {
 
 export async function prepareCompactionSuccessor(args: {
   deps: OrchestratorDeps;
-  assertNoResponseScope: () => void;
   input: RunLoopInput;
   thread: Thread;
   placeholder: Turn;
@@ -264,7 +261,6 @@ export async function prepareCompactionSuccessor(args: {
       threadId: input.threadId,
       recorded,
       revisions: deps.documentRevisions,
-      assertNoResponseScope: args.assertNoResponseScope,
     });
     const contextInput = {
       thread,
@@ -356,7 +352,6 @@ export async function prepareCompactionSuccessor(args: {
             ),
             decidingTurnId: placeholder.id as TurnId,
           },
-          assertNoResponseScope: args.assertNoResponseScope,
           pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
           signal: input.signal,
           promptBakes: {

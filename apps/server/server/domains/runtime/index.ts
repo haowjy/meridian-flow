@@ -54,6 +54,7 @@ export {
   type BoundaryCompletion,
   beginPromptEpoch,
 } from "./loop/begin-prompt-epoch.js";
+export { createCommandRecovery } from "./loop/command-recovery.js";
 export type {
   CompactedThrough,
   CompactionBlockContent,
@@ -78,7 +79,6 @@ export {
   planCompaction,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
-export { noCommandRecovery } from "./loop/execution-finalizer.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export * from "./loop/permissions/index.js";
