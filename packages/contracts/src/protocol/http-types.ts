@@ -300,11 +300,6 @@ export type ListDocumentTrashResponse = {
   documents: DocumentTrashEntry[];
 };
 
-/** One trashed document with its Markdown, rendered from its stored Yjs state. */
-export type GetDocumentTrashResponse = DocumentTrashEntry & {
-  markdown: string;
-};
-
 /** Stable writer-selected parent. URI callers may continue to omit this. */
 export type ContextDestinationParent = {
   /** Missing address segments created beneath the identity anchor, only for linked creation. */

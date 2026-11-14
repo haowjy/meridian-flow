@@ -13,7 +13,11 @@
  * Editors, row readers and command-time readers all take a room through it; none of them retains, gets or
  * replaces a session itself. Readiness belongs to the room runtime, not to this acquisition.
  */
-import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import {
+  type DocumentSession,
+  type DocumentSessionSnapshot,
+  isSignInLapse,
+} from "./document-session";
 import type { LiveDocumentSessionRegistry } from "./document-session-registry";
 import type { DraftRoomRef } from "./draft-room-pool";
 
@@ -56,7 +60,7 @@ function judge(snapshot: DocumentSessionSnapshot): Verdict {
   if (
     snapshot.status === "destroyed" ||
     connection?.kind === "terminal" ||
-    connection?.kind === "unauthorized"
+    (connection?.kind === "unauthorized" && !isSignInLapse(connection))
   )
     return "gone";
   return "usable";

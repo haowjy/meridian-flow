@@ -28,7 +28,7 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
-import type { DocumentSession } from "@/core/editor/document-session";
+import { type DocumentSession, isSignInLapse } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
   type DraftRoomRegistry,
@@ -384,7 +384,7 @@ export class DraftCommandOwner {
         snapshot.status === "destroyed" ||
         connection?.kind === "reset" ||
         connection?.kind === "terminal" ||
-        connection?.kind === "unauthorized"
+        (connection?.kind === "unauthorized" && !isSignInLapse(connection))
       ) {
         this.detach(entry);
         entry.item.queue.refuseUnsent(entry.draftId);

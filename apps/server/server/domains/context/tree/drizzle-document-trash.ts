@@ -1,6 +1,6 @@
 /** Drizzle adapter for restorable document trash and retention: emptying Trash, and the purge window. */
 import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
-import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
@@ -65,8 +65,6 @@ export function createDrizzleDocumentTrash(deps: {
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
   tree: Pick<TreeListStore, "submit">;
-  /** The document's stored Yjs as markdown; the trash keeps no text of its own. */
-  readMarkdown(documentId: DocumentId): Promise<string>;
 }): DocumentTrash {
   const objects = createObjectRelease({
     objectStore: deps.objectStore,
@@ -368,10 +366,8 @@ export function createDrizzleDocumentTrash(deps: {
     async list(projectId): Promise<readonly DocumentTrashEntry[]> {
       return entries(await rows(projectId));
     },
-    async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
-      const entry = (await entries(await rows(projectId, [documentId])))[0];
-      if (!entry) return null;
-      return { ...entry, markdown: await deps.readMarkdown(documentId) };
+    async read(projectId, documentId): Promise<DocumentTrashEntry | null> {
+      return (await entries(await rows(projectId, [documentId])))[0] ?? null;
     },
     async wasPurged(projectId, documentId): Promise<boolean> {
       const [row] = await currentDrizzleDb(deps.db)

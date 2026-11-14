@@ -104,8 +104,7 @@ export function TrashedDocument({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!details}
-                onClick={() => details && restore([details])}
+                onClick={() => standing.kind === "in-trash" && restore([{ documentId, name }])}
               >
                 <Trans>Restore</Trans>
               </Button>

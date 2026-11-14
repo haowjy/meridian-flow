@@ -20,19 +20,22 @@ import { runDelete } from "./entry-drag/entry-failure";
 import { leaveSelections } from "./entry-drag/selection";
 
 /** `restored`: the document is back in the tree, so a view of it in Trash follows it there. */
+/** What a restore needs of a document: the tree record names the node, the notices its name. */
+export type RestorableDocument = Pick<DocumentTrashEntry, "documentId" | "name">;
+
 export type TrashRestoreState = { kind: "restored" } | { kind: "failed"; message: string };
 
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
   /** Restores entries to where they were: a `restore` record each; each shows its own outcome. */
-  restore: (entries: readonly DocumentTrashEntry[]) => void;
+  restore: (entries: readonly RestorableDocument[]) => void;
   /**
    * Restores entries into a destination (a drag out of Trash). They leave the Trash list and
    * appear in the destination at once; one the server refuses goes back to Trash with its reason
    * in `states`. `destinationName` is what the notice says.
    */
   restoreInto: (
-    entries: readonly DocumentTrashEntry[],
+    entries: readonly RestorableDocument[],
     destination: TreeDestination,
     destinationName: string,
   ) => void;
@@ -64,7 +67,7 @@ export function DocumentTrashRestoreProvider({
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   // A restore the list has taken and the server has not answered, by its record's id.
-  const awaiting = useRef(new Map<string, DocumentTrashEntry>());
+  const awaiting = useRef(new Map<string, RestorableDocument>());
 
   const setState = useCallback((documentId: string, state: TrashRestoreState | null) => {
     setStates((current) => {
@@ -96,7 +99,7 @@ export function DocumentTrashRestoreProvider({
   );
 
   const fail = useCallback(
-    (entry: DocumentTrashEntry, reason?: string) => {
+    (entry: RestorableDocument, reason?: string) => {
       setState(entry.documentId, {
         kind: "failed",
         message: reason
@@ -131,7 +134,7 @@ export function DocumentTrashRestoreProvider({
 
   /** Appends the entries' `restore` records, one update per list; returns whether the lists took them. */
   const append = useCallback(
-    (entries: readonly DocumentTrashEntry[], destination?: TreeDestination) => {
+    (entries: readonly RestorableDocument[], destination?: TreeDestination) => {
       const held = entries.map((entry) => ({ entry, ...actions.holding(entry.documentId) }));
       for (const list of new Set(held.map((item) => item.list))) {
         const mine = held.filter((item) => item.list === list);
@@ -158,7 +161,7 @@ export function DocumentTrashRestoreProvider({
   );
 
   const restore = useCallback(
-    (requested: readonly DocumentTrashEntry[]) => {
+    (requested: readonly RestorableDocument[]) => {
       const entries = requested;
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ documentId }) => ({ kind: "file", id: documentId })));
@@ -180,7 +183,7 @@ export function DocumentTrashRestoreProvider({
 
   const restoreInto = useCallback(
     (
-      dragged: readonly DocumentTrashEntry[],
+      dragged: readonly RestorableDocument[],
       destination: TreeDestination,
       destinationName: string,
     ) => {
@@ -225,7 +228,7 @@ export function useDocumentTrashRestore(): RestoreContextValue {
   return value;
 }
 
-function restoredText(restored: readonly DocumentTrashEntry[], destinationName: string): string {
+function restoredText(restored: readonly RestorableDocument[], destinationName: string): string {
   const [only] = restored;
   if (restored.length === 1 && only) return t`Restored ${only.name} to ${destinationName}.`;
   return plural(restored.length, {

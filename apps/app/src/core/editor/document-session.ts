@@ -135,6 +135,14 @@ export type ResetDisposition =
   | "removed"
   | "closed";
 
+/**
+ * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
+ * edits like an offline one, and the account's list shows the "sign in again" prompt.
+ */
+export function isSignInLapse(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "unauthorized" && state.code === WS_CLOSE.AUTH_FAILED.code;
+}
+
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
   | {
@@ -376,7 +384,8 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
-        if (state.kind === "unauthorized" || state.kind === "reset") this.localPeers?.stop();
+        if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
+          this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
           if (!attemptClientSchemaReload(this.roomKey)) {
             this.raiseSchemaFence({ reason: "client-superseded" });
@@ -515,7 +524,7 @@ export class DocumentSession {
       status === "destroyed" ||
       status === "access-lost" ||
       connectionState?.kind === "reset" ||
-      connectionState?.kind === "unauthorized" ||
+      (connectionState?.kind === "unauthorized" && !isSignInLapse(connectionState)) ||
       connectionState?.kind === "terminal"
     );
   }
@@ -804,7 +813,7 @@ export class DocumentSession {
       !this.localPeers &&
       this.persistence &&
       !this.schemaFence &&
-      this.transportState?.kind !== "unauthorized" &&
+      (this.transportState?.kind !== "unauthorized" || isSignInLapse(this.transportState)) &&
       this.transportState?.kind !== "reset" &&
       typeof window !== "undefined" &&
       typeof BroadcastChannel === "function"
@@ -865,6 +874,7 @@ export class DocumentSession {
 
     // Terminal transport states pre-empt the initial-sync gate: first sync will
     // never complete after permanent denial or a session-level terminal close.
+    if (isSignInLapse(state)) return "offline";
     if (state?.kind === "unauthorized") return "access-lost";
     if (state?.kind === "reset") return "access-lost";
     if (state?.kind === "terminal") return "offline";
