@@ -7,13 +7,12 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import {
   createWork,
   requireProjectOwner,
-  WorkNameConflictError,
   WorkNameRequiredError,
 } from "../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../../lib/command-route.js";
 import { parseOptionalRequestId, requireRequestId } from "../../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../../lib/work-command.js";
+import { runWorkCommand, workAnswer } from "../../../../../lib/work-command.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -31,8 +30,8 @@ export default defineEventHandler(async (event) => {
   const work = await runWorkCommand(
     app.commands,
     { commandId, userId: user.userId, projectId, kind: "work_create", body },
-    () =>
-      createWork(
+    async () => ({
+      work: await createWork(
         { works: app.workRepo },
         {
           id: parseOptionalRequestId(body.id, "id"),
@@ -42,16 +41,14 @@ export default defineEventHandler(async (event) => {
           goal: body.goal as string | undefined,
         },
       ),
+    }),
   ).catch((error: unknown) => {
     if (error instanceof WorkNameRequiredError) {
       throw createError({ statusCode: 400, message: "name is required" });
-    }
-    if (error instanceof WorkNameConflictError) {
-      throw createError({ statusCode: 409, message: error.message });
     }
     throw error;
   });
 
   event.res.status = 201;
-  return serializeTransport(work);
+  return serializeTransport(workAnswer(work));
 });

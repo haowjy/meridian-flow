@@ -9,24 +9,16 @@
  * hours. The merge-train rule is "one stack per session, stopped right after";
  * this is the report that rule never had.
  *
- * Nothing is stopped unless --reap-idle is given with --yes, because a stack
- * belongs to whichever session started it. Databases and worktrees are never
+ * A stack stops itself after DEV_IDLE_STOP_MINUTES unused (`dev-idle-watch.ts`);
+ * --reap-idle applies the same idle rule with a shorter limit, or to stacks that
+ * started without a watcher (shown as `unwatched`). Nothing is stopped unless --reap-idle is given with
+ * --yes, because a stack belongs to whichever session started it. Databases and worktrees are never
  * touched: stopping a stack leaves both alone.
  */
 import { execFileSync } from "node:child_process";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
-import { devTmuxArgs } from "./lib/dev-tmux-socket";
-
-type Stack = {
-  worktree: string;
-  label: string;
-  rssBytes: number;
-  processes: number;
-  idleMinutes: number | null;
-};
-
-const DEV_PROCESS = /(vite\/bin\/vite\.js|nitro\/dist\/cli\/index\.mjs)\s+dev\b/;
-const WORKTREE_PATH = /(?:[\w./-]*\/)?meridian-flow(?:\.worktrees\/[\w.-]+)?/;
+import { readIdleStopRecord } from "./lib/dev-idle.ts";
+import { collectStacks, formatStackTable, mb } from "./lib/dev-stacks-report";
 
 function parseArgs(argv: string[]): {
   reapIdleMinutes: number | null;
@@ -44,61 +36,6 @@ function parseArgs(argv: string[]): {
   return { reapIdleMinutes: minutes, yes: argv.includes("--yes"), help: argv.includes("--help") };
 }
 
-/**
- * tmux session activity is the only honest idle signal: a pane's last output.
- * The dev socket holds only `pnpm dev` sessions, so an agent shell that sits in
- * a worktree on the human's server cannot make a dead stack look busy.
- */
-function idleMinutesByWorktree(): Map<string, number> {
-  const now = Math.floor(Date.now() / 1000);
-  const byWorktree = new Map<string, number>();
-  let sessions: string;
-  try {
-    sessions = execFileSync(
-      "tmux",
-      devTmuxArgs(["list-sessions", "-F", "#{pane_current_path}|#{session_activity}"]),
-    ).toString();
-  } catch {
-    return new Map();
-  }
-  for (const line of sessions.split("\n")) {
-    const [path, activity] = line.split("|");
-    const worktree = path ? WORKTREE_PATH.exec(path)?.[0] : undefined;
-    if (!worktree || !activity) continue;
-    const idle = Math.floor((now - Number(activity)) / 60);
-    byWorktree.set(worktree, Math.min(idle, byWorktree.get(worktree) ?? idle));
-  }
-  return byWorktree;
-}
-
-function collectStacks(): Stack[] {
-  const rows = execFileSync("ps", ["-eo", "rss,args", "--no-headers"]).toString().split("\n");
-  const idle = idleMinutesByWorktree();
-  const byWorktree = new Map<string, Stack>();
-  for (const row of rows) {
-    const match = /^\s*(\d+)\s+(.*)$/.exec(row);
-    if (!match || !DEV_PROCESS.test(match[2])) continue;
-    const worktree = WORKTREE_PATH.exec(match[2])?.[0];
-    if (!worktree) continue;
-    const existing = byWorktree.get(worktree);
-    const stack: Stack = existing ?? {
-      worktree,
-      label: worktree.split("/").pop() ?? worktree,
-      rssBytes: 0,
-      processes: 0,
-      idleMinutes: idle.get(worktree) ?? null,
-    };
-    stack.rssBytes += Number(match[1]) * 1024;
-    stack.processes += 1;
-    byWorktree.set(worktree, stack);
-  }
-  return [...byWorktree.values()].sort((a, b) => b.rssBytes - a.rssBytes);
-}
-
-function mb(bytes: number): string {
-  return `${Math.round(bytes / (1024 * 1024))} MB`;
-}
-
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
@@ -107,19 +44,15 @@ function main(): void {
   }
 
   const stacks = collectStacks();
+  const stopRecord = readIdleStopRecord(resolveCurrentRepoRoot());
   if (stacks.length === 0) {
     console.log("dev:stacks: no dev stacks running");
+    if (stopRecord) console.log(stopRecord);
     return;
   }
 
   const total = stacks.reduce((sum, stack) => sum + stack.rssBytes, 0);
-  console.log(`${"worktree".padEnd(30)}${"memory".padStart(10)}  ${"procs".padStart(5)}  idle`);
-  for (const stack of stacks) {
-    const idle = stack.idleMinutes === null ? "unknown" : `${stack.idleMinutes} min`;
-    console.log(
-      `${stack.label.padEnd(30)}${mb(stack.rssBytes).padStart(10)}  ${String(stack.processes).padStart(5)}  ${idle}`,
-    );
-  }
+  console.log(formatStackTable(stacks));
   const idleTotal = options.reapIdleMinutes ?? 0;
   const idleStacks = idleTotal
     ? stacks.filter((stack) => (stack.idleMinutes ?? 0) >= idleTotal)
@@ -147,6 +80,7 @@ function main(): void {
   const repoRoot = resolveCurrentRepoRoot();
   const own = stacks.find((stack) => repoRoot.endsWith(stack.label));
   if (own) console.log(`\nThis checkout: ${own.label}, ${mb(own.rssBytes)}`);
+  else if (stopRecord) console.log(`\n${stopRecord}`);
 }
 
 main();

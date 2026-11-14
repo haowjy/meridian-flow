@@ -17,6 +17,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { WorkLockedError } from "../../projects/index.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -34,11 +35,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     /**
-     * An open request to rename the target to a taken name. Before the real
+     * An open request to rename the target. Before the real
      * update runs, the Work adapter writes the target's goal and registers an
      * after-commit effect, then fails as `failure` says.
      */
-    async function openRename(failure: "name_conflict" | "infrastructure") {
+    async function openRename(failure: "refused" | "infrastructure") {
       const runtime = await runtimes.compose();
       const userId = randomUUID();
       const projectId = randomUUID();
@@ -48,9 +49,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(works)
         .values({ projectId, createdByUserId: userId, name: "Review target", handle: "w1" })
         .returning();
-      await db
-        .insert(works)
-        .values({ projectId, createdByUserId: userId, name: "Already taken", handle: "w2" });
       if (!target) throw new Error("Work fixture was not created");
       const executionId = randomUUID();
       const repos = runtime.ports.threadRepos;
@@ -72,9 +70,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           agent: null,
           action: "work.update",
           work: { handle: "w1", name: "Review target" },
-          changes: { name: "Already taken" },
+          changes: { name: "Renamed" },
         },
-        permissionCommand: { command: "update", workId: target.id, name: "Already taken" },
+        permissionCommand: { command: "update", workId: target.id, name: "Renamed" },
         deadlineAt: null,
         status: "open",
         resolution: null,
@@ -83,8 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const effects: string[] = [];
       const workRepo = runtime.ports.workRepo;
-      const update = workRepo.update;
-      workRepo.update = async (id, input) => {
+      workRepo.update = async () => {
         await currentDrizzleDb(db)
           .update(works)
           .set({ goal: "partial write" })
@@ -93,7 +90,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           effects.push("partial effect");
         });
         if (failure === "infrastructure") throw new Error("database disconnected");
-        return update(id, input);
+        throw new WorkLockedError();
       };
 
       const answer = () =>
@@ -114,7 +111,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     it("commits a refused action as an error result and discards its writes and effects", async () => {
-      const rig = await openRename("name_conflict");
+      const rig = await openRename("refused");
 
       await expect(rig.answer()).resolves.toMatchObject({
         ok: true,
@@ -129,7 +126,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           content: expect.objectContaining({ isError: true }),
         }),
       ]);
-      expect(JSON.stringify(after.blocks[0]?.content)).toContain("work_name_conflict");
+      expect(JSON.stringify(after.blocks[0]?.content)).toContain("work_locked");
       expect(after.target).toMatchObject({ name: "Review target", goal: null });
       expect(after.effects).toEqual([]);
     });

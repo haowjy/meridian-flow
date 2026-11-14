@@ -114,17 +114,19 @@ export function workNameKey(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** The one non-deleted Work a name stands for: an exact match first, else the only look-alike. */
-export function findWorkNamed<T extends { name: string; state?: WorkOwnerState }>(
+/** How many Works `worksNamed` returns at most. */
+export const NAMED_WORK_CANDIDATES = 5;
+
+/** The non-deleted Works a name stands for: the exact matches first, else the look-alikes. */
+export function worksNamedLike<T extends { name: string; state?: WorkOwnerState }>(
   works: readonly T[],
   name: string,
-): T | null {
+): T[] {
   const live = works.filter((work) => work.state !== "deleted");
   const exact = live.filter((work) => work.name.toLowerCase() === name.trim().toLowerCase());
-  if (exact.length === 1) return exact[0] ?? null;
+  if (exact.length > 0) return exact;
   const key = workNameKey(name);
-  const similar = key ? live.filter((work) => workNameKey(work.name) === key) : [];
-  return similar.length === 1 ? (similar[0] ?? null) : null;
+  return key ? live.filter((work) => workNameKey(work.name) === key) : [];
 }
 
 function chatTitle(title: string | null): string {
@@ -154,8 +156,24 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     return chatRef && files ? { ...files, chatRef } : null;
   }
 
+  /** The Work a name stands for when it stands for exactly one. */
   async function workNamed(projectId: string, name: string): Promise<WorkOwner | null> {
-    return findWorkNamed(await deps.worksNamed(projectId, name), name);
+    const matches = worksNamedLike(await deps.worksNamed(projectId, name), name);
+    return matches.length === 1 ? (matches[0] ?? null) : null;
+  }
+
+  /** Names may repeat: a name shared by Works answers with every handle, and picks none. */
+  async function sharedName(projectId: string, name: string): Promise<string | null> {
+    const candidates = await deps.worksNamed(projectId, name);
+    const matches = worksNamedLike(candidates, name);
+    if (matches.length < 2) return null;
+    const handles = matches.map((work) => `${work.handle} "${work.name}"`).join(", ");
+    // The lookup stops at its cap, so a full page may hide more Works.
+    const count =
+      candidates.length >= NAMED_WORK_CANDIDATES
+        ? `${NAMED_WORK_CANDIDATES} or more`
+        : String(matches.length);
+    return `"${name}" names ${count} Works: ${handles}. Use a handle.`;
   }
 
   async function unknownWork(projectId: string, handle: string): Promise<string> {
@@ -181,7 +199,7 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
         const work = await workNamed(projectId, slip.token);
         return work
           ? `Use ${owned("scratch", { kind: "work", workHandle: work.handle })}… (Work "${work.name}").`
-          : fallback;
+          : ((await sharedName(projectId, slip.token)) ?? fallback);
       }
       case "subagent": {
         const subagent = await subagentFiles(projectId, slip.token);
@@ -291,7 +309,9 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
       const named = await workNamed(projectId, ref);
       return {
         ok: false,
-        message: named ? `"${named.name}" is ${named.handle}.` : unknownWorkMessage(ref),
+        message: named
+          ? `"${named.name}" is ${named.handle}.`
+          : ((await sharedName(projectId, ref)) ?? unknownWorkMessage(ref)),
       };
     },
     notice,
