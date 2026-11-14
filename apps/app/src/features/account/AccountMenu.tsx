@@ -58,7 +58,7 @@ export function AccountMenu() {
               // The account's local copies go before the browser leaves for the sign-out.
               event.preventDefault();
               void clearBeforeSignOut()
-                .catch(reportError)
+                .catch((error: unknown) => reportError(error))
                 .finally(() => window.location.assign("/logout"));
             }}
           >{t`Log out`}</a>

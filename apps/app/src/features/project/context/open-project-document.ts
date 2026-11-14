@@ -430,7 +430,7 @@ export function ProjectDocumentNavigationProvider({
 }) {
   const { open: openTrash } = useTrashNavigation();
   const standings = useProjectStandings();
-  const trees = useProjectTrees(projectId);
+  const trees = useProjectTrees(projectId, { account: true });
   // Read at each open, so a change of the list does not make a new adapter.
   const treesRef = useRef(trees);
   treesRef.current = trees;

@@ -37,7 +37,8 @@ export function observeListRemovals(input: {
   const clear = (documentIds: readonly string[]) => {
     const fresh = documentIds.filter((id) => !cleared.has(id));
     for (const id of fresh) cleared.add(id);
-    if (fresh.length > 0) void removal.clearLocalCopies(fresh).catch(reportError);
+    if (fresh.length > 0)
+      void removal.clearLocalCopies(fresh).catch((error: unknown) => reportError(error));
   };
 
   const endedSource = (standing: ReturnType<typeof standings.standing>) =>
@@ -94,7 +95,7 @@ export function observeListRemovals(input: {
             }),
           ),
         )
-        .catch(reportError);
+        .catch((error: unknown) => reportError(error));
     }
   };
 

@@ -10,6 +10,8 @@ import type { TreeListSnapshot } from "@/core/tree-list/tree-list-session";
 
 type Watched = {
   handle: TreeListHandle;
+  /** The account's own list (`user://`): a document moved there is still the writer's. */
+  account: TreeListHandle;
   holds: number;
   listeners: Set<() => void>;
   /** Answers handed out since the last change: identical while nothing changed. */
@@ -22,22 +24,33 @@ const WAITING: DocumentStanding = { kind: "waiting" };
 export class ProjectStandings {
   private readonly projects = new Map<string, Watched>();
 
-  constructor(private readonly lists: TreeListRegistry) {}
+  constructor(
+    private readonly lists: TreeListRegistry,
+    private readonly accountId: string,
+  ) {}
 
   /** Holds the project's list and calls `listener` when any standing in it may have changed. */
   watch(projectId: string, listener: () => void): () => void {
     let watched = this.projects.get(projectId);
     if (!watched) {
       const handle = this.lists.acquire({ kind: "project", projectId });
+      const account = this.lists.acquire({ kind: "account", userId: this.accountId });
+      const changed = () => {
+        entry.answers = new Map();
+        for (const each of [...entry.listeners]) each();
+      };
+      const stopProject = handle.session.subscribe(changed);
+      const stopAccount = account.session.subscribe(changed);
       const entry: Watched = {
         handle,
+        account,
         holds: 0,
         listeners: new Set(),
         answers: new Map(),
-        stop: handle.session.subscribe(() => {
-          entry.answers = new Map();
-          for (const each of [...entry.listeners]) each();
-        }),
+        stop: () => {
+          stopProject();
+          stopAccount();
+        },
       };
       this.projects.set(projectId, entry);
       watched = entry;
@@ -54,6 +67,7 @@ export class ProjectStandings {
       if (held.holds === 0) {
         held.stop();
         held.handle.release();
+        held.account.release();
         this.projects.delete(projectId);
       }
     };
@@ -84,6 +98,14 @@ export class ProjectStandings {
     if (!answer) {
       const { session } = watched.handle;
       answer = standingIn(session.getSnapshot(), session.replay(), documentId);
+      if (answer.kind === "not-in-list") {
+        // Not in the project's list: it may have moved to the account's.
+        const mine = watched.account.session;
+        const there = standingIn(mine.getSnapshot(), mine.replay(), documentId);
+        // An account list not yet read cannot say the document is nowhere.
+        if (there.kind === "waiting") answer = WAITING;
+        else if (there.kind !== "not-in-list") answer = there;
+      }
       watched.answers.set(documentId, answer);
     }
     return answer;

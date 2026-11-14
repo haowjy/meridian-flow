@@ -58,7 +58,7 @@ export class AccountFeatureLifetime {
     this.treeLists = new TreeListRegistry(accountId);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
-    this.standings = new ProjectStandings(this.treeLists);
+    this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner(this.registry, {
       // A draft's room closed: where the document stands says whether it went to live or was removed.
       resolveGone: async (ref) => {
@@ -124,7 +124,10 @@ export class AccountFeatureLifetime {
     });
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.
-    void clearCopiesOfOtherAccounts(accountId as AccountId).catch(reportError);
+    if (typeof window !== "undefined")
+      void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
+        reportError(error),
+      );
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,

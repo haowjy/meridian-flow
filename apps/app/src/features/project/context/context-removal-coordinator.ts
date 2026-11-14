@@ -726,21 +726,6 @@ export class ContextRemovalCoordinator {
       .then((landing) => landed?.(landing));
   }
 
-  /**
-   * The catalog no longer places a mounted document. A presented one's notice says why once
-   * the list shows a removal; the address stays where it is, so the view shows the removal
-   * in place. A kept one, off screen, just goes.
-   */
-  closeVanished(projectId: string, tab: OpenDocument): ContextRemovalOutcome {
-    if (this.unavailable()) return { kind: "noop" };
-    if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
-    this.forget(projectId, [tab.documentId]);
-    if (!this.presented.documents(projectId).some((shown) => shown.documentId === tab.documentId))
-      return { kind: "noop" };
-    this.notices?.presentedRemoved(projectId, [tab]);
-    return this.commitWriterClose(projectId, tab);
-  }
-
   /** The Work scope changed. The route's selection stays: a document's owner is its own. */
   setActiveWork(projectId: string, activeWorkId: string): void {
     if (this.unavailable()) return;

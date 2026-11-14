@@ -43,7 +43,6 @@ import { recentAddressFromTab } from "./context/recent-opening";
 import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
-import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { useFollowOpenDocumentPlacement } from "./context/use-follow-open-document-placement";
 import { DesktopProject } from "./DesktopProject";
 import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentReview";
@@ -444,12 +443,11 @@ function HydratedReviewControllers({
     }),
     [main, props.reviewItemKey, props.reviewAddressAdmission],
   );
-  const { selection } = useContextRemovalProject(props.projectId);
   useFollowOpenDocumentPlacement({
     projectId: props.projectId,
     editorWorkId: props.editorWorkId,
     activeContextWork: props.activeContextWork,
-    selection,
+    review: props.reviewItemKey !== undefined,
     activeContextScheme: props.activeContextScheme,
     activeContextPath: props.activeContextPath,
     activeContextChat: props.activeContextChat,

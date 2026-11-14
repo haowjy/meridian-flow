@@ -2,7 +2,10 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useProjectContextSources } from "@/client/query/useContextSources";
+import {
+  useAccountContextSources,
+  useProjectContextSources,
+} from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
@@ -88,8 +91,13 @@ export function ProjectContextRemovalController({
     [],
   );
 
-  const sources = useProjectContextSources(projectId);
-  const sourceKey = sources ? sources.map((source) => source.id).join(",") : null;
+  const projectSources = useProjectContextSources(projectId);
+  const accountSources = useAccountContextSources();
+  // A document that moved to the account's list belongs to one of its sources.
+  const sourceKey =
+    projectSources && accountSources
+      ? [...projectSources, ...accountSources].map((source) => source.id).join(",")
+      : null;
   useEffect(
     () =>
       observeListRemovals({
