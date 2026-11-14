@@ -374,32 +374,32 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  // A replacement is a deletion and an insertion side by side in one part. When the inserted side is
-  // gone for good, bringing the deleted side back alone would double whatever now stands there.
-  const removingBy = new Map<Y.Item, Key[]>();
-  for (const { original, effective } of removing) {
+  // A replacement is a deleted run with the part's insertion beside it. Bringing the deleted run back
+  // alone doubles the text only when that insertion is gone and someone wrote there after the part
+  // (a replacement by the writer or a pull); a plain deletion of the insertion leaves the gap empty.
+  const removingItems = new Set<Y.Item>();
+  for (const { original } of removing) {
     const item = find(index.doc, original);
-    if (item) removingBy.set(item, [...(removingBy.get(item) ?? []), effective]);
+    if (item) removingItems.add(item);
   }
-  const pairedRemovals = new Map<Y.Item, boolean>();
+  const strandedItems = new Map<Y.Item, boolean>();
   const strandedByRemoval = (original: Key): boolean => {
     const item = find(index.doc, original);
     if (!item) return false;
-    const known = pairedRemovals.get(item);
+    const known = strandedItems.get(item);
     if (known !== undefined) return known;
     let paired = false,
-      standing = false;
+      standing = false,
+      newer = false;
     for (const step of ["left", "right"] as const) {
-      for (let near = item[step]; near; near = near[step]) {
-        const owners = removingBy.get(near);
-        if (owners) {
-          paired = true;
-          standing ||= owners.some((owner) => index.isVisible(owner));
-        } else if (!near.deleted) break;
-      }
+      let near = item[step];
+      for (; near?.deleted; near = near[step]) paired ||= removingItems.has(near);
+      if (!near) continue;
+      if (removingSet.has(key(near.id))) standing = true;
+      else newer ||= near.id.clock >= (part.frontier[near.id.client] ?? 0);
     }
-    const stranded = paired && !standing;
-    pairedRemovals.set(item, stranded);
+    const stranded = paired && !standing && newer;
+    strandedItems.set(item, stranded);
     return stranded;
   };
   const candidates = new Set(

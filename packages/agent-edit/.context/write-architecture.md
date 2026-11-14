@@ -45,8 +45,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   model's changes come from a find's window, otherwise from the word diff (`wordDiff`, the Yjs writer's own: it splits words with
   `Intl.Segmenter`, so an unspaced Chinese clause is several words, and the word the model
   changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
-  formatting is not part of a token). A replace is not trimmed: the model's whole new text
-  is written. Every operation is made and Yjs merges it,
+  formatting is not part of a token). Inside each changed run only the characters that differ are written
+  (`retainShared`), so text old and new share keeps its items and its author. Every operation is made and Yjs merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it. The owner chose "the AI's whole word" and to
   trust the model to notice an odd merge in the write's echo and its listing of concurrent

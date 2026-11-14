@@ -384,9 +384,9 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
 }
 
 /**
- * Diff at word granularity over the review's own segments, as `[op, text]` runs. A character diff reuses
- * letters across words, so a peer deleting the old word deletes part of the new one: garbled text. The
- * AI write lowering and the Yjs writer both read it, so one edit has one set of unchanged words.
+ * Diff at word granularity over the review's own segments, as `[op, text]` runs. The AI write lowering
+ * and the Yjs writer both read it, so one edit has one set of unchanged words; the write then refines
+ * each changed run by character (`retainShared`).
  */
 export function wordDiff(a: string, b: string): Array<[number, string]> {
   const wa = splitWords(a);

@@ -59,12 +59,13 @@ never refuses it. An item that is already gone is skipped ("Stayed as you edited
 the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
-A replacement is a deletion and an insertion side by side in one part, and the two come back
-together or not at all: when the inserted side is gone for good (the writer replaced it), the
-deleted side stays gone rather than doubling the text. A pull or Apply that rewrites a word the
-agent wrote into a longer word that still holds it (`dog` to `dogXX`) inserts only the difference,
-so the agent's items keep their identity and Undo still finds them (`retainContained` in
-`packages/agent-edit/src/resolver/lower-block.ts`).
+A replacement is a deleted run with the part's insertion beside it. The deleted run stays
+gone only when the insertion is gone and text written after the edit (the writer or a pull
+replaced it; a clock at or past the part's `frontier`) stands at its edge, so Undo doesn't
+double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
+writes only the characters that changed inside a changed run (`retainShared` in
+`packages/agent-edit/src/resolver/lower-block.ts`), so the agent's items keep their identity and
+Undo after a pull equals Undo of the same typing on the draft directly.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
 A turn's edit targets include its create transition even when the document is empty. A create

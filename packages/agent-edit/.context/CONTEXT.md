@@ -79,5 +79,15 @@ with it) and, for a map entry, nothing newer has replaced it. Anything else is s
 already gone, so another peer's typing never refuses it and is never removed. An AI element
 holding a live descendant outside the receipt stays (`delete-filter.ts`); only the AI's own
 items inside it go. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
-leaves a writer's later attribute value. The receipt's `frontier` no longer takes part.
+leaves a writer's later attribute value.
+
+A replacement is a deleted run with the part's insertion beside it. The deleted run stays gone
+only when the part's inserted side is no longer visible beside it *and* an item written after
+the part (a clock at or past the part's `frontier`) bounds the gap: the writer or a pull
+replaced the text, and restoring would double it. A plain deletion of the insertion leaves
+nothing there, so the original comes back. Text the diff retains keeps its items, so a pull or
+Apply never changes who wrote which characters where the text did not change: inside each
+changed run `retainShared` (`resolver/lower-block.ts`) writes only the character difference.
+The cost is a rare race: a peer's concurrent delete of an old word takes only the letters the
+new word shares with it.
 Review grouping and the model's text-derived status never use this rule.

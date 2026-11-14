@@ -3,7 +3,7 @@ import type { Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
-import { wordDiff } from "../diff/tokens.js";
+import { diffKeys, wordDiff } from "../diff/tokens.js";
 import type { EditOp, FormatRange, TextSplice } from "../ports/model.js";
 import type { TextWindow } from "./find.js";
 
@@ -259,7 +259,7 @@ function lowerText(
       });
     }
   } else {
-    hunks = wordHunks(a, b);
+    hunks = wordHunks(a, b, isAtom);
   }
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
@@ -314,7 +314,7 @@ function slideAtomInserts(
 }
 
 /** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
-function wordHunks(a: string, b: string): Hunk[] {
+function wordHunks(a: string, b: string, isAtom: (units: string, at: number) => boolean): Hunk[] {
   const hunks: Hunk[] = [];
   let base = 0;
   let model = 0;
@@ -336,36 +336,57 @@ function wordHunks(a: string, b: string): Hunk[] {
       open.end = model;
     }
   }
-  return hunks.map((hunk) => retainContained(a, b, hunk));
+  return hunks.flatMap((hunk) => retainShared(a, b, hunk, isAtom));
 }
 
 /**
- * A changed run that holds the other side whole (`dog` to `dogXX`, `dXXog`) is the insertion or deletion
- * of the difference, so the retained text keeps its items and whoever wrote them keeps their Undo.
- * Runs sharing only some letters (`blue` to `blur`) stay whole: reusing those would garble a peer's
- * concurrent delete of the old word.
+ * Inside one changed run, every character old and new share keeps its item and only the difference
+ * is written, so whoever wrote the kept characters keeps their Undo through an Apply or a pull.
+ * Inline atoms never match: two images share a placeholder, not their attributes. A run past the
+ * diff bound stays whole.
  */
-function retainContained(a: string, b: string, hunk: Hunk): Hunk {
-  const before = a.slice(hunk.from, hunk.to);
-  const after = b.slice(hunk.at, hunk.end);
-  const shorter = Math.min(before.length, after.length);
-  if (!shorter) return hunk;
-  let head = 0;
-  while (head < shorter && before[head] === after[head]) head++;
-  let tail = 0;
-  while (
-    head + tail < shorter &&
-    before[before.length - 1 - tail] === after[after.length - 1 - tail]
-  )
-    tail++;
-  if (head + tail < shorter) return hunk;
-  return {
-    ...hunk,
-    from: hunk.from + head,
-    to: hunk.to - tail,
-    at: hunk.at + head,
-    end: hunk.end - tail,
+function retainShared(
+  a: string,
+  b: string,
+  hunk: Hunk,
+  isAtom: (units: string, at: number) => boolean,
+): Hunk[] {
+  if (hunk.from === hunk.to || hunk.at === hunk.end) return [hunk];
+  const keys = (text: string, from: number, to: number) => {
+    const chars = Array.from(text.slice(from, to));
+    let at = from;
+    const unique = chars.map((char) => {
+      const key = isAtom(char, 0) ? `${char}${at}` : char;
+      at += char.length;
+      return key;
+    });
+    return { unique, widths: chars.map((char) => char.length) };
   };
+  const before = keys(a, hunk.from, hunk.to);
+  const after = keys(b, hunk.at, hunk.end);
+  const out: Hunk[] = [];
+  let base = hunk.from;
+  let model = hunk.at;
+  let open: Hunk | undefined;
+  let [x, y] = [0, 0];
+  for (const [op, n] of diffKeys(before.unique, after.unique)) {
+    if (op === DIFF_EQUAL) {
+      open = undefined;
+      for (let k = 0; k < n; k++) {
+        base += before.widths[x++];
+        model += after.widths[y++];
+      }
+      continue;
+    }
+    open ??= out[out.push({ from: base, to: base, at: model, end: model }) - 1];
+    for (let k = 0; k < n; k++) {
+      if (op === DIFF_DELETE) base += before.widths[x++];
+      else model += after.widths[y++];
+    }
+    open.to = base;
+    open.end = model;
+  }
+  return out;
 }
 
 /**
