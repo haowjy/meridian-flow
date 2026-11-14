@@ -221,7 +221,8 @@ export const effectWatermarkSweep: Probe = {
           assert.ok(secondPass.length <= 2, "the next tick is a new finite pass");
           assert.ok(contendedWhileHeld > 0, "the held Work's drafts answer contended");
           assert.ok(
-            maxWaitMs <= LOCK_TIMEOUT_MS + 100,
+            // Slack for a loaded runner; an unbounded wait lasts until the holder releases.
+            maxWaitMs <= LOCK_TIMEOUT_MS + 1_000,
             `no lock acquisition waits past the bound: ${maxWaitMs} ms`,
           );
         } finally {

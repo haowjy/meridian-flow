@@ -1044,7 +1044,9 @@ try {
       return result;
     });
     try {
-      await Promise.race([command, new Promise((r) => setTimeout(r, 500))]);
+      // Blocked on the lock, the click cannot finish until the release below, so a generous
+      // limit tells "waited" from "slow" without depending on the runner's speed.
+      await Promise.race([command, new Promise((r) => setTimeout(r, 10_000))]);
       const beforeRelease = completed;
       release.open();
       await holder;
