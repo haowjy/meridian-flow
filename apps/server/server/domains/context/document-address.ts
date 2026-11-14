@@ -20,7 +20,7 @@ export function createDocumentAddressResolver(deps: {
     return found
       ? {
           kind,
-          document: { kind: "available", documentId: input.documentId, generation: "0", ...found },
+          document: { kind: "available", documentId: input.documentId, ...found },
         }
       : { kind: "unavailable" };
   }

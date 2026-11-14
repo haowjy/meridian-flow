@@ -79,7 +79,6 @@ export function ProjectContextRemovalController({
       standings,
       removal: coordinator,
       registry,
-      showTrashed: (documentId) => void latest.current.openDocument({ documentId, replace: true }),
       refreshSources: () => {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.contextSources(projectId),

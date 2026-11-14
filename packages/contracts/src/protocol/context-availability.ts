@@ -5,19 +5,6 @@ import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
 import { filetypeSchema } from "./filetype.js";
 
-export type AvailabilityGeneration = string;
-
-const CANONICAL_AVAILABILITY_GENERATION = /^(0|[1-9]\d*)$/;
-
-/** Validate the one wire/storage spelling accepted for availability generations. */
-export function assertAvailabilityGeneration(
-  value: string,
-): asserts value is AvailabilityGeneration {
-  if (!CANONICAL_AVAILABILITY_GENERATION.test(value)) {
-    throw new TypeError(`Invalid availability generation: ${JSON.stringify(value)}`);
-  }
-}
-
 /** The authenticated user is the account boundary for browser session authority. */
 export type AccountId = UserId;
 
@@ -33,7 +20,6 @@ export type ProjectContextAuthority =
 export type AvailableDocument = {
   kind: "available";
   documentId: DocumentId;
-  generation: AvailabilityGeneration;
   authority: ProjectContextAuthority;
   entry: CatalogFileEntry;
 };
@@ -101,7 +87,6 @@ const fileClassification = z.union([
 const fileEntry = z
   .object({
     kind: z.literal("file"),
-    observationVersion: version,
     entryId: identity,
     scope,
     sourceId: identity,
@@ -130,7 +115,6 @@ export const documentAddressSchema = z.discriminatedUnion("kind", [
     document: z.object({
       kind: z.literal("available"),
       documentId: identity,
-      generation: version,
       authority,
       entry: fileEntry,
     }),

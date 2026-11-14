@@ -195,7 +195,6 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         const workHandle = work && !work.isNoWork ? work.handle : null;
         const entry = mapAuthoritativeFile({
           // Only the entry's path and name are read.
-          observationVersion: "0",
           document,
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,

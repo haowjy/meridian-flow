@@ -64,10 +64,8 @@ function availableResolution(resolvedUri = uri) {
   return {
     kind: "available" as const,
     documentId,
-    generation: "1",
     authority: { kind: "work" as const, projectId, workId: "no-work", workHandle: null },
     entry: {
-      observationVersion: "1",
       kind: "file" as const,
       entryId: documentId,
       uri: resolvedUri,
@@ -359,7 +357,6 @@ describe("UserTurnAdmission", () => {
     const folderEntry = {
       entry: {
         kind: "folder" as const,
-        observationVersion: "1",
         entryId: folderId,
         sourceId: "source",
         parentId: "source",

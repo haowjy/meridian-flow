@@ -2,7 +2,6 @@
 
 import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
 import type { DraftOwnerKey } from "@meridian/contracts/branches";
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,17 +22,20 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import { isEditorScheme } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
+  useContextRemovalCoordinator,
   useDraftCommandOwner,
   useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import { useDocumentStanding } from "../context/use-document-standing";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
 import { useWorkScopeState } from "../use-work-scope";
@@ -75,9 +77,8 @@ import {
   contextRouteRequest,
   type NavigationOptions,
   type ProjectRouteCommands,
-  type ProjectSearch,
 } from "./project-route";
-import { routePlaceKey, useRouteDocument } from "./use-route-document";
+import { rememberedRouteDocument, routeDocumentMark, routePlaceKey } from "./route-document";
 
 type ReadableProjectRouteProps = {
   project: Project;
@@ -162,16 +163,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     navigation.repairAddress(ticket);
   }, [navigation, location]);
 
-  // Where a document is now, in any source: places a review launch's document and follows a moved one.
-  const launchTrees = useProjectTreeViews(projectId, CONTEXT_URI_SCHEMES, { workId });
+  // Where a document is now, in any source of the project or the account: places a review
+  // launch's document and follows a moved one.
+  const trees = useProjectTrees(projectId, { account: true });
   const documentTree = useMemo(
-    () => ({
-      findDocument: (id: string) =>
-        CONTEXT_URI_SCHEMES.map((scheme) => launchTrees[scheme].tree?.findDocument(id)).find(
-          (file) => file != null,
-        ) ?? null,
-    }),
-    [launchTrees],
+    () => ({ findDocument: (id: string) => trees.find(id)?.file ?? null }),
+    [trees],
   );
   const latest = useRef({
     address,
@@ -270,10 +267,27 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   useEffect(() => {
     if (closingRef && documentLookup.data?.kind === "unavailable") void closeMetadata?.refetch();
   }, [closingRef?.itemKey, documentLookup.dataUpdatedAt]);
-  // A review's item names its document; a plain address is the document it last resolved.
+  // A review's item names its document; a plain address is the document its history entry
+  // last resolved.
   const routePlace = routePlaceKey(documentDestination, locatorOwner);
-  const routeDocument = useRouteDocument(routePlace);
-  const boundDocumentId = address.itemKey ? (closingDocumentId ?? null) : routeDocument.documentId;
+  const rememberedId = address.itemKey ? null : rememberedRouteDocument(location.state, routePlace);
+  const standing = useDocumentStanding(projectId, rememberedId);
+  const movedTo = rememberedId ? trees.find(rememberedId) : null;
+  // The remembered document is in no list once they have synced (a purged or trashed one still
+  // has its standing): the memory is stale and the path decides, as if the entry had none. It
+  // binds again if the document turns up, so a move between two lists, which leaves it in
+  // neither for a moment, is followed.
+  const abandoned =
+    !!rememberedId &&
+    !movedTo &&
+    trees.isComplete &&
+    standing.kind !== "in-trash" &&
+    standing.kind !== "purged";
+  const boundDocumentId = address.itemKey
+    ? (closingDocumentId ?? null)
+    : abandoned
+      ? null
+      : rememberedId;
   // A plain address is resolved by the replay alone; the server answers a review's.
   const replayAddress = useMemo(
     () =>
@@ -349,37 +363,58 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         presented: () => presented?.documents(projectId) ?? [],
         isDraftOnly: (documentId) =>
           draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
-        leaveRoute: routeDocument.forget,
       }),
-    [draftOnlyDocuments, presented, projectId, user.userId, routeDocument.forget],
+    [draftOnlyDocuments, presented, projectId, user.userId],
   );
-  const holdsBound = replayAddress?.kind === "held";
-  // The route is bound to a document this source's tree lacks. Once the list has synced the
-  // replay says where it is now: found in another source (a move between two lists leaves it in
-  // neither for a moment), the route goes there. Until then the route holds; removal is the
-  // observer's (main opens the Trash view), and the writer pointing the route elsewhere ends it.
-  const movedTo =
-    holdsBound && addressTree.isComplete && boundDocumentId
-      ? documentTree.findDocument(boundDocumentId)
-      : null;
+  // The route is bound to a document this source's tree lacks, and one decision says what to
+  // show: where the document is now (followed), or its standing once found nowhere (the Trash
+  // view for a deleted or purged one); a stale memory is dropped above (`abandoned`).
+  // A retained draft keeps painting what it paints, and so does the writer's own removal
+  // while main goes back; both end, so a hold always has an exit.
+  const coordinator = useContextRemovalCoordinator();
+  const holding = replayAddress?.kind === "held" ? boundDocumentId : null;
+  const draftRetains = useSyncExternalStore(
+    draftOnlyDocuments?.subscribe ?? noSubscription,
+    () => !!holding && (draftOnlyDocuments?.isDraftOnly(projectId, holding) ?? false),
+  );
+  const goingBack = useSyncExternalStore(
+    coordinator.subscribe,
+    () => !!holding && coordinator.isGoingBack(projectId, holding),
+  );
+  const retained = draftRetains || goingBack;
+  const heldOutcome: "follow" | "trash" | "wait" | null = !holding
+    ? null
+    : movedTo
+      ? "follow"
+      : standing.kind === "purged"
+        ? "trash"
+        : standing.kind === "in-trash"
+          ? retained
+            ? "wait"
+            : "trash"
+          : "wait";
+  const routeTrashed = heldOutcome === "trash" ? holding : null;
   const heldAttempt =
-    holdsBound && addressTree.isComplete && documentDestination
-      ? `${boundDocumentId}|${documentDestination.scheme}|${documentDestination.path}|${movedTo?.uri ?? ""}`
+    heldOutcome === "follow" && documentDestination && movedTo
+      ? `${holding}|${documentDestination.scheme}|${documentDestination.path}|${movedTo.file.uri}`
       : null;
   useEffect(() => {
-    if (!heldAttempt || !boundDocumentId || !documentDestination) return;
+    if (!heldAttempt || !holding || !movedTo) return;
     // A plain ticket: a delayed repair must not retire the writer's pending navigation.
     const navigation = latest.current.navigation;
     const ticket = navigation?.capture();
     const current = () => !!ticket && !!navigation?.isCurrent(ticket);
-    const located = movedTo ? parseContextUri(movedTo.uri) : null;
+    const located = parseContextUri(movedTo.file.uri);
     if (!located) return;
+    // The destination is the found source's: a moved Scratch note has its new owner.
+    const owner = ownerOfSource(movedTo.source);
     void openContext(
       contextRouteRequest({
         scheme: located.scheme,
         path: located.path,
-        ...(located.scheme === "scratch" ? locatorOwner : {}),
-        documentId: boundDocumentId,
+        workId: owner.workId,
+        rootThreadId: owner.rootThreadId,
+        documentId: holding,
       }),
       { replace: true, isCurrent: current },
     );
@@ -411,9 +446,25 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
   useLayoutEffect(() => {
-    if (routePlace && addressDocumentId) routeDocument.remember(routePlace, addressDocumentId);
-  }, [routePlace, addressDocumentId, routeDocument.remember]);
-  const documentIssue: ProjectRouteIssue | undefined = !documentDestination
+    if (
+      !routePlace ||
+      !addressDocumentId ||
+      !navigation ||
+      addressBinding.kind !== "plain" ||
+      rememberedId === addressDocumentId
+    )
+      return;
+    const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
+    if (ticket)
+      void navigation.replaceIfCurrent(
+        ticket,
+        address,
+        routeDocumentMark(routePlace, addressDocumentId),
+      );
+  }, [routePlace, addressDocumentId, rememberedId, navigation, location]);
+  // The Trash view shows in place of the document: nothing of the address is presented.
+  const presentedDestination = routeTrashed ? null : documentDestination;
+  const documentIssue: ProjectRouteIssue | undefined = !presentedDestination
     ? undefined
     : !documentResult
       ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
@@ -465,7 +516,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           address.itemKey === reviewItemKey && addressDocumentId
           ? undefined
           : "loading"
-        : documentDestination
+        : presentedDestination
           ? admission?.href === location.href &&
             admission.key === (location.state.__TSR_key ?? "") &&
             documentResult?.kind !== "unavailable" &&
@@ -519,7 +570,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       { replace: options?.replace ?? false },
     );
   }, []);
-  const shownTrashed = destination.kind === "trashed" ? destination.documentId : undefined;
+  const shownTrashed =
+    destination.kind === "trashed" ? destination.documentId : (routeTrashed ?? undefined);
   const trash = useMemo<TrashNavigation>(
     () => ({ shown: shownTrashed, open: openTrashed }),
     [shownTrashed, openTrashed],
@@ -584,17 +636,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         : go(toDestination({ kind: "editor" }), options);
     },
   };
-  const search: ProjectSearch = {
-    work: locatorOwner.workId,
-    chat: locatorOwner.rootThreadId,
-    scheme: destination.kind === "document" ? destination.scheme : undefined,
-    path: documentDestination ? `/${documentDestination.path}` : undefined,
-  };
-  const editorDocument = {
-    activeContextScheme: search.scheme ?? null,
-    activeContextPath: search.path ?? null,
-    activeContextChat: search.chat ?? null,
-  };
+  const activeContextScheme =
+    routeTrashed || destination.kind !== "document" ? null : destination.scheme;
+  const activeContextPath = presentedDestination ? `/${presentedDestination.path}` : null;
   return (
     <ProjectNavigationProvider
       openContextRoute={openContext}
@@ -607,7 +651,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           projectId={projectId}
           captureNavigation={captureNavigation}
         >
-          {documentDestination ? (
+          {presentedDestination ? (
             <ProjectAddressDocument
               href={location.href}
               entryKey={location.state.__TSR_key ?? ""}
@@ -644,12 +688,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
             }}
-            routeDocumentId={boundDocumentId}
+            routeDocumentId={routeTrashed ? null : boundDocumentId}
             addressedDocument={addressed ?? undefined}
-            activeContextScheme={editorDocument.activeContextScheme}
+            activeContextScheme={activeContextScheme}
             activeContextWork={locatorOwner.workId ?? null}
-            activeContextPath={editorDocument.activeContextPath}
-            activeContextChat={editorDocument.activeContextChat}
+            activeContextPath={activeContextPath}
+            activeContextChat={locatorOwner.rootThreadId ?? null}
             reviewItemKey={address.itemKey}
             reviewOwner={reviewOwner}
             reviewAddressOwner={address.owner}
@@ -671,4 +715,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       </ChatNavigationProvider>
     </ProjectNavigationProvider>
   );
+}
+
+function noSubscription(): () => void {
+  return () => undefined;
 }

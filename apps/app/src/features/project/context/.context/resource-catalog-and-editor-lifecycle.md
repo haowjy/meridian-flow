@@ -32,7 +32,7 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
 the effect of a removal on presented documents, notices and recent routes from what the list says;
-route continuity is the route's (`useRouteDocument`). `AccountResourceReplica` independently owns resource and
+route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). `AccountResourceReplica` independently owns resource and
 content durability. Neither owns the other's state.
 
 New appends a provisional `create` in Unfiled and opens the node by the name the replay gives

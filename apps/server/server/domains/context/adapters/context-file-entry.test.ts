@@ -14,7 +14,6 @@ const entryFor = (metadata: unknown) =>
       mimeType: null,
       metadata,
     } as CatalogFileRow,
-    observationVersion: "1",
     scope: { kind: "project", projectId: "p1" } as never,
     scheme: "manuscript",
     workId: null,

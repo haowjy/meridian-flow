@@ -1,7 +1,7 @@
 /**
  * What a document's removal does around the route: its views are forgotten, a notice is told, its
  * recent routes are dropped. Where main goes is the route's (`ReadableProjectRoute`), which reads
- * the replay; nothing here plans or remembers a route.
+ * the document's standing; nothing here navigates main for a removal made elsewhere.
  */
 
 import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
@@ -155,6 +155,7 @@ export class ContextRemovalCoordinator {
   private readonly gone = new Set<string>();
   /** Documents whose own removal is still sending main back: their draft's end closes nothing. */
   private readonly goingBack = new Set<string>();
+  private readonly listeners = new Set<() => void>();
   private disposed = false;
   private suspended = false;
 
@@ -288,16 +289,18 @@ export class ContextRemovalCoordinator {
     return [...ids];
   }
 
-  /**
-   * The document main shows, when it is among `documentIds` and this tab is not already taking
-   * main off it (the writer's own removal goes back by itself).
-   */
-  shownAmong(projectId: string, documentIds: readonly string[]): string | null {
-    const shown = this.presented.mainDocumentId(projectId);
-    return shown && documentIds.includes(shown) && !this.goingBack.has(`${projectId}/${shown}`)
-      ? shown
-      : null;
+  /** Whether the writer's own removal of this document is still sending main back from it. */
+  isGoingBack(projectId: string, documentId: string): boolean {
+    return this.goingBack.has(`${projectId}/${documentId}`);
   }
+
+  /** Called when `isGoingBack` may have changed: the route holds its Trash view back meanwhile. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
 
   /** What the list says changed, as one batch. A document already gone stays gone: the batch repeats nothing. */
   applyRemovals(commands: readonly RemovalCommand[]): void {
@@ -425,7 +428,10 @@ export class ContextRemovalCoordinator {
         documentIds,
         () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
       )
-      .finally(() => this.goingBack.delete(key))
+      .finally(() => {
+        this.goingBack.delete(key);
+        for (const listener of [...this.listeners]) listener();
+      })
       .then((landing) => landed?.(landing));
   }
 

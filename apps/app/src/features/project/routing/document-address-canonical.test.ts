@@ -16,7 +16,6 @@ it("follows a reviewed identity through a rename or cross-source move", () => {
     entryId: "hidden",
     sourceId: "source",
     parentId: "folder",
-    observationVersion: "1",
     name: "Withern",
     aliases: [],
     provisionalName: false,

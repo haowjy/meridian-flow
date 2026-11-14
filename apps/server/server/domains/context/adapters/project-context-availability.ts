@@ -204,9 +204,6 @@ function classifySourceIdentity(input: {
   return { kind: "valid", identity: { scope, authority, scheme, parentPath } };
 }
 
-/** The observation version every entry carries: nothing orders them any more. */
-const UNVERSIONED = "0";
-
 type SourceFacts = {
   source: typeof contextSources.$inferSelect;
   sourceProject: typeof projects.$inferSelect | null;
@@ -436,7 +433,6 @@ async function readPlacedNodes(
             entry: mapAuthoritativeFile({
               document: row,
               scope,
-              observationVersion: UNVERSIONED,
               scheme,
               workId: source.work?.id ?? null,
               workHandle: source.work && !source.work.isNoWork ? source.work.handle : null,
@@ -459,7 +455,6 @@ async function readPlacedNodes(
         out.folders.set(row.id, {
           entry: {
             kind: "folder",
-            observationVersion: UNVERSIONED,
             entryId: row.id,
             sourceId: row.contextSourceId,
             parentId: row.parentId ?? row.contextSourceId,

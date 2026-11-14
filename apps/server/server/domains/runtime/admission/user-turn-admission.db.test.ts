@@ -156,7 +156,6 @@ if (!RUN) {
                       workHandle: null,
                     },
                     entry: {
-                      observationVersion: "1",
                       kind: "file",
                       entryId: input.documentId,
                       uri: input.uri,
