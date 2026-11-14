@@ -1,11 +1,13 @@
 /**
- * Block correspondence: for two versions of a sequence of blocks (top-level blocks, a list's items,
- * the atoms of a paragraph), which old block each new block is. The model's write path and the Yjs
- * writer both ask here, so they agree on one answer.
+ * Block correspondence: for two versions of a sequence of blocks (top-level blocks, a quote's
+ * paragraphs, a table's rows, the atoms of a paragraph), which old block each new block is.
  *
- * This is guess mode: an unmade pairing costs the writer a deleted and an inserted block, and a
- * wrong one costs a block edited into another. Pairs are always in order, and only blocks of one
- * type pair, because one element cannot change its type.
+ * Two ways to answer. The content merge asks by id (`byId`): blocks carry a permanent `id`, so a block
+ * is the block with the same id, whatever was done to its text. The rest ask without: the model's
+ * write (its Markdown has no ids), the Yjs writer, review, and a block with no id. That is guess
+ * mode: an unmade pairing costs the writer a deleted and an inserted block, and a wrong one costs a
+ * block edited into another. Guess-mode pairs are in order, and only blocks of one type pair,
+ * because one element cannot change its type.
  */
 import { DIFF_EQUAL } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
@@ -17,11 +19,21 @@ export interface Correspondence {
   partner: Int32Array;
   /** New index to the old index of the first block of its unit, or -1. */
   back: Int32Array;
-  /** Old index to the first old block of the unit it was joined into, or -1. */
+  /** Old blocks paired by id out of order: moved, not edited in place. */
+  moved: Set<number>;
+  /** Old index to the old block of the unit it was joined into, or -1. */
   oldPiece: Int32Array;
-  /** New index to the first new block of the unit it was split from, or -1. */
+  /** New index to the new block of the unit it was split from, or -1. */
   nextPiece: Int32Array;
 }
+
+export const emptyCorrespondence = (oldCount: number, nextCount: number): Correspondence => ({
+  partner: new Int32Array(oldCount).fill(-1),
+  back: new Int32Array(nextCount).fill(-1),
+  moved: new Set(),
+  oldPiece: new Int32Array(oldCount).fill(-1),
+  nextPiece: new Int32Array(nextCount).fill(-1),
+});
 
 const TUNE = {
   /** Share of words two blocks must have in common to be the same block edited. */
@@ -119,19 +131,134 @@ const wordSim = (x: readonly string[], y: readonly string[]) =>
 const contained = (piece: readonly string[], whole: readonly string[]) =>
   piece.length ? commonWords(piece, whole) / piece.length : 0;
 
-export function correspond(old: readonly PMNode[], next: readonly PMNode[]): Correspondence {
-  const c: Correspondence = {
-    partner: new Int32Array(old.length).fill(-1),
-    back: new Int32Array(next.length).fill(-1),
-    oldPiece: new Int32Array(old.length).fill(-1),
-    nextPiece: new Int32Array(next.length).fill(-1),
-  };
+/**
+ * `byId` pairs by id (the merge). When two blocks are paired out of order and either could be the
+ * one that moved, `stays(i)` (0 to 2) says how much old block `i` should stay in place: the highest
+ * stays and the other moved.
+ */
+export function correspond(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  opts: { byId?: boolean; stays?: (i: number) => 0 | 1 | 2 } = {},
+): Correspondence {
+  const c = emptyCorrespondence(old.length, next.length);
+  if (opts.byId) return correspondById(old, next, c, opts.stays);
   for (const [i, j] of pairRun(old, next)) {
     c.partner[i] = j;
     c.back[j] = i;
   }
   findPieces(old, next, c);
   rootUnits(old, next, c);
+  return c;
+}
+
+const idOf = (n: PMNode): string | null => (n.attrs.id as string | null | undefined) ?? null;
+
+/** Blocks of one kind: text blocks with text blocks, others by type. */
+const compatible = (a: PMNode, b: PMNode) => (a.isTextblock ? b.isTextblock : a.type === b.type);
+
+/**
+ * The longest run of `pairs` (old index, new index; sorted by old) that is also in order in new, by
+ * weight: the pairs in it stay in place. Weights are whole numbers and a run's length dominates, so
+ * a weight only breaks a tie between equally long runs.
+ */
+function longestInOrder(pairs: Array<[number, number]>, stays: (i: number) => number) {
+  const heavy = 2 * pairs.length + 1;
+  const weight = (k: number) => heavy + stays(pairs[k][0]);
+  // Fenwick tree over new indexes: best (total, pair) of any run ending before a new index.
+  const size = Math.max(0, ...pairs.map(([, j]) => j)) + 2;
+  const tree: Array<{ total: number; at: number }> = Array.from({ length: size + 1 }, () => ({
+    total: 0,
+    at: -1,
+  }));
+  const before = (j: number) => {
+    let best = { total: 0, at: -1 };
+    for (let x = j; x > 0; x -= x & -x) if (tree[x].total > best.total) best = tree[x];
+    return best;
+  };
+  const total: number[] = [];
+  const previous: number[] = [];
+  let top = -1;
+  pairs.forEach(([, j], k) => {
+    const prev = before(j);
+    total[k] = prev.total + weight(k);
+    previous[k] = prev.at;
+    for (let x = j + 1; x <= size; x += x & -x)
+      if (total[k] > tree[x].total) tree[x] = { total: total[k], at: k };
+    if (top < 0 || total[k] > total[top]) top = k;
+  });
+  const stay = new Set<number>();
+  for (let k = top; k >= 0; k = previous[k]) stay.add(k);
+  return stay;
+}
+
+/**
+ * Pairing by id. A block pairs with the block of the other side that has its id (the first, when an
+ * id repeats) if their kinds agree. Of the pairs, the longest run in order stays and the rest
+ * moved. Blocks with no id pair among themselves by guess, inside the gap between two staying pairs.
+ * A split's or join's pieces are found beside a pair and never move it: an id pair is final.
+ */
+function correspondById(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  c: Correspondence,
+  stays: ((i: number) => number) | undefined,
+): Correspondence {
+  const at = new Map<string, number>();
+  next.forEach((n, j) => {
+    const id = idOf(n);
+    if (id !== null && !at.has(id)) at.set(id, j);
+  });
+  const seen = new Set<string>();
+  const pairs: Array<[number, number]> = [];
+  old.forEach((o, i) => {
+    const id = idOf(o);
+    if (id === null || seen.has(id)) return;
+    seen.add(id);
+    const j = at.get(id);
+    if (j !== undefined && compatible(o, next[j])) pairs.push([i, j]);
+  });
+  const stay = longestInOrder(pairs, stays ?? (() => 0));
+  const inOrder = pairs.filter((_, k) => stay.has(k));
+  for (const [i, j] of inOrder) {
+    c.partner[i] = j;
+    c.back[j] = i;
+  }
+
+  // Blocks without an id, paired by guess inside each gap between two staying pairs.
+  const bare = (nodes: readonly PMNode[], from: number, to: number) => {
+    const out: number[] = [];
+    for (let k = from; k < to; k++) if (idOf(nodes[k]) === null) out.push(k);
+    return out;
+  };
+  let [i0, j0] = [0, 0];
+  for (const [i1, j1] of [...inOrder, [old.length, next.length] as [number, number]]) {
+    const [bo, bn] = [bare(old, i0, i1), bare(next, j0, j1)];
+    if (bo.length && bn.length)
+      for (const [x, y] of pairRun(
+        bo.map((k) => old[k]),
+        bn.map((k) => next[k]),
+      )) {
+        c.partner[bo[x]] = bn[y];
+        c.back[bn[y]] = bo[x];
+      }
+    [i0, j0] = [i1 + 1, j1 + 1];
+  }
+
+  const owned = { old: new Uint8Array(old.length), next: new Uint8Array(next.length) };
+  for (const [i, j] of pairs) {
+    owned.old[i] = 1;
+    owned.next[j] = 1;
+  }
+  findPieces(old, next, c, owned);
+  rootUnits(old, next, c, new Set(inOrder.map(([i]) => i)));
+  // A pair out of order is a move.
+  pairs.forEach(([i, j], k) => {
+    if (stay.has(k)) return;
+    c.partner[i] = j;
+    c.back[j] = i;
+    c.moved.add(i);
+  });
   return c;
 }
 
@@ -325,17 +452,23 @@ const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
  * on the two sides when a split lands inside a word of a script without spaces, so the piece also
  * counts when pair and piece together are exact text of the other side.
  */
-function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspondence) {
+function findPieces(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  c: Correspondence,
+  /** Blocks that have a pair of their own by id, so they are nobody's piece. */
+  owned?: { old: Uint8Array; next: Uint8Array },
+) {
   const { partner, back } = c;
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
     if (j < 0 || !sameType(old[i], next[j])) continue;
     // Most pairs have no unpaired neighbour; counting words for them dominates a large document.
-    const open = (k: number, side: readonly PMNode[], other: Int32Array) =>
-      k >= 0 && k < side.length && other[k] < 0;
+    const open = (k: number, side: readonly PMNode[], other: Int32Array, own?: Uint8Array) =>
+      k >= 0 && k < side.length && other[k] < 0 && !own?.[k];
     if (
-      !(open(i - 1, old, partner) || open(i + 1, old, partner)) &&
-      !(open(j - 1, next, back) || open(j + 1, next, back))
+      !(open(i - 1, old, partner, owned?.old) || open(i + 1, old, partner, owned?.old)) &&
+      !(open(j - 1, next, back, owned?.next) || open(j + 1, next, back, owned?.next))
     )
       continue;
     let ow = contentWords(old[i]);
@@ -344,7 +477,12 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
     for (const dir of [-1, 1]) {
       for (
         let k = i + dir;
-        k >= 0 && k < old.length && partner[k] < 0 && c.oldPiece[k] < 0 && sameType(old[i], old[k]);
+        k >= 0 &&
+        k < old.length &&
+        partner[k] < 0 &&
+        !owned?.old[k] &&
+        c.oldPiece[k] < 0 &&
+        sameType(old[i], old[k]);
         k += dir
       ) {
         const w = contentWords(old[k]);
@@ -365,6 +503,7 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
         k >= 0 &&
         k < next.length &&
         back[k] < 0 &&
+        !owned?.next[k] &&
         c.nextPiece[k] < 0 &&
         sameType(next[j], next[k]);
         k += dir
@@ -387,14 +526,21 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
 }
 
 /**
- * A unit's pair is its first old block and its first new block; every other block of the unit is a
- * piece of that one. Yjs keeps the first block's identity through a split and a join.
+ * In guess mode a unit's pair is its first old block and its first new block; every other block of
+ * the unit is a piece of that one. Yjs keeps the first block's identity through a split and a join.
+ * A pair made by id stays as it is (`final` lists its old blocks): the id
+ * says which block is which, so a piece before it does not take its place.
  */
-function rootUnits(old: readonly PMNode[], next: readonly PMNode[], c: Correspondence) {
+function rootUnits(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  c: Correspondence,
+  final?: ReadonlySet<number>,
+) {
   const { partner, back } = c;
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
-    if (j < 0) continue;
+    if (j < 0 || final?.has(i)) continue;
     let [u0, u1, v0, v1] = [i, i + 1, j, j + 1];
     while (u0 > 0 && c.oldPiece[u0 - 1] === i) u0--;
     while (v0 > 0 && c.nextPiece[v0 - 1] === j) v0--;

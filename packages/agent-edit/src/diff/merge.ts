@@ -10,8 +10,10 @@
  * It works on `align`'s uncleaned hunks for word precision. No Yjs here: the minimal Yjs writer is
  * `writer.ts`.
  */
-import type { Node as PMNode, Schema } from "prosemirror-model";
+import { hasBlockId, withoutBlockIds } from "@meridian/prosemirror-schema";
+import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
 import { align } from "./align.js";
+import { type Correspondence, correspond, emptyCorrespondence } from "./correspond.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
 import {
@@ -31,7 +33,9 @@ import {
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
+import { settleStretches } from "./stretch.js";
 import {
+  blockKey,
   buildBlocks,
   buildSide,
   isWordTok,
@@ -115,6 +119,202 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
+/** Whether a table's cells, with their `colspan` and `rowspan`, fill a rectangle with no overlap or hole. */
+function isRectangular(table: PMNode): boolean {
+  const taken = new Set<string>();
+  let width = 0;
+  for (let r = 0; r < table.childCount; r++) {
+    let c = 0;
+    table.child(r).forEach((cell) => {
+      while (taken.has(`${r},${c}`)) c++;
+      const [cs, rs] = [Number(cell.attrs.colspan ?? 1), Number(cell.attrs.rowspan ?? 1)];
+      for (let dr = 0; dr < rs; dr++)
+        for (let dc = 0; dc < cs; dc++) {
+          const at = `${r + dr},${c + dc}`;
+          if (taken.has(at)) width = Number.POSITIVE_INFINITY;
+          taken.add(at);
+        }
+      c += cs;
+      if (Number.isFinite(width)) width = Math.max(width, c);
+    });
+  }
+  if (!Number.isFinite(width)) return false;
+  for (const at of taken) if (Number(at.split(",")[0]) >= table.childCount) return false;
+  return taken.size === width * table.childCount;
+}
+
+interface ContainerMerge {
+  merged: MergedTok[];
+  overrode: number;
+  conflicts: Conflict[];
+  orderConflict: boolean;
+}
+
+/**
+ * Both sides changed a run of containers (tables) that each side kept as the same
+ * number of the same types, so the run merges pairwise by the containers' children instead of
+ * as whole-block tokens. Null when the run does not have that shape, or when a merged node would
+ * not be a valid container: the caller then keeps the `whole-block-unit` clash.
+ */
+function mergeContainers(
+  schema: Schema,
+  base: Tok[],
+  live: MergedTok[],
+  draft: MergedTok[],
+  baseIds: number[],
+): ContainerMerge | null {
+  if (live.length !== base.length || draft.length !== base.length) return null;
+  const out: ContainerMerge = { merged: [], overrode: 0, conflicts: [], orderConflict: false };
+  const kids = (n: PMNode) => {
+    const nodes: PMNode[] = [];
+    n.forEach((c) => {
+      nodes.push(c);
+    });
+    return nodes;
+  };
+  for (let i = 0; i < base.length; i++) {
+    const [b, l, d] = [base[i], live[i].tok, draft[i].tok];
+    if (b.kind !== "atom" || l.kind !== "atom" || d.kind !== "atom") return null;
+    const [bn, ln, dn] = [b.node, l.node, d.node];
+    if (bn.type !== ln.type || bn.type !== dn.type || !bn.firstChild?.isBlock) return null;
+    if (l.key === b.key || l.key === d.key) {
+      out.merged.push(draft[i]);
+      continue;
+    }
+    if (d.key === b.key) {
+      out.merged.push(live[i]);
+      continue;
+    }
+    const inner = rebase(schema, kids(bn), kids(ln), kids(dn));
+    const changed = (n: PMNode, key: string) =>
+      JSON.stringify(n.attrs[key]) !== JSON.stringify(bn.attrs[key]);
+    const attrs = Object.fromEntries(
+      Object.keys(dn.attrs).map((key) => [key, changed(dn, key) ? dn.attrs[key] : ln.attrs[key]]),
+    );
+    const marks = Mark.sameSet(dn.marks, bn.marks) ? ln.marks : dn.marks;
+    // Both sides changed one attribute (or the marks) to different values: the draft's stands.
+    if (
+      Object.keys(dn.attrs).some(
+        (key) =>
+          changed(dn, key) &&
+          changed(ln, key) &&
+          JSON.stringify(ln.attrs[key]) !== JSON.stringify(dn.attrs[key]),
+      ) ||
+      (!Mark.sameSet(dn.marks, bn.marks) &&
+        !Mark.sameSet(ln.marks, bn.marks) &&
+        !Mark.sameSet(ln.marks, dn.marks))
+    ) {
+      out.conflicts.push({ kind: "overlap", baseIds, base: [b], live: [l], draft: [d] });
+    }
+    let node: PMNode;
+    try {
+      node = bn.type.create(attrs, inner.blocks, marks);
+      node.check();
+    } catch {
+      return null;
+    }
+    if (bn.type.name === "table" && !isRectangular(node)) return null;
+    out.merged.push({
+      tok: { kind: "atom", key: `A${blockKey(node)}`, node },
+      origin: DRAFT,
+      index: draft[i].index,
+    });
+    out.overrode += inner.overrode;
+    out.conflicts.push(...inner.conflicts.map((c) => ({ ...c, baseIds })));
+    out.orderConflict ||= inner.orderConflict;
+  }
+  return out;
+}
+
+/** A correspondence carried onto reordered sides. Pairs that no longer run in order stay; `align` skips them. */
+function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Correspondence {
+  const baseAt = new Int32Array(c.partner.length).fill(-1);
+  baseOrder.forEach((o, n) => {
+    baseAt[o] = n;
+  });
+  const sideAt = new Int32Array(c.back.length).fill(-1);
+  sideOrder.forEach((o, n) => {
+    sideAt[o] = n;
+  });
+  const out = emptyCorrespondence(baseOrder.length, sideOrder.length);
+  baseOrder.forEach((o, n) => {
+    if (c.partner[o] >= 0 && sideAt[c.partner[o]] >= 0) {
+      out.partner[n] = sideAt[c.partner[o]];
+      out.back[out.partner[n]] = n;
+    }
+    if (c.oldPiece[o] >= 0) out.oldPiece[n] = baseAt[c.oldPiece[o]];
+  });
+  sideOrder.forEach((o, n) => {
+    if (c.nextPiece[o] >= 0) out.nextPiece[n] = sideAt[c.nextPiece[o]];
+  });
+  return out;
+}
+
+/**
+ * How much each base block should stay in place when the other side's `side` paired it out of
+ * order: of two blocks swapped, the one `side` edited stays (its edit travels with it) and the
+ * unchanged one moved; one `side` removed is the one that moved, so a move against a removal is
+ * counted.
+ */
+function staysFor(base: readonly PMNode[], side: readonly PMNode[]): (i: number) => 0 | 1 | 2 {
+  const byId = new Map<string, PMNode>();
+  for (const n of side) if (n.attrs.id != null && !byId.has(n.attrs.id)) byId.set(n.attrs.id, n);
+  return (i) => {
+    const now = byId.get(base[i].attrs.id);
+    return now === undefined ? 0 : blockKey(now) === blockKey(base[i]) ? 1 : 2;
+  };
+}
+
+/** `node` with the ids of `model`, a block equal to it but for ids. */
+function withIdsOf(node: PMNode, model: PMNode): PMNode {
+  const kids: PMNode[] = [];
+  node.forEach((child, _, i) => {
+    kids.push(child.isText ? child : withIdsOf(child, model.child(i)));
+  });
+  const attrs = hasBlockId(node) ? { ...node.attrs, id: model.attrs.id } : node.attrs;
+  return node.type.create(attrs, kids, node.marks);
+}
+
+/**
+ * Both sides made the same block at one place (equal but for ids: the same split, or the same
+ * paragraph typed twice). It is one block, and carries live's id, because live is the next review
+ * base. Returns the draft with its copy given live's ids.
+ */
+function unifyAdded(
+  live: readonly PMNode[],
+  draft: readonly PMNode[],
+  inLive: Correspondence,
+  inDraft: Correspondence,
+): readonly PMNode[] {
+  // A block with no pair of its own (a split's later part has none), with the base block before it that stays in place.
+  const added = (side: readonly PMNode[], c: Correspondence) => {
+    const out = new Map<number, number[]>();
+    let after = -1;
+    side.forEach((_, j) => {
+      const i = c.back[j];
+      if (i >= 0 && !c.moved.has(i)) after = i;
+      else if (i < 0) out.set(after, [...(out.get(after) ?? []), j]);
+    });
+    return out;
+  };
+  const [inL, inD] = [added(live, inLive), added(draft, inDraft)];
+  let out: PMNode[] | null = null;
+  for (const [after, ds] of inD) {
+    const taken = new Set<number>();
+    for (const d of ds) {
+      const plain = blockKey(withoutBlockIds(draft[d]));
+      const l = inL
+        .get(after)
+        ?.find((k) => !taken.has(k) && blockKey(withoutBlockIds(live[k])) === plain);
+      if (l === undefined) continue;
+      taken.add(l);
+      out ??= [...draft];
+      out[d] = withIdsOf(draft[d], live[l]);
+    }
+  }
+  return out ?? draft;
+}
+
 export function rebase(
   schema: Schema,
   base: readonly PMNode[],
@@ -122,36 +322,45 @@ export function rebase(
   draft: readonly PMNode[],
 ): RebaseResult {
   shareBlockTokens([base, live, draft]);
-  const alignAll = (
-    baseBlocks: readonly PMNode[],
-    liveBlocks: readonly PMNode[],
-    draftBlocks: readonly PMNode[],
-  ) => {
-    const baseSide = buildSide(baseBlocks);
-    const liveSide = buildSide(liveBlocks);
-    const draftSide = buildSide(draftBlocks);
-    return {
-      base: baseSide,
-      live: liveSide,
-      draft: draftSide,
-      liveAlignment: align(baseSide, liveSide),
-      draftAlignment: align(baseSide, draftSide),
-    };
-  };
-  let sides = alignAll(base, live, draft);
+  let inLive = correspond(base, live, { byId: true, stays: staysFor(base, draft) });
+  let inDraft = correspond(base, draft, { byId: true, stays: staysFor(base, live) });
+  draft = unifyAdded(live, draft, inLive, inDraft);
+  const stretches = settleStretches(base, live, draft, inLive, inDraft);
+  if (stretches) {
+    live = stretches.live;
+    inLive = stretches.inLive;
+  }
+  let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
   let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
 
-  const order = mergeOrder(sides);
+  const order = mergeOrder({ ...sides, inLive, inDraft });
   if (order.reordered) {
     baseIds = order.baseOrder;
-    sides = alignAll(
-      baseIds.map((i) => base[i]),
-      order.live,
-      order.draft,
-    );
+    inLive = relaid(inLive, order.baseOrder, order.liveOrder);
+    inDraft = relaid(inDraft, order.baseOrder, order.draftOrder);
+    sides = {
+      base: buildSide(baseIds.map((i) => base[i])),
+      live: buildSide(order.live),
+      draft: buildSide(order.draft),
+    };
   }
-
-  const { base: baseSide, live: liveSide, draft: draftSide, liveAlignment, draftAlignment } = sides;
+  const { base: baseSide, live: liveSide, draft: draftSide } = sides;
+  const liveAlignment = align(baseSide, liveSide, inLive);
+  const draftAlignment = align(baseSide, draftSide, inDraft);
+  // Each removed block is its own removal, so one side's removal of a run meets the other's block by block.
+  for (const a of [liveAlignment, draftAlignment])
+    a.hunks = a.hunks.flatMap((h) => {
+      if (h.ins.length) return [h];
+      const cuts = [h.from];
+      for (
+        let b = baseSide.blockOf[h.from] + 1;
+        b < baseSide.starts.length && baseSide.starts[b] < h.to;
+        b++
+      )
+        if (baseSide.starts[b] > h.from) cuts.push(baseSide.starts[b]);
+      cuts.push(h.to);
+      return cuts.slice(1).map((to, k) => ({ ...h, from: cuts[k], to }));
+    });
   const baseToks = baseSide.toks;
   const idsIn = (lo: number, hi: number) => {
     const ids = new Set<number>();
@@ -161,6 +370,7 @@ export function rebase(
   const toks = (v: MergedTok[]) => v.map((o) => o.tok);
 
   let overrode = 0;
+  let orderConflict = order.cyclic;
   const replacedWords = (live: MergedTok[], kept: MergedTok[]) => {
     const remaining = new Map<string, number>();
     for (const { tok } of kept)
@@ -179,6 +389,21 @@ export function rebase(
     live: [],
     draft: [],
   }));
+  // A stretch where the pairing could not be trusted keeps the draft's blocks: one clash each.
+  for (const st of stretches?.stretches ?? []) {
+    const [l, d] = [st.live, st.draft].map((bs) => bs.flatMap((b) => tokenizeBlock(b)));
+    replacedWords(
+      l.map((tok) => ({ tok, origin: LIVE, index: 0 })),
+      d.map((tok) => ({ tok, origin: DRAFT, index: 0 })),
+    );
+    conflicts.push({
+      kind: "overlap",
+      baseIds: st.baseIds,
+      base: st.baseIds.flatMap((i) => tokenizeBlock(base[i])),
+      live: l,
+      draft: d,
+    });
+  }
   // Live's paste of text the draft changed is left out; the draft's paste of text live changed stays
   // (the draft wins) but is reported, since it carries the text from before live's change.
   const movedByLive = dropMovedText(baseToks, liveAlignment.hunks, draftAlignment.hunks);
@@ -252,19 +477,19 @@ export function rebase(
       merged.push(...draftVersion);
       continue;
     }
+    const nested =
+      lo === hi
+        ? null
+        : mergeContainers(schema, baseToks.slice(lo, hi), liveVersion, draftVersion, idsIn(lo, hi));
+    if (nested) {
+      merged.push(...nested.merged);
+      overrode += nested.overrode;
+      conflicts.push(...nested.conflicts);
+      orderConflict ||= nested.orderConflict;
+      continue;
+    }
     if (lo === hi) {
-      const union = unionInsertions(liveVersion, draftVersion);
-      if (union.chose) {
-        replacedWords(liveVersion, union.out);
-        conflicts.push({
-          kind: "overlap",
-          baseIds: idsIn(Math.max(0, lo - 1), lo),
-          base: [],
-          live: toks(liveVersion),
-          draft: toks(draftVersion),
-        });
-      }
-      merged.push(...union.out);
+      merged.push(...unionInsertions(liveVersion, draftVersion));
       continue;
     }
     // One side's text may already carry the other's change here (the same edit made on both sides
@@ -298,5 +523,5 @@ export function rebase(
     draftAlignment.pos,
   );
   const { blocks } = buildBlocks(schema, settled);
-  return { blocks, overrode, conflicts, orderConflict: order.cyclic };
+  return { blocks, overrode, conflicts, orderConflict };
 }

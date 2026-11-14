@@ -68,9 +68,16 @@ type FrozenClick = {
   patched: ReturnType<typeof readBlocks>;
 };
 const schema = buildDocumentSchema();
-const paragraph = (text: string) =>
-  schema.nodes.paragraph.create({ id: "p" }, text ? schema.text(text) : undefined);
-const blocks = (texts: string[]) => texts.map(paragraph);
+// Ids by position: the merge pairs blocks by id, so each block of a document needs its own.
+const paragraph = (text: string, at = 0) =>
+  schema.nodes.paragraph.create({ id: `p${at}` }, text ? schema.text(text) : undefined);
+// A text starting with "+" is a block the writer made new (a split's second part): a new id.
+const blocks = (texts: string[]) =>
+  texts.map((text, at) =>
+    text.startsWith("+")
+      ? schema.nodes.paragraph.create({ id: `n${at}` }, schema.text(text.slice(1)))
+      : paragraph(text, at),
+  );
 const clone = (doc: Y.Doc, id = Math.floor(Math.random() * 1e9) + 100) => {
   const out = new Y.Doc({ gc: false });
   Y.applyUpdate(out, Y.encodeStateAsUpdate(doc));
@@ -285,7 +292,27 @@ async function fixture(
       doc.on("update", (bytes) => {
         update = bytes;
       });
-      doc.transact(() => writeBlocks(doc.getXmlFragment("prosemirror"), schema, blocks(texts)));
+      // The ids an editor would keep: a block moved keeps its id, a block edited in place keeps its own.
+      const current = readBlocks(doc.getXmlFragment("prosemirror"), schema);
+      const used = new Set<string>();
+      const claim = (id: unknown) => {
+        if (typeof id !== "string" || used.has(id)) return undefined;
+        used.add(id);
+        return id;
+      };
+      const ids = texts.map((text) =>
+        claim(current.find((b) => b.textContent === text && !used.has(b.attrs.id))?.attrs.id),
+      );
+      const next = texts.map((text, at) =>
+        paragraph(text, 0).type.create(
+          {
+            id:
+              ids[at] ?? claim(current[at]?.attrs.id) ?? `n${at}-${texts.length}-${Math.random()}`,
+          },
+          text ? schema.text(text) : undefined,
+        ),
+      );
+      doc.transact(() => writeBlocks(doc.getXmlFragment("prosemirror"), schema, next));
       if (update)
         await h.persistence.journal.append(document.documentId, update, {
           origin: "system",
@@ -979,6 +1006,23 @@ try {
     assert.deepEqual(readApplyRecord(durable), []);
     durable.destroy();
     assert.deepEqual(await f.unapply(click, commandId), answer);
+    f.close();
+  });
+  await row("a click's groups chain: live ends at the draft, Un-Apply returns it", async () => {
+    // Removing a paragraph break and adding one elsewhere: each group alone against the click's base
+    // restores the other's break.
+    const f = await fixture(
+      ["She turned away", "She waited by the door"],
+      ["+She turned away She waited by", "+the door"],
+    );
+    const click = f.click();
+    assert.equal(click.request.groupIds.length, 2);
+    await applied(f, click);
+    assert.deepEqual(await f.liveText(), ["She turned away She waited by", "the door"]);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") assert.equal(answer.reversedGroupIds.length, 2);
+    assert.deepEqual(await f.liveText(), ["She turned away", "She waited by the door"]);
     f.close();
   });
   await row("Un-Apply skips an edited group and reverses an intact peer", async () => {

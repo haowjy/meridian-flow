@@ -87,7 +87,14 @@ export function reslide(baseToks: Tok[], sideToks: Tok[], own: Hunk[], other: Hu
   const clear = (h: Hunk) => !other.some((o) => o.to > o.from && overlaps(h, o, baseToks));
   for (let i = 0; i < own.length; i++) {
     const hunk = own[i];
-    if (hunk.from !== hunk.to || !hunk.ins.length || clear(hunk)) continue;
+    // A filtered hunk is not its whole side range: sliding it would shift the range.
+    if (
+      hunk.from !== hunk.to ||
+      hunk.ins.length !== hunk.sto - hunk.sfrom ||
+      hunk.sidx ||
+      clear(hunk)
+    )
+      continue;
     const lowest = i > 0 ? own[i - 1].to : 0;
     const highest = i + 1 < own.length ? own[i + 1].from : baseToks.length;
     const len = hunk.ins.length;
@@ -103,6 +110,7 @@ export function reslide(baseToks: Tok[], sideToks: Tok[], own: Hunk[], other: Hu
         from: at,
         to: at,
         sfrom: sideAt,
+        sto: sideAt + len,
         ins: sideToks.slice(sideAt, sideAt + len),
       });
       if (!(at < highest && sideToks[sideAt].key === baseToks[at].key)) break;
@@ -212,15 +220,27 @@ export function draftAbsorbsLive(
  * it merges as one insertion and only the rest can conflict.
  */
 export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
+  // The two halves partition the hunk's side range; a filtered hunk is cut at its kept token's own index.
+  const part = (h: Hunk, a: number, b: number, from: number, to: number): Hunk => ({
+    ...h,
+    from,
+    to,
+    sfrom: a === 0 ? h.sfrom : (h.sidx?.[a] ?? h.sfrom + a),
+    sto: b === h.ins.length ? h.sto : (h.sidx?.[b] ?? h.sfrom + b),
+    ins: h.ins.slice(a, b),
+    ...(h.sidx ? { sidx: h.sidx.slice(a, b) } : {}),
+  });
+  const withinBlock = (y: Hunk) => y.ins.length > 0 && !y.ins.some(isBlockTok);
   for (const [own, other] of [
     [liveHunks, draftHunks],
     [draftHunks, liveHunks],
   ] as const) {
     for (let i = 0; i < own.length; i++) {
       const hunk = own[i];
-      if (hunk.from === hunk.to || !hunk.ins.length) continue;
+      // A shared edge is one text only inside one block: two paragraphs that end in the same word do not share it.
+      if (hunk.from === hunk.to || !withinBlock(hunk)) continue;
       const insertion = other.find(
-        (y) => y.from === hunk.from && y.to === hunk.from && y.ins.length,
+        (y) => y.from === hunk.from && y.to === hunk.from && withinBlock(y),
       );
       if (insertion && !own.some((x) => x !== hunk && x.from === hunk.from && x.to === hunk.from)) {
         let shared = 0;
@@ -234,19 +254,14 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
           own.splice(
             i,
             1,
-            { from: hunk.from, to: hunk.from, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, shared) },
-            {
-              from: hunk.from,
-              to: hunk.to,
-              sfrom: hunk.sfrom + shared,
-              ins: hunk.ins.slice(shared),
-            },
+            part(hunk, 0, shared, hunk.from, hunk.from),
+            part(hunk, shared, hunk.ins.length, hunk.from, hunk.to),
           );
           continue;
         }
       }
       // An adjacent replacement can absorb an insertion at its end too ("The" → "A big black").
-      const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && y.ins.length);
+      const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && withinBlock(y));
       if (!suffix || own.some((x) => x !== hunk && x.from === hunk.to && x.to === hunk.to))
         continue;
       let shared = 0;
@@ -262,8 +277,8 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
         own.splice(
           i,
           1,
-          { from: hunk.from, to: hunk.to, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, cut) },
-          { from: hunk.to, to: hunk.to, sfrom: hunk.sfrom + cut, ins: hunk.ins.slice(cut) },
+          part(hunk, 0, cut, hunk.from, hunk.to),
+          part(hunk, cut, hunk.ins.length, hunk.to, hunk.to),
         );
       }
     }
@@ -423,7 +438,7 @@ export function dropMovedText(
     // Keep any paragraph start that only held the pasted text from becoming an empty paragraph.
     const keep = h.ins.map((_, k) => k).filter((k) => !droppedAt.has(k));
     const empty = keep.length === 1 && h.ins[keep[0]].kind === "block" && wholeInsert;
-    h.sidx = empty ? [] : keep.map((k) => h.sfrom + k);
+    h.sidx = empty ? [] : keep.map((k) => h.sidx?.[k] ?? h.sfrom + k);
     h.ins = empty ? [] : keep.map((k) => h.ins[k]);
   }
   return out;

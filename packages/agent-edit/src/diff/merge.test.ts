@@ -21,6 +21,7 @@ import {
   render,
   resetWords,
   type Scenario,
+  tagBySide,
   toPM,
 } from "./merge.fixtures.js";
 import { rebase } from "./merge.js";
@@ -110,9 +111,15 @@ describe("rebase", () => {
   });
 
   it.each(CASES.map((c) => [c.name, c] as const))("case table: %s", (_name, c) => {
-    const [B, L, D] = [c.base, c.live, c.draft].map((x) => parseDoc(schema, x));
+    const [B, L, D] = tagBySide(
+      ...([c.base, c.live, c.draft].map((x) => parseDoc(schema, x)) as [
+        PMNode[],
+        PMNode[],
+        PMNode[],
+      ]),
+    );
     const r = rebase(schema, B, L, D);
-    expect(render(r.blocks)).toBe(c.merged);
+    expect(render(r.blocks)).toBe(c.merged.replace(/#\w+/g, ""));
     expect(r.conflicts).toHaveLength(c.conflicts);
     expect(
       check({

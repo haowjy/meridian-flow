@@ -220,7 +220,9 @@ try {
     await live(s, [quote("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     const result = await read(s);
+    // A wrap is an attribute change, so the draft's typing lands in the one quoted block.
     assert.equal(result.length, 1);
+    assert.equal(result[0]?.attrs.path, ">");
     once(result, "writerPending");
     once(result, "agentPending");
   });

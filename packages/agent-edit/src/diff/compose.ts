@@ -49,8 +49,7 @@ export function composeHunks(
   if (!selIdx.length) return [];
   const take = new Set(selIdx.map((i) => hunks[i]));
 
-  const delta = (k: number) =>
-    k === 0 ? 0 : hunks[k - 1].sfrom + hunks[k - 1].ins.length - hunks[k - 1].to;
+  const delta = (k: number) => (k === 0 ? 0 : hunks[k - 1].sto - hunks[k - 1].to);
   const gapStart = (k: number) => (k === 0 ? 0 : hunks[k - 1].to);
   const gapEnd = (k: number) => (k === hunks.length ? B.toks.length : hunks[k].from);
 

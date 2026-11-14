@@ -33,10 +33,23 @@ export const coreKey = (t: Tok) => (t.kind === "text" ? `T${t.core}` : t.key);
 const keyCache = new WeakMap<PMNode, string>();
 const tokCache = new WeakMap<PMNode, Tok[]>();
 
+/**
+ * JSON with object keys sorted. A schema lists a node's attrs in its own order (the editor's extensions
+ * and the server's schema differ), and a key is hashed into the review group ids the client sends and the
+ * server recomputes, so a key must not depend on that order.
+ */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
 export function blockKey(node: PMNode): string {
   let key = keyCache.get(node);
   if (key === undefined) {
-    key = JSON.stringify(node.toJSON());
+    key = stableJson(node.toJSON());
     keyCache.set(node, key);
   }
   return key;
@@ -45,7 +58,7 @@ export function blockKey(node: PMNode): string {
 const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 const SPACE = /^\s+$/u;
 const marksKey = (marks: readonly Mark[]) =>
-  marks.length ? JSON.stringify(marks.map((m) => m.toJSON())) : "";
+  marks.length ? stableJson(marks.map((m) => m.toJSON())) : "";
 const sameMarks = (a: readonly Mark[], b: readonly Mark[]) =>
   a.length === b.length && a.every((m, i) => m.eq(b[i]));
 
@@ -56,7 +69,7 @@ export function tokenizeBlock(node: PMNode): Tok[] {
   if (node.isTextblock) {
     out.push({
       kind: "block",
-      key: `B${node.type.name}${JSON.stringify(node.attrs)}${marksKey(node.marks)}`,
+      key: `B${node.type.name}${stableJson(node.attrs)}${marksKey(node.marks)}`,
       node,
     });
     // Whitespace that ends one run leads the next run's first token, so "said **no**" tokenizes like
@@ -79,7 +92,7 @@ export function tokenizeBlock(node: PMNode): Tok[] {
     node.forEach((child) => {
       if (!child.isText) {
         flushCarry();
-        out.push({ kind: "inline", key: `I${JSON.stringify(child.toJSON())}`, node: child });
+        out.push({ kind: "inline", key: `I${stableJson(child.toJSON())}`, node: child });
         return;
       }
       const marks = child.marks;
