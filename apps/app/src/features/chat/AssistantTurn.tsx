@@ -18,6 +18,7 @@ import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
+import { callsThatDidNotRun, TurnStoppedLine } from "./TurnStoppedLine";
 import { thinkingDigest } from "./thinking-digest";
 
 export type AssistantTurnProps = {
@@ -75,6 +76,8 @@ function AssistantTurnComponent({
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
+  const notRun = useMemo(() => (isSettled ? callsThatDidNotRun(items) : []), [isSettled, items]);
+  const stopped = turn.status === "cancelled";
 
   return (
     <div
@@ -95,6 +98,8 @@ function AssistantTurnComponent({
             <DeliveryEventRows groups={deliveries} />
           </div>
         ) : null}
+
+        {stopped || notRun.length ? <TurnStoppedLine stopped={stopped} notRun={notRun} /> : null}
 
         <TurnLineageReceipt
           threadId={resolvedThreadId}

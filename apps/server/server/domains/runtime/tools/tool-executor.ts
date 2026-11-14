@@ -67,6 +67,7 @@ import {
   meridianErrorFromTool,
   meridianErrorToJson,
   TOOL_EXCEPTION_CODE,
+  TOOL_NOT_RUN_CODE,
 } from "@meridian/contracts/errors";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -118,7 +119,11 @@ function errorResult(toolCallId: string, error: MeridianError): ToolExecutionRes
 export function didNotRunResult(toolCallId: string): ToolExecutionResult {
   return errorResult(
     toolCallId,
-    meridianErrorFromTool("This call did not run: it was stopped before it changed anything."),
+    meridianErrorFromTool(
+      "This call did not run: it was stopped before it changed anything.",
+      undefined,
+      TOOL_NOT_RUN_CODE,
+    ),
   );
 }
 

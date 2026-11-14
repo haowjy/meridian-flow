@@ -33,7 +33,6 @@ type ChatComposerProps = {
   agentName: string;
   running: boolean;
   stopStatus: ChatStop["status"];
-  generating: boolean;
   writeMode: AiWriteMode;
   onWriteModeChange: (mode: AiWriteMode) => void;
   composerStrip?: ReactNode;
@@ -58,7 +57,6 @@ function ChatComposerComponent({
   agentName,
   running,
   stopStatus,
-  generating,
   writeMode,
   onWriteModeChange,
   composerStrip,
@@ -83,7 +81,7 @@ function ChatComposerComponent({
   );
   // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
   const takeover = useAskTakeover(accountId, threadId, composer);
-  const dock = useDraftDock({ threadId, generating, active });
+  const dock = useDraftDock({ threadId, active });
   const openReferenceDocument = useOpenPlacedDocument(projectId);
   const onOpenReference = useCommittedEvent((reference: { uri: string; documentId: string }) => {
     void openReferenceDocument(reference.documentId);

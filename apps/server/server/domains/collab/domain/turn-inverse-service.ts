@@ -42,6 +42,12 @@ export type StoredInversePart = InversePart & {
   wId: number | null;
   origin: EditOrigin;
   disposition: PartDisposition;
+  /**
+   * What the part's draft says of it now, before an open draft's unapplied part counts as
+   * pending: "pending" only while the review still holds it as a change. Set on a captured
+   * turn history, where the receipt reads it; the draft's `has_effect` lags a Discard.
+   */
+  standing?: PartDisposition;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -294,6 +300,30 @@ const countAccepted = (plans: PreparedDocumentInverse[]) =>
     0,
   );
 
+/**
+ * Where each drafted document's text from the turn stands now: waiting while its draft's review
+ * still holds a part of it as a change, else applied if any part was, else discarded (a Discard
+ * leaves the draft open with nothing in it, or closes it).
+ */
+function draftStates(
+  documents: readonly InverseDocument[],
+  query: TurnInverseQuery,
+): TurnReceiptChip["drafts"] {
+  const states: NonNullable<TurnReceiptChip["drafts"]> = {};
+  for (const document of documents) {
+    const drafted = document.history.filter(
+      (part) => targetsTurn(part, query) && part.origin.kind === "pending",
+    );
+    if (!drafted.length) continue;
+    states[document.documentId] = drafted.some((part) => part.standing === "pending")
+      ? "pending"
+      : drafted.some((part) => part.standing === "applied")
+        ? "applied"
+        : "discarded";
+  }
+  return Object.keys(states).length ? states : undefined;
+}
+
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
@@ -304,6 +334,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const treeRedo = await store.treeStepCount(query, "redo");
         const treeUndo = await store.treeStepCount(query, "undo");
         if (!documents.length && !treeRedo && !treeUndo) return null;
+        const drafts = draftStates(documents, query);
         const redo = prepare(store, documents, query, "redo", randomUUID());
         if (countAccepted(redo) || treeRedo)
           return {
@@ -316,11 +347,13 @@ export function createTurnInverseService(store: TurnInverseStore) {
           return {
             state: "live-active",
             control: "undo",
+            drafts,
             skips: undo.flatMap((plan) => plan.skips),
           };
         return {
           state: "expired",
           control: "view_change",
+          drafts,
           skips: undo.flatMap((plan) => plan.skips),
         };
       });

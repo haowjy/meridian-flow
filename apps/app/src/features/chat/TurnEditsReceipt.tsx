@@ -5,6 +5,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   TreeReversalLanding,
   Turn,
+  TurnDraftState,
   TurnInverseSkip,
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
@@ -17,7 +18,6 @@ import { type ReversalDirection, successfulWorkReversals } from "@/client/api/re
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
@@ -90,22 +90,30 @@ export function TurnEditsReceipt({
   const accountId = useOptionalAccountId();
   const projectId = useProjectDocumentNavigationProjectId();
 
+  const drafts = receipt?.drafts;
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   // A part the refusal line already names (a blocked or missing folder, or a document gone
-  // again) isn't listed a second time.
+  // again) isn't listed a second time, nor is a drafted document's apply or discard: its row
+  // says what became of it.
   const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
-    (skip) => !(skip.kind === "tree" && commandRefusal?.status === skip.cause),
+    (skip) =>
+      !(skip.kind === "tree" && commandRefusal?.status === skip.cause) &&
+      !(drafts?.[skip.documentId] && (skip.cause === "applied" || skip.cause === "discarded")),
   );
   const names = useOwnerNames();
-  const guardCopy = commandRefusal
-    ? reversalRefusalCopy(commandRefusal, names)
-    : undoGuardCopy(receipt, skips.length > 0);
+  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal, names) : undefined;
   const hasEditedDocuments = documents.length > 0;
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  const undoUnavailable = receipt == null || receipt.control === "view_change";
+  // A discarded draft has nothing left to take out, and a Redo would bring the discarded text back.
+  const discarded =
+    hasEditedDocuments &&
+    documents.every(
+      (document) => document.scope === "draft" && drafts?.[document.documentId] === "discarded",
+    );
+  const reversible = receipt != null && receipt.control !== "view_change" && !discarded;
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -114,7 +122,7 @@ export function TurnEditsReceipt({
   if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
   async function reverseTurn() {
-    if (pending || !receipt || receipt.control === "view_change") return;
+    if (pending || !reversible) return;
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
@@ -223,16 +231,12 @@ export function TurnEditsReceipt({
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-foreground">
               {hasEditedDocuments
-                ? documentCountLabel(documents)
+                ? documentCountLabel(documents, drafts)
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
           </span>
         </FoldToggle>
-        {undoUnavailable ? (
-          <Chip kind="label" className="shrink-0" data-undo-unavailable>
-            <Trans>Can't undo</Trans>
-          </Chip>
-        ) : (
+        {reversible ? (
           <Button
             type="button"
             variant="quiet"
@@ -252,7 +256,7 @@ export function TurnEditsReceipt({
                 ? t`Redo`
                 : t`Undo`}
           </Button>
-        )}
+        ) : null}
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
@@ -263,7 +267,7 @@ export function TurnEditsReceipt({
               role="status"
             >
               <p>
-                {undoUnavailable && !actionSkips
+                {!reversible && !actionSkips
                   ? t`What happened to each part`
                   : skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}
               </p>
@@ -290,7 +294,7 @@ export function TurnEditsReceipt({
           {guardCopy ? (
             <p
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-muted-foreground"
-              data-undo-unavailable-reason
+              data-reversal-refusal
               role="status"
             >
               {guardCopy}
@@ -302,6 +306,9 @@ export function TurnEditsReceipt({
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
+                    draft={
+                      doc.scope === "draft" && !doc.folder ? drafts?.[doc.documentId] : undefined
+                    }
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
@@ -326,24 +333,19 @@ export function TurnEditsReceipt({
   );
 }
 
-function undoGuardCopy(receipt: TurnReceiptChip | null, partsListed: boolean): string | undefined {
-  // Listed parts already say why nothing can be undone, part by part.
-  if ((receipt?.control === "view_change" || receipt == null) && !partsListed) {
-    return t`This change is no longer reversible.`;
-  }
-  return undefined;
-}
-
 /**
  * Full-width document row: hover washes the row, click opens the file. A document the turn
  * deleted is not a door: its old address may hold another document now.
  */
 function DocumentRow({
   document,
+  draft,
   onOpenContextUri,
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
+  /** What became of the document's draft text, when the turn drafted it. */
+  draft: TurnDraftState | undefined;
   onOpenContextUri: OpenContextUri | null;
   canOpenContextUri: CanOpenContextUri | null;
 }) {
@@ -364,6 +366,7 @@ function DocumentRow({
         className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
       >
         <DocumentRowLabel document={document} />
+        <DraftStateWord state={draft} />
       </span>
     );
   }
@@ -378,6 +381,7 @@ function DocumentRow({
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />
+      <DraftStateWord state={draft} />
     </button>
   );
 }
@@ -399,6 +403,16 @@ function useDocumentRowDrag(document: TurnEditDocument) {
               : { kind: "live" },
         }
       : null,
+  );
+}
+
+/** What a drafted document's text stands at now; one still waiting needs no word. */
+function DraftStateWord({ state }: { state: TurnDraftState | undefined }) {
+  if (state !== "applied" && state !== "discarded") return null;
+  return (
+    <span className="ml-auto shrink-0 pl-2 text-muted-foreground" data-draft-state={state}>
+      {state === "applied" ? t`Applied` : t`Discarded`}
+    </span>
   );
 }
 
@@ -447,14 +461,17 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
 }
 
 /**
- * "Drafted" when every change went into a draft, so the manuscript is as it was until the writer
- * applies it; else "Edited" while the turn only changed text, "Changed" once it moved, deleted or
- * made something or wrote both drafts and the manuscript. Documents and folders are counted
- * apart, so a reorganisation says it touched folders too. The part lines say what became of each.
- * It counts, never names: a name inside the toggle would compete for the click with the
- * expanded rows, which already open each document.
+ * "Drafted" when every change went into a draft and some still wait; "Applied" or "Discarded"
+ * once every one of them has had that outcome; the mix said in counts when they differ. Else
+ * "Edited" while the turn only changed text, "Changed" once it moved, deleted or made something
+ * or wrote both drafts and the manuscript. Documents and folders are counted apart, so a
+ * reorganisation says it touched folders too. It counts, never names: a name inside the toggle
+ * would compete for the click with the expanded rows, which already open each document.
  */
-function documentCountLabel(documents: readonly TurnEditDocument[]): string {
+function documentCountLabel(
+  documents: readonly TurnEditDocument[],
+  drafts: TurnReceiptChip["drafts"],
+): string {
   const counted = (folder: boolean) =>
     new Set(
       documents
@@ -465,7 +482,29 @@ function documentCountLabel(documents: readonly TurnEditDocument[]): string {
   const folders = plural(counted(true), { one: "# folder", other: "# folders" });
   const what =
     counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
-  if (documents.every((document) => document.scope === "draft")) return t`Drafted ${what}`;
+  if (documents.every((document) => document.scope === "draft")) {
+    const states = new Map<string, TurnDraftState | undefined>(
+      documents
+        .filter((document) => !document.folder)
+        .map(({ documentId }) => [documentId, drafts?.[documentId]]),
+    );
+    const count = (state: TurnDraftState) =>
+      [...states.values()].filter((value) => value === state).length;
+    const applied = count("applied");
+    const discarded = count("discarded");
+    const waiting = states.size - applied - discarded;
+    if (applied && !discarded && !waiting && counted(true) === 0) return t`Applied ${what}`;
+    if (discarded && !applied && !waiting && counted(true) === 0) return t`Discarded ${what}`;
+    if (applied || discarded) {
+      const parts = [
+        applied ? t`${applied} applied` : null,
+        discarded ? t`${discarded} discarded` : null,
+        waiting ? t`${waiting} still a draft` : null,
+      ].filter((part) => part !== null);
+      return t`Drafted ${what}: ${parts.join(", ")}`;
+    }
+    return t`Drafted ${what}`;
+  }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
     return t`Changed ${what}`;
   return t`Edited ${what}`;

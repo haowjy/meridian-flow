@@ -242,7 +242,7 @@ function DockFileLine({
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
-            view={{ ...view, items, locked: view.locked || dock.generating }}
+            view={{ ...view, items }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}
           />

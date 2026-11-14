@@ -327,6 +327,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
+            standing: classified ?? "discarded",
             disposition:
               classified === "applied"
                 ? classified

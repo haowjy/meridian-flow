@@ -45,7 +45,7 @@ added ", bright"), plus a `create`. In the chat's Changes list:
 1. Press ✓ on "lamp → lantern" only.
 2. Discard ", bright", the other two chapters' changes (one by one) and the created page
    (it asks first).
-3. Reload, expand "Edited 4 documents". It reads "Can't undo" and the applied part says "Applied to
+3. Reload, expand "Edited 4 documents". It shows no Undo and the applied part says "Applied to
    the manuscript"; the created page says "Discarded". The text parts discarded one by one still say
    "Stayed as you edited it" (#1361). `GET /api/threads/<id>/turns/<turn>/live-lineage` carries the
    same causes.

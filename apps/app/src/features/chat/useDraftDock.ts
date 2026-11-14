@@ -1,6 +1,8 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
@@ -20,15 +22,7 @@ import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-f
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
-export function useDraftDock({
-  threadId,
-  generating,
-  active = true,
-}: {
-  threadId: string;
-  generating: boolean;
-  active?: boolean;
-}) {
+export function useDraftDock({ threadId, active = true }: { threadId: string; active?: boolean }) {
   const controller = useBoundWorkBranchCommands();
   useSyncExternalStore(
     controller.owner.subscribe,
@@ -52,6 +46,24 @@ export function useDraftDock({
       ),
     [listedFiles, threadId],
   );
+  // The chat's turn cards say what became of their drafted documents, and nothing pushes that
+  // to them: an Apply, a Discard (a peer's too) or a new write changes which drafts wait here.
+  const queryClient = useQueryClient();
+  const refreshTurnCards = useCallback(
+    () =>
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) }),
+    [queryClient, threadId],
+  );
+  const waiting = candidates
+    .filter((row) => row.draft.hasDraft)
+    .map((row) => row.draft.itemKey)
+    .join();
+  const seenWaiting = useRef(waiting);
+  useEffect(() => {
+    if (seenWaiting.current === waiting) return;
+    seenWaiting.current = waiting;
+    refreshTurnCards();
+  }, [refreshTurnCards, waiting]);
   const targets = useMemo(
     () =>
       candidates
@@ -145,6 +157,7 @@ export function useDraftDock({
       if (items.length === 0) return Promise.resolve([]);
       // An Apply is one command over every file; a Discard is one notice with one Undo.
       const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
+      void sent.finally(refreshTurnCards);
       return sent.then(
         (outcomes) =>
           files.filter((_file, index) => {
@@ -154,7 +167,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [actionableFiles, applicable, runner, controller.frozen],
+    [actionableFiles, applicable, runner, controller.frozen, refreshTurnCards],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
@@ -163,7 +176,6 @@ export function useDraftDock({
   };
 
   return {
-    generating,
     controller,
     files,
     notice,
@@ -184,7 +196,7 @@ export function useDraftDock({
           (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
             ?.groups.length ?? 0) > 0,
       ),
-    canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
+    canCommand: actionableFiles.length > 0 && !controller.dispositionLocked,
     projectId,
     ownerKey,
     fileFailures,
