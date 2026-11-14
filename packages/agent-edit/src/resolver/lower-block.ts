@@ -44,8 +44,7 @@ interface Walk {
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * nodes, units and attributes the model saw. A find's windows place the changes and the word
- * diff inside them writes the same hunks as it does without a find.
+ * nodes, units and attributes the model saw. A replaced stretch is written whole, never trimmed.
  * Every node at any depth is lowered by the same code, and the room is never read. The two
  * blocks have one type; any other difference lowers: children that pair are edited in place,
  * the rest are deleted or inserted, and an inline atom may go into the middle of a run of text.
@@ -238,24 +237,26 @@ function lowerText(
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
 
-  // A find's windows place the changes; inside each, the word diff writes only what changed.
+  // A find's window is one change, placed by the model; otherwise the word diff places them.
   let hunks: Hunk[] = [];
   const olds = placed?.[0];
   const news = placed?.[1];
   if (olds && news && windowsDescribe(a, b, [olds, news])) {
     for (const [index, old] of olds.entries()) {
       const next = news[index];
-      if (old.from === old.to) {
-        hunks.push({ from: old.from, to: old.to, at: next.from, end: next.to, anchored: true });
+      // A cut that rewrites its text unchanged (marks included) is no edit.
+      if (
+        old.to > old.from &&
+        before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to))
+      )
         continue;
-      }
-      for (const hunk of wordHunks(a.slice(old.from, old.to), b.slice(next.from, next.to), isAtom))
-        hunks.push({
-          from: hunk.from + old.from,
-          to: hunk.to + old.from,
-          at: hunk.at + next.from,
-          end: hunk.end + next.from,
-        });
+      hunks.push({
+        from: old.from,
+        to: old.to,
+        at: next.from,
+        end: next.to,
+        ...(old.from === old.to ? { anchored: true as const } : {}),
+      });
     }
   } else {
     hunks = wordHunks(a, b, isAtom);
