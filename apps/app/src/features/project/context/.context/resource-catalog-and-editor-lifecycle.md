@@ -44,18 +44,13 @@ the project's current chat or document, and the newest document shown that is of
 hidden (`kept`) until a close, a Discard or a removal forgets it. Each browser tab/window presents independently. Accepted navigation commits browser history in one prepared operation.
 Returning to an empty Editor does not restore a closed document.
 
-`OpenDocumentSessionBoundary` opens the ordinary live binding once its local
-session has been probed (`useLiveDocumentBinding`: open, bind, explicit retry).
-It takes a navigation lookup answer only when the answer was armed for its document;
-local content winning discards that answer. It presents the live session in place of the cached one when that
-binding opens, and shows the session's own connection state. An availability
-recheck that returns terminal, deleted, or schema-mismatch releases the cached
-handle and its resource ownership lease rather than leaving the stale session
-mounted. A local cache-open failure falls through to exact server availability
-instead of terminalizing the document from stale metadata. A failed binding offers
-Retry and also retries once each time the resource availability revision
-advances. The phone's document host (`DocumentHost`, phone presentation) uses the same binding
-and recovery behavior.
+`OpenDocumentSessionBoundary` opens the ordinary live binding (`useLiveDocumentBinding`: open,
+bind, explicit retry). `ProjectDocumentLiveOpener.open` asks the list's standing for the document
+(`ProjectStandings`), so a document made here, before the server has heard of it, opens at once:
+the session paints from the browser's local copy and its room connects when the server has the
+`create` (the room closes non-terminally, `4211`, until then). The binding presents the live
+session in place of the cached one, and shows the session's own connection state. A failed binding
+offers Retry; the phone's document host (`DocumentHost`, phone presentation) uses the same binding.
 
 A draft-only document (a new document proposed in a branch, or one live deleted
 while a Work's draft still has it) opens no live binding at
@@ -124,25 +119,21 @@ mounted.
 A presented document that something else deleted or discarded closes as
 before and says so. Three owners, one concept each:
 
-- **The record cache.** `ProjectContextAvailabilityCoordinator.removalRecord(projectId,
-  documentId)` is a subscribable per-document answer: `removed` with the
-  server's `DocumentRemovalRecord` (null: the server keeps none, because the
-  source or Work went rather than the document itself), `available`, `lost`
-  (an authority loss) or `unresolved` (the lookup failed). Every resolution
-  fills it, whichever watch, open or poll brought it, before its commands
-  apply. Subscribing asks: the first subscriber looks the document up unless
-  an answer or an open is pending, and the document stays watched (focus,
-  `online`, the 60 s poll) until it is `removed` or `lost`. `available` is not
-  final while someone asks: another browser tab's delete reaches this tab
-  through the replay before the server commits it.
-  `useRemovalRecord` is the one React reader: the notice, `SyncStatus`, the
-  review room owner and the reopened review address.
-- **The notice store.** `RemovedNoticeStore` holds one notice per project. Whatever
-  presented a document pushes it when it vanished: `ContextRemovalCoordinator`
-  (`closeVanished`, a `terminal-remove` that ended a presentation, `discardDraft`) and
-  `useFollowOpenDocumentPlacement` (a presented document the replay no longer places). An entry
-  shows once the cache says `removed`; a Work's removal and an authority loss drop it. The store
-  asks `PresentedDocuments.isPresented` which documents a view still shows.
+- **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
+  the project's list (and the account's, for `user://`): `in-tree`, `in-trash` (with who deleted
+  it, from the delete record's actor), `purged`, `not-in-list`, or `waiting` until the list has
+  been read. Nothing is polled and nothing is stamped. `useRemovalRecord` is the React reader: the
+  notice, `SyncStatus`, the review room owner and the reopened review address.
+- **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
+  `ProjectContextRemovalController`) watches the documents the app holds (views, recent routes,
+  retained sessions) and applies what the list says as one batch through
+  `ContextRemovalCoordinator.applyRemovals`: a document in Trash or purged closes its views and
+  leaves the recents, one back in the tree is let back, and when main shows a document that went
+  to Trash main opens its Trash view (who deleted it, Restore). A purged document's local copy is
+  deleted, and so is the copy of a document whose source ended (Work or chat deleted; an archived
+  Work's source stays) or whose project the account lost (`denied`).
+- **The notice store.** `RemovedNoticeStore` holds one notice per project. The observer's closes
+  push the documents that vanished; an entry shows once the list says it was removed.
 - **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
   every copy rule as plain strings, so tooltips reuse them. A removal names
   its actor from the record, the same for every account, and never says "you":
@@ -183,24 +174,11 @@ landed (`ownRemovalEnded`). A delete the server refuses after the list took it n
 lands: the row comes back with its failure mark, and the marks of the refused entry's documents
 end with it (the observer that did this is gone; step 6b reads it from the replay). Discard is a server command, not a record the browser writes.
 
-A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
-the registry (`observeRemovedRooms`, held by an editor or not) and follows the
-document's answer in the record cache. The close outdates any answer but
-`removed` (`roomRemoved` forgets it and asks again), so whatever answers next
-was learned after the close. `removed` ends its presentations. `available` (a restore
-won the race, or a stale close) reconnects the same session in place
-(`restartRemovedRoom`). Each close costs one lookup and at most one restart;
-nothing caps restarts across closes, which holds because the server's 4208 and
-availability read the same removal record. A real restore cycle never leaves
-the document dead. The follow ends on `removed`, `lost`, the restart
-or the session's end; a failed lookup leaves it `unresolved` and the
-availability watch keeps asking. Rebinding the document instead would not help:
-its cached session hands back the same removed session. A host still
-open on a removed room says nothing while asked, the record sentence for
-`removed`, and "Access lost (not saving to the server)" otherwise
-(`SyncStatus`). Draft rooms carry no document identity in the registry, so
-their review owner does the same itself: it forgets the answer on the close,
-refreshes the Work's drafts on `removed` and rebuilds the room on `available`.
+A document in Trash still takes text: the live room admits it until its node is purged and
+closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
+restore brings it back. A host still open on a purged room says the record sentence, or "Access
+lost (not saving to the server)" when the list does not say why (`SyncStatus`). Draft rooms carry
+no document identity in the registry, so their review owner closes and rebuilds them itself.
 
 Reopening a review address whose document was removed says the sentence in
 place of "This destination is unavailable" (item key parsed by
@@ -208,11 +186,9 @@ place of "This destination is unavailable" (item key parsed by
 destination is unavailable": once nothing lives at the path it names no
 document, and finding the newest tombstone at a path belongs to a later track.
 
-Unsent text is not kept: a removed document's presentation ends even when its
-session holds unacknowledged edits. Keeping it bound would need more than the
-planner deferring this document's removal and revoke: the vanished-from-the-replay close
-must defer too, and the route's path-based admission stops resolving the address
-(masking the document as unavailable and dropping its selection to a candidate).
+Unsent text is kept: a delete closes the view, but the session and its local copy stay until the
+unsent edits are acknowledged; only a purge, an ended source, a lost project or sign-out deletes the
+copy (`local-document-copies.ts`).
 
 ### Multi-Work review representations
 
@@ -234,10 +210,6 @@ open but not shown paints nothing. It records a hold for that draft (`holdRemove
 removal plan leaves held documents alone (`held`) and ends the rest. The hold ends when
 the coordinator commits an `available` command for the document (a restore, an Apply that
 brought it back) or when its draft ends. Promotion back to live otherwise needs the document
-placed in the live tree: the replay keeps a deleted document's node, and knowing the id alone
-is not "live again". Availability applies a delete before the replay hears of it, so while
-availability answers `removed` a placed node asks availability to look again
-(`removalOutdated`): the answer turns `unresolved` and availability's own watch retries a failed
-lookup on focus, online and the poll. Settlement follows that answer and promotes only on
-`available`. Restoring a saved review already queries the saved review Work and matches
+in the live tree: the standing says `in-tree` once the replay places it, and the replay keeps a
+deleted document's node in Trash, so knowing the id alone is not "live again". Restoring a saved review already queries the saved review Work and matches
 both draft and document within that list.
