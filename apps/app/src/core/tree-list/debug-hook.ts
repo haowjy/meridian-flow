@@ -20,8 +20,8 @@ type Api = {
   read(kind: "project" | "account", id: string): unknown;
   /** Appends a `create` of a document in a source, as the account. */
   append(kind: "project" | "account", id: string, sourceId: string, name: string): string;
-  /** Appends a record that a hostile client would: another account's actor. */
-  appendForged(kind: "project" | "account", id: string, sourceId: string): void;
+  /** Appends a record only the server writes (a `purge`): the guard closes a copy that holds one. */
+  appendForged(kind: "project" | "account", id: string): void;
   close(): void;
 };
 
@@ -50,8 +50,9 @@ export function installTreeListDebugHook(
   };
   const read = (kind: "project" | "account", id: string) => {
     const { session } = handleOf(kind, id);
-    const { doc, status, role, dropped } = session.getSnapshot();
-    const rows = [...projectedRows(replayView(doc, LIVE)).values()].map((row) => ({
+    const { doc, status, role } = session.getSnapshot();
+    const live = replayView(doc, LIVE);
+    const rows = [...projectedRows(live).values()].map((row) => ({
       id: row.id,
       name: row.name,
       parent: row.parentId,
@@ -60,9 +61,10 @@ export function installTreeListDebugHook(
     return {
       status,
       role,
-      dropped: dropped.length,
       clientId: doc.clientID,
       records: listRecords(doc).length,
+      /** The creates the server dropped (its Work was closed), with its reason. */
+      dropped: live.dropped.map(({ name, reason }) => ({ name, reason })),
       rows,
     };
   };
@@ -81,13 +83,11 @@ export function installTreeListDebugHook(
         filetype: "markdown",
       }).id;
     },
-    appendForged(kind, id, sourceId) {
+    appendForged(kind, id) {
       const { doc } = handleOf(kind, id).session.getSnapshot();
-      new TreeWriter(doc).create(LIVE, "user:00000000-0000-4000-8000-00000000dead", {
-        kind: "document",
-        name: "forged",
-        parent: sourceRoot(sourceId),
-        filetype: "markdown",
+      new TreeWriter(doc).purge(`user:${accountId}`, {
+        id: crypto.randomUUID(),
+        node: crypto.randomUUID(),
       });
     },
     close() {

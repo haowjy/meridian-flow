@@ -47,8 +47,6 @@ export type TreeListSnapshot = {
   readonly status: TreeListStatus;
   /** Whether this tab holds the list's connection or follows the tab that does. */
   readonly role: "owner" | "follower";
-  /** Records a fresh copy left out of the broken one's: written by a client of another build, kept nowhere. */
-  readonly dropped: readonly TreeRecord[];
 };
 
 const statusOf = (state: ListSyncState): TreeListStatus =>
@@ -67,6 +65,7 @@ export class TreeListSession {
     readonly accountId: string,
     readonly list: TreeListRef,
     locks: CrossContextLockManager | null = nativeLocks(),
+    private readonly onDropped: (records: readonly TreeRecord[]) => void = () => undefined,
   ) {
     const key = `${accountId}:${treeRoomName(list)}`;
     this.copy = new StoredListCopy(
@@ -81,7 +80,6 @@ export class TreeListSession {
       version: 0,
       status: "waiting",
       role: "follower",
-      dropped: [],
     };
     this.observe(this.copy.doc);
     this.copy.subscribe(() => {
@@ -130,7 +128,7 @@ export class TreeListSession {
           this.copy.announceStatus(this.ownStatus);
           this.publish({ status: this.ownStatus });
         },
-        onDropped: (records) => this.publish({ dropped: [...this.current.dropped, ...records] }),
+        onDropped: this.onDropped,
       });
       // The connection lives as long as the lock: the lock is released when the session closes.
       await this.closed.promise;
@@ -158,8 +156,7 @@ export class TreeListSession {
       next.doc === this.current.doc &&
       next.version === this.current.version &&
       next.status === this.current.status &&
-      next.role === this.current.role &&
-      next.dropped === this.current.dropped
+      next.role === this.current.role
     )
       return;
     this.current = next;

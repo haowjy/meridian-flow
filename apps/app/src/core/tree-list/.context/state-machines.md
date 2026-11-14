@@ -31,8 +31,8 @@ stateDiagram-v2
 - A close with `4212` means the server found something in the copy an honest client never writes.
   The same bytes would be sent again, so nothing reconnects: the snapshot's `doc` becomes a fresh
   document under a new Yjs client id, and the records the old copy held that the server lacks are
-  appended once, those `clientMayWrite` accepts. The ones it does not are the snapshot's
-  `dropped`, kept nowhere else. If the fresh copy breaks again before the server has taken what
+  appended once, those `clientMayWrite` accepts. The ones it does not are reported as one
+  failure toast (`AccountFeatureLifetime`) and kept nowhere else. If the fresh copy breaks again before the server has taken what
   was appended, the session is `broken` and nothing connects again; the copy and the writer's
   records stay on the device.
 - A close with `4213` means the stored copy is of another list (a reset database, a recreated

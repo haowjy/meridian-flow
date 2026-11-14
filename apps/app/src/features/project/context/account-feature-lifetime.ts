@@ -1,9 +1,11 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
+import { plural } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import {
   clearAccountCopies,
@@ -65,7 +67,15 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
-    this.treeLists = new TreeListRegistry(accountId);
+    this.treeLists = new TreeListRegistry(accountId, (records) =>
+      notifyFailure({
+        key: "tree-list-dropped",
+        title: plural(records.length, {
+          one: "# change made on this device couldn't be kept.",
+          other: "# changes made on this device couldn't be kept.",
+        }),
+      }),
+    );
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
