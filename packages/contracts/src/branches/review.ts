@@ -148,9 +148,10 @@ export type ApplyItemsClick = {
 };
 
 /**
- * Take back a Discard: fresh pending copies, on the Work's current branch (the Discard's own
- * branch when it is still open, else the Work's new one), of the tree records it settled and of
- * the text drafts it closed.
+ * Restore a Discard, from the notice right after it or from Trash: the Work gets fresh pending
+ * copies of the tree records it settled, and the text drafts it closed reopen as the same rows
+ * in the Work's current branch. `discardCommandId` may name a restore too, which swaps the text
+ * it closed back in.
  */
 export type UndoDiscardClick = {
   commandId: CommandId;
@@ -160,28 +161,65 @@ export type UndoDiscardResult =
   | {
       status: "restored";
       commandId: CommandId;
+      /** The Discard (or earlier restore) this took the members of. */
+      discardCommandId: CommandId;
+      /** The Work's current branch: where the copies and the reopened drafts are. */
       branchId: BranchId;
-      /** The copies made: tree records and text drafts. */
+      /** What came back: tree records copied and text drafts reopened. */
       restored: number;
-      /** What the Discard held that could not come back: a node or document that is gone, or a document the Work drafted again since. */
+      /** Newer drafts of the same documents this restore closed, now members of its own entry. */
+      swapped: number;
+      /** What the Discard held that could not come back: a node or document that has been purged. */
       leftOut: number;
     }
   | {
       status: "refused";
       commandId: CommandId;
       /**
-       * `already_restored`: an Undo of this Discard already made its copies. `nothing_to_restore`:
-       * the Discard settled no record and closed no draft that still exists.
+       * `already_restored`: a restore took the entry's members already. `nothing_to_restore`: the
+       * entry's records belong to another Work. `expired`: older than the Trash retention.
+       * `document_purged`: what the entry held was purged, nodes or text. `work_purged`: the Work
+       * is gone.
        */
       reason:
         | "already_restored"
         | "nothing_to_restore"
+        | "expired"
+        | "document_purged"
+        | "work_purged"
         | "not_found"
         | "work_archived"
         | "chat_frozen"
         | "work_deleted";
     };
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
+
+/**
+ * The document half of a Trash entry for a Discard (or for a restore that swapped a newer draft
+ * out): the command, and the text drafts it closed that are still closed. The tree half is the
+ * tree's own answer for the same command id; an entry with no member in either is not listed.
+ */
+export type DiscardEntry = {
+  commandId: CommandId;
+  kind: "discard" | "undo_discard";
+  /** When the command ran: the entry leaves Trash 30 days later. */
+  at: string;
+  /** The branch the command ran on; Restore names it. */
+  branchId: BranchId;
+  workId: string | null;
+  drafts: { draftId: string; documentId: string }[];
+};
+
+/** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
+export type ListDiscardEntriesResponse = {
+  entries: (DiscardEntry & {
+    /** What the command settled in the tree and no restore has taken. */
+    tree: {
+      records: number;
+      created: { node: string; kind: string; name: string; path: string[] }[];
+    };
+  })[];
+};
 
 /** What one kind's effect answered, as stored in a command's outcome. */
 export type StoredDocumentCommandResult =
