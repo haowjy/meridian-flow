@@ -81,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const effects: string[] = [];
       const workRepo = runtime.ports.workRepo;
-      workRepo.update = async (id, input) => {
+      workRepo.update = async () => {
         await currentDrizzleDb(db)
           .update(works)
           .set({ goal: "partial write" })
