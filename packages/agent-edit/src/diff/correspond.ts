@@ -10,7 +10,7 @@
 import { DIFF_EQUAL } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import { weightedOrderedMatches } from "../ordered-matching.js";
-import { blockKey, contentWords, diffKeys, similarity } from "./tokens.js";
+import { blockKey, contentWords, diffKeys, sharedBound, similarity } from "./tokens.js";
 
 export interface Correspondence {
   /** Old index to the new index of the first block of its unit, or -1. */
@@ -88,12 +88,17 @@ function scoreWeight(a: PMNode, b: PMNode, floor: number): number {
   if (a.type !== b.type) return 0;
   if (sameContent(a, b)) return 20_000 + Math.round(100 * attrShare(a, b));
   const sim = similarity(a, b, false, floor);
-  if (sim < floor) return 0;
-  const x = contentWords(a);
-  const y = contentWords(b);
-  let lead = 0;
-  while (lead < 63 && lead < x.length && lead < y.length && x[lead] === y[lead]) lead++;
-  return Math.round(sim * 100) * 100 + lead;
+  if (sim >= floor) {
+    const x = contentWords(a);
+    const y = contentWords(b);
+    let lead = 0;
+    while (lead < 63 && lead < x.length && lead < y.length && x[lead] === y[lead]) lead++;
+    return Math.round(sim * 100) * 100 + lead;
+  }
+  // A weaker real overlap beats none, and none still keeps the block by position (1).
+  if (floor > TUNE.similar) return 0;
+  const longer = Math.max(contentWords(a).length, contentWords(b).length);
+  return 1 + (longer ? Math.round((100 * sharedBound(a, b)) / longer) : 0);
 }
 
 /** Words in common, in order. A block's own word list is the same array each projection, so it is remembered. */
@@ -146,14 +151,10 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
       pairs.push(...pairLargeGap(old, next, a0, a1, b0, b1, skipped));
       return;
     }
-    // Blocks of one type that share no words still weigh 1, so an unrelated rewrite keeps its
-    // elements (and a peer's typing in them) by position between the pairs that do share words.
     const w = new Uint32Array(rows * cols);
     for (let r = 0; r < rows; r++)
       for (let q = 0; q < cols; q++)
-        if (!skipped(a0 + r, b0 + q))
-          w[r * cols + q] =
-            weight(old[a0 + r], next[b0 + q]) || (old[a0 + r].type === next[b0 + q].type ? 1 : 0);
+        if (!skipped(a0 + r, b0 + q)) w[r * cols + q] = weight(old[a0 + r], next[b0 + q]);
     const matches =
       weightedOrderedMatches((i, j) => w[(i - a0) * cols + (j - b0)], a0, a1, b0, b1, TUNE.work) ??
       [];
