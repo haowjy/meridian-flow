@@ -177,18 +177,18 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
 
     async listAccess(principal, documentIds, options) {
-      const facts = options?.destination
-        ? await deps.facts.loadList(documentIds, undefined, options.branchViews)
+      const at = options?.destination;
+      const facts = at
+        ? await deps.facts.loadList(
+            documentIds,
+            at.kind === "draft" ? at.owner : undefined,
+            options.branchViews,
+          )
         : await loadListFor(principal, documentIds, options?.branchViews);
       const out = new Map<DocumentId, FileDecision>();
       for (const [documentId, fact] of facts) {
-        const result = options?.destination
-          ? levelAt(
-              principal,
-              fact,
-              await deps.grants.personGrants(principal.accountId, fact),
-              options.destination,
-            )
+        const result = at
+          ? levelAt(principal, fact, await deps.grants.personGrants(principal.accountId, fact), at)
           : await decision(principal, fact);
         if (atLeast(result.level, "read")) out.set(documentId, result);
       }
@@ -199,9 +199,10 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   /**
    * An agent's facts, decided where its write would land. A chat in draft mode loads its
    * branch's view. Any other chat loads the live tree, and only a place that sends the write to
-   * a draft loads the branch (and a document only the branch holds, such as the one an earlier
-   * write of this chat created there): the branch's lifecycle and locks apply to a draft, never
-   * to a live write.
+   * a draft loads the branch: the branch's lifecycle and locks apply to a draft, never to a live
+   * write. Once live says draft, the branch's facts are the answer, null included. A document
+   * only the branch holds (one an earlier write of this chat created there) counts when its
+   * place drafts.
    */
   async function loadFor(principal: Principal, target: FileTarget): Promise<FileFacts | null> {
     const agent = principal.agent;
@@ -210,9 +211,10 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     const branched = { target, branchOwner: agent.branchOwner.owner };
     if (agent.writeMode === "draft") return deps.facts.load(branched);
     const live = await deps.facts.load({ target });
-    if (live && destinationFor(principal, live).kind === "live") return live;
+    if (live)
+      return destinationFor(principal, live).kind === "live" ? live : deps.facts.load(branched);
     const drafted = await deps.facts.load(branched);
-    return drafted && destinationFor(principal, drafted).kind === "draft" ? drafted : live;
+    return drafted && destinationFor(principal, drafted).kind === "draft" ? drafted : null;
   }
 
   /** `loadFor` for a list: one live query, then one branch query for the documents that draft. */
@@ -225,17 +227,26 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     if (!agent) return deps.facts.loadList(documentIds, undefined, branchViews);
     const owner = agent.branchOwner.owner;
     if (agent.writeMode === "draft") return deps.facts.loadList(documentIds, owner, branchViews);
-    const live = await deps.facts.loadList(documentIds, undefined, branchViews);
-    const toDraft = documentIds.filter((id) => {
-      const fact = live.get(id);
-      return !fact || destinationFor(principal, fact).kind === "draft";
-    });
-    if (toDraft.length === 0) return live;
+    const facts = await deps.facts.loadList(documentIds, undefined, branchViews);
+    const onlyBranch = new Set<DocumentId>();
+    const toDraft: DocumentId[] = [];
+    for (const id of documentIds) {
+      const fact = facts.get(id);
+      if (!fact) {
+        onlyBranch.add(id);
+        toDraft.push(id);
+      } else if (destinationFor(principal, fact).kind === "draft") {
+        facts.delete(id);
+        toDraft.push(id);
+      }
+    }
+    if (toDraft.length === 0) return facts;
     const drafted = await deps.facts.loadList(toDraft, owner, branchViews);
     for (const [id, fact] of drafted) {
-      if (destinationFor(principal, fact).kind === "draft") live.set(id, fact);
+      if (!onlyBranch.has(id) || destinationFor(principal, fact).kind === "draft")
+        facts.set(id, fact);
     }
-    return live;
+    return facts;
   }
 }
 

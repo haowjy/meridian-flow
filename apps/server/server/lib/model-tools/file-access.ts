@@ -8,9 +8,9 @@ import {
   documentNotFoundMessage,
   modelResult,
 } from "@meridian/agent-edit/integration";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import {
   type FileAccessDenied,
@@ -19,11 +19,11 @@ import {
   type FileGrant,
   type FileNeed,
   type FileTarget,
+  isDrafted,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
-import { chatOwner } from "../../shared/draft-owner.js";
 import {
   isPermissionDenial,
   permissionDeniedMessage,
@@ -59,23 +59,21 @@ export async function agentPrincipal(
 }
 
 /**
- * Where an explicit `version: "draft"` read goes when its document's own destination is live
- * (an auto-apply chat, or another chat drafted there): the draft the Work kept of it, so the
- * result says `draft`. With no kept draft it reads live, as `draft` always did there.
+ * Where an explicit `version: "draft"` read goes: the draft the Work kept of the document, so the
+ * result says `draft`. A source that can't hold a draft, or a document with none kept, reads
+ * where its access sends it, as `draft` always did there.
  */
 export async function keptDraft(
   deps: Pick<ToolWiringDeps, "branches">,
-  grant: FileGrant<"read">,
+  address: Pick<ResolvedDocumentAddress, "documentId" | "uri">,
   execution: ThreadExecutionContext,
-  thread: Pick<Thread, "projectId" | "rootThreadId">,
-  documentId: string,
 ): Promise<FileDestination | null> {
-  if (grant.destination.kind === "draft") return null;
-  const { workId, workHandle } = execution.scope;
-  const owner = chatOwner(thread, { id: workId, isNoWork: workHandle === null });
+  const parsed = parseUnifiedContextUri(address.uri);
+  if (!parsed.ok || !isDrafted(parsed.value.scheme)) return null;
+  const owner = execution.branchOwner;
   const drafts = await deps.branches.draftReview.list({ owner });
-  return drafts.some((draft) => draft.documentId === documentId)
-    ? { kind: "draft", owner, ownerHandle: workHandle }
+  return drafts.some((draft) => draft.documentId === address.documentId)
+    ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
     : null;
 }
 
