@@ -340,10 +340,12 @@ function wordHunks(a: string, b: string, isAtom: (units: string, at: number) => 
 }
 
 /**
- * Inside one changed run, every character old and new share keeps its item and only the difference
- * is written, so whoever wrote the kept characters keeps their Undo through an Apply or a pull.
- * Inline atoms never match: two images share a placeholder, not their attributes. A run past the
- * diff bound stays whole.
+ * A changed run that only gained characters (the old run is a subsequence of the new one) keeps
+ * the old characters' items and writes just the insertions, so the writer's typing inside an AI
+ * word survives an Apply or a pull. Any other change, a deletion or a letter swap, writes the run
+ * whole: a replaced word's letters would otherwise belong to two authors and Undo would restore
+ * fragments. Inline atoms never match: two images share a placeholder, not their attributes. A
+ * run past the diff bound stays whole.
  */
 function retainShared(
   a: string,
@@ -364,12 +366,14 @@ function retainShared(
   };
   const before = keys(a, hunk.from, hunk.to);
   const after = keys(b, hunk.at, hunk.end);
+  const ops = diffKeys(before.unique, after.unique);
+  if (ops.some(([op]) => op === DIFF_DELETE)) return [hunk];
   const out: Hunk[] = [];
   let base = hunk.from;
   let model = hunk.at;
   let open: Hunk | undefined;
   let [x, y] = [0, 0];
-  for (const [op, n] of diffKeys(before.unique, after.unique)) {
+  for (const [op, n] of ops) {
     if (op === DIFF_EQUAL) {
       open = undefined;
       for (let k = 0; k < n; k++) {

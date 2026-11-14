@@ -395,8 +395,17 @@ function planInverse(
       let near = item[step];
       for (; near?.deleted; near = near[step]) paired ||= removingItems.has(near);
       if (!near) continue;
-      if (removingSet.has(key(near.id))) standing = true;
-      else newer ||= near.id.clock >= (part.frontier[near.id.client] ?? 0);
+      // The character touching the gap, followed back to its original: an Undo- or Redo-restored
+      // copy has a client the part's frontier never saw, but it is not newer writing.
+      const edge = key({
+        client: near.id.client,
+        clock: near.id.clock + (step === "left" ? near.length - 1 : 0),
+      });
+      if (removingSet.has(edge)) standing = true;
+      else {
+        const origin = parse(index.root(edge));
+        newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
+      }
     }
     const stranded = paired && !standing && newer;
     strandedItems.set(item, stranded);

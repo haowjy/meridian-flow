@@ -61,11 +61,13 @@ writer deleted), a heading level or other attribute the writer set after the edi
 element the edit created that the writer typed in stays, holding only the writer's text.
 A replacement is a deleted run with the part's insertion beside it. The deleted run stays
 gone only when the insertion is gone and text written after the edit (the writer or a pull
-replaced it; a clock at or past the part's `frontier`) stands at its edge, so Undo doesn't
+replaced it; a clock at or past the part's `frontier`, read on the original of an
+Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
 double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
-writes only the characters that changed inside a changed run (`retainShared` in
-`packages/agent-edit/src/resolver/lower-block.ts`), so the agent's items keep their identity and
-Undo after a pull equals Undo of the same typing on the draft directly.
+writes only the insertions inside a changed run that only gained characters (`retainShared` in
+`packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
+Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
+the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
 A turn's edit targets include its create transition even when the document is empty. A create
