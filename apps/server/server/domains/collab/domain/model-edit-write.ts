@@ -23,6 +23,7 @@ import {
   deferUntilDrizzleCommit,
   isInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type {
@@ -89,6 +90,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   ): Promise<WriteOutcome> {
     if (documentId) {
       await deps.enterLiveSeam(documentId);
+      await testHook("command.afterLock");
       if (await sawClosedDraft(documentId, given.frontiers)) return discardedWrite(command);
     }
     const outcome = await deps.liveCore.write(command, {
@@ -123,6 +125,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id });
     if (await sawClosedDraft(documentId, given.frontiers)) return discardedWrite(command);
     await deps.lockDraft(workDraft.draftId);
+    await testHook("command.afterLock");
     return threadCoreFor(given).write(command, {
       ...given,
       linkView,

@@ -684,6 +684,7 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 - [Draft model and durable records](draft-model-and-records.md)
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
+- [Model edits as commands](model-edits.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 

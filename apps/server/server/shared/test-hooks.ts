@@ -56,6 +56,8 @@ const TEST_HOOK_POINTS = [
   "command.beforeClaim",
   /** The command holds its claim and has run nothing of its effect. */
   "command.afterClaim",
+  /** A model edit holds its destination's lock (the document, or the draft row) and has read nothing. */
+  "command.afterLock",
   /** The effect ran and its outcome is stored; nothing has committed. */
   "command.beforeCommit",
   /** The command's transaction committed; the caller has not been answered. */
