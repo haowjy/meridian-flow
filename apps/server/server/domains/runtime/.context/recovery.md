@@ -16,11 +16,17 @@ is not restarted for its retired parent message.
 
 Once the session claim proves the prior owner is gone, `settleStaleExecution`
 does one thread-lock hold: lock the row, repair while it still holds the dead
-reply's turn and adopted-message IDs (an optional `recoverCommands` dependency
-answers each assistant turn's unanswered document commands first), check every
+reply's turn and adopted-message IDs, check every
 turn of the execution is terminal, delete the row; reports publish after the
 lock. The new lease row is inserted afterwards
 ([run identity](delivery.md#run-identity)).
+
+`finalizeExecution` takes a required `recoverCommands` dependency and calls it
+for an assistant turn before the turn becomes terminal, inside the same thread
+lock and under the caller's session claim (no lease check). Every path that ends
+an assistant turn recovers: the run's close, the orphan repair, and the spawn
+report repair. Production composes `noCommandRecovery` until the loop resolves
+commands.
 
 Every write a running run makes to the transcript (a model response, a tool
 result block) goes through `storeUnderLease` or `ackWithResponse`: thread lock,

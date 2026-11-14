@@ -31,8 +31,7 @@ export type ExecutionSettlementDeps = PersistenceDeps & {
   repos: import("../../threads/index.js").ThreadRepositories;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
-  /** Answers a dead turn's unanswered document commands before the turn is marked terminal; see `finalizeOrphanedTurns`. */
-  recoverCommands?(threadId: ThreadId, turn: Turn): Promise<void>;
+  recoverCommands: Parameters<typeof finalizeExecution>[0]["recoverCommands"];
   publishStatus?(threadId: ThreadId): Promise<void>;
   inbox: DeliveryStore;
   leaseStore: DeliveryLeaseStore;

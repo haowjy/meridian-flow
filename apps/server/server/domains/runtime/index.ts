@@ -78,6 +78,7 @@ export {
   planCompaction,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
+export { noCommandRecovery } from "./loop/execution-finalizer.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export * from "./loop/permissions/index.js";

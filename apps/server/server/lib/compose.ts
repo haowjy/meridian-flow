@@ -211,6 +211,7 @@ import {
   createWriterTurnProducer,
   type DeliveryProducer,
   InvalidAdmissionError,
+  noCommandRecovery,
   type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
@@ -873,6 +874,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
     toolRegistry,
+    recoverCommands: noCommandRecovery,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     runClaim: runClaim,
@@ -999,6 +1001,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
+    recoverCommands: noCommandRecovery,
     authority: runClaim,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
@@ -1358,6 +1361,7 @@ export function createInMemoryAppServices(): AppServices {
   const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
+    recoverCommands: noCommandRecovery,
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");

@@ -20,6 +20,7 @@ export function createOrphanReportRepair(deps: {
   retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: LiveEventWriter;
+  recoverCommands: Parameters<typeof finalizeExecution>[0]["recoverCommands"];
   authority: RunClaim;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;

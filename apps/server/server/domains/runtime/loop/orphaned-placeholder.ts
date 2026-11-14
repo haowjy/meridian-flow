@@ -12,8 +12,6 @@ type OrphanRepairDeps = Parameters<typeof finalizeExecution>[0] & {
   publishStatus?(threadId: ThreadId): Promise<void>;
   retireOrphanedReply?(threadId: ThreadId, turnId: Turn["id"]): Promise<void>;
   clearOrphanedTurn?(threadId: ThreadId, turnId: Turn["id"]): Promise<void>;
-  /** Unset where no document commands run (the spawn report repair). */
-  recoverCommands?(threadId: ThreadId, turn: Turn): Promise<void>;
 };
 
 async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<void> {
@@ -71,7 +69,6 @@ export async function finalizeOrphanedTurns(
       (turn.role === "assistant" && thread?.kind !== "subagent");
     if (!sweeps && (input.scope !== "claimed" || !isExecutionTurn(turn))) continue;
     const compaction = turn.role === "compaction";
-    if (turn.role === "assistant") await deps.recoverCommands?.(input.threadId, turn);
     const completion = await finalizeExecution(deps, {
       threadId: input.threadId,
       turnId: turn.id,

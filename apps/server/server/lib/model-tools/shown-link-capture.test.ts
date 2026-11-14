@@ -687,6 +687,9 @@ const rows: Array<{
           },
           eventSink: { emit() {} },
           shownLinks: h.store,
+          delivery: {
+            storeUnderLease: (_lease: unknown, persist: () => Promise<unknown>) => persist(),
+          },
           persistenceDeps: {
             repos: h.repos,
             eventWriter: {
