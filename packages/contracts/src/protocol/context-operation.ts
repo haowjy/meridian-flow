@@ -1,11 +1,10 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
-  ContextEntryRef,
+  ContextDestinationParent,
+  ContextSiblingPosition,
   CopyContextEntriesResult,
   CopyContextEntrySource,
-  DeleteContextEntryResult,
-  MoveContextEntryRequest,
 } from "./http-types.js";
 
 /**
@@ -58,32 +57,14 @@ export type ContextError =
       reason?: "source_behind" | "namespace_changed";
     };
 
-export interface ContextMoveResult {
-  linkUpdate?: { links: number; documents: number };
-  /** Where the entry stands after the move: the address a receipt's refresh fences on. */
+export type ContextOperationCommand = {
+  kind: "copy";
+  /** Ordered roots by canonical address; the read view travels with each. */
+  sources: CopyContextEntryCommandSource[];
   destinationUri: string;
-  /** Per-entry namespace mutation revision produced by this exact operation. */
-  locationVersion?: string;
-}
-
-export type ContextOperationCommand =
-  | {
-      kind: "move";
-      expected: ContextEntryRef;
-      destinationParent?: MoveContextEntryRequest["destinationParent"];
-      position?: MoveContextEntryRequest["position"];
-      /** Only when the writer typed one; otherwise the row keeps its name. */
-      name?: string;
-    }
-  | { kind: "delete"; expected: ContextEntryRef }
-  | {
-      kind: "copy";
-      /** Ordered roots by canonical address; the read view travels with each. */
-      sources: CopyContextEntryCommandSource[];
-      destinationUri: string;
-      destinationParent?: MoveContextEntryRequest["destinationParent"];
-      position?: MoveContextEntryRequest["position"];
-    };
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+};
 
 /**
  * One root as the receipt remembers it. The client's state vector is deliberately absent:
@@ -95,8 +76,6 @@ export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" 
 };
 
 export type ContextOperationValue = {
-  move: ContextMoveResult;
-  delete: DeleteContextEntryResult;
   copy: CopyContextEntriesResult;
 };
 

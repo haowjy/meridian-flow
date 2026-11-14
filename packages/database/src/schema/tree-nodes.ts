@@ -72,6 +72,8 @@ export const treeNodes = pgTable(
     /** The `delete` record that put the node in Trash, and when the server admitted it. */
     trashRecord: text("trash_record"),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
+    /** Who made that delete (`user:<id>`, `agent:<chat>/<turn>`, `system`): the list holds it, the model's removal record reads it here. */
+    trashedBy: text("trashed_by"),
   },
   (table) => [
     // The target of the composite foreign key below.

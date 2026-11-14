@@ -791,6 +791,7 @@ CREATE TABLE "tree_nodes" (
 	"location_version" bigint DEFAULT 0 NOT NULL,
 	"trash_record" text,
 	"trashed_at" timestamp with time zone,
+	"trashed_by" text,
 	CONSTRAINT "tree_nodes_id_source" UNIQUE("id","context_source_id"),
 	CONSTRAINT "tree_nodes_kind_valid" CHECK ("tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "tree_nodes_file_type_of_document" CHECK (("tree_nodes"."kind" = 'folder') = ("tree_nodes"."file_type" IS NULL)),
