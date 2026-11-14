@@ -415,7 +415,6 @@
     "tools/dev/lib/worktree-cleanup.test.ts": 14,
     "tools/dev/portless-ownership.test.ts": 3,
     "tools/dev/vitest-isolate-boundary.test.ts": 2,
-    "tools/mf/src/commands/cli-contracts.test.ts": 1,
     "tools/mf/src/commands/thread/events-map.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 1,
     "tools/mf/src/commands/thread/tail.test.ts": 5,
