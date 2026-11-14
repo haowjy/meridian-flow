@@ -4844,8 +4844,8 @@ msgstr "Rename Work"
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkTitles.tsx
-msgid "Rename Work: {0}"
-msgstr "Rename Work: {0}"
+#~ msgid "Rename Work: {0}"
+#~ msgstr "Rename Work: {0}"
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx

@@ -1,12 +1,9 @@
 /**
- * A Work's two titles: the active tab in the pane band (navigation chrome) and
- * the page heading (the page's own identity). Both rename the same Work in
- * place through `TitleEditSlot`, without moving the text: a rename shows at
- * once, and a refused one reopens the title that was edited. An archived Work
- * shows the same titles as plain text, as does a Work with no server identity
- * yet (its name only, through the `Plain*` titles).
- * Both are one line: a long name truncates, with the full name on hover and as
- * the accessible name; the rename field scrolls within that line.
+ * A Work's page heading, renamed in place through `TitleEditSlot`, without moving the text: a
+ * rename shows at once, and a refused one reopens the field with the writer's text. An archived
+ * Work shows its name as plain text, and a Work with no server identity yet shows only its name
+ * (`PlainWorkHeading`). The heading is one line: a long name truncates, with the full name on
+ * hover and as the accessible name; the rename field scrolls within that line.
  */
 
 import { t } from "@lingui/core/macro";
@@ -16,7 +13,6 @@ import { workClosedSentence, workUpdateFailure } from "@/client/query/work-updat
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
-import { titleChipClass } from "../shell/tab-chip";
 
 // The heading shrinks beside the status; it clips nothing itself, so a refused
 // rename's message can hang below it. The text inside truncates instead.
@@ -37,52 +33,7 @@ export function useWorkRename(projectId: string, work: Work) {
   };
 }
 
-export function WorkTitleTab({
-  projectId,
-  work,
-  variant,
-}: {
-  projectId: string;
-  work: Work;
-  variant: "tab" | "quiet";
-}) {
-  const rename = useWorkRename(projectId, work);
-  const archived = isWorkArchived(work);
-  return (
-    <div className={titleChipClass(variant)}>
-      <TitleEditSlot
-        titleKey={`work:${work.id}`}
-        label={t`Rename Work`}
-        failure={renameFailure}
-        closed={closedSentence}
-        rename={rename}
-      >
-        {({ start, triggerRef }) =>
-          archived ? (
-            <span title={work.name} className="pane-title min-w-0 truncate px-1">
-              {work.name}
-            </span>
-          ) : (
-            <span className="flex min-w-0 px-1">
-              <button
-                ref={triggerRef}
-                type="button"
-                aria-label={t`Rename Work: ${work.name}`}
-                title={work.name}
-                onClick={() => start(work.name)}
-                className="pane-title inline-edit-trigger focus-ring min-w-0 truncate text-left"
-              >
-                {work.name}
-              </button>
-            </span>
-          )
-        }
-      </TitleEditSlot>
-    </div>
-  );
-}
-
-/** The Work page's heading, renamed in place like the tab above it. */
+/** The Work page's heading, renamed in place. */
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
   const rename = useWorkRename(projectId, work);
   const archived = isWorkArchived(work);
@@ -117,20 +68,6 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         }
       </TitleEditSlot>
     </h1>
-  );
-}
-
-/**
- * A Work's name in the tab as plain text. Outside this module, only for a Work
- * still being created, which has a name but nothing to rename yet.
- */
-export function PlainWorkTitleTab({ name, variant }: { name: string; variant: "tab" | "quiet" }) {
-  return (
-    <div className={titleChipClass(variant)}>
-      <span title={name} className="pane-title min-w-0 truncate px-1">
-        {name}
-      </span>
-    </div>
   );
 }
 
