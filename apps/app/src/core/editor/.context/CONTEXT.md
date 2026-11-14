@@ -428,8 +428,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   (the server drops a read-only room's writes without closing it). The live registry
   and `DraftRoomPool` both ask it; neither keeps its own list.
 - A held session ends when the server acknowledges its edits, when the predicate turns
-  false, when the room is refused, the document removed or access revoked
-  (`dropRefusedRoom`, `drainDocument`, `drainAccess`), when the account closes
+  false, when the document is removed or access revoked
+  (`drainDocument`, `drainAccess`), when the account closes
   (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time

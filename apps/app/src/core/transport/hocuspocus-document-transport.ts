@@ -19,9 +19,9 @@
  * The transport also owns the room's access scope. The server names it on every
  * (re)connect through Hocuspocus's authenticated message; a 4409
  * `access-changed` close freezes the room until the reconnect names the new
- * scope. Local edits still unacknowledged at that close were refused, and a
- * reconnect would replay them from this Y.Doc, so the transport resets instead
- * and the owner rebuilds the room from the server's state.
+ * scope. It never resets the room: unacknowledged local edits stay in this
+ * Y.Doc, and the reconnect's admission decides. An edit admission's handshake
+ * delivers them; a read-only one holds them on screen.
  *
  * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
  * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
@@ -254,25 +254,18 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
   [WS_CLOSE.DRAFT_CLOSED.reason]: "closed",
-  [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
   [WS_CLOSE.DOCUMENT_DELETED.reason]: "removed",
 };
 
-export function classifyDocumentTransportClose(
-  roomName: string,
-  event: { code?: number; reason: string },
-  hasUnacknowledgedEdits = false,
-): DocumentSessionConnectionState | null {
+export function classifyDocumentTransportClose(event: {
+  code?: number;
+  reason: string;
+}): DocumentSessionConnectionState | null {
   const reason = event.reason as DocumentSessionResetReason;
-  const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
-  if (disposition) {
-    if ((disposition === "superseded" || disposition === "rebuild") && !isDraftRoom(roomName))
-      return null;
-    if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
-    return { kind: "reset", reason, disposition, code: event.code };
-  }
+  if (Object.hasOwn(RESET_DISPOSITIONS, reason))
+    return { kind: "reset", reason, disposition: RESET_DISPOSITIONS[reason], code: event.code };
   if (event.code !== undefined && isTerminalDenialClose({ code: event.code, reason: event.reason }))
     return terminalState(event.reason, event.code);
   return null;
@@ -386,14 +379,11 @@ export function createHocuspocusDocumentTransport({
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
     if (destroyed) return;
-    publishTerminal(classifyDocumentTransportClose(roomName, { reason }) ?? terminalState(reason));
+    publishTerminal(classifyDocumentTransportClose({ reason }) ?? terminalState(reason));
   }
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    // A read-only connection's edits were held, never sent for the server to refuse:
-    // the reconnect's admission decides whether they now land (an Unarchive does).
-    const refusable = outbox !== null && currentAccess !== "read";
     if (
       event.reason === WS_CLOSE.ACCESS_CHANGED.reason ||
       event.reason === WS_CLOSE.DOCUMENT_DELETED.reason
@@ -402,7 +392,7 @@ export function createHocuspocusDocumentTransport({
       // a removed document has no reconnect, so it stays read-only.
       publishAccess("read");
     }
-    const state = classifyDocumentTransportClose(roomName, event, refusable);
+    const state = classifyDocumentTransportClose(event);
     if (state) {
       publishTerminal(state);
       return;
