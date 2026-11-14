@@ -18,7 +18,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@hocuspocus/server": "4.3.0",
     "@meridian-flow/gateway": "workspace:*",
-    "@meridian-flow/mars-schema": "0.31.1",
+    "@meridian-flow/mars-schema": "0.32.0",
     "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
