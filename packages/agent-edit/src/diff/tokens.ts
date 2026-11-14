@@ -167,14 +167,24 @@ function flatten(blocks: readonly PMNode[]): Side {
   return { blocks, toks, starts, blockOf };
 }
 
+/** What `buildBlocks` had to change to make the tokens blocks: counts, no text. */
+export interface ShapeRepairs {
+  /** A mark the block's type cannot hold was dropped. */
+  markDropped: number;
+  /** An inline node the block cannot hold moved to a paragraph after it. */
+  inlineMovedOut: number;
+  /** Inline content with no paragraph to hold it got one. */
+  strayInlineWrapped: number;
+}
+
 /** Rebuilds blocks from tokens. Never drops content: inline nodes a block can't hold follow it in a paragraph. */
 export function buildBlocks(
   schema: Schema,
   toks: readonly Tok[],
   opts: { allowEmpty?: boolean } = {},
-): { blocks: PMNode[]; normalized: number } {
+): { blocks: PMNode[]; shape: ShapeRepairs } {
   const blocks: PMNode[] = [];
-  let normalized = 0;
+  const shape: ShapeRepairs = { markDropped: 0, inlineMovedOut: 0, strayInlineWrapped: 0 };
   let cur: { shell: PMNode; inline: PMNode[] } | null = null;
   const flush = () => {
     if (!cur) return;
@@ -182,12 +192,12 @@ export function buildBlocks(
     cur = null;
     const type = shell.type;
     const fixed = inline.map((n) => (n.isText ? n.mark(type.allowedMarks(n.marks)) : n));
-    if (fixed.some((n, i) => n !== inline[i])) normalized++;
+    if (fixed.some((n, i) => n !== inline[i])) shape.markDropped++;
     const allowed = fixed.filter((n) => type.contentMatch.matchType(n.type));
     const rejected = fixed.filter((n) => !type.contentMatch.matchType(n.type));
     blocks.push(type.create(shell.attrs, joinText(allowed), shell.marks));
     if (rejected.length) {
-      normalized++;
+      shape.inlineMovedOut++;
       blocks.push(schema.nodes.paragraph.create({ id: newBlockId() }, joinText(rejected)));
     }
   };
@@ -202,7 +212,7 @@ export function buildBlocks(
       if (!cur) {
         // Inline content with no textblock to hold it (after a whole block, or at the start).
         cur = { shell: schema.nodes.paragraph.create({ id: newBlockId() }), inline: [] };
-        normalized++;
+        shape.strayInlineWrapped++;
       }
       if (t.kind === "text") {
         if (t.wsMarks && t.ws) {
@@ -217,7 +227,7 @@ export function buildBlocks(
   }
   flush();
   if (!blocks.length && !opts.allowEmpty) blocks.push(...blankDocument(schema));
-  return { blocks, normalized };
+  return { blocks, shape };
 }
 
 function joinText(nodes: PMNode[]): PMNode[] {

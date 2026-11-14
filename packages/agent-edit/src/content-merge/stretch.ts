@@ -6,9 +6,9 @@
  * side changed the structure.
  */
 import type { Node as PMNode } from "prosemirror-model";
-import { type Correspondence, emptyCorrespondence } from "./correspond.js";
-import { Dsu } from "./dsu.js";
-import { blockKey } from "./tokens.js";
+import { type Correspondence, emptyCorrespondence } from "../diff/correspond.js";
+import { Dsu } from "../diff/dsu.js";
+import { blockKey } from "../diff/tokens.js";
 
 /**
  * One side's changes laid over the base. Slot 2g is the gap before base block g, slot 2i+1 is base

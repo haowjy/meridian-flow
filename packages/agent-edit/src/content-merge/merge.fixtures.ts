@@ -6,9 +6,10 @@
  */
 import { hasBlockId, withBlockIds } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import { correspond } from "./correspond.js";
+import { correspond } from "../diff/correspond.js";
+import type { Tok } from "../diff/tokens.js";
 import type { Conflict } from "./merge.js";
-import type { Tok } from "./tokens.js";
+import type { RuleName } from "./rules.js";
 
 /** `text#id` is a unit with the id `id`; no suffix, no id. */
 const withId = (text: string): [string, { id: string } | null] => {
@@ -1012,6 +1013,8 @@ export interface Case {
   draft: string;
   merged: string;
   conflicts: number;
+  /** The merge rules this row fires, and only those. */
+  rules: RuleName[];
 }
 
 const LIN = "p#lin:Lin Feng drew his sword and stepped forward.";
@@ -1034,6 +1037,7 @@ export const CASES: Case[] = [
     draft: "p#A:one two DRAFT",
     merged: "p:one | p:two DRAFT",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "a far addition beside a short line the draft edited",
@@ -1043,6 +1047,7 @@ export const CASES: Case[] = [
     draft: `p#n:No! | ${FAR} | p#z:The door stayed shut.`,
     merged: `p:No! | ${FARM} | p:No, she said quietly. | p:The door stayed shut.`,
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "a far addition beside a short line the draft edited, an unchanged twin",
@@ -1052,6 +1057,7 @@ export const CASES: Case[] = [
     draft: `p#n:No! | ${FAR} | p#t:No. | p#z:The door stayed shut.`,
     merged: `p:No! | ${FARM} | p:No. | p:No, she said quietly. | p:The door stayed shut.`,
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "an item joined into another, a lookalike item added, the draft split the joined one",
@@ -1061,6 +1067,7 @@ export const CASES: Case[] = [
     draft: "list:a b c d#A;e#B;f g#C",
     merged: "list:x f g y;a b c d;e;f g",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "a block deleted and another typed, against an appended word",
@@ -1070,6 +1077,7 @@ export const CASES: Case[] = [
     draft: "p#m:Mara opened the door tonight",
     merged: "p:Rain fell on the roof | p:Mara opened the door tonight",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "the draft moves a block live deleted",
@@ -1079,6 +1087,7 @@ export const CASES: Case[] = [
     draft: "p#a:aa bb | p#c:ee ff | p#b:cc dd",
     merged: "p:aa bb | p:ee ff | p:cc dd",
     conflicts: 1,
+    rules: ["draft-wins-stretch", "moved-paragraph-keeps-edits"],
   },
   {
     row: "the draft moves and edits a block live deleted",
@@ -1088,6 +1097,7 @@ export const CASES: Case[] = [
     draft: "p#a:aa bb | p#c:ee ff | p#b:cc DD",
     merged: "p:aa bb | p:ee ff | p:cc DD",
     conflicts: 1,
+    rules: ["draft-wins-stretch", "moved-paragraph-keeps-edits"],
   },
   {
     row: "live moves a block the draft deleted",
@@ -1097,6 +1107,7 @@ export const CASES: Case[] = [
     draft: "p#a:aa bb | p#c:ee ff",
     merged: "p:aa bb | p:ee ff",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "two blocks swapped, the draft edits one",
@@ -1106,6 +1117,7 @@ export const CASES: Case[] = [
     draft: "p#a:aa BB | p#b:cc dd",
     merged: "p:cc dd | p:aa BB",
     conflicts: 0,
+    rules: ["moved-paragraph-keeps-edits"],
   },
   {
     row: "the same block typed on both sides",
@@ -1115,6 +1127,7 @@ export const CASES: Case[] = [
     draft: "p#a:x y | p#n2:new para here",
     merged: "p:x y | p:new para here",
     conflicts: 0,
+    rules: ["same-block-added-twice"],
   },
   // Text in one paragraph
   {
@@ -1125,6 +1138,7 @@ export const CASES: Case[] = [
     draft: "p:The bird sat on the mat.",
     merged: "p:The bird sat on the mat.",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "same word, same edit",
@@ -1134,6 +1148,7 @@ export const CASES: Case[] = [
     draft: "p:The dog sat.",
     merged: "p:The dog sat.",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "same paragraph, different words",
@@ -1143,6 +1158,7 @@ export const CASES: Case[] = [
     draft: "p:The cat sat on the rug.",
     merged: "p:The dog sat on the rug.",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "same-point insertions, equal",
@@ -1152,6 +1168,7 @@ export const CASES: Case[] = [
     draft: "p:She ran home.",
     merged: "p:She ran home.",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "same-point insertions, different",
@@ -1161,6 +1178,7 @@ export const CASES: Case[] = [
     draft: "p:She ran fast.",
     merged: "p:She ran home fast.",
     conflicts: 0,
+    rules: ["insertions-kept-both"],
   },
   {
     row: "same-point insertions, different",
@@ -1170,6 +1188,7 @@ export const CASES: Case[] = [
     draft: "p:One. | p:Wind rose. | p:Two.",
     merged: "p:One. | p:Rain fell. | p:Wind rose. | p:Two.",
     conflicts: 0,
+    rules: ["insertions-kept-both"],
   },
   {
     row: "same-point insertions, equal",
@@ -1179,6 +1198,7 @@ export const CASES: Case[] = [
     draft: "p:One. | p:New para. | p:Two.",
     merged: "p:One. | p:New para. | p:Two.",
     conflicts: 0,
+    rules: ["same-block-added-twice"],
   },
   {
     row: "edit vs delete, same words",
@@ -1188,6 +1208,7 @@ export const CASES: Case[] = [
     draft: "p:a d",
     merged: "p:a d",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   // Repeated content
   {
@@ -1198,6 +1219,7 @@ export const CASES: Case[] = [
     draft: "p:He frowned. | p:She left the room. | p:He nodded.",
     merged: "p:He frowned. | p:She left the room. | p:He nodded slowly.",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "repeated content",
@@ -1207,6 +1229,7 @@ export const CASES: Case[] = [
     draft: "p:He frowned. She left. He nodded.",
     merged: "p:He frowned. She left. He nodded slowly.",
     conflicts: 0,
+    rules: [],
   },
   // Structure
   {
@@ -1217,6 +1240,7 @@ export const CASES: Case[] = [
     draft: "p:one TWO three four",
     merged: "p:one TWO | p:three four",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "merge vs edit",
@@ -1226,6 +1250,7 @@ export const CASES: Case[] = [
     draft: "p:one two | p:three FOUR",
     merged: "p:one two three FOUR",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "merge vs edit",
@@ -1235,6 +1260,7 @@ export const CASES: Case[] = [
     draft: "p:one two three four",
     merged: "p:one two three FOUR",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "split on both sides",
@@ -1244,6 +1270,7 @@ export const CASES: Case[] = [
     draft: "p:one two | p:three four",
     merged: "p:one two | p:three four",
     conflicts: 0,
+    rules: ["same-block-added-twice"],
   },
   {
     row: "split on both sides",
@@ -1253,6 +1280,7 @@ export const CASES: Case[] = [
     draft: "p:one | p:two three four",
     merged: "p:one | p:two three four",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "merge vs split",
@@ -1262,6 +1290,7 @@ export const CASES: Case[] = [
     draft: "p:one two | p:three | p:four",
     merged: "p:one two | p:three | p:four",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "delete paragraph vs join onto it",
@@ -1271,6 +1300,7 @@ export const CASES: Case[] = [
     draft: "p:aa bb cc dd ee ff | p:gg hh",
     merged: "p:aa bb cc dd ee ff | p:gg hh",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   // Moves
   {
@@ -1281,6 +1311,7 @@ export const CASES: Case[] = [
     draft: `${LIN} | ${ELDER} | p#thu:Thunder rolled across the silent peak.`,
     merged: `p:Thunder rolled across the silent peak. | ${LIN} | ${ELDER}`,
     conflicts: 0,
+    rules: ["moved-paragraph-keeps-edits"],
   },
   {
     row: "draft moves, live edits",
@@ -1290,6 +1321,7 @@ export const CASES: Case[] = [
     draft: `${THUNDER} | ${LIN} | ${ELDER}`,
     merged: `p:Thunder rolled across the silent peak. | ${LIN} | ${ELDER}`,
     conflicts: 0,
+    rules: ["moved-paragraph-keeps-edits"],
   },
   {
     row: "adjacent swap on one side, move on the other",
@@ -1299,6 +1331,7 @@ export const CASES: Case[] = [
     draft: `${LIN} | ${THUNDER} | ${ELDER}`,
     merged: `${THUNDER} | ${LIN} | ${ELDER}`,
     conflicts: 0,
+    rules: ["moved-paragraph-keeps-edits"],
   },
   {
     row: "both move one paragraph to different places",
@@ -1308,6 +1341,7 @@ export const CASES: Case[] = [
     draft: [SIX[0], SIX[2], SIX[3], SIX[1], SIX[4], SIX[5]].join(" | "),
     merged: [SIX[0], SIX[2], SIX[3], SIX[1], SIX[4], SIX[5]].join(" | "),
     conflicts: 1,
+    rules: ["moved-paragraph-keeps-edits", "draft-wins-order"],
   },
   {
     row: "moved text (cut and paste)",
@@ -1317,6 +1351,7 @@ export const CASES: Case[] = [
     draft: "p:Lin Feng drew his sword. | p:Thunder rolled across the peak. The wind howled.",
     merged: "p:Lin Feng drew his sword. | p:Thunder rolled across the peak. The wind howled.",
     conflicts: 2,
+    rules: ["draft-wins-text"],
   },
   {
     row: "moved text (cut and paste)",
@@ -1326,6 +1361,7 @@ export const CASES: Case[] = [
     draft: "p:Lin Feng drew his sword. The cold wind howled. | p:Thunder rolled across the peak.",
     merged: "p:Lin Feng drew his sword. The cold wind howled. | p:Thunder rolled across the peak.",
     conflicts: 2,
+    rules: ["draft-wins-text", "moved-text-dropped"],
   },
   // Delete vs edit
   {
@@ -1336,6 +1372,7 @@ export const CASES: Case[] = [
     draft: `${LIN} | p:The elder watched him with icy eyes. | ${THUNDER}`,
     merged: `${LIN} | p:The elder watched him with icy eyes. | ${THUNDER}`,
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "draft deletes, live edits",
@@ -1345,6 +1382,7 @@ export const CASES: Case[] = [
     draft: `${LIN} | ${THUNDER}`,
     merged: `${LIN} | ${THUNDER}`,
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "draft deletes, live appends",
@@ -1354,6 +1392,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:f g",
     merged: "p:a b | p:f g",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "draft deletes everything",
@@ -1363,6 +1402,7 @@ export const CASES: Case[] = [
     draft: "p:",
     merged: "p:",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "live deletes everything",
@@ -1372,6 +1412,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:c d e",
     merged: "p: | p:c d e",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "both delete",
@@ -1381,6 +1422,7 @@ export const CASES: Case[] = [
     draft: `${LIN} | ${THUNDER}`,
     merged: `${LIN} | ${THUNDER}`,
     conflicts: 0,
+    rules: [],
   },
   // Block type, marks, attrs
   {
@@ -1391,6 +1433,7 @@ export const CASES: Case[] = [
     draft: "p:Chapter One: Dawn | p:Body text here.",
     merged: "h2:Chapter One: Dawn | p:Body text here.",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "block type vs block type",
@@ -1400,6 +1443,7 @@ export const CASES: Case[] = [
     draft: "h3:Chapter One | p:Body text here.",
     merged: "h3:Chapter One | p:Body text here.",
     conflicts: 1,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "marks: different marks, same word",
@@ -1409,6 +1453,7 @@ export const CASES: Case[] = [
     draft: "p:He said *no*.",
     merged: "p:He said ***no***.",
     conflicts: 0,
+    rules: ["marks-merged"],
   },
   {
     row: "marks: mark vs replace",
@@ -1418,6 +1463,7 @@ export const CASES: Case[] = [
     draft: "p:He said yes.",
     merged: "p:He said yes.",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "marks: mark vs neighbouring edit",
@@ -1427,6 +1473,7 @@ export const CASES: Case[] = [
     draft: "p:See the old map.",
     merged: "p:See the old [map](a).",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "attrs vs text",
@@ -1436,6 +1483,7 @@ export const CASES: Case[] = [
     draft: "p:The very end.",
     merged: "pc:The very end.",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   // Non-text blocks (atomic)
   {
@@ -1446,6 +1494,7 @@ export const CASES: Case[] = [
     draft: "p:a b | fig:map | p:c d e",
     merged: "p:a b | p:c d e",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "figure changed vs deleted",
@@ -1455,6 +1504,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:c d",
     merged: "p:a b | p:c d",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "same rule inserted on both sides",
@@ -1464,6 +1514,7 @@ export const CASES: Case[] = [
     draft: "p:a b | hr | p:c d",
     merged: "p:a b | hr | p:c d",
     conflicts: 0,
+    rules: ["same-block-added-twice"],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1473,6 +1524,7 @@ export const CASES: Case[] = [
     draft: "list:one;two;THREE",
     merged: "list:ONE;two;THREE",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1482,6 +1534,7 @@ export const CASES: Case[] = [
     draft: "list:ONE;two",
     merged: "list:ONE;two;three",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1491,6 +1544,7 @@ export const CASES: Case[] = [
     draft: "list:the bird sat;two",
     merged: "list:the bird sat;two",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1500,6 +1554,7 @@ export const CASES: Case[] = [
     draft: "quote:She said hello.;He left.",
     merged: "quote:She said hello.;He left.;Rain fell.",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1509,6 +1564,7 @@ export const CASES: Case[] = [
     draft: "table:a b,c d;e f,g H",
     merged: "table:a B,c d;e f,g H",
     conflicts: 0,
+    rules: ["containers-merged"],
   },
   {
     row: "edits in one container, merged table not rectangular",
@@ -1518,6 +1574,7 @@ export const CASES: Case[] = [
     draft: "table:a,b;c,d",
     merged: "table:a,b;c,d",
     conflicts: 1,
+    rules: ["whole-block-unit"],
   },
   {
     row: "paragraph deleted beside a changed figure",
@@ -1527,6 +1584,7 @@ export const CASES: Case[] = [
     draft: "p:intro words here | fig:map3 | p:c d",
     merged: "fig:map3 | p:c d",
     conflicts: 1,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "paragraph deleted beside a changed list",
@@ -1536,6 +1594,7 @@ export const CASES: Case[] = [
     draft: "p:intro words here | list:one;TWO | p:c d",
     merged: "list:ONE;TWO | p:c d",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1545,6 +1604,7 @@ export const CASES: Case[] = [
     draft: "table:alpha^2;c,DRAFT",
     merged: "table:LIVE^2;c,DRAFT",
     conflicts: 0,
+    rules: ["containers-merged"],
   },
   {
     row: "edits in one container (list, quote, table)",
@@ -1554,6 +1614,7 @@ export const CASES: Case[] = [
     draft: "quote:She said hi. | p:after that",
     merged: "quote:She said hello. | p:after that",
     conflicts: 0,
+    rules: [],
   },
   // Block structure settled before words (`draft-wins-stretch`), and pairings nothing settles
   {
@@ -1564,6 +1625,7 @@ export const CASES: Case[] = [
     draft: "p:a b c",
     merged: "p:a b c",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1, sides exchanged",
@@ -1573,6 +1635,7 @@ export const CASES: Case[] = [
     draft: "p:a | p:X | p:b c",
     merged: "p:a | p:X | p:b c",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1: a join and a typed paragraph beside it",
@@ -1582,6 +1645,7 @@ export const CASES: Case[] = [
     draft: "p:a b c d e",
     merged: "p:a b c d e",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1, sides exchanged",
@@ -1591,6 +1655,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:NEW | p:c d e",
     merged: "p:a b | p:NEW | p:c d e",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1: live joins, the draft keeps the second",
@@ -1600,6 +1665,7 @@ export const CASES: Case[] = [
     draft: "p#b:b c d",
     merged: "p:b c d",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1: the same with a heading",
@@ -1609,6 +1675,7 @@ export const CASES: Case[] = [
     draft: "h2#b:b c d e f",
     merged: "h2:b c d e f",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1: empty paragraphs before",
@@ -1618,6 +1685,7 @@ export const CASES: Case[] = [
     draft: "p#e1: | p#e2: | h2#b:b c d e f",
     merged: "p: | p: | h2:b c d e f",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "r2 B1: a reorder and a join",
@@ -1627,6 +1695,7 @@ export const CASES: Case[] = [
     draft: "p#cd:c d",
     merged: "p:c d",
     conflicts: 2,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "seed 54: a cut and a paste, both sides",
@@ -1636,6 +1705,7 @@ export const CASES: Case[] = [
     draft: "p:e f | p:a x y z b c",
     merged: "p:e f | p:a x y z b c",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "r2 B1: repeated short paragraphs, one moved",
@@ -1645,6 +1715,7 @@ export const CASES: Case[] = [
     draft: "p#y1:Yes. DRAFT | p#y2:Yes. | p#m:Maybe.",
     merged: "p:Yes. LIVE DRAFT | p:Maybe. | p:Yes.",
     conflicts: 0,
+    rules: ["insertions-kept-both", "moved-paragraph-keeps-edits"],
   },
   {
     row: "both sides moved different paragraphs",
@@ -1654,6 +1725,7 @@ export const CASES: Case[] = [
     draft: "p:alpha beta | p:epsilon zeta",
     merged: "p:alpha beta | p:epsilon zeta",
     conflicts: 1,
+    rules: ["moved-text-dropped"],
   },
   {
     row: "draft moves a paragraph, live removes it",
@@ -1663,6 +1735,7 @@ export const CASES: Case[] = [
     draft: "p:alpha beta | p:epsilon zeta | p:gamma delta",
     merged: "p:alpha beta | p:epsilon zeta | p:gamma delta",
     conflicts: 1,
+    rules: [],
   },
   {
     row: "both move one paragraph to different places",
@@ -1672,6 +1745,7 @@ export const CASES: Case[] = [
     draft: "p#c:cc dd | p#e:ee ff | p#g:gg hh | p#a:aa bb",
     merged: "p:cc dd | p:ee ff | p:gg hh | p:aa bb",
     conflicts: 1,
+    rules: ["moved-paragraph-keeps-edits", "draft-wins-order"],
   },
   {
     row: "r1 B1: live rewrites a paragraph, the draft extends it",
@@ -1681,6 +1755,7 @@ export const CASES: Case[] = [
     draft: "p#m:Mara opened the door tonight",
     merged: "p:Rain fell on the roof tonight",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "r1 B1, sides exchanged",
@@ -1690,6 +1765,7 @@ export const CASES: Case[] = [
     draft: "p#m:Rain fell on the roof",
     merged: "p:Rain fell on the roof tonight",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "both rewrite one paragraph",
@@ -1699,6 +1775,7 @@ export const CASES: Case[] = [
     draft: "p#m:Snow lay on the hill",
     merged: "p:Snow lay on the hill",
     conflicts: 2,
+    rules: ["draft-wins-text"],
   },
   {
     row: "rewrite against an edit",
@@ -1708,6 +1785,7 @@ export const CASES: Case[] = [
     draft: "p:aa bb cc DD | p:zz",
     merged: "p:aa bb cc DD | p:zz",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "an edit against a rewrite",
@@ -1717,6 +1795,7 @@ export const CASES: Case[] = [
     draft: "p:qq rr ss tt | p:zz",
     merged: "p:qq rr ss tt | p:zz",
     conflicts: 1,
+    rules: ["draft-wins-text"],
   },
   {
     row: "a longer CJK sentence still merges",
@@ -1726,6 +1805,7 @@ export const CASES: Case[] = [
     draft: "p:她慢慢地走进了房间，然后坐下。",
     merged: "p:她慢慢地跑进了房间，然后坐下。",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "an echoed paragraph the draft added",
@@ -1735,6 +1815,7 @@ export const CASES: Case[] = [
     draft: "p:one two three four | p:new alpha | p:new beta | p:three four | p:five six",
     merged: "p:one two three four | p:new alpha | p:new beta | p:three FOUR | p:five six",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "three items, live edits two and the draft the third",
@@ -1744,6 +1825,7 @@ export const CASES: Case[] = [
     draft: "list:Yes apple;Yes banana;Yes cherry?",
     merged: "list:Yes apple!;Yes banana!;Yes cherry?",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "empty items",
@@ -1753,6 +1835,7 @@ export const CASES: Case[] = [
     draft: "list:;y;x",
     merged: "list:;y;x",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "an item live edited, an item the draft removed",
@@ -1762,6 +1845,7 @@ export const CASES: Case[] = [
     draft: "list:No apple;Yes banana.",
     merged: "list:No apple;Yes banana!",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "the same, with short items",
@@ -1771,6 +1855,7 @@ export const CASES: Case[] = [
     draft: "list:No.;Yes. banana",
     merged: "list:No.;Yes. banana!",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "the same, in a table",
@@ -1780,6 +1865,7 @@ export const CASES: Case[] = [
     draft: "table:Anne,10;Bob,10",
     merged: "table:Anne,10;Bob,10",
     conflicts: 1,
+    rules: ["containers-merged", "draft-wins-stretch"],
   },
   {
     row: "a shared prefix in every item",
@@ -1789,6 +1875,7 @@ export const CASES: Case[] = [
     draft: "list:EDIT same1 same2 apple;same0 same1 same2 banana.",
     merged: "list:EDIT same1 same2 apple;same0 same1 same2 banana!",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "live removes an item the draft edited",
@@ -1798,6 +1885,7 @@ export const CASES: Case[] = [
     draft: "list:apple tart;banana bread;cherry",
     merged: "list:apple tart;banana loaf;cherry",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "live removes a row the draft edited",
@@ -1807,6 +1895,7 @@ export const CASES: Case[] = [
     draft: "table:Anne,10;Bob,20;Cat,30",
     merged: "table:Anne,10;Bob,25;Cat,30",
     conflicts: 1,
+    rules: ["containers-merged", "draft-wins-stretch"],
   },
   {
     row: "an item joined onto another and edited",
@@ -1816,6 +1905,7 @@ export const CASES: Case[] = [
     draft: "list:w32 w30 w13",
     merged: "list:w32 w30 w13",
     conflicts: 2,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "near twins, both edited",
@@ -1825,6 +1915,7 @@ export const CASES: Case[] = [
     draft: "list:No apple#i1;Yes banana#i2",
     merged: "list:No apple;Yes cherry",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "a figure live replaced, the draft changed",
@@ -1834,6 +1925,7 @@ export const CASES: Case[] = [
     draft: "p:intro words here | fig:map3 | p:c d",
     merged: "fig:map3 | p:c d",
     conflicts: 1,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "a paste filtered out, then a slide",
@@ -1843,6 +1935,12 @@ export const CASES: Case[] = [
     draft: "p:head EDIT d | p:d e e tail | p:f b",
     merged: "p:head EDIT d | p:e d e e tail | p:f b",
     conflicts: 2,
+    rules: [
+      "draft-wins-text",
+      "insertions-kept-both",
+      "moved-text-dropped",
+      "space-added-between-words",
+    ],
   },
   {
     row: "a paragraph moved out of a repeated pair, then a join",
@@ -1852,6 +1950,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:c | p:b",
     merged: "p:a b | p:c | p:b",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "the same with a heading",
@@ -1861,6 +1960,7 @@ export const CASES: Case[] = [
     draft: "p:a b | p:c | h1:b",
     merged: "p:a b | p:c | h1:b",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "a repeated paragraph moved, another edited",
@@ -1870,6 +1970,7 @@ export const CASES: Case[] = [
     draft: "p:No. | p:Yes. | p:other",
     merged: "p:No. | p:other | p:Yes.",
     conflicts: 0,
+    rules: [],
   },
   // Scripts without spaces
   {
@@ -1880,6 +1981,7 @@ export const CASES: Case[] = [
     draft: "p:她走了。",
     merged: "p:她跑了。",
     conflicts: 0,
+    rules: [],
   },
   // A short line does not link to a paragraph in another place
   {
@@ -1892,6 +1994,7 @@ export const CASES: Case[] = [
     merged:
       "p:No! | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:No, she said quietly. | p:The door stayed shut.",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "a short line removed, a far paragraph rewritten to hold it",
@@ -1903,6 +2006,7 @@ export const CASES: Case[] = [
     merged:
       "p:He nodded slowly. | p:Rain fell on the old road. | p:The lamp burned low tonight. | p:Wind moved through the pines. | p:A dog barked far away. | p:He nodded at her and the end came.",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   // A join inside a container is owned where it happens
   {
@@ -1913,6 +2017,7 @@ export const CASES: Case[] = [
     draft: "list:The rain fell on the road;He turned;away",
     merged: "list:She turned away LIVE;The rain fell on the road;He turned;away",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "the same with no shared vocabulary",
@@ -1922,6 +2027,7 @@ export const CASES: Case[] = [
     draft: "list:a b c d e f;g h;i",
     merged: "list:x h i y;a b c d e f;g h;i",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
   },
   {
     row: "the same with table rows",
@@ -1931,6 +2037,7 @@ export const CASES: Case[] = [
     draft: "table:a b c d e f;g h;i",
     merged: "table:x h i y;a b c d e f;g h;i",
     conflicts: 1,
+    rules: ["containers-merged", "draft-wins-stretch"],
   },
   // Equal blocks in a stretch are no clash only when they sit in the same places
   {
@@ -1941,6 +2048,7 @@ export const CASES: Case[] = [
     draft: "p:a | p:c d | p:b",
     merged: "p:a | p: | p:c d | p:b",
     conflicts: 0,
+    rules: [],
   },
   {
     row: "the same inside a quote",
@@ -1950,6 +2058,7 @@ export const CASES: Case[] = [
     draft: "quote:a;c d;b",
     merged: "quote:a;;c d;b",
     conflicts: 0,
+    rules: [],
   },
   // block-attributes-merged: each attribute from the side that changed it (flat-model/design.md section 5)
   {
@@ -1960,6 +2069,7 @@ export const CASES: Case[] = [
     draft: "p#a{path=-,marker=done}:one two | p#b:three",
     merged: "p{path=--,marker=done}:one two | p:three",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "both sides change the same attribute to different values",
@@ -1969,6 +2079,7 @@ export const CASES: Case[] = [
     draft: "p#a{path=---,marker=item}:one two",
     merged: "p{path=---,marker=item}:one two",
     conflicts: 1,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "both sides change the same attribute to the same value",
@@ -1978,6 +2089,7 @@ export const CASES: Case[] = [
     draft: "p#a{path=-,marker=done}:one two",
     merged: "p{path=-,marker=done}:one two",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "live changes an attribute, the draft edits the text and another attribute",
@@ -1987,6 +2099,7 @@ export const CASES: Case[] = [
     draft: "p#a{path=-,marker=done}:one two THREE",
     merged: "p{path=--,marker=done}:one two THREE",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "live changes an attribute and inserts a block before it, the draft changes another attribute",
@@ -1996,6 +2109,7 @@ export const CASES: Case[] = [
     draft: "p#a{path=-,marker=done}:one two | p#b:three",
     merged: "p:fresh | p{path=--,marker=done}:one two | p:three",
     conflicts: 0,
+    rules: ["block-attributes-merged"],
   },
   {
     row: "live changes an attribute of a block the draft removed",
@@ -2005,5 +2119,50 @@ export const CASES: Case[] = [
     draft: "p#b:three",
     merged: "p:three",
     conflicts: 1,
+    rules: ["draft-wins-stretch"],
+  },
+  // Two one-sided changes a few tokens apart are one change the two diffs placed differently
+  {
+    row: "live adds a heading, the draft typed the same words at the end of the paragraph before it",
+    name: "neighbouring-changes-joined",
+    base: "p#f:Fig | p#a:Hello there.",
+    live: "p#f:Fig | p#a:Hello there. | h2#b:The end.",
+    draft: "p#f:Fig | p#a:Well Hello there. The end.",
+    merged: "p:Fig | p:Well Hello there. | h2:The end.",
+    conflicts: 0,
+    rules: ["neighbouring-changes-joined"],
+  },
+  // Words typed where the other side deleted the paragraph have no paragraph to join
+  {
+    row: "live joins the next paragraph onto the first, the draft keeps the second and rewrites it",
+    name: "typed-at-end-of-deleted",
+    base: "p:One two three. | p:Four five",
+    live: "p:One two three. Four five",
+    draft: "p:One two three. | p:Six seven Four",
+    merged: "p:One two three. | p:Six seven Four",
+    conflicts: 1,
+    rules: ["draft-wins-text", "typed-at-end-of-deleted"],
+  },
+  // One side inserted words the other side's replacement also starts with
+  {
+    row: "live replaces a word with a phrase, the draft replaces it with a phrase that shares its words",
+    name: "shared-edge-kept-once",
+    base: "p:The cat sat on the mat.",
+    live: "p:A big black cat sat on the mat.",
+    draft: "p:The big black cat sat on the mat.",
+    merged: "p:A big black cat sat on the mat.",
+    conflicts: 0,
+    rules: ["shared-edge-kept-once"],
+  },
+  // Both sides changed the space before one word
+  {
+    row: "both sides change the space before one word, differently",
+    name: "draft-wins-space",
+    base: "p:a b",
+    live: "p:a  b",
+    draft: "p:a   b",
+    merged: "p:a   b",
+    conflicts: 0,
+    rules: ["draft-wins-space"],
   },
 ];

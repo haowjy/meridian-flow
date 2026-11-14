@@ -1,10 +1,10 @@
 /** Live→Work draft pulls (debounced and at tool boundaries), and a thread peer's identity step. */
 
+import { contentMerge, type RuleCounts } from "@meridian/agent-edit/content-merge";
 import {
   blocksEqual,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
-  rebase,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import {
@@ -122,6 +122,8 @@ export async function peerLossReason(
 
 export type DraftPullDiagnostics = {
   backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
+  /** What a pull's content merge did: how often each rule fired, and the live words the draft overrode. */
+  merged(input: { documentId: DocumentId; rules: RuleCounts; overrode: number }): void;
 };
 
 export function createDraftPullService(input: {
@@ -233,7 +235,12 @@ export function createDraftPullService(input: {
               const oldBase = readBlocks(reviewBase, schema);
               if (blocksEqual(oldBase, nextBase)) return [];
               const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-              const merged = rebase(schema, oldBase, nextBase, readBlocks(fragment, schema));
+              const merged = contentMerge(schema, oldBase, nextBase, readBlocks(fragment, schema));
+              input.diagnostics?.merged({
+                documentId,
+                rules: merged.rules,
+                overrode: merged.overrode,
+              });
               return captureMutationUpdates(prefix, () =>
                 prefix.transact(() => {
                   writeBlocks(fragment, schema, merged.blocks);

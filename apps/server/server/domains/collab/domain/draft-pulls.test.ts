@@ -99,7 +99,7 @@ describe("DraftPullService", () => {
             workDraft: { draftId: "work", seed: null },
           }),
         },
-        diagnostics: { backgroundFailed: () => {} },
+        diagnostics: { backgroundFailed: () => {}, merged: () => {} },
         debounceMs: 10,
         maxDebounceMs: 50,
       });
@@ -169,7 +169,7 @@ describe("DraftPullService", () => {
             workDraft: { draftId: "work", seed: null },
           }),
         },
-        diagnostics: { backgroundFailed: failed },
+        diagnostics: { backgroundFailed: failed, merged: () => {} },
         debounceMs: 10,
         maxDebounceMs: 50,
       });

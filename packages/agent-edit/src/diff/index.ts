@@ -1,4 +1,4 @@
-/** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply, Discard and the rebase. */
+/** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply and Discard. */
 
 export { appliedParts } from "./applied-parts.js";
 export {
@@ -20,7 +20,6 @@ export {
   type WriterReceipt,
 } from "./attribution.js";
 export {
-  applyBase,
   applySpanPatches,
   baseViewDelta,
   composeHunks,
@@ -41,11 +40,6 @@ export {
   recoverLatePeerEdits,
   retainLateTypingDeletions,
 } from "./late-peer-recovery.js";
-export {
-  type Conflict,
-  type RebaseResult,
-  rebase,
-} from "./merge.js";
 export {
   appendRestorationLinks,
   RESTORED_ROOT,

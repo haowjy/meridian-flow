@@ -42,6 +42,7 @@ import {
 import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { contentMerge } from "../../../../packages/agent-edit/src/content-merge/index.ts";
 import {
   applySpanPatches,
   baseViewDelta,
@@ -51,7 +52,6 @@ import {
   REVIEW_BASE_FRAGMENT,
   readApplyRecord,
   readBlocks,
-  rebase,
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
 import {
@@ -146,6 +146,7 @@ async function fixture(
     close: createDraftClose(),
     releaseObjects: async () => {},
     onCommitted: async () => {},
+    merged: () => {},
     measured: (m) => measure.push(m),
   });
   const pending = createDrizzleWorkBranchPendingStore(h.db);
@@ -335,7 +336,7 @@ async function fixture(
           });
           const reviewBase = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
           const prose = prefix.getXmlFragment("prosemirror");
-          const merged = rebase(
+          const merged = contentMerge(
             schema,
             readBlocks(reviewBase, schema),
             upstream,

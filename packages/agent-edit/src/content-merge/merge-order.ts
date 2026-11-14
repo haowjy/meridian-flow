@@ -1,11 +1,11 @@
 /**
- * Paragraph order for the content rebase. Takes each side's block correspondence with the base
+ * Paragraph order for the content merge. Takes each side's block correspondence with the base
  * (equal, edited in place, or moved), decides one paragraph order for the three documents, and lays
  * each out in it, so the token merge afterwards sees edits and no moves.
  */
 import type { Node as PMNode } from "prosemirror-model";
-import type { Correspondence } from "./correspond.js";
-import type { Side } from "./tokens.js";
+import type { Correspondence } from "../diff/correspond.js";
+import type { Side } from "../diff/tokens.js";
 
 /**
  * The blocks of `blocks` a side moved: those outside its longest run still in base order. `favored`

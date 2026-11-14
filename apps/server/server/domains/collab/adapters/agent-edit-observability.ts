@@ -55,6 +55,16 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
         payload: unknownToEventPayload(cause),
       });
     },
+    merged({ documentId, rules, overrode }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "debug",
+        source: "collab.draft_pull",
+        name: "merge.counted",
+        correlation: { documentId },
+        payload: { rules, overrode },
+      });
+    },
   };
 }
 
