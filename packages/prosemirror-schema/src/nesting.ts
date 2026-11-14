@@ -259,6 +259,36 @@ export function nestTree(facts: readonly BlockFacts[]): NestedNode[] {
 }
 
 /**
+ * The paths of a run of copied or moved blocks without the steps outside them: each loses the
+ * levels around the shallowest block's own list level, so the run keeps its shape relative to
+ * itself and can land under any path. The first block starts no fresh container: where it lands
+ * decides that.
+ */
+export function detach(paths: readonly (readonly Step[])[]): Step[][] {
+  let cut = Number.POSITIVE_INFINITY;
+  for (const steps of paths) cut = Math.min(cut, Math.max(0, innermostListStep(steps)));
+  const detached = paths.map((steps) => steps.slice(Number.isFinite(cut) ? cut : 0));
+  if (detached[0]) detached[0] = detached[0].map((step) => ({ ...step, fresh: false }));
+  return detached;
+}
+
+/**
+ * The steps a moved block lands under, below the block `above` (null at the start of its
+ * sequence): it keeps its own list depth, `depth`, but sits at most one level under `above`.
+ */
+export function landingBase(above: readonly Step[] | null, depth: number): Step[] {
+  const aboveSteps = above ?? [];
+  const aboveDepth = aboveSteps.filter((step) => step.type === "list").length;
+  const levels = Math.min(depth, aboveDepth + 1) - 1;
+  const base: Step[] = [];
+  for (const step of aboveSteps) {
+    if (base.filter((s) => s.type === "list").length >= levels) break;
+    base.push({ type: step.type, fresh: false });
+  }
+  return base;
+}
+
+/**
  * The block range of the item a block starts: the block plus every following block that is
  * deeper or continues it. A block that starts no item is its own range.
  */
@@ -268,7 +298,7 @@ export function extentOf(facts: readonly BlockFacts[], index: number): [number, 
   let end = index + 1;
   while (end < facts.length) {
     const step = facts[end].steps[level];
-    if (!step || step.type !== "list" || step.opens || step.startsItem) break;
+    if (step?.type !== "list" || step.opens || step.startsItem) break;
     end++;
   }
   return [index, end];

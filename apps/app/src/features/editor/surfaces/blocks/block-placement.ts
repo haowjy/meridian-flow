@@ -35,7 +35,7 @@ import { watchManuscriptLayout } from "@/core/editor/chrome";
 import { manuscriptOverlay } from "@/features/editor/chrome/manuscript-overlay";
 
 import { blockHandlePosition, seamLinePosition } from "./block-geometry";
-import { blockAt } from "./block-targets";
+import { blockAt, blockRun } from "./block-targets";
 
 export type BlockChromePlacement = {
   handle: ReturnType<typeof blockHandlePosition>;
@@ -89,10 +89,12 @@ function samePlacement(a: BlockChromePlacement, b: BlockChromePlacement): boolea
   );
 }
 
-/** True when `seamIndex` is one of the two edges the held block already has. */
+/** True when `seamIndex` is an edge of the held block's run, or inside it. */
 function restingSeam(editor: Editor, seamIndex: number): boolean {
   const held = draggedBlockPos(editor.state);
   if (held === null) return false;
   const source = blockAt(editor.state.doc, held);
-  return source !== null && (seamIndex === source.index || seamIndex === source.index + 1);
+  if (source === null) return false;
+  const run = blockRun(editor.state.doc, source);
+  return seamIndex >= run.index && seamIndex <= run.endIndex;
 }

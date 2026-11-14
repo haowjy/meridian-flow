@@ -91,9 +91,9 @@ export function markdownClipboardParser(
   };
 }
 
-/** A paragraph without a level: a heading is the same node with one. */
+/** A paragraph without a level or a place in a list: a heading or an item is the same node with one. */
 function isBodyText(block: PMNode): boolean {
-  return block.type.name === "paragraph" && block.attrs.level == null;
+  return block.type.name === "paragraph" && block.attrs.level == null && block.attrs.path == null;
 }
 
 /** A link, an emphasis, an image: structure the literal characters spelled. */

@@ -16,20 +16,12 @@ is best effort.
 Add a probe that moves a figure and verifies every other block keeps its hash
 while the moved figure receives a fresh Yjs item identity.
 
-## Task-list authoring
+## Lists and screen readers
 
-The shared schema and Markdown codec carry a task item as `marker: "todo" | "done"` on the
-block that starts the item, and the editor draws the box, but no writer surface can author
-or toggle it. A surface should write `marker`, with an input rule (`[ ] `, `[x] `), a click
-on the box and Mod-Enter, not upstream `taskList` or `taskItem` nodes.
-
-## Editing lists
-
-Lists are drawn and have plain commands (toolbar, Tab, `- `/`N. ` input rules). Not yet:
-Enter in an item (a split copies `path` with its `|`, and `done` stays `done`), Enter or
-Backspace to lift, paste and copy of lists as HTML (a pasted list is plain paragraphs), and
-dragging an item with what is under it. Each item is one top-level block today, so a drag
-moves one item.
+List markers are generated content on flat sibling blocks, with `aria-level` on each listed
+block; there is no `role="list"` parent. What VoiceOver and NVDA announce is untested. If
+they do not read a list, the fallback is a visually hidden text marker in a widget
+decoration (flat model design, section 7).
 
 ## Two views of one session
 

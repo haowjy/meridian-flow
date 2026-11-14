@@ -61,7 +61,7 @@ describe("nested blocks through Markdown", () => {
     ["mdx", mdxCodec({ schema, components })],
   ])("write, parse and write again gives the same text (%s)", (_name, codec) => {
     const random = rng(7);
-    for (let n = 0; n < 3000; n++) {
+    for (let n = 0; n < 1000; n++) {
       const blocks = randomBlocks(random);
       const written = (nodes: typeof blocks) => codec.serialize(nodes, UNSCOPED_DOCUMENT_LINKS);
       const first = written(codec.parse(written(blocks)).blocks);

@@ -24,6 +24,8 @@ function drawContainer(container: ProseMirrorNode, start: number, out: Decoratio
     const attrs: Record<string, string> = {
       class: "meridian-listed",
       style: `--nest-depth: ${listSteps}`,
+      // The DOM is flat, so a screen reader learns the depth from the block itself.
+      "aria-level": String(listSteps),
     };
     if (facts.marker !== null) {
       const own = facts.steps[innermostListStep(facts.steps)];

@@ -26,8 +26,12 @@ type SlashBlock = {
 /** What an entry lands, which is the question availability has to ask. */
 type SlashInsertion =
   | ({ strategy: "block" } & SlashBlock)
+  /** The block the trigger is in becomes a list item, or leaves the list: the toolbar's toggle. */
+  | { strategy: "list"; kind: SlashListKind }
   /** A picture, inline where the trigger was. */
   | { strategy: "image" };
+
+type SlashListKind = "bullet" | "ordered" | "task";
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
 
@@ -54,11 +58,9 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
   "heading-3": heading(3),
-  "bullet-list": block({ type: "paragraph", attrs: { path: "-", marker: "item" } }),
-  "numbered-list": block({
-    type: "paragraph",
-    attrs: { path: "-", marker: "item", kind: "ordered" },
-  }),
+  "bullet-list": { strategy: "list", kind: "bullet" },
+  "numbered-list": { strategy: "list", kind: "ordered" },
+  "task-list": { strategy: "list", kind: "task" },
   quote: block({ type: "blockquote", content: [emptyParagraph] }),
   divider: block({ type: "horizontal_rule" }, "after"),
   table: block({
@@ -92,13 +94,19 @@ type SlashTarget =
   /** The block keeps its text and the new node lands after it. */
   | { mode: "insert-after"; pos: number; block: SlashBlock }
   /** A picture stands exactly where the trigger was, among the same words. */
-  | { mode: "inline"; pos: number };
+  | { mode: "inline"; pos: number }
+  /** The trigger's own block is listed or unlisted in place. */
+  | { mode: "list"; kind: SlashListKind };
 
 /** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
-  return insertion.strategy === "image"
-    ? inlineImageTarget(doc, pos)
-    : blockTarget(doc, pos, insertion);
+  if (insertion.strategy === "image") return inlineImageTarget(doc, pos);
+  if (insertion.strategy === "list") {
+    return doc.resolve(pos).parent.type.name === "paragraph"
+      ? { mode: "list", kind: insertion.kind }
+      : null;
+  }
+  return blockTarget(doc, pos, insertion);
 }
 
 /** Where a picture goes: exactly where the trigger was, or nowhere. */
@@ -182,6 +190,13 @@ export function applySlashCommand(
   const at = deleted.mapping.map(range.from);
   const target = slashTarget(deleted.doc, at, SLASH_INSERTIONS[item.id]);
   if (!target) return false;
+
+  if (target.mode === "list") {
+    const chain = editor.chain().focus().deleteRange(range);
+    return (
+      target.kind === "task" ? chain.toggleTaskList() : chain.toggleListKind(target.kind)
+    ).run();
+  }
 
   if (target.mode === "inline") {
     const consumed = editor.chain().focus().deleteRange(range).run();

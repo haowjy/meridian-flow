@@ -374,7 +374,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   Several carried lines land at a gap: before the landing textblock at its start,
   after it at its end, or at a split inside it. The slice closes into blocks and
   ProseMirror fits those blocks where the schema requires it. List items are sibling
-  blocks and keep their nesting attributes and order; a partly dropped item stays an item. A whole top-level textblock keeps its type; a top-level
+  blocks and keep their order and their depth relative to each other; a partly dropped item
+  stays an item, and the run is nested where it lands like a paste (below). A whole top-level textblock keeps its type; a top-level
   textblock cut by the source selection takes the landing's type, and a cut last
   block joins the landing's tail. This applies to copies because the door reads
   their source selection too. A slice from outside has no source selection and
@@ -396,6 +397,19 @@ keyboard, pointer, drop, or draft-recovery answer.
   description (a hidden element named by `aria-describedby`) says so; there is
   no visible hint.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
+- **Lists are attributes** (`extensions/nesting/`, rules in the flat model design section 4).
+  Enter, Backspace and Mod-Enter register on the kernel at `document` scope, narrowed to
+  prose in the document or a cell, and decline wherever ProseMirror's own key is right; an
+  open menu's Enter outranks them. Enter splits with the block's nesting (no `|`, no
+  `start`, `done` becomes `todo`) and lifts an empty block; Backspace at an item's start
+  drops its marker so it joins the item above, and lifts a first item. A paste or drop is
+  nested where it lands (`landSlice`, called from `sliceForDestination`): a block with a
+  list level of its own lands beside the caret's item, any other takes the caret's item
+  kind and task state. A copy detaches its blocks (`copiedSlice`), and words from inside one
+  block carry no list. Clipboard HTML is nested on the way out (`NestingDOMSerializer`, the
+  serializer the link clipboard plugin owns) and flattened on the way in (`flattenDom`,
+  inside the paste sanitizer, before it drops list elements; only the `data-` values it
+  writes survive). A pasted item replaces an empty line instead of merging into it.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,
