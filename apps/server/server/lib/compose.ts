@@ -180,7 +180,6 @@ import {
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
-  createContextMediaResolver,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
@@ -283,6 +282,7 @@ import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export type AppServices = {

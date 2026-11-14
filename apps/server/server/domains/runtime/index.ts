@@ -7,7 +7,6 @@ export type {
 export type { ShownLinkShowing } from "../../shared/model-evidence.js";
 export { TREE_NAMES_ROOM } from "../../shared/model-evidence.js";
 export type { WorkContextNotices } from "../projects/index.js";
-export { createContextMediaResolver } from "./adapters/context-media-resolver.js";
 export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
@@ -76,6 +75,7 @@ export {
   planCompaction,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
+export { linkExpirySeconds } from "./loop/media-link-window.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export * from "./loop/permissions/index.js";
@@ -156,8 +156,8 @@ export type { CommandResolver } from "./ports/command-resolver.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { DocumentEvidence, FrontierLookups } from "./ports/document-evidence.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
-export type { MediaResolverPort } from "./ports/media-resolver.js";
-export { unavailableMediaResolver } from "./ports/media-resolver.js";
+export type { LinkWindow, MediaResolverPort, ResolvedMedia } from "./ports/media-resolver.js";
+export { MediaResolutionError, unavailableMediaResolver } from "./ports/media-resolver.js";
 export {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,

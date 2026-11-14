@@ -62,9 +62,6 @@ imports one of them fails the check.
 
 | file | imports |
 |---|---|
-| `adapters/context-media-resolver.ts` | `context` |
-| `adapters/context-media-resolver.ts` | `file-policy` |
-| `adapters/context-media-resolver.ts` | `storage` |
 | `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |
 | `admission/user-turn-admission.ts` | `@meridian/markup` |

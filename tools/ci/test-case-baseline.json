@@ -199,7 +199,7 @@
     "apps/server/server/domains/projects/work-repository.db.test.ts": 14,
     "apps/server/server/domains/projects/work-repository.test.ts": 2,
     "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts": 1,
-    "apps/server/server/domains/runtime/adapters/context-media-resolver.test.ts": 6,
+    "apps/server/server/lib/runtime-host/media-resolver.test.ts": 6,
     "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts": 19,
     "apps/server/server/domains/runtime/adapters/drizzle-run-state.db.test.ts": 5,
     "apps/server/server/domains/runtime/adapters/drizzle-session-lock.test.ts": 1,
