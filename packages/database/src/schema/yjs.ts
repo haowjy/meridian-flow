@@ -28,7 +28,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
-import { modelResponses, threads, turns } from "./agent-threads";
+import { threads, turns } from "./agent-threads";
 import { branches } from "./branches";
 import { documents, projects } from "./content";
 import { documentEdits } from "./document-edits";
@@ -195,9 +195,7 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
+    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
     createdAt: createdAt(),
   },
   (table) => [
