@@ -79,7 +79,7 @@ export function TrashSource({
   );
 }
 
-/** A deleted document: its age at the right, where it was under its name; its menu restores. */
+/** A deleted document: its age at the right, where it was deleted from under its name; its menu restores. */
 function TrashRow({
   entry,
   now,
@@ -107,7 +107,7 @@ function TrashRow({
       icon={fileKindIcon(entry.name)}
       title={entry.name}
       meta={relativeTime(entry.removal.time, now)}
-      detail={<span title={location}>{location}</span>}
+      detail={<span title={location}>{t`Deleted from ${location}`}</span>}
       onOpen={onOpen}
       current={active && "page"}
       selected={row.selected}

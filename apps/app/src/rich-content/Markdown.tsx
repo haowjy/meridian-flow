@@ -17,7 +17,6 @@ type MarkdownBaseProps = {
   skills?: readonly MarkdownSkillOccurrence[];
   referenceResolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpenReference?: (documentId: string) => void;
-  uploadsChat?: string;
 };
 
 type MarkdownProps = MarkdownBaseProps &
@@ -34,14 +33,12 @@ export function Markdown({
   skills,
   referenceResolutions,
   onOpenReference,
-  uploadsChat,
 }: MarkdownProps) {
   return (
     <TranscriptReferenceContext.Provider
       value={{
         resolutions: referenceResolutions,
         onOpen: onOpenReference,
-        uploadsChat,
       }}
     >
       <DocumentMarkdown

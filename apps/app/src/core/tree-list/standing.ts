@@ -3,7 +3,12 @@
  * Nothing is polled and nothing is stamped: the replay is the copy the tree is drawn from, so it
  * cannot disagree with the tree.
  */
-import { listRecords, type TreeNode, type TreeProjection } from "@meridian/project-tree";
+import {
+  lastSettlements,
+  listRecords,
+  type TreeNode,
+  type TreeProjection,
+} from "@meridian/project-tree";
 import type { TreeListSnapshot } from "./tree-list-session";
 
 export type DocumentStanding =
@@ -12,8 +17,15 @@ export type DocumentStanding =
   | { kind: "in-tree"; node: TreeNode }
   /** Deleted, and `deletedBy` is the delete record's actor (`user:<id>`, `agent:<chat>/<turn>`). */
   | { kind: "in-trash"; node: TreeNode; deletedBy: string | null }
-  | { kind: "purged" }
-  | { kind: "not-in-list" };
+  /** Its content is gone. */
+  | ({ kind: "purged" } & Discarded)
+  | ({ kind: "not-in-list" } & Discarded);
+
+/**
+ * `discardedBy`: it was a Work's new document and a Discard took it away, so it never was live
+ * (the Discard's actor, null when unknown).
+ */
+type Discarded = { discardedBy?: string | null };
 
 const ANSWERS: ReadonlySet<TreeListSnapshot["status"]> = new Set([
   "synced",
@@ -32,8 +44,11 @@ export function standingIn(
 ): DocumentStanding {
   const node = projection.nodes.get(documentId);
   if (!node) {
-    if (projection.gone.has(documentId)) return { kind: "purged" };
-    return listIsReadable(snapshot.status) ? { kind: "not-in-list" } : { kind: "waiting" };
+    const discarded = discardedCreate(snapshot, documentId);
+    if (projection.gone.has(documentId)) return { kind: "purged", ...discarded };
+    return listIsReadable(snapshot.status)
+      ? { kind: "not-in-list", ...discarded }
+      : { kind: "waiting" };
   }
   if (node.purged) return { kind: "purged" };
   if (!node.trashed) return { kind: "in-tree", node };
@@ -42,4 +57,13 @@ export function standingIn(
   );
   const deleted = entry && listRecords(snapshot.doc).find((record) => record.id === entry.id);
   return { kind: "in-trash", node, deletedBy: deleted?.actor ?? null };
+}
+
+/** The Discard that took away the node's latest create, when that is what happened to it. */
+function discardedCreate(snapshot: TreeListSnapshot, documentId: string): Discarded {
+  const create = listRecords(snapshot.doc)
+    .filter((record) => record.type === "create" && record.node === documentId)
+    .pop();
+  const settle = create && lastSettlements(snapshot.doc).get(create.id);
+  return settle?.to === "discarded" ? { discardedBy: settle.actor } : {};
 }

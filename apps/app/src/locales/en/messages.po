@@ -243,6 +243,11 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} is text, so it was added as a document in assets. The chip links to it."
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0} items deleted."
+msgstr "{0} items deleted."
+
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
@@ -566,6 +571,10 @@ msgstr "{name} deleted {title}."
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
 msgstr "{name} deleted this document."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name} deleted."
+msgstr "{name} deleted."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded {count} documents from the draft ({names})."
@@ -1947,6 +1956,16 @@ msgstr "Couldn't be reversed"
 msgid "Couldn't bring back {0} drafts."
 msgstr "Couldn't bring back {0} drafts."
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back {0} items."
+msgstr "Couldn't bring back {0} items."
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back {0}."
+msgstr "Couldn't bring back {0}."
+
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't bring back the change to {0}."
@@ -2542,6 +2561,10 @@ msgstr "Deleted a document"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
+
+#: src/features/project/shell/sidebar/TrashSource.tsx
+msgid "Deleted from {location}"
+msgstr "Deleted from {location}"
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} by {name} on {deleted}."

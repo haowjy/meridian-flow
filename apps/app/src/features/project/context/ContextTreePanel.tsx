@@ -26,6 +26,7 @@ import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
+import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
 import { fileSuggestion, matchFileSuggestions } from "./file-suggestions/file-suggestions";
@@ -104,6 +105,11 @@ export function ContextTreePanel({
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
+  // Where the header's New file and New folder go: the folder the writer last opened or closed
+  // into, else the open document's folder, else the top.
+  const [place, setPlace] = useState<{ folderPath: string; activePath: string | null } | null>(
+    null,
+  );
   const revealed = useRef<string | null>(null);
 
   const revealPath = useCallback(
@@ -160,7 +166,7 @@ export function ContextTreePanel({
     }
     if (revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
-    revealPath(parentContextPath(activeLocationPath));
+    revealPath(parentContextEntryPath(activeLocationPath));
   }, [activeLocationPath, tree, revealPath]);
 
   const creatingParent = creating?.parentPath;
@@ -214,6 +220,7 @@ export function ContextTreePanel({
                   createdFile: setPendingOpenPath,
                   createdFolder,
                   setCreatedFolder,
+                  placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
                 }
               : undefined,
             onSelectFile,
@@ -240,6 +247,7 @@ export function ContextTreePanel({
       writable,
       creates,
       activeDocumentId,
+      activeLocationPath,
       changed,
       creating,
       createdFolder,
@@ -256,12 +264,18 @@ export function ContextTreePanel({
     ],
   );
 
+  // Opening another document since moves the place to its folder.
+  const placed =
+    place && place.activePath === activeLocationPath
+      ? place.folderPath
+      : activeLocationPath && parentContextEntryPath(activeLocationPath);
+  const here = placed && tree?.findPath(placed)?.kind === "dir" ? placed : "";
   const actions = creates ? (
     <>
-      <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
+      <IconButton label={t`New file`} onClick={() => requestCreate("file", here)}>
         <FilePlus aria-hidden />
       </IconButton>
-      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", "")}>
+      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", here)}>
         <FolderPlus aria-hidden />
       </IconButton>
       {importScheme ? (
@@ -378,9 +392,4 @@ function FoundFiles({
       })}
     </div>
   );
-}
-
-function parentContextPath(path: string): string {
-  const separator = path.lastIndexOf("/");
-  return separator <= 0 ? "" : path.slice(0, separator);
 }

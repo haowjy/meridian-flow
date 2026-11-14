@@ -7,6 +7,13 @@ import { plural, t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
+import type { TreeStep } from "@/core/project-tree/tree-undo";
+import {
+  type DiscardUndo,
+  type DraftNotices,
+  deleteNoticeKey,
+  type NoticeSurface,
+} from "@/features/draft-review/draft-notices";
 import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
@@ -19,6 +26,11 @@ export type EntryContext = {
   projectId: string;
   actions: EntryActions;
   removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
+  /**
+   * Where a delete's notice shows: `tree` in the sidebar, `main` on Recently opened. A delete of
+   * the document main shows follows main to where it goes back to. None: no notice.
+   */
+  notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
 export type EntryFailure = { key: string } & (
@@ -195,10 +207,20 @@ export async function runDelete(
         : [],
     ),
   ]);
-  removal?.beginOwnRemoval(projectId, covered.flat());
+  let shown: number | null = null;
+  const leaving =
+    removal?.beginOwnRemoval(projectId, covered.flat(), (landing) => {
+      if (shown !== null)
+        context.notice?.notices.landed(deleteNoticeKey(projectId), shown, landing);
+    }) ?? null;
+  const taken: { list: EntryActions["project"]; step: TreeStep; names: string[] }[] = [];
   for (const list of new Set(entries.map((item) => item.list))) {
     const mine = entries.filter((item) => item.list === list);
-    if (list.remove(mine.map(({ entry }) => entry.id)).ok) continue;
+    const removed = list.remove(mine.map(({ entry }) => entry.id));
+    if (removed.ok) {
+      taken.push({ list, step: removed.step, names: mine.map(({ entry }) => entry.name) });
+      continue;
+    }
     for (const item of mine) {
       const { name, ...entry } = item.entry;
       showFailure(context, {
@@ -209,4 +231,47 @@ export async function runDelete(
       });
     }
   }
+  if (context.notice && taken.length > 0)
+    shown = showDeleteNotice(context.notice, projectId, taken, leaving, covered.flat()[0] ?? "");
+}
+
+/**
+ * The delete's notice, with an Undo that takes back the sidebar's own Undo step for it: whichever
+ * runs first, the other has nothing left (a press ends the notice).
+ */
+function showDeleteNotice(
+  { notices, at }: NonNullable<EntryContext["notice"]>,
+  projectId: string,
+  taken: readonly { list: EntryActions["project"]; step: TreeStep; names: string[] }[],
+  leaving: string | null,
+  documentId: string,
+): number | null {
+  const names = taken.flatMap((each) => each.names);
+  const surface: NoticeSurface = leaving
+    ? { kind: "band", documentId: leaving }
+    : { kind: at === "main" ? "landing" : "tree" };
+  const handle: DiscardUndo = {
+    undo: () => ({
+      answer: taken.map(({ list, step }) => list.undo(step)).some(Boolean) ? "ok" : "gone",
+      landed: Promise.resolve(),
+    }),
+    end: () => {},
+  };
+  for (const { step } of taken) step.ended = () => notices.partEnded(handle);
+  const id = notices.showDiscard({
+    projectId,
+    ownerKey: deleteNoticeKey(projectId),
+    // Leaving main's document, the notice follows main to where it goes back to (`landed`).
+    surface,
+    parts: [
+      {
+        documentId: leaving ?? documentId,
+        name: names[0] ?? "",
+        scope: "deleted",
+        count: names.length,
+        handle,
+      },
+    ],
+  });
+  return id;
 }

@@ -243,6 +243,11 @@ msgstr ""
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0} items deleted."
+msgstr ""
+
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
@@ -566,6 +571,10 @@ msgstr "{name} 删除了{title}。"
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
 msgstr "{name} 删除了这份文档。"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name} deleted."
+msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded {count} documents from the draft ({names})."
@@ -1947,6 +1956,16 @@ msgstr ""
 msgid "Couldn't bring back {0} drafts."
 msgstr ""
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back {0} items."
+msgstr ""
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back {0}."
+msgstr ""
+
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't bring back the change to {0}."
@@ -2541,6 +2560,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashSource.tsx
+msgid "Deleted from {location}"
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx

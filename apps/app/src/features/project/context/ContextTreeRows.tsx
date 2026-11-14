@@ -26,7 +26,7 @@ import {
 } from "@/features/import/tree-rows";
 import { focusWhenFree } from "@/lib/focus-follow";
 import type { ContextCreateKind } from "./context-create-kind";
-import type { ContextEntrySibling } from "./context-entry-name";
+import { type ContextEntrySibling, parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
@@ -61,6 +61,8 @@ export type TreeEnv = {
     /** The folder creation just made, until its row takes focus. */
     createdFolder: string | null;
     setCreatedFolder: (path: string | null) => void;
+    /** The writer opened or closed a folder: the header's New file and New folder go there. */
+    placeAt: (folderPath: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
@@ -128,15 +130,6 @@ export function TreeChildren({
   const siblings = useMemo(() => siblingsOf(children), [children]);
   return (
     <>
-      {env.creation?.creating?.parentPath === parentPath ? (
-        <CreateRow
-          kind={env.creation?.creating.kind}
-          parentId={parentId}
-          parent={parentPath}
-          depth={depth}
-          siblings={siblings}
-        />
-      ) : null}
       {children
         .filter(
           (child) =>
@@ -163,6 +156,16 @@ export function TreeChildren({
             />
           ),
         )}
+      {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
+      {env.creation?.creating?.parentPath === parentPath ? (
+        <CreateRow
+          kind={env.creation?.creating.kind}
+          parentId={parentId}
+          parent={parentPath}
+          depth={depth}
+          siblings={siblings}
+        />
+      ) : null}
     </>
   );
 }
@@ -240,6 +243,7 @@ function DirRow({
           title={dir.name}
           onOpen={() => {
             if (env.creation?.creating) env.creation.done();
+            env.creation?.placeAt(isOpen ? parentContextEntryPath(dir.path) : dir.path);
             env.toggleEntry(dir.entryId);
           }}
           selected={row.selected}

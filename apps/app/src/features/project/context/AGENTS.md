@@ -38,7 +38,8 @@ stay chat resources, not documents main opens.
   tab and brings it back in the side.
 - The writer's own delete or Discard of a document begins with the removal coordinator's
   `beginOwnRemoval`: it sends main back to the document
-  shown before. A new door that removes documents for the writer must use it.
+  shown before. A new door that removes documents for the writer must use it. A delete door goes
+  through `useDeleteContextEntries(projectId, at)`, which names where its notice with Undo shows.
 
 Children: [`file-suggestions/AGENTS.md`](file-suggestions/AGENTS.md). The list's replay,
 editor admission and identity continuity: [`.context/CONTEXT.md`](.context/CONTEXT.md). Drag,
