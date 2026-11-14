@@ -1,6 +1,6 @@
 /**
- * The project's chat deletes: one notice, "Deleted ‹title›" with its Undo, replaced by the next
- * delete. The project owns it, so switching the sidebar's list, closing the phone's drawer or
+ * The project's chat deletes: one notice, the deleted chat's row struck through with its Undo,
+ * ended by the next delete or the writer's next pick in the Chat list. The project owns it, so switching the sidebar's list, closing the phone's drawer or
  * remounting the sidebar keeps it; leaving the project, signing out or reloading ends it.
  *
  * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of it) and leaves its saved words alone: the composer's draft and unsent records stay
@@ -28,7 +28,12 @@ export type ChatDeleteNotice = {
   threadId: string;
   title: string;
   status: "ready" | "restoring" | "failed";
+  /** Where the chat's row was when the writer deleted it, for the row to stay there. */
+  place: ChatPlace | null;
 };
+
+/** A row's place in one list: the list's key and the chats listed before it, nearest first. */
+export type ChatPlace = { list: string; after: readonly string[] };
 
 /** A delete the server refused: the chat is back, and its row says so with Retry. */
 export type ChatDeleteRefusal = { threadId: string; title: string };
@@ -72,14 +77,20 @@ export class ChatDeletes {
   notice = (): ChatDeleteNotice | null => this.held?.notice ?? null;
   refused = (): ChatDeleteRefusal | null => this.refusal;
 
-  delete(threadId: string, title: string): void {
+  delete(threadId: string, title: string, place: ChatPlace | null = null): void {
     if (this.closed) return;
     this.end();
     this.refusal = null;
     const { client, accountId, projectId } = this.ports;
     const mark = beginOwnChatDelete(accountId, threadId);
     const taken = this.takeAway(threadId);
-    const notice: ChatDeleteNotice = { id: this.nextId++, threadId, title, status: "ready" };
+    const notice: ChatDeleteNotice = {
+      id: this.nextId++,
+      threadId,
+      title,
+      status: "ready",
+      place,
+    };
     const held: Held = {
       notice,
       taken,
@@ -160,7 +171,7 @@ export class ChatDeletes {
     return outcome;
   }
 
-  /** The notice ends without Undo: the chat's saved words go. */
+  /** The notice ends without Undo (the writer moved on in the list): the chat's saved words go. */
   dismiss = () => this.end();
 
   open() {
