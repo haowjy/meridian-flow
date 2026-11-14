@@ -1,5 +1,6 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Turn } from "@meridian/contracts/threads";
+import type { Block, Turn } from "@meridian/contracts/threads";
+import { ToolCallPairing } from "@meridian-flow/gateway";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CommandResolver } from "../ports/command-resolver.js";
@@ -25,14 +26,19 @@ export function createCommandRecovery(deps: {
 }) {
   return async (threadId: ThreadId, turn: Turn): Promise<void> => {
     const blocks = await deps.repos.blocks.listByTurn(turn.id);
-    const stored = new Set(blocks.map((block) => block.id));
-    const open = blocks.flatMap((block) => {
-      if (block.blockType !== "tool_use" || !block.responseId) return [];
+    const calls = new ToolCallPairing<Block>();
+    for (const block of [...blocks].sort((a, b) => a.sequence - b.sequence)) {
+      const { toolCallId } = block.content as { toolCallId?: string };
+      if (toolCallId === undefined) continue;
+      if (block.blockType === "tool_use") calls.call(toolCallId, block);
+      else if (block.blockType === "tool_result") calls.answer(toolCallId);
+    }
+    const open = calls.unanswered().flatMap((block) => {
       const { toolCallId, toolName } = block.content as { toolCallId: string; toolName: string };
-      if (!deps.toolRegistry.getRegistration(toolName)?.documentCommand) return [];
-      // A call id is the model's per response; the command's identity is the response and the id.
-      const key = { responseId: block.responseId, toolCallId };
-      return stored.has(modelEditIds(key).blockId) ? [] : [{ key, toolCallId }];
+      if (!block.responseId || !deps.toolRegistry.getRegistration(toolName)?.documentCommand)
+        return [];
+      // The command's identity is the response and the id: a call id is the model's per response.
+      return [{ key: { responseId: block.responseId, toolCallId }, toolCallId }];
     });
     if (open.length === 0) return;
     const thread = await deps.repos.threads.findByIdIncludingDeleted(threadId);

@@ -5,6 +5,7 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
+import { ToolCallPairing } from "@meridian-flow/gateway";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import type { DocumentTextPolicy } from "../../tools/document-text.js";
 import { textContent } from "../../tools/tool-content.js";
@@ -19,19 +20,18 @@ export type RecordedDocuments = ReadonlyMap<
 export type ModelElisions = NonNullable<CompactionMetadata["elisions"]>;
 
 function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies) {
-  // A call id repeats across the responses of a turn: a result answers the latest call before it.
-  const calls = new Map<unknown, Block>();
+  const calls = new ToolCallPairing<Block>();
   return [...blocks]
     .sort((a, b) => a.sequence - b.sequence)
     .flatMap((result) => {
       if (result.blockType === "tool_use") {
-        calls.set((result.content as JsonObject).toolCallId, result);
+        calls.call((result.content as JsonObject).toolCallId as string, result);
         return [];
       }
       if (result.blockType !== "tool_result") return [];
       const content = result.content as JsonObject;
       if (content.isError || isNotesStepHeldResult(content.result)) return [];
-      const call = calls.get(content.toolCallId);
+      const call = calls.answer(content.toolCallId as string);
       if (!call) return [];
       const tool = call.content as JsonObject;
       const policy = policies(tool.toolName as string);

@@ -64,8 +64,8 @@ export interface DocumentCommands {
   /** Fresh and authenticated: the account and digest the key names are all it reads. */
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
   /**
-   * Claims the id and runs the effect in one transaction that holds no second connection
-   * (`runCommandWithinTx`). An id already taken throws `DocumentCommandExistsError`.
+   * Claims the id and runs the effect in one transaction that holds no second connection.
+   * An id already taken throws `DocumentCommandExistsError`.
    */
   run<R extends StoredDocumentCommandResult>(
     envelope: DocumentCommandEnvelope,

@@ -1,6 +1,11 @@
 /** Model-visible transcript with preflight sizing, document excerpts and block-boundary splits. */
 import type { Block } from "@meridian/contracts/threads";
-import type { ContentPart, TokenizerFamily, ToolUsePart } from "@meridian-flow/gateway";
+import {
+  type ContentPart,
+  type TokenizerFamily,
+  ToolCallPairing,
+  type ToolUsePart,
+} from "@meridian-flow/gateway";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
@@ -14,14 +19,8 @@ function renderPart(part: ContentPart): string {
   return JSON.stringify(part);
 }
 
-function resultExcerpt(content: readonly ContentPart[], index: number, rendered: string): string {
-  const part = content[index];
+function resultExcerpt(part: ContentPart, call: ToolUsePart | undefined, rendered: string): string {
   if (part.type !== "tool_result" || rendered.length <= EXCERPT_CHARACTERS) return rendered;
-  // A call id repeats across the responses of a turn: the result answers the latest call before it.
-  const call = content
-    .slice(0, index)
-    .filter((c): c is ToolUsePart => c.type === "tool_use" && c.toolCallId === part.toolCallId)
-    .at(-1);
   const uri = call?.toolName === "read" ? call.input.path : undefined;
   // Only document reads can be re-read. Writes and other bulky results must split or fail.
   return typeof uri === "string"
@@ -68,7 +67,18 @@ export function transcriptSegments(
         .filter((part) => part.type !== "reasoning");
       parts = content.map(renderPart);
     }
-    if (!fits(wrap(parts))) parts = parts.map((part, index) => resultExcerpt(content, index, part));
+    if (!fits(wrap(parts))) {
+      const calls = new ToolCallPairing<ToolUsePart>();
+      parts = parts.map((rendered, index) => {
+        const part = content[index] as ContentPart;
+        if (part.type === "tool_use") calls.call(part.toolCallId, part);
+        return resultExcerpt(
+          part,
+          part.type === "tool_result" ? calls.answer(part.toolCallId) : undefined,
+          rendered,
+        );
+      });
+    }
     if (fits(wrap(parts))) {
       result.push(wrap(parts));
       continue;

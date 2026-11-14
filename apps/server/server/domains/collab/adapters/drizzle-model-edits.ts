@@ -92,6 +92,7 @@ export function createDrizzleModelEdits(
           kind: "model_edit",
           accountId: key.accountId,
           projectId: key.projectId,
+          threadId: key.threadId,
           requestDigest: ids.digest,
           outcome: { status: "never" },
         })

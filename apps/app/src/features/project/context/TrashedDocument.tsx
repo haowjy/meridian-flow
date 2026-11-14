@@ -150,8 +150,8 @@ function trashSentence(entry: DocumentTrashEntry, locale: string, accountId: str
 }
 
 /**
- * Names who deleted it only when that says something: you, another writer, a chat's AI, a Work,
- * or a reply that didn't finish, in `RemovedDocumentNotice`'s words.
+ * Names who deleted it only when that says something: you, another writer, a chat's AI or a Work,
+ * in `RemovedDocumentNotice`'s words.
  */
 function deletedSentence(
   entry: DocumentTrashEntry,
