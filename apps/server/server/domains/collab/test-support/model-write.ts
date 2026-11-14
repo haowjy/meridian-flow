@@ -14,7 +14,8 @@ export async function modelWrite(
   who: { accountId: string; projectId: string },
 ): Promise<RoutedWriteOutcome> {
   const key = {
-    responseId: context.responseIdentity?.providerResponseId ?? randomUUID(),
+    threadId: context.threadId as never,
+    responseId: context.responseIdentity?.modelResponseId ?? randomUUID(),
     toolCallId: command.tool_use_id ?? randomUUID(),
     accountId: who.accountId as never,
     projectId: who.projectId as never,

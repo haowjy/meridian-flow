@@ -8,7 +8,14 @@
  */
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
-import type { BranchId, DocumentCommandId, DraftItemKey, ProjectId, UserId } from "../ids.js";
+import type {
+  BranchId,
+  DocumentCommandId,
+  DraftItemKey,
+  ProjectId,
+  ThreadId,
+  UserId,
+} from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
 import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
@@ -159,6 +166,8 @@ export type ModelEditToolResult = {
  * the loop and a recovering process derive the same command id from it.
  */
 export type ModelEditKey = {
+  /** The chat, so a purge of it can delete the command's stored result. */
+  threadId: ThreadId;
   responseId: string;
   toolCallId: string;
   accountId: UserId;

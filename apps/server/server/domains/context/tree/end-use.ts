@@ -9,7 +9,6 @@
  * commit. Hidden nodes are tombstoned, never hard-deleted.
  */
 import type { BranchId, DocumentId } from "@meridian/contracts";
-import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -110,35 +109,4 @@ export async function hiddenDocumentIds(
 ): Promise<ReadonlySet<DocumentId>> {
   const rows = await loadDocumentIdentityRows(currentDrizzleDb(db), [...new Set(ids)]);
   return new Set(rows.filter((row) => row.hidden).map((row) => row.id));
-}
-
-/**
- * Reverse a branch's create for a rolled-back reply or a failed create (§12.5, O-11). The
- * tree half only: collab's `retractDraft` decides whether the document's draft holds
- * another contribution (then the create stands) and otherwise closes it; the branch's use
- * then ends.
- */
-export async function retractCreate(
-  db: Database,
-  input: {
-    branchId: BranchId;
-    documentId: DocumentId;
-    cause: RetractionCause;
-    removal: DocumentRemoval;
-    retractDraft(): Promise<"retracted" | "stands">;
-  },
-): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
-  await lockDocuments(db, [input.documentId]);
-  const uses = await loadActiveBranchUses(currentDrizzleDb(db), [input.documentId]);
-  if (!uses.some((use) => use.branchId === input.branchId)) {
-    return { retracted: false, tombstoned: [] };
-  }
-  if ((await input.retractDraft()) === "stands") return { retracted: false, tombstoned: [] };
-  const ended = await endUse(db, {
-    branchId: input.branchId,
-    documentIds: [input.documentId],
-    actor: { cause: input.cause },
-    removal: input.removal,
-  });
-  return { retracted: true, tombstoned: ended.tombstoned };
 }

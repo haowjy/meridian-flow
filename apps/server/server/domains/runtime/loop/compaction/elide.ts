@@ -19,22 +19,25 @@ export type RecordedDocuments = ReadonlyMap<
 export type ModelElisions = NonNullable<CompactionMetadata["elisions"]>;
 
 function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies) {
-  const calls = new Map(
-    blocks
-      .filter((block) => block.blockType === "tool_use")
-      .map((block) => [(block.content as JsonObject).toolCallId, block]),
-  );
-  return blocks.flatMap((result) => {
-    if (result.blockType !== "tool_result") return [];
-    const content = result.content as JsonObject;
-    if (content.isError || isNotesStepHeldResult(content.result)) return [];
-    const call = calls.get(content.toolCallId);
-    if (!call) return [];
-    const tool = call.content as JsonObject;
-    const policy = policies(tool.toolName as string);
-    const input = (tool.input ?? {}) as JsonObject;
-    return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
-  });
+  // A call id repeats across the responses of a turn: a result answers the latest call before it.
+  const calls = new Map<unknown, Block>();
+  return [...blocks]
+    .sort((a, b) => a.sequence - b.sequence)
+    .flatMap((result) => {
+      if (result.blockType === "tool_use") {
+        calls.set((result.content as JsonObject).toolCallId, result);
+        return [];
+      }
+      if (result.blockType !== "tool_result") return [];
+      const content = result.content as JsonObject;
+      if (content.isError || isNotesStepHeldResult(content.result)) return [];
+      const call = calls.get(content.toolCallId);
+      if (!call) return [];
+      const tool = call.content as JsonObject;
+      const policy = policies(tool.toolName as string);
+      const input = (tool.input ?? {}) as JsonObject;
+      return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
+    });
 }
 
 /** Raw evidence, not an earlier compaction's substitutions, is the source of each pass. */

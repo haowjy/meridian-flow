@@ -5991,7 +5991,7 @@
         },
         "documents_deletion_cause_valid": {
           "name": "documents_deletion_cause_valid",
-          "value": "\"documents\".\"deletion_cause\" IN ('create_failed', 'repair')"
+          "value": "\"documents\".\"deletion_cause\" IN ('repair')"
         },
         "documents_size_bytes_nonneg": {
           "name": "documents_size_bytes_nonneg",
@@ -10220,6 +10220,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "request_digest": {
           "name": "request_digest",
           "type": "text",
@@ -10240,7 +10246,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "document_commands_thread": {
+          "name": "document_commands_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "document_commands_account_id_users_id_fk": {
           "name": "document_commands_account_id_users_id_fk",

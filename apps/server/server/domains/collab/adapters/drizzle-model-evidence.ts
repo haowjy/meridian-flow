@@ -174,6 +174,9 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       await db_()
         .delete(links)
         .where(inArray(links.threadId, [...threadIds]));
+      await db_()
+        .delete(schema.documentCommands)
+        .where(inArray(schema.documentCommands.threadId, [...threadIds]));
     },
   };
 }

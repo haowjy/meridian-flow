@@ -9,7 +9,6 @@ import type { BranchTreePort } from "../../ports/branch-tree.js";
 import type { DocumentRemoval } from "../../ports/document-removal.js";
 import { deleteInBranch, moveInBranch } from "../../tree/branch-tree-changes.js";
 import { createInBranch } from "../../tree/creates.js";
-import { retractCreate } from "../../tree/end-use.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { lockDocumentNamespaces } from "./document-locations.js";
 
@@ -19,7 +18,7 @@ export function createDrizzleBranchTree(deps: {
   /** The source, provisioned when the first create needs it. */
   sourceId(): Promise<string>;
   documents: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
   repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
 }): BranchTreePort {
@@ -50,18 +49,6 @@ export function createDrizzleBranchTree(deps: {
         },
         ...(deps.repair ? { repair: deps.repair } : {}),
       });
-    },
-    async retractCreate({ branch, documentId, cause }) {
-      await lockedSource();
-      const retracted = await retractCreate(deps.db, {
-        branchId: branch.id,
-        documentId,
-        cause,
-        removal: deps.removal,
-        retractDraft: () =>
-          deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
-      });
-      return retracted.retracted ? "retracted" : "stands";
     },
     async moveInBranch({ branch, documentId, dir, name, extension, position, changedBy }) {
       return moveInBranch(deps.db, {

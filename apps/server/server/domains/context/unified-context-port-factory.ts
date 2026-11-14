@@ -610,7 +610,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
   documentSync: ContextFSDeps["documentSync"] &
     DocumentCreationAggregate &
-    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   /** The tree's removal kernel: every delete, overwrite and end of use tombstones through it. */
   removal: DocumentRemoval;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;

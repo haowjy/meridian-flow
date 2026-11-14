@@ -75,7 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            responseIdentity: { providerResponseId: TURN_ID },
+            responseIdentity: { modelResponseId: TURN_ID },
             commandOwner: { accountId: USER_ID, projectId: PROJECT_ID } as never,
             agentSlug: null,
           },

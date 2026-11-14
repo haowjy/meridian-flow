@@ -31,7 +31,7 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseIdentity: { providerResponseId: responseId },
+    responseIdentity: { modelResponseId: responseId },
     grant: testFileGrant(
       { kind: "draft", owner: { kind: "work", workId: WORK_ID }, ownerHandle: "atomicity-work" },
       ALPHA_ID,

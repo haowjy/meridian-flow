@@ -40,7 +40,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
-  const identity = (responseId: string) => ({ providerResponseId: responseId });
+  const identity = (responseId: string) => ({ modelResponseId: responseId });
 
   describe("collab image paths (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });

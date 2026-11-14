@@ -904,7 +904,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             actor: "agent" as const,
             threadId: query.threadId,
             turnId: query.turnId,
-            responseId: query.responseIdentity?.providerResponseId,
+            responseId: query.responseIdentity?.modelResponseId,
             toolCallId: query.toolCallId,
           }
         : {
@@ -979,7 +979,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             ...(query.model && query.turnId ? { actorTurnId: query.turnId } : {}),
             ...(query.model && query.responseIdentity
               ? {
-                  authoringResponseId: query.responseIdentity.providerResponseId,
+                  authoringResponseId: query.responseIdentity.modelResponseId,
                 }
               : {}),
             seq: 0,
@@ -1034,7 +1034,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             updateMeta: {
               ...(query.model && query.responseIdentity
                 ? {
-                    authoringResponseId: query.responseIdentity.providerResponseId,
+                    authoringResponseId: query.responseIdentity.modelResponseId,
                   }
                 : {}),
               restorationAliases: part.aliases.map((alias) => ({

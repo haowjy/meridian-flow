@@ -60,13 +60,7 @@ export function removedFile(removal: DocumentRemovalRecord | null | undefined): 
   };
 }
 
-/**
- * A write the removal stopped before the reply saved it. A system removal is the reply's own, so
- * it never says "before this reply was saved".
- */
+/** A write the removal stopped before it ran. */
 export function removedWriteMessage(removal: DocumentRemovalRecord | null | undefined): string {
-  const removed = `This file was ${removalPhrase(removal)}`;
-  return removal?.actor?.kind !== "system"
-    ? `${removed} before this reply was saved, so this change wasn't made.`
-    : `${removed}, so this change wasn't made.`;
+  return `This file was ${removalPhrase(removal)} before this edit ran, so this change wasn't made.`;
 }

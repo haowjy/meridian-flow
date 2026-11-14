@@ -6,7 +6,7 @@
  * boundary goes left, and a text is only emptied, never deleted, because a peer's
  * concurrent insert may be anchored in it. Imports only Yjs.
  */
-import * as Y from "yjs";
+import type * as Y from "yjs";
 
 type Attrs = Record<string, unknown>;
 

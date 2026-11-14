@@ -453,8 +453,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         await this.runBeforeDestructiveWrite();
         const removed = await this.removal.remove({
           documentIds: [token.nodeId as DocumentId],
-          reason: command.removal?.reason ?? "deleted",
-          cause: command.removal?.cause,
+          reason: "deleted",
           userId: command.actorUserId as UserId,
           threadId: command.actorThreadId as ThreadId | undefined,
         });
@@ -504,8 +503,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       await this.runBeforeDestructiveWrite();
       const removed = await this.removal.remove({
         documentIds: documentClosure.map((row) => row.id),
-        reason: command.removal?.reason ?? "deleted",
-        cause: command.removal?.cause,
+        reason: "deleted",
         userId: command.actorUserId as UserId,
       });
       const deletedFolders = await currentDrizzleDb(this.db)

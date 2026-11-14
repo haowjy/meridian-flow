@@ -169,8 +169,5 @@ export function createEffectiveDocumentReader(input: {
     ensureCreatedDocumentDraft(command) {
       return input.drafts.ensureCreatedDocumentDraft(command);
     },
-    retractCreatedDocumentDraft(command) {
-      return input.drafts.retractCreatedDocumentDraft(command);
-    },
   };
 }

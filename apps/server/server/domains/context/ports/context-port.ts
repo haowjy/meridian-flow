@@ -22,7 +22,6 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
-  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -480,13 +479,7 @@ export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
 export interface ContextDeleteOptions {
   origin?: WriteProvenance;
-  removal?: { reason: "discarded"; cause: RetractionCause };
   operation?: ContextOperationInput<"delete">;
-  /**
-   * Delete only while the node is still at this path of its area; a node the writer has
-   * renamed or moved since survives, and the delete answers `stale_target`.
-   */
-  onlyAt?: string;
   /** Runs inside the delete's own transaction once the removal is written (see the move's). */
   inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
@@ -589,17 +582,6 @@ export interface ContextPort {
     uri: string,
     options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
-
-  /**
-   * Reverse a create this port made, for a rolled-back reply or a failed create write
-   * (contract §12.5): a live create is deleted; a branch's create ends the branch's use of
-   * the document unless the document's draft already holds committed text. A draft-mode
-   * port's `delete` never reverses a branch's create.
-   */
-  retractCreate(
-    uri: string,
-    options: { documentId: string; cause: RetractionCause },
-  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

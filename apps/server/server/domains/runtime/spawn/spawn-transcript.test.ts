@@ -63,6 +63,7 @@ async function setup() {
     turnId: turn.id,
     blockSeqRef: { value: 0 },
     allBlocks: [],
+    store: (persist) => persist(),
   };
   return { repos, child, turn, transcript };
 }

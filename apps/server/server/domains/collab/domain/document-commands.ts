@@ -4,7 +4,7 @@
  * so a committed row always holds the final answer and a resend reads it.
  */
 import { createHash } from "node:crypto";
-import type { DocumentCommandId, ProjectId, UserId } from "@meridian/contracts";
+import type { DocumentCommandId, ProjectId, ThreadId, UserId } from "@meridian/contracts";
 import type {
   DocumentCommandKind,
   DocumentCommandOutcome,
@@ -16,6 +16,8 @@ export type DocumentCommandEnvelope = {
   commandId: DocumentCommandId;
   accountId: UserId;
   projectId: ProjectId;
+  /** Set for a `model_edit`: its chat. */
+  threadId?: ThreadId;
   kind: DocumentCommandKind;
   /** `commandDigest` of the canonical envelope; it covers the branch. */
   digest: string;

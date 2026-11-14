@@ -26,14 +26,15 @@ for an assistant turn before the turn becomes terminal, inside the same thread
 lock and under the caller's session claim (no lease check). Every path that ends
 an assistant turn recovers: the run's close, the orphan repair, and the spawn
 report repair. `createCommandRecovery` (`loop/command-recovery.ts`) takes each
-`tool_use` of the turn with no `tool_result` whose registration has `documentCommand`,
-in call order, resolves its command (`resolve` joins the finalizer's transaction: a connection of
+`tool_use` of the turn whose registration has `documentCommand` and whose result block
+(the id `modelEditIds(key).blockId` derives from its response and call id, never the call id
+alone: adapters number calls per response) is not stored, in call order, resolves its command (`resolve` joins the finalizer's transaction: a connection of
 its own would wait on the thread lock the first holds) and stores the result block under
 `modelEditIds(key).blockId` (the outcome's result, or "did not run" for `never`). Other
 tools' open calls keep the request-time stub.
 
 Every write a running run makes to the transcript (a model response, a tool
-result block) goes through `storeUnderLease` or `ackWithResponse`: thread lock,
+result block, a spawn's invocation card) goes through `storeUnderLease` or `ackWithResponse`: thread lock,
 then a check that the run's own lease row exists. A process that lost its run
 gets `LostRunError`, its write rolls back and the loop exits without closing
 the turn, so nothing it stores can land after recovery read the transcript. Compaction

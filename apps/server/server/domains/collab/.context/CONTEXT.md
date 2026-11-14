@@ -111,7 +111,7 @@ again (draft rooms close by exact draft id; a closed draft stays closed). A
 Restore that commits while that read is in flight can still have its new live
 connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
 reply's closed pin lost its write is one pure rule, `closedPinReason`
-(`domain/closed-pin-reason.ts`), shared by the save fence and a failed peer
+(`domain/closed-pin-reason.ts`), shared by a model edit's check and a failed peer
 identity ensure: a draft closed `document_removed` is the removal's even when its document
 stands again (`removed: null`). The closer is
 built at the composition root and its retirement bound by the collab domain once
@@ -295,7 +295,7 @@ and only another rewrite does. Whether a draft is frozen is derived on every
 read from its branch's origin Work (archived, deleted, or missing), never
 stored. Archive and restore lock no draft row and bump no revision (Work deletion also
 removes its owned documents through the tree removal protocol; a `deleted` removal leaves their drafts active):
-every rewrite and reply save locks the Work through the Works
+every rewrite and model edit locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its
 statement's snapshot, so an `UPDATE` that started before an Archive committed,
@@ -316,7 +316,7 @@ locks the Works a write names, directly or through its branches and drafts,
 `FOR NO KEY UPDATE` in id order, in the caller's transaction, before any branch,
 inverse, document or draft lock, so every write enters Work, branch, document,
 draft, the order the transitions take. A caller hands it its whole write set
-once, through `lockWorks` (opening a branch, Apply's batch plan, a reply save's
+once, through `lockWorks` (opening a branch, Apply's batch plan, a model edit's
 grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
 either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;

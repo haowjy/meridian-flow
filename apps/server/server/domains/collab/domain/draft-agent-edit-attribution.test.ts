@@ -103,7 +103,7 @@ describe("draft concurrent attribution", () => {
       sessionId: "session",
       threadId: "thread-a",
       turnId: "turn-late",
-      responseIdentity: { providerResponseId: "reply-late" },
+      responseIdentity: { modelResponseId: "reply-late" },
       frontiers: {
         recording: async () => frontier,
         planning: async () => frontier,

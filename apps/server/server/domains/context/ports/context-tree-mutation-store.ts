@@ -8,7 +8,6 @@ import type {
   ContextSiblingPosition,
   DeleteContextEntryResult,
   Filetype,
-  RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
@@ -108,7 +107,6 @@ export type ContextTreeDeleteCommand = {
   actorUserId?: string;
   /** The chat whose model deleted it: the removal names "the AI in ‹chat›". */
   actorThreadId?: string;
-  removal?: { reason: "discarded"; cause: RetractionCause };
   root: ContextLocationToken;
   mode: "recursive";
 };

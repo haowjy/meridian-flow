@@ -139,7 +139,7 @@ export function useComposedRuntimes(db: () => Database) {
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
-            responseIdentity: { providerResponseId: responseId },
+            responseIdentity: { modelResponseId: responseId },
             commandOwner: owner as never,
             agentSlug: null,
             // No one answers here: a `work` call the policy asks about gets the refusal.

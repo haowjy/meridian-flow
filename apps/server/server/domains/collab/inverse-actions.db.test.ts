@@ -65,7 +65,7 @@ it.each([
     const current = {
       ...initial,
       turnId: currentTurn,
-      responseIdentity: { providerResponseId: currentResponse },
+      responseIdentity: { modelResponseId: currentResponse },
     };
     await core.read(address, current);
     expect(

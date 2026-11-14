@@ -21,6 +21,6 @@ export interface ModelEvidence {
   latestRoom(rooms: readonly string[], blockIds: readonly string[]): Promise<string | null>;
   /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
-  /** Deletes what these threads were shown, when the threads are deleted. */
+  /** Deletes what these threads were shown and the tool results their model edits stored, when the threads are deleted. */
   forgetThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }

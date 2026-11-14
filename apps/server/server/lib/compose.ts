@@ -177,6 +177,7 @@ import {
   type HandoffBriefs,
 } from "../domains/runtime/handoff/brief-service.js";
 import {
+  type CommandResolver,
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
@@ -209,7 +210,6 @@ import {
   createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
-  type DocumentCommands,
   InvalidAdmissionError,
   type RunClaim,
   type RunStarter,
@@ -857,14 +857,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
-  const documentCommands: DocumentCommands = {
+  const commandResolver: CommandResolver = {
     resolveCommand: (key) => ports.documentSync.modelEdits().resolve(key),
   };
   const recoverCommands = createCommandRecovery({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     toolRegistry,
-    commands: documentCommands,
+    commands: commandResolver,
   });
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
@@ -949,7 +949,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
-  const toolExecutor = createToolExecutor(toolRegistry, documentCommands);
+  const toolExecutor = createToolExecutor(toolRegistry, commandResolver);
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
       {

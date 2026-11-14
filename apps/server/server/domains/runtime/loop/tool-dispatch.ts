@@ -226,6 +226,7 @@ export async function dispatchToolCall(
     turnId: ctx.currentTurn.id,
     blockSeqRef: ctx.blockSeqRef,
     allBlocks: ctx.allBlocks,
+    store: (persist) => deps.delivery.storeUnderLease(ctx.lease, persist),
   };
 
   const spawn =
@@ -358,7 +359,7 @@ export async function dispatchToolCall(
     {
       threadId: ctx.threadId,
       turnId: ctx.currentTurn.id,
-      responseIdentity: { providerResponseId: ctx.responseId },
+      responseIdentity: { modelResponseId: ctx.responseId },
       commandOwner: {
         accountId: ctx.thread.userId as UserId,
         projectId: ctx.thread.projectId as ProjectId,

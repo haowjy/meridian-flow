@@ -243,30 +243,6 @@ export function createDrizzleDraftStore(
     });
   }
 
-  /**
-   * §12.5, O-11: a contribution is any journal row of the draft; then the create stands.
-   */
-  async function retractCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<"stands" | "retracted"> {
-    const tx = currentDrizzleDb(db);
-    const selection = { documentIds: [input.documentId], branchId: input.branchId };
-    await testHook("retract.beforeLocks");
-    const drafts = await lockActiveDrafts(tx, selection);
-    for (const documentDraft of drafts) {
-      const [contribution] = await tx
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .where(eq(draftWriteJournal.draftId, documentDraft.id))
-        .limit(1);
-      if (contribution) return "stands";
-    }
-    await testHook("retract.afterRecheck");
-    await deps.close.closeDrafts(tx, selection, "document_discarded");
-    return "retracted";
-  }
-
   /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
   async function ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;
@@ -598,7 +574,6 @@ export function createDrizzleDraftStore(
     },
 
     ensureCreatedDocumentDraft,
-    retractCreatedDocumentDraft,
   };
 }
 

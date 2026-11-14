@@ -87,7 +87,7 @@ export function responseContext(responseId: string) {
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseIdentity: { providerResponseId: responseId },
+    responseIdentity: { modelResponseId: responseId },
     grant: inProject(
       testFileGrant({
         kind: "draft",

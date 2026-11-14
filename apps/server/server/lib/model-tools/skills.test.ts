@@ -77,7 +77,7 @@ async function criticTools() {
         await executor.executeTool({ id: "call-1", name, arguments: input }, {
           threadId: THREAD_ID,
           turnId: "turn-1",
-          responseIdentity: { providerResponseId: "response-1" },
+          responseIdentity: { modelResponseId: "response-1" },
           commandOwner: { accountId: "user-1", projectId: "project-1" },
         } as never)
       ).content,

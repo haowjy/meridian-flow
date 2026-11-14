@@ -30,14 +30,6 @@ export type ApplicationDraftStore = DraftStore & {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<DraftSnapshot>;
-  /**
-   * Close the branch's draft on a document it created, unless it holds a journal row
-   * (a contribution).
-   */
-  retractCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<"stands" | "retracted">;
   /** The thread's owner's active draft on the document, as metadata. */
   resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
   /**

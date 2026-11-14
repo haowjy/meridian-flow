@@ -605,7 +605,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId },
+        responseIdentity: { modelResponseId: responseId },
       },
     );
   }

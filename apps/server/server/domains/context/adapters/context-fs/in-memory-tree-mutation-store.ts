@@ -530,9 +530,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           return Err({ code: "stale_source" });
         }
         doc.deletedAt = now;
-        doc.deletionReason = command.removal?.reason ?? "deleted";
+        doc.deletionReason = "deleted";
         doc.deletedByUserId = command.actorUserId ?? null;
-        doc.deletionCause = command.removal?.cause ?? null;
         doc.updatedAt = now;
         this.markMutatorWrite();
         this.backing.availabilityGeneration.value += 1n;
@@ -564,9 +563,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           subtree.has(document.folderId)
         ) {
           document.deletedAt = now;
-          document.deletionReason = command.removal?.reason ?? "deleted";
+          document.deletionReason = "deleted";
           document.deletedByUserId = command.actorUserId ?? null;
-          document.deletionCause = command.removal?.cause ?? null;
           document.updatedAt = now;
         }
       }

@@ -171,10 +171,7 @@ instant create is never refused for a name: a branch's hidden text document at
 that path is unhidden and keeps its id, the device's minted id forwards to it
 (`document_forwards`, answered `joined`, and link resolution follows forwards for
 ids no document holds), and a visible occupant sends the create to the first
-free name. `retractCreate` reverses a create for a rolled-back reply or failed
-write: a draft placement ends the branch's use unless another thread's committed
-text makes the document stand, and only that Work's document draft, peers, and
-rooms retire.
+free name. A create is never reversed by retraction: a model's edit commits at its call.
 
 A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
 `create-folder` route): a replay finds the folder under its ID and answers
@@ -216,8 +213,7 @@ are facts about the target (the occupant, `onlyAt`). A row that left the locked 
 `io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
 from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
 occupied destination leaf sends the arrival to the next free name and
-returns that actual path. A delete with `onlyAt` (a model create's retraction) acts
-only on a row still at that path and otherwise answers `stale_target`. An absent,
+returns that actual path. An absent,
 terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
