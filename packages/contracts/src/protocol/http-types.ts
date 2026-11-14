@@ -65,14 +65,6 @@ export type ThreadLiveState = {
   runState: RunState;
 };
 
-export const projectBootstrapResponseSchema = z.object({
-  projectId: z.string().min(1),
-  documentId: z.string().min(1),
-  manuscriptSourceId: z.string().min(1),
-  uri: z.string().min(1),
-});
-export type ProjectBootstrapResponse = z.infer<typeof projectBootstrapResponseSchema>;
-
 export type CreateProjectRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
