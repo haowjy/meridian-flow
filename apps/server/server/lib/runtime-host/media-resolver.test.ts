@@ -6,12 +6,15 @@
  * - A link is asked of the object store; bytes are read only when the store has none
  */
 import { describe, expect, it } from "vitest";
-import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
-import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
-import { createNoopEventSink } from "../../observability/index.js";
-import type { ObjectStorePort } from "../../storage/index.js";
-import { MediaResolutionError } from "../ports/media-resolver.js";
-import { createContextMediaResolver } from "./context-media-resolver.js";
+import type {
+  ProjectContextAvailabilityPort,
+  UploadIdentityPort,
+} from "../../domains/context/index.js";
+import { createAllowAllFileAccess, type FileAccess } from "../../domains/file-policy/index.js";
+import { createNoopEventSink } from "../../domains/observability/index.js";
+import { MediaResolutionError } from "../../domains/runtime/index.js";
+import type { ObjectStorePort } from "../../domains/storage/index.js";
+import { createContextMediaResolver } from "./media-resolver.js";
 
 const context = { threadId: "thread-1", projectId: "project-1", actorUserId: "user-1" };
 const reference = { documentId: "document-1", uri: "uploads://@c1/image.png" };

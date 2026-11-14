@@ -277,6 +277,21 @@ function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection
   return null;
 }
 
+/**
+ * Ctrl/Cmd+Home and End: the document's first or last caret. When a table or other block
+ * object ends the document, that is the gap cursor beside it, the one ArrowDown out of its
+ * last cell gives; the browser's own key would put the caret inside the cell. Declines
+ * where a text caret is the document's end, which the browser's key reaches already.
+ */
+export function documentEdgeTransaction(
+  state: EditorState,
+  edge: "start" | "end",
+): Transaction | null {
+  const $edge = state.doc.resolve(edge === "start" ? 0 : state.doc.content.size);
+  if (!gapCursorFits($edge)) return null;
+  return state.tr.setSelection(new GapCursor($edge)).scrollIntoView();
+}
+
 /** prosemirror-gapcursor ships `GapCursor.valid` but does not declare it, so the reach into an undeclared static lives here and nowhere else. */
 export function gapCursorFits($pos: ResolvedPos): boolean {
   const gapCursor = GapCursor as unknown as { valid?: (at: ResolvedPos) => boolean };
