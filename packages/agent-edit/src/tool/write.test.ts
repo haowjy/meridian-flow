@@ -132,7 +132,7 @@ describe("write tool dispatch", () => {
     );
 
     expectOutcome(next, "success");
-    expect(outcomeText(next)).not.toContain("concurrent edits:");
+    expect(outcomeText(next)).not.toContain("after you last read it");
   });
 
   it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
