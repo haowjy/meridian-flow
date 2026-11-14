@@ -29,9 +29,13 @@ which deletes it.
 A Work draft's insert also stores the live room, the live and draft seed snapshots,
 the paired live journal position and state, and the live-origin map for copied
 top-level blocks. Those cuts project a first draft write's live observation into
-revision 0 and attribute any gap between that observation and the seed; they don't
-gate the write. A row without the state-and-position pair reports the seed as
-unattributed. The map never changes, and a race loser reads the winner's record.
+revision 0; they don't gate the write. A draft made by a model's write seeds from the
+live cut that model last saw (`docAtFrontier`), not live's head: the write plans on a
+seed that lacks the writer's typing since, and the pull then merges that typing into
+the draft instead of the write overwriting it. When the cut's history is gone the seed
+is live's head, the cut is a gap, and the seed bridge attributes it; a row without the
+state-and-position pair reports the seed as unattributed. The map never changes, and a
+race loser reads the winner's record.
 
 Typing, rebase and Apply don't encode an unused after-cut under the hold. The
 replica's cached encoding supplies a no-tail append's before-cut, and the finalized

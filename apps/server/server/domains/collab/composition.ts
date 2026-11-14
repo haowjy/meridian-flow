@@ -358,8 +358,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     enterDraftSeam: async () => {
       await lockSeamWorks(deps.db, []);
     },
-    ensureWorkDraft: ({ documentId, branchId }) =>
-      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId }),
+    ensureWorkDraft: ({ documentId, branchId, seen }) =>
+      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId, seen }),
     lockDraft: async (draftId) => {
       await currentDrizzleDb(deps.db)
         .select({ id: documentDrafts.id })
