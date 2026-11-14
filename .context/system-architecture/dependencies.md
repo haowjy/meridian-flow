@@ -10,7 +10,7 @@ ordinary imports between apps, packages and features, is not listed anywhere.
 
 - **Apps import packages; no package imports an app.** Nothing breaks it today.
 - **A package imports only packages lower in the list on the [code](code.md) page.** `gateway`, `prosemirror-schema`, `yjs-inspect` and `design-tokens` import no workspace code.
-- **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Six domains (`runtime`, `threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
+- **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Five domains (`threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
 - **Domains do not import `lib/`.** `lib/` is the composition root: it may import every domain and wire them together.
 - **The app's layers (`routes`, features, `client`, `components`, `core`, `lib`) have no written rule**, and imports run both ways between them, so a feature importing another feature is not a break.
 - **The agent runtime (`domains/runtime`) does not import document, billing or Work code.** Its ties are listed [below](#the-runtimes-ties-to-document-billing-and-work-code).
@@ -30,7 +30,6 @@ with no row and on a row with no break.
 | `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-apply-tree.ts` |
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-drafts.ts` |
 | `collab` | `projects` | domains are acyclic | `apps/server/server/domains/collab/adapters/lifecycle-refusal.ts` |
-| `collab` | `runtime` | domains are acyclic | `apps/server/server/domains/collab/hocuspocus-persistence.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
 | `context` | `projects` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
@@ -38,10 +37,6 @@ with no row and on a row with no break.
 | `file-policy` | `collab` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
 | `file-policy` | `context` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
 | `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/index.ts` |
-| `runtime` | `context` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
-| `runtime` | `file-policy` | domains are acyclic | `apps/server/server/domains/runtime/adapters/context-media-resolver.ts` |
-| `runtime` | `projects` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
-| `runtime` | `threads` | domains are acyclic | `apps/server/server/domains/runtime/adapters/drizzle/permission-grants.ts` |
 | `threads` | `context` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/repositories.ts` |
 | `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/thread-works-repository.ts` |
 
@@ -67,9 +62,6 @@ imports one of them fails the check.
 
 | file | imports |
 |---|---|
-| `adapters/context-media-resolver.ts` | `context` |
-| `adapters/context-media-resolver.ts` | `file-policy` |
-| `adapters/context-media-resolver.ts` | `storage` |
 | `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |
 | `admission/user-turn-admission.ts` | `@meridian/markup` |

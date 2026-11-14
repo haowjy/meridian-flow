@@ -105,6 +105,18 @@ export function meridianErrorFromGateway(
  */
 export const TOOL_EXCEPTION_CODE = "tool_exception";
 
+/** The code of a call the run ended before it started or settled: nothing it asked for changed. */
+export const TOOL_NOT_RUN_CODE = "tool_not_run";
+
+/** Whether a tool result says its call never ran. */
+export function isToolNotRunResult(result: unknown): boolean {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { code?: unknown }).code === TOOL_NOT_RUN_CODE
+  );
+}
+
 export function meridianErrorFromTool(
   message: string,
   details?: JsonValue,

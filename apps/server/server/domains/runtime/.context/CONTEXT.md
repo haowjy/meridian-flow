@@ -18,6 +18,7 @@ use, persists every side effect through the threads repositories, and emits
 | [controls.md](controls.md) | Queue order, the yield, applying a write-mode switch. |
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port and paid-row settlement. |
+| [host-effects.md](host-effects.md) | The outbox for writes a runtime commit owes the host. |
 | [recovery.md](recovery.md) | Placeholder repair, stale-lease settlement, process recovery lanes. |
 | [gateway context](../gateway/.context/CONTEXT.md) | The provider-neutral gateway. |
 

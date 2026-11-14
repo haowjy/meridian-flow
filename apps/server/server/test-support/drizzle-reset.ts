@@ -5,7 +5,7 @@ import { promptBakes, threads } from "@meridian/database/schema";
 import { sql, TransactionRollbackError } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { afterAll, aroundEach, beforeAll } from "vitest";
-import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import { processDetachedWork } from "../shared/detached-work.js";
 
 type CatalogTableRow = {
   table_oid: string;

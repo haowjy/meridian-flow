@@ -17,6 +17,7 @@ export type {
 export {
   errorInterrupt,
   httpErrorInterruptBody,
+  isToolNotRunResult,
   meridianError,
   meridianErrorFromGateway,
   meridianErrorFromHttpStatus,
@@ -26,6 +27,7 @@ export {
   meridianErrorFromWsBoundary,
   sharedErrorInterrupt,
   TOOL_EXCEPTION_CODE,
+  TOOL_NOT_RUN_CODE,
   wsErrorInterruptPayload,
 } from "../errors/index.js";
 export { blockContentRecord } from "../threads/block-content-record.js";
