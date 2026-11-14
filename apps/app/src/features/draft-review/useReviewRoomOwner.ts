@@ -21,12 +21,7 @@ export function useReviewRoomOwner(input: {
     if (!review || (!command.hidden && !command.closed)) return;
     dispatch({ type: "exitInline" });
     if (!command.hidden && command.closed && !command.removed)
-      dispatch({
-        type: "toast",
-        code: "draft-closed",
-        tone: "info",
-        unsentText: command.unsentText,
-      });
+      dispatch({ type: "toast", code: "draft-closed", tone: "info" });
   }, [command.hidden, command.closed, review?.itemKey, dispatch]);
   const read = useRoomBindings(
     review

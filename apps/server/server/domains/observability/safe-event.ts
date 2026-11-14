@@ -104,6 +104,8 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "too_large",
     "worker_unavailable",
   ]),
+  rescue: new Set(["schema-removed-text", "unsent-typing"]),
+  rescueCause: new Set(["access-changed", "closed", "removed"]),
   rewrite: new Set(["checkpoint", "compact", "pull", "reset"]),
   ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set([

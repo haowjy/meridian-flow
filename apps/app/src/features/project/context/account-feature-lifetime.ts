@@ -14,6 +14,7 @@ import { AccountResourceReplica } from "@/core/resources/account-resource-replic
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
+import { notifyUnsentTyping } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
@@ -149,6 +150,7 @@ export class AccountFeatureLifetime {
       },
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
+    this.registry.observeUnsentTyping(notifyUnsentTyping);
     dropRetiredTabSession(accountId);
     this.resources =
       typeof window === "undefined"

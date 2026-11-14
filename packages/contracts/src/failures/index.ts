@@ -148,8 +148,29 @@ export type ClientFailureRecord = FailureOccurrence & {
   submissionId?: string;
 } & ({ phase: "recorded" } | { phase: "ended"; end: FailureEnd });
 
+/**
+ * Text handed back to its typist after something else made it unreachable: the words a schema
+ * repair removed, or typing a room ended with before the server acknowledged it. Counts only; the
+ * text stays in the typist's browser.
+ */
+export type ClientRescueRecord = {
+  occurrenceId: string;
+  phase: "rescued";
+  rescue:
+    | { kind: "schema-removed-text"; chars: number; passages: number }
+    | {
+        kind: "unsent-typing";
+        cause: "closed" | "removed" | "access-changed";
+        chars: number;
+        passages: number;
+      };
+};
+
+/** What the client diagnostics channel carries: failure transitions and rescues. */
+export type ClientDiagnosticRecord = ClientFailureRecord | ClientRescueRecord;
+
 export interface FailureLog {
-  record(record: ClientFailureRecord): void;
+  record(record: ClientDiagnosticRecord): void;
 }
 export const noFailureLog: FailureLog = { record() {} };
 export {

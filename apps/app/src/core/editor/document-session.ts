@@ -62,6 +62,7 @@ import {
   type LocalPresence,
   type LocalPresenceFields,
 } from "./local-presence";
+import { unsentText } from "./rescued-text";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   attemptClientSchemaReload,
@@ -499,6 +500,12 @@ export class DocumentSession {
 
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
+  }
+
+  /** The words typed here that the server has not acknowledged; null when there are none. */
+  unsentText(): string | null {
+    const updates = this.unacknowledgedUpdates();
+    return updates ? unsentText(this.document, updates) : null;
   }
 
   /**

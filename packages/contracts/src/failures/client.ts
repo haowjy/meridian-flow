@@ -1,7 +1,7 @@
 /** Bounded metadata accepted by client failure diagnostics, never arbitrary error text. */
 import { z } from "zod";
 import type { EventRecord } from "../observability/index.js";
-import type { ClientFailureRecord } from "./index.js";
+import type { ClientDiagnosticRecord, ClientFailureRecord } from "./index.js";
 
 const id = z
   .string()
@@ -42,13 +42,32 @@ const record = z
       .strict(),
   })
   .strict();
+const count = z.number().int().min(0).max(10_000_000);
+const rescue = z
+  .object({
+    occurrenceId: id,
+    phase: z.literal("rescued"),
+    rescue: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("schema-removed-text"), chars: count, passages: count }).strict(),
+      z
+        .object({
+          kind: z.literal("unsent-typing"),
+          cause: z.enum(["closed", "removed", "access-changed"]),
+          chars: count,
+          passages: count,
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
 export const clientFailureRecordSchema = z.discriminatedUnion("phase", [
   record.extend({ phase: z.literal("recorded") }),
   record.extend({
     phase: z.literal("ended"),
     end: z.enum(["resolved", "retried", "moved_on", "forgotten", "dismissed", "moot"]),
   }),
-]) satisfies z.ZodType<ClientFailureRecord>;
+  rescue,
+]) satisfies z.ZodType<ClientDiagnosticRecord>;
 export const clientFailureBatchSchema = z
   .object({
     accountId: z.uuid(),
@@ -56,7 +75,25 @@ export const clientFailureBatchSchema = z
   })
   .strict();
 
-export function clientFailureEvent(record: ClientFailureRecord): EventRecord {
+export function clientFailureEvent(record: ClientDiagnosticRecord): EventRecord {
+  if (record.phase === "rescued")
+    return {
+      timestamp: new Date().toISOString(),
+      level: "info",
+      source: "client",
+      name: "rescue.handed_back",
+      payload: {
+        occurrenceId: record.occurrenceId,
+        rescue: record.rescue.kind,
+        ...(record.rescue.kind === "unsent-typing" ? { rescueCause: record.rescue.cause } : {}),
+        chars: record.rescue.chars,
+        passages: record.rescue.passages,
+      },
+    };
+  return failureEvent(record);
+}
+
+function failureEvent(record: ClientFailureRecord): EventRecord {
   return {
     timestamp: new Date().toISOString(),
     level: record.failure.source === "bug" ? "error" : "warn",
