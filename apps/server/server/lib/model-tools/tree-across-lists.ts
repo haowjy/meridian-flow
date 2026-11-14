@@ -10,6 +10,10 @@ import type { ThreadId, TurnId } from "@meridian/contracts";
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
+import type {
+  ContextMoveAcrossListsChange,
+  ContextPort,
+} from "../../domains/context/ports/context-port.js";
 import { reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -31,6 +35,42 @@ const lastSegment = (path: string) => path.split("/").filter(Boolean).at(-1) ?? 
 const folderPart = (path: string) => path.slice(0, path.lastIndexOf("/") + 1);
 
 type Moved = { node: string; uri: string };
+
+type AcrossReceipt = TreeReceipt & { across: { from: string; to: string } };
+
+/**
+ * A move between lists taken back, or done again, is the move the other way: the node goes back
+ * under the folder and name its receipt recorded, found by id. The model's Undo and a card's
+ * Undo both take this move, through `port.moveAcrossLists`.
+ */
+function moveBackOf(receipt: AcrossReceipt) {
+  const here = areaOfPath(receipt.across.to) as NonNullable<ReturnType<typeof areaOfPath>>;
+  const back = areaOfPath(receipt.across.from) as NonNullable<ReturnType<typeof areaOfPath>>;
+  return {
+    node: receipt.subject,
+    fromUri: receipt.across.to,
+    fromArea: here.area,
+    folderUri: `${back.area}${folderPart(back.rest)}`,
+    name: lastSegment(back.rest),
+    shownAt: receipt.across.to,
+    backArea: back.area,
+  };
+}
+
+/** A card's Undo or Redo of a move between lists: the receipt's move back, by the context port. */
+export function moveBackAcrossLists(
+  port: Pick<ContextPort, "moveAcrossLists">,
+  receipt: AcrossReceipt,
+  origin: ContextMoveAcrossListsChange["origin"],
+) {
+  const move = moveBackOf(receipt);
+  return port.moveAcrossLists({ kind: "file", nodeId: move.node }, move.fromArea, {
+    folderUri: move.folderUri,
+    name: move.name,
+    onlyAt: move.fromUri.slice(move.fromArea.length),
+    origin,
+  });
+}
 
 /** One document across, with the receipt that Undo, Redo and `revert` name. */
 async function moveOne(
@@ -200,17 +240,11 @@ export async function reverseAcrossLists(
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: "undo" | "redo" | "revert",
-  receipt: TreeReceipt & { across: { from: string; to: string } },
+  receipt: AcrossReceipt,
 ) {
-  const here = areaOfPath(receipt.across.to) as NonNullable<ReturnType<typeof areaOfPath>>;
-  const back = areaOfPath(receipt.across.from) as NonNullable<ReturnType<typeof areaOfPath>>;
+  const { backArea, ...move } = moveBackOf(receipt);
   const result = await moveOne(deps, call, ctx, grants, {
-    node: receipt.subject,
-    fromUri: receipt.across.to,
-    fromArea: here.area,
-    folderUri: `${back.area}${folderPart(back.rest)}`,
-    name: lastSegment(back.rest),
-    shownAt: receipt.across.to,
+    ...move,
     reverses: { kind: command === "redo" ? "redo" : "undo", receipt: receipt.id },
   });
   if (result.refused)
@@ -225,7 +259,7 @@ export async function reverseAcrossLists(
         },
       }),
     };
-  const names = await printedNames(call, back.area, [result.moved.node]);
+  const names = await printedNames(call, backArea, [result.moved.node]);
   return {
     output: modelResult({
       command,

@@ -10,19 +10,11 @@ import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
-import {
-  isSourceRoot,
-  LIVE,
-  moveBetweenLists,
-  recordsOf,
-  sourceRoot,
-  undoChange,
-  type View,
-} from "@meridian/project-tree";
+import { LIVE, undoChange, type View } from "@meridian/project-tree";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import type { AgentTreeHistory, TreeReceipt } from "../contracts.js";
+import type { AgentTreeHistory, MoveBackAcrossLists, TreeReceipt } from "../contracts.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
@@ -120,7 +112,11 @@ export function createTurnTreeInverse(deps: {
   async function run(
     steps: readonly TreeReceipt[],
     direction: "undo" | "redo",
-    input: { threadId: ThreadId; userId: UserId | undefined },
+    input: {
+      threadId: ThreadId;
+      userId: UserId | undefined;
+      moveBackAcrossLists?: MoveBackAcrossLists;
+    },
   ): Promise<{ reversed: number; skips: TurnInverseSkip[] }> {
     const actor = input.userId ? `user:${input.userId}` : "system";
     const skips: TurnInverseSkip[] = [];
@@ -139,10 +135,10 @@ export function createTurnTreeInverse(deps: {
         continue;
       }
       if (receipt.across) {
-        const other = await otherList(input.threadId, list);
-        const answer = other ? await moveBack(receipt, list, other, actor) : null;
-        if (answer === null) skips.push(skip("refused"));
-        else if (answer === "superseded") skips.push(skip("superseded"));
+        const answer = input.moveBackAcrossLists
+          ? await input.moveBackAcrossLists(receipt)
+          : ({ ok: false, cause: "refused" } as const);
+        if (!answer.ok) skips.push(skip(answer.cause));
         else {
           reversed++;
           await deps.history().recordAgentTreeChange({
@@ -154,7 +150,10 @@ export function createTurnTreeInverse(deps: {
                 afterAt: receipt.across.from,
               },
             ],
-            records: answer,
+            records: [
+              { record: answer.records.left, node: receipt.subject },
+              { record: answer.records.entered, node: receipt.subject },
+            ],
             op: receipt.op,
             acrossLists: true,
             threadId: input.threadId,
@@ -202,80 +201,6 @@ export function createTurnTreeInverse(deps: {
       });
     }
     return { reversed, skips };
-  }
-
-  /**
-   * A move between lists taken back (or done again) by the same move the other way: the node
-   * returns under the folder the receipt's own move left, or the top of its source when that
-   * folder is gone. Nothing is made when a later change moved or renamed it since.
-   */
-  async function moveBack(
-    receipt: TreeReceipt,
-    here: TreeList,
-    there: TreeList,
-    actor: string,
-  ): Promise<{ record: string; node: string }[] | "superseded"> {
-    const [left, entered] = receipt.records;
-    if (!left || !entered) return "superseded";
-    const { result } = await deps.treeLists.submit({
-      lists: [here, there],
-      make: ([out, into]) => {
-        const node = receipt.subject;
-        const standing = out.writer.view(LIVE);
-        const setters = standing.setters.get(node);
-        const present = standing.nodes.get(node);
-        // Creates set no place or name: the node is as the move left it while nothing later did.
-        const order = recordsOf(out.writer.doc)
-          .toArray()
-          .map((record) => record.id);
-        const arrivedAt = order.indexOf(entered.record);
-        const touched = [setters?.place, setters?.label].some(
-          (setter) => setter !== undefined && order.indexOf(setter.id) > arrivedAt,
-        );
-        if (!present || present.trashed || arrivedAt < 0 || touched) return "superseded" as const;
-        const moved = recordsOf(into.writer.doc)
-          .toArray()
-          .find((record) => record.id === left.record);
-        if (moved?.type !== "move") return "superseded" as const;
-        // The node left `into` under the name and type that list's records last gave it.
-        let name: string | undefined;
-        let source: string | undefined;
-        let filetype: string | undefined;
-        for (const record of recordsOf(into.writer.doc).toArray()) {
-          if (record.id === moved.id) break;
-          if (record.node !== node) continue;
-          if (record.type === "create") source = record.source;
-          if (record.type === "create" || record.type === "rename") {
-            name = record.name;
-            filetype = record.filetype ?? filetype;
-          } else if (record.type === "move" && record.name !== undefined) name = record.name;
-        }
-        const folder = into.writer.view(LIVE).nodes.get(moved.from.parent);
-        const parent =
-          isSourceRoot(moved.from.parent) || (folder && folder.kind === "folder" && !folder.trashed)
-            ? moved.from.parent
-            : source
-              ? sourceRoot(source)
-              : null;
-        if (parent === null) return "superseded" as const;
-        const back = moveBetweenLists(
-          out,
-          {
-            ...into,
-            parent,
-            ...(name !== undefined ? { name } : {}),
-            ...(filetype ? { filetype } : {}),
-          },
-          actor,
-          node,
-        );
-        return [
-          { record: back.left.id, node },
-          { record: back.entered.id, node },
-        ];
-      },
-    });
-    return result;
   }
 
   return { plan, run };

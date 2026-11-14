@@ -349,8 +349,8 @@ export function appliedCreates(writer: TreeWriter, applied: string): string[] {
  * after the Apply (on the server: the journal's head). A record that lands earlier in the list
  * but was admitted later moves the state vector too, so it counts. Text is not in the list:
  * `writtenSince` holds documents the Apply created that have text written since. Its live copies
- * leave the replay and everything its command settled, the superseded records too, is pending
- * again, unless one of them no longer fits.
+ * leave the replay, with the restores it made first, and everything its command settled, the
+ * superseded records too, is pending again, unless one of them no longer fits.
  */
 export function undoApply(
   writer: TreeWriter,
@@ -359,6 +359,8 @@ export function undoApply(
   by: Actor,
   command: string,
   writtenSince: ReadonlySet<string> = new Set(),
+  /** The live restore records the Apply appended before its copies: they leave live too. */
+  restoredByApply: readonly string[] = [],
 ): "undone" | "gone" | "superseded" {
   assertNewCommand(writer.doc, command);
   const now = Y.encodeStateVector(writer.doc);
@@ -366,7 +368,7 @@ export function undoApply(
   const { settled, copies } = appliedBy(writer, applied);
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
   const restored = new Set(settled.map(([id]) => id));
-  const undone = copies.map((copy) => copy.id);
+  const undone = [...copies.map((copy) => copy.id), ...restoredByApply];
   if (!stillFit(writer, restored, undone)) return "superseded";
   writer.transact(() => {
     writer.settle(by, undone, "undone", { command });

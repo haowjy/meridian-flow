@@ -291,14 +291,19 @@ function createInMemoryBranchStub(): CollabBranches {
   });
   return {
     draftReview: {
-      async applyClick({ request }) {
-        return { status: "closed", commandId: request.commandId };
-      },
-      async applyTree({ request }) {
+      async apply({ request }) {
         return { status: "closed", commandId: request.commandId };
       },
       async unapplyClick({ request }) {
         return { status: "closed", commandId: request.commandId };
+      },
+      commandDocuments: {
+        async ofApply() {
+          return [];
+        },
+        async ofDiscard() {
+          return [];
+        },
       },
       async undoDiscard({ request }) {
         return { status: "refused", commandId: request.commandId, reason: "not_found" };
@@ -351,6 +356,9 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
       }));
     },
     // The in-memory host has no tree history.
+    async listFolderTargetsForTurn() {
+      return [];
+    },
     async listTreeEntriesForTurn() {
       return [];
     },

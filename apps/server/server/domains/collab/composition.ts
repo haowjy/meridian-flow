@@ -59,6 +59,7 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
+import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -484,7 +485,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
   const applyCommands = createApplyClickService({
-    identity,
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
     store: createDrizzleApplyClick(deps.db, {
@@ -520,11 +520,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
+      coordinator: draftCoordinator,
     }),
   });
   const branches = createWorkBranchReviewService({
-    applyClick: applyCommands.apply,
-    applyTree: applyCommands.applyTree,
+    commandDocuments: createDrizzleCommandDocuments(deps.db, { treeLists: deps.treeLists }),
+    apply: applyCommands.apply,
     unapplyClick: applyCommands.unapply,
     undoDiscard,
     branches: workBranches,

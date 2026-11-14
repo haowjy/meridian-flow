@@ -397,8 +397,34 @@ export const applyCommandTrees = pgTable(
     createdHeads: jsonb("created_heads")
       .$type<Record<string, { live: number; draft: number }>>()
       .notNull(),
+    /** The live restore records the Apply appended before its copies, which Un-Apply takes back. */
+    restored: jsonb("restored").$type<string[]>().notNull(),
+    /** The nodes whose live copies or restores this Apply made in this list: what Un-Apply writes. */
+    nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
+);
+
+/**
+ * The text drafts a Discard command closed: what its Undo copies back onto the Work's branch,
+ * once (`restoredBy`). The drafts keep their bytes after closing, until their document's content
+ * is purged (which deletes them and this row with them).
+ */
+export const discardCommandDrafts = pgTable(
+  "discard_command_drafts",
+  {
+    commandId: uuid("command_id")
+      .$type<DocumentCommandId>()
+      .notNull()
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => documentDrafts.id, { onDelete: "cascade" }),
+    restoredBy: uuid("restored_by")
+      .$type<DocumentCommandId>()
+      .references(() => documentCommands.id, { onDelete: "set null" }),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.draftId] })],
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */
@@ -426,6 +452,6 @@ export const applyCommandEffects = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
-    uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
+    uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
   ],
 );

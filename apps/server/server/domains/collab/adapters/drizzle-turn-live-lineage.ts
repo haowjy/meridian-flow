@@ -12,7 +12,11 @@ import { alias } from "drizzle-orm/pg-core";
 import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TurnLiveLineageDocumentStore } from "../domain/turn-live-lineage.js";
-import { readTurnEditTargets, readTurnTreeTargets } from "./drizzle-turn-edit-targets.js";
+import {
+  readTurnEditTargets,
+  readTurnFolderTargets,
+  readTurnTreeTargets,
+} from "./drizzle-turn-edit-targets.js";
 
 export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineageDocumentStore {
   return {
@@ -28,6 +32,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         await readTurnEditTargets(tx, { threadId, turnId }),
       );
     },
+    listFolderTargetsForTurn: (threadId, turnId) =>
+      readTurnFolderTargets(currentDrizzleDb(db), { threadId, turnId }),
     async listTreeEntriesForTurn(threadId, turnId) {
       const receipts = alias(treeEditReceipts, "reversed");
       const rows = await currentDrizzleDb(db)

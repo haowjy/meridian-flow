@@ -884,7 +884,16 @@ CREATE TABLE "apply_command_trees" (
 	"scope" text NOT NULL,
 	"mark" "bytea" NOT NULL,
 	"created_heads" jsonb NOT NULL,
+	"restored" jsonb NOT NULL,
+	"nodes" jsonb NOT NULL,
 	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
+);
+--> statement-breakpoint
+CREATE TABLE "discard_command_drafts" (
+	"command_id" uuid NOT NULL,
+	"draft_id" text NOT NULL,
+	"restored_by" uuid,
+	CONSTRAINT "discard_command_drafts_command_id_draft_id_pk" PRIMARY KEY("command_id","draft_id")
 );
 --> statement-breakpoint
 CREATE TABLE "document_block_rooms" (
@@ -1141,6 +1150,9 @@ ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_comman
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_draft_id_document_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."document_drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_restored_by_document_commands_id_fk" FOREIGN KEY ("restored_by") REFERENCES "public"."document_commands"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_block_rooms" ADD CONSTRAINT "document_block_rooms_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_blocks" ADD CONSTRAINT "document_blocks_room_id_document_block_rooms_room_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."document_block_rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1272,7 +1284,7 @@ CREATE INDEX "tree_nodes_siblings" ON "tree_nodes" USING btree ("context_source_
 CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","group_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","document_id","group_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_commands_thread" ON "document_commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint

@@ -71,8 +71,9 @@ export async function loadUnapplyHistory(
 }
 
 /**
- * The command's effects, read for the account that sent it on this branch. Null when it has
- * none here, or its text draft closed: nothing to take back.
+ * The command's effects, read for the account that sent it on this branch: the text effects of
+ * each document it wrote, and its tree half. Null when it has none here, or a text draft it
+ * wrote in closed: nothing to take back.
  */
 export async function loadPreparedUnapply(
   db: Database,
@@ -86,6 +87,7 @@ export async function loadPreparedUnapply(
       scope: applyCommandTrees.scope,
       mark: applyCommandTrees.mark,
       createdHeads: applyCommandTrees.createdHeads,
+      restored: applyCommandTrees.restored,
     })
     .from(applyCommandTrees)
     .innerJoin(documentCommands, eq(documentCommands.id, applyCommandTrees.commandId))
@@ -120,51 +122,52 @@ export async function loadPreparedUnapply(
         eq(documentCommands.kind, "apply"),
       ),
     )
-    .orderBy(applyCommandEffects.ordinal);
-  const first = rows[0];
-  if (!first) return trees.length ? { branchId: command.branchId, text: null, trees } : null;
-  if (rows.some((row) => row.draftId !== first.draftId)) return null;
-  try {
-    const base = await coordinator.loadBase(first.draftId);
-    if (
-      base.snapshot.status === "closed" ||
-      base.snapshot.documentId !== first.documentId ||
-      base.snapshot.branchId !== first.branchId
-    )
-      return null;
-    const effects: NonNullable<PreparedUnapply["text"]>["effects"] = [];
-    let preceding = first.baseStart?.map((node) => schema.nodeFromJSON(node));
-    if (!preceding) return null;
-    for (const row of rows) {
-      const following = applySpanPatches(
-        preceding,
-        (row.baseDelta as import("@meridian/agent-edit/diff").SpanPatch[]).map((patch) => ({
-          ...patch,
-          blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
-        })),
-        "base",
-      );
-      if (row.unappliedBy === null)
-        effects.push({
-          ordinal: row.ordinal,
-          groupId: row.groupId,
-          liveUpdateSeq: row.liveUpdateSeq,
-          baseBefore: preceding.map((node) => node.toJSON()),
-          baseAfter: following.map((node) => node.toJSON()),
-        });
-      preceding = following;
+    .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);
+  if (!rows.length) return trees.length ? { branchId: command.branchId, texts: [], trees } : null;
+  const texts: PreparedUnapply["texts"] = [];
+  for (const documentId of new Set(rows.map((row) => row.documentId))) {
+    const own = rows.filter((row) => row.documentId === documentId);
+    const [first] = own;
+    if (!first || own.some((row) => row.draftId !== first.draftId)) return null;
+    try {
+      const base = await coordinator.loadBase(first.draftId);
+      if (
+        base.snapshot.status === "closed" ||
+        base.snapshot.documentId !== first.documentId ||
+        base.snapshot.branchId !== first.branchId
+      )
+        return null;
+      const effects: PreparedUnapply["texts"][number]["effects"] = [];
+      let preceding = first.baseStart?.map((node) => schema.nodeFromJSON(node));
+      if (!preceding) return null;
+      for (const row of own) {
+        const following = applySpanPatches(
+          preceding,
+          (row.baseDelta as import("@meridian/agent-edit/diff").SpanPatch[]).map((patch) => ({
+            ...patch,
+            blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
+          })),
+          "base",
+        );
+        if (row.unappliedBy === null)
+          effects.push({
+            ordinal: row.ordinal,
+            groupId: row.groupId,
+            liveUpdateSeq: row.liveUpdateSeq,
+            baseBefore: preceding.map((node) => node.toJSON()),
+            baseAfter: following.map((node) => node.toJSON()),
+          });
+        preceding = following;
+      }
+      texts.push({ base, documentId: first.documentId, effects });
+    } catch (cause) {
+      const [draft] = await tx
+        .select({ status: documentDrafts.status })
+        .from(documentDrafts)
+        .where(eq(documentDrafts.id, first.draftId));
+      if (!draft || draft.status === "closed") return null;
+      throw cause;
     }
-    return {
-      branchId: command.branchId,
-      text: { base, documentId: first.documentId, effects },
-      trees,
-    };
-  } catch (cause) {
-    const [draft] = await tx
-      .select({ status: documentDrafts.status })
-      .from(documentDrafts)
-      .where(eq(documentDrafts.id, first.draftId));
-    if (!draft || draft.status === "closed") return null;
-    throw cause;
   }
+  return { branchId: command.branchId, texts, trees };
 }

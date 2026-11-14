@@ -55,6 +55,8 @@ export type TurnInverseQuery = {
   path?: string;
   /** Caller identity for destination admission; the incoming content grant never routes it. */
   principal?: Principal;
+  /** A card's way of taking back a move between lists (`MoveBackAcrossLists`). */
+  moveBackAcrossLists?: import("../contracts.js").MoveBackAcrossLists;
 };
 export type InverseDocument = {
   documentId: DocumentId;

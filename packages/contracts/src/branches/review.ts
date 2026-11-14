@@ -115,10 +115,13 @@ export type ApplyClickObservation =
   | { status: "none"; commandId: DocumentCommandId };
 
 /**
- * Take back one Apply command: the surviving text groups of its document, and everything it
- * settled in the tree, in one command. The tree half is allowed only while nothing else has
- * changed the list since (`gone`), and refuses as `superseded` when a record it would bring
- * back no longer fits; either refuses the whole command.
+ * Take back one Apply command: the surviving text groups of every document it applied, and
+ * everything it settled in the tree (a restore it made included), in one command. The tree half
+ * is allowed only while nothing else has changed the list since (`gone`), and refuses as
+ * `superseded` when a record it would bring back no longer fits; either refuses the whole
+ * command. A text group a later edit overlaps stays applied and is named in `skippedGroupIds`;
+ * when every group stays, the tree half still comes back and the answer is `unapplied` with no
+ * `reversedGroupIds`.
  */
 export type UnapplyClick = {
   commandId: DocumentCommandId;
@@ -137,21 +140,32 @@ export type UnapplyClickAnswer =
   | UnapplyClickResult
   | { status: "conflict"; commandId: DocumentCommandId };
 
+/** The text cut of one document in an Apply: the writer's frozen click on its review room. */
+export type ApplyTextCut = {
+  draftId: string;
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
+  snapshot: string;
+  baseViewDelta: ApplySpanPatch[];
+  groupIds: string[];
+};
+
 /**
- * Apply the tree changes of several nodes, documents or folders, as one command and one Undo
- * step. Each item carries the revision of the branch's row the writer saw (`tree.revision` of
- * the review item); any row that holds another now answers `changed` and nothing applies.
+ * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
+ * cut (the revision of the branch's row the writer saw; any row that holds another now answers
+ * `changed` and nothing applies) and its text cut. An item has at least one of the two. The
+ * per-document click is this command with one item.
  */
-export type ApplyTreeClick = {
+export type ApplyItemsClick = {
   commandId: DocumentCommandId;
-  items: { node: string; revision: string | null }[];
+  items: { node: string; tree?: { revision: string | null }; text?: ApplyTextCut }[];
   /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
   restore?: true;
 };
 
 /**
- * Take back a Discard: fresh pending copies of the records it settled, on the Work's current
- * branch (the Discard's own branch when it is still open, else the Work's new one).
+ * Take back a Discard: fresh pending copies, on the Work's current branch (the Discard's own
+ * branch when it is still open, else the Work's new one), of the tree records it settled and of
+ * the text drafts it closed.
  */
 export type UndoDiscardClick = {
   commandId: DocumentCommandId;
@@ -162,14 +176,25 @@ export type UndoDiscardResult =
       status: "restored";
       commandId: DocumentCommandId;
       branchId: BranchId;
-      /** The pending copies appended, and the records left out because their node is gone. */
+      /** The copies made: tree records and text drafts. */
       restored: number;
+      /** What the Discard held that could not come back: a node or document that is gone, or a document the Work drafted again since. */
       leftOut: number;
     }
   | {
       status: "refused";
       commandId: DocumentCommandId;
-      reason: "superseded" | "not_found" | "work_archived" | "chat_frozen" | "work_deleted";
+      /**
+       * `already_restored`: an Undo of this Discard already made its copies. `nothing_to_restore`:
+       * the Discard settled no record and closed no draft that still exists.
+       */
+      reason:
+        | "already_restored"
+        | "nothing_to_restore"
+        | "not_found"
+        | "work_archived"
+        | "chat_frozen"
+        | "work_deleted";
     };
 export type UndoDiscardAnswer =
   | UndoDiscardResult

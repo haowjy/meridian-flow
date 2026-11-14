@@ -18,11 +18,11 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
-import { branchOwnerSql, ownerOfColumns } from "../../../shared/draft-owner.js";
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
-import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
+import type { TurnEditedDocumentId, TurnTreeFolder } from "../domain/turn-live-lineage.js";
 
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
@@ -94,6 +94,50 @@ export async function readTurnEditTargets(
   return [...targets.values()].sort(
     (a, b) => a.documentId.localeCompare(b.documentId) || a.scope.localeCompare(b.scope),
   );
+}
+
+/**
+ * The folders the turn's tree receipts changed, live or in the branch the change was drafted in,
+ * whether or not the card's Undo has since taken them back: a folder has no document, and the
+ * reply's card lists it all the same. Each is named by the path the receipt recorded.
+ */
+export async function readTurnFolderTargets(
+  db: Pick<Database, "selectDistinct">,
+  query: {
+    threadId: TurnInverseQuery["threadId"];
+    turnId: NonNullable<TurnInverseQuery["turnId"]>;
+  },
+): Promise<TurnTreeFolder[]> {
+  const owner = branchOwnerSql(branches);
+  const rows = await db
+    .selectDistinct({
+      nodeId: treeEditReceiptNodes.nodeId,
+      shownAt: treeEditReceipts.shownAt,
+      workId: owner.workId,
+      rootThreadId: owner.rootThreadId,
+    })
+    .from(treeEditReceipts)
+    .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
+    .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
+    .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
+    .where(
+      and(
+        eq(treeEditReceipts.threadId, query.threadId),
+        eq(treeEditReceipts.turnId, query.turnId),
+        ne(treeEditReceipts.kind, "undo"),
+        isNull(documents.id),
+      ),
+    )
+    .orderBy(treeEditReceiptNodes.nodeId);
+  const folders = new Map<string, TurnTreeFolder>();
+  for (const row of rows)
+    if (row.shownAt)
+      folders.set(`${row.nodeId}:${row.workId}:${row.rootThreadId}`, {
+        nodeId: row.nodeId,
+        ownerKey: ownerKeyOfColumns({ workId: row.workId, rootThreadId: row.rootThreadId }),
+        shownAt: row.shownAt,
+      });
+  return [...folders.values()];
 }
 
 /**

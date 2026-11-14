@@ -31,7 +31,11 @@ import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
 import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
-import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
+import type {
+  LiveLineageDocument,
+  TurnEditedDocument,
+  TurnTreeFolder,
+} from "./domain/turn-live-lineage.js";
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -194,6 +198,18 @@ export type TreeReceiptInput = {
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
 
+/**
+ * The server's move back for a receipt of a move between a project's files and the account's:
+ * the context port's own `moveAcrossLists`, which the caller builds from the thread's context.
+ * `superseded`: the node was moved or changed since, or is gone; else the move was refused.
+ */
+export type MoveBackAcrossLists = (
+  receipt: TreeReceipt,
+) => Promise<
+  | { ok: true; records: { left: string; entered: string } }
+  | { ok: false; cause: "superseded" | "refused" }
+>;
+
 export type TreeReceipt = {
   id: string;
   subject: string;
@@ -274,6 +290,8 @@ export type ReverseThreadContextInput = {
    * stored outcome is the click's answer.
    */
   alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
+  /** How a move between lists is taken back; without it, such a step is refused. */
+  moveBackAcrossLists?: MoveBackAcrossLists;
 };
 
 export type TurnReversalAccess = {
@@ -283,6 +301,7 @@ export type TurnReversalAccess = {
     direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
+    moveBackAcrossLists?: MoveBackAcrossLists;
   }): Promise<ReversalOutcome>;
   reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
@@ -406,16 +425,13 @@ export type ModelDraftRow = {
 };
 
 export type DraftReviewApi = {
-  applyClick(input: {
+  /**
+   * Apply any selection of nodes, documents and folders, tree and text, as one command; a
+   * per-document click is its one-item case.
+   */
+  apply(input: {
     branchId: BranchId;
-    documentId: DocumentId;
-    request: import("@meridian/contracts/branches").ApplyClick;
-    envelope: DocumentCommandEnvelope;
-  }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
-  /** The tree changes of several nodes, documents or folders, as one command. */
-  applyTree(input: {
-    branchId: BranchId;
-    request: import("@meridian/contracts/branches").ApplyTreeClick;
+    request: import("@meridian/contracts/branches").ApplyItemsClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
@@ -424,7 +440,20 @@ export type DraftReviewApi = {
     request: import("@meridian/contracts/branches").UnapplyClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
-  /** Fresh pending copies of what a Discard settled, on the Work's current branch. */
+  /** The documents a command touched, from its own record: what its routes authorize. */
+  commandDocuments: {
+    ofApply(input: {
+      applyCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+    ofDiscard(input: {
+      discardCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+  };
+  /** Fresh pending copies of what a Discard settled and closed, on the Work's current branch. */
   undoDiscard(input: {
     /** The branch the Discard ran on; it may have closed with it. */
     branchId: BranchId;
@@ -498,6 +527,8 @@ export type CollabBranchResolver = {
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  /** The folders the turn changed: its card lists them with the documents. */
+  listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 

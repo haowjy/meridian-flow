@@ -20,6 +20,7 @@ import {
 } from "@meridian/database/schema";
 import { applyDraft, LIVE, pendingRecords, type TreeRecord } from "@meridian/project-tree";
 import { and, eq, inArray, max } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -83,6 +84,13 @@ export function createApplyTreeOperations(input: {
       )
     )
       return { kind: "changed" };
+    // Every item's document is held under the lists' keys, in id order: the text half of the
+    // command writes under them too.
+    const lockItems = async () => {
+      const tx = currentDrizzleDb(input.db);
+      for (const node of items.map((it) => it.node).sort())
+        await lockDocumentMutation(tx, node as DocumentId);
+    };
     // Only the writer's knowledge brings a deleted document back: a delete their view did not
     // show leaves the click undone and the draft pending.
     const restoring = (it: TreeApplyItem) =>
@@ -90,7 +98,10 @@ export function createApplyTreeOperations(input: {
     if (!click.restore && items.some(restoring)) return { kind: "needs_restore" };
     const landing = (it: TreeApplyItem) => it.cut !== null || it.item?.isNew === true;
     const active = items.filter((it) => landing(it) || restoring(it));
-    if (active.length === 0) return { kind: "applied", applied: [], restored: false };
+    if (active.length === 0) {
+      await lockItems();
+      return { kind: "applied", applied: [], restored: false };
+    }
 
     const lists: TreeList[] = [];
     const listOf = new Map<string, TreeList>();
@@ -106,8 +117,7 @@ export function createApplyTreeOperations(input: {
     // closed drafts' resync below are written under both.
     await input.treeLists.lock(lists);
     const tx = currentDrizzleDb(input.db);
-    for (const node of active.map((it) => it.node).sort())
-      await lockDocumentMutation(tx, node as DocumentId);
+    await lockItems();
     // Where each document is in live now, to say where the Apply moved it.
     const documents = active.flatMap((it) => (it.item ? [it.node as DocumentId] : []));
     const before = await input.tree.identityStatus(LIVE_TREE, documents);
@@ -127,30 +137,50 @@ export function createApplyTreeOperations(input: {
           }
         }
         const landed = new Set<string>();
-        const perList: { scope: "project" | "account"; mark: Uint8Array; created: string[] }[] = [];
+        const perList: {
+          scope: "project" | "account";
+          mark: Uint8Array;
+          created: string[];
+          restored: string[];
+          nodes: string[];
+        }[] = [];
         for (const [at, { writer }] of writers.entries()) {
           const list = lists[at] as TreeList;
+          // The restores come first and are the command's: Un-Apply takes them back with the copies.
+          const restored: string[] = [];
+          const restoredNodes: string[] = [];
           for (const it of active) {
             if (listOf.get(it.node) !== list || !restoring(it)) continue;
-            if (writer.view(LIVE).nodes.get(it.node)?.trashed === true)
-              writer.restore(LIVE, actor, it.node);
+            if (writer.view(LIVE).nodes.get(it.node)?.trashed === true) {
+              restored.push(writer.restore(LIVE, actor, it.node).id);
+              restoredNodes.push(it.node);
+            }
           }
           const mine = active.filter((it) => listOf.get(it.node) === list && chosen.has(it.node));
-          if (mine.length === 0) continue;
-          const applied = applyDraft(
-            writer,
-            branchId,
-            actor,
-            click.commandId,
-            mine.flatMap((it) => (chosen.get(it.node) ?? []).map((record) => record.id)),
-          );
+          const applied =
+            mine.length === 0
+              ? null
+              : applyDraft(
+                  writer,
+                  branchId,
+                  actor,
+                  click.commandId,
+                  mine.flatMap((it) => (chosen.get(it.node) ?? []).map((record) => record.id)),
+                );
           for (const it of mine)
-            if (recordsOfItem(applied.copies, it.node as DocumentId).length > 0)
+            if (recordsOfItem(applied?.copies ?? [], it.node as DocumentId).length > 0)
               landed.add(it.node);
+          if (!applied && restored.length === 0) continue;
           perList.push({
             scope: list.kind,
-            mark: applied.mark,
-            created: applied.copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
+            mark: applied?.mark ?? Y.encodeStateVector(writer.doc),
+            created: (applied?.copies ?? []).flatMap((copy) =>
+              copy.type === "create" ? [copy.node] : [],
+            ),
+            restored,
+            nodes: [
+              ...new Set([...restoredNodes, ...(applied?.copies ?? []).map((copy) => copy.node)]),
+            ],
           });
         }
         // A record that cannot land (a move into itself, a change to what live has in Trash)
@@ -172,6 +202,8 @@ export function createApplyTreeOperations(input: {
           createdHeads: Object.fromEntries(
             row.created.map((node) => [node, { live: 0, draft: 0 }]),
           ),
+          restored: row.restored,
+          nodes: row.nodes,
         })),
       );
 

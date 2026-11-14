@@ -18,6 +18,7 @@ import {
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
 import { createDrizzleBranchTreeActors } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-actors.ts";
 import { createDrizzleBranchTreeState } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-state.ts";
+import { createDrizzleCommandDocuments } from "../../../../apps/server/server/domains/collab/adapters/drizzle-command-documents.ts";
 import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
@@ -34,6 +35,7 @@ import {
 } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import {
   handleApplyClickRequest,
+  handleApplyItemsRequest,
   handleUnapplyClickRequest,
 } from "../../../../apps/server/server/lib/branch-review-route.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
@@ -158,7 +160,6 @@ async function fixture(
     }),
   });
   const service = createApplyClickService({
-    identity,
     commands,
     evidence: createDrizzleDraftDispositionStore(h.db),
     store: apiStore,
@@ -174,8 +175,9 @@ async function fixture(
     fileAccess,
     documentSync: {
       draftReview: {
-        applyClick: service.apply,
+        apply: service.apply,
         unapplyClick: service.unapply,
+        commandDocuments: createDrizzleCommandDocuments(h.db, { treeLists }),
         resolveItemByDocument: identity.resolveReviewItemByDocument,
         resolveItemInBranch: identity.resolveReviewItemInBranch,
         branchOwner: (branchId: BranchId) => h.branches.ownerOf(branchId),
@@ -194,6 +196,7 @@ async function fixture(
     ...document,
     draftId: snapshot.draftId,
     room,
+    routeServices,
     async type(texts: string[], agent = false, owner = work) {
       let update: Uint8Array | undefined;
       const capture = (bytes: Uint8Array) => {
@@ -995,6 +998,54 @@ try {
     );
     durable.destroy();
     f.close();
+  });
+  await row("Apply of two documents is one command and one Un-Apply takes back both", async () => {
+    const a = await fixture(["Alpha."], ["Alpha edited."]);
+    const b = await fixture(["Beta."], ["Beta edited."], undefined, a);
+    const clicks = [a, b].map((f) => ({ f, click: f.click() }));
+    const commandId = randomUUID();
+    const scope = { userId: h.ids.user, projectId: h.ids.project, branchId: a.branchId };
+    const answer = await handleApplyItemsRequest(a.routeServices, {
+      ...scope,
+      request: {
+        commandId,
+        items: clicks.map(({ f, click }) => ({
+          node: f.documentId,
+          text: {
+            draftId: f.draftId,
+            snapshot: click.request.snapshot,
+            baseViewDelta: click.request.baseViewDelta,
+            groupIds: click.request.groupIds,
+          },
+        })),
+      },
+    });
+    assert.equal(answer.status, "applied", JSON.stringify(answer));
+    assert.deepEqual(await a.liveText(), ["Alpha edited."]);
+    assert.deepEqual(await b.liveText(), ["Beta edited."]);
+    // One command carries both documents' effects.
+    assert.equal(
+      (
+        await h.raw`select count(distinct document_id)::int as n from apply_command_effects where command_id=${commandId}`
+      )[0].n,
+      2,
+    );
+
+    const undone = await handleUnapplyClickRequest(a.routeServices, {
+      ...scope,
+      request: { commandId: randomUUID(), applyCommandId: commandId },
+    });
+    assert.equal(undone.status, "unapplied", JSON.stringify(undone));
+    if (undone.status === "unapplied") assert.equal(undone.reversedGroupIds.length, 2);
+    assert.deepEqual(await a.liveText(), ["Alpha."]);
+    assert.deepEqual(await b.liveText(), ["Beta."]);
+    for (const f of [a, b]) {
+      const durable = await f.durable();
+      assert.deepEqual(readApplyRecord(durable), []);
+      durable.destroy();
+    }
+    a.close();
+    b.close();
   });
   console.log(JSON.stringify({ summary: "passed", rows: reports.length, measurements: measure }));
 } finally {

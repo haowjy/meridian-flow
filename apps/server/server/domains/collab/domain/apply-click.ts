@@ -13,10 +13,10 @@ import {
   validateSpanPatches,
 } from "@meridian/agent-edit/diff";
 import type {
-  ApplyClick,
   ApplyClickAnswer,
   ApplyClickRefusalReason,
   ApplyClickResult,
+  ApplyTextCut,
   UnapplyClickAnswer,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
@@ -25,19 +25,17 @@ import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
-import type { BranchReviewIdentity } from "./branch-review-identity.js";
 import { DocumentCommandExistsError, type DocumentCommands, replay } from "./document-commands.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
-export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
+export type ApplyCommand = Parameters<CollabBranches["draftReview"]["apply"]>[0];
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
-export type ApplyTreeCommand = Parameters<CollabBranches["draftReview"]["applyTree"]>[0];
-/** What an Un-Apply takes back: the Apply's text effects on its one document, and its tree half. */
+/** What an Un-Apply takes back: the Apply's text effects on each document it wrote, and its tree half. */
 export type PreparedUnapply = {
   branchId: import("@meridian/contracts").BranchId;
-  /** Null for an Apply that wrote no text effect (a tree-only Apply). */
-  text: {
+  /** One per document the Apply wrote text in, by document id; empty for a tree-only Apply. */
+  texts: {
     base: DraftBase;
     documentId: import("@meridian/contracts").DocumentId;
     effects: {
@@ -47,12 +45,14 @@ export type PreparedUnapply = {
       baseBefore: unknown[];
       baseAfter: unknown[];
     }[];
-  } | null;
+  }[];
   /** One per list the Apply settled records in: the list's state vector it left. */
   trees: {
     scope: "project" | "account";
     mark: Uint8Array;
     createdHeads: Record<string, { live: number; draft: number }>;
+    /** The live restore records the Apply made in this list. */
+    restored: string[];
   }[];
 };
 export type CompiledClick = {
@@ -66,20 +66,23 @@ type CompiledApplyGroup = {
   patched: readonly PMNode[];
   record: ApplyEntry;
 };
+/** One item of an Apply with its cuts prepared: the text compiled against the draft's replica. */
+export type PreparedApplyItem = {
+  node: string;
+  tree: TreeCut | null;
+  text: { base: DraftBase; click: CompiledClick } | null;
+};
 export interface ApplyCommandStore {
-  loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
+  loadBase(input: {
+    draftId: string;
+    documentId: string;
+    branchId: import("@meridian/contracts").BranchId;
+  }): Promise<DraftBase | null>;
   /**
-   * Applies exactly the click's cuts in one transaction: the tree cut first (the move, delete
-   * or creation its frozen revision holds), then the text cut at the result.
+   * Applies exactly the command's cuts in one transaction: the tree cuts first (the moves,
+   * deletes and creations their frozen revisions hold), then each item's text cut at the result.
    */
-  apply(
-    command: ApplyClickCommand,
-    prepared:
-      | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
-      | { kind: "tree"; branchId: import("@meridian/contracts").BranchId; tree: TreeCut },
-  ): Promise<ApplyClickAnswer>;
-  /** The tree changes of several nodes as one command (`ApplyTreeClick`). */
-  applyTree(command: ApplyTreeCommand): Promise<ApplyClickAnswer>;
+  apply(command: ApplyCommand, items: readonly PreparedApplyItem[]): Promise<ApplyClickAnswer>;
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
   unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
@@ -102,7 +105,7 @@ function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
 
 export function compileClick(
   doc: Y.Doc,
-  request: ApplyClick,
+  request: ApplyTextCut & { commandId: string },
   provenance: {
     userId: string;
     parts: import("@meridian/agent-edit/diff").Provenance["parts"];
@@ -186,87 +189,60 @@ export function compileClick(
 }
 
 export function createApplyClickService(input: {
-  identity: BranchReviewIdentity;
   commands: DocumentCommands;
   evidence: DraftDispositionStore;
   store: ApplyCommandStore;
 }) {
-  const apply = async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
-    const commandId = command.envelope.commandId;
+  const apply = async (command: ApplyCommand): Promise<ApplyClickAnswer> => {
+    const { commandId } = command.envelope;
     const lookup = async (): Promise<ApplyClickAnswer | null> =>
       replay<ApplyClickResult>(await input.commands.lookup(command.envelope), commandId);
     const first = await lookup();
     if (first) return first;
     await testHook("apply.beforeCompile");
     try {
-      const { tree } = command.request;
-      const textCut =
-        !!command.request.snapshot ||
-        command.request.groupIds.length > 0 ||
-        command.request.baseViewDelta.length > 0;
-      if (!textCut) {
-        // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
-        if (!tree) throw new ApplyClickRefused("malformed");
-        const resolved = await input.identity.resolveReviewItemInBranch(command);
-        if (!resolved) throw new ApplyClickRefused("not_found");
-        return await input.store.apply(command, {
-          kind: "tree",
-          branchId: resolved.branchId,
-          tree,
+      const { items } = command.request;
+      const prepared: PreparedApplyItem[] = [];
+      for (const item of items) {
+        const tree = item.tree ?? null;
+        const cut = item.text;
+        if (!cut) {
+          // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
+          if (!tree) throw new ApplyClickRefused("malformed");
+          prepared.push({ node: item.node, tree, text: null });
+          continue;
+        }
+        if (!cut.groupIds.length) throw new ApplyClickRefused("malformed");
+        const start = performance.now();
+        const base = await input.store.loadBase({
+          draftId: cut.draftId,
+          documentId: item.node,
+          branchId: command.branchId,
         });
+        if (!base || base.snapshot.status === "closed")
+          return (await lookup()) ?? { status: "closed", commandId };
+        // Receipts are captured after this replica, so they cover every item a contained click can name.
+        const captured = await input.evidence.capture(cut.draftId);
+        if (!captured || captured.draft.documentDraft.status === "closed")
+          return (await lookup()) ?? { status: "closed", commandId };
+        const lifecycle = captured.draft.documentDraft.lifecycle;
+        if (lifecycle !== "active")
+          throw new ApplyClickRefused(
+            lifecycle === "archived"
+              ? "work_archived"
+              : lifecycle === "deleted"
+                ? "work_deleted"
+                : "not_found",
+          );
+        let click: CompiledClick;
+        try {
+          click = compileClick(base.replica.doc, { ...cut, commandId }, captured);
+        } finally {
+          input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
+        }
+        prepared.push({ node: item.node, tree, text: { base, click } });
       }
-      if (!command.request.groupIds.length) throw new ApplyClickRefused("malformed");
-      if (!command.request.draftId) throw new ApplyClickRefused("malformed");
-      const start = performance.now();
-      const base = await input.store.loadBase(command);
-      if (!base || base.snapshot.status === "closed") {
-        return (await lookup()) ?? { status: "closed", commandId: command.envelope.commandId };
-      }
-      // Receipts are captured after this replica, so they cover every item a contained click can name.
-      const captured = await input.evidence.capture(command.request.draftId);
-      if (!captured || captured.draft.documentDraft.status === "closed") {
-        return (await lookup()) ?? { status: "closed", commandId: command.envelope.commandId };
-      }
-      const lifecycle = captured.draft.documentDraft.lifecycle;
-      if (lifecycle !== "active")
-        throw new ApplyClickRefused(
-          lifecycle === "archived"
-            ? "work_archived"
-            : lifecycle === "deleted"
-              ? "work_deleted"
-              : "not_found",
-        );
-      const doc = base.replica.doc;
-      let click: CompiledClick;
-      try {
-        click = compileClick(doc, command.request, captured);
-      } finally {
-        input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
-      }
-      return await input.store.apply(command, {
-        kind: "text",
-        base,
-        click,
-        ...(tree ? { tree } : {}),
-      });
-    } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
-        const winner = await lookup();
-        if (winner) return winner;
-      }
-      if (cause instanceof ApplyClickRefused)
-        return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
-      throw cause;
-    }
-  };
-  const applyTree = async (command: ApplyTreeCommand): Promise<ApplyClickAnswer> => {
-    const commandId = command.envelope.commandId;
-    const lookup = async () =>
-      replay<ApplyClickResult>(await input.commands.lookup(command.envelope), commandId);
-    const first = await lookup();
-    if (first) return first;
-    try {
-      return await input.store.applyTree(command);
+      return await input.store.apply(command, prepared);
     } catch (cause) {
       if (cause instanceof DocumentCommandExistsError) {
         const winner = await lookup();
@@ -297,5 +273,5 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
-  return { apply, applyTree, unapply };
+  return { apply, unapply };
 }
