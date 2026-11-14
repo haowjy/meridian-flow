@@ -2,11 +2,11 @@
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
+import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import type { NoticePort } from "../../notices/index.js";
 import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { latestRowAt } from "../loop/latest-row.js";

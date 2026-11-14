@@ -17,11 +17,11 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
+import { processDetachedWork } from "../../shared/detached-work.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createNoopEventSink } from "../observability/index.js";
-import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";

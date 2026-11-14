@@ -1,13 +1,13 @@
 /** Shared PostgreSQL composition for compaction and control boundary contracts. */
 
 import type { Database } from "@meridian/database";
+import { processDetachedWork } from "../../../../shared/detached-work.js";
 import { executionScenario } from "../../../../test-support/execution-scenario.js";
 import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
 import { createDrizzleNoticePort } from "../../../notices/adapters/drizzle-notice-port.js";
 import type { NoticePort } from "../../../notices/index.js";
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
-import { processDetachedWork } from "../../detached-work.js";
 import type { WorkContextReader } from "../work-context.js";
 import { createTestAgentBinding } from "./runtime-fixtures.js";
 import { createRuntimeHarness } from "./runtime-harness.js";

@@ -20,7 +20,6 @@
 import { createInterface } from "node:readline";
 import { createDb } from "@meridian/database";
 import { NoopEventSink } from "../../../../apps/server/server/domains/observability/index.ts";
-import { processDetachedWork } from "../../../../apps/server/server/domains/runtime/detached-work.ts";
 import {
   handleDiscardAllWorkBranchRequest,
   selectBranchRouteServices,
@@ -34,6 +33,7 @@ import {
   createYjsGateway,
   selectYjsGatewayServices,
 } from "../../../../apps/server/server/lib/yjs-ws-handler.ts";
+import { processDetachedWork } from "../../../../apps/server/server/shared/detached-work.ts";
 import {
   setTestHook,
   type TestHookPoint,

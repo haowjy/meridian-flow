@@ -4,6 +4,10 @@ import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/cont
 import type { Gateway, StreamEvent } from "@meridian-flow/gateway";
 import { registryTokenRateSource } from "../../../../lib/gateway/registry.js";
 import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+} from "../../../../shared/detached-work.js";
+import {
   InMemoryTransactionOwner,
   noTransactionOwner,
 } from "../../../../shared/in-memory-transaction.js";
@@ -36,7 +40,6 @@ import {
 } from "../../adapters/in-memory/loop-ports.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createAskService, refusingPermissionExecutor } from "../../asks/ask-service.js";
-import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";

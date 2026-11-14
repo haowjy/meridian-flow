@@ -170,10 +170,6 @@ import {
   refusingPermissionExecutor,
 } from "../domains/runtime/asks/ask-service.js";
 import type { ModelTokenRateSource } from "../domains/runtime/costing/pricing.js";
-import {
-  createDetachedWorkTracker,
-  type DetachedWorkTracker,
-} from "../domains/runtime/detached-work.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
   createHandoffBriefs,
@@ -276,6 +272,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";

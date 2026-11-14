@@ -10,6 +10,7 @@ import {
   type StopResponse,
   type Turn,
 } from "@meridian/contracts/threads";
+import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   type ThreadRepository,
@@ -17,7 +18,6 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import type { DetachedWorkTracker } from "../detached-work.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { latestRowAt } from "./latest-row.js";
 import { createLocalTurn } from "./local-turn.js";

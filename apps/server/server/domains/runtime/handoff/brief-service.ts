@@ -3,6 +3,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { Thread, Turn } from "@meridian/contracts/threads";
+import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -20,7 +21,6 @@ import type {
 } from "../../threads/ports/handoff-brief-launcher.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { ModelTokenRateSource } from "../costing/pricing.js";
-import type { DetachedWorkTracker } from "../detached-work.js";
 import { recordEnded } from "../loop/failure-detection.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
 import { createLocalTurn } from "../loop/local-turn.js";

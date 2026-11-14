@@ -137,7 +137,7 @@ import { createThreadCores } from "./thread-cores.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-import type { DetachedWorkTracker } from "../runtime/detached-work.js";
+import type { DetachedWorkTracker } from "../../shared/detached-work.js";
 
 type CollabDomainDeps = {
   backgroundTasks?: DetachedWorkTracker;
