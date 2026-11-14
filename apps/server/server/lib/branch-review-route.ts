@@ -468,6 +468,7 @@ export async function handleOwnerDraftListRequest(
       )
       .map((item) => toWireItem(item, listed.threadTitles)),
     branchId: listed.branchId,
+    folders: listed.folders,
     frozen,
   };
 }

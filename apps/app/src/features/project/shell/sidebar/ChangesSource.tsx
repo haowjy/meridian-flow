@@ -118,13 +118,16 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
 }
 
 /**
- * The scope's drafted documents, one row each in the one file order. A row opens its draft;
- * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
- * draft of the scope, new documents, moves and deletes included. A Discard asks first only when
- * it can't run here and so carries no Undo (`discardAsks`); an Apply all asks when it would
- * delete documents or bring back documents deleted from the manuscript, naming each, and again
- * for any a newer delete held back. A question takes the place of the buttons that asked it. A Discard made here shows its
- * notice in the row's place (Discard all: the bar's); an Apply's facts sit below the rows.
+ * The scope's drafted documents, one row each in the one file order, under the folders the Work
+ * changes. A row opens its draft; its × and ✓ discard or apply that document's draft, and a
+ * folder's apply or discard everything under it, the folder's own change included. Discard all
+ * and Apply all act on every change of the scope, new documents, folders, moves and deletes
+ * included. Each Apply is one command, which sidebar Undo takes back whole, and each Discard's
+ * notice has its Undo; only a frozen owner's Discard asks first (`discardAsks`). An Apply of
+ * several asks when it would delete documents or bring back documents deleted from the
+ * manuscript, naming each, and again for any a newer delete held back. A question takes the
+ * place of the buttons that asked it. A Discard made here shows its notice in the row's place
+ * (Discard all: the bar's); an Apply's facts sit below the rows.
  *
  * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
  * (every chat in Trash) offers no Apply, only Discard.
@@ -201,10 +204,17 @@ export function ChangesSource({
   /** What an Apply of several asks about first: the documents it deletes and those it brings back. */
   const [asking, setAsking] = useState<{
     targets: readonly ReviewFileTarget[];
+    folders: readonly string[];
+    name?: string;
     deleting: readonly ReviewFileTarget[];
     restoring: readonly ReviewFileTarget[];
   } | null>(null);
-  const hasFiles = files.length > 0;
+  // The folder changes Apply all takes along: every one that can land.
+  const changedFolders = groups.flatMap((group) =>
+    group.folder && !group.folder.fault ? group.folder.folders : [],
+  );
+  // A folder changed alone lists no document, and is still a change to review.
+  const hasFiles = files.length > 0 || groups.some((group) => group.folder);
   useEffect(() => {
     if (hasFiles) return;
     setAsking(null);
@@ -215,17 +225,42 @@ export function ChangesSource({
   const everyDraft = draftsOf(files);
   const ids = (targets: readonly ReviewFileTarget[]) =>
     new Set(targets.map((file) => file.documentId));
-  // Brings back only the named documents; a delete the list hadn't shown yet asks again.
-  const applyAll = (targets: readonly ReviewFileTarget[], restore: ReadonlySet<string>) =>
-    void controller.disposeDrafts("apply", draftsOf(targets), restore).then((outcomes) => {
-      const heldBack = targets.filter((_file, index) => outcomes[index]?.kind === "needs-restore");
-      if (heldBack.length > 0) setAsking({ targets: heldBack, deleting: [], restoring: heldBack });
-    });
-  const startApply = (targets: readonly ReviewFileTarget[]) => {
+  // One command. Brings back only the named documents; a delete the list hadn't shown yet held
+  // it back, and it asks again, naming what live deleted.
+  const applyAll = (
+    targets: readonly ReviewFileTarget[],
+    folders: readonly string[],
+    restore: ReadonlySet<string>,
+    name?: string,
+  ) =>
+    void controller
+      .applyMany(
+        draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
+        restore,
+        folders,
+        name,
+      )
+      .then((outcomes) => {
+        const heldBack = targets.filter(
+          (_file, index) => outcomes[index]?.kind === "needs-restore",
+        );
+        const restoring = targets.filter((_file, index) => {
+          const outcome = outcomes[index];
+          return outcome?.kind === "needs-restore" && outcome.deleted === true;
+        });
+        if (heldBack.length > 0)
+          setAsking({ targets: heldBack, folders, deleting: [], restoring, name });
+      });
+  const startApply = (
+    targets: readonly ReviewFileTarget[],
+    folders: readonly string[],
+    name?: string,
+  ) => {
     const restoring = targets.filter((file) => isDeletedFromManuscript(file.draft));
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
-    if (restoring.length > 0 || deleting.length > 0) setAsking({ targets, deleting, restoring });
-    else applyAll(targets, new Set());
+    if (restoring.length > 0 || deleting.length > 0)
+      setAsking({ targets, folders, deleting, restoring, name });
+    else applyAll(targets, folders, new Set(), name);
   };
   const untitled = t`Untitled document`;
   const names = (targets: readonly ReviewFileTarget[]) =>
@@ -241,7 +276,7 @@ export function ChangesSource({
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          applyAll(asking.targets, ids(asking.restoring));
+          applyAll(asking.targets, asking.folders, ids(asking.restoring), asking.name);
         },
         disabled: controller.dispositionLocked,
       }
@@ -294,10 +329,16 @@ export function ChangesSource({
               density="full"
               touch={touch}
               disabled={archived}
-              discardAsks={controller.discardAllAsks(everyDraft)}
-              onDiscard={() => void controller.disposeDrafts("discard", everyDraft)}
+              discardAsks={controller.frozen}
+              onDiscard={
+                everyDraft.length > 0 ? () => void controller.discardDrafts(everyDraft) : undefined
+              }
               onApply={
-                controller.canApply && files.every(applicable) ? () => startApply(files) : undefined
+                controller.canApply &&
+                files.every(applicable) &&
+                (files.length > 0 || changedFolders.length > 0)
+                  ? () => startApply(files, changedFolders)
+                  : undefined
               }
               applyDisabled={held.some((read) => read.status !== "ready")}
             />
@@ -329,9 +370,11 @@ export function ChangesSource({
                   files={group.files}
                   controller={controller}
                   touch={touch}
-                  canApply={controller.canApply && group.files.every(applicable)}
-                  onApply={() => startApply(group.files)}
-                  onDiscard={() => void controller.disposeDrafts("discard", draftsOf(group.files))}
+                  canApply={
+                    controller.canApply && !group.folder.fault && group.files.every(applicable)
+                  }
+                  onApply={(name) => startApply(group.files, group.folder?.folders ?? [], name)}
+                  onDiscard={() => void controller.discardDrafts(draftsOf(group.files))}
                 />
               ) : null;
               const shown = group.folder && folded.has(group.folder.id) ? [] : group.files;
@@ -595,8 +638,9 @@ function useWorkTree(projectId: string, ownerKey: string) {
 
 /**
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
- * cannot land if it cannot, and × ✓ for everything listed under it; a click folds its rows. A folder change with no
- * drafted document under it has no × ✓: no command applies a folder alone yet.
+ * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
+ * rows. A folder changed with no drafted document under it has its ✓ alone: no Discard takes a
+ * folder by itself.
  */
 function FolderGroupRow({
   folder,
@@ -619,7 +663,8 @@ function FolderGroupRow({
   controller: WorkBranchCommands;
   touch: boolean;
   canApply: boolean;
-  onApply: () => void;
+  /** `name`: the folder's, for what the Apply's Undo says. */
+  onApply: (name: string) => void;
   onDiscard: () => void;
 }) {
   const name = entry?.name ?? t`Folder`;
@@ -648,7 +693,7 @@ function FolderGroupRow({
         }
         detail={detail}
         actions={
-          files.length > 0 ? (
+          files.length > 0 || canApply ? (
             <ReviewActions
               scope="document"
               labels={{
@@ -659,8 +704,8 @@ function FolderGroupRow({
               touch={touch}
               disabled={controller.dispositionLocked}
               className={touch ? "gap-0" : "gap-0.5"}
-              onDiscard={onDiscard}
-              onApply={canApply ? onApply : undefined}
+              onDiscard={files.length > 0 ? onDiscard : undefined}
+              onApply={canApply ? () => onApply(name) : undefined}
             />
           ) : undefined
         }

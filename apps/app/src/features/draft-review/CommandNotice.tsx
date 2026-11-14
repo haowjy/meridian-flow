@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
@@ -120,14 +120,10 @@ export function DraftNoticeLine({
     const [only] = notice.landed;
     const single = only && notice.landed.length === 1;
     const name = only ? documentDisplayName(only.uri) : "";
-    // One landing names the document on its Open; the line says where it went.
+    // One landing names the document on its Open; the line says where it went. Several say it
+    // once per place, so the line holds at sidebar width.
     const sentence = [
-      ...(single
-        ? [t`Now in ${placeOf(only.uri)}.`]
-        : notice.landed.map(({ uri }) => {
-            const landedName = documentDisplayName(uri);
-            return t`${landedName} is now in ${placeOf(uri)}.`;
-          })),
+      ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(notice.landed)),
       appliedSentence(notice.restored, notice.renamed, notice.alsoApplied),
     ]
       .filter(Boolean)
@@ -181,6 +177,20 @@ export function DraftNoticeLine({
             failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
           };
   const failed = notice.status === "failed";
+  if (notice.status === "partial") {
+    const count = notice.leftOut;
+    return (
+      <ActionNotice
+        data-command-notice="undo-partial"
+        sentence={plural(count, {
+          one: "# change couldn't come back: it was drafted again or is gone.",
+          other: "# changes couldn't come back: they were drafted again or are gone.",
+        })}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
+    );
+  }
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
@@ -235,6 +245,21 @@ export function restoredSentence(titles: readonly string[]): string {
   return titles.length === 1
     ? t`${names} is back in the manuscript.`
     : t`${names} are back in the manuscript.`;
+}
+
+/** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */
+function landedSentences(landed: readonly { uri: string }[]): string[] {
+  const byPlace = new Map<string, string[]>();
+  for (const { uri } of landed) {
+    const place = placeOf(uri);
+    byPlace.set(place, [...(byPlace.get(place) ?? []), documentDisplayName(uri)]);
+  }
+  const list = (names: readonly string[]) =>
+    new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(names);
+  return [...byPlace].map(([place, names]) => {
+    const all = list(names);
+    return names.length === 1 ? t`${all} is now in ${place}.` : t`${all} are now in ${place}.`;
+  });
 }
 
 /** "Manuscript/Arc 3": the source and folder a document is in. */

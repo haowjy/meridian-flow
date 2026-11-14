@@ -312,7 +312,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], threadTitles: new Map() };
+        return { branchId: null, items: [], folders: [], threadTitles: new Map() };
       },
       async pendingDocumentCount() {
         return 0;

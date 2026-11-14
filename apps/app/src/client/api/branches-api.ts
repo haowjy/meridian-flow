@@ -5,6 +5,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
+  ApplyItemsClick,
   BranchDiscardAllRequest,
   BranchDiscardAllResponse,
   DocumentCommandLookupResponse,
@@ -15,14 +16,18 @@ import type {
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
+  UndoDiscardAnswer,
+  UndoDiscardClick,
 } from "@meridian/contracts/branches";
 import {
   apiDocumentCommandPath,
+  apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
   apiProjectBranchDocumentDraftDiscardPath,
   apiProjectBranchDocumentDraftPath,
   apiProjectBranchUnapplyPath,
+  apiProjectBranchUndoDiscardPath,
   apiProjectDocumentBranchesPath,
   apiProjectDraftsPath,
 } from "@meridian/contracts/protocol";
@@ -76,12 +81,26 @@ export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObs
     return { status: "none", commandId: body.commandId };
   return found.outcome.result as ApplyClickResult;
 }
+/** Several nodes, folders included, as one Apply command. */
+export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick) {
+  return postJson<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+/** Takes one Apply command back, every document and the tree, by its id. */
+export function unapplyCommand(projectId: string, branchId: string, body: UnapplyClick) {
+  return postJson<UnapplyClickAnswer>(apiProjectBranchUnapplyPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
+}
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
-  return postJson<UnapplyClickAnswer>(
-    apiProjectBranchUnapplyPath(draft.projectId, branchOf(draft.itemKey)),
-    body,
-    { signal: AbortSignal.timeout(10_000) },
-  );
+  return unapplyCommand(draft.projectId, branchOf(draft.itemKey), body);
+}
+/** Takes a Discard back: `branchId` is the branch it ran on. */
+export function undoDiscard(projectId: string, branchId: string, body: UndoDiscardClick) {
+  return postJson<UndoDiscardAnswer>(apiProjectBranchUndoDiscardPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
 }
 export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest) {
   return postJson<DraftDiscardResponse>(

@@ -415,7 +415,8 @@ export function SourcesBody({
           className="flex min-h-0 flex-1 flex-col"
           onKeyDown={(event) => {
             const root = isTreeKey(source) ? catalogs[source].tree?.root.entryId : undefined;
-            if (root && undo.handles(event)) undo.press(source === "user", root);
+            if (source === "changes" && undo.handles(event)) undo.press(false, null);
+            else if (root && undo.handles(event)) undo.press(source === "user", root);
           }}
         >
           <SourceTabs chosen={chosen} tabs={tabs} source={source} onSelect={setPicked} />

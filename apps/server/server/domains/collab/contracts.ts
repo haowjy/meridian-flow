@@ -466,6 +466,8 @@ export type DraftReviewApi = {
   listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
+    /** The folders the branch has a row on, with the revision an Apply of one freezes. */
+    folders: { id: string; revision: string }[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
   /** Pending documents summed over the project's active branches. */

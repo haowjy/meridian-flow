@@ -52,6 +52,19 @@ export async function branchRowRevisions(
   return new Map(rows.map((row) => [row.id, row.revision]));
 }
 
+/** The folders the Work has a row on, each with its revision: what an Apply of a folder freezes. */
+export async function branchFolderRevisions(
+  db: Database,
+  branchId: BranchId,
+): Promise<{ id: string; revision: string }[]> {
+  if (!isUuid(branchId)) return [];
+  const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
+    SELECT b.id::text AS id, ${REVISION} AS revision
+    FROM branch_tree_nodes b
+    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
+  return [...rows];
+}
+
 export function createDrizzleBranchTreeState(
   db: Database,
   tree: Pick<TreeReader, "identityStatus">,

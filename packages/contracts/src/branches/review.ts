@@ -325,6 +325,11 @@ export interface ThreadDraftListResponse {
    */
   branchId: BranchId | null;
   /**
+   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
+   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
+   */
+  folders: { id: string; revision: string }[];
+  /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.

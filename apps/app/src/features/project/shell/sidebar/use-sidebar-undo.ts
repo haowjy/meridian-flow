@@ -1,13 +1,14 @@
 /**
  * Ctrl+Z in the sidebar: takes back the writer's latest tree change in the shown source, made in
- * the view the toggle shows (`tree-undo.ts`). A step that no longer fits is skipped, and the toast
+ * the view the toggle shows, or their latest Apply as one step (`tree-undo.ts`); on the Changes
+ * tab, the latest of any source. A step that no longer fits is skipped, and the toast
  * says which. A press inside a text field is the field's own Undo.
  */
 import { plural, t } from "@lingui/core/macro";
 import { type KeyboardEvent, useCallback, useMemo, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { StatusToastNotice } from "@/components/app/StatusToast";
-import { undoLatest } from "@/core/project-tree/tree-undo";
+import { type UndoOutcome, undoLatest } from "@/core/project-tree/tree-undo";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../../context/account-feature-context";
 
@@ -30,6 +31,7 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
   const account = useTreeList({ kind: "account", userId: accountId });
   const [notice, setNotice] = useState<StatusToastNotice | null>(null);
   const ids = useRef(0);
+  const pressing = useRef(false);
   const dismiss = useCallback(() => setNotice(null), []);
   return useMemo(
     () => ({
@@ -41,34 +43,50 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         event.preventDefault();
         return true;
       },
-      /** `accountList`: the source is the account's (`user://`). */
-      press(accountList: boolean, source: string) {
+      /**
+       * `accountList`: the source is the account's (`user://`). `source` null: the Changes tab,
+       * whose press takes the latest step of any source. A press while one waits on the server
+       * is dropped: the stack is read one press at a time.
+       */
+      press(accountList: boolean, source: string | null) {
         const session = (accountList ? account : project).session;
-        if (!session) return;
-        const outcome = undoLatest(
-          session,
-          source,
-          version.view,
-          `user:${accountId}`,
-          version.pendingText,
-        );
-        const [only] = outcome.skipped;
-        if (outcome.skipped.length === 0) setNotice(null);
-        else {
-          ids.current += 1;
-          setNotice({
-            id: ids.current,
-            text:
-              outcome.skipped.length === 1 && only
-                ? t`Skipped your change to ${only}: it was changed again since.`
-                : plural(outcome.skipped.length, {
-                    one: "Skipped # change that was changed again since.",
-                    other: "Skipped # changes that were changed again since.",
-                  }),
+        if (!session || pressing.current) return;
+        pressing.current = true;
+        void undoLatest(session, source, version.view, `user:${accountId}`, version.pendingText)
+          .then((outcome) => {
+            const text = noticeOf(outcome);
+            if (text === null) setNotice(null);
+            else {
+              ids.current += 1;
+              setNotice({ id: ids.current, text });
+            }
+          })
+          .finally(() => {
+            pressing.current = false;
           });
-        }
       },
     }),
     [notice, dismiss, account, project, version, accountId],
   );
+}
+
+/** What a press says: which steps it skipped, or that an Apply's Undo didn't reach the server. */
+function noticeOf(outcome: UndoOutcome): string | null {
+  const skipped = outcome.skipped;
+  const [only] = skipped;
+  const said =
+    skipped.length === 0
+      ? null
+      : skipped.length === 1 && only
+        ? only.kind === "apply"
+          ? t`Skipped applying ${only.name}: the tree changed since.`
+          : t`Skipped your change to ${only.name}: it was changed again since.`
+        : plural(skipped.length, {
+            one: "Skipped # change that was changed again since.",
+            other: "Skipped # changes that were changed again since.",
+          });
+  if (outcome.kind !== "failed") return said;
+  const name = outcome.name;
+  const failed = t`Couldn't undo applying ${name}. Try again.`;
+  return said ? `${said} ${failed}` : failed;
 }

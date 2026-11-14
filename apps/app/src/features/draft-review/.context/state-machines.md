@@ -33,6 +33,9 @@ stateDiagram-v2
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.
+- **A member of an Apply of several is `sent` by its group** (`group-apply.ts`): its send waits
+  until every member is its own queue's head, then the group posts the one command, and each
+  member's queue settles from the same answer.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).

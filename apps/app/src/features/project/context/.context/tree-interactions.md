@@ -115,7 +115,8 @@ entry inside another entry's folder goes with that folder, never on its own. A l
 take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
 comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
 delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
-Writer deletion has no confirmation step and no Undo here: the sidebar's Undo is step 8.
+Writer deletion has no confirmation step; the sidebar's Ctrl+Z takes it back
+(`core/project-tree/tree-undo.ts`).
 
 ## Downlinks
 

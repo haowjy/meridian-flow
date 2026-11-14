@@ -53,7 +53,10 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
-import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
+import {
+  branchFolderRevisions,
+  createDrizzleBranchTreeState,
+} from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -534,6 +537,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
+    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(

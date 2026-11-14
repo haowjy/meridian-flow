@@ -72,6 +72,7 @@ export class TreeActions {
     const projection = made.replay();
     const nodes = [...new Set(records.map((record) => record.node))];
     pushUndoStep(made.session, {
+      kind: "tree",
       records: records.map((record) => record.id),
       draft: made.view.draft,
       sources: [...new Set(nodes.flatMap((node) => shownSourceOf(projection, node) ?? []))],

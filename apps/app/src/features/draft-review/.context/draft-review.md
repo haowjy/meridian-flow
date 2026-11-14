@@ -102,13 +102,20 @@ reader for it (following replacement sessions even without a surface) and cancel
 close, so a newer draft under the same key can't inherit an old click. Retiring a
 session refuses only its draft's unsent clicks.
 
-`captureApply` synchronously freezes the `draftId`, Yjs snapshot, reviewed base blocks,
+`apply` synchronously freezes the `draftId`, Yjs snapshot, reviewed base blocks,
 selected ids, the result of applying those groups and one room-base-to-O delta. Its
 acknowledgement barrier waits for the server to acknowledge every local update in the
-cut before sending. Apply all captures every item in the click's event turn, then
-releases sends in server order; an earlier answer may omit a tree cut it already settled,
-but later text or a later tree revision is never recaptured. The queue keeps its own
-`readDraftRoom` lease until terminal.
+cut before sending. The queue keeps its own `readDraftRoom` lease until terminal.
+
+An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
+so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is
+frozen in the click's event turn and joins its own FIFO as a member sharing the command's id;
+the member's send hands its click to the group, and the group posts `ApplyItemsClick` once
+every member reached its queue's head, so each text cut lands after that document's earlier
+clicks. A member that ends unsent (closed draft, unread room) is left out. Folders ride on
+the command as nodes with no queue, their tree cut the list response's `folders[].revision`.
+Every member's queue settles from the one answer; groups are enqueued in item order in one
+turn, so two groups never wait on each other.
 
 An editor text Apply gives that editor's history the Undo and Redo callbacks of the
 schedule-owned command handle. The handle owns command identity, reversal outcome and
@@ -216,15 +223,18 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`, read by
-every surface through `discardAsks`/`discardAllAsks`): a change in a read frame, or a whole text
-draft that is not a whole item (created document, picture), has no move or delete, and whose
-room is read now (`DraftCommandOwner.canDiscardLocally`), is a local text Discard with an Undo.
-Anything else asks once, shows no notice, and goes to the server, which has no Undo (#763): a
-whole draft as an item Discard (`discardOnServer`, everything the branch holds on the
-document), a move or delete as `discardItem`. A Discard all of only local drafts is local, one
-notice; any other Discard all (rows still loading, a room in error) is the server's branch
-Discard. A Discard never reports success for a draft it didn't discard. Their optimistic
+One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`): a
+change in a read frame, or a whole text draft that is not a whole item (created document,
+picture), has no move or delete, and whose room is read now
+(`DraftCommandOwner.canDiscardLocally`), is a local text Discard, whose Undo the room holds.
+Anything else goes to the server under a command id the client mints: a whole draft as an item
+Discard (`discardOnServer`, everything the branch holds on the document), a move or delete as
+`discardItem`. Every Discard shows the owner's notice, and its Undo takes back each share: a
+room's text locally, a server Discard by Undo of a Discard (`undo-discard`, both halves onto
+the Work's current branch); `leftOut` stays on the notice as what couldn't come back. Only a
+frozen owner's Discard asks first (`discardAsks`): its Undo would be refused. A Discard all of
+only local drafts is local, one notice; any other Discard all (rows still loading, a room in
+error) is the server's branch Discard, one share standing for every draft. A Discard never reports success for a draft it didn't discard. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 
@@ -273,9 +283,13 @@ the same item FIFO. The click body's `tree` is `{ revision }` only, because the 
 schema is strict.
 
 `discardItem` is the item's one Discard when it has a tree line: the server's tree-only
-Discard (`ends: "tree"`) beside the local text revert. Its text offers no Undo,
-because Undo would bring back the text without the move or delete the server already
-settled.
+Discard (`ends: "tree"`) beside the local text revert. Its notice's Undo takes back both, so
+the text never comes back without its move or delete.
+
+An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
+(`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
+command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
+with its notice. A band's Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

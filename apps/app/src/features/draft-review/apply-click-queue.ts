@@ -15,6 +15,8 @@ export type FrozenApply = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   acknowledged: Promise<void>;
+  /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
+  send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
 
 function isFinalApplyRefusal(
@@ -29,7 +31,6 @@ export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
 
 type ApplyCommand = FrozenApply & {
   kind: "apply";
-  release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
   sent: boolean;
   attempts: number;
   stalled: boolean;
@@ -109,12 +110,9 @@ export class ApplyClickQueue {
     return this.commands.length > 0;
   }
 
-  enqueue(
-    frozen: FrozenApply,
-    release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
-  ): Promise<ApplyClickOutcome> {
+  enqueue(frozen: FrozenApply): Promise<ApplyClickOutcome> {
     if (this.closed) return Promise.resolve({ status: "cancelled" });
-    const result = this.queueApply(frozen, release).outcome;
+    const result = this.queueApply(frozen).outcome;
     this.startFeedback();
     this.port.changed();
     return result;
@@ -123,13 +121,12 @@ export class ApplyClickQueue {
   /** Own one Apply's command identity, reversal result, and text-only replay selection. */
   enqueueHistory(input: {
     frozen: FrozenApply;
-    release: Promise<{ cancel?: boolean; omitTree?: boolean }>;
     patchFor(groupIds: readonly string[]): readonly PMNode[];
     intent(): void;
     applyRefused(answer: ApplyClickOutcome): void;
     unapplyRefused(answer: UnapplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
-    const initial = this.queueApply(input.frozen, input.release);
+    const initial = this.queueApply(input.frozen);
     this.startFeedback();
     this.port.changed();
     const landedText = (answer: ApplyClickOutcome) =>
@@ -228,10 +225,7 @@ export class ApplyClickQueue {
     return projected;
   }
 
-  private queueApply(
-    frozen: FrozenApply,
-    release: Promise<{ cancel?: boolean; omitTree?: boolean }> = Promise.resolve({}),
-  ): ApplyCommand {
+  private queueApply(frozen: FrozenApply): ApplyCommand {
     let finish!: (result: ApplyClickOutcome) => void;
     const outcome = new Promise<ApplyClickOutcome>((resolve) => {
       finish = resolve;
@@ -239,7 +233,6 @@ export class ApplyClickQueue {
     const command: ApplyCommand = {
       kind: "apply",
       ...frozen,
-      release,
       sent: false,
       attempts: 0,
       stalled: false,
@@ -397,15 +390,7 @@ export class ApplyClickQueue {
 
   private async dispatchApply(command: ApplyCommand): Promise<void> {
     try {
-      const [, released] = await Promise.all([command.acknowledged, command.release]);
-      if (released.cancel) {
-        this.commands.splice(this.commands.indexOf(command), 1);
-        command.finish({ status: "cancelled" });
-        this.moveOn();
-        return;
-      }
-      if (released.omitTree && command.body.tree)
-        command.body = { ...command.body, tree: undefined };
+      await command.acknowledged;
     } catch {
       this.refuse(command);
       return;
@@ -418,7 +403,7 @@ export class ApplyClickQueue {
     try {
       answer = await (command.closed
         ? this.port.lookup(command.body)
-        : this.port.send(command.body));
+        : (command.send ?? this.port.send)(command.body));
     } catch {
       // Unknown delivery retains this immutable head.
     }

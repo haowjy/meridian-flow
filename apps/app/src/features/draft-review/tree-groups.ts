@@ -27,7 +27,13 @@ export type LandingFault =
 
 export type ChangeGroup<T> = {
   /** The changed folder heading the group; null for documents under no changed folder. */
-  folder: { id: string; change: FolderChange; fault: LandingFault | null } | null;
+  folder: {
+    id: string;
+    change: FolderChange;
+    fault: LandingFault | null;
+    /** Every changed folder the group takes: this one and the changed folders inside it. */
+    folders: string[];
+  } | null;
   files: T[];
 };
 
@@ -126,6 +132,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
         id,
         change: folderChange(work, byFolder.get(id) ?? []),
         fault: faults.get(id) ?? null,
+        folders: [id, ...[...byFolder.keys()].filter((inner) => outermost(inner) === id)],
       },
       files: grouped.get(id) ?? [],
     })),
