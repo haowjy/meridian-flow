@@ -222,15 +222,19 @@ export function createTreeRooms(services: TreeRoomServices) {
     async beforeSync(input: { tree: TreeRoomConnection; type: number; payload: Uint8Array }) {
       const { tree } = input;
       if (tree.refusal) throw new TreeRoomRefusal(tree.refusal);
-      const turn = tree.queue.then(() => admitMessage(tree, input.type, input.payload));
-      tree.queue = turn.catch(() => undefined);
-      try {
-        await turn;
-      } catch (cause) {
-        // The gateway closes the socket on any error; the queued messages behind it must find it closed.
-        tree.refusal ??= SERVER_ERROR_CLOSE;
-        throw cause;
-      }
+      const turn = tree.queue.then(async () => {
+        try {
+          await admitMessage(tree, input.type, input.payload);
+          return null;
+        } catch (cause) {
+          // The gateway closes the socket on any error; the queued messages behind it must find it closed.
+          tree.refusal ??= SERVER_ERROR_CLOSE;
+          return { cause };
+        }
+      });
+      tree.queue = turn.then(() => undefined);
+      const fault = await turn;
+      if (fault) throw fault.cause;
     },
 
     dispose() {

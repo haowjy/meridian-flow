@@ -20,8 +20,11 @@ export type ContextEntryValidationResult =
 
 const MAX_NAME = 255;
 const UNTITLED = "Untitled";
-// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this matches
-const CONTROL = /[\u0000-\u001f\u007f]/g;
+/** A control character: C0 or DEL. */
+const withoutControls = (text: string) =>
+  [...text]
+    .map((char) => ((char.codePointAt(0) as number) <= 0x1f || char === "\u007f" ? " " : char))
+    .join("");
 // Look-alikes for what a path cannot carry: the slash is the separator, a leading `@` or `~`
 // opens an owner or branch qualifier, and `.` / `..` are navigation.
 const LOOK_ALIKE: Record<string, string> = { "/": "\u2215", "@": "\uff20", "~": "\uff5e" };
@@ -42,8 +45,7 @@ const LOOK_ALIKE: Record<string, string> = { "/": "\u2215", "@": "\uff20", "~": 
  * replays, and needs a migration of the list.
  */
 export function normalEntryName(kind: "document" | "folder", typed: string): string {
-  let name = typed
-    .replace(CONTROL, " ")
+  let name = withoutControls(typed)
     .trim()
     .replaceAll("/", LOOK_ALIKE["/"] as string);
   const first = name[0];
