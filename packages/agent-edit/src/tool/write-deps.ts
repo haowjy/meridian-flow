@@ -8,13 +8,7 @@ import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
 import type { AgentEditJournal } from "../ports/update-journal.js";
-import type {
-  ResponseCommitterTransitionDetail,
-  ResponseLifecycleClaimDiscardedDetail,
-  ResponseLifecycleErrorDetail,
-  UnexpectedWriteErrorDetail,
-  WriteIdempotencyHitDetail,
-} from "./types.js";
+import type { UnexpectedWriteErrorDetail } from "./types.js";
 
 export interface LinkSpliceFallbackDetail {
   documentId: string;
@@ -39,9 +33,6 @@ export interface CreateWriteToolOptions {
   /** Durable lookup authority for the response that authored a mutation. */
   semanticProvenance?: SemanticProvenanceWriter;
   actorSessionStore?: ActorSessionStore;
-  idempotency?: {
-    maxEntries?: number;
-  };
   defaultSessionId?: string;
   defaultThreadId?: string;
   /**
@@ -51,10 +42,5 @@ export interface CreateWriteToolOptions {
    */
   onLinkSpliceFallback?: (event: LinkSpliceFallbackDetail) => void;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
-  onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
-  onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
-  onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
-  onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
-  closedResponseTombstoneCap?: number;
 }

@@ -31,7 +31,6 @@ it("records model undo, redo and revert with model provenance", async () => {
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
 
     for (const command of ["undo", "redo"] as const)
       expect(await core.write({ ...address, command }, context)).toMatchObject({
@@ -94,7 +93,7 @@ it("records model undo, redo and revert with model provenance", async () => {
 });
 
 it("records writer card undo and redo with the writer's user identity", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     expect(
       await view.collab.agentEdit().write(
@@ -109,7 +108,6 @@ it("records writer card undo and redo with the writer's user identity", async ()
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     for (const direction of ["undo", "redo"] as const)
       expect(
         await view.collab.reverseTurn({
@@ -164,7 +162,7 @@ it("records writer card undo and redo with the writer's user identity", async ()
   }
 });
 
-it("an already-connected live room sees Undo, Redo and immediate rollback without a repairing read", async () => {
+it("an already-connected live room sees Undo and Redo without a repairing read", async () => {
   const { harness, view, responseId, context } = await fixture();
   const peer = new Y.Doc({ gc: false });
   try {
@@ -177,7 +175,6 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseId,
-        editScopeId: responseId,
       },
     };
     await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, immediate);
@@ -240,16 +237,6 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
         ),
       );
     }
-    const broadcasts = view.hocuspocus.broadcasts.length;
-    await view.collab.finalizeResponseRollback(
-      { providerResponseId: responseId, editScopeId: responseId },
-      {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      },
-    );
-    expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
-    await vi.waitFor(() => expect(prose()).toBe("Alpha Beta.\n\nBlue."));
   } finally {
     peer.destroy();
     await harness.dispose();

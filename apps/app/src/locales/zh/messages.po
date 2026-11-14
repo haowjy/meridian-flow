@@ -4717,8 +4717,8 @@ msgid "Right"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Rolled back"
-msgstr ""
+#~ msgid "Rolled back"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Row"

@@ -1,7 +1,7 @@
 # Collab — reversal contracts
 
 Reversal uses the same forward-inverse primitive for card actions, model
-Undo/Redo/Revert, and failed-response rollback. An inverse is an ordinary
+Undo/Redo/Revert. An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
 ## Commands and policy
@@ -34,8 +34,7 @@ otherwise an invertible active part offers Undo. Effective action state is
 indexed per immutable part. A model count consumes original actions: once a
 partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit; Redo retains the exact parts that were
-reversed. A rolled-back action has no stack impact, and repeated rollback does
-not append another inverse.
+reversed.
 
 The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
@@ -66,10 +65,9 @@ Card authorization and change-viewer discovery share immutable edit and
 origin targets with inverse admission; mutation and draft transport
 journals are never authorization lineage. Card inverse rows are writer rows
 with no turn, and restoration correspondence comes from certified aliases on
-immutable parts, never equal text. Save and rollback take a
-`ModelResponseIdentity`, not a bare string that could mean provider response or
-helper scope: `response_id` keeps provider authorship and `edit_scope_id`
-selects the rotated scope.
+immutable parts, never equal text. A model write carries a
+`ResponseAuthorship`: `response_id` keeps provider authorship. The command's id
+(`document_edits.command_id`) joins the text and tree receipts of one call.
 
 Part disposition is computed once for each resolved destination.
 `createDraftDispositionReader` reads receipts from that draft. Apply evidence
@@ -96,7 +94,7 @@ still refuse or skip until tree reverts are implemented.
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
-Undo/Redo, Revert and failed-scope rollback eligibility; a discarded or applied disposition
+Undo/Redo and Revert eligibility; a discarded or applied disposition
 chooses the copy only when the kernel skips a part, ahead of the edited-since reading, so an
 applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
 regardless of whether those receipts currently contribute to review. Closed drafts are never
@@ -117,8 +115,7 @@ inverse row records the transition it made (`targets` names the entry).
 
 Tree entries are judged by state, never by row presence: an entry stands while its
 destination still holds the `after` of its latest transition (the entry itself, a row naming
-it, or a row reversing such a row: an undo of a revert reapplies the entry, a rollback of an
-undo leaves it as the undo found it; latest, since a redone delete writes a new removal); an
+it, or a row reversing such a row: an undo of a revert reapplies the entry; latest, since a redone delete writes a new removal); an
 undo restores the `before`. A later own entry that was undone does not block, so A→B, B→C,
 undo, undo returns to A. Applied or discarded comes only from a later settlement row naming
 the entry; an Apply names entries undone before it as discarded, so their redo refuses
@@ -129,7 +126,7 @@ committed path differs from the recorded one, that path too: live, or the branch
 draft or tree facts took it. The history writer (`recordDocumentEdit`) is the one place a transition's states
 are checked against its destination and op; readers trust the rows.
 
-Every inverse (model undo, redo and revert, the card, a reply's rollback) is one ordered
+Every inverse (model undo, redo and revert, and the card) is one ordered
 stream of steps (`domain/inverse-stream.ts`): each selected original edit is one step, text or
 tree, with its action and its place on the shared id axis allocated in that one loop, planned
 on a simulation the steps before it advanced (simulated rows, destination states, one clock).
@@ -137,9 +134,9 @@ So a restore planned earlier lets later live text be reversed, a model count-N U
 separately redoable actions, and a step that reverses an undo puts its edit back on the stack.
 A removal an earlier step makes is `madeBy` that step until it runs; a restore planned after it
 carries the removal that step actually made, while an unrelated removal still refuses it. The
-commit runs the steps in planned order (the card and rollback merge documents newest first,
+commit runs the steps in planned order (the card merges documents newest first,
 redo oldest first), each tree step in its own savepoint: a fault (`ancestor_taken`,
-`folder_missing`, `superseded`) is a reported skip for the card and rollback, and live text of a
+`folder_missing`, `superseded`) is a reported skip for the card, and live text of a
 document a skipped restore left removed is skipped with the rest of that document's text. A
 model inverse is all or nothing (`TreeInverseRefused`). A draft's text still commits as one
 checkpoint rewrite, at its plan's first text step. Every tree inverse commits under
@@ -153,7 +150,7 @@ the card authorizes them from those targets, and a deleted one at its restore de
 deleted or copied its net tree line per destination (live, or the Work whose branch a drafted
 entry names) (`TurnTreeLine`: a create whose document records `metadata.copiedFrom` is a copy
 from that source to where it ended up; otherwise deleted, or moved from its first `shownAt` to
-its last move's `landedAt`), leaving out entries a rollback reversed. A removed one keeps its
+its last move's `landedAt`), leaving out entries an undo reversed. A removed one keeps its
 receipt row at its last or recorded create address, read through the same `restore` target. A
 drafted tree entry's
 inverse writes back the branch facts the plan selected (`writeBackBranchFacts`) while the row
@@ -215,11 +212,6 @@ blocks an ancestor folder, the folder is missing, or the document moved or was d
 answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
 `cant_undo_dependent`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
 app words it; a tree skip names the path its entry was shown at.
-
-Failed-response rollback selects immutable parts by `editScopeId`, records
-accepted parts as terminal rollback edits, and keeps only uninvertible pending
-targets in `rollback_pending`. A failed checkpoint or report cannot reject a
-durable save.
 
 A released closed draft has no bytes from which to describe a receipt's prose.
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause

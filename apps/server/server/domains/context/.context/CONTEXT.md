@@ -101,8 +101,7 @@ spends its own budget waiting, and returns stopped and empty. No per-user cap ex
 Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view (a code file's text is the file itself, with no fence). Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
-sees (current derivation, no active draft in the reader's own Work, no staged writes of
-the reply), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
+sees (current derivation, no active draft in the reader's own Work), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
 same door for `ls -v`: it answers for current derivations only, and a document it leaves out
 lists with no word count. Context never reads the block tables itself. Candidate paths are spelled through
 the tree view's folder chain; a document under a deleted ancestor has no path and is not
@@ -131,8 +130,7 @@ chat's write mode, checks project-final availability, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
 live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
-independent pull transaction rules. It reports settled authority, not a
-response's staged overlay.
+independent pull transaction rules. It reports settled authority.
 
 A project-final identity lookup distinguishes missing, deleted, and
 reversibly hidden authority; foreign identities stay indistinguishable from

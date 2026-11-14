@@ -11,6 +11,7 @@ import { createTestDocumentRemoval } from "../../test-support/document-removal.j
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
+import { modelWrite } from "./test-support/model-write.js";
 import {
   createWorkBranchFixture,
   DOC_ID,
@@ -114,7 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("durably commits distinct responses that reuse a provider-local tool id", async () => {
+    it("keeps distinct responses that reuse a provider-local tool id", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await writeMarkdown(collab, {
@@ -125,7 +126,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(
-        collab.agentEdit().write(
+        modelWrite(
+          collab.modelEdits(),
           {
             command: "insert",
             file: "chapter.md",
@@ -140,24 +142,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             turnId: TURN_ID,
             responseIdentity: {
               providerResponseId: "response-reused-provider-tool-id-db-a",
-              editScopeId: "response-reused-provider-tool-id-db-a",
             },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit(
-        {
-          providerResponseId: "response-reused-provider-tool-id-db-a",
-          editScopeId: "response-reused-provider-tool-id-db-a",
-        },
-        {
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-        },
-      );
 
       await expect(
-        collab.agentEdit().write(
+        modelWrite(
+          collab.modelEdits(),
           {
             command: "insert",
             file: "chapter.md",
@@ -172,30 +165,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             turnId: TURN_2_ID,
             responseIdentity: {
               providerResponseId: "response-reused-provider-tool-id-db-b",
-              editScopeId: "response-reused-provider-tool-id-db-b",
             },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit(
-        {
-          providerResponseId: "response-reused-provider-tool-id-db-b",
-          editScopeId: "response-reused-provider-tool-id-db-b",
-        },
-        {
-          threadId: THREAD_ID as never,
-          turnId: TURN_2_ID as never,
-        },
-      );
 
       const rows = await db
-        .select({ id: draftWriteJournal.id, status: draftWriteJournal.status })
+        .select({ id: draftWriteJournal.id })
         .from(draftWriteJournal)
         .orderBy(draftWriteJournal.id);
-      expect(rows).toEqual([
-        expect.objectContaining({ status: "active" }),
-        expect.objectContaining({ status: "active" }),
-      ]);
+      expect(rows).toHaveLength(2);
     });
   });
 }

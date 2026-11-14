@@ -72,7 +72,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           threadId: query.threadId,
           turnId: query.turnId ?? null,
           responseId: query.responseIdentity?.providerResponseId ?? null,
-          editScopeId: query.responseIdentity?.editScopeId ?? null,
           toolCallId: query.toolCallId ?? null,
           actor: "agent",
         },
@@ -179,7 +178,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               threadId: query.threadId,
               turnId: query.turnId ?? null,
               responseId: query.responseIdentity?.providerResponseId ?? null,
-              editScopeId: query.responseIdentity?.editScopeId ?? null,
               toolCallId: query.toolCallId ?? null,
               actor: "agent",
               wId: null,
@@ -228,7 +226,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           direction,
           simulation.tree,
           simulation.states,
-          currentInspection().actions.rolledBack,
           simulation.nextStep,
         );
         if (!("cause" in decision)) return decision;
@@ -619,29 +616,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           turnId === query.turnId ? "this turn" : "earlier turn";
         const treeLine = (entry: Entry & { tree: TransitionEntry }) => {
           const k = treeKey(entry.tree.editId);
-          const latest = latestTransition(entry.tree, document.tree, index.rolledBack);
+          const latest = latestTransition(entry.tree, document.tree);
           const settled = settlementOf(entry.tree, document.tree);
-          const state = index.rolledBack.has(k)
-            ? "rolled back"
-            : index.byPart.has(k)
-              ? "undone"
-              : (settled ??
-                (!latest.stands
-                  ? "undone"
-                  : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates, 0)
-                    ? entry.tree.tree.destination.kind === "draft"
-                      ? "pending"
-                      : "live"
-                    : "changed"));
+          const state = index.byPart.has(k)
+            ? "undone"
+            : (settled ??
+              (!latest.stands
+                ? "undone"
+                : planTreeInverse(entry.tree, "invert", latest.row, document.treeStates, 0)
+                  ? entry.tree.tree.destination.kind === "draft"
+                    ? "pending"
+                    : "live"
+                  : "changed"));
           const reversal = (direction: "undo" | "revert") =>
-            policy.treePlan(
-              entry,
-              direction,
-              document.tree,
-              document.treeStates,
-              index.rolledBack,
-              () => 0,
-            );
+            policy.treePlan(entry, direction, document.tree, document.treeStates, () => 0);
           let command = "cause" in reversal("revert") ? "none" : "revert";
           if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
           else if (
@@ -666,29 +654,27 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             applied = entry.parts.filter(
               (part) => part.origin.kind === "pending" && part.disposition === "applied",
             ).length;
-          const state = entry.parts.every((part) => inspection.rolledBack(part))
-            ? "rolled back"
-            : fullyUndone
-              ? undos.some((undo) =>
-                  undo.parts.some(
-                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-                  ),
-                )
-                ? "undone by the user"
-                : "undone"
-              : applied
-                ? applied === entry.parts.length
-                  ? "applied"
-                  : `partly applied (${applied} of ${entry.parts.length})`
-                : entry.parts.every((part) => part.disposition === "discarded")
-                  ? "discarded"
-                  : states.every((state) => state.state === "undone")
-                    ? "undone"
-                    : states.some((state) => state.state === "changed")
-                      ? "changed"
-                      : entry.parts.some((part) => part.origin.kind === "pending")
-                        ? "pending"
-                        : "live";
+          const state = fullyUndone
+            ? undos.some((undo) =>
+                undo.parts.some(
+                  (part) => part.actor !== "agent" || part.threadId !== query.threadId,
+                ),
+              )
+              ? "undone by the user"
+              : "undone"
+            : applied
+              ? applied === entry.parts.length
+                ? "applied"
+                : `partly applied (${applied} of ${entry.parts.length})`
+              : entry.parts.every((part) => part.disposition === "discarded")
+                ? "discarded"
+                : states.every((state) => state.state === "undone")
+                  ? "undone"
+                  : states.some((state) => state.state === "changed")
+                    ? "changed"
+                    : entry.parts.some((part) => part.origin.kind === "pending")
+                      ? "pending"
+                      : "live";
           let command = "none";
           const revertPlan = policy.textPlan(entry, "revert", (destination) =>
             destination.kind === "draft" && destination.state === "gone"

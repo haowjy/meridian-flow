@@ -321,7 +321,7 @@ export const documents = pgTable(
     ),
     check(
       "documents_deletion_cause_valid",
-      sql`${table.deletionCause} IN ('reply_rolled_back', 'create_failed', 'repair')`,
+      sql`${table.deletionCause} IN ('create_failed', 'repair')`,
     ),
     index("documents_purge_candidates")
       .on(table.deletedAt, table.id)

@@ -1,18 +1,6 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
-import type {
-  AgentEditCore,
-  ReadCommand,
-  ResponseCommitSuccessResult,
-  RetiredWriteReason,
-  StagedWriteRejectionReason,
-  WriteCommand,
-  WriteContext,
-  WriteOutcome,
-} from "@meridian/agent-edit/integration";
+import type { AgentEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
 import { draftOwnerKey } from "@meridian/contracts";
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -22,99 +10,25 @@ import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-po
 export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
 
 /**
- * A read's context. `liveVersion` marks a `version: "live"` read: it reads
- * the live document even when this reply already drafted it, where a default
- * read follows the reply's pinned destination.
+ * A read's context. `liveVersion` marks a `version: "live"` read: it reads the live document
+ * even when the thread has a Work draft of it, where a default read follows the grant's
+ * destination.
  */
 export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
-
-/** Why the save step left a document out of a reply. */
-export type RefusedResponseDocument =
-  | {
-      documentId: DocumentId;
-      /** The policy's permission refusal under the save's locks; its copy is the tool's to write. */
-      denial: FileAccessDenied;
-    }
-  | {
-      documentId: DocumentId;
-      /**
-       * The document is not found, or its draft closed because it was removed: the writes are
-       * dropped with the record's copy. Null when there is no record: the document went with
-       * its source or Work, or stands again.
-       */
-      removed: DocumentRemovalRecord | null;
-    }
-  | {
-      documentId: DocumentId;
-      /**
-       * The branch its writes were pinned to moved on before the save (closed, or this
-       * document's draft applied or discarded): the save never retargets them to a new branch (§2.5).
-       */
-      reason: StagedWriteRejectionReason;
-    };
 
 /** An inverse may reverse some writes and name the policy refusals for the rest. */
 export type RoutedWriteOutcome = WriteOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
 
-/** One reply's save across every destination it wrote. */
-export type ResponseSaveResult = ResponseCommitSuccessResult & {
-  refused: RefusedResponseDocument[];
-};
-
-type ResponseTransactionOptions = NonNullable<Parameters<AgentEditCore["commitResponse"]>[1]> & {
-  beforeTransactionCommit?(result: ResponseSaveResult): void | Promise<void>;
-};
-
 declare const liveAgentEditCoreBrand: unique symbol;
-declare const threadPeerAgentEditCoreBrand: unique symbol;
 
 export type LiveAgentEditCore = AgentEditCore & {
   readonly [liveAgentEditCoreBrand]: "live-agent-edit-core";
 };
 
-// A reply's created set isn't asked of the pool: a create is a row in the tree view.
-export type ThreadPeerAgentEditCore = Omit<
-  AgentEditCore,
-  "read" | "write" | "commitResponse" | "prepareResponse" | "responseDocuments" | "readRoom"
-> & {
-  read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
-  /**
-   * The room copy a call on this document would read: the reply's pinned destination with its
-   * surviving staged writes, the thread's Work draft, or live. The caller disposes it.
-   */
-  readRoom(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    live: boolean;
-  }): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
-  write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
-  /**
-   * Retire exactly these peers on `documentId` after their drafts closed or were deleted:
-   * their staged writes are refused with the reason. Durable draft rows are the caller's;
-   * other threads and documents are untouched.
-   */
-  retireThreadPeers(
-    documentId: string,
-    peers: readonly { threadId: string; peerDraftId: string; reason: RetiredWriteReason }[],
-  ): Promise<void>;
-  commitResponse(
-    responseId: string,
-    options?: ResponseTransactionOptions,
-  ): Promise<ResponseSaveResult>;
-  readonly [threadPeerAgentEditCoreBrand]: "thread-peer-agent-edit-core";
-};
-
 export function asLiveAgentEditCore(core: AgentEditCore): LiveAgentEditCore {
   return core as LiveAgentEditCore;
-}
-
-export function asThreadPeerAgentEditCore(
-  core: Omit<ThreadPeerAgentEditCore, typeof threadPeerAgentEditCoreBrand>,
-): ThreadPeerAgentEditCore {
-  return core as ThreadPeerAgentEditCore;
 }
 
 export function sameDestination(left: FileDestination, right: FileDestination): boolean {

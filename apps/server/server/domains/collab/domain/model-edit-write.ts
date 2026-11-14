@@ -9,12 +9,12 @@ import {
   type AgentEditCore,
   modelResult,
   parseDocumentAddress,
-  type RetiredWriteReason,
   rejectedWriteResult,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
   type WriteOutcome,
+  type WriteRefusalReason,
 } from "@meridian/agent-edit/integration";
 import type { DraftOwner, LinkView, ProjectId, ThreadId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -38,7 +38,7 @@ type GivenContext = Omit<ModelEditWriteContext, "grant">;
 /** What a model edit's write needs from the rest of collab; the seams here are the adapters'. */
 export type ModelEditWriteDeps = {
   liveCore: LiveAgentEditCore;
-  /** The thread's core over Work drafts; it holds no response state a model edit touches. */
+  /** The thread's core over Work drafts. */
   threadCore(threadId: ThreadId): AgentEditCore;
   branches: Pick<Branches, "ensureActiveForWrite" | "viewForOwner">;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
@@ -166,7 +166,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
 /** The refusal a write gets when the draft its model last saw has been discarded since. */
 export function discardedWrite(
   command: WriteCommand,
-  reason: RetiredWriteReason = "discarded_edit",
+  reason: WriteRefusalReason = "discarded_edit",
 ): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   return {

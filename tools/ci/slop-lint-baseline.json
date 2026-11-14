@@ -373,11 +373,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/domain/thread-peer-core-pool.ts",
-        "line": "let early: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/collab/hocuspocus-rooms.ts",
         "line": "matching.map((name) => hocuspocus.loadingDocuments.get(name)?.catch(() => undefined)),",
         "count": 1
@@ -466,11 +461,6 @@
         "path": "packages/agent-edit/src/frontier.ts",
         "line": "} catch {",
         "count": 1
-      },
-      {
-        "path": "packages/agent-edit/src/tool/response-committer.ts",
-        "line": "} catch {",
-        "count": 2
       },
       {
         "path": "packages/agent-edit/src/tool/write.ts",
@@ -654,16 +644,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/draft-peer-pool.db.test.ts",
-        "line": "new Promise((resolve) => setTimeout(() => resolve(\"pool exhausted\"), 8000)),",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
-        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
-        "count": 2
-      },
-      {
         "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
         "line": "inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>",
         "count": 1
@@ -721,11 +701,6 @@
       {
         "path": "apps/server/server/shared/drizzle-transaction.db.test.ts",
         "line": "late = wait(50).then(() =>",
-        "count": 1
-      },
-      {
-        "path": "packages/agent-edit/src/tool/response-committer.test.ts",
-        "line": "setTimeout(resolve, 20);",
         "count": 1
       },
       {

@@ -118,7 +118,7 @@ type Dependencies = {
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  /** Revert and rollback change pending membership, so they reconcile the Works' counts through it. */
+  /** A revert changes pending membership, so it reconciles the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate">;
   /** A delete's redo removes the document again; its undo restores it (`restoreDocument`). */
   removal: DocumentRemoval;
@@ -172,7 +172,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       threadId: edit.threadId,
       turnId: edit.turnId,
       responseId: edit.responseId,
-      editScopeId: edit.editScopeId,
       toolCallId: edit.toolCallId,
       consumes: edit.consumes,
       actor: edit.actor,
@@ -205,7 +204,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 threadId: edit.threadId,
                 turnId: edit.turnId,
                 responseId: edit.responseId,
-                editScopeId: edit.editScopeId,
                 toolCallId: edit.toolCallId,
                 actor: edit.actor,
                 wId: edit.wId,
@@ -664,8 +662,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     userId: UserId | undefined,
   ): Promise<FileGrant<"edit">[] | null> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
-    // Rollback runs inside the reply's already bound grants. Every interactive inverse supplies
-    // its principal explicitly; an absent one here means a composition bug, not live routing.
+    // Every inverse supplies its principal explicitly; an absent one here means a composition
+    // bug, not live routing.
     if (!principal) return null;
     const requirements = new Map<
       string,
@@ -788,8 +786,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * One tree step, isolated in a savepoint: the live move, restore or delete, or the branch's
    * facts written back, then its row (`recordStep`). A step after one that makes a removal
    * starts from the removal that step made. A destination that can't take it refuses a model
-   * inverse whole, and is a reported skip for the card and a rollback, whose other steps still
-   * run. Returns the model's handle.
+   * inverse whole, and is a reported skip for the card, whose other steps still run. Returns the model's handle.
    */
   async function commitTreeStep(
     entry: PlannedInverse,
@@ -865,8 +862,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   /**
    * The one recorder of a committed inverse step, text or tree: who made it (the model's chat
-   * and reply with its write ordinal, stamped on the draft journal rows it wrote; the writer;
-   * or the system for a rollback), its action and what it consumes, the receipts or tree
+   * and reply with its write ordinal, stamped on the draft journal rows it wrote; or the
+   * writer), its action and what it consumes, the receipts or tree
    * transition it committed, and its count where it landed. Returns the model's handle.
    */
   async function recordStep(
@@ -908,11 +905,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             threadId: query.threadId,
             turnId: query.turnId,
             responseId: query.responseIdentity?.providerResponseId,
-            editScopeId: query.responseIdentity?.editScopeId,
             toolCallId: query.toolCallId,
           }
         : {
-            actor: step.actionKind === "rollback" ? ("system" as const) : ("human" as const),
+            actor: "human" as const,
           }),
       wId,
       actorUserId: userId,
@@ -984,7 +980,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             ...(query.model && query.responseIdentity
               ? {
                   authoringResponseId: query.responseIdentity.providerResponseId,
-                  editScopeId: query.responseIdentity.editScopeId,
                 }
               : {}),
             seq: 0,
@@ -1040,7 +1035,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               ...(query.model && query.responseIdentity
                 ? {
                     authoringResponseId: query.responseIdentity.providerResponseId,
-                    editScopeId: query.responseIdentity.editScopeId,
                   }
                 : {}),
               restorationAliases: part.aliases.map((alias) => ({
@@ -1062,53 +1056,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     if (rewritten.status !== "committed") throw new InverseAttemptMiss();
   }
 
-  /** After every step: a rollback's remaining pending rows, and the document's delivery. */
+  /** After every step: the document's delivery. */
   async function settleDocument(
     entry: PlannedInverse,
-    kind: "undo" | "redo" | "revert" | "rollback",
+    kind: "undo" | "redo" | "revert",
     query: TurnInverseQuery,
     deliveries: (() => Promise<void>)[],
   ): Promise<void> {
     const { plan } = entry;
     const document = plan.document;
-    if (kind === "rollback") {
-      const accepted = new Set(
-        entry.committed.flatMap((edit) =>
-          edit.parts.flatMap((part) =>
-            part.targets.map((target) => `${target.editId}:${target.ordinal}`),
-          ),
-        ),
-      );
-      const unresolved = document.history.filter(
-        (part) =>
-          (part.kind === "write" ||
-            part.kind === "revert" ||
-            part.kind === "undo" ||
-            part.kind === "redo") &&
-          part.editScopeId === query.responseIdentity?.editScopeId &&
-          part.origin.kind === "pending" &&
-          part.disposition === "pending" &&
-          !accepted.has(`${part.editId}:${part.ordinal}`) &&
-          !document.history.some(
-            (transition) =>
-              transition.kind === "rollback" &&
-              transition.targets.some(
-                (target) => target.editId === part.editId && target.ordinal === part.ordinal,
-              ),
-          ),
-      );
-      const rowIds = unresolved.flatMap((part) =>
-        part.origin.kind === "pending" ? [part.origin.rowId] : [],
-      );
-      if (rowIds.length) {
-        await db()
-          .update(draftWriteJournal)
-          .set({ status: "rollback_pending" })
-          .where(
-            and(inArray(draftWriteJournal.id, rowIds), eq(draftWriteJournal.status, "active")),
-          );
-      }
-    }
     const landed = new Set(entry.updates.map(({ draftId }) => draftId));
     if (!landed.size) return;
     deliveries.push(async () => {
@@ -1122,7 +1078,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           await input.flushLivePull(document.documentId);
         }
       }
-      if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
+      if (kind !== "revert" && !query.model && query.turnId)
         await input.notices.record({
           docId: document.documentId,
           threadId: query.threadId,

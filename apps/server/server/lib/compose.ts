@@ -280,12 +280,7 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
-import {
-  type AgentEditResponseWriteLifecycle,
-  createAgentEditResponseWriteLifecycle,
-  createModelToolRegistrations,
-  createReferenceReader,
-} from "./model-tools/index.js";
+import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
@@ -324,8 +319,6 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextNotices: WorkContextNotices;
-  /** A reply's write lifecycle: its save, its rollback, and the staged creates they retract. */
-  responseWrites: AgentEditResponseWriteLifecycle;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -897,15 +890,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
-  const responseWrites = createAgentEditResponseWriteLifecycle({
-    documentSync: ports.documentSync,
-  });
   const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
-    responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     permissionGrants,
@@ -1271,7 +1260,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
-    responseWrites,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1797,7 +1785,6 @@ export function createInMemoryAppServices(): AppServices {
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
     asks,
-    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({

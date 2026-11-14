@@ -5991,7 +5991,7 @@
         },
         "documents_deletion_cause_valid": {
           "name": "documents_deletion_cause_valid",
-          "value": "\"documents\".\"deletion_cause\" IN ('reply_rolled_back', 'create_failed', 'repair')"
+          "value": "\"documents\".\"deletion_cause\" IN ('create_failed', 'repair')"
         },
         "documents_size_bytes_nonneg": {
           "name": "documents_size_bytes_nonneg",
@@ -7939,12 +7939,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "edit_scope_id": {
-          "name": "edit_scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "command_id": {
           "name": "command_id",
           "type": "uuid",
@@ -8134,7 +8128,7 @@
         },
         "document_edits_kind_valid": {
           "name": "document_edits_kind_valid",
-          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert','rollback')"
+          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert')"
         },
         "document_edits_tree_change_valid": {
           "name": "document_edits_tree_change_valid",
@@ -10308,23 +10302,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "upstream_draft_id": {
-          "name": "upstream_draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "branch_id": {
           "name": "branch_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",
@@ -10488,28 +10470,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "document_drafts_active_thread_peer": {
-          "name": "document_drafts_active_thread_peer",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"document_drafts\".\"kind\" = 'thread_peer' AND \"document_drafts\".\"status\" = 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -10526,38 +10486,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "document_drafts_upstream_draft_id_document_drafts_id_fk": {
-          "name": "document_drafts_upstream_draft_id_document_drafts_id_fk",
-          "tableFrom": "document_drafts",
-          "tableTo": "document_drafts",
-          "columnsFrom": [
-            "upstream_draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "document_drafts_branch_id_branches_id_fk": {
           "name": "document_drafts_branch_id_branches_id_fk",
           "tableFrom": "document_drafts",
           "tableTo": "branches",
           "columnsFrom": [
             "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_drafts_thread_id_threads_id_fk": {
-          "name": "document_drafts_thread_id_threads_id_fk",
-          "tableFrom": "document_drafts",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
           ],
           "columnsTo": [
             "id"
@@ -10572,7 +10506,7 @@
       "checkConstraints": {
         "document_drafts_kind_valid": {
           "name": "document_drafts_kind_valid",
-          "value": "\"document_drafts\".\"kind\" IN ('work_draft', 'thread_peer')"
+          "value": "\"document_drafts\".\"kind\" = 'work_draft'"
         },
         "document_drafts_closed_cause_presence": {
           "name": "document_drafts_closed_cause_presence",
@@ -10589,10 +10523,6 @@
         "document_drafts_seed_record_shape": {
           "name": "document_drafts_seed_record_shape",
           "value": "((\"document_drafts\".\"seed_origins\" IS NULL AND \"document_drafts\".\"seed_live_room\" IS NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NULL) OR (\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"seed_origins\" IS NOT NULL AND \"document_drafts\".\"seed_live_room\" IS NOT NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NOT NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NOT NULL)) AND ((\"document_drafts\".\"seed_live_state\" IS NULL AND \"document_drafts\".\"seed_live_position\" IS NULL) OR (\"document_drafts\".\"seed_live_state\" IS NOT NULL AND \"document_drafts\".\"seed_live_position\" IS NOT NULL))"
-        },
-        "document_drafts_owner_shape": {
-          "name": "document_drafts_owner_shape",
-          "value": "(\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"thread_id\" IS NULL) OR (\"document_drafts\".\"kind\" = 'thread_peer' AND \"document_drafts\".\"thread_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -11122,13 +11052,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -11182,28 +11105,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_write_journal_active": {
-          "name": "draft_write_journal_active",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_write_journal\".\"status\" = 'active'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -11270,10 +11171,6 @@
         "draft_write_journal_source_valid": {
           "name": "draft_write_journal_source_valid",
           "value": "\"draft_write_journal\".\"source\" IN ('agent', 'writer', 'server')"
-        },
-        "draft_write_journal_status_valid": {
-          "name": "draft_write_journal_status_valid",
-          "value": "\"draft_write_journal\".\"status\" IN ('active', 'rollback_pending')"
         }
       },
       "isRLSEnabled": false

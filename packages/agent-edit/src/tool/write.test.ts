@@ -94,10 +94,6 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-immediate-failed-pull",
-        interactionContext: {
-          mode: "threadPeer",
-          peerDraftId: "draft-peer",
-        },
       },
     );
 
@@ -118,10 +114,6 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-immediate-success-after-failed-pull",
-        interactionContext: {
-          mode: "threadPeer",
-          peerDraftId: "draft-peer",
-        },
       },
     );
 
@@ -183,8 +175,8 @@ describe("write tool dispatch", () => {
     let writerLanded: Promise<void> | undefined;
     const raced = harness({});
     const readRoom = raced.coordinator.readRoom.bind(raced.coordinator);
-    raced.coordinator.readRoom = async (docId, staged) => {
-      const read = await readRoom(docId, staged);
+    raced.coordinator.readRoom = async (docId) => {
+      const read = await readRoom(docId);
       const runtime = read.doc;
       runtime.on("afterTransaction", () => {
         if (writerLanded || model.getBlocks(runtime).length === 0) return;
@@ -232,31 +224,6 @@ describe("write tool dispatch", () => {
     expect(outcomeText(byHash)).toContain("status: success");
     expect(outcomeText(byHash)).toContain("Inserted scene.");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Inserted scene.", "Omega."]);
-
-    const first = await ctx.core.write(
-      {
-        command: "insert",
-        file: "chapter.md",
-        content: "!",
-        find: "Alpha",
-        tool_use_id: "same-call",
-      },
-      context,
-    );
-    const replay = await ctx.core.write(
-      {
-        command: "insert",
-        file: "chapter.md",
-        content: "!",
-        find: "Alpha",
-        tool_use_id: "same-call",
-      },
-      context,
-    );
-
-    expect(replay).toBe(first);
-    expectOutcome(first, "success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
   it("finds the writer's text and the escaped form a read showed", async () => {
@@ -301,13 +268,9 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-a",
-        responseIdentity: {
-          providerResponseId: "response-provider-local-a",
-          editScopeId: "response-provider-local-a",
-        },
+        responseIdentity: { providerResponseId: "response-provider-local-a" },
       },
     );
-    await ctx.core.commitResponse("response-provider-local-a");
 
     const second = await ctx.core.write(
       {
@@ -319,13 +282,9 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-b",
-        responseIdentity: {
-          providerResponseId: "response-provider-local-b",
-          editScopeId: "response-provider-local-b",
-        },
+        responseIdentity: { providerResponseId: "response-provider-local-b" },
       },
     );
-    await ctx.core.commitResponse("response-provider-local-b");
 
     expectOutcome(first, "success");
     expectOutcome(second, "success");
@@ -340,8 +299,8 @@ describe("write tool dispatch", () => {
     expect(
       appended.mock.calls.flatMap(([entries]) => entries.map((entry) => entry.mutation?.writeId)),
     ).toEqual([
-      "response:response-provider-local-a:tool:provider-local-write",
-      "response:response-provider-local-b:tool:provider-local-write",
+      "turn:turn-provider-local-a:tool:provider-local-write",
+      "turn:turn-provider-local-b:tool:provider-local-write",
     ]);
   });
 
@@ -355,10 +314,9 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-9",
-        responseIdentity: { providerResponseId: "response-9", editScopeId: "response-9" },
+        responseIdentity: { providerResponseId: "response-9" },
       },
     );
-    await ctx.core.commitResponse("response-9");
 
     const mutations = appended.mock.calls.flatMap(([entries]) =>
       entries.map((entry) => entry.mutation),
@@ -367,39 +325,9 @@ describe("write tool dispatch", () => {
       expect.objectContaining({
         turnId: "turn-9",
         toolCallId: "call-write-9",
-        writeId: "response:response-9:tool:call-write-9",
+        writeId: "turn:turn-9:tool:call-write-9",
       }),
     ]);
-  });
-
-  it("rejects tool_use_id replay after rollback instead of returning cached staged success", async () => {
-    const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const responseContext = {
-      ...context,
-      turnId: "turn-idempotency-after-rollback",
-      responseIdentity: {
-        providerResponseId: "response-idempotency-after-rollback",
-        editScopeId: "response-idempotency-after-rollback",
-      },
-    };
-    const command = {
-      command: "insert" as const,
-      file: "chapter.md",
-      content: "Rolled back write.",
-      tool_use_id: "rollback-replay-write",
-    };
-
-    const first = await ctx.core.write(command, responseContext);
-    expectOutcome(first, "success");
-    await ctx.core.rollbackResponse("response-idempotency-after-rollback");
-
-    const replay = await ctx.core.write(command, responseContext);
-
-    expectOutcome(replay, "invalid_write", true);
-    expect(outcomeText(replay)).toContain("Response lifecycle closed");
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
   it("restores the pre-write runtime snapshot after an apply failure", async () => {
@@ -506,12 +434,10 @@ describe("write tool dispatch", () => {
       );
       const rejected = await multipart.core.write(command, {
         ...context,
-        responseIdentity: { providerResponseId: "certification", editScopeId: "certification" },
-        createdDocument: false,
+        responseIdentity: { providerResponseId: "certification" },
       });
       expectOutcome(rejected, "partial_failure", true);
       expect(certified).toBe(2);
-      expect((await multipart.core.commitResponse("certification")).updateCount).toBe(0);
       expect((await multipart.journal.read("chapter.md")).updates).toHaveLength(0);
       expect(blockTexts(multipart.liveDoc("chapter.md"))).toEqual(["cat one", "cat two"]);
     }

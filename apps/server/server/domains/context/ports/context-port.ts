@@ -54,8 +54,6 @@ export interface ThreadContextView {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;
-  /** The reply in progress, whose own staged writes reads still see. */
-  responseId?: string | null;
   /** The owner whose branch this thread's drafted writes land in; null outside draft mode. */
   branchOwner: BranchOwnerRef | null;
   version?: "draft" | "live";

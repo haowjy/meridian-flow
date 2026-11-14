@@ -98,7 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     /** The documents the save refused: a denial, or a write the branch's end turned away (receipted). */
-    const refusedIn = (result: unknown) => [
+    const _refusedIn = (result: unknown) => [
       ...((result as SaveResult).refused ?? []).map(({ documentId }) => documentId),
       ...((result as SaveResult).receipts ?? [])
         .filter(({ receipt }) => receipt.result.status === "invalid_write")
@@ -164,8 +164,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(await draftsOf(chapter), "and the branch's draft")
         .toEqual([{ kind: "work_draft", status: "active", branchId }]);
-      const saved = await reply.save();
-      expect.soft(refusedIn(saved), "the save keeps it").toEqual([]);
       expect.soft(await savedRows(branchId ?? "", chapter), "in the draft").toHaveLength(1);
     });
   });

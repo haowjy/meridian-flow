@@ -31,7 +31,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { branchTreeScenario } = await import("../test-support/branch-tree-scenario.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -152,7 +151,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch needle notes.",
       });
       expect(notes.result).toMatchObject({ destination: "live" });
-      await first.save();
 
       call = (await script.begin()).call;
       const draftRead = await call("read", { path: CHAPTER });
@@ -192,7 +190,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         created.metadata as { documentRevisions?: { documentId?: unknown }[] } | undefined
       )?.documentRevisions?.[0]?.documentId;
       if (typeof documentId !== "string") throw new Error("Create returned no document identity");
-      await reply.save();
 
       const receipt = await script.runtime.ports.documentSync.listEditedDocumentsForTurn(
         THREAD.threadId as never,
@@ -246,7 +243,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Writer live content.",
         content: "Kept draft content.",
       });
-      await first.save();
       await db
         .update(schema.threads)
         .set({ aiWriteMode: "direct" })
@@ -378,7 +374,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await create(reply.call, "after")).result).toMatchObject({
           destination: "draft",
         });
-        await reply.save();
         expect(await switchTurns()).toEqual([]);
 
         // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
@@ -488,7 +483,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(bySection.isError).toBeFalsy();
       expect(text(bySection)).toContain(`${CHAPTER}#the-midnight-duel`);
       expect(text(bySection)).not.toContain(".md");
-      await first.save();
 
       const { call: next } = await script.begin();
       const duel = text(await next("read", { path: "scratch://duel" }));

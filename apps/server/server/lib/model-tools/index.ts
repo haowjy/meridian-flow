@@ -14,10 +14,6 @@ import type { ToolWiringDeps } from "./tool-context.js";
 import { createWorkHandler } from "./work-tool.js";
 
 export { createReferenceReader } from "./reference-reader.js";
-export {
-  type AgentEditResponseWriteLifecycle,
-  createAgentEditResponseWriteLifecycle,
-} from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 
 export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {

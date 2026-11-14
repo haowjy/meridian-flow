@@ -136,11 +136,8 @@ async function containerGrant(
   return isFileAccessDenied(grant) ? fileAccessDeniedError("move", grant, path) : grant;
 }
 
-function livePort(deps: ToolWiringDeps, call: ToolCall, ctx: ToolHandlerContext) {
-  return contextPortForThread(deps.contextPorts, call.context.resolution, {
-    responseId: ctx.responseIdentity?.editScopeId ?? null,
-    liveWrites: true,
-  });
+function livePort(deps: ToolWiringDeps, call: ToolCall) {
+  return contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
 }
 
 /**
@@ -156,7 +153,7 @@ async function commitLive(
   source: FileRef & { documentId: DocumentId },
   ctx: ToolHandlerContext,
 ): Promise<{ handle: string; uri: string } | WriteToolErrorOutput> {
-  const port = livePort(deps, call, ctx);
+  const port = livePort(deps, call);
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
@@ -358,7 +355,7 @@ export async function runNamespaceCommand(
   // The mover flushes stale link derivations before it locks, on connections of its own, so
   // a move that runs as a command flushes before the claim.
   if (input.command === "move" && !drafted)
-    await livePort(deps, call, ctx).flushMoveLinks(contextAreaOf(source.uri));
+    await livePort(deps, call).flushMoveLinks(contextAreaOf(source.uri));
   return settle(async () => {
     const result = await runWithEditGrants(deps.fileAccess, grants, () =>
       drafted

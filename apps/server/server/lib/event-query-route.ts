@@ -47,8 +47,6 @@ const correlationParsers = {
   batchId: parseStringCorrelation,
   pushId: parseStringCorrelation,
   branchId: parseStringCorrelation,
-  peerDraftId: parseStringCorrelation,
-  upstreamDraftId: parseStringCorrelation,
   folderIds: parseStringCorrelation,
   releasedDraftIds: parseStringCorrelation,
 } satisfies Record<keyof EventCorrelation, CorrelationParser>;
