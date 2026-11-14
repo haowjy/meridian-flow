@@ -23,8 +23,8 @@ rebases are server appends, not Yjs pulls.
 
 These writes stand outside the doors: the shared close (`drizzle-draft-close.ts`), the
 projection job's effect write, creation and its seeds, which insert the row
-(`ensureDocumentDraft`), and retraction and tree deletion,
-which delete it.
+(`ensureDocumentDraft`), and tree deletion,
+which deletes it.
 
 A Work draft's insert also stores the live room, the live and draft seed snapshots,
 the paired live journal position and state, and the live-origin map for copied

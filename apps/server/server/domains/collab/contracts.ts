@@ -525,14 +525,6 @@ export type DraftPeerShadowAccess = {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
-  /**
-   * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the branch's draft on the document holds a contribution; otherwise closes the drafts, which retire after commit.
-   */
-  retractCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<"stands" | "retracted">;
 };
 
 export type DraftAttributionAccess = {

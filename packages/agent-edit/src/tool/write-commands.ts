@@ -742,7 +742,7 @@ export function createWriteCommands(deps: {
       kind: "agent",
       turnId,
       threadId: session.threadId,
-      responseId: context.responseIdentity?.providerResponseId,
+      responseId: context.responseIdentity?.modelResponseId,
     };
   }
 

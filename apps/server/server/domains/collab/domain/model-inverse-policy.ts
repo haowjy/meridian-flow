@@ -71,7 +71,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         identity: {
           threadId: query.threadId,
           turnId: query.turnId ?? null,
-          responseId: query.responseIdentity?.providerResponseId ?? null,
+          responseId: query.responseIdentity?.modelResponseId ?? null,
           toolCallId: query.toolCallId ?? null,
           actor: "agent",
         },
@@ -177,7 +177,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               documentId: document.documentId,
               threadId: query.threadId,
               turnId: query.turnId ?? null,
-              responseId: query.responseIdentity?.providerResponseId ?? null,
+              responseId: query.responseIdentity?.modelResponseId ?? null,
               toolCallId: query.toolCallId ?? null,
               actor: "agent",
               wId: null,

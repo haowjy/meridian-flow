@@ -43,6 +43,7 @@ export function createDrizzleModelEdits(
             commandId: ids.commandId,
             accountId: key.accountId,
             projectId: key.projectId,
+            threadId: key.threadId,
             kind: "model_edit",
             digest: ids.digest,
           },

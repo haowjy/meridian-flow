@@ -12,7 +12,6 @@ import {
   type Filetype,
   type ParsedDocumentFilename,
   parseDocumentFilename,
-  type RetractionCause,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -586,19 +585,6 @@ export class ContextFS implements ContextSchemeAdapter {
     options?: ContextEnsureTrackedOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     return this.placement.ensureTracked(path, options);
-  }
-
-  /**
-   * Reverse this adapter's create of `documentId` for a rolled-back reply or a failed
-   * create write (§12.5): a live create is deleted by the router; a branch's create ends
-   * the branch's use unless another contribution makes it stand.
-   */
-  retractCreate(
-    _path: string,
-    documentId: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
-    return this.placement.retract(documentId, cause);
   }
 
   writeBinary(

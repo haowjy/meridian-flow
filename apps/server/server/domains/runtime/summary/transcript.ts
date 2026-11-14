@@ -14,13 +14,14 @@ function renderPart(part: ContentPart): string {
   return JSON.stringify(part);
 }
 
-function resultExcerpt(
-  part: ContentPart,
-  rendered: string,
-  calls: ReadonlyMap<string, ToolUsePart>,
-): string {
+function resultExcerpt(content: readonly ContentPart[], index: number, rendered: string): string {
+  const part = content[index];
   if (part.type !== "tool_result" || rendered.length <= EXCERPT_CHARACTERS) return rendered;
-  const call = calls.get(part.toolCallId);
+  // A call id repeats across the responses of a turn: the result answers the latest call before it.
+  const call = content
+    .slice(0, index)
+    .filter((c): c is ToolUsePart => c.type === "tool_use" && c.toolCallId === part.toolCallId)
+    .at(-1);
   const uri = call?.toolName === "read" ? call.input.path : undefined;
   // Only document reads can be re-read. Writes and other bulky results must split or fail.
   return typeof uri === "string"
@@ -55,11 +56,6 @@ export function transcriptSegments(
     let content = turnContextMessages(turn, blocks)
       .flatMap((message) => message.content)
       .filter((part) => part.type !== "reasoning");
-    const calls = new Map(
-      content
-        .filter((part): part is ToolUsePart => part.type === "tool_use")
-        .map((call) => [call.toolCallId, call]),
-    );
     let parts = content.map(renderPart);
     if (!parts.some(Boolean)) continue;
     // Live system updates join their text into one part; recover the original
@@ -72,8 +68,7 @@ export function transcriptSegments(
         .filter((part) => part.type !== "reasoning");
       parts = content.map(renderPart);
     }
-    if (!fits(wrap(parts)))
-      parts = parts.map((part, index) => resultExcerpt(content[index], part, calls));
+    if (!fits(wrap(parts))) parts = parts.map((part, index) => resultExcerpt(content, index, part));
     if (fits(wrap(parts))) {
       result.push(wrap(parts));
       continue;

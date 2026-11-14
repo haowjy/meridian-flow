@@ -74,6 +74,37 @@ const committed = {
   commands: ["done"],
 };
 
+/** Two responses of one turn each call `call-1` (some adapters number calls per response); the second is killed at `point`. */
+function reusedCallId(
+  name: string,
+  spec: {
+    point: string;
+    expected: string;
+    after: Partial<Awaited<ReturnType<typeof state>>>;
+  },
+): ModelEditCase[] {
+  return [
+    {
+      name,
+      expected: spec.expected,
+      async run({ h, start }) {
+        const { thread, documentId, path } = await seedCase(h, name, "direct");
+        const first = await start();
+        await first.arm(spec.point, "kill", 2);
+        await first.script([
+          { toolCalls: [insertCall("call-1", path, "First.")] },
+          { toolCalls: [insertCall("call-1", path, "Second.")] },
+          reply,
+        ]);
+        await send(first, h, thread);
+        assert.equal(await first.died(), "SIGKILL");
+        await recover(start, h, thread);
+        assert.deepEqual(await state(h, thread, documentId), { turns: ["error"], ...spec.after });
+      },
+    },
+  ];
+}
+
 const cases: ModelEditCase[] = [
   {
     name: "killed before its response is stored: nothing ran",
@@ -158,6 +189,26 @@ const cases: ModelEditCase[] = [
       });
     },
   },
+  ...reusedCallId("killed after the commit of a call whose id an earlier response used", {
+    point: "command.afterCommit",
+    expected: "the later edit's own result is stored beside the first's: two results, two edits",
+    after: {
+      doc: ["Live seed.", "First.", "Second."],
+      results: ["call-1:committed", "call-1:committed"],
+      edits: ["call-1", "call-1"],
+      commands: ["done", "done"],
+    },
+  }),
+  ...reusedCallId("killed before the claim of a call whose id an earlier response used", {
+    point: "command.beforeClaim",
+    expected: "the later call did not run; the earlier result is not taken for it",
+    after: {
+      doc: ["Live seed.", "First."],
+      results: ["call-1:committed", "call-1:did_not_run"],
+      edits: ["call-1"],
+      commands: ["done", "never"],
+    },
+  }),
   {
     name: "the old process alive and held after the claim: recovery waits on the key",
     expected:
@@ -204,6 +255,7 @@ const cases: ModelEditCase[] = [
       const second = await start();
       const key = {
         op: "resolve",
+        threadId: thread,
         responseId: use?.response,
         toolCallId: "call-1",
         accountId: h.ids.user,

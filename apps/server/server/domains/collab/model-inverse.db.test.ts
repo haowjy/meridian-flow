@@ -108,7 +108,7 @@ describe("model document stack", () => {
             {
               ...liveContext,
               turnId,
-              responseIdentity: { providerResponseId: responseId },
+              responseIdentity: { modelResponseId: responseId },
             },
           ),
         ).toMatchObject({ status: "success" });
@@ -331,7 +331,7 @@ describe("model document stack", () => {
       });
       const secondContext = {
         ...context,
-        responseIdentity: { providerResponseId: responseId },
+        responseIdentity: { modelResponseId: responseId },
       };
       await core.read(address, secondContext);
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
@@ -391,7 +391,7 @@ describe("model document stack", () => {
       const draftId = await readDraftId(db, ALPHA_ID);
       const prose = () =>
         destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draftId);
-      const responseIdentity = { providerResponseId: responseId };
+      const responseIdentity = { modelResponseId: responseId };
       const inverse = { ...initial, responseIdentity };
       const write = (command: "undo" | "redo", count = 1) =>
         core.write({ ...address, command, count }, inverse);

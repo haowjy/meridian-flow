@@ -37,10 +37,6 @@ const TEST_HOOK_POINTS = [
   /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
   "apply.afterScopeGuess",
   "apply.afterLive",
-  /** A created document's retraction read its drafts and holds no draft row yet. */
-  "retract.beforeLocks",
-  /** A retraction holds its draft rows and found no contribution; nothing is deleted yet. */
-  "retract.afterRecheck",
   /** An inverse's capture read a document's live bytes and nothing after them. */
   "inverse.afterCaptureRead",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */

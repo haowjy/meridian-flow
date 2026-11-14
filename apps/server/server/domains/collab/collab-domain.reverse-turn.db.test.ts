@@ -141,7 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseIdentity: {
-              providerResponseId: "response-reused-provider-tool-id-db-a",
+              modelResponseId: "response-reused-provider-tool-id-db-a",
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseIdentity: {
-              providerResponseId: "response-reused-provider-tool-id-db-b",
+              modelResponseId: "response-reused-provider-tool-id-db-b",
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },

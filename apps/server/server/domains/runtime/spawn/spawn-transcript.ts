@@ -20,7 +20,6 @@ import { ExecutionReportConflictError } from "../../threads/index.js";
 import type { ExecutionReportRepository } from "../../threads/ports/repositories.js";
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
-import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { jsonContent } from "../tools/tool-content.js";
 
 export type SpawnTranscript = {
@@ -29,6 +28,8 @@ export type SpawnTranscript = {
   turnId: string;
   blockSeqRef: { value: number };
   allBlocks: Block[];
+  /** Runs a write of the running run under its lease (`storeUnderLease`): a run another process took over stores nothing. */
+  store<T>(persist: () => Promise<T>): Promise<T>;
 };
 
 function customCardBlock(
@@ -62,16 +63,14 @@ export async function persistCustomCard(
   content: ComponentBlockContent,
   existing?: Block | null,
 ): Promise<Block> {
-  const persisted = await persistAndAppendEvents(
-    transcript.persistence,
-    transcript.threadId,
-    async () => {
+  const persisted = await transcript.store(() =>
+    persistAndAppendEvents(transcript.persistence, transcript.threadId, async () => {
       const card = customCardBlock(transcript, content, existing);
       return {
         result: card.local,
         events: [{ type: "block.upserted" as const, block: card.row }],
       };
-    },
+    }),
   );
   rememberBlock(transcript, persisted.result, existing);
 
@@ -90,7 +89,6 @@ export async function persistInvocationCard(
 /** The parent lock serializes the admission replacement with publication B. */
 export async function bindAdmittedInvocationCard(input: {
   transcript: SpawnTranscript | undefined;
-  delivery: Pick<DeliveryProducer, "withThreadLock">;
   card: Block | null;
   props: Extract<InvocationCardProps, { terminalAt: null }>;
   execution: TurnId;
@@ -98,7 +96,7 @@ export async function bindAdmittedInvocationCard(input: {
 }): Promise<void> {
   const { transcript, card } = input;
   if (!transcript || !card) return;
-  await input.delivery.withThreadLock(transcript.threadId, async () => {
+  await transcript.store(async () => {
     const persisted = await persistAndAppendEvents(
       transcript.persistence,
       transcript.threadId,

@@ -19,17 +19,17 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    frame waits on the lock (`pg_stat_activity`). Commit. PASS: the tab closes
    `4208 document-deleted`; no new `document_yjs_updates` row. Control without
    the tombstone: one row, no close.
-2. **A save holds the lock through confirmation.** Pause at
-   `save.afterDocumentLock`, send a No Work chat a scripted insert, and once the
+2. **A model edit holds the lock through its commit.** Pause at
+   `command.afterLock`, send a No Work chat a scripted insert, and once the
    lock is held ask for it from a SQL removal. PASS: the removal waits; after
    the file is deleted the reply's row commits first and the removal's lock is
    granted after it.
-3. **Reply write staged before a delete.** Pause at `save.beforeWorkLock`; a
-   draft-mode chat inserts; `./mf doc rm` the document; resume. The save has not
-   taken the Work lock, so the removal wins. PASS: no draft or live row for the
+3. **A model edit held before its claim, then a delete.** Pause at
+   `command.beforeClaim`; a draft-mode chat inserts; `./mf doc rm` the document;
+   resume. The edit has taken no lock, so the removal wins. PASS: no draft or live row for the
    write; an open live tab holds no AI text; the receipt says the file was
-   deleted before the reply was saved. Repeat in a No Work chat.
-4. **Staged create after Discard.** Pause at `save.beforeWorkLock`; a
+   deleted before the edit ran. Repeat in a No Work chat.
+4. **A held create, then Discard.** Pause at `command.beforeClaim`; a
    draft-mode chat creates a file; Discard all the Work's branch; resume. PASS:
    the hidden row is a `discarded` tombstone with no head, no checkpoint, no
    other row at its name. Then compaction, the generation reader, provenance and
@@ -50,11 +50,11 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    Apply with `restore` is `applied`; A is restored at the next free name and
    the result carries a `renamed` note with the requested and landed paths.
 8. **The receipt names who removed it.** Start the stack with
-   `HOOK_PAUSE_AT=save.beforeWorkLock` (the save must not hold the Work lock the
+   `HOOK_PAUSE_AT=command.beforeClaim` (the edit must not hold the Work lock the
    delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,
    resume. PASS: the write's result reads "This file was deleted by <name> before this
-   reply was saved, so this change wasn't made." (a name appears only when the user row
+   edit ran, so this change wasn't made." (a name appears only when the user row
    has one: the dev auth bypass user has none, so set `users.name` after the delete and before
-   resuming), and the chat's card reads "<name> deleted <title> before this reply saved
-   its change." (or "<title> was deleted before this reply saved its change." without a name; the result carries `rejected: "removed"` and the record in `removal`).
+   resuming), and the chat's card reads "<name> deleted <title> before this change could
+   be made." (or "<title> was deleted before this change could be made." without a name; the result carries `rejected: "removed"` and the record in `removal`).
    Repeat in a No Work chat.

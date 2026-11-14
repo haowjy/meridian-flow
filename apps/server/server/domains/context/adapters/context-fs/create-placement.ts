@@ -2,13 +2,12 @@
  * Where a ContextFS adapter's creates land, as a strategy (contract §2.3, §6.1). The port
  * factory decides the placement once (`placementFor`); ContextFS delegates the commands
  * whose meaning differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`,
- * `retractCreate`, the refusals a draft placement makes (a draft never seeds live
+ * the refusals a draft placement makes (a draft never seeds live
  * Yjs, and an empty hidden folder would have no use), and a draft placement's moves and
  * deletes, which are facts in the Work's branch.
  */
 
 import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contracts";
-import type { RetractionCause } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
@@ -69,11 +68,6 @@ export interface CreatePlacement {
     path: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<{ documentId: string; placement: ContextPlacement["kind"] }, AdapterFault>>;
-  /** Reverse a create (§12.5): `live` asks the caller to delete; a branch create retracts here. */
-  retract(
-    documentId: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
   /** A draft placement's moves and deletes; null for a live one, whose go through the mover. */
   readonly branchTree: BranchTreeCommands | null;
 }
@@ -176,7 +170,6 @@ function livePlacement(
         return Ok({ documentId: doc.id, placement: "live" as const });
       });
     },
-    retract: async () => Ok({ placement: "live" as const }),
     branchTree: placement.branch ? branchTreeCommands(placement.branch, executor) : null,
   };
 }
@@ -265,23 +258,6 @@ function draftPlacement(
       });
     },
     branchTree: branchTreeCommands(placement, executor),
-    retract(documentId, cause) {
-      return executor.run(
-        async ({ branch }) => {
-          // No active branch: a whole Discard already ended every use.
-          if (branch) {
-            await placement.tree.retractCreate({
-              branch: { id: branch.id, owner: placement.owner },
-              documentId,
-              cause,
-            });
-          }
-          return Ok({ placement: "draft" as const });
-        },
-        undefined,
-        { branch: { ...owner, mode: "existing" } },
-      );
-    },
   };
 }
 

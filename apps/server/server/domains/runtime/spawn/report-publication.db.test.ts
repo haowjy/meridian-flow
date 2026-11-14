@@ -439,8 +439,8 @@ else
           turnId: ids.callerTurn,
           blockSeqRef: { value: 8 },
           allBlocks: [],
+          store: (persist) => delivery.withThreadLock(ids.caller, persist),
         },
-        delivery,
         card: originalCard,
         props: invocationCardProps({
           agent: "critic",

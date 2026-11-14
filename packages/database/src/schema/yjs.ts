@@ -329,12 +329,18 @@ export const documentCommands = pgTable(
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * The chat of a `model_edit` command, so a purge of the chat deletes its stored tool results.
+     * Plain, no foreign key, like the evidence tables.
+     */
+    threadId: uuid("thread_id").$type<ThreadId>(),
     /** Hash of the canonical request; another digest under this id is a conflict. */
     requestDigest: text("request_digest").notNull(),
     outcome: jsonb("outcome").$type<DocumentCommandOutcome>().notNull(),
     createdAt: createdAt(),
   },
   (table) => [
+    index("document_commands_thread").on(table.threadId),
     check(
       "document_commands_kind_valid",
       sql`${table.kind} IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')`,

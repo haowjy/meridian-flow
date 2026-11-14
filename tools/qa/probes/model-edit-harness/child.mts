@@ -9,7 +9,7 @@
  *   {op:"send", threadId, userId, text}   admit a message, as the chat route does
  *   {op:"sweep"}                     the recovery lanes once: wake scan, orphan repair
  *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo, as the route sends it
- *   {op:"resolve", responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
+ *   {op:"resolve", threadId, responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
  *   {op:"discard", projectId, branchId, userId, commandId}   Discard all on a Work's branch
  *   {op:"timeout", tool, ms}        shorten a tool's registered timeout, for the timeout cases
  *   {op:"exit"}
@@ -96,6 +96,7 @@ type Op = { id?: number } & (
     }
   | {
       op: "resolve";
+      threadId: string;
       responseId: string;
       toolCallId: string;
       accountId: string;
@@ -143,6 +144,7 @@ async function handle(message: Op): Promise<unknown> {
       return reverseTurnCard(app, message as never);
     case "resolve":
       return ports.documentSync.modelEdits().resolve({
+        threadId: message.threadId as never,
         responseId: message.responseId,
         toolCallId: message.toolCallId,
         accountId: message.accountId as never,

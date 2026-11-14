@@ -63,7 +63,7 @@ import { liveRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
-import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
   commitRewriteWithinTx,
@@ -242,30 +242,6 @@ export function createDrizzleDraftStore(
       }
       return documentDraft;
     });
-  }
-
-  /**
-   * §12.5, O-11: a contribution is any journal row of the draft; then the create stands.
-   */
-  async function retractCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<"stands" | "retracted"> {
-    const tx = currentDrizzleDb(db);
-    const selection = { documentIds: [input.documentId], branchId: input.branchId };
-    await testHook("retract.beforeLocks");
-    const drafts = await lockActiveDrafts(tx, selection);
-    for (const documentDraft of drafts) {
-      const [contribution] = await tx
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .where(eq(draftWriteJournal.draftId, documentDraft.id))
-        .limit(1);
-      if (contribution) return "stands";
-    }
-    await testHook("retract.afterRecheck");
-    await deps.close.closeDrafts(tx, selection, "document_discarded");
-    return "retracted";
   }
 
   /** The document's live state as its journal holds it, read in this transaction. */
@@ -631,7 +607,6 @@ export function createDrizzleDraftStore(
 
     ensureCreatedDocumentDraft,
     ensureLiveDocumentDraft,
-    retractCreatedDocumentDraft,
   };
 }
 

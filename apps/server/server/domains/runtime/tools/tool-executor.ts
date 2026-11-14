@@ -71,7 +71,7 @@ import {
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
-import type { DocumentCommands } from "../ports/document-commands.js";
+import type { CommandResolver } from "../ports/command-resolver.js";
 import {
   invalidArgumentsResult,
   parseToolInput,
@@ -419,7 +419,7 @@ type CallExit = { exit: ToolExecutionError };
  */
 export function createToolExecutor(
   registry: ToolRegistry,
-  commands?: DocumentCommands,
+  commands?: CommandResolver,
 ): ToolExecutorWithBatch {
   /** The key of a `documentCommand` call: its response, its id and whose thread it ran in. */
   function commandKey(
@@ -431,8 +431,9 @@ export function createToolExecutor(
     if (!commands || !ctx.responseIdentity || !ctx.commandOwner)
       throw new Error(`Tool ${call.name} is a document command and has no command context`);
     return {
-      responseId: ctx.responseIdentity.providerResponseId,
+      responseId: ctx.responseIdentity.modelResponseId,
       toolCallId: call.id,
+      threadId: ctx.threadId,
       ...ctx.commandOwner,
     };
   }

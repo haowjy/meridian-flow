@@ -268,7 +268,7 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-a",
-        responseIdentity: { providerResponseId: "response-provider-local-a" },
+        responseIdentity: { modelResponseId: "response-provider-local-a" },
       },
     );
 
@@ -282,7 +282,7 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-b",
-        responseIdentity: { providerResponseId: "response-provider-local-b" },
+        responseIdentity: { modelResponseId: "response-provider-local-b" },
       },
     );
 
@@ -314,7 +314,7 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-9",
-        responseIdentity: { providerResponseId: "response-9" },
+        responseIdentity: { modelResponseId: "response-9" },
       },
     );
 
@@ -434,7 +434,7 @@ describe("write tool dispatch", () => {
       );
       const rejected = await multipart.core.write(command, {
         ...context,
-        responseIdentity: { providerResponseId: "certification" },
+        responseIdentity: { modelResponseId: "certification" },
       });
       expectOutcome(rejected, "partial_failure", true);
       expect(certified).toBe(2);

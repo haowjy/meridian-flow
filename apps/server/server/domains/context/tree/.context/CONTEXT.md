@@ -149,15 +149,14 @@ writes it, `restoreWorkDocuments` clears it for a Work Restore,
 `restoreDocument` clears one document's own delete (below), and
 `readRemovalRecords` reads it (actor names joined as they read now) through the
 handle its caller gives. Adapters call the reader directly; domain code that
-needs a seam (the reply save fence, the model's file tools) takes the narrow
+needs a seam (the model's file tools) takes the narrow
 `DocumentRemovals` port, built by `createRemovalRecords`. Callers must
 authorize identity access before exposing a record (availability does so through
 its existing classification). `ports/document-removal.ts` holds the kernel and the
 collab port, so collab need not import a context adapter. A removed document
 refuses as agent-edit's `DocumentNotFoundError` carrying its record in
 `removal`. A writer's Discard never sets the Work-cascade restore marker.
-Retractions name `create_failed`; both repair paths name
-`repair` (one `DocumentRemovalCause`, from contracts). A model's delete names its
+Both repair paths name `repair` (the one `DocumentRemovalCause`, from contracts). A model's delete names its
 chat (`deleted_by_thread_id`, actor `agent` with the chat's title) and keeps the
 chat's owner in `deleted_by_user_id`, who stands in once the chat is gone.
 
@@ -185,8 +184,7 @@ draft rows are never deleted by it.
 
 Pending counts: every Work the removal changed (tree uses, closed drafts' Works)
 goes to `WorkProjectionMutation.recountAfterCommit`, which skips a Work the
-caller already holds through the projection (Discard, a branch create's
-retraction) and recounts the rest in a separate root transaction after commit,
+caller already holds through the projection (Discard) and recounts the rest in a separate root transaction after commit,
 because the removal holds document locks and may not take a Work lock. End of
 use recounts nothing itself: every caller holds the branch's Work. Folder
 deletion locks the complete pre-split subtree, hidden boundary documents

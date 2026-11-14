@@ -155,15 +155,14 @@ function toolResultParts(message: Message, names: Map<string, string>, target: T
 }
 
 function mapContents(messages: Message[], target: Target): Content[] {
+  // A call id repeats across responses; a result belongs to the latest call before it.
   const names = new Map<string, string>();
-  for (const message of messages) {
-    for (const part of message.content) {
-      if (part.type === "tool_use") names.set(part.toolCallId, part.toolName);
-    }
-  }
   const contents: Content[] = [];
   for (const message of messages) {
     if (message.role === "system") continue;
+    for (const part of message.content) {
+      if (part.type === "tool_use") names.set(part.toolCallId, part.toolName);
+    }
     const role = message.role === "assistant" ? "model" : "user";
     const parts =
       message.role === "tool"

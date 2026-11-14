@@ -117,8 +117,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             sessionId: session.id,
             threadId: session.threadId,
             ...(context.turnId ? { turnId: context.turnId } : {}),
-            ...(context.responseIdentity?.providerResponseId
-              ? { responseId: context.responseIdentity.providerResponseId }
+            ...(context.responseIdentity?.modelResponseId
+              ? { responseId: context.responseIdentity.modelResponseId }
               : {}),
             ...(toolUseId ? { toolUseId } : {}),
           });

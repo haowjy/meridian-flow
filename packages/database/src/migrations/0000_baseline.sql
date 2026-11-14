@@ -589,7 +589,7 @@ CREATE TABLE "documents" (
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
 	CONSTRAINT "documents_removal_presence" CHECK (("documents"."deleted_at" IS NOT NULL) = ("documents"."deletion_reason" IS NOT NULL)),
 	CONSTRAINT "documents_deletion_reason_valid" CHECK ("documents"."deletion_reason" IN ('deleted', 'discarded')),
-	CONSTRAINT "documents_deletion_cause_valid" CHECK ("documents"."deletion_cause" IN ('create_failed', 'repair')),
+	CONSTRAINT "documents_deletion_cause_valid" CHECK ("documents"."deletion_cause" IN ('repair')),
 	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0),
 	CONSTRAINT "documents_file_type_valid" CHECK ("documents"."file_type" IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary'))
 );
@@ -1028,6 +1028,7 @@ CREATE TABLE "document_commands" (
 	"kind" text NOT NULL,
 	"account_id" uuid NOT NULL,
 	"project_id" uuid,
+	"thread_id" uuid,
 	"request_digest" text NOT NULL,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -1407,6 +1408,7 @@ CREATE UNIQUE INDEX "asks_one_live_per_thread" ON "asks" USING btree ("thread_id
 CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","group_id");--> statement-breakpoint
 CREATE INDEX "collab_staged_states_project_idx" ON "collab_staged_states" USING btree ("project_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX "document_commands_thread" ON "document_commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_drafts_active_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint

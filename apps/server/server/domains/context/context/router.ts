@@ -15,7 +15,7 @@ import {
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import { type EventSink, emitEvent } from "../../observability/index.js";
+import type { EventSink } from "../../observability/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
@@ -894,43 +894,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!moved.ok) return moved;
       const { scheme, authority } = destination.value;
       return Ok({ uri: uriFor(scheme, moved.value.path, authority), moved: moved.value.moved });
-    },
-
-    async retractCreate(uri, options): Promise<Result<void, ContextError>> {
-      const r = await resolveMutation(uri);
-      if (!r.ok) return r;
-      const { adapter, canonical } = r.value;
-      const retracted = await callAdapter(canonical, () =>
-        adapter.retractCreate(r.value.path, options.documentId, options.cause),
-      );
-      if (!retracted.ok) return retracted;
-      if (retracted.value.placement === "draft") return Ok(undefined);
-      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      const deleted = await treeMover.delete(
-        { kind: "file", nodeId: options.documentId },
-        r.value,
-        {
-          onlyAt: r.value.path,
-          removal: { reason: "discarded", cause: options.cause },
-        },
-      );
-      if (!deleted.ok && deleted.error.code === "stale_target" && deps.eventSink)
-        // The writer moved or renamed the create; it survives. A miss that is not that (a
-        // caller passing a different address than the create landed at) would look the same.
-        emitEvent(deps.eventSink, {
-          level: "debug",
-          source: "context.router",
-          name: "retract_create.moved_on",
-          correlation: { documentId: options.documentId },
-          payload: { uri: canonical },
-        });
-      if (
-        !deleted.ok &&
-        deleted.error.code !== "not_found" &&
-        deleted.error.code !== "stale_target"
-      )
-        return deleted;
-      return Ok(undefined);
     },
 
     async delete(node, area, options = {}) {

@@ -59,7 +59,7 @@ function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
 }
 
 const identity = (responseId: string) => ({
-  providerResponseId: responseId,
+  modelResponseId: responseId,
   editScopeId: responseId,
 });
 

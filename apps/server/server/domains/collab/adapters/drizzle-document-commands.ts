@@ -81,6 +81,7 @@ export async function runCommand<R extends StoredDocumentCommandResult>(
         kind: envelope.kind,
         accountId: envelope.accountId,
         projectId: envelope.projectId,
+        threadId: envelope.threadId,
         requestDigest: envelope.digest,
         // Replaced below, before this transaction can commit.
         outcome: { status: "never" },

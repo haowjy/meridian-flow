@@ -10,7 +10,6 @@ import type {
   DeleteContextEntryResult,
   InvalidOperationReason,
   ParsedDocumentFilename,
-  RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
@@ -238,15 +237,6 @@ export interface ContextSchemeAdapter {
     path: string,
     options?: ContextEnsureTrackedOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
-  /**
-   * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
-   * retracts the branch's use itself; `live` asks the caller to delete the document.
-   */
-  retractCreate(
-    path: string,
-    documentId: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,

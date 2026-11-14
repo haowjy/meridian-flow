@@ -300,9 +300,6 @@ function createInMemoryDraftPeerStub(
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },
-    async retractCreatedDocumentDraft() {
-      throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
-    },
   };
 }
 

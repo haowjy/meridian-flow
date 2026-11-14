@@ -25,7 +25,7 @@ function directProvenance(input: DirectTreeChange) {
   return {
     threadId: input.threadId,
     turnId: input.turnId ?? null,
-    responseId: input.responseIdentity?.providerResponseId ?? null,
+    responseId: input.responseIdentity?.modelResponseId ?? null,
     toolCallId: input.toolCallId ?? null,
     shownAt: input.shownAt,
   };

@@ -401,6 +401,7 @@ function transcriptFor(
     turnId,
     blockSeqRef: { value: 0 },
     allBlocks: [],
+    store: (persist) => persist(),
     journal,
   };
 }

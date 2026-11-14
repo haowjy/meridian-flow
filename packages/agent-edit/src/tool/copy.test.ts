@@ -90,7 +90,7 @@ describe("document copy", () => {
     const responseContext = {
       ...context,
       turnId: "turn-copy",
-      responseIdentity: { providerResponseId: "response-copy" },
+      responseIdentity: { modelResponseId: "response-copy" },
     };
 
     const result = await ctx.core.write(
