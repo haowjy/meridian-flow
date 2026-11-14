@@ -23,6 +23,17 @@ import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
 import { RemovedNoticeStore } from "./removed-notice-store";
 
+/** Why a sign-out stopped: edits the server did not acknowledge, or a copy another tab still held open. */
+export class SignOutIncomplete extends Error {
+  constructor(readonly left: "unsent" | "copies") {
+    super(`Sign-out left ${left} behind`);
+  }
+}
+
+const UNSENT_EDITS_WAIT_MS = 8_000;
+/** One account's tabs hear that another is signing out. */
+const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
+
 export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
@@ -44,6 +55,7 @@ export class AccountFeatureLifetime {
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
+  private readonly signOutChannel: BroadcastChannel | null;
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -134,6 +146,20 @@ export class AccountFeatureLifetime {
       epochSignal: this.runtime.epochSignal,
     });
     this.featureLease = this.removal.createLifetimeLease();
+    this.signOutChannel =
+      typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SIGN_OUT_CHANNEL);
+    if (this.signOutChannel)
+      this.signOutChannel.onmessage = ({ data }) => {
+        if ((data as { accountId?: string } | null)?.accountId === this.accountId)
+          void this.signedOutElsewhere();
+      };
+  }
+
+  /** Another tab is signing this account out: send what can be sent, let go of every copy, and leave. */
+  private async signedOutElsewhere(): Promise<void> {
+    if (this.state === "open") await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
+    await this.finishClose();
+    window.location.assign("/logout");
   }
 
   resumeFeatureLease(): void {
@@ -154,10 +180,21 @@ export class AccountFeatureLifetime {
     this.featureLease.suspend();
   }
 
-  /** Sign-out: the sessions close, then every copy this account has on this browser is deleted. */
+  /**
+   * Sign-out: the edits the server can still acknowledge are sent, the account's other tabs let
+   * go of their copies, and every copy this account has on this browser is deleted. Throws
+   * `SignOutIncomplete` when edits could not be sent or a copy could not be deleted: the writer
+   * is not signed out with the account's text left behind.
+   */
   async clearForSignOut(): Promise<void> {
+    if (this.state === "open") {
+      if (!(await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS)))
+        throw new SignOutIncomplete("unsent");
+      this.signOutChannel?.postMessage({ accountId: this.accountId });
+    }
     await this.finishClose();
-    await clearAccountCopies(this.accountId as AccountId);
+    if (!(await clearAccountCopies(this.accountId as AccountId)))
+      throw new SignOutIncomplete("copies");
   }
 
   finishClose(): Promise<void> {
@@ -171,6 +208,7 @@ export class AccountFeatureLifetime {
       }
       await this.runtime.finishClose();
       this.state = "closed";
+      this.signOutChannel?.close();
     })();
     this.closeAttempt = attempt;
     void attempt

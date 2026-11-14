@@ -2,6 +2,7 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import type { DraftRoomRef } from "./draft-room-pool";
 
 export type RetainedLiveDocumentReference = Readonly<{
   projectId: ProjectId;
@@ -24,8 +25,10 @@ export interface LiveDocumentSessionRegistry {
    * itself. Resolves once this tab is done.
    */
   clearLocalCopy(documentId: DocumentId): Promise<void>;
-  /** The documents this browser still holds a copy of for the account, open or not. */
-  localCopies(): Promise<DocumentId[]>;
+  /** True once no open session has unsent edits the server could still acknowledge; false if some remain at the deadline. */
+  settleUnsentEdits(timeoutMs: number): Promise<boolean>;
+  /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
+  observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   /**
@@ -60,6 +63,6 @@ export interface LiveDocumentSessionRegistry {
   ): () => void;
   /** A fresh session for a draft room whose last one reset, synced from the server alone. */
   rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
-  retainDraftRooms(ownerId: string, rooms: readonly string[]): void;
+  retainDraftRooms(ownerId: string, rooms: readonly DraftRoomRef[]): void;
   releaseDraftRooms(ownerId: string): void;
 }

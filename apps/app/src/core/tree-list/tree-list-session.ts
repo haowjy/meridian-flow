@@ -22,6 +22,7 @@ import { StoredListCopy } from "./stored-copy";
  * - `rebuilding`: the server refused the copy whole; it is being rebuilt from the server's
  * - `read-only`: synced, but the account may not write the list: the server keeps none of the
  *   copy's records
+ * - `unauthenticated`: the sign-in did not hold; the writer signs in again. Nothing is known about access.
  * - `denied`: this account has no access to the list
  */
 export type TreeListStatus =
@@ -30,6 +31,7 @@ export type TreeListStatus =
   | "read-only"
   | "offline"
   | "rebuilding"
+  | "unauthenticated"
   | "denied";
 
 export type TreeListSnapshot = {

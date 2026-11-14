@@ -146,14 +146,14 @@ export async function retireThrough(
 }
 
 /**
- * A document's current head without materializing a missing one. `living` reads it only when
+ * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
  * (checkpoints, compaction, version replacement) asks for it.
  */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
-  options: { living?: boolean } = {},
+  options: { notPurged?: boolean } = {},
 ): Promise<DocumentAuthorityHeadGeneration | null> {
   const [row] = await db
     .select({
@@ -162,7 +162,7 @@ export async function findDocumentAuthorityHead(
     })
     .from(documentYjsHeads)
     .where(
-      options.living
+      options.notPurged
         ? holdsText(documentId)
         : eq(documentYjsHeads.documentId, documentId as DocumentId),
     )
@@ -170,11 +170,11 @@ export async function findDocumentAuthorityHead(
   return row ?? null;
 }
 
-/** The head a caller requires, else why it has none (with its removal record when `living`). */
+/** The head a caller requires, else why it has none (with its removal record when `notPurged`). */
 export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
-  options: { living?: boolean } = {},
+  options: { notPurged?: boolean } = {},
 ): Promise<DocumentAuthorityHeadGeneration> {
   const row = await findDocumentAuthorityHead(db, documentId, options);
   if (!row) throw await refusedAuthority(db, documentId);
@@ -240,7 +240,7 @@ export async function replaceGeneration(
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;
     await lockDocumentMutation(txDb, input.documentId);
-    const head = await readDocumentAuthorityHead(txDb, input.documentId, { living: true });
+    const head = await readDocumentAuthorityHead(txDb, input.documentId, { notPurged: true });
     if (head.generation !== input.expectedGeneration) {
       return { ok: false as const, code: "stale_generation" as const };
     }

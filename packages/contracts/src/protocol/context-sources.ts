@@ -25,7 +25,15 @@ export type ContextSource = {
 };
 
 /** The sources the account can read in one project, or the account's own (`user://`). */
-export type ContextSourcesResult = { sources: readonly ContextSource[] };
+export type ContextSourcesResult = {
+  sources: readonly ContextSource[];
+  /**
+   * Sources that ended and can come back (a deleted Work's, a deleted chat's): readers drop them,
+   * and a browser keeps its copies of their documents. A source named by neither list was purged
+   * for good.
+   */
+  ended: readonly ContextSourceId[];
+};
 
 /**
  * A project's sources changed (one began, ended, was renamed, or the account lost or gained access

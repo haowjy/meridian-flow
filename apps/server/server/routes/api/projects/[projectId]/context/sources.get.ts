@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const result: ContextSourcesResult = {
     sources: await app.contextSources.inProject(projectId as never),
+    ended: await app.contextSources.endedIn(projectId as never),
   };
   return serializeTransport(result);
 });

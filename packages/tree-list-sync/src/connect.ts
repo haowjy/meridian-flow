@@ -16,6 +16,8 @@ import { PART_RECORDS, splitSyncFrame } from "./parts.js";
  * - `rebuilding`: the server refused the copy whole; it is being thrown away and rebuilt
  * - `read-only`: synced, but the server keeps none of this copy's records: the account may read
  *   the list and not write it
+ * - `unauthenticated`: the sign-in did not hold (expired session, a refresh that failed); nothing
+ *   connects again until the writer signs in. It says nothing about the account's access.
  * - `denied`: the account has no access to this list; nothing will connect again
  *
  * A record the server refused whole is not appended again: `onRejected` has it.
@@ -26,6 +28,7 @@ export type ListSyncState =
   | "read-only"
   | "offline"
   | "rebuilding"
+  | "unauthenticated"
   | "denied";
 
 /** The browser's copy of one list. */
@@ -42,7 +45,6 @@ export type ListCopy = {
   settleCarried(): Promise<void>;
 };
 
-const DENIAL_CODES = new Set<number>([WS_CLOSE.AUTH_FAILED.code, WS_CLOSE.PERMISSION_DENIED.code]);
 /** More rebuilds than this within the window and the records appended again are all given up on. */
 const MAX_REBUILDS = 3;
 const REBUILD_WINDOW_MS = 60_000;
@@ -121,6 +123,11 @@ export function connectTreeList(options: {
     await copy.settleCarried();
   }
 
+  function end(next: "unauthenticated" | "denied") {
+    publish(next);
+    queueMicrotask(stop);
+  }
+
   function start() {
     const doc = copy.doc;
     socket = new PartsWebsocket({
@@ -146,15 +153,12 @@ export function connectTreeList(options: {
       onClose: ({ event }) => {
         if (event.code === WS_CLOSE.LIST_REBUILD.code)
           void rebuild(listRebuildRecord(event.reason));
-        else if (DENIAL_CODES.has(event.code)) {
-          publish("denied");
-          queueMicrotask(stop);
-        } else if (isSynced()) publish("offline");
+        else if (event.code === WS_CLOSE.AUTH_FAILED.code) end("unauthenticated");
+        else if (event.code === WS_CLOSE.PERMISSION_DENIED.code) end("denied");
+        else if (isSynced()) publish("offline");
       },
-      onAuthenticationFailed: () => {
-        publish("denied");
-        queueMicrotask(stop);
-      },
+      onAuthenticationFailed: ({ reason }) =>
+        end(reason === WS_CLOSE.AUTH_FAILED.reason ? "unauthenticated" : "denied"),
     });
     provider.attach();
     void socket.connect();

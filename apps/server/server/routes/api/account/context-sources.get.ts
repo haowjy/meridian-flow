@@ -6,6 +6,9 @@ import { requireAppUser } from "../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const result: ContextSourcesResult = { sources: await app.contextSources.ofUser(user.userId) };
+  const result: ContextSourcesResult = {
+    sources: await app.contextSources.ofUser(user.userId),
+    ended: [],
+  };
   return serializeTransport(result);
 });

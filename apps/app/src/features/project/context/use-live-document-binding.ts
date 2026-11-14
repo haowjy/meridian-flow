@@ -25,10 +25,13 @@ export function useLiveDocumentBinding({
   projectId,
   documentId,
   owner,
+  trashed,
 }: {
   projectId: string;
   documentId: string | null;
-  owner: "desktop-document-host" | "mobile-project-document-host";
+  owner: "desktop-document-host" | "mobile-project-document-host" | "trash-view";
+  /** The document is in Trash and is shown read-only. */
+  trashed?: true;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
@@ -50,7 +53,7 @@ export function useLiveDocumentBinding({
     setState({ kind: "opening", documentId });
     void (async () => {
       try {
-        const opened = await opener.open({ projectId, documentId, signal: abort.signal });
+        const opened = await opener.open({ projectId, documentId, trashed, signal: abort.signal });
         // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
         if (opened.kind === "cancelled") return;
         if (opened.kind !== "opened") {
@@ -83,7 +86,7 @@ export function useLiveDocumentBinding({
       abort.abort();
       binding?.release();
     };
-  }, [documentId, opener, projectId, retryGeneration]);
+  }, [documentId, opener, projectId, retryGeneration, trashed]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   return useMemo(() => ({ state, retry }), [retry, state]);

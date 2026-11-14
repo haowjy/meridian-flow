@@ -13,10 +13,11 @@ import type {
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool } from "./draft-room-pool";
+import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
+  draftRoomPersistenceKey,
   LocalDocumentCopies,
 } from "./local-document-copies";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
@@ -77,8 +78,12 @@ export class DocumentSessionRegistry {
   ) {
     this.copies = copies;
     this.draftRooms = new DraftRoomPool({
-      openSession: (roomKey) => {
-        const session = this.createSession(roomKey, { kind: "indexeddb", key: roomKey });
+      hold: (documentId) => this.copies.hold(documentId as DocumentId),
+      openSession: (roomKey, documentId) => {
+        const session = this.createSession(roomKey, {
+          kind: "indexeddb",
+          key: draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
+        });
         this.attachSessionTransport(session);
         return session;
       },
@@ -115,8 +120,40 @@ export class DocumentSessionRegistry {
     await this.copies.clear(documentId);
   }
 
-  localCopies(): Promise<DocumentId[]> {
-    return this.copies.list();
+  /**
+   * Resolves true once no open session has unsent edits the server could still acknowledge, false
+   * if some are still unsent at the deadline. What a session cannot deliver (offline, refused) is
+   * not waited for.
+   */
+  async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
+    const sessions = [
+      ...[...this.liveRooms.values()].flatMap(({ session }) => (session ? [session] : [])),
+      ...this.draftRooms.sessions(),
+    ];
+    const pending = (session: DocumentSession) =>
+      session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+    const settled = sessions.map(
+      (session) =>
+        new Promise<boolean>((resolve) => {
+          if (!pending(session)) return resolve(true);
+          const timer = setTimeout(() => {
+            stop();
+            resolve(false);
+          }, timeoutMs);
+          const stop = session.subscribe(() => {
+            if (pending(session)) return;
+            clearTimeout(timer);
+            stop();
+            resolve(true);
+          });
+        }),
+    );
+    return (await Promise.all(settled)).every(Boolean);
+  }
+
+  /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */
+  observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
+    return this.copies.observe(observer);
   }
 
   get(lease: LiveDocumentSessionLease): DocumentSession {
@@ -188,7 +225,7 @@ export class DocumentSessionRegistry {
     return () => this.retainedObservers.delete(observer);
   }
 
-  retainDraftRooms(ownerId: string, refs: readonly string[]): void {
+  retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
     this.draftRooms.retain(ownerId, refs);
   }
 
@@ -345,8 +382,8 @@ export class DocumentSessionRegistry {
 
   /**
    * Drop a live room whose pending edits the server refused, even when no editor host holds it:
-   * the session is torn down and its local copy cleared. Draft rooms hold no local copy; their
-   * editor rebuilds them in place (`rebuildDraftRoom`).
+   * the session is torn down and its local copy cleared. A draft room's editor rebuilds it in
+   * place (`rebuildDraftRoom`).
    */
   private dropRefusedRoom(session: DocumentSession): void {
     if (this.refusedRoomDrops.has(session) || session.resetDisposition !== "refused") return;

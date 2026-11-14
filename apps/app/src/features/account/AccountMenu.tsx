@@ -1,6 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useState } from "react";
 
+import { notifyFailure } from "@/components/app/failure-toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,12 +15,37 @@ import {
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useOptionalSignOutCleanup } from "@/features/project/context/account-feature-context";
+import { SignOutIncomplete } from "@/features/project/context/account-feature-lifetime";
+
+const SIGN_OUT_FAILURE = "sign-out";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();
   const { open } = useSettingsNavigation();
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const clearBeforeSignOut = useOptionalSignOutCleanup();
+  const [leaving, setLeaving] = useState(false);
+
+  const leave = () => {
+    if (!clearBeforeSignOut) return window.location.assign("/logout");
+    setLeaving(true);
+    // The account's text leaves this browser before it does; if it can't, the writer stays signed in.
+    clearBeforeSignOut().then(
+      () => window.location.assign("/logout"),
+      (error: unknown) => {
+        setLeaving(false);
+        if (!(error instanceof SignOutIncomplete)) reportError(error);
+        notifyFailure({
+          key: SIGN_OUT_FAILURE,
+          title:
+            error instanceof SignOutIncomplete && error.left === "unsent"
+              ? t`Couldn't log out: your latest changes haven't reached the server yet.`
+              : t`Couldn't log out: another tab still has your documents open.`,
+          onRetry: leave,
+        });
+      },
+    );
+  };
 
   const email = user?.email ?? null;
   const label = email ?? t`Signed in`;
@@ -53,15 +80,16 @@ export function AccountMenu() {
           {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}
           <a
             href="/logout"
+            aria-disabled={leaving}
             onClick={(event) => {
               if (!clearBeforeSignOut) return;
               // The account's local copies go before the browser leaves for the sign-out.
               event.preventDefault();
-              void clearBeforeSignOut()
-                .catch((error: unknown) => reportError(error))
-                .finally(() => window.location.assign("/logout"));
+              if (!leaving) leave();
             }}
-          >{t`Log out`}</a>
+          >
+            {leaving ? t`Logging out…` : t`Log out`}
+          </a>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

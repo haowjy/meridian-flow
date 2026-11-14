@@ -1,38 +1,87 @@
 /**
  * Reads a project's list for the documents the app is holding (views, recent routes, local
- * copies) and acts on what it says: a document in Trash leaves the views and the recents; a
- * document back in the tree is let back; a purged node's local copy is deleted, and so are the
- * copies of a project the account lost access to and of a source that ended (its Work deleted, its
- * chat deleted). An archived Work's source stays, so its documents keep their unsent text. Nothing is polled: it runs when the list
- * changes.
+ * copies) and acts on what it says. Nothing is polled: it runs when the list, the sources or the
+ * browser's copies change.
  *
- * A `delete` closes the view but keeps the local copy and its session until its unsent edits are
- * acknowledged; only a `purge` (or lost access) makes the copy something that cannot come back.
+ * Two different things happen, and only the second is irreversible:
+ * - **Views close** when a document cannot be shown right now: it is in Trash, purged, or its
+ *   source ended (a deleted Work or chat, which can be restored). The copy and its session stay,
+ *   with any unsent text, until the document comes back or is gone for good.
+ * - **A copy is deleted** only when the document is gone for good (`goneForGood`, the one
+ *   predicate every deletion goes through): its node's purge in the list, its source purged, or
+ *   the account removed from the project. Losing the connection, an expired sign-in and a source
+ *   that ended but can be restored are not final.
  */
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { ContextRemovalCoordinator, RemovalCommand } from "./context-removal-coordinator";
 import type { ProjectStandings } from "./project-standings";
 
+/** What the sources queries said, and when: an absence is believed only if it was read after the node was first seen. */
+export type SourceFacts = {
+  live: ReadonlySet<string>;
+  /** Ended and restorable: a deleted Work's or chat's source. */
+  ended: ReadonlySet<string>;
+  fetchedAt: number;
+};
+
+export type ListRemovalObserver = {
+  setSources(facts: SourceFacts | null): void;
+  stop(): void;
+};
+
 export function observeListRemovals(input: {
   projectId: string;
-  standings: Pick<ProjectStandings, "watch" | "standing" | "status">;
+  standings: Pick<ProjectStandings, "watch" | "standing" | "status" | "inProjectList">;
   removal: Pick<
     ContextRemovalCoordinator,
     "applyRemovals" | "clearLocalCopies" | "watchedDocumentIds" | "shownAmong"
   >;
   /** Main shows a document that went to Trash: it shows its Trash view (who deleted it, Restore). */
   showTrashed(documentId: string): void;
-  registry: Pick<LiveDocumentSessionRegistry, "localCopies" | "observeRetainedLiveDocuments">;
-  /** The ids of the sources the account can still read in the project; null until they are known. */
-  sourceIds: ReadonlySet<string> | null;
-}): () => void {
-  const { projectId, standings, removal, registry, sourceIds, showTrashed } = input;
+  registry: Pick<
+    LiveDocumentSessionRegistry,
+    "observeLocalCopies" | "observeRetainedLiveDocuments"
+  >;
+  /** Asks the sources again: a source the list names that the sources do not is read once more before it counts as purged. */
+  refreshSources(): void;
+  /** The sign-in did not hold: the writer signs in again. Called once per time it begins. */
+  signInRequired(): void;
+}): ListRemovalObserver {
+  const { projectId, standings, removal, registry, showTrashed } = input;
   const cleared = new Set<string>();
   const shownTrashed = new Set<string>();
+  /** When the list first named each source the sources did not. */
+  const unlisted = new Map<string, number>();
+  let facts: SourceFacts | null = null;
   /** Sessions kept open for unsent edits after their view went: a purge ends them too. */
   let retained: string[] = [];
-  let swept = false;
+  /** Every document this browser holds a copy of: a purge arrives whether or not a view remains. */
+  let copies: ReadonlySet<string> = new Set();
+  let askedToSignIn = false;
   let stopped = false;
+
+  const sourceState = (source: string): "unknown" | "live" | "ended" | "purged" => {
+    if (!facts) return "unknown";
+    if (facts.live.has(source)) return "live";
+    if (facts.ended.has(source)) return "ended";
+    const seen = unlisted.get(source);
+    if (seen === undefined) {
+      unlisted.set(source, Date.now());
+      input.refreshSources();
+      return "unknown";
+    }
+    return facts.fetchedAt > seen ? "purged" : "unknown";
+  };
+
+  /** Whether the document can never come back to this account. */
+  const goneForGood = (documentId: string): boolean => {
+    const standing = standings.standing(projectId, documentId);
+    if (standing.kind === "purged") return true;
+    if (standing.kind !== "in-tree" && standing.kind !== "in-trash") return false;
+    if (standings.status(projectId) === "denied" && standings.inProjectList(projectId, documentId))
+      return true;
+    return sourceState(standing.node.source) === "purged";
+  };
 
   const clear = (documentIds: readonly string[]) => {
     const fresh = documentIds.filter((id) => !cleared.has(id));
@@ -41,33 +90,32 @@ export function observeListRemovals(input: {
       void removal.clearLocalCopies(fresh).catch((error: unknown) => reportError(error));
   };
 
-  const endedSource = (standing: ReturnType<typeof standings.standing>) =>
-    sourceIds !== null &&
-    (standing.kind === "in-tree" || standing.kind === "in-trash") &&
-    !sourceIds.has(standing.node.source);
-
   const refresh = () => {
     if (stopped) return;
-    const ids = [...new Set([...removal.watchedDocumentIds(projectId), ...retained])];
-    // The account lost the project: its views close and its copies cannot come back to it.
-    if (standings.status(projectId) === "denied") {
-      removal.applyRemovals(ids.map((documentId) => ({ kind: "gone", projectId, documentId })));
-      clear(ids);
-      return;
-    }
+    const status = standings.status(projectId);
+    if (status === "unauthenticated" && !askedToSignIn) {
+      askedToSignIn = true;
+      input.signInRequired();
+    } else if (status !== "unauthenticated") askedToSignIn = false;
+
+    const viewIds = [...new Set([...removal.watchedDocumentIds(projectId), ...retained])];
     const commands: RemovalCommand[] = [];
-    const purged: string[] = [];
-    for (const documentId of ids) {
+    for (const documentId of viewIds) {
       const standing = standings.standing(projectId, documentId);
-      // A node whose source ended can never come back to this account, whatever its state.
-      const ended = endedSource(standing);
-      if (standing.kind === "in-trash" || standing.kind === "purged" || ended)
+      const sourceEnded =
+        (standing.kind === "in-tree" || standing.kind === "in-trash") &&
+        ["ended", "purged"].includes(sourceState(standing.node.source));
+      if (
+        standing.kind === "in-trash" ||
+        standing.kind === "purged" ||
+        sourceEnded ||
+        (status === "denied" && standings.inProjectList(projectId, documentId))
+      )
         commands.push({ kind: "gone", projectId, documentId });
       else if (standing.kind === "in-tree") {
         commands.push({ kind: "back", projectId, documentId });
         shownTrashed.delete(documentId);
       }
-      if (standing.kind === "purged" || ended) purged.push(documentId);
     }
     const trashed = commands.flatMap((command) =>
       command.kind === "gone" &&
@@ -81,33 +129,29 @@ export function observeListRemovals(input: {
       shownTrashed.add(shown);
       showTrashed(shown);
     }
-    clear(purged);
-    // A tab that crashed half way through a deletion leaves its copy behind: it is found here.
-    if (!swept && standings.status(projectId) !== "waiting") {
-      swept = true;
-      void registry
-        .localCopies()
-        .then((copies) =>
-          clear(
-            copies.filter((id) => {
-              const standing = standings.standing(projectId, id);
-              return standing.kind === "purged" || endedSource(standing);
-            }),
-          ),
-        )
-        .catch((error: unknown) => reportError(error));
-    }
+    clear([...new Set([...viewIds, ...copies])].filter(goneForGood));
   };
 
   const stopRetained = registry.observeRetainedLiveDocuments((snapshot) => {
     retained = snapshot.filter((ref) => ref.projectId === projectId).map((ref) => ref.documentId);
     refresh();
   });
+  const stopCopies = registry.observeLocalCopies((documents) => {
+    copies = documents;
+    refresh();
+  });
   const stop = standings.watch(projectId, refresh);
   refresh();
-  return () => {
-    stopped = true;
-    stopRetained();
-    stop();
+  return {
+    setSources(next) {
+      facts = next;
+      refresh();
+    },
+    stop() {
+      stopped = true;
+      stopRetained();
+      stopCopies();
+      stop();
+    },
   };
 }

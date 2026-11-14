@@ -19,6 +19,7 @@ const ANSWERS: ReadonlySet<TreeListSnapshot["status"]> = new Set([
   "synced",
   "read-only",
   "offline",
+  "unauthenticated",
 ]);
 
 /** A list whose absences can be believed. */
@@ -30,7 +31,10 @@ export function standingIn(
   documentId: string,
 ): DocumentStanding {
   const node = projection.nodes.get(documentId);
-  if (!node) return listIsReadable(snapshot.status) ? { kind: "not-in-list" } : { kind: "waiting" };
+  if (!node) {
+    if (projection.gone.has(documentId)) return { kind: "purged" };
+    return listIsReadable(snapshot.status) ? { kind: "not-in-list" } : { kind: "waiting" };
+  }
   if (node.purged) return { kind: "purged" };
   if (!node.trashed) return { kind: "in-tree", node };
   const entry = projection.trash.find(

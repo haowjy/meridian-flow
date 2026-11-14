@@ -68,6 +68,8 @@ export type ProjectDocumentLiveOpenResult =
 export type ProjectDocumentLiveOpenRequest = {
   projectId: ProjectId;
   documentId: DocumentId;
+  /** Also admits a document in Trash: its Trash view shows the text the session holds. */
+  trashed?: true;
   signal?: AbortSignal;
 };
 
@@ -104,9 +106,12 @@ export class ProjectDocumentLiveOpener {
     }
     if (cancelled()) return { kind: "cancelled" };
     switch (standing.kind) {
-      case "in-trash":
       case "purged":
         return { kind: "unavailable", reason: "deleted" };
+      case "in-trash":
+        if (!input.trashed) return { kind: "unavailable", reason: "deleted" };
+        if (standing.node.kind !== "document") return { kind: "not-editable" };
+        break;
       case "not-in-list":
       case "waiting":
         return { kind: "unavailable", reason: "not-visible" };

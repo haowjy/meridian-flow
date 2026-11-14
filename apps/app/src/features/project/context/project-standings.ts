@@ -111,6 +111,11 @@ export class ProjectStandings {
     return answer;
   }
 
+  /** Whether the project's own list (not the account's) has a node for the document. */
+  inProjectList(projectId: string, documentId: string): boolean {
+    return this.projects.get(projectId)?.handle.session.replay().nodes.has(documentId) ?? false;
+  }
+
   /** The list's own status: `denied` means the account has no access to the project. */
   status(projectId: string): TreeListSnapshot["status"] {
     return this.projects.get(projectId)?.handle.session.getSnapshot().status ?? "waiting";

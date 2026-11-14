@@ -306,7 +306,10 @@ export class DraftCommandOwner {
       this.textClicks(entry).length > 0 ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
-      const lease = readDraftRoom(this.registry, entry.roomKey);
+      const lease = readDraftRoom(this.registry, {
+        roomKey: entry.roomKey,
+        documentId: entry.ref.documentId,
+      });
       entry.lease = lease;
       const follow = () => {
         const next = lease.usable();
@@ -446,7 +449,10 @@ export class DraftCommandOwner {
     if (pending) return pending;
     const entry = this.entries.get(id);
     const lease = entry?.binding
-      ? readDraftRoom(this.registry, entry.binding.session.roomKey)
+      ? readDraftRoom(this.registry, {
+          roomKey: entry.binding.session.roomKey,
+          documentId: ref.documentId,
+        })
       : null;
     if (entry) entry.users++;
     this.setState(ref.itemKey, { checkingClose: true }, id);

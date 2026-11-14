@@ -106,8 +106,6 @@ export type DocumentSessionSnapshot = {
    */
   access: DocumentSessionAccess | null;
   localPersistenceSynced: boolean;
-  /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
-  adoptionStalled: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
 };
@@ -240,7 +238,6 @@ export class DocumentSession {
   /** The closing of a transport `detachTransport` released; the next one opens after it. */
   private detaching: Promise<void> | null = null;
   /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
-  private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeTransportAccess: (() => void) | null = null;
@@ -341,7 +338,6 @@ export class DocumentSession {
     }
 
     this.transportAttachmentPending = true;
-    this.adoptionFailed = false;
     this.recomputeStatus();
     if ((this.persistence && !this.localPersistenceSynced) || this.detaching) {
       void Promise.all([
@@ -548,24 +544,9 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       localPersistenceSynced: this.localPersistenceSynced,
-      adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
     };
-  }
-
-  /**
-   * The adopter reports whether a cached session cannot reach server ownership
-   * (authority unreachable or adoption failed). A failure is recorded only while
-   * the session is `detached` with no transport; otherwise it is a no-op, so a
-   * transport-owned or destroyed session is never labelled stalled.
-   */
-  reportAdoptionStalled(stalled: boolean): void {
-    if (this.destroyed) return;
-    const next = stalled && this.status === "detached";
-    if (this.adoptionFailed === next) return;
-    this.adoptionFailed = next;
-    this.emit();
   }
 
   /**
@@ -667,32 +648,6 @@ export class DocumentSession {
     });
   }
 
-  /** Local-only same-session identity change used by conflict remint. */
-  prepareDetachedReidentity(documentId: string): { commit(): void; abort(): void } {
-    if (this.transportProvider || this.status !== "detached")
-      throw new Error("Only a detached local session may be reminted");
-    const room = parseYjsRoomName(documentId);
-    if (room?.kind !== "live") throw new Error("Invalid reminted document identity");
-    let settled = false;
-    return {
-      commit: () => {
-        if (settled) return;
-        settled = true;
-        this.roomKey = documentId;
-        this.room = room;
-        this.documentId = documentId;
-        try {
-          this.emit();
-        } catch {
-          // Durable lineage authority already committed; observers cannot roll identity back.
-        }
-      },
-      abort: () => {
-        settled = true;
-      },
-    };
-  }
-
   get persistenceName(): string | null {
     return this.persistence?.name ?? null;
   }
@@ -719,11 +674,6 @@ export class DocumentSession {
     });
     this.initialization = attempt;
     void attempt.catch((error) => reportError(error));
-  }
-
-  /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
-  get localPersistenceProvider(): object | null {
-    return this.persistence;
   }
 
   /**
@@ -764,10 +714,8 @@ export class DocumentSession {
    * TipTap editor first, then calls this method so providers can detach before
    * the Y.Doc is destroyed.
    */
-  destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
+  destroy(): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
-    const closed =
-      this.transportState?.kind === "reset" && this.transportState.disposition === "closed";
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();
@@ -810,10 +758,7 @@ export class DocumentSession {
         },
         {
           settled: false,
-          run: () =>
-            options.clearPersistence || closed
-              ? this.persistence?.clearData()
-              : this.persistence?.destroy(),
+          run: () => this.persistence?.destroy(),
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },

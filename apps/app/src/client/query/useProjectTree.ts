@@ -91,7 +91,7 @@ export function sourceFor(
   return sources.find((source) => source.scheme === scheme && owns(source)) ?? null;
 }
 
-const READY = new Set<TreeListStatus>(["synced", "read-only", "offline"]);
+const READY = new Set<TreeListStatus>(["synced", "read-only", "offline", "unauthenticated"]);
 
 /** The copy has synced or can stand in for the list: an address that finds no node is "not there". */
 export const listIsComplete = (status: TreeListStatus): boolean => READY.has(status);

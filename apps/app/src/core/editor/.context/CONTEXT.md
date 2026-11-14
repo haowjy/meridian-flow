@@ -202,7 +202,7 @@ identity in anchors or holds.
   `null`, `"center"`, and `"right"` (no `"left"` state). `table-operations.ts`
   refuses row/column moves on a table containing spans, and row zero (the GFM
   header) never moves.
-- Writer-visible save state: an outage (`offline` or a stalled cache adoption)
+- Writer-visible save state: an outage (`offline`)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
   healthy sessions show nothing. Draft sessions use the same local save copy.

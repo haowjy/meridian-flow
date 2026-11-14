@@ -821,7 +821,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         // A checkpoint captured before a removal stores nothing after it.
-        const current = await findDocumentAuthorityHead(txDb, docId, { living: true });
+        const current = await findDocumentAuthorityHead(txDb, docId, { notPurged: true });
         if (
           !current ||
           current.authorityId !== captured.authorityId ||
@@ -846,7 +846,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
         const authorityHead = await readDocumentAuthorityHead(txDb, docId, {
-          living: true,
+          notPurged: true,
         }).catch((cause: unknown) => {
           // A removed document keeps its history as the removal left it.
           if (isDocumentNotFoundError(cause) && cause.removal) return null;
@@ -1043,7 +1043,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
       return runInDrizzleTransaction(db as Database, async () => {
         const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
-        const current = await readDocumentAuthorityHead(tx, docId, { living: true });
+        const current = await readDocumentAuthorityHead(tx, docId, { notPurged: true });
         if (
           current.authorityId !== captured.authorityId ||
           current.generation !== captured.generation

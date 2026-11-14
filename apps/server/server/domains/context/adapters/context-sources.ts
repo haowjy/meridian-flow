@@ -3,7 +3,7 @@ import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, threads, works } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextSources } from "../ports/context-sources.js";
 import { sourceAuthority } from "./context-file-entry.js";
@@ -81,6 +81,19 @@ export function createDrizzleContextSources(db: Database): ContextSources {
         sql`(${ofProject(projectId)} or ${ofWorks(projectId)}
           or (${eq(contextSources.projectId, projectId)} and (${isNotNull(contextSources.rootThreadId)} or ${isNotNull(contextSources.chatThreadId)})))`,
       );
+    },
+    async endedIn(projectId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ id: contextSources.id })
+        .from(contextSources)
+        .leftJoin(works, eq(contextSources.workId, works.id))
+        .where(
+          and(
+            or(eq(contextSources.projectId, projectId), eq(works.projectId, projectId)),
+            or(isNotNull(contextSources.deletedAt), isNotNull(works.deletedAt)),
+          ),
+        );
+      return rows.map((row) => row.id as ContextSourceId);
     },
     ofUser(userId) {
       return read(

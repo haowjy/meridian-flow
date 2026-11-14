@@ -1450,6 +1450,9 @@ export function createInMemoryAppServices(): AppServices {
     async inProject() {
       return [];
     },
+    async endedIn() {
+      return [];
+    },
     async ofUser() {
       return [];
     },

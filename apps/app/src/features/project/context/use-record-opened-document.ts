@@ -41,7 +41,7 @@ function whenListSynced(
     const check = () => {
       const { status } = held.session.getSnapshot();
       if (status === "synced" || status === "read-only") finish(true);
-      else if (status === "denied") finish(false);
+      else if (status === "denied" || status === "unauthenticated") finish(false);
     };
     signal.addEventListener("abort", onAbort, { once: true });
     stop = held.session.subscribe(check);

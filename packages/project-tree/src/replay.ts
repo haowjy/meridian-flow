@@ -98,6 +98,8 @@ export type TreeProjection = {
   rescued: string[];
   /** Trash: the deletes still in force. Per view, like the tree. */
   trash: TrashEntry[];
+  /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
+  gone: ReadonlySet<string>;
 };
 
 type Working = {
@@ -146,6 +148,7 @@ export function replay(
   const nodes = new Map<string, Working>();
   const skipped: TreeProjection["skipped"] = [];
   const rescued: string[] = [];
+  const gone = new Set<string>();
   const ownDelete = (record: TreeRecord) =>
     record.draft !== null || (of.draft != null && record.fromDraft === of.draft);
   let deletes: DeleteInForce[] = [];
@@ -249,6 +252,12 @@ export function replay(
     // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
     // restoring a Discard make before they append a record.
     const node = placeable(record.node);
+    // A Discarded create is in no view: its purge is the one record that names a node not in
+    // this one, and it says the document's content is gone.
+    if (record.type === "purge" && !nodes.has(record.node)) {
+      gone.add(record.node);
+      continue;
+    }
     if (!node) {
       skip(nodes.has(record.node) ? "purged" : "missing-node");
       continue;
@@ -377,7 +386,7 @@ export function replay(
     }
   }
 
-  return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued);
+  return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone);
 }
 
 /** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
@@ -415,6 +424,7 @@ function derive(
   pendingText: ReadonlySet<string>,
   skipped: TreeProjection["skipped"],
   rescued: string[],
+  gone: ReadonlySet<string>,
 ): TreeProjection {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
@@ -543,6 +553,7 @@ function derive(
     children: ordered,
     skipped,
     rescued,
+    gone,
     trash: deletes
       .filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged)
       .map((entry) => ({

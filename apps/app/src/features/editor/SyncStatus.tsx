@@ -12,8 +12,7 @@
  *     asked, the removal's sentence once it proves one, and "Access lost"
  *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     It begins when the status is `offline` or when `adoptionStalled` (a cached
- *     session that is `detached` because adopting it failed). It stays through
+ *     It begins when the status is `offline`. It stays through
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
@@ -57,7 +56,7 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
  */
 function nextPhase(phase: OutagePhase, snapshot: DocumentSessionSnapshot): OutagePhase {
   if (snapshot.status === "access-lost" || snapshot.status === "destroyed") return "idle";
-  if (snapshot.status === "offline" || snapshot.adoptionStalled) return "awaiting";
+  if (snapshot.status === "offline") return "awaiting";
   if (phase === "idle") return phase;
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
   if (snapshot.status !== "synced") return "awaiting";
