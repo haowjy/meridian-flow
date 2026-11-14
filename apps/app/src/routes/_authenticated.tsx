@@ -6,6 +6,7 @@ import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
+import { CommandDriverProvider } from "@/client/commands/driver-context";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { FailureLogProvider } from "@/client/failures/failure-log";
 import { readLastShownChat } from "@/client/project-shell/store";
@@ -137,12 +138,14 @@ function AuthenticatedAccountProviderTree({
 }) {
   return (
     <AccountFeatureComposition accountId={user.userId}>
-      <AccountSettingsProvider
-        serverValue={user.accountSettings}
-        serverReadGeneration={user.accountSettingsReadGeneration}
-      >
-        <AuthenticatedProviderTree now={now} user={user} />
-      </AccountSettingsProvider>
+      <CommandDriverProvider>
+        <AccountSettingsProvider
+          serverValue={user.accountSettings}
+          serverReadGeneration={user.accountSettingsReadGeneration}
+        >
+          <AuthenticatedProviderTree now={now} user={user} />
+        </AccountSettingsProvider>
+      </CommandDriverProvider>
     </AccountFeatureComposition>
   );
 }

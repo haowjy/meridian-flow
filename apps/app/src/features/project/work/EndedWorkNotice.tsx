@@ -9,7 +9,7 @@ import { Trans } from "@lingui/react/macro";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { Archive, Trash2 } from "lucide-react";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-command-store";
+import { useWorkMutations } from "@/client/query/work-mutations";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

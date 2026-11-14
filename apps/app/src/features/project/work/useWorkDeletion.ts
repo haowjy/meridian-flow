@@ -2,15 +2,15 @@
  * Optimistic Work deletion with Undo, owned by the Manage Works dialog so the list and the
  * open Work share one delete state.
  *
- * Each delete is its own command record: its Undo window comes from that
- * record, so several deletes each keep their own, and closing a window
- * reaches every surface. A refused delete is the Work's command failure.
+ * Each delete opens its own Undo window, so several deletes each keep their own, and
+ * closing a window reaches every surface. A refused delete is the Work's command failure.
  */
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
+import { useCommandDriver } from "@/client/commands/driver-context";
 import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
-import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-command-store";
+import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-mutations";
 
 export type WorkDeletion = {
   /** Open Undo windows, oldest delete first. */
@@ -24,11 +24,12 @@ export type WorkDeletion = {
 
 export function useWorkDeletion(projectId: string): WorkDeletion {
   const client = useQueryClient();
+  const driver = useCommandDriver();
   const { delete: deleteCommand, restore } = useWorkMutations(projectId);
   const windows = useWorkDeleteWindows(projectId);
   const close = useCallback(
-    (workId: string) => closeWorkDeleteWindow(client, projectId, workId),
-    [client, projectId],
+    (workId: string) => closeWorkDeleteWindow(client, driver, projectId, workId),
+    [client, driver, projectId],
   );
   const windowsRef = useRef(windows);
   windowsRef.current = windows;

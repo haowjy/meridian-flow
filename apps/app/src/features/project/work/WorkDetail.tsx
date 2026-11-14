@@ -8,7 +8,7 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-command-store";
+import { useWorkMutations } from "@/client/query/work-mutations";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

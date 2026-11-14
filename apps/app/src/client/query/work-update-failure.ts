@@ -5,21 +5,19 @@
  * retry line.
  */
 import { t } from "@lingui/core/macro";
-import { isMeridianApiError } from "@/client/api/http-client";
-import { deletedDestinationCopy } from "@/client/api/meridian-error";
+import { WorkCommandRefused } from "./work-mutations";
 
 export function workUpdateFailure(cause: unknown, fallback: string): string {
-  const deleted = isMeridianApiError(cause)
-    ? deletedDestinationCopy(cause.code, cause.details)
-    : null;
-  if (deleted) return deleted;
-  switch (isMeridianApiError(cause) ? cause.code : null) {
-    case "work_archived":
-      return t`This Work is archived. Unarchive it to edit.`;
-    case "work_not_found":
-      return t`This Work no longer exists.`;
-    case "work_name_conflict":
+  if (!(cause instanceof WorkCommandRefused)) return fallback;
+  switch (cause.reason) {
+    case "name_conflict":
       return t`Another Work already has this name. Choose a different name.`;
+    case "unavailable":
+      return cause.state === "archived"
+        ? t`This Work is archived. Unarchive it to edit.`
+        : t`This Work no longer exists.`;
+    case "locked":
+      return t`This Work is archived. Unarchive it to edit.`;
     default:
       return fallback;
   }

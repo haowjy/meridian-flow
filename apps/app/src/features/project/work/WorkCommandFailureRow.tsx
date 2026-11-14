@@ -6,8 +6,8 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { DELETION_RETENTION_DAYS as WORK_DELETE_RETENTION_DAYS } from "@meridian/contracts/retention";
 import type { ReactNode } from "react";
-import { HttpResponseError } from "@/client/api/http-client";
 import type { WorkCommandFailure } from "@/client/query/work-command-selectors";
+import type { WorkCommandRefused } from "@/client/query/work-mutations";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 
 /** The commands whose failure stays on the Work until the writer acts on it. */
@@ -55,15 +55,14 @@ export function workFailureLine(
 }
 
 /** A restore the server will refuse again as it is: Retry can't help. */
-function restoreRefusal(error: Error, name?: string): ReactNode {
-  const status = error instanceof HttpResponseError ? error.status : null;
-  if (status === 409)
+function restoreRefusal(error: WorkCommandRefused, name?: string): ReactNode {
+  if (error.reason === "restore_conflict")
     return name ? (
       <Trans>Another Work is now named {name}. Rename that Work, then restore this one.</Trans>
     ) : (
       <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
     );
-  if (status === 410)
+  if (error.reason === "restore_expired")
     return name ? (
       <Trans>
         {name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.

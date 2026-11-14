@@ -1,23 +1,17 @@
 /**
- * The Work command table. One entry per operation says what it sends, what it
- * shows while pending, which fields it owns once committed, when the server
- * already shows it, and how it runs. The record store
- * (`work-command-store`) runs commands from it; the projection
- * (`work-command-projection`) reads records against the server snapshot.
+ * The Work command table. One entry per operation says what it sends, what it shows while the
+ * command is unsettled, which fields it owns once the server has answered, and when the server
+ * snapshot already shows it. The command driver delivers each as a record of its own kind
+ * (`createWorkKinds`); `work-command-projection` lays the records over the server snapshot.
  */
+import type { CommandKind, CommandRecord, HttpRequest } from "@meridian/command-driver";
+import { apiProjectWorksPath } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
+import type { QueryClient } from "@tanstack/react-query";
 
-import {
-  archiveWork,
-  createProjectWork,
-  deleteWork,
-  listProjectWorks,
-  restoreWork,
-  unarchiveWork,
-  updateWork,
-} from "@/client/api/projects-api";
-import { createWithRecovery } from "@/client/creation/creation-registry";
+import { convergeWorkProjection } from "./work-projection-cache";
+import { refreshWorksSnapshot } from "./works-projection-acquisition";
 
 export type WorkCommandVariables = {
   create: { workId: ParsedRequestId; name: string; goal?: string };
@@ -30,22 +24,24 @@ export type WorkCommandVariables = {
 
 export type WorkOperation = keyof WorkCommandVariables;
 
-type WorkCommandResults = {
-  create: Work;
-  update: Work;
-  archive: Work;
-  unarchive: Work;
-  delete: unknown;
-  restore: Work;
+/** What a Work record stores: the project (a refresh needs it) and the writer's variables. */
+export type WorkCommandBody<Op extends WorkOperation = WorkOperation> = {
+  projectId: string;
+  variables: WorkCommandVariables[Op];
 };
 
-type CommandContext = { projectId: string; signal: AbortSignal | undefined };
+/** The server's names for the kinds, which `resolve` is told. */
+const KINDS = {
+  create: "work_create",
+  update: "work_update",
+  archive: "work_archive",
+  unarchive: "work_unarchive",
+  delete: "work_delete",
+  restore: "work_restore",
+} as const satisfies Record<WorkOperation, string>;
 
 type WorkCommandSpec<Op extends WorkOperation> = {
-  request: (
-    variables: WorkCommandVariables[Op],
-    context: CommandContext,
-  ) => Promise<WorkCommandResults[Op]>;
+  request: (body: WorkCommandBody<Op>) => HttpRequest;
   /** The Work as this command expects to leave it, before the server answers. */
   project: (
     work: Work | undefined,
@@ -56,12 +52,10 @@ type WorkCommandSpec<Op extends WorkOperation> = {
   commit: (
     work: Work | undefined,
     variables: WorkCommandVariables[Op],
-    committed: WorkCommandResults[Op],
+    committed: Work | undefined,
   ) => Work | undefined;
   /** Whether the server snapshot already shows what this command asked for. */
   reached: (work: Work | undefined, variables: WorkCommandVariables[Op]) => boolean;
-  /** Runs one at a time on the network with the project's other serial commands. */
-  serial: boolean;
   /**
    * A refusal stays as a record for a surface to show. Otherwise its caller
    * reports it from the command's own promise, and the record goes at once.
@@ -72,70 +66,83 @@ type WorkCommandSpec<Op extends WorkOperation> = {
 const patch = (work: Work | undefined, fields: Partial<Work>): Work | undefined =>
   work && { ...work, ...fields };
 
+const worksPath = (workId: string, action = "") => `/api/works/${workId}${action}`;
+
 const workCommands = {
   create: {
-    // A lost POST response is recovered by the Work's own id.
-    request: ({ workId, name, goal }, { projectId, signal }) =>
-      createWithRecovery(
-        () => createProjectWork(projectId, { id: workId, name, goal }, { signal }),
-        async () =>
-          (await listProjectWorks(projectId, { signal })).works.find(
-            (work) => work.id === workId,
-          ) ?? null,
-      ),
+    request: ({ projectId, variables: { workId, name, goal } }) => ({
+      method: "POST",
+      path: apiProjectWorksPath(projectId),
+      body: { id: workId, name, goal },
+    }),
     // Until the server has it, the Work shows only as a `WorkCreation`.
     project: (work) => work,
     commit: (work, _, committed) => work ?? committed,
     reached: (work) => !!work,
-    serial: false,
     keepsFailure: true,
   },
   update: {
-    request: ({ workId, data }, { signal }) => updateWork(workId, data, { signal }),
+    request: ({ variables: { workId, data } }) => ({
+      method: "PATCH",
+      path: worksPath(workId),
+      body: { ...data },
+    }),
     project: (work, { data }, { at }) => patch(work, { ...data, updatedAt: at }),
     commit: (work, { data }, committed) =>
+      committed &&
       patch(
         work,
         Object.fromEntries(Object.keys(data).map((key) => [key, committed[key as keyof Work]])),
       ),
     reached: (work, { data }) =>
       !!work && Object.entries(data).every(([key, value]) => work[key as keyof Work] === value),
-    serial: false,
     // A rename reopens its own field on failure.
     keepsFailure: false,
   },
   archive: {
-    request: ({ workId }, { signal }) => archiveWork(workId, { signal }),
+    request: ({ variables: { workId } }) => ({
+      method: "POST",
+      path: worksPath(workId, "/archive"),
+      body: {},
+    }),
     project: (work, _, { at }) => patch(work, { archivedAt: at }),
-    commit: (work, _, { archivedAt }) => patch(work, { archivedAt }),
+    commit: (work, _, committed) => committed && patch(work, { archivedAt: committed.archivedAt }),
     reached: (work) => !!work && isWorkArchived(work),
-    serial: true,
     keepsFailure: true,
   },
   unarchive: {
-    request: ({ workId }, { signal }) => unarchiveWork(workId, { signal }),
+    request: ({ variables: { workId } }) => ({
+      method: "POST",
+      path: worksPath(workId, "/unarchive"),
+      body: {},
+    }),
     project: (work) => patch(work, { archivedAt: null }),
-    commit: (work, _, { archivedAt }) => patch(work, { archivedAt }),
+    commit: (work, _, committed) => committed && patch(work, { archivedAt: committed.archivedAt }),
     reached: (work) => !!work && !isWorkArchived(work),
-    serial: true,
     keepsFailure: true,
   },
   delete: {
-    request: ({ workId }, { signal }) => deleteWork(workId, { signal }),
+    request: ({ variables: { workId } }) => ({
+      method: "DELETE",
+      path: worksPath(workId),
+      body: {},
+    }),
     project: (work, _, { at }) => patch(work, { deletedAt: at }),
     // The server returns nothing: the client clock stands in for the delete
     // time, so the purge countdown is approximate until the next read.
     commit: (work) => patch(work, { deletedAt: work?.deletedAt ?? new Date().toISOString() }),
     reached: (work) => !work || work.deletedAt !== null,
-    serial: true,
     keepsFailure: true,
   },
   restore: {
-    request: ({ workId }, { signal }) => restoreWork(workId, { signal }),
+    request: ({ variables: { workId } }) => ({
+      method: "POST",
+      path: worksPath(workId, "/restore"),
+      body: {},
+    }),
     project: (work) => patch(work, { deletedAt: null }),
-    commit: (work, _, { deletedAt }) => patch(work, { deletedAt }),
+    commit: (work, _, committed) => committed && patch(work, { deletedAt: committed.deletedAt }),
     reached: (work) => !!work && work.deletedAt === null,
-    serial: true,
     keepsFailure: true,
   },
 } satisfies { [Op in WorkOperation]: WorkCommandSpec<Op> };
@@ -143,32 +150,93 @@ const workCommands = {
 /** Indexed through the mapped type so a generic operation keeps its own spec. */
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
-export type CommandOf<Op extends WorkOperation> = {
+/** The kind a Work operation is stored and delivered as. */
+export const workKindOf = (operation: WorkOperation): string => KINDS[operation];
+
+export const WORK_KINDS: ReadonlySet<string> = new Set(Object.values(KINDS));
+
+/** A Work command as the screens read it: a driver record in the Work's own terms. */
+type ViewOf<Op extends WorkOperation> = {
+  /** The driver record's id. */
+  id: string;
   operation: Op;
+  projectId: string;
   variables: WorkCommandVariables[Op];
-};
-
-/** One Work command with its own variables. */
-export type WorkCommand = { [Op in WorkOperation]: CommandOf<Op> }[WorkOperation];
-
-export type RecordOf<Op extends WorkOperation> = CommandOf<Op> & {
-  id: number;
   workId: string;
-  submittedAt: number;
-  /** `done` is a delete that landed: its Undo window. */
-  status: "pending" | "failed" | "done";
-  /** The writer closed it: a pending delete's Undo window. */
-  dismissed: boolean;
-  error: Error | null;
-  /** What the server returned; set once the command committed. */
-  committed?: { result: WorkCommandResults[Op] };
+  state: CommandRecord["state"];
+  /** A read of the Works started after this settled `done` has included it. */
+  observed: boolean;
+  since: number;
+  /** The Work the server returned; set once the command is `done`. */
+  committed?: Work;
+  /** Why the server turned it away (`name_conflict`, `restore_expired`, ...), when it says. */
+  reason: string | null;
+  /** For `unavailable`: whether the Work is `archived`, `deleted` or `missing`. */
+  refusalState: string | null;
 };
 
-export type WorkCommandRecord = { [Op in WorkOperation]: RecordOf<Op> }[WorkOperation];
+export type WorkCommandRecord = { [Op in WorkOperation]: ViewOf<Op> }[WorkOperation];
 
-/** A command resolves to its failure, or `null` once the server has it. */
-export type RunWorkCommand<Op extends WorkOperation> = (
-  variables: WorkCommandVariables[Op],
-) => Promise<Error | null>;
+const OPERATION_OF = Object.fromEntries(
+  Object.entries(KINDS).map(([operation, kind]) => [kind, operation]),
+) as Record<string, WorkOperation>;
 
-export type WorkMutations = { [Op in WorkOperation]: RunWorkCommand<Op> };
+/** The Work view of a driver record; null for another domain's. */
+export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
+  const operation = OPERATION_OF[record.kind];
+  if (!operation) return null;
+  const body = record.body as WorkCommandBody;
+  const result = record.outcome?.result as
+    | { work?: Work; status?: string; refusal?: { error?: string; state?: string } }
+    | Work
+    | null
+    | undefined;
+  // A direct answer is the Work itself; a stored outcome wraps it as `{ status, work }`.
+  const committed =
+    record.state === "done" && result && typeof result === "object"
+      ? "work" in result
+        ? result.work
+        : (result as Work)
+      : undefined;
+  const refusal =
+    record.state === "never" && result && "refusal" in result ? result.refusal : undefined;
+  return {
+    id: record.id,
+    operation,
+    projectId: body.projectId,
+    variables: body.variables,
+    workId: body.variables.workId,
+    state: record.state,
+    observed: record.observed,
+    since: record.since,
+    committed: committed?.id ? committed : undefined,
+    reason: refusal?.error ?? null,
+    refusalState: refusal?.state ?? null,
+  } as WorkCommandRecord;
+}
+
+/**
+ * Every tab runs this for each Work record it sees settle: converge what a Work change touches
+ * and read the Works again, whose result (started after the record settled) is its observation.
+ */
+export function createWorkKinds(client: QueryClient): Record<string, CommandKind> {
+  const kinds: Record<string, CommandKind> = {};
+  for (const operation of Object.keys(KINDS) as WorkOperation[]) {
+    kinds[KINDS[operation]] = {
+      version: 1,
+      migrate: (body) => body as WorkCommandBody,
+      request: ({ body }) => workCommandSpecs[operation].request(body as never),
+      onSettled: (record, ctx) => {
+        const { projectId } = record.body as WorkCommandBody;
+        convergeWorkProjection(client, { kind: "entity", projectId, operation });
+        // A failed read leaves the record unobserved: its effect keeps showing, and the next
+        // tab to open it reads again.
+        void refreshWorksSnapshot(client, projectId).then(
+          () => ctx.observed(record.id),
+          () => undefined,
+        );
+      },
+    };
+  }
+  return kinds;
+}

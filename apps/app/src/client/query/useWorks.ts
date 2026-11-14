@@ -10,7 +10,7 @@ import { useCallback, useMemo } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectWorkCommands } from "./work-command-projection";
-import { useWorkCommandRecords } from "./work-command-store";
+import { useWorkCommandRecords } from "./work-mutations";
 import { acquireWorksSnapshot, workFromSnapshot } from "./works-projection-acquisition";
 
 export { workFromSnapshot };

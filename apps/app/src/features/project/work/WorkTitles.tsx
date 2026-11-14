@@ -11,7 +11,7 @@
 
 import { t } from "@lingui/core/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { useWorkMutations } from "@/client/query/work-command-store";
+import { useWorkMutations } from "@/client/query/work-mutations";
 import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
