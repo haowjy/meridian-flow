@@ -137,6 +137,10 @@ Before editing a gap, the writer splits existing word boundaries in client-clock
 avoiding repeated shifts of Yjs's struct arrays during the backwards block write. Splitting
 allocates no clocks.
 
+A group's id is a hash of its tokens' keys, and the browser (the editor's schema) and the server
+(`buildDocumentSchema`) both compute it, so a key must not depend on the order a schema lists a node's
+attrs (`stableJson` in `tokens.ts`). When they differed the server refused the click as `malformed`.
+
 A frozen Apply click holds O (the optimistic base seen) and P (O with its selected groups
 applied). `applyBase(schema, committed, O, P)` returns P when O equals the committed base,
 otherwise the blocks of `rebase(schema, O, committed, P)`. Browser queue folds and server
@@ -157,7 +161,7 @@ same function plans a content Apply's live update, with the patch as the draft s
 insertions at either edge of an adjacent replacement peel off before clustering, so
 `The → A big black` and `+big black` keep one copy.
 
-A quote or table is one token to `align`, so a cluster in which both sides changed containers is
+A table is one token to `align`, so a cluster in which both sides changed containers is
 merged over their children (`mergeContainers`), pairwise when each side replaced a run of the same
 containers, and at every depth. It falls back to a clash of the whole block (`whole-block-unit`)
 when the types or counts differ, when the merged node fails `check()`, or when a merged table's
@@ -217,7 +221,7 @@ restructured (split, joined, moved, or added in a gap). Two sides' changes clash
 and the token merge cannot be trusted with them:
 
 - at a base block: one side removed the block and the other changed it in any way, or both
-  restructured it, or one side split or joined a container (a table row, a quote) that the other
+  restructured it, or one side split or joined a container (a table row) that the other
   changed: a container is one token to the token merge, so an edit cannot travel into its pieces
   as it does into a paragraph's;
 - at a gap inside a join: the other side has anything there.
