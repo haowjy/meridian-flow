@@ -45,4 +45,4 @@ Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).
 
 [definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
-[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
+[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md#packages-and-availability
