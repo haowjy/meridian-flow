@@ -3,7 +3,9 @@
  * Work's tree (live, then the Work's pending records, replayed in the browser), and every tree
  * action, click and Ctrl+Z in the sidebar acts there; on Live it is the live tree. The toggle is
  * offered while the Work has pending changes, and with none the shell is live. Flipping it moves
- * main's page to the Work's draft of it, or back to Live.
+ * main's page to the Work's draft of it, or back to Live. The page's version chip is the same
+ * state: picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
+ * (`review-launch`), sets the toggle with it.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { pendingRecords } from "@meridian/project-tree";
@@ -18,6 +20,7 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
+import { workDisplayName } from "@/lib/work-name";
 import { useAccountId } from "./context/account-feature-context";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
 import { useScopeDraftOwner } from "./use-work-scope";
@@ -32,9 +35,17 @@ export type ShellTreeVersion = {
   offered: boolean;
   /** Whose drafts the toggle shows. */
   ownerKey: string;
+  /** The Work's name, for the words on a page; null for a chat's own drafts. */
+  name: string | null;
+  /** The documents and folders the Work changes: marked in the tree on Live. */
+  changed: ReadonlySet<string>;
   /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
   flip: () => void;
+  /** Sets the toggle alone: the page already shows the version it names. */
+  show: (next: "live" | "draft") => void;
+  /** The toggle to Draft, with this page on the Work's draft of it. */
+  showDraft: (documentId: string) => void;
 };
 
 const ShellTreeVersionContext = createContext<ShellTreeVersion | null>(null);
@@ -68,24 +79,25 @@ export function TreeVersionProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const { ownerKey } = useScopeDraftOwner(projectId, chatThreadId);
+  const { ownerKey, work } = useScopeDraftOwner(projectId, chatThreadId);
   const drafts = useOwnerDrafts(projectId, ownerKey);
   const { branchId, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
   const projectVersion = project.snapshot?.version;
   const accountVersion = account.snapshot?.version;
-  // A change to a folder alone lists no document, so the list says whether the Work has one.
-  const pendingTree = useMemo(
-    () =>
-      branchId !== null &&
-      [project.snapshot, account.snapshot].some(
-        (snapshot) => snapshot && pendingRecords(snapshot.doc, branchId).length > 0,
-      ),
+  // A change to a folder alone lists no document, so the list says what else the Work changes.
+  const rows = drafts.drafts;
+  const changed = useMemo(() => {
+    const nodes = new Set(rows?.map((row) => row.documentId));
+    if (branchId === null) return nodes;
+    for (const snapshot of [project.snapshot, account.snapshot])
+      if (snapshot)
+        for (const record of pendingRecords(snapshot.doc, branchId)) nodes.add(record.node);
+    return nodes;
     // `version` is what changes when the copy does.
-    [branchId, project.snapshot, account.snapshot, projectVersion, accountVersion],
-  );
-  const offered = branchId !== null && (Boolean(drafts.drafts?.length) || pendingTree);
+  }, [branchId, rows, project.snapshot, account.snapshot, projectVersion, accountVersion]);
+  const offered = branchId !== null && changed.size > 0;
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const draftVersion = useDraftTreeVersion(branchId, drafts.drafts);
@@ -94,23 +106,61 @@ export function TreeVersionProvider({
   const main = useOptionalMainItem()?.item;
   const mainDocument = main?.kind === "document" ? main.documentId : null;
   const isDraftOnly = useIsDraftOnly(projectId);
+  const show = useCallback(
+    (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
+    [accountId, projectId],
+  );
+  const showDraft = useCallback(
+    (documentId: string) => {
+      show("draft");
+      const draft = fileForDocument(documentId);
+      if (draft)
+        setDocumentView(accountId, projectId, documentId, {
+          pin: { ownerKey, itemKey: draft.draft.itemKey },
+        });
+    },
+    [show, fileForDocument, accountId, projectId, ownerKey],
+  );
   const flip = useCallback(() => {
-    const next = showing === "draft" ? "live" : "draft";
-    writeTreeVersionChoice(accountId, projectId, next);
-    if (!mainDocument) return;
-    const draft = fileForDocument(mainDocument);
+    if (showing === "live") {
+      if (mainDocument) showDraft(mainDocument);
+      else show("draft");
+      return;
+    }
+    show("live");
     // A page live has no version of keeps its draft on Live, as a Work pick leaves it.
-    if (next === "live" && !isDraftOnly(mainDocument))
+    if (mainDocument && !isDraftOnly(mainDocument))
       setDocumentView(accountId, projectId, mainDocument, { version: "live" });
-    else if (next === "draft" && draft)
-      setDocumentView(accountId, projectId, mainDocument, {
-        pin: { ownerKey, itemKey: draft.draft.itemKey },
-      });
-  }, [showing, accountId, projectId, mainDocument, fileForDocument, isDraftOnly, ownerKey]);
+  }, [showing, show, showDraft, accountId, projectId, mainDocument, isDraftOnly]);
 
+  const name = work && !work.isNoWork ? workDisplayName(work) : null;
   const state = useMemo<ShellTreeVersion>(
-    () => ({ version, draftVersion, showing, offered, ownerKey, draftOf: fileForDocument, flip }),
-    [version, draftVersion, showing, offered, ownerKey, fileForDocument, flip],
+    () => ({
+      version,
+      draftVersion,
+      showing,
+      offered,
+      ownerKey,
+      name,
+      changed,
+      draftOf: fileForDocument,
+      flip,
+      show,
+      showDraft,
+    }),
+    [
+      version,
+      draftVersion,
+      showing,
+      offered,
+      ownerKey,
+      name,
+      changed,
+      fileForDocument,
+      flip,
+      show,
+      showDraft,
+    ],
   );
   return (
     <ShellTreeVersionContext.Provider value={state}>

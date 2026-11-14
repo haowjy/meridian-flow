@@ -21,6 +21,7 @@ import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
+import { useShellTreeVersion } from "./tree-version";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -157,9 +158,16 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
 
 export function useAiDraftLauncher() {
   const openDraft = useOpenDraft();
+  const shell = useShellTreeVersion();
+  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
+  const showsWork = shell?.show;
+  const workOwner = shell?.ownerKey;
   const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => void openDraft(target),
-    [openDraft],
+    (target: AiDraftLaunchTarget) => {
+      if (showsWork && target.ownerKey === workOwner) showsWork("draft");
+      void openDraft(target);
+    },
+    [openDraft, showsWork, workOwner],
   );
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */

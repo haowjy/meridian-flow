@@ -61,9 +61,10 @@ export function useWorkScope(projectId: string): {
 }
 
 /**
- * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's own,
- * when that chat has no Work (a chat on a named Work keeps its drafts in that Work). `ownerKey`
- * is "" when there are none to show; `work` is the Work its commands act for.
+ * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
+ * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
+ * and the Work chip all show these, so under No Work they follow the chat. `ownerKey` is "" when
+ * there are none to show; `work` is the Work its commands act for.
  */
 export function useScopeDraftOwner(
   projectId: string,
@@ -75,13 +76,12 @@ export function useScopeDraftOwner(
   const snapshot = noWork ? { works: works ?? [], noWork } : null;
   const picked = workId && workId !== noWork?.id ? workFromSnapshot(snapshot, workId) : null;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  const lineageKey =
-    !picked && chatWork?.isNoWork ? chatOwnerKey(chatWork, thread?.rootThreadId ?? null) : "";
+  const chatKey = picked ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
   return useMemo(
     () =>
       picked
         ? { picked, work: picked, ownerKey: workOwnerKey(picked) }
-        : { picked: null, work: lineageKey ? chatWork : null, ownerKey: lineageKey },
-    [picked, chatWork, lineageKey],
+        : { picked: null, work: chatKey ? chatWork : null, ownerKey: chatKey },
+    [picked, chatWork, chatKey],
   );
 }

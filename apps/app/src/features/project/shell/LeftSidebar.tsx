@@ -99,6 +99,7 @@ export function LeftSidebar({
 
       <WorkScopePicker
         projectId={projectId}
+        chatThreadId={chatThreadId}
         workId={scope.workId}
         onPick={scope.setWorkId}
         onManage={() => manageWorks?.open()}

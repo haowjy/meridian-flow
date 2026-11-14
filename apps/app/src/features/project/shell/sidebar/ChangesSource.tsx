@@ -58,7 +58,7 @@ import { SourcePane } from "./SourcePane";
  * chat on screen's own drafts when it has no Work (the chat Scratch rule).
  */
 export type ChangesScope = {
-  /** The Work the commands act for: the picked Work, or No Work for a chat's lineage. */
+  /** The Work the commands act for: the picked Work, else the chat on screen's (No Work for a chat's own drafts). */
   work: Work | null;
   /** "" when there is nothing to list (None with no chat of its own). */
   ownerKey: string;
@@ -66,7 +66,7 @@ export type ChangesScope = {
   empty: string;
   /** What waits on the writer: the picker's count for a Work, the listed drafts for a chat. */
   count: number;
-  /** Whether the strip offers the tab; under None only a chat with drafts does. */
+  /** Whether the strip offers the tab; under None only while the chat on screen's drafts wait. */
   offered: boolean;
   /**
    * Another Work with changes to review, when this scope has none: the empty state names it. The
@@ -86,20 +86,22 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   return useMemo(() => {
     const count = picked ? picked.pendingDocumentCount : (lineageCount ?? 0);
     const others = (works ?? [])
-      .filter((other) => other.id !== picked?.id && !isWorkArchived(other))
+      .filter((other) => other.id !== work?.id && !isWorkArchived(other))
       .filter((other) => other.pendingDocumentCount > 0)
       .sort((a, b) => Number(b.id === chatWorkId) - Number(a.id === chatWorkId));
     const other = count === 0 ? others[0] : undefined;
     const elsewhere = other ? { work: other, count: other.pendingDocumentCount } : null;
-    if (picked) {
-      const name = picked.name;
+    // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
+    const named = picked ?? (work && !work.isNoWork ? work : null);
+    if (named) {
+      const name = named.name;
       return {
         work,
         ownerKey,
         heading: t`Changes in ${name}`,
         empty: t`Nothing to review in ${name}.`,
         count,
-        offered: true,
+        offered: Boolean(picked) || count > 0,
         elsewhere,
       };
     }

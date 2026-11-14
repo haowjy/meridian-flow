@@ -22,6 +22,7 @@ import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
+import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
@@ -86,6 +87,8 @@ export function ContextTreePanel({
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
+  const shell = useShellTreeVersion();
+  const changed = shell?.showing === "live" && shell.offered ? shell.changed : null;
   const activeLocationPath =
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
@@ -188,6 +191,7 @@ export function ContextTreePanel({
               ...(scheme !== "uploads" ? (["delete"] as const) : []),
             ],
             activeDocumentId,
+            changed,
             creation: schemeAllowsCreation(scheme)
               ? {
                   creating,
@@ -220,6 +224,7 @@ export function ContextTreePanel({
       owner,
       scheme,
       activeDocumentId,
+      changed,
       creating,
       createdFolder,
       onSelectFile,

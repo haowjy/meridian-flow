@@ -31,6 +31,7 @@ import {
 } from "@/features/draft-review/tree-line";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { tabLocation } from "@/features/project/context/identity-location";
+import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
 import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,8 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
+  // The page's notice says what the toggle's Work does to it; this says what other Works do.
+  const cue = useLiveDraftCue(projectId, tab);
   if (deleted) {
     const sentence = deletedFromManuscriptSentence(
       title,
@@ -80,7 +83,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
       dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
-    hint.tree ? [{ work: hint.label, line: hint.tree }] : [],
+    hint.tree && hint.owner !== cue?.ownerKey ? [{ work: hint.label, line: hint.tree }] : [],
   );
   if (pending.length > 0) {
     const location = tabLocation(tab);

@@ -18,6 +18,7 @@ import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus } from "@/lib/focus-follow";
 import { workDisplayName } from "@/lib/work-name";
@@ -42,6 +43,8 @@ export function DocumentVersionMenu({
   const { documentId } = document;
   const accountId = useAccountId();
   const paint = useHostDocumentPaint();
+  // The chip and the sidebar's Live/Draft toggle are one state: a pick here sets both.
+  const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works } = useWorks(projectId);
   if (document.kind === "new") return null;
@@ -88,6 +91,7 @@ export function DocumentVersionMenu({
       setDocumentView(accountId, projectId, documentId, {
         pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
       });
+      if (hint.owner === shell?.ownerKey) shell.show("draft");
       followToChip(documentId);
     },
   }));
@@ -106,6 +110,7 @@ export function DocumentVersionMenu({
       onShowLive={() => {
         if (review) review.onShowLive();
         else setDocumentView(accountId, projectId, documentId, { version: "live" });
+        shell?.show("live");
         followToChip(documentId);
       }}
       onRename={review?.onRename}

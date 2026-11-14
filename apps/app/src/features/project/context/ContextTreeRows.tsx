@@ -51,6 +51,8 @@ export type TreeEnv = {
   scheme: ProjectContextTreeScheme;
   /** Main's document, marked current wherever this tree puts it. */
   activeDocumentId: string | null;
+  /** On Live, what the Work's draft changes: each gets a jade dot. */
+  changed?: ReadonlySet<string> | null;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -253,6 +255,8 @@ function DirRow({
                 reason={dir.failureReason}
                 folder
               />
+            ) : env.changed?.has(dir.entryId) ? (
+              <DraftChangeMark />
             ) : null
           }
           below={
@@ -365,6 +369,8 @@ function FileRow({
               move={Boolean(file.namespaceRepairMove)}
               reason={file.failureReason}
             />
+          ) : env.changed?.has(file.documentId) ? (
+            <DraftChangeMark />
           ) : null
         }
         below={
@@ -382,6 +388,17 @@ function FileRow({
         }
       />
     </EntryDestinationPicker>
+  );
+}
+
+/** A row the Work's draft changes, seen on Live: the page and Changes say what. */
+function DraftChangeMark() {
+  return (
+    <span className="mx-1 size-1.5 shrink-0 rounded-full bg-primary">
+      <span className="sr-only">
+        <Trans>, changed in the draft</Trans>
+      </span>
+    </span>
   );
 }
 

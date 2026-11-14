@@ -251,7 +251,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   // A review's item names its document; a plain address is the document its history entry
   // last resolved.
   const routePlace = routePlaceKey(documentDestination, locatorOwner);
-  const rememberedId = address.itemKey ? null : rememberedRouteDocument(location.state, routePlace);
+  const markedId = rememberedRouteDocument(location.state, routePlace);
+  const rememberedId = address.itemKey ? null : markedId;
   const standing = useDocumentStanding(projectId, rememberedId);
   const movedTo = rememberedId ? trees.find(rememberedId) : null;
   // The remembered document is in no list once they have synced (a purged or trashed one still
@@ -452,15 +453,10 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
+  // A review marks its entry too: leaving it keeps the drafted path until admission repairs it
+  // to the live one, and only the remembered id finds the document there.
   useLayoutEffect(() => {
-    if (
-      !routePlace ||
-      !addressDocumentId ||
-      !navigation ||
-      addressKind !== "plain" ||
-      rememberedId === addressDocumentId
-    )
-      return;
+    if (!routePlace || !addressDocumentId || !navigation || markedId === addressDocumentId) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
     if (ticket)
       void navigation.replaceIfCurrent(
@@ -468,7 +464,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         address,
         routeDocumentMark(routePlace, addressDocumentId),
       );
-  }, [routePlace, addressDocumentId, rememberedId, navigation, location]);
+  }, [routePlace, addressDocumentId, markedId, navigation, location]);
   // The Trash view shows in place of the document: nothing of the address is presented.
   const presentedDestination = routeTrashed ? null : documentDestination;
   // A prerequisite that failed ends the wait: the address stays, with a way to retry.

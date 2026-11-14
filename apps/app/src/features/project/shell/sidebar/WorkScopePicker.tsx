@@ -21,6 +21,7 @@ import {
 import { ChooserMark } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
+import { useChangesScope } from "./ChangesSource";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -29,11 +30,14 @@ import { cn } from "@/lib/utils";
  */
 export function WorkScopePicker({
   projectId,
+  chatThreadId,
   workId,
   onPick,
   onManage,
 }: {
   projectId: string;
+  /** The chat on screen: under None the chip names its Work, whose drafts the sidebar shows. */
+  chatThreadId: string | null;
   /** The scoped Work's id, the No Work row's included. */
   workId: string | null;
   onPick: (workId: string) => void;
@@ -47,7 +51,10 @@ export function WorkScopePicker({
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
   const scoped = works?.find((work) => work.id === workId) ?? null;
   const noWorkScoped = workId !== null && workId === noWork?.id;
-  const pending = scoped?.pendingDocumentCount ?? 0;
+  // The chip says whose drafts the toggle and Changes show, and the count Changes has.
+  const changes = useChangesScope(projectId, chatThreadId);
+  const pending = changes.count;
+  const shown = changes.work && !changes.work.isNoWork ? changes.work : scoped;
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
 
   return (
@@ -62,9 +69,9 @@ export function WorkScopePicker({
             role.selected,
           )}
         >
-          {scoped || noWorkScoped ? (
+          {shown || noWorkScoped ? (
             <WorkIdentity
-              work={scoped ?? noWork}
+              work={shown ?? noWork}
               unavailableLabel={t`None`}
               className={cn("flex-1", role.row)}
             />

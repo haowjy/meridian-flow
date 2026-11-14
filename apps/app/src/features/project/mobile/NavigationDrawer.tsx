@@ -120,6 +120,7 @@ export function NavigationDrawer({
                 <div className="flex shrink-0 flex-col py-1">
                   <WorkScopePicker
                     projectId={projectId}
+                    chatThreadId={chatThreadId}
                     workId={scope.workId}
                     onPick={scope.setWorkId}
                     onManage={() => {
