@@ -2,13 +2,16 @@
  * Ctrl+Z in the sidebar: takes back the writer's latest tree change in the shown source, made in
  * the view the toggle shows, or their latest Apply as one step (`tree-undo.ts`); on the Changes
  * tab, the latest of any source. A step that no longer fits is skipped, and its rows say so
- * (`TreeNotice`). A press inside a text field is the field's own Undo.
+ * (`TreeNotice`). Focus follows to the row the press brings back, as a row's Undo does. A press
+ * inside a text field is the field's own Undo.
  */
 import { type KeyboardEvent, useMemo, useRef } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
+import { focusWhenBack } from "@/components/app/RowWord";
 import { undoLatest } from "@/core/project-tree/tree-undo";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../../context/account-feature-context";
+import { entryRowOf } from "../../context/use-tree-notice-words";
 
 const isUndoKey = (event: KeyboardEvent) =>
   (event.key === "z" || event.key === "Z") &&
@@ -45,15 +48,15 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         const session = (accountList ? account : project).session;
         if (!session || pressing.current) return;
         pressing.current = true;
-        void undoLatest(
-          session,
-          source,
-          version.view,
-          `user:${accountId}`,
-          version.pendingText,
-        ).finally(() => {
-          pressing.current = false;
-        });
+        const from = document.activeElement;
+        void undoLatest(session, source, version.view, `user:${accountId}`, version.pendingText)
+          .then((outcome) => {
+            const [node] = outcome.kind === "undone" ? outcome.nodes : [];
+            if (node && from) focusWhenBack(() => entryRowOf(node), from);
+          })
+          .finally(() => {
+            pressing.current = false;
+          });
       },
     }),
     [account, project, version, accountId],

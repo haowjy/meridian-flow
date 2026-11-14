@@ -1170,6 +1170,10 @@ msgstr ""
 msgid "Applied as {name}: the name was taken."
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied just now: its changes are in the manuscript."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Applied to the manuscript"
 msgstr ""

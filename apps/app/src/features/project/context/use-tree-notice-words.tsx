@@ -58,7 +58,8 @@ export const NOWHERE: NoticePlace = { holds: () => false, parent: () => null, op
 /** A word the writer's own delete or restore just made takes the focus, once per step. */
 const focused = new WeakSet<TreeStep>();
 
-const rowOf = (node: string) =>
+/** The drawn row of a tree or Trash node: where focus goes when an Undo brings it back. */
+export const entryRowOf = (node: string) =>
   document.querySelector<HTMLElement>(
     `[data-entry-key="file:${CSS.escape(node)}"], [data-entry-key="folder:${CSS.escape(node)}"]`,
   );
@@ -147,7 +148,7 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
                     focused.add(step);
                     return true;
                   },
-                  back: () => rowOf(node),
+                  back: () => entryRowOf(node),
                 }
               : undefined
           }

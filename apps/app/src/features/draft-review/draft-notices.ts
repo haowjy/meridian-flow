@@ -90,16 +90,23 @@ export type DraftNotice =
     });
 
 /**
- * One fact an Apply brought, about one document: it landed somewhere new (`uri`), was added under
+ * One fact an Apply brought, about one document: it was applied, landed somewhere new (`uri`), was added under
  * another name than the one asked for, came back to the manuscript, or was applied along with
  * the documents picked (`also`: its old and new names).
  */
-export type AppliedFact = { documentId: string } & (
+export type AppliedFact = {
+  documentId: string;
+} /** Applied where it was, under its name: the row says so, the chat's line has nothing to add. */ & (
+  | { kind: "applied"; name: string }
   | { kind: "landed"; uri: string; name: string }
   | { kind: "renamed"; name: string }
   | { kind: "restored"; name: string }
   | { kind: "also"; from: string; to: string }
 );
+
+/** A notice with something to say on a line: a plain Apply's is said only on its rows. */
+export const hasLine = (notice: DraftNotice) =>
+  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
 
 export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();

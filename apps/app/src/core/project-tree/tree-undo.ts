@@ -92,6 +92,8 @@ export type UndoOutcome =
   | {
       kind: "undone";
       skipped: readonly Skipped[];
+      /** What the step taken back acted on: where the focus follows it. */
+      nodes: readonly string[];
       partial?: { name: string; nodes: readonly string[]; textLeft: number };
     }
   | { kind: "nothing"; skipped: readonly Skipped[] }
@@ -231,6 +233,7 @@ async function takeLatest(
         return {
           kind: "undone",
           skipped,
+          nodes: step.nodes,
           ...(textLeft > 0 ? { partial: { name: step.name, nodes: step.nodes, textLeft } } : {}),
         };
       if (answer === "failed") {
@@ -243,7 +246,8 @@ async function takeLatest(
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],
     );
-    if (takeBack(session, step, view, actor, pendingText)) return { kind: "undone", skipped };
+    if (takeBack(session, step, view, actor, pendingText))
+      return { kind: "undone", skipped, nodes: step.nodes };
     skipped.push({ kind: "tree", name: names[0] ?? "", nodes: step.nodes });
   }
   return { kind: "nothing", skipped };
@@ -277,6 +281,7 @@ export async function undoStep(
             : {
                 kind: "undone",
                 skipped: [],
+                nodes: step.nodes,
                 ...(textLeft > 0
                   ? { partial: { name: step.name, nodes: step.nodes, textLeft } }
                   : {}),

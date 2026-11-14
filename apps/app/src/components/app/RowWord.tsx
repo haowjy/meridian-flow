@@ -59,7 +59,7 @@ export function RowWord({
     const held = word !== null && word === document.activeElement;
     onAction();
     const back = latest.current?.back;
-    if (held && back) returnFocus(back, word);
+    if (held && back) focusWhenBack(back, word);
   };
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
@@ -140,16 +140,17 @@ export function RowWord({
 }
 
 /**
- * Waits for the row an action brings back, then gives it the focus; focus moved meanwhile wins.
- * Focus a dialog's trap put on a box around the word, as the word left, is still the word's.
+ * Waits for the row an action brings back, then gives it the focus; focus the writer moved
+ * meanwhile wins. Focus still on `from` (what had it at the action), or on a box around it, as a
+ * dialog's trap puts it when `from` leaves, is the action's to move.
  */
-function returnFocus(back: () => HTMLElement | null, word: HTMLElement) {
+export function focusWhenBack(back: () => HTMLElement | null, from: Element) {
   const until = Date.now() + 3000;
   const around = new Set<Element>();
-  for (let at = word.parentElement; at; at = at.parentElement) around.add(at);
+  for (let at = from.parentElement; at; at = at.parentElement) around.add(at);
   const step = () => {
     const active = document.activeElement;
-    const free = active === null || active === word || around.has(active);
+    const free = active === null || active === from || around.has(active);
     if (!free) return;
     const to = back();
     if (to) moveFocus(to, { ring: lastInputWasKeyboard() });

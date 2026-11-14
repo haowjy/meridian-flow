@@ -5,6 +5,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { hasLine } from "@/features/draft-review/draft-notices";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -38,7 +39,12 @@ export function useDraftDock({
   // The owner's notice, if this chat's strip made it.
   const owned = useDraftNotice(controller.ownerKey);
   const notice =
-    active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
+    active &&
+    owned?.surface.kind === "strip" &&
+    owned.surface.threadId === threadId &&
+    hasLine(owned)
+      ? owned
+      : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;

@@ -19,7 +19,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import type { AppliedFact, DraftNotice } from "./draft-notices";
+import { type AppliedFact, type DraftNotice, hasLine } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -126,6 +126,7 @@ export function DraftNoticeLine({
   useLingui();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
+  if (!hasLine(notice)) return null;
   if (notice.kind === "applied") {
     const landed = notice.facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
     const named = (kind: "renamed" | "restored") =>
@@ -347,6 +348,8 @@ function factSentence(fact: AppliedFact): string {
       const name = fact.name;
       return t`Applied as ${name}: the name was taken.`;
     }
+    case "applied":
+      return t`Applied just now: its changes are in the manuscript.`;
     case "restored":
       return t`Applied. It is back in the manuscript.`;
     case "also": {

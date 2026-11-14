@@ -175,6 +175,16 @@ export function useWorkBranchCommands({
           return from && to ? [{ documentId, kind: "also", from, to }] : [];
         }),
       ];
+      // Every document the writer applied says so on its row, a plain Apply as much as one that
+      // moved it.
+      const told = new Set(facts.map((fact) => fact.documentId));
+      for (const { item } of done) {
+        const name = titleOf(item);
+        if (item && name && !told.has(item.documentId)) {
+          told.add(item.documentId);
+          facts.push({ documentId: item.documentId, kind: "applied", name });
+        }
+      }
       if (facts.length)
         notices.showApplied({ projectId, ownerKey, surface: noticeSurface(draft), facts });
     };
