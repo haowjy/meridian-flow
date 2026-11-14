@@ -60,8 +60,8 @@ function run(seed: number, editorCount: number) {
   const r = rng(seed);
   // Client ids and block ids come from the seed, so a seed replays the same run.
   const ids = rng(seed + 1_000_003);
-  vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(array: T) => {
-    const bytes = array as unknown as Uint8Array;
+  vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation((array) => {
+    const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
     for (let k = 0; k < bytes.length; k++) bytes[k] = Math.floor(ids() * 256);
     return array;
   });
