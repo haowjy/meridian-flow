@@ -16,6 +16,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   uniqueIndex,
   uuid,
@@ -106,8 +107,9 @@ export const documentEditParts = pgTable(
 /**
  * What a tree command did, for the chat that made it: one row per tool call. `records` are the
  * records it admitted, which Undo names to the package one by one (`undoChange`, resolving
- * through copies); `w_id` is the model's handle on `node_id`'s counter for this chat. A row of
- * kind `undo` or `redo` names the receipt it reverses.
+ * through copies). `node_id` is the subject the model's handle hangs on; every node the call
+ * changed is in `tree_edit_receipt_nodes`. A row of kind `undo` or `redo` names the receipt it
+ * reverses.
  */
 export const treeEditReceipts = pgTable(
   "tree_edit_receipts",
@@ -132,22 +134,48 @@ export const treeEditReceipts = pgTable(
     op: text("op").$type<"create" | "move" | "delete" | "restore">().notNull(),
     kind: text("kind").$type<"write" | "undo" | "redo">().notNull().default("write"),
     reverses: uuid("reverses"),
-    wId: integer("w_id").notNull(),
     /** The Work's branch the record was drafted in; null when it is live. */
     draftBranchId: uuid("draft_branch_id").$type<BranchId>(),
-    /** The path the model gave, and where the node landed, for the turn's receipt lines. */
+    /** The path the model gave, for the turn's receipt lines and the Undo of a deleted node. */
     shownAt: text("shown_at"),
-    landedAt: text("landed_at"),
     createdAt: createdAt(),
   },
   (t) => [
-    index("tree_edit_receipts_node_idx").on(t.nodeId, t.threadId, t.seq),
+    index("tree_edit_receipts_thread_idx").on(t.threadId, t.shownAt),
     index("tree_edit_receipts_turn_idx").on(t.turnId),
+    index("tree_edit_receipts_reverses_idx").on(t.reverses),
     check("tree_edit_receipts_op_valid", sql`${t.op} IN ('create','move','delete','restore')`),
     check("tree_edit_receipts_kind_valid", sql`${t.kind} IN ('write','undo','redo')`),
     check(
       "tree_edit_receipts_reverses_valid",
       sql`(${t.kind} = 'write') = (${t.reverses} IS NULL)`,
     ),
+  ],
+);
+
+/**
+ * A node a tree receipt changed, in the chat's one history of that node: `w_id` is the write
+ * ordinal reserved on the node's counter (`agent_edit_wid_counters`), the same sequence the node's
+ * text edits take, so Undo, Redo and `revert` order text and tree changes by it. `before_at` and
+ * `after_at` are the node's address before and after (null for a node the call created or
+ * deleted), for the turn's change viewer.
+ */
+export const treeEditReceiptNodes = pgTable(
+  "tree_edit_receipt_nodes",
+  {
+    receiptId: uuid("receipt_id")
+      .notNull()
+      .references(() => treeEditReceipts.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id").notNull(),
+    wId: integer("w_id").notNull(),
+    beforeAt: text("before_at"),
+    afterAt: text("after_at"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.receiptId, t.nodeId] }),
+    index("tree_edit_receipt_nodes_node_idx").on(t.threadId, t.nodeId, t.wId),
   ],
 );

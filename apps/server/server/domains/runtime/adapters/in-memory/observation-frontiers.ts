@@ -50,10 +50,14 @@ export function createInMemoryObservationFrontiers(deps: {
       return sourceBlockIds
         .flatMap((id) => {
           const row = rows.get(key(id, room));
-          return row ? [row] : [];
+          return row ? [{ sourceBlockId: id, row }] : [];
         })
-        .sort((a, b) => a.recordedSeq - b.recordedSeq)
-        .map((row) => row.snapshot.slice());
+        .sort((a, b) => a.row.recordedSeq - b.row.recordedSeq)
+        .map(({ sourceBlockId, row }) => ({
+          sourceBlockId,
+          recordedSeq: row.recordedSeq,
+          snapshot: row.snapshot.slice(),
+        }));
     },
   };
 }

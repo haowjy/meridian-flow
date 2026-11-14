@@ -48,8 +48,15 @@ export interface ReferenceReader {
  */
 export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
-  /** Each reference block's frontier: the block whose materialized read the model is sent. */
-  frontiers: { sourceBlockId: string; frontier: ObservationFrontier }[];
+  /**
+   * Each reference block's frontier and the tree names its read showed: the block whose
+   * materialized read the model is sent.
+   */
+  frontiers: {
+    sourceBlockId: string;
+    frontier?: ObservationFrontier;
+    names?: ObservationFrontier;
+  }[];
 }
 
 /**
@@ -67,8 +74,8 @@ export async function recordReferenceEvidence(
 ): Promise<void> {
   for (const showing of evidence.shown)
     await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontier } of evidence.frontiers)
-    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
+  for (const { sourceBlockId, frontier, names } of evidence.frontiers)
+    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId }, names);
 }
 
 export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };
@@ -113,7 +120,10 @@ export async function loadReferenceReads(input: {
           : [];
       }),
   );
-  const reads = new Map<string, ReferenceRead & { frontier?: ObservationFrontier }>();
+  const reads = new Map<
+    string,
+    ReferenceRead & { frontier?: ObservationFrontier; names?: ObservationFrontier }
+  >();
   const updated: Block[] = [];
   const evidence: ReferenceEvidence = { shown: [], frontiers: [] };
   for (const block of input.blocks) {
@@ -135,14 +145,19 @@ export async function loadReferenceReads(input: {
         result: read.result,
         revision: read.revision,
         ...(read.evidence?.frontier ? { frontier: read.evidence.frontier } : {}),
+        ...(read.evidence?.names ? { names: read.evidence.names } : {}),
       };
       reads.set(key, result);
       evidence.shown.push(...(read.evidence?.shown ?? []));
     }
     input.signal?.throwIfAborted();
     // A repeated mention shows the same read, so its block records the same frontier.
-    if (result.frontier)
-      evidence.frontiers.push({ sourceBlockId: block.id, frontier: result.frontier });
+    if (result.frontier || result.names)
+      evidence.frontiers.push({
+        sourceBlockId: block.id,
+        ...(result.frontier ? { frontier: result.frontier } : {}),
+        ...(result.names ? { names: result.names } : {}),
+      });
     updated.push({
       ...block,
       content: { ...reference, read: { result: result.result, revision: result.revision } },

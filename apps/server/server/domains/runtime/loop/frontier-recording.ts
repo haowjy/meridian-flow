@@ -8,7 +8,11 @@
 import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { TurnBlockId } from "@meridian/contracts";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { type ObservationFrontiers, TREE_NAMES_ROOM } from "../ports/observation-frontiers.js";
+import {
+  type ObservationFrontiers,
+  type ObservationRow,
+  TREE_NAMES_ROOM,
+} from "../ports/observation-frontiers.js";
 
 export interface FrontierRecordingDeps {
   observationFrontiers: ObservationFrontiers;
@@ -68,17 +72,32 @@ export class CreditedBlocks {
 }
 
 /**
- * What the blocks the run carries showed of the tree: each row's added names, oldest first. A
- * failed lookup is logged and answers nothing shown, which guards nothing.
+ * What the blocks the run carries showed of the tree: each row's added names, oldest first. Rows
+ * are read once per block for the life of the lookup (a block's rows do not change while the run
+ * carries it), so a call reads only the blocks added since the one before. A failed lookup is
+ * logged and answers nothing shown, which guards nothing.
  */
 export function shownNamesLookup(
   deps: FrontierRecordingDeps,
   blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
   correlation: { threadId: string; turnId: string },
 ): () => Promise<Uint8Array[]> {
+  const loaded = new Set<TurnBlockId>();
+  let rows: ObservationRow[] = [];
   return async () => {
     try {
-      return await deps.observationFrontiers.all(TREE_NAMES_ROOM, await blockIds());
+      const ids = await blockIds();
+      const carried = new Set(ids);
+      rows = rows.filter((row) => carried.has(row.sourceBlockId));
+      for (const id of loaded) if (!carried.has(id)) loaded.delete(id);
+      const fresh = ids.filter((id) => !loaded.has(id));
+      if (fresh.length > 0) {
+        rows = [...rows, ...(await deps.observationFrontiers.all(TREE_NAMES_ROOM, fresh))].sort(
+          (a, b) => a.recordedSeq - b.recordedSeq,
+        );
+        for (const id of fresh) loaded.add(id);
+      }
+      return rows.map((row) => row.snapshot);
     } catch (error) {
       emitEvent(deps.eventSink, {
         level: "warn",

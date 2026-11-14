@@ -153,12 +153,17 @@ export async function runTreeToolCommand(
       drafted,
       make: (scope) => {
         const result = runTreeCommand(scope, places, shown, local);
-        return { result, arrived: result.ok ? result.arrived : [] };
+        return { result, arrived: result.ok ? result.arrived : [], refused: !result.ok };
       },
       afterWrite: async (result, scope) => {
         if (!result.ok || result.made.length === 0) return;
         const recorded = await history.recordAgentTreeChange({
-          nodeId: result.subject,
+          subject: result.subject,
+          nodes: result.touched.map((touched) => ({
+            nodeId: touched.node,
+            beforeAt: touched.before,
+            afterAt: touched.after,
+          })),
           records: result.made,
           op: input.command === "create" ? "create" : input.command,
           threadId: ctx.threadId as ThreadId,
@@ -171,7 +176,6 @@ export async function runTreeToolCommand(
               }
             : {}),
           shownAt: uriOfWritten(result.shownAt),
-          landedAt: result.landedAt,
         });
         handle = recorded.handle;
       },

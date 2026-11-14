@@ -35,8 +35,21 @@ export class TreeWriter {
     private readonly origin: string = "local",
   ) {}
 
+  /** The last replay of each view and the list lengths it replayed: the list only grows. */
+  private readonly replays = new Map<
+    string | null,
+    { records: number; settles: number; projection: TreeProjection }
+  >();
+
+  /** The view's tree, replayed once per version of the list however many times it is asked for. */
   view(view: View): TreeProjection {
-    return replayView(this.doc, view);
+    const records = recordsOf(this.doc).length;
+    const settles = settleLogOf(this.doc).length;
+    const hit = this.replays.get(view.draft);
+    if (hit && hit.records === records && hit.settles === settles) return hit.projection;
+    const projection = replayView(this.doc, view);
+    this.replays.set(view.draft, { records, settles, projection });
+    return projection;
   }
 
   /** Runs `change` as one Yjs transaction, so its records and settlements travel as one update. */

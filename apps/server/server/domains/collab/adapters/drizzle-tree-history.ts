@@ -1,48 +1,27 @@
 /**
- * The model's tree changes as receipts: the row its call keeps in the tool call's own transaction
- * (a handle on the node's per-chat counter, which `undo`, `redo` and `revert` name), and the
- * Works whose drafts outlive a delete.
+ * The model's tree changes as receipts: the rows its call keeps in the tool call's own
+ * transaction (a write ordinal on each node it changed, from the counter the node's text edits
+ * take too), the one history of a node `undo`, `redo` and `revert` choose from, and the Works
+ * whose drafts outlive a delete.
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
-import { type Database, documentEdits, treeEditReceipts } from "@meridian/database";
+import { type Database, treeEditReceiptNodes, treeEditReceipts } from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, isNotNull, max, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { AgentTreeHistory } from "../contracts.js";
+import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 
 export function createDrizzleTreeHistory(
   db: Database,
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
+  /** The text engine's own stack of a document for a chat: ordinals of what Undo and Redo would take. */
+  textStack: (threadId: string, documentId: string) => Promise<NodeHistory["text"]>,
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
-  const receiptsWhere = async (where: SQL | undefined) => {
-    const rows = await tx()
-      .select()
-      .from(treeEditReceipts)
-      .where(where)
-      .orderBy(desc(treeEditReceipts.seq));
-    return rows.map((row) => ({
-      id: row.id,
-      nodeId: row.nodeId,
-      records: row.records,
-      op: row.op,
-      kind: row.kind,
-      reverses: row.reverses,
-      wId: row.wId,
-      draftBranchId: row.draftBranchId,
-      createdAt: row.createdAt,
-    }));
-  };
   return {
     async recordAgentTreeChange(input) {
-      // A node's counter is the document's own for a document, so a handle names one edit of
-      // either kind; a folder has no document, and the counter takes any node id.
-      const wId = await journal.reserveWriteOrdinal(
-        input.nodeId as Parameters<typeof journal.reserveWriteOrdinal>[0],
-        input.threadId,
-      );
       const [row] = await tx()
         .insert(treeEditReceipts)
         .values({
@@ -51,19 +30,40 @@ export function createDrizzleTreeHistory(
           responseId: input.responseIdentity?.providerResponseId ?? null,
           editScopeId: input.responseIdentity?.editScopeId ?? null,
           toolCallId: input.toolCallId ?? null,
-          nodeId: input.nodeId,
+          nodeId: input.subject,
           records: input.records,
           op: input.op,
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
-          wId,
           draftBranchId: input.draftBranchId ?? null,
           shownAt: input.shownAt,
-          landedAt: input.landedAt ?? null,
         })
         .returning({ id: treeEditReceipts.id });
       if (!row) throw new Error("A tree receipt was not inserted");
-      return { handle: editHandle(wId), id: row.id };
+      // A node's counter is the document's own for a document, so one ordinal orders its text
+      // edits and tree changes; a folder has no document, and the counter takes any node id.
+      const nodes = input.nodes.some((node) => node.nodeId === input.subject)
+        ? input.nodes
+        : [{ nodeId: input.subject, beforeAt: null, afterAt: null }, ...input.nodes];
+      let handle = 0;
+      const reserved: (typeof treeEditReceiptNodes.$inferInsert)[] = [];
+      for (const node of nodes) {
+        const wId = await journal.reserveWriteOrdinal(
+          node.nodeId as Parameters<typeof journal.reserveWriteOrdinal>[0],
+          input.threadId,
+        );
+        if (node.nodeId === input.subject) handle = wId;
+        reserved.push({
+          receiptId: row.id,
+          threadId: input.threadId,
+          nodeId: node.nodeId,
+          wId,
+          beforeAt: node.beforeAt,
+          afterAt: node.afterAt,
+        });
+      }
+      await tx().insert(treeEditReceiptNodes).values(reserved);
+      return { handle: editHandle(handle), id: row.id };
     },
 
     async draftedInReply(turnId) {
@@ -75,27 +75,60 @@ export function createDrizzleTreeHistory(
       return row !== undefined;
     },
 
-    receiptsFor: (threadId, nodeId) =>
-      receiptsWhere(
-        and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.nodeId, nodeId)),
-      ),
+    async receiptsAt(threadId, shownAt) {
+      const rows = await tx()
+        .select()
+        .from(treeEditReceipts)
+        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.shownAt, shownAt)))
+        .orderBy(desc(treeEditReceipts.seq));
+      return rows.map((row) => receiptOf(row, [], 0));
+    },
 
-    receiptsAt: (threadId, shownAt) =>
-      receiptsWhere(
-        and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.shownAt, shownAt)),
-      ),
-
-    async latestTextEditAt(threadId, documentId) {
-      const [row] = await tx()
-        .select({ at: max(documentEdits.createdAt) })
-        .from(documentEdits)
+    async historyOf(threadId, nodeId, isDocument) {
+      const mine = await tx()
+        .select({ receiptId: treeEditReceiptNodes.receiptId, wId: treeEditReceiptNodes.wId })
+        .from(treeEditReceiptNodes)
         .where(
-          and(
-            eq(documentEdits.threadId, threadId),
-            eq(documentEdits.documentId, documentId as DocumentId),
+          and(eq(treeEditReceiptNodes.threadId, threadId), eq(treeEditReceiptNodes.nodeId, nodeId)),
+        )
+        .orderBy(desc(treeEditReceiptNodes.wId));
+      const ids = mine.map((row) => row.receiptId);
+      const text =
+        isDocument && ids.length > 0 ? await textStack(threadId, nodeId) : { undo: [], redo: null };
+      if (ids.length === 0) return { undo: [], redo: [], all: [], text };
+      const rows = await tx()
+        .select()
+        .from(treeEditReceipts)
+        .where(or(inArray(treeEditReceipts.id, ids), inArray(treeEditReceipts.reverses, ids)));
+      const reversed = new Set(rows.flatMap((row) => (row.reverses ? [row.reverses] : [])));
+      const touched = await tx()
+        .select({
+          receiptId: treeEditReceiptNodes.receiptId,
+          nodeId: treeEditReceiptNodes.nodeId,
+          wId: treeEditReceiptNodes.wId,
+        })
+        .from(treeEditReceiptNodes)
+        .where(inArray(treeEditReceiptNodes.receiptId, ids));
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const all = mine.flatMap((entry): TreeReceipt[] => {
+        const row = byId.get(entry.receiptId);
+        if (!row) return [];
+        const own = touched.filter((node) => node.receiptId === row.id);
+        return [
+          receiptOf(
+            row,
+            own.map((node) => node.nodeId),
+            entry.wId,
+            own.find((node) => node.nodeId === row.nodeId)?.wId ?? entry.wId,
           ),
-        );
-      return row?.at ?? null;
+        ];
+      });
+      return {
+        undo: all.filter((r) => r.kind !== "undo" && !reversed.has(r.id)),
+        redo: all.filter((r) => r.kind === "undo" && !reversed.has(r.id)),
+        all,
+        text,
+      } satisfies NodeHistory;
     },
 
     async survivingDraftWorks(documentId) {
@@ -118,5 +151,25 @@ export function createDrizzleTreeHistory(
       // By name, as the model repeats it to the writer, who never sees handles (#914).
       return rows.map((row) => `Work "${row.name}"`).sort();
     },
+  };
+}
+
+function receiptOf(
+  row: typeof treeEditReceipts.$inferSelect,
+  nodes: string[],
+  wId: number,
+  handle = wId,
+): TreeReceipt {
+  return {
+    id: row.id,
+    subject: row.nodeId,
+    records: row.records,
+    op: row.op,
+    kind: row.kind,
+    reverses: row.reverses,
+    draftBranchId: row.draftBranchId,
+    wId,
+    handle,
+    nodes,
   };
 }

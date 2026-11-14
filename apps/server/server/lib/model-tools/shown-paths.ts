@@ -13,6 +13,7 @@ import {
   emptyShown,
   encodeDelta,
   type NamesShown,
+  printedDelta,
   type ShownDelta,
 } from "../../domains/context/tree/names-shown.js";
 import { reachPath } from "../../domains/context/tree/tree-commands.js";
@@ -36,6 +37,26 @@ export async function shownNamesOf(
 export function namesEvidence(delta: ShownDelta | undefined) {
   if (!delta || (delta.whole.length === 0 && delta.names.length === 0)) return {};
   return { names: { room: TREE_NAMES_ROOM, snapshot: encodeDelta(delta) } };
+}
+
+/**
+ * What a result showed when it printed the paths of these nodes (one source, `area`): each name
+ * along each path as the tree holds it now. Every tool that prints a path records it this way,
+ * from the nodes that produced it, so a name means what the model was shown whatever name it
+ * typed to get there.
+ */
+export async function printedNames(
+  call: ToolCall,
+  area: string,
+  ids: readonly string[],
+  version?: "draft" | "live",
+): Promise<ShownDelta | undefined> {
+  if (ids.length === 0) return undefined;
+  const read = await call.context.port.readTree(area, {
+    ...(version ? { version } : {}),
+    read: (scope) => printedDelta(scope.writer.view(scope.view), ids),
+  });
+  return read.ok ? read.value : undefined;
 }
 
 /** The area a path names (`manuscript://`, a Work's, a chat's) and the path below it. */

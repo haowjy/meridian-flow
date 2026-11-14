@@ -1,6 +1,11 @@
 /** Immutable edit/placement discovery for the retained turn change-viewer read model. */
 import type { DocumentId } from "@meridian/contracts";
-import { type Database, documents, treeEditReceipts } from "@meridian/database";
+import {
+  type Database,
+  documents,
+  treeEditReceiptNodes,
+  treeEditReceipts,
+} from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { and, eq, ne, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -22,18 +27,23 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
       const receipts = alias(treeEditReceipts, "reversed");
       const rows = await currentDrizzleDb(db)
         .select({
-          documentId: treeEditReceipts.nodeId,
+          documentId: treeEditReceiptNodes.nodeId,
           workId: branches.originWorkId,
           rootThreadId: branches.originRootThreadId,
           op: treeEditReceipts.op,
-          shownAt: treeEditReceipts.shownAt,
-          landedAt: treeEditReceipts.landedAt,
+          // The node's own address before the change (a create's: where it was made), so a
+          // folder's delete or a several-move reads as each document's own line.
+          shownAt: sql<
+            string | null
+          >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
+          landedAt: treeEditReceiptNodes.afterAt,
           // A copy's create names the document it read, so the turn can say it copied.
           copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
         })
         .from(treeEditReceipts)
+        .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
         // A folder has no document, and a folder's change is not a document's line.
-        .innerJoin(documents, eq(documents.id, treeEditReceipts.nodeId))
+        .innerJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
         // A drafted entry's owner: the branch it was drafted in.
         .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
         .where(
@@ -50,7 +60,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             ),
           ),
         )
-        .orderBy(treeEditReceipts.seq);
+        .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);
       return rows.map(({ workId, rootThreadId, ...row }) => ({
         ...row,
         documentId: row.documentId as DocumentId,

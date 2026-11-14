@@ -2,7 +2,7 @@
 
 import { editHandle, type PreparedEditRoots } from "@meridian/agent-edit/integration";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
-import type { InverseDocument, StoredInversePart } from "./turn-inverse-service.js";
+import type { StoredInversePart } from "./turn-inverse-service.js";
 
 /** One model-visible edit on the stack. */
 export type Entry = {
@@ -13,9 +13,9 @@ export type Entry = {
 export const entryKeys = (entry: Entry) => entry.parts.map(key);
 export const entryRows = (entry: Entry): { id: number; key: string }[] =>
   entry.parts.map((part) => ({ id: part.id, key: key(part) }));
-export function entries(document: InverseDocument, threadId: string): Entry[] {
+export function entries(history: readonly StoredInversePart[], threadId: string): Entry[] {
   const map = new Map<string, Entry>();
-  for (const part of document.history) {
+  for (const part of history) {
     if (
       part.threadId !== threadId ||
       part.actor !== "agent" ||

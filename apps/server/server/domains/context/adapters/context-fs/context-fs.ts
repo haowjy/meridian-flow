@@ -706,7 +706,7 @@ export class ContextFS implements ContextSchemeAdapter {
       const result = await this.writes.run(target, (scope) => {
         const made = input.make(scope);
         arrived = made.arrived ?? [];
-        return made.result;
+        return made;
       });
       await input.afterWrite?.(result, { view: target.view });
       // Only live documents arrive at a live address; a drafted one has none.

@@ -169,10 +169,19 @@ export type AgentEditAccess = {
   treeHistory(): AgentTreeHistory;
 };
 
+/** A node a tree call changed, with its address before and after (null: created, or deleted). */
+export type TreeReceiptNode = {
+  nodeId: string;
+  beforeAt: string | null;
+  afterAt: string | null;
+};
+
 /** One record a model's tree call admitted, as its receipt keeps it. */
 export type TreeReceiptInput = {
   /** The node the handle hangs on: the one acted on, or the folder several were moved into. */
-  nodeId: string;
+  subject: string;
+  /** Every node the call changed, the subject included: each takes a write ordinal of its own. */
+  nodes: readonly TreeReceiptNode[];
   /** The records the call admitted, in order. */
   records: Array<{ record: string; node: string }>;
   op: "create" | "move" | "delete" | "restore";
@@ -184,39 +193,54 @@ export type TreeReceiptInput = {
   draftBranchId?: import("@meridian/contracts").BranchId;
   /** The path the model gave. */
   shownAt: string;
-  /** Where the node landed, for a move or rename. */
-  landedAt?: string;
   /** An undo or redo names the receipt it reverses. */
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
 
 export type TreeReceipt = {
   id: string;
-  nodeId: string;
+  subject: string;
   records: TreeReceiptInput["records"];
   op: TreeReceiptInput["op"];
   kind: "write" | "undo" | "redo";
   reverses: string | null;
-  wId: number;
   draftBranchId: string | null;
-  createdAt: Date;
+  /** The write ordinal of the node this receipt was found by. */
+  wId: number;
+  /** The write ordinal on the subject's counter: the handle the model was given. */
+  handle: number;
+  /** Every node the call changed. */
+  nodes: string[];
+};
+
+/**
+ * One chat's history of a node, the one order Undo, Redo and `revert` choose from: the tree
+ * receipts that changed it, and the write ordinals of its text edits. Both take their ordinal
+ * from the node's counter, so a larger one is later.
+ */
+export type NodeHistory = {
+  /** Receipts that take a step back (a write or a redo) and were not themselves reversed, newest first. */
+  undo: TreeReceipt[];
+  /** Receipts that took a step back (an undo) and were not redone, newest first. */
+  redo: TreeReceipt[];
+  /** Every receipt of the node by its handle on that node. */
+  all: TreeReceipt[];
+  /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
+  text: { undo: number[]; redo: number | null };
 };
 
 export type AgentTreeHistory = {
   /**
    * Keeps a model's tree record as a receipt, in the tool call's own transaction, and returns its
-   * handle on the node's counter for this chat.
+   * handle on the subject's counter for this chat.
    */
   recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
-  /** Whether a reply already made a drafted tree change (the first says drafted changes wait). */
   /** Whether the turn (one reply) already made a drafted tree change. */
   draftedInReply(turnId: TurnId): Promise<boolean>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
   receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
-  /** This chat's receipts for a node, newest first. */
-  receiptsFor(threadId: ThreadId, nodeId: string): Promise<TreeReceipt[]>;
-  /** When this chat last edited the document's text, or null: a tree receipt older than it is not the newest edit. */
-  latestTextEditAt(threadId: ThreadId, documentId: string): Promise<Date | null>;
+  /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
+  historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
 };

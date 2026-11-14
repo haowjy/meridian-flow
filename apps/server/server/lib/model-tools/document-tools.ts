@@ -60,7 +60,14 @@ import {
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
-import { namesEvidence, reachShown, wrongKindMessage } from "./shown-paths.js";
+import {
+  areaOfPath,
+  namesEvidence,
+  printedNames,
+  type Reached,
+  reachShown,
+  wrongKindMessage,
+} from "./shown-paths.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -68,6 +75,7 @@ import {
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
   resolveToolCall,
+  type ToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
   writeToolError,
@@ -282,6 +290,18 @@ async function writeUnderGrant(
   };
 }
 
+/** The names a result printed for the document it was about: what the path reached, else the tree's own. */
+async function printedOf(
+  call: ToolCall,
+  address: ResolvedDocumentAddress,
+  reached: Pick<Reached, "delta" | "node"> | null,
+  version?: "draft" | "live",
+) {
+  if (reached?.node?.id === address.documentId && reached.delta) return reached.delta;
+  const area = areaOfPath(address.uri)?.area;
+  return area ? printedNames(call, area, [address.documentId], version) : reached?.delta;
+}
+
 /** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
 export async function readTrackedDocument(
   deps: ToolWiringDeps,
@@ -361,7 +381,10 @@ export async function readTrackedDocument(
     output: { ...outcome.result, ...owner, ...(notice ? { notice } : {}) },
     revision: outcome.revision,
     metadata: documentRevisionMetadata(address, outcome.revision),
-    evidence: { ...evidenceOf(address.documentId, outcome), ...namesEvidence(reached.delta) },
+    evidence: {
+      ...evidenceOf(address.documentId, outcome),
+      ...namesEvidence(await printedOf(call, address, reached, version)),
+    },
   };
 }
 
@@ -378,7 +401,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
 
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const written = input as WriteToolInput;
+    let written = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(written);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
@@ -390,9 +413,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       (written.command === "create" && written.path.endsWith("/"))
     )
       return runTreeToolCommand(deps, call, written, ctx);
+    // What the tree took back of this call's `count`, said before the text engine's own line.
+    let treeUndone: string[] = [];
     if (written.command === "undo" || written.command === "redo" || written.command === "revert") {
       const tree = await runTreeInverse(deps, call, written, ctx);
-      if (tree) return tree;
+      if (tree?.kind === "answer") return tree.answer;
+      if (tree?.kind === "then_text") {
+        treeUndone = tree.undone;
+        written = { ...written, count: tree.count } as typeof written;
+      }
     }
     const { context, principal } = call;
     const isInverse =
@@ -479,7 +508,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           ? {
               recordCreate: async ({ documentId, record, draftBranchId }) => {
                 await deps.documentSync.treeHistory().recordAgentTreeChange({
-                  nodeId: documentId,
+                  subject: documentId,
+                  nodes: [{ nodeId: documentId, beforeAt: null, afterAt: parsed.path }],
                   records: [{ record, node: documentId }],
                   threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
                   ...(ctx.turnId
@@ -545,6 +575,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       else if (!now && outcome.result.documentEmpty)
         outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
     }
+    if (treeUndone.length > 0 && !outcome.isError)
+      outcome = {
+        ...outcome,
+        result: {
+          ...outcome.result,
+          message: [`undone: ${treeUndone.join(", ")}`, outcome.result.message]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      };
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {
@@ -608,7 +648,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
-      evidence: { ...outcome.evidence, ...namesEvidence(reached.delta) },
+      evidence: {
+        ...outcome.evidence,
+        ...namesEvidence(
+          // A create's own name and an inverse's new place are printed too.
+          await printedOf(call, address, creates || isInverse ? null : reached),
+        ),
+      },
     };
   };
 }

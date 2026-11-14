@@ -54,11 +54,24 @@ function shownAt(shown: NamesShown, folder: string, name: string): string | null
   return shown.whole.has(folder) ? null : undefined;
 }
 
-/** The delta of a listing of `folder`: every shown name in it, and the folder as listed whole. */
-export function listingDelta(projection: TreeProjection, folder: string): ShownDelta {
+/**
+ * The delta of a listing of `folder`: the folder as listed whole, the names of the children the
+ * listing showed (`visible`: the rest were hidden from the model), and the folder's own path.
+ */
+export function listingDelta(
+  projection: TreeProjection,
+  folder: string,
+  visible: (node: TreeNode) => boolean = () => true,
+): ShownDelta {
+  const above = printedDelta(projection, [folder]);
   return {
     whole: [folder],
-    names: childrenOf(projection, folder).map((node) => [folder, node.displayName, node.id]),
+    names: [
+      ...above.names,
+      ...childrenOf(projection, folder)
+        .filter(visible)
+        .map((node): [string, string, string] => [folder, node.displayName, node.id]),
+    ],
   };
 }
 
@@ -70,7 +83,7 @@ export function splitSegments(path: string): { segments: string[]; folder: boole
 }
 
 /** The names a segment may mean in a folder: a document's leaf also goes through the name codec. */
-function candidates(segment: string, last: boolean, folder: boolean): string[] {
+export function candidates(segment: string, last: boolean, folder: boolean): string[] {
   const canonical = last && !folder ? canonicalLeaf(segment) : segment;
   // What was written is a name before it is an alias: a folder named `ch1.md` is not `ch1`.
   return canonical === segment ? [segment] : [segment, canonical];
@@ -88,11 +101,14 @@ export type Resolution =
       trashed: TreeNode[];
     }
   | {
-      /** The name now means a different node from the one the model was shown. */
+      /**
+       * The name now means a different node from the one the model was shown. `was` is absent
+       * when that node is not in this view (it was shown in the other view of the chat).
+       */
       kind: "path_changed";
       folder: string;
       name: string;
-      was: TreeNode;
+      was?: TreeNode;
       now: TreeNode;
     }
   | { kind: "gone"; node: TreeNode }
@@ -110,8 +126,9 @@ export type Resolution =
 /**
  * Resolves `path` from `root` (a source's top) one name at a time against the map and the tree
  * now (tree-tools.md, "Which tree a stale path is resolved against"). With `through`, a folder
- * the model was shown that is in Trash now is walked through and reported (a create or move into
- * a deleted folder is made, and the folder stands); the last segment is always refused as `gone`.
+ * the model was shown that is in Trash now is walked through and reported, the last segment
+ * included: it is a destination container (a create or move into a deleted folder is made, and the
+ * folder stands). Without `through`, a deleted node is refused as `gone`: it is the target.
  */
 export function resolveShown(
   projection: TreeProjection,
@@ -131,13 +148,15 @@ export function resolveShown(
     for (name of candidates(segment, last, path.folder)) {
       const now = childrenOf(projection, folder).find((child) => child.displayName === name);
       const was = shownAt(shown, folder, name);
-      // A node the map names but this view lacks (shown in the other view) means what is there now.
       const meant = was ? projection.nodes.get(was) : undefined;
+      // A node the map names but this view lacks (shown in the other view) is still the node the
+      // name meant: a different occupant now is a changed name, whatever the view.
+      if (was && !meant && now) return { kind: "path_changed", folder, name, now };
       if (meant && now && now.id !== meant.id)
         return { kind: "path_changed", folder, name, was: meant, now };
       if (meant?.purged) return { kind: "gone", node: meant };
       if (meant?.trashed) {
-        if (!options.through || last) return { kind: "gone", node: meant };
+        if (!options.through) return { kind: "gone", node: meant };
         trashed.push(meant);
       }
       node = meant ?? now;
@@ -154,9 +173,23 @@ export function resolveShown(
   return { kind: "node", node, along, parent: folder, trashed };
 }
 
-/** The delta of a resolved path: each name along it, and what the call itself changed. */
-export function pathDelta(resolution: Extract<Resolution, { kind: "node" }>): ShownDelta {
-  return { whole: [], names: resolution.along.map((e) => [e.folder, e.name, e.node]) };
+/**
+ * What a result that printed these nodes' paths showed: each name along each path, as it was
+ * printed, from the nodes that produced it. The one place a path a tool prints is recorded.
+ */
+export function printedDelta(projection: TreeProjection, ids: Iterable<string>): ShownDelta {
+  const names: Array<[string, string, string | null]> = [];
+  const seen = new Set<string>();
+  for (const id of ids)
+    for (
+      let node = projection.nodes.get(id);
+      node && !seen.has(node.id);
+      node = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent)
+    ) {
+      seen.add(node.id);
+      names.push([node.parent, node.displayName, node.id]);
+    }
+  return { whole: [], names };
 }
 
 /** The names a tree operation emptied and filled (nothing else is shown). */

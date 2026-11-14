@@ -1,4 +1,6 @@
 /** PostgreSQL `ObservationFrontiers` over `observation_frontiers`. */
+
+import type { TurnBlockId } from "@meridian/contracts";
 import * as schema from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -32,7 +34,11 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
       if (sourceBlockIds.length === 0) return [];
       const rows = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
-          .select({ snapshot: table.snapshot })
+          .select({
+            sourceBlockId: table.sourceBlockId,
+            recordedSeq: table.recordedSeq,
+            snapshot: table.snapshot,
+          })
           .from(table)
           .where(
             and(
@@ -42,7 +48,11 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
           )
           .orderBy(table.recordedSeq),
       );
-      return rows.map((row) => new Uint8Array(row.snapshot));
+      return rows.map((row) => ({
+        sourceBlockId: row.sourceBlockId as TurnBlockId,
+        recordedSeq: row.recordedSeq ?? 0,
+        snapshot: new Uint8Array(row.snapshot),
+      }));
     },
     async latest(room, sourceBlockIds) {
       if (sourceBlockIds.length === 0) return null;

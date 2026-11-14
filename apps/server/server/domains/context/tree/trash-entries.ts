@@ -10,6 +10,7 @@ import {
   type Actor,
   type DiscardedBy,
   discardedBy,
+  isSourceRoot,
   listRecords,
   type NodeKind,
   restoreDiscard,
@@ -144,13 +145,29 @@ export async function discardedTree(
     lists: [list],
     view: ([{ writer }]): DiscardedTree => {
       const found: DiscardedBy = discardedBy(writer.doc, command);
-      const projection = writer.view({ draft: null });
-      // A node the Discard left in no live view is not in this projection's live nodes only when purged.
+      const live = writer.view({ draft: null });
+      // The nodes the Discard created exist in no live view: their names and places are what
+      // its own records say (the create, then any rename or move the Discard also held).
+      const made = new Map<string, { kind: NodeKind; name: string; parent: string }>();
+      for (const record of found.records) {
+        if (record.type === "create")
+          made.set(record.node, { kind: record.kind, name: record.name, parent: record.parent });
+        const node = made.get(record.node);
+        if (record.type === "rename" && node) node.name = record.name;
+        if (record.type === "move" && node) node.parent = record.parent;
+      }
+      const pathOf = (id: string): string[] => {
+        const names: string[] = [];
+        for (let at = made.get(id); at; at = made.get(at.parent)) {
+          names.unshift(at.name);
+          if (!made.has(at.parent))
+            names.unshift(...(isSourceRoot(at.parent) ? [] : pathNames(live, at.parent)));
+        }
+        return names;
+      };
       const created = found.created.flatMap((id) => {
-        const node = projection.nodes.get(id);
-        return node
-          ? [{ node: id, kind: node.kind, name: node.displayName, path: pathNames(projection, id) }]
-          : [];
+        const node = made.get(id);
+        return node ? [{ node: id, kind: node.kind, name: node.name, path: pathOf(id) }] : [];
       });
       return { records: found.records, created, restored: found.restored };
     },

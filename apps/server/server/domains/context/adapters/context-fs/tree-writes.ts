@@ -331,10 +331,13 @@ export interface SourceTree {
   ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
   /**
    * One tree command on this source's list: `make` runs under the list's lock on the copy at the
-   * journal's head, makes whatever records it decides on and returns what it made. It decides
-   * before it writes: a throw stores nothing.
+   * journal's head, makes whatever records it decides on and returns its answer. A refused answer
+   * stores nothing: what `make` wrote before it refused is dropped with the copy, as a throw does.
    */
-  run<T>(target: TreeWriteTarget, make: (scope: TreeScope) => T): Promise<T>;
+  run<T>(
+    target: TreeWriteTarget,
+    make: (scope: TreeScope) => { result: T; refused?: boolean },
+  ): Promise<T>;
   /** What this source's tree shows in `view`, at the journal's head. */
   read<T>(view: View, read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T): Promise<T>;
   /** Ends a drafted create's pending records, for a create whose write failed. */
@@ -624,13 +627,25 @@ export function createSourceTree(deps: {
       return result;
     },
 
-    async run(target, make) {
+    async run<T>(
+      target: TreeWriteTarget,
+      make: (scope: TreeScope) => { result: T; refused?: boolean },
+    ) {
       const root = sourceRoot(await deps.sourceId());
-      const { result } = await deps.store.submit({
-        lists: [await list()],
-        make: ([{ writer }]) => make({ writer, view: target.view, actor: target.actor, root }),
-      });
-      return result;
+      try {
+        const { result } = await deps.store.submit({
+          lists: [await list()],
+          make: ([{ writer }]) => {
+            const made = make({ writer, view: target.view, actor: target.actor, root });
+            if (made.refused) throw new TreeRefusal(made.result);
+            return made;
+          },
+        });
+        return result.result;
+      } catch (cause) {
+        if (cause instanceof TreeRefusal) return cause.reason as T;
+        throw cause;
+      }
     },
 
     async read(view, read) {

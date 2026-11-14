@@ -6,14 +6,15 @@
  */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { childrenOf } from "@meridian/project-tree";
 import type { ContextFileEntry } from "../../domains/context/index.js";
+import { listingDelta } from "../../domains/context/tree/names-shown.js";
 import {
   isSkillsUri,
   type LsEntry,
   type LsResult,
   type LsToolInput,
   listSkillDir,
+  type ResultEvidence,
   skillsRootEntries,
   sortLsEntries,
   type ToolHandlerContext,
@@ -57,7 +58,10 @@ function listedDocumentIds(rows: readonly { documentId?: string }[]): DocumentId
 }
 
 export function createLsHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext): Promise<LsResult | ToolErrorOutput> => {
+  return async (
+    input: unknown,
+    ctx: ToolHandlerContext,
+  ): Promise<LsResult | (ToolErrorOutput & { evidence?: ResultEvidence })> => {
     const { path, verbose = false, version } = input as LsToolInput;
     if (path && isSkillsUri(path)) {
       const skills = await listSkillDir(deps, ctx.threadId, path);
@@ -72,7 +76,10 @@ export function createLsHandler(deps: ToolWiringDeps) {
       ? await reachShown(call, ctx, "ls", path, { ...(version ? { version } : {}) })
       : null;
     if (reached && isToolError(reached))
-      return toolError({ message: reached.output.message ?? "" });
+      return {
+        ...toolError({ message: reached.output.message ?? "" }),
+        evidence: reached.evidence,
+      };
     const wrongKind = reached?.node ? wrongKindMessage(reached.path, reached.node, "ls") : null;
     if (wrongKind) return toolError({ message: wrongKind });
     const result = await context.port.list(reached?.path ?? path, { wordCounts: verbose });
@@ -141,19 +148,15 @@ async function listedNames(
   const read = await call.context.port.readTree(parts.area, {
     ...(version ? { version } : {}),
     read: (scope) => {
-      const projection = scope.writer.view(scope.view);
       const folder = reached?.node?.id ?? scope.root;
       const listed = new Set(
         listing.map((entry) =>
           entry.uri.replace(/\/$/, "").slice(entry.uri.replace(/\/$/, "").lastIndexOf("/") + 1),
         ),
       );
-      return {
-        whole: [folder],
-        names: childrenOf(projection, folder)
-          .filter((node) => listed.has(node.displayName))
-          .map((node): [string, string, string] => [folder, node.displayName, node.id]),
-      };
+      return listingDelta(scope.writer.view(scope.view), folder, (node) =>
+        listed.has(node.displayName),
+      );
     },
   });
   return read.ok ? namesEvidence(read.value) : null;

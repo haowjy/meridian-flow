@@ -131,7 +131,8 @@ export type TreeScope = {
 export type TreeCommandInput<T> = {
   origin?: WriteProvenance;
   drafted?: boolean;
-  make: (scope: TreeScope) => { result: T; arrived?: readonly string[] };
+  /** A refused result stores nothing of what `make` wrote. */
+  make: (scope: TreeScope) => { result: T; arrived?: readonly string[]; refused?: boolean };
   afterWrite?: (result: T, scope: Pick<TreeScope, "view">) => Promise<void>;
 };
 
