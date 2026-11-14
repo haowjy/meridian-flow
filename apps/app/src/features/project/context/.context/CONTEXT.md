@@ -10,9 +10,8 @@ Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
 removal host. Project-scoped files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` turns a known file identity into main's address before
-content opens: every door opens in main. An ID the project's replay does not hold waits for one
-availability lookup (opening by address is still the server's; step 6b moves it); its available
-answer is consumed once by the destination.
+content opens: every door opens in main. An ID absent from the in-memory resource projection
+waits for one identity lookup; its available answer is consumed once by the destination.
 The destination alone opens local content, admits the live room, and presents Retry. Read-only
 Context files still open a viewer without live Yjs admission. Closing or replacing a
 destination discards its unconsumed answer.
@@ -26,11 +25,8 @@ files retain host Work context. Never add upload-specific navigation in Composer
 The replay has explicit waiting, complete and denied states (`resolveIn`: a node, "not there", or
 "waiting for the list"). A host waits for the list to sync; waiting is never treated as missing.
 
-Availability command admission rejects while removal is suspended or disposed;
-an empty successful receipt would let the availability owner falsely acknowledge
-unapplied authority. Local settlement still differs from session-effect completion:
-failed session effects remain pending for retry. This is not durable namespace
-receipt recovery across account/authority shutdown.
+What the list says about a document's removal reaches the coordinator through `applyRemovals`, which is
+refused while removal is suspended or disposed.
 
 ## Tree ownership
 
@@ -58,16 +54,13 @@ be appended returns a `TreeActionResult` with a reason the writer can act on
 there, a read-only or denied list, a list still loading.
 
 The close of `AccountFeatureLifetime` releases the lists with the rest of the account's state.
-Opening a local Yjs document by id (a document created offline, before its `create` is admitted)
-is step 6b's registry opener; until then `open-document-session` retries the live opener.
-
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
 path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
 address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
-`documents` are main's and the side's only (main first): the removal coordinator, availability
+`documents` are main's and the side's only (main first): the removal coordinator
 and removed notices read them to know what is on screen. Its `shown` list, every mounted document
 newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
 closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move

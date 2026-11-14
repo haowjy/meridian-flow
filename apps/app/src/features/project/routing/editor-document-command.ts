@@ -32,7 +32,6 @@ export function createEditorDocumentCommand({
   accountId,
   read,
   presented,
-  lookup,
   isDraftOnly,
   admitDraftReview,
   enterRoute,
@@ -42,7 +41,6 @@ export function createEditorDocumentCommand({
   read: () => EditorCommandSnapshot;
   /** What the views present now (`PresentedDocuments`): a renamed document's current locator. */
   presented: () => readonly OpenDocument[];
-  lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
   admitDraftReview: (tab: Extract<OpenDocument, { kind: "tracked" }>) => void;
@@ -68,7 +66,7 @@ export function createEditorDocumentCommand({
       // reused path can have outdated. Identity decides where that document is now.
       let target: ContextRouteRequest = requested;
       if (options?.replaceIfSameDocument === true) {
-        target = await resolveLaunchLocator({
+        target = resolveLaunchLocator({
           requested,
           tabs: presented(),
           addressed: current.address.destination,
@@ -78,7 +76,6 @@ export function createEditorDocumentCommand({
             (options.document !== undefined && isDraftOnly(options.document.documentId)),
           tree: current.documentTree,
           selected: !!options.itemKey && scope !== null,
-          lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
       }

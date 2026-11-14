@@ -19,8 +19,8 @@ import {
   useAccountId,
   useOptionalContextRemovalCoordinator,
   useOptionalDraftOnlyPresentations,
-  useOptionalProjectContextAvailabilityCoordinator,
   useOptionalRemovedNotices,
+  useProjectStandings,
 } from "@/features/project/context/account-feature-context";
 import { useOptionalChatOnScreen } from "@/features/project/side/SideView";
 import { useScopeDraftOwner } from "@/features/project/use-work-scope";
@@ -93,7 +93,7 @@ function OwnerSettlement({
 }) {
   const queryClient = useQueryClient();
   const accountId = useAccountId();
-  const availability = useOptionalProjectContextAvailabilityCoordinator();
+  const standings = useProjectStandings();
   const removal = useOptionalContextRemovalCoordinator();
   const notices = useOptionalRemovedNotices();
   const drafts = useOwnerDrafts(projectId, ownerKey);
@@ -175,55 +175,19 @@ function OwnerSettlement({
     held,
   ]);
 
-  // The tree placing a presented document (a New file, a link's Create, a restore) makes it live
-  // for every host. Availability can apply a live delete before the tree hears of it, so while
-  // availability says the document is removed the placement may be stale: the answer is followed,
-  // not remembered. A placement asks once for a fresh answer; a failed lookup is retried by
-  // availability's watch, and whatever answers next re-runs this effect. Only `available` (or no
-  // answer at all) promotes.
-  const [answers, answered] = useReducer((count: number) => count + 1, 0);
-  const asked = useRef(new Set<string>());
-  // Held across runs: releasing the last ask forgets an `unresolved` answer, which reads as none.
-  const watched = useRef(new Map<string, () => void>());
+  // The list placing a presented document in the live tree makes it live for every host: a join,
+  // New file, a link's Create, a restore, an Apply. While it shows the document in Trash or not
+  // yet, the placement is not followed.
+  const [, answered] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => standings.watch(projectId, answered), [standings, projectId]);
   useEffect(() => {
     if (drafts.status !== "ready") return;
-    const waiting = new Set<string>();
     for (const draft of presentations()) {
       const listed = drafts.drafts?.some((row) => row.itemKey === draft.itemKey);
-      const sighting = `${draft.token}|${draft.documentId}`;
-      const placed = latestTrees.current.find(draft.documentId) !== null;
-      if (!placed) {
-        asked.current.delete(sighting);
-        continue;
-      }
-      if (!listed) continue;
-      const handle = availability?.removalRecord(projectId, draft.documentId);
-      const answer = handle?.get()?.kind;
-      if (!availability || !handle || (answer !== "removed" && answer !== "unresolved")) {
+      if (listed && standings.standing(projectId, draft.documentId).kind === "in-tree")
         registry.promote(projectId, draft.documentId);
-        continue;
-      }
-      waiting.add(draft.documentId);
-      if (!watched.current.has(draft.documentId))
-        watched.current.set(draft.documentId, handle.subscribe(answered));
-      if (answer === "removed" && !asked.current.has(sighting)) {
-        asked.current.add(sighting);
-        availability.removalOutdated(projectId, draft.documentId);
-      }
     }
-    for (const [documentId, release] of watched.current) {
-      if (waiting.has(documentId)) continue;
-      watched.current.delete(documentId);
-      release();
-    }
-  }, [membership, drafts.drafts, drafts.status, projectId, availability, answers, held]);
-  useEffect(
-    () => () => {
-      for (const release of watched.current.values()) release();
-      watched.current.clear();
-    },
-    [],
-  );
+  });
 
   return null;
 }

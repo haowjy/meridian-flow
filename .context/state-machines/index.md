@@ -56,6 +56,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Account session runtime | Whether the account's document sessions take new work: open, closing, closed | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
 | Draft room read | Whether a draft's room can be shown and acted on | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Sync pill outage phase | Whether the pill is reporting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |

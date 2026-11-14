@@ -13,7 +13,6 @@ import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useProjectTreeView } from "@/client/query/useProjectTree";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
@@ -69,21 +68,6 @@ export function ContextDocumentHost({
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
   const bindingKeys = useRef(new WeakMap<object, string>());
-  // A failed live binding tries again when the document comes back into the list (a restore).
-  const { tree } = useProjectTreeView(
-    projectId,
-    document.kind === "new" ? "unfiled" : document.scheme,
-    {
-      ...(document.kind === "new"
-        ? {}
-        : {
-            workId: document.workId,
-            rootThreadId: document.rootThreadId,
-            chatId: document.chatId,
-          }),
-    },
-  );
-  const availabilityRevision = tree?.findDocument(document.documentId) ? "listed" : "unlisted";
   // The host's own review: the one it has open, else the draft its view paints. While the paint
   // is held (the pinned owner's list is loading) the pin already names the item, so the live
   // text stays covered rather than painting Live first.
@@ -236,7 +220,6 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      availabilityRevision={availabilityRevision}
       liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}
     >

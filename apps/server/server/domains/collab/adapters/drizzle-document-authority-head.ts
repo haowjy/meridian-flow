@@ -21,7 +21,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, eq, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
+import { livingDocumentRefusal, textHeldSql } from "../../context/tree/living-document.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
@@ -94,7 +94,7 @@ export async function allocateAdmission(
       nextAdmissionSequence: sql`${documentYjsHeads.nextAdmissionSequence} + 1`,
       updatedAt: sql`now()`,
     })
-    .where(living(documentId))
+    .where(holdsText(documentId))
     .returning({
       authorityId: documentYjsHeads.authorityId,
       generation: documentYjsHeads.authorityGeneration,
@@ -109,7 +109,7 @@ export async function allocateAdmission(
 }
 
 /**
- * Moves a living document's head to what was just admitted or checkpointed; a checkpoint
+ * Moves a document's head, in Trash or not, to what was just admitted or checkpointed; a checkpoint
  * insert names its checkpoint. A missing head or a removed document is refused, rolling the
  * caller's rows back with it, so this is the backstop behind each door's own liveness read.
  */
@@ -128,7 +128,7 @@ export async function advanceHead(
       ...(to.checkpointId === undefined ? {} : { latestCheckpointId: to.checkpointId }),
       updatedAt: sql`now()`,
     })
-    .where(living(documentId))
+    .where(holdsText(documentId))
     .returning({ documentId: documentYjsHeads.documentId });
   if (!updated) throw await refusedAuthority(db, documentId);
 }
@@ -142,18 +142,18 @@ export async function retireThrough(
   await db
     .update(documentYjsHeads)
     .set({ retiredThroughSeq: sql`greatest(${documentYjsHeads.retiredThroughSeq}, ${seq})` })
-    .where(living(documentId));
+    .where(holdsText(documentId));
 }
 
 /**
- * A document's current head without materializing a missing one. `living` reads it only when
+ * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
  * (checkpoints, compaction, version replacement) asks for it.
  */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
-  options: { living?: boolean } = {},
+  options: { notPurged?: boolean } = {},
 ): Promise<DocumentAuthorityHeadGeneration | null> {
   const [row] = await db
     .select({
@@ -162,19 +162,19 @@ export async function findDocumentAuthorityHead(
     })
     .from(documentYjsHeads)
     .where(
-      options.living
-        ? living(documentId)
+      options.notPurged
+        ? holdsText(documentId)
         : eq(documentYjsHeads.documentId, documentId as DocumentId),
     )
     .limit(1);
   return row ?? null;
 }
 
-/** The head a caller requires, else why it has none (with its removal record when `living`). */
+/** The head a caller requires, else why it has none (with its removal record when `notPurged`). */
 export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
-  options: { living?: boolean } = {},
+  options: { notPurged?: boolean } = {},
 ): Promise<DocumentAuthorityHeadGeneration> {
   const row = await findDocumentAuthorityHead(db, documentId, options);
   if (!row) throw await refusedAuthority(db, documentId);
@@ -205,10 +205,10 @@ export async function refusedAuthority(
   );
 }
 
-function living(documentId: string) {
+function holdsText(documentId: string) {
   return and(
     eq(documentYjsHeads.documentId, documentId as DocumentId),
-    or(eq(documentYjsHeads.kind, "tree_list"), livingDocumentSql(documentYjsHeads.documentId)),
+    or(eq(documentYjsHeads.kind, "tree_list"), textHeldSql(documentYjsHeads.documentId)),
   );
 }
 
@@ -240,7 +240,7 @@ export async function replaceGeneration(
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;
     await lockDocumentMutation(txDb, input.documentId);
-    const head = await readDocumentAuthorityHead(txDb, input.documentId, { living: true });
+    const head = await readDocumentAuthorityHead(txDb, input.documentId, { notPurged: true });
     if (head.generation !== input.expectedGeneration) {
       return { ok: false as const, code: "stale_generation" as const };
     }

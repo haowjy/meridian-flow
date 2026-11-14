@@ -2,9 +2,11 @@
 
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
+import { moveDocumentAcrossLists } from "@/client/api/projects-api";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
+import { parseContextUri } from "@/lib/context-uri";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { documentRow } from "./context-entry-name";
@@ -116,15 +118,43 @@ export function useIdentityCommit({
     try {
       const destination = plan.desired.destination;
       const current = location.scheme;
-      // A move between a project and the account's files is a server route, not a record.
-      if ((destination.scheme === "user") !== (current === "user"))
-        throw new Error("Moving between project and account files is not offered here");
+      const folder = destination.folderPath.split("/").filter(Boolean).join("/");
+      // A move between a project and the account's files spans two lists: a server route, not a record.
+      if ((destination.scheme === "user") !== (current === "user")) {
+        const from = trees[current as (typeof EDITOR_SCHEMES)[number]].tree;
+        const into = trees[destination.scheme as (typeof EDITOR_SCHEMES)[number]].tree;
+        const file = from?.findDocument(document.documentId);
+        if (!from || !into || !file) throw new Error("Document is not in the list");
+        const parent =
+          destination.parentId ??
+          (folder ? into.findPath(`/${folder}`)?.entryId : into.root.entryId);
+        const to = parent && (parent === into.root.entryId ? into.root : into.entry(parent));
+        if (!to) throw new Error("Destination folder is unavailable");
+        const answer = await moveDocumentAcrossLists(projectId, {
+          nodeId: file.entryId,
+          from: from.root.uri,
+          to: to.uri,
+          ...(plan.desired.name !== file.name ? { name: plan.desired.name } : {}),
+        });
+        const placed = parseContextUri(answer.uri);
+        if (!placed) throw new Error("The move's answer names no place");
+        onCommitted(
+          document.documentId,
+          {
+            scheme: destination.scheme,
+            path: placed.path.startsWith("/") ? placed.path : `/${placed.path}`,
+            name: plan.desired.name,
+            ...replaceOwner(destination),
+          },
+          { isLatest: true, document },
+        );
+        return { status: "committed" };
+      }
       const actions = destination.scheme === "user" ? accountActions : projectActions;
       const from = trees[current as (typeof EDITOR_SCHEMES)[number]].tree;
       const into = trees[destination.scheme as (typeof EDITOR_SCHEMES)[number]].tree;
       const file = from?.findDocument(document.documentId);
       if (!from || !into || !file) throw new Error("Document is not in the list");
-      const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       const parentId =
         destination.parentId ?? (folder ? into.findPath(`/${folder}`)?.entryId : into.root.entryId);
       if (!parentId) throw new Error("Destination folder is unavailable");

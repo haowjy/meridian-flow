@@ -231,9 +231,9 @@ export function apiProjectDocumentReadPath(projectId: string, documentId: string
   return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
-/** Move or rename one entry (file or folder) by id. */
-export function apiProjectContextEntryMovePath(projectId: string, entryId: string): string {
-  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/move`;
+/** Move one document between the project's files and the account's (`user://`). */
+export function apiProjectContextMovePath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/move`;
 }
 
 /** One Copy command: many sources, one destination, one receipt. */

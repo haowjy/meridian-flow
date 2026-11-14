@@ -16,7 +16,6 @@ import {
 } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import type { ContextRouteSelection } from "./context-removal-protocol";
 import { useFollowOpenDocumentPlacement } from "./use-follow-open-document-placement";
 
 const tab: OpenDocument = {
@@ -58,23 +57,7 @@ vi.mock("@/client/query/useProjectTrees", async (importOriginal) => ({
   }),
 }));
 
-const locator = { scheme: "manuscript" as const, path: "/old.md" };
-const bound: ContextRouteSelection = {
-  status: "bound",
-  revision: 1,
-  locator,
-  identity: { kind: "server", documentId: "doc-a" },
-  by: "navigation",
-};
-const candidate: ContextRouteSelection = {
-  status: "candidate",
-  revision: 1,
-  locator,
-  obligations: [],
-  reentryGuard: null,
-};
-
-async function follows(selection: ContextRouteSelection) {
+async function follows(input: { path?: string; review?: boolean } = {}) {
   const open = vi.fn<OpenContextRoute>(async () => ({ kind: "applied" as const }));
   function Present() {
     const presented = useOptionalPresentedDocuments();
@@ -85,9 +68,9 @@ async function follows(selection: ContextRouteSelection) {
     useFollowOpenDocumentPlacement({
       projectId: "project",
       editorWorkId: "work-a",
-      selection,
+      review: input.review ?? false,
       activeContextScheme: "manuscript",
-      activeContextPath: "/old.md",
+      activeContextPath: input.path ?? "/old.md",
       onOpenContextTarget: open,
     });
     return null;
@@ -102,16 +85,16 @@ async function follows(selection: ContextRouteSelection) {
   return open;
 }
 
-it("takes the route to the bound document's new placement", async () => {
-  const open = await follows(bound);
+it("takes the route to main's document's new placement", async () => {
+  const open = await follows();
   expect(open).toHaveBeenCalledTimes(1);
   expect(open.mock.calls[0]?.[0]).toMatchObject({ path: "/new.md", documentId: "doc-a" });
 });
 
-it("leaves a route that is only a candidate where the writer put it", async () => {
-  expect(await follows(candidate)).not.toHaveBeenCalled();
+it("leaves a route the writer pointed elsewhere where they put it", async () => {
+  expect(await follows({ path: "/pasted.md" })).not.toHaveBeenCalled();
 });
 
 it("leaves a review address on its own path, which the live placement does not show", async () => {
-  expect(await follows({ ...bound, by: "review" })).not.toHaveBeenCalled();
+  expect(await follows({ review: true })).not.toHaveBeenCalled();
 });

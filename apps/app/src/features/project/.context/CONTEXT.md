@@ -59,7 +59,7 @@ own band, so the focus follows to the new one. The band's far right holds the ta
 (`MainTabMenu`, while the lane has a tab): Close all, then every tab, the open one filled. Close all
 sends main to the lane's empty page unless it is there already. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed, and of chats the
-project's list no longer holds, are not drawn once the replica or the list has loaded, and a tab
+project's list no longer holds, are not drawn once the list has loaded, and a tab
 shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.tsx`, one projection a `LiveTabsProvider` shares, read
 by the strip, the tab list and the side's document list; the record is left alone, so a document
 that comes back has its tab). A tab's Live or Draft view is its document's view, so it is per tab
@@ -189,7 +189,7 @@ for canonical, entry-guarded replacement.
 Rename or move prepares the open document's new locator and the replacement address as one
 navigation commit, so the old address keeps its identity continuity until the new one is accepted.
 
-A presented document is its id; its path, name and owner are a display cache the replica
+A presented document is its id; its path, name and owner are a display cache the list
 refreshes. A route is bound to a document only when that is proven, and the bound selection records what proved
 it (`by`). A navigation that names the document (a tree open, a Recent row, a chat door) binds the route it
 opens in `commit()` (`enterRoute`), and any other URL (paste, reload, Back/Forward) stays a

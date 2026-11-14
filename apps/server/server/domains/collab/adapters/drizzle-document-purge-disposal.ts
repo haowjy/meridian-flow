@@ -17,7 +17,7 @@ import { lockActiveDrafts } from "./drizzle-draft-close.js";
  */
 export function createDrizzleDocumentPurgeDisposal(
   db: Database,
-  deps: { close: Pick<DraftClose, "closeDrafts"> },
+  deps: { close: Pick<DraftClose, "closeDrafts" | "registerRemoved"> },
 ): DocumentPurgeDraftDisposal {
   return {
     async settle(documentIds) {
@@ -34,6 +34,12 @@ export function createDrizzleDocumentPurgeDisposal(
         { documentIds: sorted as DocumentId[] },
         "document_discarded",
       );
+      // A document in Trash keeps its room; the purge closes it, once the content is released.
+      deps.close.registerRemoved(sorted as DocumentId[], {
+        reason: "deleted",
+        actor: null,
+        time: new Date().toISOString(),
+      });
       return "closed";
     },
   };

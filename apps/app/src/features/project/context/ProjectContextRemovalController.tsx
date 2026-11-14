@@ -1,14 +1,24 @@
 /** Live project removal host; mounted only after Work/bootstrap readiness. */
 
+import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useContextSourceFacts } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
-import { useContextRemovalCoordinator } from "./account-feature-context";
+import {
+  useContextRemovalCoordinator,
+  useLiveDocumentSessionRegistry,
+  useProjectStandings,
+} from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 import { selectionAtRoute } from "./context-removal-protocol";
+import { type ListRemovalObserver, observeListRemovals } from "./list-removal-observer";
 import { useOpenProjectDocument } from "./open-project-document";
 import { openRecent } from "./RecentDocumentsLanding";
 import { useContextRemovalProject } from "./use-context-removal-project";
@@ -41,6 +51,8 @@ export function ProjectContextRemovalController({
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
+  const standings = useProjectStandings();
+  const registry = useLiveDocumentSessionRegistry();
   const recent = useRecentDocuments(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
@@ -79,6 +91,37 @@ export function ProjectContextRemovalController({
     }),
     [],
   );
+
+  const queryClient = useQueryClient();
+  const sources = useContextSourceFacts(projectId);
+  const [observer, setObserver] = useState<ListRemovalObserver | null>(null);
+  useEffect(() => {
+    const created = observeListRemovals({
+      projectId,
+      standings,
+      removal: coordinator,
+      registry,
+      showTrashed: (documentId) => void latest.current.openDocument({ documentId, replace: true }),
+      refreshSources: () => {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.contextSources(projectId),
+        });
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
+      },
+      signInRequired: () =>
+        notifyFailure({
+          key: "sign-in-expired",
+          title: t`Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost.`,
+          onRetry: () => window.location.reload(),
+        }),
+    });
+    setObserver(created);
+    return () => {
+      created.stop();
+      setObserver(null);
+    };
+  }, [coordinator, projectId, queryClient, registry, standings]);
+  useEffect(() => observer?.setSources(sources), [observer, sources]);
 
   useLayoutEffect(() => {
     const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);

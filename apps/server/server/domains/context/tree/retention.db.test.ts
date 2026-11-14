@@ -56,7 +56,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     eventSink: { emit() {}, emitBatch() {}, async flush() {} },
     drafts: createDrizzleDocumentPurgeDisposal(db, { close: draftClose }),
     tree: treeLists,
-    readMarkdown: async () => "",
   });
 
   beforeEach(async () => {

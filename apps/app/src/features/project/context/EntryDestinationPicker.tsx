@@ -7,10 +7,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type {
-  ContextSiblingPosition,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
   ArrowDownToLine,
   ArrowDownUp,
@@ -21,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
+import { moveDocumentAcrossLists } from "@/client/api/projects-api";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
@@ -141,8 +139,16 @@ function OpenPicker({
     }
     // Copy adds beside what is there, so only a folder inside itself refuses.
     if (action === "copy") return null;
-    // Two lists (the project's, the account's files) are moved between by a server route.
-    if (placed.some(({ at }) => at && (at.scheme === "user") !== (destination.scheme === "user")))
+    // Two lists (the project's, the account's files) are moved between by a server route, which
+    // takes documents only.
+    if (
+      placed.some(
+        ({ row, at }) =>
+          at &&
+          row.ref.kind === "folder" &&
+          (at.scheme === "user") !== (destination.scheme === "user"),
+      )
+    )
       return "other-list";
     return placed.every(({ at }) => at?.entry.parentId === destination.entryId)
       ? "already-there"
@@ -209,8 +215,12 @@ function OpenPicker({
     const moving = placed.filter(
       ({ at: here }) => here && !(several && here.entry.parentId === destination.entryId),
     );
+    const crossing = moving.filter(
+      ({ at: here }) => here && (here.scheme === "user") !== (destination.scheme === "user"),
+    );
+    const within = moving.filter((row) => !crossing.includes(row));
     const result = actions.moveAll(
-      moving.map(({ row }) => ({
+      within.map(({ row }) => ({
         node: row.ref.id,
         parentId: destination.entryId,
         ...(at === undefined ? {} : { index: at }),
@@ -218,12 +228,33 @@ function OpenPicker({
     );
     if (!result.ok) return setError(treeActionMessage(result.reason, "folder"));
     const moved = moving.map(({ row }) => row.ref);
-    selectRows(selection, moved);
-    revealFolder(destination.entryId);
-    movedSeveral.current = several;
-    onOpenChange(false);
-    // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
-    if (several) selection?.focus();
+    const finish = () => {
+      selectRows(selection, moved);
+      revealFolder(destination.entryId);
+      movedSeveral.current = several;
+      onOpenChange(false);
+      // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
+      if (several) selection?.focus();
+    };
+    if (crossing.length === 0) return finish();
+    // The records of both lists are made on the server in one transaction.
+    const into =
+      destination.entryId === destination.tree.root.entryId
+        ? destination.tree.root
+        : destination.tree.entry(destination.entryId);
+    if (!into) return setError(unavailable);
+    setPending(true);
+    void Promise.all(
+      crossing.map(({ row, at: here }) =>
+        moveDocumentAcrossLists(projectId, {
+          nodeId: row.ref.id,
+          from: (here as NonNullable<typeof here>).tree.root.uri,
+          to: into.uri,
+        }),
+      ),
+    )
+      .then(finish, () => setError(unavailable))
+      .finally(() => setPending(false));
   }
 
   /** Copies the row into the folder at the end of `trail`. */

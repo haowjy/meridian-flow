@@ -33,11 +33,11 @@ stay chat resources, not documents main opens.
   removal owners handle continuity and removal. Main's tabs
   (`client/project-shell/main-tabs.ts`) are the one record of open documents;
   `PresentedDocuments` only records what hosts mount and show. A new way for the writer or a
-  removal to end a document (beyond close, Discard, vanish and the availability batch) must go
+  removal to end a document (beyond close, Discard, vanish and the list's removal batch) must go
   through the coordinator's `forget` (or `writerClose`), which also close its tab, or the desktop keeps it as a
   tab and brings it back in the side.
 - The writer's own delete or Discard of a document begins with the removal coordinator's
-  `beginOwnRemoval`: it silences the removed notice and sends main back to the document
+  `beginOwnRemoval`: it sends main back to the document
   shown before. A new door that removes documents for the writer must use it.
 
 Children: [`file-suggestions/AGENTS.md`](file-suggestions/AGENTS.md). The list's replay,

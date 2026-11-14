@@ -76,7 +76,6 @@ export function useOpenTabSessions(
     };
     void (async () => {
       const opened = await opener.open({
-        source: "server",
         projectId,
         documentId,
         signal: abort.signal,

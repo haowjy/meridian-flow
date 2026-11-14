@@ -157,8 +157,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    `write create` to `scratch://zz-probe-note.md` on an owned mock-provider stack.
    Open the note beside the chat so the browser installs its resource descriptor.
 2. Trash the last live chat with `./mf api DELETE /api/threads/$THREAD`. While
-   hidden, query `/api/projects/$PROJECT/context/availability` for the note ID:
-   expect `authority-unavailable` with `lineage_hidden`, never `deleted`.
+   hidden, follow a link to the note: expect "not available", never a Trash entry.
 3. Restore with `./mf api POST /api/threads/$THREAD/restore`. Reopen the chat
    and Scratch. The same note must return in the loaded profile, not just in a
    fresh one. Repeat with Work trash/restore cascading over the lineage's chats.

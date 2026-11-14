@@ -1,43 +1,22 @@
-/** Immutable account epoch and narrowed facets over one private session core. */
+/** The account's document sessions: one registry per signed-in account, closed on sign-out. */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
-import type {
-  LiveDocumentSessionRegistry,
-  LiveSessionIncarnationPort,
-  LocalDocumentSessionFactory,
-} from "./document-session-registry";
-import {
-  DocumentSessionRegistry,
-  type LocalResourceLifetimePort,
-} from "./document-session-registry-implementation";
-import type {
-  LocalDocumentSessionAdoptionPort,
-  LocalDocumentSessionReservationPort,
-} from "./local-document-session-adoption";
+import type { LiveDocumentSessionRegistry } from "./document-session-registry";
+import { DocumentSessionRegistry } from "./document-session-registry-implementation";
 
 export interface AccountDocumentSessionRuntime {
   readonly accountId: AccountId;
   readonly epochSignal: AbortSignal;
   readonly registry: LiveDocumentSessionRegistry;
-  readonly localReservation: LocalDocumentSessionReservationPort;
-  readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalDocumentSessionFactory;
-  readonly liveIncarnation: LiveSessionIncarnationPort;
-  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
 
-/** Test substitution is cohesive: every facet and both lifecycle phases travel together. */
+/** Test substitution: the registry and its two lifecycle phases travel together. */
 export interface AccountDocumentSessionCore {
   readonly accountId: AccountId;
   readonly registry: LiveDocumentSessionRegistry;
-  readonly localReservation: LocalDocumentSessionReservationPort;
-  readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalDocumentSessionFactory;
-  readonly liveIncarnation: LiveSessionIncarnationPort;
-  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -52,27 +31,17 @@ function createCore(
   accountId: AccountId,
   connectivityHints: ConnectivityHintsPort | undefined,
 ): AccountDocumentSessionCore {
-  const registry = new DocumentSessionRegistry(
-    undefined,
-    undefined,
-    accountId,
-    ({ roomKey, document, awareness }) =>
-      createHocuspocusDocumentTransport({
-        roomName: roomKey,
-        document,
-        awareness,
-        connectivityHints,
-      }),
+  const registry = new DocumentSessionRegistry(accountId, ({ roomKey, document, awareness }) =>
+    createHocuspocusDocumentTransport({
+      roomName: roomKey,
+      document,
+      awareness,
+      connectivityHints,
+    }),
   );
   return Object.freeze({
     accountId,
     registry,
-    localReservation: registry.localTransfers,
-    localAdoption: registry.localTransfers,
-    localConstruction: registry,
-    liveIncarnation: registry,
-    connectLocalResources: (port: LocalResourceLifetimePort) =>
-      registry.connectLocalResources(port),
     beginClose: () => registry.beginCloseAccountRuntime(),
     finishClose: () => registry.closeAccountRuntime(),
   });
@@ -92,6 +61,7 @@ export function createAccountDocumentSessionRuntime(
     if (state !== "open") throw new Error(`Account document session runtime is ${state}`);
   };
 
+  // A closed runtime refuses new work, but a release still lets go of what it held.
   const registry = new Proxy(core.registry, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -99,8 +69,6 @@ export function createAccountDocumentSessionRuntime(
       if (
         property === "release" ||
         property === "releaseDraftRooms" ||
-        property === "revokeDocument" ||
-        property === "revokeAccess" ||
         property === "whenRefusedRoomDropped"
       ) {
         return value.bind(target);
@@ -111,48 +79,6 @@ export function createAccountDocumentSessionRuntime(
       };
     },
   });
-  const localReservation: LocalDocumentSessionReservationPort = {
-    reserve(transfer) {
-      requireOpen();
-      return core.localReservation.reserve(transfer);
-    },
-    abort(handoff) {
-      return core.localReservation.abort(handoff);
-    },
-  };
-  const localAdoption: LocalDocumentSessionAdoptionPort = {
-    begin(request) {
-      try {
-        requireOpen();
-        return core.localAdoption.begin(request);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
-    abort: (receipt) => core.localAdoption.abort(receipt),
-    adopt(request) {
-      try {
-        requireOpen();
-        return core.localAdoption.adopt(request);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
-  };
-  const localConstruction: LocalDocumentSessionFactory = {
-    async whenAuthorityReady() {
-      requireOpen();
-      await core.localConstruction.whenAuthorityReady();
-      requireOpen();
-    },
-    createDetached(request) {
-      requireOpen();
-      return core.localConstruction.createDetached(request);
-    },
-  };
-  const liveIncarnation: LiveSessionIncarnationPort = {
-    incarnationOf: (session) => core.liveIncarnation.incarnationOf(session),
-  };
   const beginClose = () => {
     if (state !== "open") return;
     state = "closing";
@@ -163,22 +89,6 @@ export function createAccountDocumentSessionRuntime(
     accountId: input.accountId,
     epochSignal: epoch.signal,
     registry,
-    localReservation,
-    localAdoption,
-    localConstruction,
-    liveIncarnation,
-    connectLocalResources: (port: LocalResourceLifetimePort) => {
-      requireOpen();
-      core.connectLocalResources({
-        terminal: port.terminal,
-        lineageHandleFor: (projectId, documentId) => port.lineageHandleFor(projectId, documentId),
-        beginClose() {
-          beginClose();
-          port.beginClose();
-        },
-        finishClose: () => port.finishClose(),
-      });
-    },
     beginClose,
     finishClose() {
       if (finishPromise) return finishPromise;

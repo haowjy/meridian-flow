@@ -1,25 +1,24 @@
 /**
- * useFollowOpenDocumentPlacement — take main's address to wherever the replica now places its
- * document, and say once that a presented document the replica no longer places was removed. A
- * kept document the replica no longer places is let go without a word.
+ * useFollowOpenDocumentPlacement — take main's address to wherever the project's lists now place
+ * its document (the project's, or the account's `user://`). Removal is not here: the list's
+ * observer (`list-removal-observer.ts`) reads Trash and purge.
  *
  * Desktop and phone both need this: main's host derives its document from the address's
- * catalog, so a move that leaves that catalog would otherwise strand it on the old path. The
- * removed document stays where it was shown, in its removed state; nothing closes it.
+ * tree, so a move that leaves that tree would otherwise strand it on the old path.
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useMemo, useRef } from "react";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
+import type { OpenDocument } from "@/client/stores";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
-  useContextRemovalCoordinator,
+  type useContextRemovalCoordinator,
   usePresentedDocuments,
   useShownDocuments,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
-import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { placeTab } from "./open-document-from-file";
 import { useIsDraftOnly } from "./use-is-draft-only";
 
@@ -28,8 +27,8 @@ export function useFollowOpenDocumentPlacement(input: {
   editorWorkId: string | null | undefined;
   /** A Work's Scratch route: its owning Work. */
   activeContextWork?: string | null;
-  /** The route follows a document only while the selection is bound to it at this route. */
-  selection: ContextRouteSelection;
+  /** The address names a review: the draft's path is the address, not the live placement. */
+  review: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   activeContextChat?: string | null;
@@ -44,11 +43,11 @@ export function useFollowOpenDocumentPlacement(input: {
     ],
     [presented, shown],
   );
-  const trees = useProjectTrees(input.projectId);
-  const contextRemoval = useContextRemovalCoordinator();
+  const trees = useProjectTrees(input.projectId, { account: true });
   const isDraftOnly = useIsDraftOnly(input.projectId);
-  // A removal is said once per document: the document stays presented in its removed state.
-  const removed = useRef(new Set<string>());
+  // A move between two lists leaves the document in neither for a moment, and its view goes with
+  // it: the places views last showed are kept until the route is no longer at one.
+  const lastShown = useRef(new Map<string, OpenDocument>());
 
   useEffect(() => {
     const route =
@@ -60,13 +59,14 @@ export function useFollowOpenDocumentPlacement(input: {
             rootThreadId: input.activeContextChat,
           })
         : null;
-    // A review binding owns the draft's path, which the live placement does not show.
-    const boundDocumentId =
-      route && !(input.selection.status === "bound" && input.selection.by === "review")
-        ? routeSelectionDocumentId(input.selection, route)
-        : null;
-    const gone = new Set<string>();
-    for (const tab of mounted) {
+    for (const tab of mounted) lastShown.current.set(tab.documentId, tab);
+    for (const [documentId, tab] of lastShown.current) {
+      const spelled =
+        route !== null && tab.kind !== "new" && sameContextTarget(routeTargetForTab(tab), route);
+      if (!spelled && !mounted.some((on) => on.documentId === documentId)) {
+        lastShown.current.delete(documentId);
+        continue;
+      }
       const found = trees.find(tab.documentId);
       const projection = placeTab(
         found && {
@@ -77,22 +77,14 @@ export function useFollowOpenDocumentPlacement(input: {
         trees.isComplete,
         isDraftOnly(tab.documentId),
       );
-      if (projection.kind === "none") continue;
-      if (projection.kind === "removed") {
-        gone.add(tab.documentId);
-        if (removed.current.has(tab.documentId)) continue;
-        removed.current.add(tab.documentId);
-        // closeVanished keeps a document a live draft still holds, and says the rest went.
-        contextRemoval.closeVanished(input.projectId, tab);
-        continue;
-      }
-      // A route is the document's only while the selection is bound to it there; a URL the
-      // writer just pasted or traversed to is never pulled back to a shown document's placement.
+      if (projection.kind === "none" || projection.kind === "removed") continue;
+      // The URL is the document's only while it spells the place the view last showed it at; once
+      // the address no longer resolves there (a move), main would show nothing, so it follows.
       if (
         route !== null &&
-        tab.kind !== "new" &&
+        !input.review &&
+        spelled &&
         projection.document.kind !== "new" &&
-        boundDocumentId === tab.documentId &&
         !sameContextTarget(routeTargetForTab(projection.document), route)
       )
         void input
@@ -110,9 +102,6 @@ export function useFollowOpenDocumentPlacement(input: {
             (error: unknown) => reportError(error),
           );
     }
-    // A restored document can be removed again later.
-    for (const documentId of removed.current)
-      if (!gone.has(documentId)) removed.current.delete(documentId);
   }, [
     input.activeContextChat,
     input.activeContextWork,
@@ -121,8 +110,7 @@ export function useFollowOpenDocumentPlacement(input: {
     input.editorWorkId,
     input.onOpenContextTarget,
     input.projectId,
-    input.selection,
-    contextRemoval,
+    input.review,
     isDraftOnly,
     trees,
     mounted,

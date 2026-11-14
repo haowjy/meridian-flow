@@ -718,7 +718,6 @@ export async function createProductionAppPorts(input: {
       eventSink,
       drafts: documentSync.documentPurgeDraftDisposal,
       tree: treeLists,
-      readMarkdown: documentSync.readFrozenMarkdown,
     }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
@@ -1448,6 +1447,9 @@ export function createInMemoryAppServices(): AppServices {
 
   const noContextSources: ContextSources = {
     async inProject() {
+      return [];
+    },
+    async endedIn() {
       return [];
     },
     async ofUser() {

@@ -275,7 +275,7 @@ describe("DocumentSession status derivation", () => {
     await flushMicrotasks();
     expect(session.getSnapshot().status).toBe("syncing");
 
-    current().emit({ kind: "unauthorized", reason: "permission-denied", code: 4401 });
+    current().emit({ kind: "unauthorized", reason: "permission-denied", code: 4403 });
     expect(session.getSnapshot().status).toBe("access-lost");
 
     void session.destroy();

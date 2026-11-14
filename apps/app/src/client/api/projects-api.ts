@@ -12,7 +12,7 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextOperationReceipt,
   ContextSourcesResult,
-  GetDocumentTrashResponse,
+  DocumentTrashEntry,
   ListDocumentTrashResponse,
   ProjectChatFeedPage,
   RestoreContextDocumentsRequest,
@@ -24,11 +24,10 @@ import {
   apiProjectChatFeedPath,
   apiProjectContextCopyPath,
   apiProjectContextCreateFolderPath,
-  apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextEntryDeletePath,
-  apiProjectContextEntryMovePath,
   apiProjectContextLineagePath,
+  apiProjectContextMovePath,
   apiProjectContextOperationPath,
   apiProjectContextSourcesPath,
   apiProjectDocumentAddressPath,
@@ -37,7 +36,6 @@ import {
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
-  type CatalogScope,
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
@@ -60,9 +58,6 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type MoveContextEntryRequest,
-  type MoveContextEntryResult,
-  type ProjectContextIdentityLookupResult,
   type ProjectContextRequestOptions,
   type ProjectContextTreeScheme,
   type ProjectWorkingSet,
@@ -268,19 +263,6 @@ export async function getAccountContextSources(
   return getJson(API_ACCOUNT_CONTEXT_SOURCES_PATH, { signal });
 }
 
-export async function getProjectContextAvailability(
-  projectId: string,
-  documentIds: readonly string[],
-  signal?: AbortSignal,
-  folderIds?: readonly string[],
-): Promise<ProjectContextIdentityLookupResult> {
-  return postJson<ProjectContextIdentityLookupResult>(
-    `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
-    { projectId, documentIds, ...(folderIds ? { folderIds } : {}) },
-    { signal },
-  );
-}
-
 export async function createProject(
   data: CreateProjectRequest,
   init?: RequestInitOptions,
@@ -359,19 +341,22 @@ export async function createContextFolder(
 }
 
 /**
- * Move or rename one entry (file or folder) by its id. The server finds the row, so the request
- * carries no path or owner, and sends only what the writer chose (`MoveContextEntryRequest`).
+ * Moves one document between the project's files and the account's (`user://`), the one move the
+ * browser cannot write as records because it spans two lists. `from` is the root URI of the source
+ * the document stands in, `to` the URI of the folder it goes into; `name` is set when the writer
+ * typed one. The answer is where it stands now.
  */
-export async function moveContextEntry(
+export async function moveDocumentAcrossLists(
   projectId: string,
-  entryId: string,
-  body: MoveContextEntryRequest,
+  body: { nodeId: string; from: string; to: string; name?: string },
   init?: RequestInitOptions,
-): Promise<MoveContextEntryResult> {
-  return postJson(urlFor(apiProjectContextEntryMovePath(projectId, entryId), init), body, {
-    headers: init?.headers,
-    signal: init?.signal,
-  });
+): Promise<{ uri: string }> {
+  const { nodeId, ...rest } = body;
+  return postJson(
+    urlFor(apiProjectContextMovePath(projectId), init),
+    { expected: { kind: "file", nodeId }, ...rest },
+    { headers: init?.headers, signal: init?.signal },
+  );
 }
 
 /**
@@ -428,7 +413,7 @@ export function getTrashedDocument(
   projectId: string,
   documentId: string,
   init?: RequestInitOptions,
-): Promise<GetDocumentTrashResponse> {
+): Promise<DocumentTrashEntry> {
   return getJson(
     urlFor(
       `/api/projects/${encodeURIComponent(projectId)}/context/trash/${encodeURIComponent(documentId)}`,

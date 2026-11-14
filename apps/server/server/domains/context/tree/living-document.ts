@@ -24,6 +24,16 @@ export function livingDocumentSql(documentId: SQL | AnyColumn): SQL {
     or exists (select 1 from branch_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
 }
 
+/**
+ * What a text write into the document's room needs: its node is not purged. A document in
+ * Trash still takes text (a restore brings it back with what was typed); the purge deletes the
+ * node, and with it the head this predicate guards.
+ */
+export function textHeldSql(documentId: SQL | AnyColumn): SQL {
+  return sql`(exists (select 1 from tree_nodes t where t.id = ${documentId})
+    or exists (select 1 from branch_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
+}
+
 /** Why the document is not living: deleted, or in no view, or no row at all; null when it lives. */
 export async function livingDocumentRefusal(
   db: LivingDocumentDb,

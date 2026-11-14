@@ -4,43 +4,58 @@
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  *
+ * A closed room keeps its local copy: a Discard can be undone, so the copy goes with its document
+ * (`LocalDocumentCopies`), never with the room.
+ *
  * A room whose updates the server kept refusing (`updatesRefused`) is not
  * retired on that close: it stays open, read-only, so its owner can show the
  * unsent text, until the owner rebuilds it or the last owner leaves.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import { clearDocument } from "y-indexeddb";
-
 import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
+import type { CopyHold } from "./local-document-copies";
+
+/** A draft room and the document it drafts: the room's copy is kept under the document, and goes with it. */
+export type DraftRoomRef = { roomKey: string; documentId: string };
 
 export class DraftRoomPool {
   private readonly closed = new Set<string>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
+  private readonly documents = new Map<string, string>();
+  private readonly holds = new Map<string, Promise<CopyHold>>();
   private readonly retainedByOwner = new Map<string, Set<string>>();
   private readonly teardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly deps: {
       /** A new session for the room, published to its observers with its transport attached. */
-      openSession(roomKey: string): DocumentSession;
+      openSession(roomKey: string, documentId: string): DocumentSession;
+      /** The shared hold on the document's local copies, taken while a room is open. */
+      hold(documentId: string): Promise<CopyHold>;
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
     },
   ) {}
 
+  sessions(): DocumentSession[] {
+    return [...this.rooms.values()];
+  }
+
   peek(roomKey: string): DocumentSession | undefined {
     return this.rooms.get(roomKey);
   }
 
-  retain(ownerId: string, roomKeys: readonly string[]): void {
-    const keys = new Set(roomKeys);
-    for (const roomKey of keys) {
+  retain(ownerId: string, rooms: readonly DraftRoomRef[]): void {
+    const keys = new Set<string>();
+    for (const { roomKey, documentId } of rooms) {
       if (parseYjsRoomName(roomKey)?.kind !== "draft") {
         throw new Error(`Draft retention requires a draft room: ${roomKey}`);
       }
+      keys.add(roomKey);
+      this.documents.set(roomKey, documentId);
     }
     this.retainedByOwner.set(ownerId, keys);
     for (const roomKey of keys) this.cancelTeardown(roomKey);
@@ -72,7 +87,10 @@ export class DraftRoomPool {
     this.deps.teardownOwner.assertAvailable({ kind: "draft", roomKey });
     const existing = this.rooms.get(roomKey);
     if (existing) return existing;
-    const session = this.deps.openSession(roomKey);
+    const documentId = this.documents.get(roomKey);
+    if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
+    this.holds.set(roomKey, this.deps.hold(documentId));
+    const session = this.deps.openSession(roomKey, documentId);
     this.rooms.set(roomKey, session);
     session.subscribe((snapshot) => {
       if (this.rooms.get(roomKey) !== session) return;
@@ -96,7 +114,6 @@ export class DraftRoomPool {
     const session = this.rooms.get(roomKey);
     if (session) this.retire(roomKey, session);
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
-    await clearDocument(roomKey);
   }
 
   /** The account runtime is closing: forget every owner and retire every room. */
@@ -155,6 +172,11 @@ export class DraftRoomPool {
     this.rooms.delete(roomKey);
     this.cancelTeardown(roomKey);
     // Quarantine is installed before delivery can try to reopen the same room.
-    void this.deps.teardownOwner.retire({ kind: "draft", roomKey }, session).catch(() => undefined);
+    const hold = this.holds.get(roomKey);
+    this.holds.delete(roomKey);
+    void this.deps.teardownOwner
+      .retire({ kind: "draft", roomKey }, session)
+      .catch((error: unknown) => reportError(error))
+      .then(async () => (await hold)?.release());
   }
 }

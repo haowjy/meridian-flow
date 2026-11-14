@@ -1,32 +1,27 @@
-/** React subscription to one document's removal answer in the account's record cache. */
-import { useMemo, useSyncExternalStore } from "react";
-import { useOptionalProjectContextAvailabilityCoordinator } from "./account-feature-context";
-import type { RemovalAnswer } from "./project-context-availability-coordinator";
+/** React subscription to what the project's list says about one document's removal. */
+import { useCallback, useSyncExternalStore } from "react";
+import { useOptionalProjectStandings } from "./account-feature-context";
+import { type RemovalAnswer, removalAnswer } from "./removal-answer";
 
-const unsubscribed = () => undefined;
-const subscribeNothing = () => unsubscribed;
+const unwatched = () => undefined;
 
 /**
- * Whether and how a document was removed. Subscribing asks: the first
- * subscriber looks it up unless an answer or an open is already pending, and
- * the availability watch keeps asking until it is `removed` or `lost`.
- * Undefined while nothing is known; a null `documentId` asks nothing.
+ * Whether and how a document was removed: undefined until the list is read, or when no document
+ * is asked about.
  */
 export function useRemovalRecord(
   projectId: string,
   documentId: string | null,
 ): RemovalAnswer | undefined {
-  const availability = useOptionalProjectContextAvailabilityCoordinator();
-  const handle = useMemo(
-    () =>
-      availability && projectId && documentId
-        ? availability.removalRecord(projectId, documentId)
-        : null,
-    [availability, documentId, projectId],
+  const standings = useOptionalProjectStandings();
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      standings && projectId && documentId ? standings.watch(projectId, listener) : unwatched,
+    [standings, projectId, documentId],
   );
-  return useSyncExternalStore(
-    handle?.subscribe ?? subscribeNothing,
-    () => handle?.get(),
-    () => undefined,
-  );
+  const read = useCallback(() => {
+    if (!standings || !projectId || !documentId) return undefined;
+    return removalAnswer(standings.standing(projectId, documentId));
+  }, [standings, projectId, documentId]);
+  return useSyncExternalStore(subscribe, read, () => undefined);
 }

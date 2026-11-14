@@ -250,7 +250,7 @@ export function useWorkBranchCommands({
           if (outcome.kind !== "done") return;
           removal.beginOwnRemoval(projectId, [draft.documentId], (landing) => {
             if (shown !== null) notices.landed(ownerKey, shown, landing);
-          })([]);
+          });
         });
       return start;
     };

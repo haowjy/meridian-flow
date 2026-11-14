@@ -16,10 +16,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  getProjectContextAvailability,
-  getProjectDocumentAddress,
-} from "@/client/api/projects-api";
+import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { type DraftPin, endPin } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -367,11 +364,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         accountId: user.userId,
         read: () => ({ ...latest.current, addressDocumentId: addressDocumentIdRef.current }),
         presented: () => presented?.documents(projectId) ?? [],
-        lookup: (documentId) =>
-          getProjectContextAvailability(projectId, [documentId]).then(
-            (result) => result.resolutions[0] ?? { kind: "failed" as const },
-            () => ({ kind: "failed" as const }),
-          ),
         isDraftOnly: (documentId) =>
           draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
         admitDraftReview: (installed) => contextRemoval.admitDraftReview(projectId, installed),

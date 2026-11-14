@@ -4,13 +4,11 @@
  * A launch carries the locator its draft row captured, which a rename, a move or a reused
  * path can have outdated. The document's identity decides, in the order the route owners read
  * it: its workspace tab (kept current by renames and moves, and only an optimization), the
- * address that names it, a draft-only document's own draft admission, the live tree, and
- * last the server's exact identity lookup (not for a launch carrying a review selector, which
- * navigates at once with its known path). A cached locator is never the answer by itself:
+ * address that names it, a draft-only document's own draft admission, and the live tree (a
+ * launch carrying a review selector navigates at once with its known path). A cached locator is never the answer by itself:
  * when identity cannot be resolved the launch fails rather than navigating to whatever
  * document holds the old path.
  */
-import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import { parseContextUri } from "@/lib/context-uri";
@@ -19,11 +17,7 @@ import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
 import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
-export type LaunchIdentityLookup = (
-  documentId: string,
-) => Promise<ProjectContextIdentityResolution | { kind: "failed" }>;
-
-export async function resolveLaunchLocator(input: {
+export function resolveLaunchLocator(input: {
   requested: ContextRouteRequest;
   tabs: readonly OpenDocument[];
   addressed: ProjectDestination;
@@ -33,12 +27,10 @@ export async function resolveLaunchLocator(input: {
   tree: Pick<TreeView, "findDocument"> | null;
   /**
    * The launch carries a review selector (`{workId, itemKey}`): destination admission binds the
-   * server's document and canonicalizes the path, so a miss here never waits on, or fails by, a
-   * live-identity lookup.
+   * server's document and canonicalizes the path, so a miss here never fails the launch.
    */
   selected: boolean;
-  lookup: LaunchIdentityLookup;
-}): Promise<ContextRouteRequest> {
+}): ContextRouteRequest {
   const { requested } = input;
   const { documentId } = requested;
   if (!documentId) return requested;
@@ -63,8 +55,5 @@ export async function resolveLaunchLocator(input: {
   const cached = live ? locate(live.uri) : null;
   if (cached) return contextRouteRequest({ ...requested, ...cached });
   if (input.selected) return requested;
-  const resolution = await input.lookup(documentId);
-  const location = resolution.kind === "available" ? locate(resolution.entry.uri) : null;
-  if (!location) throw new Error("The reviewed document could not be located");
-  return contextRouteRequest({ ...requested, ...location });
+  throw new Error("The reviewed document could not be located");
 }

@@ -22,7 +22,6 @@ features.
 - [`mobile/AGENTS.md`](mobile/AGENTS.md)
 
 Shell, routes and hydration: [`.context/CONTEXT.md`](.context/CONTEXT.md). Document lifecycle:
-[`.context/editor-document-lifecycle.md`](.context/editor-document-lifecycle.md). Resource
-architecture:
+[`.context/editor-document-lifecycle.md`](.context/editor-document-lifecycle.md). When a view closes and when a local copy goes:
 [`.context/resource-lifecycle-architecture.md`](.context/resource-lifecycle-architecture.md).
 Phone: [`mobile/.context/CONTEXT.md`](mobile/.context/CONTEXT.md).

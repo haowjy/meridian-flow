@@ -1,12 +1,12 @@
 /** Read one restorable deleted document with its last settled text. */
 import type { DocumentId } from "@meridian/contracts";
-import type { GetDocumentTrashResponse } from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
-export default defineEventHandler(async (event): Promise<GetDocumentTrashResponse> => {
+export default defineEventHandler(async (event): Promise<DocumentTrashEntry> => {
   const { app, user } = await requireAppUser(event);
   const projectId = requireRequestId(getRouterParam(event, "projectId"), "projectId");
   const documentId = requireRequestId(

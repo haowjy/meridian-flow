@@ -1,4 +1,8 @@
-/** Main's view of a deleted document: its text read-only, who deleted it, and Restore. */
+/**
+ * Main's view of a deleted document: its text read-only, who deleted it, and Restore. Whether it
+ * is in Trash or purged is the list's answer, and the text is the document's own session, so what
+ * the writer typed offline is there. The server adds only the retention details.
+ */
 
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
@@ -6,12 +10,14 @@ import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { httpErrorStatus } from "@/client/api/http-client";
+import type * as Y from "yjs";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
+import { roomContent } from "@/features/draft-review/review-frame";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
 import { useAccountId } from "./account-feature-context";
@@ -19,6 +25,8 @@ import { documentPlace } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
+import { useDocumentStanding } from "./use-document-standing";
+import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
 import { TextViewer } from "./viewers/TextViewer";
 
@@ -31,41 +39,60 @@ export function TrashedDocument({
 }) {
   const { i18n } = useLingui();
   const accountId = useAccountId();
-  const query = useTrashedDocument(projectId, documentId);
+  const standing = useDocumentStanding(projectId, documentId);
+  const trashed = standing.kind === "in-trash";
+  const details = useTrashedDocument(projectId, trashed ? documentId : null).data;
+  const binding = useLiveDocumentBinding({
+    projectId,
+    documentId: trashed ? documentId : null,
+    owner: "trash-view",
+    trashed: true,
+  });
+  const text = useSessionText(
+    binding.state.kind === "opened" ? binding.state.session.document : null,
+  );
   const { states, restore } = useDocumentTrashRestore();
   const state = states.get(documentId);
-  const openFailed = useOpenOnceLiving(projectId, documentId, state?.kind, query.error);
-  const document = query.data;
+  const openFailed = useOpenOnceLiving(
+    projectId,
+    documentId,
+    state?.kind,
+    standing.kind === "in-tree",
+  );
 
-  // A refetch that fails after a restore keeps the record on screen while main opens the document.
-  if (query.isError && !document) {
+  if (standing.kind === "purged" || standing.kind === "not-in-list") {
     return (
       <div className="p-4">
-        {[404, 410].includes(httpErrorStatus(query.error) ?? 0) ? (
-          <p className={role.emptyLine}>
+        <p className={role.emptyLine}>
+          {standing.kind === "purged" ? (
+            <Trans>Gone for good: this document was emptied from Trash.</Trans>
+          ) : (
             <Trans>No longer available</Trans>
-          </p>
-        ) : (
-          <InlineErrorRow
-            message={t`Couldn't load this document.`}
-            onRetry={() => void query.refetch()}
-          />
-        )}
+          )}
+        </p>
       </div>
     );
   }
-  if (query.isPending || !document) {
+  if (standing.kind === "waiting" || binding.state.kind === "opening") {
     return (
       <p role="status" className={cn("px-4 pt-3", role.emptyLine)}>
         <Trans>Loading document…</Trans>
       </p>
     );
   }
+  if (binding.state.kind === "failed") {
+    return (
+      <div className="p-4">
+        <InlineErrorRow message={t`Couldn't load this document.`} onRetry={binding.retry} />
+      </div>
+    );
+  }
+  const name = standing.kind === "in-trash" ? standing.node.name : "";
   const failure =
     state?.kind === "failed"
       ? state.message
       : openFailed
-        ? t`Restored ${document.name}, but couldn't open it. Try again from the file list.`
+        ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
         : null;
   return (
     <ReadOnlyViewerFrame className="bg-transparent">
@@ -74,40 +101,60 @@ export function TrashedDocument({
           <DocumentNotice
             icon={<ArchiveRestore className="size-4" aria-hidden />}
             action={
-              <Button size="sm" variant="outline" onClick={() => restore([document])}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => standing.kind === "in-trash" && restore([{ documentId, name }])}
+              >
                 <Trans>Restore</Trans>
               </Button>
             }
           >
-            {trashSentence(document, i18n.locale, accountId)}
+            {details ? trashSentence(details, i18n.locale, accountId) : t`Deleted.`}
           </DocumentNotice>
           {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
         </div>
         <div className="min-h-0 flex-1">
-          <TextViewer source={{ content: document.markdown }} name={document.name} markdown />
+          <TextViewer source={{ content: text }} name={name} markdown />
         </div>
       </div>
     </ReadOnlyViewerFrame>
   );
 }
 
+/** The document's text as its session holds it now, offline typing included. */
+function useSessionText(document: Y.Doc | null): string {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    if (!document) return;
+    const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    const read = () => {
+      const { doc } = roomContent(document);
+      setText(doc.textBetween(0, doc.content.size, "\n\n"));
+    };
+    read();
+    fragment.observeDeep(read);
+    return () => fragment.unobserveDeep(read);
+  }, [document]);
+  return text;
+}
+
 /**
  * Main follows the document out of Trash, wherever it was restored from (this Restore, the
  * sidebar's, a drag out), and an address naming a document no longer in Trash goes to it once.
- * One open leaves the view: a later 404 from re-reading the record must not start another, which
- * would cancel this one and lose its failure. Returns whether that open failed.
+ * One open leaves the view: the list changing again must not start another, which would cancel
+ * this one and lose its failure. Returns whether that open failed.
  */
 function useOpenOnceLiving(
   projectId: string,
   documentId: string,
   restore: "restored" | "failed" | undefined,
-  error: Error | null,
+  living: boolean,
 ): boolean {
   const openDocument = useOpenProjectDocument(projectId);
   const [failed, setFailed] = useState(false);
   const leaving = useRef(false);
   const mounted = useRef(false);
-  const missing = [404, 410].includes(httpErrorStatus(error) ?? 0);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -116,12 +163,12 @@ function useOpenOnceLiving(
   }, []);
   useEffect(() => {
     const restored = restore === "restored";
-    if (leaving.current || (!restored && !missing)) return;
+    if (leaving.current || (!restored && !living)) return;
     leaving.current = true;
     void openDocument({ documentId, replace: true }).then((outcome) => {
       if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
     });
-  }, [restore, missing, documentId, openDocument]);
+  }, [restore, living, documentId, openDocument]);
   return failed;
 }
 

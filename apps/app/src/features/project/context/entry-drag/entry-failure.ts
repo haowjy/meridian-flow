@@ -195,8 +195,7 @@ export async function runDelete(
         : [],
     ),
   ]);
-  const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
-  const kept: string[] = [];
+  removal?.beginOwnRemoval(projectId, covered.flat());
   for (const list of new Set(entries.map((item) => item.list))) {
     const mine = entries.filter((item) => item.list === list);
     if (list.remove(mine.map(({ entry }) => entry.id)).ok) continue;
@@ -208,8 +207,6 @@ export async function runDelete(
         entry,
         name,
       });
-      kept.push(...(covered[entries.indexOf(item)] ?? []));
     }
   }
-  settleMark?.(kept);
 }

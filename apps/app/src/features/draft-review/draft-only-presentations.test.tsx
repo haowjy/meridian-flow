@@ -10,13 +10,11 @@
  * - settlement closes a document only on its own presentation's `gone` answer
  * - the coordinator's committed `available` command promotes the document
  */
-import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { OpenDocument } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
-import type { ProjectDocumentAvailabilityCommand } from "@/features/project/context/project-context-availability-coordinator";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftOnlySettlement } from "./DraftOnlySettlement";
 import { DraftOnlyPresentations } from "./draft-only-presentations";
@@ -47,7 +45,10 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => "account-a",
   useOptionalDraftOnlyPresentations: () => registry,
   useOptionalContextRemovalCoordinator: () => removal,
-  useOptionalProjectContextAvailabilityCoordinator: () => null,
+  useProjectStandings: () => ({
+    watch: () => () => undefined,
+    standing: () => ({ kind: "waiting" }),
+  }),
   useOptionalRemovedNotices: () => ({
     presentedRemoved: (_project: string, tabs: readonly OpenDocument[]) =>
       removedNotices.push(...tabs.map((tab) => tab.documentId)),
@@ -114,47 +115,21 @@ it("a late gone answer about an old mount leaves a newer mount of the same item 
   });
 });
 
-function command(kind: "terminal-remove" | "available", generation: string) {
-  return (
-    kind === "available"
-      ? {
-          kind,
-          commandId: `available-${generation}`,
-          projectId,
-          generation,
-          document: {
-            entryId: documentId,
-            name: "Chapter.md",
-            aliases: [],
-            provisionalName: false,
-            uri: "manuscript://Chapter.md",
-            path: ["Chapter.md"],
-            scope: { kind: "project", projectId },
-          } as unknown as CatalogFileEntry,
-        }
-      : {
-          kind,
-          commandId: `remove-${generation}`,
-          projectId,
-          documentId,
-          generation,
-          deletionVersion: null,
-          cause: "document-deleted",
-        }
-  ) as ProjectDocumentAvailabilityCommand;
+function command(kind: "gone" | "back") {
+  return { kind, projectId, documentId } as const;
 }
 
 it("a live delete's hold ends when live has the document again", async () => {
-  await removal.reconcileDocumentAvailability([command("terminal-remove", "1")]).localSettlement;
+  removal.applyRemovals([command("gone")]);
   expect(registry.isDraftOnly(projectId, documentId)).toBe(true);
   expect(removedNotices).toEqual([]);
 
-  await removal.reconcileDocumentAvailability([command("available", "2")]).localSettlement;
+  removal.applyRemovals([command("back")]);
   expect(registry.isDraftOnly(projectId, documentId)).toBe(false);
 });
 
 it("a live delete's hold ends with its draft, and the document is said removed", async () => {
-  await removal.reconcileDocumentAvailability([command("terminal-remove", "1")]).localSettlement;
+  removal.applyRemovals([command("gone")]);
   await settling(async () => {
     await vi.waitFor(() => expect(metadataAnswers).toHaveLength(1));
     await act(async () => metadataAnswers[0]?.({ status: "gone" }));

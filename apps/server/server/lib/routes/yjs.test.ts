@@ -140,13 +140,6 @@ describe("Yjs draft handshake route guard", () => {
           headSchemaVersion: vi.fn(async () => null),
           flushDraftLivePull,
         } as never,
-        liveDocuments: {
-          findById: async () => ({
-            kind: "found" as const,
-            document: {} as never,
-            clashesWith: [],
-          }),
-        },
         eventSink: { emit() {} } as never,
         treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       },
@@ -277,9 +270,6 @@ describe("Yjs draft handshake route guard", () => {
     });
     const gateway = createYjsGateway({
       ...gatewayServices(),
-      liveDocuments: {
-        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
-      },
       eventSink: { emit: vi.fn() } as never,
       treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       documentSync: {
@@ -472,9 +462,6 @@ describe("Yjs room access", () => {
       },
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: documentSync as never,
-      liveDocuments: {
-        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
-      },
       eventSink: { emit() {} } as never,
       treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,

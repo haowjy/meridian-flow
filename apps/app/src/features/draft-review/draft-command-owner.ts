@@ -28,7 +28,7 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
-import type { DocumentSession } from "@/core/editor/document-session";
+import { type DocumentSession, isSignInLapse } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
   type DraftRoomRegistry,
@@ -177,9 +177,7 @@ export class DraftCommandOwner {
       resolveGone?(
         ref: DraftRef,
       ): Promise<{ disposition: "closed" | "removed"; liveUri?: string } | null>;
-      removed?(ref: DraftRef): void;
       closeCreated?(ref: DraftRef): void;
-      markOwnRemoval?(ref: DraftRef): (removed: boolean) => void;
     } = {},
   ) {}
   subscribe = (listener: () => void) => {
@@ -308,7 +306,10 @@ export class DraftCommandOwner {
       this.textClicks(entry).length > 0 ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
-      const lease = readDraftRoom(this.registry, entry.roomKey);
+      const lease = readDraftRoom(this.registry, {
+        roomKey: entry.roomKey,
+        documentId: entry.ref.documentId,
+      });
       entry.lease = lease;
       const follow = () => {
         const next = lease.usable();
@@ -383,7 +384,7 @@ export class DraftCommandOwner {
         snapshot.status === "destroyed" ||
         connection?.kind === "reset" ||
         connection?.kind === "terminal" ||
-        connection?.kind === "unauthorized"
+        (connection?.kind === "unauthorized" && !isSignInLapse(connection))
       ) {
         this.detach(entry);
         entry.item.queue.refuseUnsent(entry.draftId);
@@ -448,7 +449,10 @@ export class DraftCommandOwner {
     if (pending) return pending;
     const entry = this.entries.get(id);
     const lease = entry?.binding
-      ? readDraftRoom(this.registry, entry.binding.session.roomKey)
+      ? readDraftRoom(this.registry, {
+          roomKey: entry.binding.session.roomKey,
+          documentId: ref.documentId,
+        })
       : null;
     if (entry) entry.users++;
     this.setState(ref.itemKey, { checkingClose: true }, id);
@@ -513,7 +517,6 @@ export class DraftCommandOwner {
       disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
-    if (disposition === "removed") this.lifecycle.removed?.(ref);
     this.setState(
       ref.itemKey,
       {
@@ -858,7 +861,6 @@ export class DraftCommandOwner {
     frozen: boolean,
   ): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
-    const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
     this.setState(
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
@@ -874,7 +876,6 @@ export class DraftCommandOwner {
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
-        settleOwn?.(true);
         // State held under the item key itself (no draft room ever bound, as for a picture)
         // would hide the document's next item in this branch too; the caller drops the row.
         const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
@@ -884,7 +885,6 @@ export class DraftCommandOwner {
         );
         return { kind: "done" };
       }
-      settleOwn?.(false);
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
@@ -892,7 +892,6 @@ export class DraftCommandOwner {
       });
       return { kind: "change-refused", code: result.status };
     } catch {
-      settleOwn?.(false);
       if (this.active)
         this.setState(ref.itemKey, {
           hidden: false,

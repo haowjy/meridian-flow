@@ -88,7 +88,7 @@ export function createDrizzleApplyClick(
     treeLists: Pick<TreeListStore, "submit">;
     tree: Pick<TreeReader, "identityStatus">;
     branchTree: BranchTreeStateReader;
-    close: Pick<DraftClose, "closeDrafts" | "registerRemoved">;
+    close: Pick<DraftClose, "closeDrafts">;
     onCommitted(documentId: ApplyClickCommand["documentId"]): Promise<void>;
     measured(input: {
       commandId: string;

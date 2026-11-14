@@ -1,6 +1,6 @@
 /** Drizzle adapter for restorable document trash and retention: emptying Trash, and the purge window. */
 import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
-import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
@@ -13,7 +13,13 @@ import {
   treeNodes,
   works,
 } from "@meridian/database/schema";
-import { descendantsOf, LIVE, listRecords, settlementsOf } from "@meridian/project-tree";
+import {
+  descendantsOf,
+  LIVE,
+  lastSettlements,
+  listRecords,
+  settlementsOf,
+} from "@meridian/project-tree";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type * as Y from "yjs";
@@ -59,8 +65,6 @@ export function createDrizzleDocumentTrash(deps: {
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
   tree: Pick<TreeListStore, "submit">;
-  /** The document's stored Yjs as markdown; the trash keeps no text of its own. */
-  readMarkdown(documentId: DocumentId): Promise<string>;
 }): DocumentTrash {
   const objects = createObjectRelease({
     objectStore: deps.objectStore,
@@ -275,8 +279,9 @@ export function createDrizzleDocumentTrash(deps: {
 
   /**
    * A document no view shows: its drafted create was discarded, or refused and not kept, and
-   * it has been that way since `cutoff`. It has no node, so there is no record to append; the
-   * lists that can reshow it (an Undo of the Discard) are locked while its content is released.
+   * it has been that way since `cutoff`. It has no node in any view, so the purge record names its
+   * create's Discard; the lists that can reshow it (an Undo of the Discard) are locked while its
+   * content is released.
    */
   async function purgeUnviewed(documentId: DocumentId, cutoff: Date): Promise<Released | null> {
     const tx = () => currentDrizzleDb(deps.db);
@@ -305,6 +310,26 @@ export function createDrizzleDocumentTrash(deps: {
           .limit(1);
         if (!still) return null;
         if ((await deps.drafts.settle([documentId])) === "pending") return null;
+        // The list that holds its create says the content is gone: the browsers keeping a copy
+        // of a Discarded document delete it on this record, the one fact they can trust.
+        await deps.tree.submit({
+          lists: [
+            { kind: "project", projectId: owner.project },
+            { kind: "account", userId: owner.user },
+          ],
+          make: (copies) => {
+            for (const { writer } of copies) {
+              const create = listRecords(writer.doc).find(
+                (record) => record.type === "create" && record.node === documentId,
+              );
+              if (create)
+                writer.purge("system", {
+                  id: lastSettlements(writer.doc).get(create.id)?.command ?? create.id,
+                  node: documentId,
+                });
+            }
+          },
+        });
         return release([documentId]);
       });
     } catch (cause) {
@@ -341,10 +366,8 @@ export function createDrizzleDocumentTrash(deps: {
     async list(projectId): Promise<readonly DocumentTrashEntry[]> {
       return entries(await rows(projectId));
     },
-    async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
-      const entry = (await entries(await rows(projectId, [documentId])))[0];
-      if (!entry) return null;
-      return { ...entry, markdown: await deps.readMarkdown(documentId) };
+    async read(projectId, documentId): Promise<DocumentTrashEntry | null> {
+      return (await entries(await rows(projectId, [documentId])))[0] ?? null;
     },
     async wasPurged(projectId, documentId): Promise<boolean> {
       const [row] = await currentDrizzleDb(deps.db)
