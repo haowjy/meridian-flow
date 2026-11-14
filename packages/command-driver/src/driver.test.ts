@@ -19,6 +19,8 @@ class Server {
   faults: Fault[] = [];
   /** commands whose effect is refused by the domain (a stored `refused`). */
   refuse = new Set<string>();
+  /** commands refused the first time only. */
+  refuseOnce = new Set<string>();
 
   handle = async (request: TransportRequest, signal: AbortSignal): Promise<TransportAnswer> => {
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
@@ -52,7 +54,7 @@ class Server {
     const known = this.stored.get(id);
     if (known?.status === "done") return ok({ label: body.label });
     if (known) return { status: 409, body: null, code: "x" };
-    if (this.refuse.has(body.label as string)) {
+    if (this.refuse.has(body.label as string) || this.refuseOnce.delete(body.label as string)) {
       this.stored.set(id, { status: "refused", result: { refusal: "no" } });
       return { status: 409, body: null, code: "x" };
     }
@@ -114,7 +116,8 @@ class World {
     next.grant(holder.release);
   }
 
-  async tab(): Promise<CommandDriver> {
+  /** `silent`: its writes reach no other tab, as when a message is late. */
+  async tab({ silent = false } = {}): Promise<CommandDriver> {
     const listener = new Set<() => void>();
     const mine = {
       post: () => {
@@ -126,7 +129,7 @@ class World {
       lock: this.lock,
       transport: this.server.handle,
       changes: {
-        post: mine.post,
+        post: silent ? () => undefined : mine.post,
         subscribe: (l) => {
           listener.add(l);
           this.listeners.add(l);
@@ -138,6 +141,10 @@ class World {
         close() {},
       },
       online: () => this.online,
+      routes: {
+        lookup: (id) => `/api/commands/${id}`,
+        resolve: (id) => `/api/commands/${id}/resolve`,
+      },
       kinds: { x: this.kind as CommandKind },
       log: (entry) => this.logs.push(entry),
     });
@@ -231,11 +238,11 @@ describe("one delivery, whatever goes wrong on the way", () => {
     await settle(0);
     const [record] = tab.getSnapshot().records;
     expect(record?.state).toBe("never");
-    expect(record?.outcome).toEqual({ status: "never", result: { refusal: "no" } });
+    expect(record?.outcome).toEqual({ status: "never", result: { refusal: "no" }, code: "x" });
     expect(world.server.requests.some((r) => r.path.endsWith("/resolve"))).toBe(true);
   });
 
-  it("retry keeps the record's place and takes a new id for the server", async () => {
+  it("retry keeps the record's place while nothing later was sent, and takes a new id for the server", async () => {
     const world = new World();
     const tab = await world.tab();
     world.server.refuse.add("one");
@@ -248,6 +255,36 @@ describe("one delivery, whatever goes wrong on the way", () => {
     expect(record).toMatchObject({ id, seq, state: "done" });
     expect(record?.sendId).not.toBe(sendId);
     expect(world.server.effects).toEqual(["one"]);
+  });
+
+  it("retry goes behind a later command of its lane that was already sent", async () => {
+    const world = new World();
+    const tab = await world.tab();
+    world.server.refuseOnce.add("one");
+    const one = await submit(tab, "one");
+    await submit(tab, "two");
+    await settle(0);
+    expect(world.server.effects).toEqual(["two"]);
+    await tab.retry(one.id);
+    await settle(0);
+    const records = tab.getSnapshot().records;
+    expect(records.map((r) => (r.body as { label: string }).label)).toEqual(["two", "one"]);
+    expect(records.find((r) => r.id === one.id)?.seq).toBeGreaterThan(one.seq);
+    expect(world.server.effects).toEqual(["two", "one"]);
+  });
+
+  it("does not prune a record that another tab retried after this tab last read", async () => {
+    const world = new World();
+    const holder = await world.tab();
+    const other = await world.tab({ silent: true });
+    world.server.refuseOnce.add("one");
+    const { id } = await submit(holder, "one");
+    await settle(0);
+    await settle(30 * 24 * 60 * 60 * 1000 - 1_000);
+    await other.retry(id);
+    await settle(2_000);
+    expect(world.server.effects).toEqual(["one"]);
+    expect(states(holder)).toEqual({ one: "done" });
   });
 
   it("pauses an account the server turns away, and sends again once resumed", async () => {
@@ -319,18 +356,32 @@ describe("one delivery, whatever goes wrong on the way", () => {
     expect(world.server.requests).toEqual([]);
   });
 
-  it("keeps an observed outcome for a minute so other tabs can react, then drops it", async () => {
+  it("observation is per tab: another tab's read never retires this tab's effect", async () => {
     const world = new World();
     const a = await world.tab();
     const b = await world.tab();
     const { id } = await submit(a, "one");
     await settle(0);
     expect(world.settledSeen.filter((s) => s.endsWith("done"))).toHaveLength(2);
-    await a.observed(id);
-    await settle(59_000);
-    expect(b.getSnapshot().records).toHaveLength(1);
-    await settle(2_000);
+    await a.observe(() => true);
+    expect(a.getSnapshot().records[0]?.observed).toBe(true);
+    expect(b.getSnapshot().records[0]).toMatchObject({ id, observed: false });
+    // The journal lets the record go a minute after some tab observed it; b keeps its own copy.
+    await settle(61_000);
+    expect(a.getSnapshot().records).toHaveLength(0);
+    expect(b.getSnapshot().records).toMatchObject([{ id, state: "done", observed: false }]);
+    await b.observe((record) => record.id === id);
     expect(b.getSnapshot().records).toHaveLength(0);
+  });
+
+  it("one observation covers every record settled before it, so a missed read never strands one", async () => {
+    const world = new World();
+    const tab = await world.tab();
+    await submit(tab, "one");
+    await submit(tab, "two");
+    await settle(0);
+    await tab.observe((record) => record.settledAt !== undefined);
+    expect(tab.getSnapshot().records.every((record) => record.observed)).toBe(true);
   });
 });
 
@@ -346,16 +397,18 @@ describe("schedules of tabs, outages and reloads", () => {
       const next = random(seed);
       const world = new World();
       const tabs: CommandDriver[] = [await world.tab(), await world.tab()];
-      const submitted: Record<string, string[]> = { a: [], b: [] };
       let n = 0;
       for (let step = 0; step < 40; step++) {
         const roll = next();
         const tab = tabs[Math.floor(next() * tabs.length)] as CommandDriver;
-        if (roll < 0.4) {
+        if (roll < 0.35) {
           const lane = next() < 0.5 ? "a" : "b";
           const label = `${lane}${n++}`;
+          if (next() < 0.2) world.server.refuseOnce.add(label);
           await submit(tab, label, [lane]);
-          submitted[lane]?.push(label);
+        } else if (roll < 0.5) {
+          const never = tab.getSnapshot().records.find((r) => r.state === "never");
+          if (never) await tab.retry(never.id);
         } else if (roll < 0.6) {
           world.server.faults.push(next() < 0.5 ? "drop_request" : "drop_response");
         } else if (roll < 0.7) {
@@ -379,11 +432,25 @@ describe("schedules of tabs, outages and reloads", () => {
         tab.nudge();
       }
       await settle(120_000);
+      for (let round = 0; round < 3; round++) {
+        for (const record of tabs[0]?.getSnapshot().records ?? [])
+          if (record.state === "never") await tabs[0]?.retry(record.id);
+        await settle(120_000);
+      }
       const duplicated = world.server.effects.filter((l, i, all) => all.indexOf(l) !== i);
       expect(duplicated).toEqual([]);
+      const records = tabs[0]?.getSnapshot().records ?? [];
+      expect(records.every((r) => r.state === "done")).toBe(true);
+      // Every command was applied once, and each lane in the order of the journal's places.
+      expect([...world.server.effects].sort()).toEqual(
+        records.map((r) => (r.body as { label: string }).label).sort(),
+      );
       for (const lane of ["a", "b"])
-        expect(world.server.effects.filter((l) => l.startsWith(lane))).toEqual(submitted[lane]);
-      expect(tabs[0]?.getSnapshot().records.every((r) => r.state === "done")).toBe(true);
+        expect(world.server.effects.filter((l) => l.startsWith(lane))).toEqual(
+          records
+            .filter((r) => r.lanes.includes(lane))
+            .map((r) => (r.body as { label: string }).label),
+        );
     });
   }
 });

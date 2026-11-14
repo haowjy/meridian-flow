@@ -1,4 +1,6 @@
 /** Sole acquisition and QueryCache installation owner for canonical Works snapshots. */
+
+import type { CommandDriver, CommandRecord } from "@meridian/command-driver";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { listProjectWorks } from "@/client/api/projects-api";
@@ -12,6 +14,28 @@ export function workFromSnapshot(
   if (!snapshot) return null;
   if (workId === snapshot.noWork.id) return snapshot.noWork;
   return snapshot.works.find((work) => work.id === workId && work.deletedAt === null) ?? null;
+}
+
+/**
+ * What this tab's Works include, per project: a successful read started at `startedAt` has every
+ * Work command settled by then. Each successful read tells the driver, so a failed refresh
+ * followed by a later good one covers both records, and no other tab's read counts here.
+ */
+const readObservers = new WeakMap<QueryClient, (projectId: string, startedAt: number) => void>();
+
+export function observeWorksReads(client: QueryClient, driver: CommandDriver): () => void {
+  const observer = (projectId: string, startedAt: number) =>
+    void driver.observe(
+      (record: CommandRecord) =>
+        record.kind.startsWith("work_") &&
+        (record.body as { projectId?: string }).projectId === projectId &&
+        record.settledAt !== undefined &&
+        record.settledAt <= startedAt,
+    );
+  readObservers.set(client, observer);
+  return () => {
+    if (readObservers.get(client) === observer) readObservers.delete(client);
+  };
 }
 
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
@@ -59,6 +83,7 @@ function installResponse(
   projectId: string,
   response: WorksSnapshot,
   started: number,
+  startedAt: number,
 ): WorksSnapshot {
   if (response.projectId !== projectId) {
     throw new Error(`Works snapshot project mismatch: expected ${projectId}`);
@@ -71,6 +96,7 @@ function installResponse(
   if (ordering > 0 || (ordering === 0 && started >= state.installedStart)) {
     client.setQueryData(projectQueryKeys.works(projectId), response);
     state.installedStart = started;
+    readObservers.get(client)?.(projectId, startedAt);
     return response;
   }
   return current ?? response;
@@ -85,8 +111,9 @@ function startAcquisition(
   const state = stateFor(client, projectId);
   if (!supersede && state.inFlight) return state.inFlight;
   const started = beginWorksSnapshotRequest(projectId);
+  const startedAt = Date.now();
   const acquisition = request().then((response) =>
-    installResponse(client, projectId, response, started),
+    installResponse(client, projectId, response, started, startedAt),
   );
   state.inFlight = acquisition;
   void acquisition

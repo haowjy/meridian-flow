@@ -9,7 +9,6 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
 import type { OpenDocument } from "@/client/stores";
-import { NotSentYet } from "@/components/app/NotSentYet";
 import { role } from "@/components/ui/roles";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -89,7 +88,6 @@ export function LeftSidebar({
           )}
           inputClassName={cn("h-8 px-2 font-semibold", role.row)}
         />
-        <NotSentYet />
         <ProjectMenu
           key={projectId}
           projectId={projectId}

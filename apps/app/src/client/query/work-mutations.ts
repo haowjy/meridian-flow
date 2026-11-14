@@ -8,8 +8,8 @@
 import type { CommandDriver } from "@meridian/command-driver";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-
 import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
+import { submitCommand } from "@/client/commands/submit";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   WORK_KINDS,
@@ -19,6 +19,7 @@ import {
   workCommandOf,
   workCommandSpecs,
   workKindOf,
+  workLanes,
 } from "./work-commands";
 
 /** The server turned a command away; `reason` is its code (`name_conflict`, `restore_expired`, ...). */
@@ -27,14 +28,22 @@ export class WorkCommandRefused extends Error {
   constructor(
     readonly reason: string | null,
     readonly state: string | null,
+    readonly code: string | null = null,
   ) {
     super(`Work command refused${reason ? `: ${reason}` : ""}`);
+  }
+
+  /** Only a refusal the server did not explain can succeed on a second try: the others ran and were turned away. */
+  get retryable(): boolean {
+    return this.reason === null && this.code === null;
   }
 }
 
 /** A command resolves to its failure, or `null` once the server has it. */
 export type RunWorkCommand<Op extends WorkOperation> = (
   variables: WorkCommandVariables[Op],
+  /** `saved` runs once the command is in the journal: where a destination may open. */
+  options?: { saved?: () => void },
 ) => Promise<Error | null>;
 
 export type WorkMutations = { [Op in WorkOperation]: RunWorkCommand<Op> };
@@ -45,8 +54,8 @@ export function useWorkMutations(projectId: string): WorkMutations {
   return useMemo(() => {
     const command =
       <Op extends WorkOperation>(operation: Op): RunWorkCommand<Op> =>
-      (variables) =>
-        runWorkCommand(client, driver, projectId, operation, variables);
+      (variables, options) =>
+        runWorkCommand(client, driver, projectId, operation, variables, options?.saved);
     return {
       create: command("create"),
       update: command("update"),
@@ -77,6 +86,7 @@ async function runWorkCommand<Op extends WorkOperation>(
   projectId: string,
   operation: Op,
   variables: WorkCommandVariables[Op],
+  saved?: () => void,
 ): Promise<Error | null> {
   if (!driver) return new Error("Commands are not available yet");
   const { workId } = variables;
@@ -85,33 +95,36 @@ async function runWorkCommand<Op extends WorkOperation>(
     const old = WORK_KINDS.has(record.kind) ? workCommandOf(record) : null;
     if (old?.state === "never" && old.workId === workId) void driver.dismiss(old.id);
   }
-  let id: string;
-  try {
-    ({ id } = await driver.submit({
-      kind: workKindOf(operation),
-      lanes: [`work:${workId}`],
-      body: { projectId, variables },
-    }));
-  } catch (cause) {
-    return cause instanceof Error ? cause : new Error(String(cause));
-  }
+  const record = await submitCommand(driver, {
+    kind: workKindOf(operation),
+    lanes: workLanes(operation, projectId, workId),
+    body: { projectId, variables },
+  });
+  if (!record) return new Error("The change could not be saved on this device");
+  const { id } = record;
+  saved?.();
   if (operation === "delete")
     openDeleteWindow(client, projectId, { workId, commandId: id, openedAt: Date.now() });
   const settled = await driver.whenSettled(id);
   if (operation === "restore" && settled?.state === "done") closeWindows(client, projectId, workId);
-  const failed = settled && workCommandOf(settled);
+  if (!settled) return new Error("The command was removed before it settled");
+  const failed = workCommandOf(settled);
   // A closed Work answers `done` with nothing changed: the field reopens like a refusal.
   if (failed?.returned) {
     if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
     return new WorkCommandRefused("returned", failed.returned);
   }
-  if (settled?.state !== "never") return null;
+  if (settled.state !== "never") return null;
   if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
   return refusedBy(failed);
 }
 
 const refusedBy = (record: WorkCommandRecord | null) =>
-  new WorkCommandRefused(record?.reason ?? null, record?.refusalState ?? null);
+  new WorkCommandRefused(
+    record?.reason ?? null,
+    record?.refusalState ?? null,
+    record?.code ?? null,
+  );
 
 /** Runs a refused command again, in its place. Resolves to its failure, or `null`. */
 export async function retryWorkCommand(
@@ -120,8 +133,8 @@ export async function retryWorkCommand(
 ): Promise<Error | null> {
   await driver.retry(failed.id);
   const settled = await driver.whenSettled(failed.id);
-  if (settled?.state !== "never") return null;
-  return refusedBy(workCommandOf(settled));
+  if (!settled) return new Error("The command was removed before it settled");
+  return settled.state === "never" ? refusedBy(workCommandOf(settled)) : null;
 }
 
 export function dismissWorkCommand(driver: CommandDriver, id: string): void {

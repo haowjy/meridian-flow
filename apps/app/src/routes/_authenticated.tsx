@@ -13,9 +13,11 @@ import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
 import { FailureToaster } from "@/components/app/failure-toast";
+import { NotSentYet } from "@/components/app/NotSentYet";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
@@ -138,7 +140,7 @@ function AuthenticatedAccountProviderTree({
 }) {
   return (
     <AccountFeatureComposition accountId={user.userId}>
-      <CommandDriverProvider>
+      <CommandDriverProvider domains={workDomain}>
         <AccountSettingsProvider
           serverValue={user.accountSettings}
           serverReadGeneration={user.accountSettingsReadGeneration}
@@ -183,6 +185,7 @@ function AuthenticatedProviderTree({
                   </div>
                   <SettingsDialog />
                   <FailureToaster />
+                  <NotSentYet />
                   {DebugOverlay ? (
                     <Suspense fallback={null}>
                       <DebugOverlay />

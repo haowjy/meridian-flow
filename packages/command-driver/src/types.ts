@@ -1,7 +1,10 @@
 import type { CommandOutcome } from "@meridian/contracts/commands";
 
 /** What a command came to, as the server stored it. A server `refused` reads as `never`. */
-export type Outcome = { status: "done"; result: unknown } | { status: "never"; result?: unknown };
+export type Outcome =
+  | { status: "done"; result: unknown }
+  /** `code` is the structured error code of the attempt that was turned away, when it had one. */
+  | { status: "never"; result?: unknown; code?: string };
 
 export type CommandState = "sending" | "done" | "never";
 
@@ -69,10 +72,10 @@ export type CommandKind<Body = unknown> = {
   request(record: Pick<CommandRecord<Body>, "id" | "body">): HttpRequest;
   /**
    * Every tab runs this once for each record it sees settle (also for one settled before it
-   * opened), so it must be safe in every tab and safe to run twice. Call `observed` once a
-   * read of your own data that started after the record settled has come back.
+   * opened), so it must be safe in every tab and safe to run twice. The domain then reads its
+   * own data and tells the driver through `observe` which outcomes that read included.
    */
-  onSettled?(record: CommandRecord<Body>, ctx: { observed(id: string): void }): void;
+  onSettled?(record: CommandRecord<Body>): void;
 };
 
 export type JournalState = { records: readonly CommandRecord[]; nextSeq: number };
@@ -111,6 +114,8 @@ export type DriverPorts = {
   transport: Transport;
   changes: ChangeChannel;
   online(): boolean;
+  /** The server's lookup and resolve routes for a command id. */
+  routes: { lookup(sendId: string): string; resolve(sendId: string): string };
   kinds: Readonly<Record<string, CommandKind>>;
   /** A failure worth keeping: carries the id, kind, attempt and failure class, never a body. */
   log(entry: { id: string; kind: string; attempt: number; failure: string }): void;

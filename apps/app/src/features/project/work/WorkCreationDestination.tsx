@@ -14,7 +14,8 @@ export function WorkCreationDestination({
   name: string;
   goal: string | null;
   failed: boolean;
-  onRetry: () => void;
+  /** Absent where a second try cannot succeed. */
+  onRetry?: () => void;
   onDiscard: () => void;
 }) {
   return (
@@ -36,9 +37,11 @@ export function WorkCreationDestination({
             <Trans>Couldn’t create this Work.</Trans>
           </p>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={onRetry}>
-              <Trans>Retry</Trans>
-            </Button>
+            {onRetry ? (
+              <Button size="sm" onClick={onRetry}>
+                <Trans>Retry</Trans>
+              </Button>
+            ) : null}
             <Button size="sm" variant="outline" onClick={onDiscard}>
               <Trans>Discard</Trans>
             </Button>

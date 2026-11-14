@@ -8,14 +8,16 @@ import { DELETION_RETENTION_DAYS as WORK_DELETE_RETENTION_DAYS } from "@meridian
 import type { ReactNode } from "react";
 import type { WorkCommandFailure } from "@/client/query/work-command-selectors";
 import type { WorkCommandRefused } from "@/client/query/work-mutations";
+import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 
 /** The commands whose failure stays on the Work until the writer acts on it. */
-export const WORK_ROW_OPERATIONS = ["archive", "unarchive", "delete", "restore"] as const;
+export const WORK_ROW_OPERATIONS = ["update", "archive", "unarchive", "delete", "restore"] as const;
 
 export type WorkRowFailure = WorkCommandFailure<(typeof WORK_ROW_OPERATIONS)[number]>;
 
 const messages: { [Op in WorkRowFailure["operation"]]: () => string } = {
+  update: () => t`Couldn’t save this change to the Work`,
   archive: () => t`Work couldn’t be archived`,
   unarchive: () => t`Work couldn’t be unarchived`,
   delete: () => t`Work couldn’t be deleted`,
@@ -44,12 +46,15 @@ export function workFailureLine(
 ) {
   const refusal = failure.operation === "restore" ? restoreRefusal(failure.error, name) : null;
   if (refusal) return { message: refusal, onDismiss: failure.dismiss };
+  const explained = workUpdateFailure(failure.error, "");
   return {
     message:
-      name && failure.operation === "restore"
+      explained ||
+      (name && failure.operation === "restore"
         ? t`Couldn’t restore ${name}`
-        : messages[failure.operation](),
-    onRetry: onRetry ?? (() => void failure.retry()),
+        : messages[failure.operation]()),
+    // Retry only where a second try can succeed.
+    onRetry: failure.error.retryable ? (onRetry ?? (() => void failure.retry())) : undefined,
     onDismiss: failure.dismiss,
   };
 }

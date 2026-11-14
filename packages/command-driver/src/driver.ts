@@ -50,7 +50,13 @@ export type SubmitInput = {
 };
 
 export class CommandDriver {
+  /** The journal's records. */
   private records: readonly CommandRecord[] = [];
+  /** What this tab shows: the journal's records with this tab's own observations. */
+  private shown: readonly CommandRecord[] = [];
+  private readonly observedHere = new Set<string>();
+  /** Settled records this tab has not observed yet, kept after the journal drops them. */
+  private readonly lingering = new Map<string, CommandRecord>();
   private snapshot: DriverSnapshot = { records: [], notSent: false, paused: false };
   private readonly listeners = new Set<() => void>();
   private readonly reacted = new Set<string>();
@@ -147,11 +153,32 @@ export class CommandDriver {
     return record;
   }
 
-  /** A read of the domain's data that started after the record settled has included its outcome. */
-  observed(id: string): Promise<void> {
-    return this.update(id, (record) =>
-      record.state === "done" && !record.observed ? { ...record, observed: true } : null,
+  /**
+   * This tab's own data now includes the outcome of every matching `done` record (a read of it
+   * that started after they settled has returned). Observation is per tab: its record stays in
+   * this tab's snapshot, effect and all, until then, whatever another tab has seen. The journal
+   * only learns that some tab has, which lets the record expire.
+   */
+  async observe(match: (record: CommandRecord) => boolean): Promise<void> {
+    const seen = this.shown.filter(
+      (record) => record.state === "done" && !this.observedHere.has(record.id) && match(record),
     );
+    if (seen.length === 0) return;
+    for (const record of seen) {
+      this.observedHere.add(record.id);
+      this.lingering.delete(record.id);
+    }
+    this.show();
+    this.publish();
+    const ids = new Set(seen.map((record) => record.id));
+    await this.mutate(({ records }) => ({
+      change: {
+        put: records
+          .filter((r) => ids.has(r.id) && r.state === "done" && !r.observed)
+          .map((r) => ({ ...r, observed: true })),
+      },
+      result: undefined,
+    }));
   }
 
   /** The writer is done with a settled record. */
@@ -165,30 +192,39 @@ export class CommandDriver {
     });
   }
 
-  /** Puts a `never` record back to sending in its place, under a new id for the server. */
+  /**
+   * Puts a `never` record back to sending, under a new id for the server. It keeps its place
+   * while nothing later in its lanes has been sent; otherwise it goes to the end, so a lane is
+   * never sent out of order.
+   */
   retry(id: string): Promise<void> {
     this.reacted.delete(id);
-    return this.update(id, (record) =>
-      record.state === "never"
-        ? {
-            ...record,
-            state: "sending",
-            sendId: crypto.randomUUID(),
-            sent: false,
-            request: undefined,
-            outcome: undefined,
-            observed: false,
-            attempts: 0,
-            settledAt: undefined,
-          }
-        : null,
-    );
-  }
-
-  /** Skips the wait before the next send of this record. */
-  retryNow(id: string): void {
-    this.retryAt.delete(id);
-    this.wake();
+    return this.mutate(({ records, nextSeq }) => {
+      const record = records.find((candidate) => candidate.id === id);
+      if (record?.state !== "never") return { change: {}, result: undefined };
+      const passed = records.some(
+        (other) =>
+          other.seq > record.seq &&
+          other.sent &&
+          other.lanes.some((lane) => record.lanes.includes(lane)),
+      );
+      const again: CommandRecord = {
+        ...record,
+        seq: passed ? nextSeq : record.seq,
+        state: "sending",
+        sendId: crypto.randomUUID(),
+        sent: false,
+        request: undefined,
+        outcome: undefined,
+        observed: false,
+        attempts: 0,
+        settledAt: undefined,
+      };
+      return {
+        change: { put: [again], nextSeq: passed ? nextSeq + 1 : undefined },
+        result: undefined,
+      };
+    });
   }
 
   /** Something that may let a send through changed: back online, tab visible. */
@@ -265,9 +301,12 @@ export class CommandDriver {
     });
   }
 
+  /** Tells the other tabs and reads again. The write is committed by now: a failed read is not its failure. */
   private async changed(): Promise<void> {
     this.ports.changes.post();
-    await this.reload();
+    await this.reload().then(undefined, (cause) =>
+      this.ports.log({ id: "", kind: "journal", attempt: 0, failure: `read: ${String(cause)}` }),
+    );
   }
 
   private async reload(): Promise<void> {
@@ -278,18 +317,33 @@ export class CommandDriver {
     if (read < this.installedRead || this.stopped) return;
     this.installedRead = read;
     this.records = [...records].sort((a, b) => a.seq - b.seq);
+    this.show();
     this.publish();
     for (const record of this.records) this.react(record);
     this.wake();
+  }
+
+  private show(): void {
+    for (const record of this.records)
+      if (record.state === "done" && !this.observedHere.has(record.id))
+        this.lingering.set(record.id, { ...record, observed: false });
+    const journaled = new Set(this.records.map((record) => record.id));
+    const gone = [...this.lingering.values()].filter((record) => !journaled.has(record.id));
+    this.shown = [
+      ...this.records.map((record) =>
+        record.observed === this.observedHere.has(record.id)
+          ? record
+          : { ...record, observed: this.observedHere.has(record.id) },
+      ),
+      ...gone,
+    ].sort((a, b) => a.seq - b.seq);
   }
 
   private react(record: CommandRecord): void {
     if (record.state === "sending" || this.reacted.has(record.id)) return;
     this.reacted.add(record.id);
     try {
-      this.ports.kinds[record.kind]?.onSettled?.(record, {
-        observed: (id) => void this.observed(id),
-      });
+      this.ports.kinds[record.kind]?.onSettled?.(record);
     } catch (cause) {
       this.ports.log({
         id: record.id,
@@ -312,9 +366,9 @@ export class CommandDriver {
     if (waiting.length > 0 && !late)
       this.notSentTimer = setTimeout(() => this.publish(), oldest + NOT_SENT_AFTER_MS - Date.now());
     const prev = this.snapshot;
-    if (prev.records === this.records && prev.notSent === notSent && prev.paused === this.signedOut)
+    if (prev.records === this.shown && prev.notSent === notSent && prev.paused === this.signedOut)
       return;
-    this.snapshot = { records: this.records, notSent, paused: this.signedOut };
+    this.snapshot = { records: this.shown, notSent, paused: this.signedOut };
     for (const listener of [...this.listeners]) listener();
   }
 
@@ -334,7 +388,7 @@ export class CommandDriver {
         void this.deliver(record, delivery);
       else if (at > now) next = Math.min(next, at);
     }
-    for (const record of this.records) next = Math.min(next, this.expiry(record));
+    for (const record of this.records) next = Math.min(next, expiry(record));
     // A timer past 2^31 ms fires at once, so a far expiry is reached in steps.
     if (next < Number.POSITIVE_INFINITY)
       this.wakeTimer = setTimeout(
@@ -352,28 +406,16 @@ export class CommandDriver {
     return sending.filter((record) => record.lanes.every((lane) => first.get(lane) === record.id));
   }
 
-  /** When a settled record may go: observed `done` after a minute, a `never` after thirty days. */
-  private expiry(record: CommandRecord): number {
-    if (record.settledAt === undefined) return Number.POSITIVE_INFINITY;
-    if (record.state === "done" && record.observed) return record.settledAt + DONE_KEPT_MS;
-    if (record.state === "never") return record.settledAt + NEVER_KEPT_MS;
-    return Number.POSITIVE_INFINITY;
-  }
-
   private prune(now: number): void {
-    const expired = this.records
-      .filter((record) => this.expiry(record) <= now)
-      .map((record) => record.id);
-    if (expired.length === 0) return;
-    this.mutate(() => ({ change: { remove: expired }, result: undefined })).then(
-      undefined,
-      (cause) =>
-        this.ports.log({
-          id: expired[0] as string,
-          kind: "prune",
-          attempt: 0,
-          failure: String(cause),
-        }),
+    if (!this.records.some((record) => expiry(record) <= now)) return;
+    // Decided from what the transaction reads: another tab may have retried a record since.
+    this.mutate(({ records }) => ({
+      change: {
+        remove: records.filter((record) => expiry(record) <= Date.now()).map((record) => record.id),
+      },
+      result: undefined,
+    })).then(undefined, (cause) =>
+      this.ports.log({ id: "", kind: "prune", attempt: 0, failure: String(cause) }),
     );
   }
 
@@ -382,7 +424,7 @@ export class CommandDriver {
     try {
       await this.attempt(first, delivery.signal);
     } catch (cause) {
-      if (!delivery.signal.aborted) this.later(first, "network", cause);
+      if (!delivery.signal.aborted) this.later(first, "network");
     } finally {
       if (this.inFlight.get(first.id) === delivery) this.inFlight.delete(first.id);
       if (!delivery.signal.aborted) this.wake();
@@ -395,7 +437,7 @@ export class CommandDriver {
     if (record.sent && !this.lookedUp.has(record.id)) {
       this.lookedUp.add(record.id);
       const found = await this.call(
-        { method: "GET", path: `/api/commands/${record.sendId}` },
+        { method: "GET", path: this.ports.routes.lookup(record.sendId) },
         signal,
       );
       if (this.isAccountFault(found)) return this.fault();
@@ -422,21 +464,22 @@ export class CommandDriver {
       return this.settle(record, { status: "done", result: answer.body });
     if (this.isAccountFault(answer)) return this.fault();
     if (status === 408 || status === 429 || status >= 500)
-      return this.later(record, `http_${status}`, undefined, status === 500);
+      return this.later(record, `http_${status}`, status === 500);
     // Any other refusal says nothing about whether an earlier attempt landed: the server's
     // stored outcome does, and where there is none it stores a `never`.
     const resolved = await this.call(
       {
         method: "POST",
-        path: `/api/commands/${record.sendId}/resolve`,
+        path: this.ports.routes.resolve(record.sendId),
         body: { kind: record.kind },
       },
       signal,
     );
     if (this.isAccountFault(resolved)) return this.fault();
     const outcome = (resolved.body as Partial<CommandResolveResponse> | null)?.outcome;
-    if (resolved.status === 200 && outcome) return this.settle(record, outcomeOf(outcome));
-    this.later(record, `resolve_http_${resolved.status}`, undefined, true);
+    if (resolved.status === 200 && outcome)
+      return this.settle(record, outcomeOf(outcome, answer.code));
+    this.later(record, `resolve_http_${resolved.status}`, true);
   }
 
   private isAccountFault({ status, code }: TransportAnswer): boolean {
@@ -453,7 +496,7 @@ export class CommandDriver {
     }
   }
 
-  private later(record: CommandRecord, failure: string, _cause?: unknown, bug = false): void {
+  private later(record: CommandRecord, failure: string, bug = false): void {
     const n = Math.max(1, record.attempts);
     const [start, cap] = bug
       ? [BUG_BACKOFF_START_MS, BUG_BACKOFF_CAP_MS]
@@ -507,12 +550,24 @@ export class CommandDriver {
   }
 }
 
+/** When a settled record may go: observed `done` after a minute, a `never` after thirty days. */
+function expiry(record: CommandRecord): number {
+  if (record.settledAt === undefined) return Number.POSITIVE_INFINITY;
+  if (record.state === "done" && record.observed) return record.settledAt + DONE_KEPT_MS;
+  if (record.state === "never") return record.settledAt + NEVER_KEPT_MS;
+  return Number.POSITIVE_INFINITY;
+}
+
 function settled(record: CommandRecord, outcome: Outcome): CommandRecord {
   return { ...record, sent: true, state: outcome.status, outcome, settledAt: Date.now() };
 }
 
 /** Until Work refusals are settled outcomes, the server still stores `refused`: it never took effect. */
-function outcomeOf(wire: WireOutcome): Outcome {
+function outcomeOf(wire: WireOutcome, code?: string | null): Outcome {
   if (wire.status === "done") return { status: "done", result: wire.result };
-  return { status: "never", result: wire.status === "refused" ? wire.result : undefined };
+  return {
+    status: "never",
+    result: wire.status === "refused" ? wire.result : undefined,
+    ...(code ? { code } : {}),
+  };
 }

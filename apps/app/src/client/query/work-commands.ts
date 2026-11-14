@@ -10,8 +10,9 @@ import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 
+import type { CommandDomain } from "@/client/commands/driver-context";
 import { convergeWorkProjection } from "./work-projection-cache";
-import { refreshWorksSnapshot } from "./works-projection-acquisition";
+import { observeWorksReads, refreshWorksSnapshot } from "./works-projection-acquisition";
 
 export type WorkCommandVariables = {
   create: { workId: ParsedRequestId; name: string; goal?: string };
@@ -150,6 +151,16 @@ const workCommands = {
 /** Indexed through the mapped type so a generic operation keeps its own spec. */
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
+/**
+ * What a Work command waits behind. Every one waits for its Work's earlier commands; the
+ * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, as they
+ * did before the driver, so they run one at a time per project.
+ */
+export const workLanes = (operation: WorkOperation, projectId: string, workId: string): string[] =>
+  operation === "create" || operation === "update"
+    ? [`work:${workId}`]
+    : [`work:${workId}`, `project-works:${projectId}`];
+
 /** The kind a Work operation is stored and delivered as. */
 export const workKindOf = (operation: WorkOperation): string => KINDS[operation];
 
@@ -177,6 +188,8 @@ type ViewOf<Op extends WorkOperation> = {
    * the Work as it stands, so projecting it puts the subject back.
    */
   returned: string | null;
+  /** The structured error code of the attempt that was turned away, when this tab saw it. */
+  code: string | null;
   /** For `unavailable`: whether the Work is `archived`, `deleted` or `missing`. */
   refusalState: string | null;
 };
@@ -224,31 +237,30 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
         )?.why) ||
       null,
     refusalState: refusal?.state ?? null,
+    code:
+      (record.state === "never" && record.outcome?.status === "never" && record.outcome.code) ||
+      null,
   } as WorkCommandRecord;
 }
 
 /**
- * Every tab runs this for each Work record it sees settle: converge what a Work change touches
- * and read the Works again, whose result (started after the record settled) is its observation.
+ * The Work kinds, and the binding that tells the driver which Work outcomes each read of this
+ * tab's Works included. Every tab runs `onSettled` for each Work record it sees settle:
+ * converge what a Work change touches and read the Works again.
  */
-export function createWorkKinds(client: QueryClient): Record<string, CommandKind> {
+export function workDomain(client: QueryClient): CommandDomain {
   const kinds: Record<string, CommandKind> = {};
   for (const operation of Object.keys(KINDS) as WorkOperation[]) {
     kinds[KINDS[operation]] = {
       version: 1,
       migrate: (body) => body as WorkCommandBody,
       request: ({ body }) => workCommandSpecs[operation].request(body as never),
-      onSettled: (record, ctx) => {
+      onSettled: (record) => {
         const { projectId } = record.body as WorkCommandBody;
         convergeWorkProjection(client, { kind: "entity", projectId, operation });
-        // A failed read leaves the record unobserved: its effect keeps showing, and the next
-        // tab to open it reads again.
-        void refreshWorksSnapshot(client, projectId).then(
-          () => ctx.observed(record.id),
-          () => undefined,
-        );
+        void refreshWorksSnapshot(client, projectId).then(undefined, () => undefined);
       },
     };
   }
-  return kinds;
+  return { kinds, bind: (driver) => observeWorksReads(client, driver) };
 }

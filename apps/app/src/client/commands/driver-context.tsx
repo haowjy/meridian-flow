@@ -3,8 +3,13 @@
  * stopped when it unmounts, so a command outlives the screen that made it but not the account.
  * Screens read records through `useCommands`; what they show of a record stays with each domain.
  */
-import { CommandDriver, type CommandRecord, type DriverSnapshot } from "@meridian/command-driver";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  CommandDriver,
+  type CommandKind,
+  type CommandRecord,
+  type DriverSnapshot,
+} from "@meridian/command-driver";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -14,7 +19,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createWorkKinds } from "@/client/query/work-commands";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { createBroadcastChannel, createFetchTransport, createWebLock } from "./browser-ports";
@@ -25,32 +29,56 @@ export const CommandDriverContext = createContext<CommandDriver | null>(null);
 const NOTHING: DriverSnapshot = { records: [], notSent: false, paused: false };
 const noSubscription = () => () => undefined;
 
-export function CommandDriverProvider({ children }: { children: ReactNode }) {
+/**
+ * What a domain brings to the driver: its kinds, and a binding that runs while the driver is open
+ * (tells the driver which outcomes the domain's own reads included).
+ */
+export type CommandDomain = {
+  kinds: Record<string, CommandKind>;
+  bind(driver: CommandDriver): () => void;
+};
+
+export function CommandDriverProvider({
+  domains,
+  children,
+}: {
+  /** Made once per account, with the account's query client. */
+  domains: (client: QueryClient) => CommandDomain;
+  children: ReactNode;
+}) {
   const accountId = useAccountId();
   const client = useQueryClient();
-  const [driver] = useState(() =>
-    typeof window === "undefined"
-      ? null
-      : new CommandDriver({
-          journal: createIndexedDbJournal(accountId),
-          lock: createWebLock(accountId),
-          transport: createFetchTransport(accountId),
-          changes: createBroadcastChannel(accountId),
-          online: () => navigator.onLine,
-          kinds: createWorkKinds(client),
-          log: (payload) =>
-            appendTraceEvent({
-              timestamp: new Date().toISOString(),
-              level: "warn",
-              source: "client",
-              name: "command.unanswered",
-              payload,
-            }),
-        }),
-  );
+  const [{ driver, domain }] = useState(() => {
+    if (typeof window === "undefined") return { driver: null, domain: null };
+    const made = domains(client);
+    return {
+      domain: made,
+      driver: new CommandDriver({
+        journal: createIndexedDbJournal(accountId),
+        lock: createWebLock(accountId),
+        transport: createFetchTransport(accountId),
+        changes: createBroadcastChannel(accountId),
+        online: () => navigator.onLine,
+        routes: {
+          lookup: (id) => `/api/commands/${id}`,
+          resolve: (id) => `/api/commands/${id}/resolve`,
+        },
+        kinds: made.kinds,
+        log: (payload) =>
+          appendTraceEvent({
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            source: "client",
+            name: "command.unanswered",
+            payload,
+          }),
+      }),
+    };
+  });
   useEffect(() => {
-    if (!driver) return;
+    if (!driver || !domain) return;
     void driver.open();
+    const unbind = domain.bind(driver);
     const nudge = () => driver.nudge();
     const visible = () => {
       if (document.visibilityState !== "visible") return;
@@ -76,9 +104,10 @@ export function CommandDriverProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("freeze", suspend);
       document.removeEventListener("resume", resume);
       document.removeEventListener("visibilitychange", visible);
+      unbind();
       driver.stop();
     };
-  }, [driver]);
+  }, [driver, domain]);
   return <CommandDriverContext.Provider value={driver}>{children}</CommandDriverContext.Provider>;
 }
 

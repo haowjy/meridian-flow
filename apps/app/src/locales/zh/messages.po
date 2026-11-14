@@ -2349,8 +2349,16 @@ msgstr ""
 msgid "Couldn't run that skill"
 msgstr ""
 
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change on this device, so it wasn’t sent."
+msgstr ""
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
+msgstr ""
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t save this change to the Work"
 msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
@@ -4201,6 +4209,10 @@ msgstr ""
 
 #: src/components/app/NotSentYet.tsx
 msgid "Not sent"
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent, signed out"
 msgstr ""
 
 #. placeholder {0}: answer.text
@@ -6803,6 +6815,10 @@ msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr ""
 
 #: src/features/import/ImportProvider.tsx

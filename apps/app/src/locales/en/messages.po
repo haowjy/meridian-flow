@@ -2349,9 +2349,17 @@ msgstr "Couldn't retry. Another reply started first."
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
 
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change on this device, so it wasn’t sent."
+msgstr "Couldn’t save that change on this device, so it wasn’t sent."
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
 msgstr "Couldn’t save the goal. Try again."
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t save this change to the Work"
+msgstr "Couldn’t save this change to the Work"
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
@@ -4202,6 +4210,10 @@ msgstr "Not run before compaction"
 #: src/components/app/NotSentYet.tsx
 msgid "Not sent"
 msgstr "Not sent"
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent, signed out"
+msgstr "Not sent, signed out"
 
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
@@ -6804,6 +6816,10 @@ msgstr "You left checkout. No purchase was confirmed."
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr "You're out of usage. Your messages will send when you add more."
+
+#: src/components/app/NotSentYet.tsx
+msgid "You’re signed out of this account. Sign in again and the changes will be sent."
+msgstr "You’re signed out of this account. Sign in again and the changes will be sent."
 
 #: src/features/import/ImportProvider.tsx
 msgid "your files"
