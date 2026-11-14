@@ -358,6 +358,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     draftJournal: durableDraftJournalReadStore,
     model: runtime.model,
     codec: runtime.codec,
+    codecFor: runtime.codecFor,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     observability,

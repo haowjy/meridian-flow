@@ -11,7 +11,7 @@ import {
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
 import {
   createDraftAgentEditCoordinator,
@@ -37,6 +37,7 @@ type ThreadCoresInput = {
   draftJournal: DraftReplayJournalReads;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
+  codecFor(documentId: DocumentId): Promise<AgentEditCodecFactory>;
   links: DocumentLinkScopes;
   aheadRefs: AheadRefRegistrar;
   observability: AgentEditObservability;
@@ -76,6 +77,7 @@ export function createThreadCores(input: ThreadCoresInput, max = 128) {
       }),
       documentEdits: input.documentEdits,
       codec: input.codec,
+      codecFor: input.codecFor,
       model: input.model,
       defaultThreadId: threadId,
       ...input.observability,

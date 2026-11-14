@@ -337,6 +337,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftJournal: replayJournal,
     model: runtime.model,
     codec: runtime.codec,
+    codecFor: runtime.codecFor,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
     observability,
