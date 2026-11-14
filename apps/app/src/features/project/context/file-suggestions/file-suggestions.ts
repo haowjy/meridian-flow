@@ -1,7 +1,6 @@
-/** Pure normalized-catalog projection and ranking for file suggestion hosts. */
+/** Pure projection of the replay's trees and ranking for file suggestion hosts. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "@meridian/resource-replica";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
+import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 
 export type FileSuggestionKind = "file" | "dir";
 
@@ -14,55 +13,39 @@ export type FileSuggestion = {
   parents: readonly string[];
 };
 
-export function catalogFileSuggestions(views: readonly CatalogCacheView[]): FileSuggestion[] {
+export function treeFileSuggestions(
+  trees: readonly { scheme: ProjectContextTreeScheme; tree: TreeView }[],
+): FileSuggestion[] {
   const suggestions: FileSuggestion[] = [];
-  const seen = new Set<string>();
-  for (const view of views) {
-    const sources = new Map(
-      [...view.entries.values()].flatMap((entry) =>
-        entry.kind === "source" ? [[entry.entryId, entry] as const] : [],
-      ),
-    );
-    for (const entry of view.entries.values()) {
-      if (entry.kind === "source") {
-        const key = `${entry.scheme}:${entry.entryId}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          suggestions.push({
-            entryId: entry.entryId,
-            scheme: entry.scheme,
-            path: "/",
-            name: entry.name,
-            kind: "dir",
-            parents: [],
-          });
-        }
-        continue;
+  for (const { scheme, tree } of trees) {
+    suggestions.push({
+      entryId: tree.root.entryId,
+      scheme,
+      path: "/",
+      name: tree.root.name,
+      kind: "dir",
+      parents: [],
+    });
+    const walk = (parentId: string) => {
+      for (const entry of tree.children(parentId)) {
+        suggestions.push({
+          entryId: entry.kind === "dir" ? entry.entryId : entry.documentId,
+          scheme,
+          path: entry.path,
+          name: entry.name,
+          kind: entry.kind === "dir" ? "dir" : "file",
+          parents: entry.path.split("/").filter(Boolean).slice(0, -1),
+        });
+        if (entry.kind === "dir") walk(entry.entryId);
       }
-      if (entry.kind !== "folder" && entry.kind !== "file") continue;
-      const source = sources.get(entry.sourceId);
-      if (!source) continue;
-      const key = `${source.scheme}:${entry.entryId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      suggestions.push({
-        entryId: entry.entryId,
-        scheme: source.scheme,
-        path: `/${entry.path.join("/")}`,
-        name: entry.name,
-        kind: entry.kind === "folder" ? "dir" : "file",
-        parents: entry.path.slice(0, -1),
-      });
-    }
+    };
+    walk(tree.root.entryId);
   }
   return suggestions;
 }
 
-/** One catalog file as a suggestion, keyed by its document. */
-export function fileSuggestion(
-  scheme: ProjectContextTreeScheme,
-  file: CatalogFile,
-): FileSuggestion {
+/** One file as a suggestion, keyed by its document. */
+export function fileSuggestion(scheme: ProjectContextTreeScheme, file: TreeFile): FileSuggestion {
   return {
     entryId: file.documentId,
     scheme,

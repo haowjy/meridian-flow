@@ -1,14 +1,10 @@
 /**
- * The session-bound half of an open document: one resource lookup, one live
+ * The session-bound half of an open document: one local lookup, one live
  * room binding, one server-session capture. Main's and the side's
  * documents both render through it, so a document has exactly one way to reach
  * its `DocumentSession` and no view owns a second Y.Doc, room or capture.
  */
-import {
-  type ResourceProjectionSnapshot,
-  resourceForDocumentIdentity,
-} from "@meridian/resource-replica";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -21,7 +17,6 @@ import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 type OpenDocumentSessionProps = {
   projectId: string;
   documentId: string;
-  resourceHandle?: string;
   availabilityRevision: string;
   /** False for a document with no live room yet (draft-only until Apply promotes it). */
   liveRoom?: boolean;
@@ -49,7 +44,6 @@ export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
 function OpenDocumentSession({
   projectId,
   documentId,
-  resourceHandle,
   availabilityRevision,
   liveRoom = true,
   bindingOwner = "desktop-document-host",
@@ -59,47 +53,20 @@ function OpenDocumentSession({
   const resources = useAccountResourceReplica();
   const opener = useProjectDocumentLiveOpener();
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
-  const resourceIdentity = resourceHandle ?? documentId;
-  const resourceLookup = useMemo(
-    () =>
-      resourceHandle
-        ? ({ kind: "handle", handle: resourceHandle } as const)
-        : ({ kind: "document", documentId } as const),
-    [resourceIdentity],
-  );
   const [local, setLocal] = useState<{
-    identity: string;
     documentId: string;
     handle: ResourceContentHandle | null;
     phase: "probing" | "cached" | "server";
-  }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
+  }>({ documentId, handle: null, phase: "probing" });
   const installedHandle = useRef<ResourceContentHandle | null>(null);
-  // A descriptor can lose its resource handle while keeping its document (a review
-  // launch re-opens it without one). Same document, same cached session: keep
-  // painting it while the exact lookup re-probes, never drop to a skeleton.
-  const currentLocal =
-    local.identity === resourceIdentity
-      ? local
-      : {
-          identity: resourceIdentity,
-          documentId,
-          handle: local.documentId === documentId ? local.handle : null,
-          phase:
-            local.documentId === documentId && local.phase === "server"
-              ? ("server" as const)
-              : ("probing" as const),
-        };
+  const currentLocal = local;
   useEffect(() => {
     if (!liveRoom) return;
     const abort = new AbortController();
     const transferToken = opener.transferToken(documentId);
     setLocal((prior) => ({
-      identity: resourceIdentity,
       documentId,
-      handle:
-        prior.identity === resourceIdentity || prior.documentId === documentId
-          ? prior.handle
-          : null,
+      handle: prior.documentId === documentId ? prior.handle : null,
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {
@@ -110,44 +77,14 @@ function OpenDocumentSession({
             installedHandle.current = null;
           }
           setLocal((prior) => ({
-            identity: resourceIdentity,
             documentId,
-            handle:
-              !releaseCachedHandle && prior.identity === resourceIdentity ? prior.handle : null,
+            handle: !releaseCachedHandle && prior.documentId === documentId ? prior.handle : null,
             phase: "server",
           }));
         }
       };
       try {
-        let key: { handle: string } | null;
-        if (resourceLookup.kind === "handle") {
-          key = { handle: resourceLookup.handle };
-        } else {
-          const projection = resources.readProjectionState(projectId);
-          if (projection.kind === "failed") {
-            key = await resources.keyForDocument(projectId, resourceLookup.documentId);
-          } else {
-            let snapshot: ResourceProjectionSnapshot | null = null;
-            if (projection.kind === "ready") {
-              snapshot = projection.snapshot;
-            } else {
-              try {
-                snapshot = await resources.whenProjectionReady(projectId, abort.signal);
-              } catch {
-                if (abort.signal.aborted) return;
-              }
-            }
-            if (snapshot) {
-              const record = resourceForDocumentIdentity(
-                snapshot.records,
-                resourceLookup.documentId,
-              );
-              key = record ? { handle: record.resource.handle } : null;
-            } else {
-              key = await resources.keyForDocument(projectId, resourceLookup.documentId);
-            }
-          }
-        }
+        const key = await resources.keyForDocument(projectId, documentId);
         if (abort.signal.aborted) return;
         if (!key) {
           settleUnavailable();
@@ -175,7 +112,6 @@ function OpenDocumentSession({
         if (transferToken) opener.disposeTransfer(transferToken);
         installedHandle.current = result.handle;
         setLocal({
-          identity: resourceIdentity,
           documentId,
           handle: result.handle,
           phase: "cached",
@@ -188,16 +124,7 @@ function OpenDocumentSession({
     return () => {
       abort.abort();
     };
-  }, [
-    availabilityRevision,
-    documentId,
-    liveRoom,
-    opener,
-    projectId,
-    resourceIdentity,
-    resourceLookup,
-    resources,
-  ]);
+  }, [availabilityRevision, documentId, liveRoom, opener, projectId, resources]);
   useEffect(() => {
     const transferToken = opener.transferToken(documentId);
     return () => {
@@ -245,22 +172,4 @@ function OpenDocumentSession({
     onReopen,
     state.kind === "failed" && state.documentId === documentId ? state.reason : null,
   );
-}
-
-export function resourceAvailabilityRevision(
-  snapshot: ResourceProjectionSnapshot | null,
-  documentId: string,
-): string {
-  if (!snapshot) return "pending";
-  const resource = snapshot.records.find(
-    (record) => record.resource.identity.documentId === documentId,
-  )?.resource;
-  return JSON.stringify([
-    resource?.revision ?? null,
-    resource?.lifecycle.kind === "acknowledged"
-      ? resource.lifecycle.availabilityGeneration
-      : resource?.lifecycle.kind === "terminal"
-        ? resource.lifecycle.generation
-        : null,
-  ]);
 }

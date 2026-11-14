@@ -11,8 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -27,6 +26,7 @@ import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
@@ -34,7 +34,7 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
+import { ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
@@ -50,7 +50,7 @@ import { TREE_TABS, type TreeTab, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { useTrashDrop } from "./trash-drop";
 
-/** The catalogs the sidebar lists: the project's areas, and the picked named Work's Scratch. */
+/** The trees the sidebar lists: the project's areas, and the picked named Work's Scratch. */
 const TREE_SCHEMES = [...EDITOR_CONTEXT_SCHEMES, "scratch"] as const;
 type TreeKey = (typeof TREE_SCHEMES)[number];
 
@@ -79,7 +79,7 @@ type WriteSources = {
   ) => void;
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
-  catalogs: Record<TreeKey, CatalogState>;
+  catalogs: Record<TreeKey, TreeViewResult>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkBranchCommands;
@@ -108,9 +108,9 @@ type Source = {
   Body: ComponentType<{ drop: SourceDrop }>;
 };
 
-/** A drop at a catalog's top level; a drag resting on it accepted shows the source. */
+/** A drop at a tree's top level; a drag resting on it accepted shows the source. */
 function useRootDrop(scheme: TreeKey, reveal?: () => void): SourceDrop {
-  const rootId = useWriteSources().catalogs[scheme].catalog?.root.entryId ?? null;
+  const rootId = useWriteSources().catalogs[scheme].tree?.root.entryId ?? null;
   const target = useMemo(
     () => ({ scheme, catalogRootId: rootId ?? `${scheme}:loading`, folder: null }),
     [scheme, rootId],
@@ -320,16 +320,16 @@ export function SourcesBody({
     surface: "changes",
   });
 
-  // Only Scratch reads the Work; without a named one it has no catalog.
-  const catalogs = useContextCatalogViews(projectId, TREE_SCHEMES, {
+  // Only Scratch reads the Work; without a named one it has no tree.
+  const catalogs = useProjectTreeViews(projectId, TREE_SCHEMES, {
     workId: scratchWorkId,
     enabled: contextLive,
   });
   const areas = useMemo<MoveArea[]>(
     () =>
       TREE_SCHEMES.flatMap((scheme) => {
-        const catalog = catalogs[scheme].catalog;
-        return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
+        const tree = catalogs[scheme].tree;
+        return tree ? [{ scheme, owner: { workId: editorWorkId }, tree, accepts: true }] : [];
       }),
     [catalogs, editorWorkId],
   );
@@ -491,7 +491,7 @@ function FootSource({
 }) {
   const { label, icon, useDrop } = SOURCES[source];
   const { catalogs } = useWriteSources();
-  const count = source === "unfiled" ? (catalogs.unfiled.catalog?.files().length ?? 0) : 0;
+  const count = source === "unfiled" ? (catalogs.unfiled.tree?.files().length ?? 0) : 0;
   const drop = useDrop(onSelect);
   return (
     <DropRegion state={drop.dropState} flush>

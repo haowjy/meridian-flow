@@ -1,21 +1,19 @@
-/** Warm exact content resolves readable routes without waiting for remote address lookup. */
+/** A plain address resolves against the replay of the list: to a document, to "not there", or to "waiting for the list". */
 
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
+  CatalogFileEntry,
+  CatalogScope,
   DocumentAddressResult,
-  ProjectContextIdentityResolution,
+  ProjectContextAuthority,
 } from "@meridian/contracts/protocol";
-import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import { resolveIn, type TreeViewResult } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 
 type DocumentDestination = Extract<ProjectDestination, { kind: "document" }>;
-type AvailableDocumentAuthority = Extract<
-  ProjectContextIdentityResolution,
-  { kind: "available" }
->["authority"];
-
 export function canonicalDocumentPath(path: string): string {
   return path.replace(/^\/+/, "");
 }
@@ -65,68 +63,124 @@ function sameDocument(
   );
 }
 
-export function resolveLocalDocumentAddress(
-  projectId: string,
-  destination: DocumentDestination,
-  workId: string | null,
-  catalog: CatalogContextView | null,
-  /** The document the route is bound to: where the URL names a path the document has left, it is found by identity. */
-  boundDocumentId: string | null = null,
-  /** The lineage a Scratch address names, in place of a Work. */
-  rootThreadId: string | null = null,
-): { result: DocumentAddressResult; file: CatalogFile; bound: boolean } | undefined {
-  if (!catalog) return undefined;
-  const requested = `/${canonicalDocumentPath(destination.path)}`;
-  // The document the route is bound to is the route's document wherever its placement goes:
-  // an unconfirmed move of it or a folder above it, that move's rollback, or another document
-  // taking a path it holds or left. The path is its current label, and admission repairs the
-  // URL to it. It is already open, so it needs no exact local content, and the server's answer
-  // for a path in flux does not outrank it. A bound document the catalog does not list yet is
-  // never answered by the path's occupant (the shared route-document order).
-  const owner = resolveLiveRouteDocument({ path: requested, boundDocumentId, catalog });
-  if (owner.kind !== "live") return undefined;
-  const { file } = owner;
-  const bound = owner.byIdentity ? file : null;
-  // A document under the writer's own unconfirmed move is likewise a known server document.
-  // Editable or not: a kept `.md` card under its writer's unconfirmed rename is as known as a
-  // document, and the server, which has not seen the new path yet, must not reject its route.
-  if (file.kind !== "file" || !(file.localContent || file.placementPending || bound))
-    return undefined;
-  const entry = catalog.normalized.entries.get(file.documentId);
-  if (entry?.kind !== "file") return undefined;
-  let authority: AvailableDocumentAuthority;
-  if (entry.scope.kind === "project") authority = entry.scope;
-  else if (entry.scope.kind === "user") authority = entry.scope;
-  else if (entry.scope.kind === "lineage") {
-    const uri = parseUnifiedContextUri(file.uri);
-    if (
-      rootThreadId !== entry.scope.rootThreadId ||
-      !uri.ok ||
-      uri.value.authority.kind !== "lineage"
-    )
-      return undefined;
-    authority = {
+/** What the address found in the replay; `held`: the route's bound document is not in this source's tree. */
+export type ReplayAddress =
+  | { kind: "found"; result: DocumentAddressResult; file: TreeFile }
+  | { kind: "absent" | "waiting" | "held" };
+
+/** The authority of the document's source: what the address's owner and the file's URI say. */
+function authorityOf(
+  file: TreeFile,
+  input: {
+    projectId: string;
+    accountId: string;
+    workId: string | null;
+    rootThreadId: string | null;
+  },
+  scheme: string,
+): ProjectContextAuthority | null {
+  if (scheme === "user") return { kind: "user", userId: input.accountId };
+  if (scheme !== "scratch") return { kind: "project", projectId: input.projectId };
+  const uri = parseUnifiedContextUri(file.uri);
+  if (!uri.ok) return null;
+  if (input.rootThreadId) {
+    if (uri.value.authority.kind !== "lineage") return null;
+    return {
       kind: "lineage",
-      projectId,
-      rootThreadId: entry.scope.rootThreadId,
+      projectId: input.projectId,
+      rootThreadId: input.rootThreadId,
       rootThreadRef: uri.value.authority.rootThreadRef,
     };
-  } else {
-    // A chat's uploads are files, never editable text: they have no editor address.
-    if (entry.scope.kind === "chat") return undefined;
-    if (!workId || workId !== entry.scope.workId) return undefined;
-    const uri = parseUnifiedContextUri(file.uri);
-    if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;
-    authority = {
-      kind: "work",
-      projectId,
-      workId: entry.scope.workId,
-      workHandle: uri.value.authority.kind === "work" ? uri.value.authority.workHandle : null,
-    };
   }
+  if (!input.workId || uri.value.authority.kind === "contextual") return null;
   return {
+    kind: "work",
+    projectId: input.projectId,
+    workId: input.workId,
+    workHandle: uri.value.authority.kind === "work" ? uri.value.authority.workHandle : null,
+  };
+}
+
+function scopeOf(authority: ProjectContextAuthority): CatalogScope {
+  if (authority.kind === "chat")
+    return { kind: "chat", projectId: authority.projectId, chatId: authority.chatId };
+  if (authority.kind === "user") return { kind: "user", userId: authority.userId };
+  if (authority.kind === "work")
+    return { kind: "work", projectId: authority.projectId, workId: authority.workId };
+  if (authority.kind === "lineage")
+    return {
+      kind: "lineage",
+      projectId: authority.projectId,
+      rootThreadId: authority.rootThreadId,
+    };
+  return { kind: "project", projectId: authority.projectId };
+}
+
+/** The server's shape of the file, for the answers (canonical address, tab) built from one. */
+function entryOf(file: TreeFile, sourceId: string, authority: ProjectContextAuthority) {
+  const classification = file.editable
+    ? { editable: true, filetype: file.filetype, schemaType: file.schemaType }
+    : {
+        editable: false,
+        disposition: file.disposition,
+        fileType: file.fileType,
+        mimeType: file.mimeType ?? null,
+        ...(file.disposition === "custom" ? { filetype: file.filetype } : {}),
+      };
+  return {
+    kind: "file",
+    observationVersion: "0",
+    entryId: file.documentId,
+    scope: scopeOf(authority),
+    sourceId,
+    parentId: file.parentId,
+    name: file.name,
+    aliases: file.aliases ?? [],
+    path: file.path.split("/").filter(Boolean),
+    uri: file.uri,
+    provisionalName: file.provisionalName,
+    hasProperties: file.hasProperties,
+    extension: file.extension,
+    ...classification,
+  } as unknown as CatalogFileEntry;
+}
+
+/**
+ * Where a plain address is in the replay. The document the route is bound to is the route's
+ * document wherever its path went (the path is its current label, and admission repairs the URL
+ * to it); with no bound identity the path's occupant is. A bound document this source's tree
+ * lacks is never answered by the path's occupant: the route holds until it is found elsewhere or
+ * gone (`holdsBoundDocument`). An address that finds nothing is "not there" only once the list
+ * has synced.
+ */
+export function resolveReplayAddress(input: {
+  projectId: string;
+  accountId: string;
+  destination: DocumentDestination;
+  workId: string | null;
+  /** The lineage a Scratch address names, in place of a Work. */
+  rootThreadId: string | null;
+  tree: TreeViewResult;
+  boundDocumentId: string | null;
+}): ReplayAddress {
+  const requested = `/${canonicalDocumentPath(input.destination.path)}`;
+  const resolved = resolveIn(input.tree, (tree) => {
+    const owner = resolveLiveRouteDocument({
+      path: requested,
+      boundDocumentId: input.boundDocumentId,
+      tree,
+    });
+    return owner.kind === "live" ? owner.file : owner.kind === "pending" ? "held" : null;
+  });
+  if (resolved.kind !== "found") return resolved;
+  if (resolved.value === "held") return { kind: "held" };
+  const file = resolved.value;
+  const authority = authorityOf(file, input, input.destination.scheme);
+  // A chat's uploads are files, never editable text: they have no editor address.
+  if (!authority || input.destination.scheme === "uploads") return { kind: "absent" };
+  return {
+    kind: "found",
     file,
-    bound: bound !== null,
     result: {
       kind: "current",
       document: {
@@ -134,127 +188,24 @@ export function resolveLocalDocumentAddress(
         documentId: file.documentId,
         generation: "0",
         authority,
-        entry,
+        entry: entryOf(file, input.tree.tree?.root.entryId ?? "", authority),
       },
     },
-  };
+  } as ReplayAddress;
 }
 
 /**
- * The route waits when it is bound to a document the catalog does not list: an answer naming
- * another document (or none) is the path's occupant, never the route's document, and opening it
- * would add a stray tab. Reached by a tab clicked after a move this device missed.
+ * The review item's file when live has no view of the document: a page a draft created opens as
+ * review, never as a blank live editor.
  */
-export function holdsBoundDocument(
-  boundDocumentId: string | null,
-  catalog: CatalogContextView | null,
-  remote: DocumentAddressResult | undefined,
-): boolean {
-  return (
-    boundDocumentId !== null &&
-    resolveLiveRouteDocument({ path: "", boundDocumentId, catalog }).kind === "pending" &&
-    !(remote && remote.kind !== "unavailable" && remote.document.documentId === boundDocumentId)
-  );
-}
-
-/** Local content masks failure, but a successful server address owns canonical repair. */
-export function reconcileDocumentAddress(
-  local: ReturnType<typeof resolveLocalDocumentAddress>,
-  remote: DocumentAddressResult | undefined,
-  remoteView: "live" | "review" = "review",
-): {
-  result: DocumentAddressResult | undefined;
-  localFile: CatalogFile | undefined;
-  view: "live" | "review" | "local";
-} {
-  // The route's open document outranks whatever the server says about the path it holds or left.
-  if (local?.bound) return { result: local.result, localFile: local.file, view: "local" };
-  if (remote && remote.kind !== "unavailable") {
-    // While the writer's own move is unconfirmed, the path it gave this document is its
-    // address; a server alias for that path only remembers where the document used to be.
-    if (
-      remote.kind === "alias" &&
-      local?.file.placementPending &&
-      local.file.documentId === remote.document.documentId
-    )
-      return { result: local.result, localFile: local.file, view: "local" };
-    return {
-      result: remote,
-      view: remoteView,
-      localFile: local?.file.documentId === remote.document.documentId ? local.file : undefined,
-    };
-  }
-  if (local) return { result: local.result, localFile: local.file, view: "local" };
-  return { result: remote, localFile: undefined, view: remoteView };
-}
-
-/** Retain exact local ownership while successful server metadata owns the locator. */
-export function mergeLocalResourceState(
-  canonical: CatalogFile,
-  local: CatalogFile | undefined,
-): CatalogFile {
-  if (!local || local.documentId !== canonical.documentId) return canonical;
-  return {
-    ...canonical,
-    ...(local.resourceHandle ? { resourceHandle: local.resourceHandle } : {}),
-    ...(local.resourceState ? { resourceState: local.resourceState } : {}),
-    ...(local.resourceOrigin ? { resourceOrigin: local.resourceOrigin } : {}),
-    ...(local.localContent ? { localContent: local.localContent } : {}),
-    ...(local.namespaceFailure ? { namespaceFailure: local.namespaceFailure } : {}),
-    ...(local.namespaceRepairName ? { namespaceRepairName: local.namespaceRepairName } : {}),
-    ...(local.namespaceFailureAt === undefined
-      ? {}
-      : { namespaceFailureAt: local.namespaceFailureAt }),
-  };
-}
-
-/**
- * A successful server live lookup proves live membership, even if the catalog lags.
- * A review-view lookup may admit a hidden document; it proves no live membership.
- * The live manifest
- * lists what can open live. A document missing from it has no live
- * view: its pending new-document draft opens as review, and with no such draft
- * the address is unavailable. Never a blank live editor.
- *
- * Absence concludes "unavailable" only on an authoritative read: the catalog is
- * settled (a stored checkpoint stays "complete" while its refresh is in flight)
- * and the drafts were read. A read still in flight is `pending`; a read that
- * failed is `failed`, never evidence of absence and never an endless wait. A tab
- * already open live (an Apply promoted it) is never second-guessed by a lagging catalog.
- */
-export type GatedLiveView =
-  | { outcome: "ready"; result: DocumentAddressResult | undefined; draftOnly?: ReviewFileTarget }
-  | { outcome: "pending" | "failed"; result: undefined };
-
-export function gateLiveView(
+export function draftOnlyTarget(
   result: DocumentAddressResult | undefined,
-  manifest: {
-    catalog: CatalogContextView | null;
-    isComplete: boolean;
-    isFetching: boolean;
-    isError: boolean;
-  },
-  draftList: { status: string; files: ReviewFileTarget[] | null },
-  hasLiveTab: (documentId: string) => boolean,
-  admittedView: "live" | "review" | "local" = "local",
-): GatedLiveView {
-  if (!result || result.kind === "unavailable") return { outcome: "ready", result };
-  const documentId = result.document.documentId;
-  if (admittedView === "review") {
-    const file = draftList.files?.find((candidate) => candidate.documentId === documentId);
-    return { outcome: "ready", result, ...(file?.draftOnly ? { draftOnly: file } : {}) };
-  }
-  if (
-    admittedView === "live" ||
-    hasLiveTab(documentId) ||
-    manifest.catalog?.normalized.entries.has(documentId)
-  )
-    return { outcome: "ready", result };
-  if (manifest.isError || draftList.status === "error")
-    return { outcome: "failed", result: undefined };
-  const settled = manifest.isComplete && !manifest.isFetching;
-  if (!settled || draftList.status === "loading") return { outcome: "pending", result: undefined };
-  const group = draftList.files?.find((candidate) => candidate.documentId === documentId);
-  if (group?.draftOnly) return { outcome: "ready", result, draftOnly: group };
-  return { outcome: "ready", result: { kind: "unavailable" } };
+  view: "live" | "review",
+  draftList: { files: ReviewFileTarget[] | null },
+): ReviewFileTarget | undefined {
+  if (view !== "review" || !result || result.kind === "unavailable") return undefined;
+  const file = draftList.files?.find(
+    (candidate) => candidate.documentId === result.document.documentId,
+  );
+  return file?.draftOnly ? file : undefined;
 }

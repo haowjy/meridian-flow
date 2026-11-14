@@ -8,9 +8,9 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import type { OpenDocument } from "@/client/stores";
 import { role } from "@/components/ui/roles";
+import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { useOpenProjectDocument } from "../context/open-project-document";

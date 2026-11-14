@@ -82,7 +82,7 @@ export function IdentityPlacementField({
   const [destination, setDestination] = useState<{
     scheme: ProjectContextTreeScheme;
     folderPath: string;
-    parent?: import("@meridian/resource-replica").ParentRef;
+    parentId?: string;
   } | null>(null);
   const [value, setValue] = useState(
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
@@ -113,19 +113,24 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
-    if (!provisionalPlacement || document.kind !== "new") return;
+    if (!provisionalPlacement || document.kind === "viewer") return;
     const abort = new AbortController();
     let release: (() => void) | null = null;
     let unobserve: (() => void) | null = null;
     void resources
-      .openDocument(
-        projectId,
-        { handle: document.resourceHandle },
-        `identity-field:${document.resourceHandle}`,
-        abort.signal,
+      .keyForDocument(projectId, document.documentId)
+      .then((key) =>
+        key
+          ? resources.openDocument(
+              projectId,
+              key,
+              `identity-field:${document.documentId}`,
+              abort.signal,
+            )
+          : null,
       )
       .then((result) => {
-        if (result.kind !== "opened" || abort.signal.aborted) return;
+        if (result?.kind !== "opened" || abort.signal.aborted) return;
         release = result.handle.release;
         const session = result.handle.session;
         localSessionRef.current = session;
@@ -359,9 +364,7 @@ export function IdentityPlacementField({
               setDestination({
                 scheme: entry.scheme,
                 folderPath: entry.path,
-                ...(entry.path === "/"
-                  ? {}
-                  : { parent: { kind: "folder", folderId: entry.entryId } }),
+                ...(entry.path === "/" ? {} : { parentId: entry.entryId }),
               });
               inputRef.current?.focus();
               return;
