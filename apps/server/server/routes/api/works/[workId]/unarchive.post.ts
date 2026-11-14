@@ -5,7 +5,7 @@ import { requireWorkOwner, setWorkArchived } from "../../../../domains/projects/
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../lib/work-command.js";
+import { already, runWorkCommand } from "../../../../lib/work-command.js";
 import { throwWorkMutationHttpError } from "../../../../lib/work-http.js";
 
 export default defineEventHandler(async (event) => {
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
           workId,
           false,
         );
-        return { work: after, ...(!changed && { already: "active" }) };
+        return { work: after, ...(!changed && already("active")) };
       },
     );
     return serializeTransport(archived);

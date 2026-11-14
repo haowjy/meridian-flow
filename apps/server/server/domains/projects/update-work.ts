@@ -53,6 +53,10 @@ export async function updateWorkTransition(
   const result = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before) throw new WorkLifecycleUnavailableError(workId, "missing");
+    const lifecycle = workLifecycleState(before);
+    if (lifecycle !== "active") {
+      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.handle);
+    }
     if (
       before.isNoWork &&
       (normalized.name !== undefined ||

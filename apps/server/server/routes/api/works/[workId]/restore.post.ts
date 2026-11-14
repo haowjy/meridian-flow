@@ -5,7 +5,7 @@ import { requireWorkOwner, restoreWork } from "../../../../domains/projects/inde
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../lib/work-command.js";
+import { already, runWorkCommand } from "../../../../lib/work-command.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
         { works: app.workRepo, workContextNotices: app.workContextNotices },
         workId,
       );
-      return { work: after, ...(!changed && { already: "active" }) };
+      return { work: after, ...(!changed && already("active")) };
     },
   );
   if (!work) throw new Error("A restore answers its Work");

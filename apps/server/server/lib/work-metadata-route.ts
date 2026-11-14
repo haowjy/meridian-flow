@@ -7,6 +7,7 @@ import {
   requireWorkOwner,
   updateWorkTransition,
   type WorkContextNotices,
+  WorkLifecycleUnavailableError,
   WorkNameRequiredError,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -44,11 +45,32 @@ export async function updateWorkMetadataForWriter(
         workId: input.workId,
         body: { name: input.name, goal: input.goal },
       },
-      async () => ({
-        work: (
-          await updateWorkTransition(deps, input.workId, { name: input.name, goal: input.goal })
-        ).after,
-      }),
+      async () => {
+        try {
+          const { after } = await updateWorkTransition(deps, input.workId, {
+            name: input.name,
+            goal: input.goal,
+          });
+          return { work: after };
+        } catch (cause) {
+          // A closed Work takes no change: the command is done, the Work stays as it stands, and
+          // the result says why, so the client keeps the writer's typed words.
+          if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing") {
+            const work = await deps.works.findById(input.workId);
+            if (!work) throw cause;
+            return {
+              work,
+              settled: [
+                {
+                  rule: "returned",
+                  why: cause.state === "archived" ? "work_archived" : "work_deleted",
+                },
+              ],
+            };
+          }
+          throw cause;
+        }
+      },
     );
     return updated as Work;
   } catch (error) {

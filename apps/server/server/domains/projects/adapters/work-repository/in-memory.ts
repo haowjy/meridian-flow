@@ -172,6 +172,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
       if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.handle);
       if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) row.name = input.name;
       if (input.goal !== undefined) row.goal = input.goal;

@@ -48,8 +48,12 @@ export type CommandOutcome<R = unknown> =
 /**
  * Where a done command's result differs from what was asked. Absent when it landed as asked.
  * `already`: the asked state held before the command ran (a second press, or another tab did it).
+ * `returned`: the command would change a closed Work, so nothing changed; the result carries the
+ * Work as it stands and `why` names how it is closed.
  */
-export type Settlement = { rule: "already"; state: string };
+export type Settlement =
+  | { rule: "already"; state: string }
+  | { rule: "returned"; why: "work_archived" | "work_deleted" };
 
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =

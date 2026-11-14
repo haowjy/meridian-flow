@@ -23,10 +23,15 @@ function refusalOf(cause: unknown): WorkCommandResult | undefined {
     : undefined;
 }
 
+/** The settlement a second press stores: the lifecycle state the Work was already in. */
+export function already(state: string): { settled: Settlement[] } {
+  return { settled: [{ rule: "already", state }] };
+}
+
 /**
  * Runs `effect` as the Work command `kind`, in one transaction that starts with the claim.
  * Answers the Work the command made (none for a delete) or throws the domain error that refused
- * it. The effect names `already` (the lifecycle state) when that state held before it ran.
+ * it. The effect lists what settled differently from the ask.
  * `body` is the request's body without its `commandId`: a resend must carry the same one.
  */
 export async function runWorkCommand(
@@ -39,18 +44,14 @@ export async function runWorkCommand(
     workId?: string;
     body: unknown;
   },
-  effect: () => Promise<{ work?: Work; already?: string }>,
+  effect: () => Promise<{ work?: Work; settled?: Settlement[] }>,
 ): Promise<Work | undefined> {
   const result = await runRouteCommand<WorkCommandResult>(
     store,
     { ...input, selectors: { workId: input.workId ?? null } },
     async () => {
-      const { work, already } = await effect();
-      return {
-        status: "done",
-        ...(work && { work }),
-        ...(already && { settled: [{ rule: "already", state: already }] }),
-      };
+      const { work, settled } = await effect();
+      return { status: "done", ...(work && { work }), ...(settled && { settled }) };
     },
     refusalOf,
   );

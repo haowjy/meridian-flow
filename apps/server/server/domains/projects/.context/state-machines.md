@@ -38,8 +38,11 @@ stateDiagram-v2
 - **A second press answers `already`.** Archive of an archived Work, unarchive of a live one,
   delete of a deleted one and restore of a live one store `done` with the Work and
   `settled: [{ rule: "already", state }]` (`lib/work-command.ts`).
-- **A rename or goal lands on a Work wherever it is filed**, archived or in Trash; the Work
-  stays where it is. Names may repeat (no unique index): a Work is told apart by its id and
+- **What changes a closed Work itself bounces.** A writer's rename or goal on an archived or
+  deleted Work stores `done`, changes nothing, and carries the Work as it stands with
+  `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" }]`, so the client keeps
+  the typed words. The model's Work tool answers the same case with its `work_archived` error.
+  Names may repeat (no unique index): a Work is told apart by its id and
   handle, and a name that matches two Works resolves to neither in the model's lookups
   (`context/owner-lookup.ts`), which answer with both handles.
 - **Branches and drafts outlive the delete** until purge, so restore finds them.
@@ -48,5 +51,5 @@ stateDiagram-v2
   (`WorkLockedError`, answered 400 `work_locked`).
 - A caller that finds the Work unavailable gets `WorkLifecycleUnavailableError` with
   `missing`, `deleted` or `archived` (`domain/work-lifecycle.ts`): the lock layer's draft writes
-  and archive of a deleted Work. A Work update never raises it. `missing` is a lookup result,
+  and archive of a deleted Work; the writer's update catches it into the `returned` result. `missing` is a lookup result,
   never a stored state.

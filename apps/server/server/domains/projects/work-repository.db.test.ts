@@ -140,54 +140,45 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await works.findById(work.id)).toMatchObject({ archivedAt: null, deletedAt: null });
     });
 
-    it("returns coded PATCH refusals for archived and deleted Works", async () => {
+    it("answers a PATCH on an archived or deleted Work with the Work unchanged", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "PATCH lifecycle" });
+      const commands = createCommandStore(db);
       const deps = {
-        commands: createCommandStore(db),
+        commands,
         works,
         projects,
         workContextNotices: { async workChanged() {} },
       };
-      const codeFrom = async (operation: Promise<unknown>) => {
-        try {
-          await operation;
-          throw new Error("Expected Work metadata refusal");
-        } catch (error) {
-          const data = (error as { data?: Record<string, unknown> }).data;
-          const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY] as
-            | { error?: { code?: string } }
-            | undefined;
-          return {
-            status: (error as { statusCode?: number }).statusCode,
-            code: envelope?.error?.code,
-          };
-        }
+      const patch = async (commandId: string) => {
+        const answered = await updateWorkMetadataForWriter(deps, {
+          commandId: commandId as CommandId,
+          workId: work.id,
+          userId: USER_ID,
+          name: "Typed while closed",
+          goal: "Blocked",
+        });
+        const stored = await commands.lookup({
+          commandId: commandId as CommandId,
+          accountId: USER_ID,
+        });
+        return {
+          name: answered.name,
+          settled: stored.kind === "stored" ? (stored.outcome as any).result.settled : null,
+        };
       };
 
       await works.archive(work.id);
-      await expect(
-        codeFrom(
-          updateWorkMetadataForWriter(deps, {
-            commandId: randomUUID() as CommandId,
-            workId: work.id,
-            userId: USER_ID,
-            goal: "Blocked",
-          }),
-        ),
-      ).resolves.toEqual({ status: 409, code: "work_archived" });
+      await expect(patch(randomUUID())).resolves.toEqual({
+        name: "PATCH lifecycle",
+        settled: [{ rule: "returned", why: "work_archived" }],
+      });
 
       await works.unarchive(work.id);
       await works.softDelete(work.id);
-      await expect(
-        codeFrom(
-          updateWorkMetadataForWriter(deps, {
-            commandId: randomUUID() as CommandId,
-            workId: work.id,
-            userId: USER_ID,
-            goal: "Gone",
-          }),
-        ),
-      ).resolves.toEqual({ status: 404, code: "work_not_found" });
+      await expect(patch(randomUUID())).resolves.toEqual({
+        name: "PATCH lifecycle",
+        settled: [{ rule: "returned", why: "work_deleted" }],
+      });
     });
 
     it("settles a Work command's id under a racing resolve, a retried delete and a resend", async () => {

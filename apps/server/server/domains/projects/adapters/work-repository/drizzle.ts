@@ -119,11 +119,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     return row ? mapWork(row) : null;
   }
 
-  /** An update lands on a Work wherever it is filed; archive and unarchive need it out of Trash. */
-  async function requireUnlocked(id: WorkId, opts?: { inTrash?: "allowed" }): Promise<Work> {
+  async function requireUnlocked(id: WorkId): Promise<Work> {
     const existing = await findWorkById(id);
     if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
-    if (existing.deletedAt && opts?.inTrash !== "allowed") {
+    if (existing.deletedAt) {
       throw new WorkLifecycleUnavailableError(id, "deleted", existing.handle);
     }
     if (existing.isNoWork) throw new WorkLockedError();
@@ -136,7 +135,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const [row] = await currentDrizzleDb(db)
         .update(works)
         .set({ ...patch, entityRevision: sql`${works.entityRevision} + 1`, updatedAt: new Date() })
-        .where(eq(works.id, id))
+        .where(and(eq(works.id, id), isNull(works.deletedAt)))
         .returning();
       if (!row) throw new Error(`Work not found: ${id}`);
       return mapWork(row);
@@ -256,7 +255,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return { authorityRevision: project?.revision ?? "0" };
     },
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
-      await requireUnlocked(id, { inTrash: "allowed" });
+      await requireUnlocked(id);
       const patch: Partial<typeof works.$inferInsert> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.goal !== undefined) patch.goal = input.goal;
