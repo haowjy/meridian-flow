@@ -12,14 +12,19 @@ accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the brow
 `DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
 its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired`,
 `permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,
-`lib/work-receipt-reversal.ts`) are a second `reverse_turn` command once that one committed,
-under an id derived from the click's, on the documents' outcome: their Work and thread locks
-never wait under a document key. Its stored outcome is the click's answer. A resend under the id
-answers the stored outcomes and changes nothing; a kill between the two runs the second on the
-resend; another request under the id is `command_conflict` (409). The receipts the reversal
-writes carry `document_edits.command_id`. A miss the server retries (a moved capture, a deadlock)
-rolls back past the claim; exhausting the inverse's attempts is `ReversalConflictError` and
-stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
+`lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
+both halves or neither; its one stored outcome answers a resend, and another request under the id
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`.
+A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
+command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
+and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each
+document's own Work) and the service adds the receipts' Works; `lockWorkThreadTrees` takes the chat's
+thread, the Works' threads (parents first), the Works by id, the lineages and, when receipts
+exist, the project's tree lists. The commit scope compares the Works it would lock with that set
+before taking any lock; a Work outside it throws `ReversalOwnersMoved`, which rolls back past the
+claim and reruns the command with the larger set (four attempts). A miss the server retries (a
+moved capture, a deadlock) rolls back past the claim; exhausting the inverse's attempts is
+`ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use

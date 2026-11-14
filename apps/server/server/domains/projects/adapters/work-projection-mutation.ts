@@ -84,6 +84,11 @@ export type WorkProjectionMutation = {
    * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
+  /**
+   * The Works and lineages `lockWorks` would lock for the set, read with no lock: what a caller
+   * that must hold them earlier (in the order of another lock family) declares.
+   */
+  ownersOf(set: WorkWriteSet): Promise<OwnerLocks>;
   /** `lockWorks`, then `operation`, in one transaction (its own when the caller has none). */
   mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
   /**
@@ -237,21 +242,10 @@ export function createWorkProjectionMutation(input: {
       .where(and(inArray(works.id, workIds), ne(works.pendingDocumentCount, count)));
   }
 
-  async function lockWriteSet(
-    set: WorkWriteSet,
-    options: WorkWriteOptions = {},
-  ): Promise<LockedWorkWriteSet> {
-    if (!isInDrizzleTransaction()) {
-      throw new Error("Work locks are held by the caller's transaction; none is open");
-    }
+  /** The owners a set names, with the drafts it resolved (`lockWriteSet` reads them again). */
+  async function resolveOwners(set: WorkWriteSet) {
     const draftIds = new Set(set.drafts ?? []);
     const drafts = await branchDraftRefs(input.db, [...draftIds]);
-    if (options.requireActive) {
-      if (drafts.length !== draftIds.size) throw new Error("Draft not found");
-      // A draft whose branch has no owner is frozen, as a missing Work is.
-      const frozen = drafts.find((row) => row.workId === null && row.rootThreadId === null);
-      if (frozen) throw new WorkLifecycleUnavailableError(frozen.branchId, "missing");
-    }
     const branchIds = [...new Set(set.branches ?? [])];
     // A branch's owner is its origin columns, as the pending projection maps a branch.
     const branchOwners =
@@ -274,6 +268,23 @@ export function createWorkProjectionMutation(input: {
         ...owned.flatMap(({ rootThreadId }) => (rootThreadId ? [rootThreadId] : [])),
       ]),
     ].sort();
+    return { draftIds, drafts, workIds, rootIds };
+  }
+
+  async function lockWriteSet(
+    set: WorkWriteSet,
+    options: WorkWriteOptions = {},
+  ): Promise<LockedWorkWriteSet> {
+    if (!isInDrizzleTransaction()) {
+      throw new Error("Work locks are held by the caller's transaction; none is open");
+    }
+    const { draftIds, drafts, workIds, rootIds } = await resolveOwners(set);
+    if (options.requireActive) {
+      if (drafts.length !== draftIds.size) throw new Error("Draft not found");
+      // A draft whose branch has no owner is frozen, as a missing Work is.
+      const frozen = drafts.find((row) => row.workId === null && row.rootThreadId === null);
+      if (frozen) throw new WorkLifecycleUnavailableError(frozen.branchId, "missing");
+    }
     const db = currentDrizzleDb(input.db);
     const locked = options.seam
       ? await lockSeamWorks(db, workIds, rootIds)
@@ -317,6 +328,10 @@ export function createWorkProjectionMutation(input: {
       });
     },
     lockWorks: lockWriteSet,
+    async ownersOf(set) {
+      const { workIds, rootIds } = await resolveOwners(set);
+      return { workIds, lineageRootIds: rootIds };
+    },
     recountAfterCommit({ workIds, lineageRootIds }) {
       if (!workIds.length && !lineageRootIds.length) return;
       const state = worksNoticeState();

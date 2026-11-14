@@ -7,7 +7,14 @@ import type {
   ReversalOutcome,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
@@ -285,11 +292,14 @@ export type ReverseThreadContextInput = {
   /** Minted by the browser for each click; a resend under it answers the stored outcome. */
   commandId: CommandId;
   /**
-   * The click's second part (the Work receipts a turn made), on the documents' outcome: its
-   * own command, under an id derived from `commandId`, once the documents' committed. Its
-   * stored outcome is the click's answer.
+   * The click's second part (the Work receipts a turn made): run on the documents' outcome in
+   * the same command, so the click holds both parts or neither. The Works its receipts name
+   * are locked with the documents', before any document lock.
    */
-  alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
+  alongside?: {
+    workIds: readonly WorkId[];
+    run(outcome: ReversalOutcome): Promise<ReversalOutcome>;
+  };
   /** How a move between lists is taken back; without it, such a step is refused. */
   moveBackAcrossLists?: MoveBackAcrossLists;
 };

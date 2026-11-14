@@ -22,7 +22,7 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { branchOwnerSql } from "../../../shared/draft-owner.js";
+import { branchOwnerSql, mergeOwnerLocks } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -35,6 +35,7 @@ import {
   type FileAccess,
   FileEditRefusedError,
   type FileGrant,
+  grantOwnerLocks,
   isFileAccessDenied,
   runEditAdmission,
 } from "../../file-policy/index.js";
@@ -50,7 +51,7 @@ import { createInverseDestinationResolver } from "../domain/inverse-draft-destin
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
-import { ReversalConflictError } from "../domain/reversal-conflict.js";
+import { ReversalConflictError, ReversalOwnersMoved } from "../domain/reversal-conflict.js";
 import {
   createTurnInverseService,
   type InverseDocument,
@@ -83,7 +84,7 @@ type Dependencies = {
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** A revert changes pending membership, so it reconciles the Works' counts through it. */
-  workProjection: Pick<WorkProjectionMutation, "mutate">;
+  workProjection: Pick<WorkProjectionMutation, "mutate" | "ownersOf">;
   /** A removed document's text is not reversed; its record words the refusal. */
   removals: DocumentRemovals;
   /** The tree half of a card's reversal: the reply's tree receipts, in the lists that hold them. */
@@ -425,6 +426,36 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
+    async ownersOf(query, direction, userId) {
+      let captured: InverseCapture;
+      try {
+        captured = await capture(query);
+      } catch (cause) {
+        if (cause instanceof InverseAttemptMiss) throw new ReversalOwnersMoved(mergeOwnerLocks());
+        throw cause;
+      }
+      const { ids, draftIds } = captured;
+      destroyDocuments(captured.documents);
+      const tree = await treePlanOf(query, direction);
+      let owners = await input.workProjection.ownersOf({
+        drafts: draftIds,
+        branches: tree.branches,
+      });
+      // Each document's own Work, which its write grant locks with the branch's.
+      const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
+      if (principal)
+        for (const documentId of new Set([...ids, ...tree.documents.map((d) => d.documentId)])) {
+          const grant = await input.fileAccess.authorizeAt(
+            principal,
+            { kind: "document", documentId: documentId as DocumentId },
+            { kind: "live" },
+            "edit",
+          );
+          if (!isFileAccessDenied(grant))
+            owners = mergeOwnerLocks(owners, grantOwnerLocks(grant.facts));
+        }
+      return owners;
+    },
     async treeStepCount(query, direction) {
       return (await treePlanOf(query, direction)).steps.length;
     },
@@ -466,6 +497,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query, direction);
       const grants = await admitInverse(sequence, query, userId, tree.documents);
       const works = { drafts: attempt.draftIds, branches: tree.branches };
+      if (query.declared) {
+        // What the scope below locks; a Work outside the caller's locks is past their order.
+        const effect = mergeOwnerLocks(
+          await input.workProjection.ownersOf(works),
+          ...(grants ?? []).map((grant) => grantOwnerLocks(grant.facts)),
+        );
+        const declared = query.declared;
+        if (
+          effect.workIds.some((id) => !declared.workIds.includes(id)) ||
+          effect.lineageRootIds.some((id) => !declared.lineageRootIds.includes(id))
+        )
+          throw new ReversalOwnersMoved(effect);
+      }
       let treeReversed = 0;
       const operation = async () => {
         // What each plan was computed against is still what the documents hold.

@@ -54,8 +54,12 @@ type PlannedStep = {
   message?: string;
 };
 
-/** A chat card's Undo or Redo: the turn's documents, then its Work receipts. */
-export function reverseTurnCard(
+/**
+ * A chat card's Undo or Redo: the turn's documents, then its Work receipts, in one command.
+ * The Works the receipts name are read first (a turn's blocks never change), so the command
+ * locks them with the documents' before any document lock.
+ */
+export async function reverseTurnCard(
   app: Pick<
     AppServices,
     | "documentSync"
@@ -74,7 +78,15 @@ export function reverseTurnCard(
     commandId: CommandId;
   },
 ): Promise<ReversalOutcome> {
-  const alongside = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
+  const receiptWorkIds = await workReceiptWorkIds(
+    {
+      blocks: app.threadRepos.blocks,
+      turns: app.threadRepos.turns,
+      threads: app.threadRepos.threads,
+    },
+    input,
+  );
+  const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
     const canReverseWorkReceipts =
       outcome.status === "reversed" ||
       outcome.status === "reconciled" ||
@@ -128,9 +140,17 @@ export function reverseTurnCard(
   };
   return app.documentSync.reverseThreadContext({
     ...input,
-    alongside,
+    alongside: { workIds: receiptWorkIds, run: alongsideRun },
     moveBackAcrossLists: moveBack,
   });
+}
+
+async function workReceiptWorkIds(
+  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "threads">,
+  input: { threadId: ThreadId; turnId: TurnId },
+): Promise<WorkId[]> {
+  const context = await reversalContext(deps, input);
+  return context ? [...new Set(context.receipts.map(({ workId }) => workId))] : [];
 }
 
 export function combineWorkReversalOutcome(

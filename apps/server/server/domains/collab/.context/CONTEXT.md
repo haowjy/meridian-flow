@@ -506,8 +506,11 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 
 1. Live `withDocument` mutexes (sorted), before any transaction.
 2. In the database, the command's claim row (`runCommand`).
-3. Work rows (only through the Works mutation boundary, in ID order, with the lifecycle and
-   grant locks `lockSeamWorks` takes), then the branch row.
+3. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
+   reverses a card's Work receipts (`lockWorkThreadTrees`: all the threads, then all the Works
+   and lineages, so several Works never interleave their phases). Then Work rows (only through
+   the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
+   takes), then the branch row.
 4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
@@ -547,9 +550,9 @@ transaction is open throws (`assertOutsideCommandTransaction`): a wait on either
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction
 reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's
-transaction. A card Undo's Work receipts are a second command
-after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
-document key.
+transaction. A card Undo's Work receipts run in the same command as its documents
+(`reversal.md`): the command declares every Work and thread it will lock and takes them before
+its first document key, and reruns when its commit finds a Work it did not declare.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. Background timers remain armed across failed
 pulls; only a committed run with no newer work may clear them.

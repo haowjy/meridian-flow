@@ -32,6 +32,7 @@ import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
+import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
@@ -433,6 +434,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     turnInverse,
+    lockOwners: createDrizzleReversalLocks(db),
     resolveDocumentUri,
     commands: createDrizzleDocumentCommands(db),
   });
@@ -522,6 +524,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const collab = {
     agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
+    reversalOwners: turnInverse.reversalOwners,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     bindMarkdown: runtime.linkBinder.bindMarkdown,

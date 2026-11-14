@@ -14,6 +14,9 @@ import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { discardedTree } from "../domains/context/tree/trash-entries.js";
+import { runWorkLifecycleCommand } from "../domains/projects/index.js";
+import { setTestHook } from "../shared/test-hooks.js";
+import { race } from "../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
 import { reverseTurnCard } from "./work-receipt-reversal.js";
 
@@ -843,6 +846,211 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const redone = await call("write", { command: "redo", path: "ch1" });
         expect(redone.isError, text(redone)).toBeFalsy();
         expect(await ls(call, "user://")).toContain("mine");
+      });
+    });
+
+    describe("a card Undo of a turn that made a Work and edited a document", () => {
+      const NEW_WORK_ID = "00000000-0000-4000-8000-000000000d20";
+      const NEW_WORK_THREAD = "00000000-0000-4000-8000-000000000d21";
+
+      /** The turn made Work "Fresh" (its receipt) and replaced the text of ch1. */
+      async function madeWorkAndEdited() {
+        const script = await start();
+        await db.insert(schema.works).values({
+          id: NEW_WORK_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Fresh",
+          handle: "w3",
+        });
+        await db.insert(schema.threads).values({
+          rootThreadId: NEW_WORK_THREAD,
+          id: NEW_WORK_THREAD,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Fresh",
+          kind: "primary",
+          status: "idle",
+          aiWriteMode: "direct",
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: NEW_WORK_THREAD,
+          workId: NEW_WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        await db.insert(schema.turnBlocks).values({
+          id: randomUUID(),
+          turnId: THREAD.turnId,
+          blockType: "custom",
+          sequence: 1,
+          content: {
+            metadata: {
+              workReceipt: {
+                operation: "create",
+                changed: true,
+                workId: NEW_WORK_ID,
+                workName: "Fresh",
+                before: null,
+                after: { name: "Fresh", goal: null, status: null, archived: false },
+                inverse: { command: "delete", workId: NEW_WORK_ID },
+              },
+            },
+          },
+        } as never);
+        await script.reply(async (edit) => {
+          await edit("write", { command: "replace", path: "ch1", find: "one", content: "ONE" });
+        });
+        return script;
+      }
+      const card = (
+        script: Awaited<ReturnType<typeof start>>,
+        direction: "undo" | "redo",
+        commandId = randomUUID(),
+        thread = THREAD,
+      ) =>
+        reverseTurnCard(
+          {
+            ...script.runtime.ports,
+            workContextNotices: { workChanged: async () => {} },
+            stopThreads: async () => {},
+          },
+          {
+            threadId: thread.threadId as never,
+            turnId: thread.turnId as never,
+            userId: USER_ID as never,
+            direction,
+            commandId: commandId as never,
+          },
+        );
+      const workDeleted = async () =>
+        (
+          await db
+            .select({ deletedAt: schema.works.deletedAt })
+            .from(schema.works)
+            .where(eq(schema.works.id, NEW_WORK_ID))
+        )[0]?.deletedAt != null;
+      const ch1 = async (script: Awaited<ReturnType<typeof start>>) => script.text("ch1", "live");
+      const claims = async () =>
+        (await db.select().from(schema.commands).where(eq(schema.commands.kind, "reverse_turn")))
+          .length;
+
+      it("takes back the document and the Work in one command, and a resend answers it", async () => {
+        const script = await madeWorkAndEdited();
+        expect(await ch1(script)).toContain("ONE");
+        const id = randomUUID();
+        const undone = await card(script, "undo", id);
+        expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
+          expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
+        ]);
+        expect(undone.acceptedParts).toBeGreaterThan(0);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+        expect(await claims()).toBe(1);
+        // The same click again: the stored answer, nothing done twice.
+        expect(await card(script, "undo", id)).toEqual(undone);
+        expect(await claims()).toBe(1);
+        const redone = await card(script, "redo");
+        expect(redone.workReceipts).toEqual([
+          expect.objectContaining({ workId: NEW_WORK_ID, status: "redone" }),
+        ]);
+        expect(await workDeleted()).toBe(false);
+        expect(await ch1(script)).toContain("ONE");
+      });
+
+      it("a crash after the documents and before the commit leaves neither half", async () => {
+        const script = await madeWorkAndEdited();
+        const id = randomUUID();
+        const remove = setTestHook("command.beforeCommit", async () => {
+          throw new Error("crash between the halves");
+        });
+        try {
+          await expect(card(script, "undo", id)).rejects.toThrow("crash between the halves");
+        } finally {
+          remove();
+        }
+        expect(await workDeleted()).toBe(false);
+        expect(await ch1(script)).toContain("ONE");
+        expect(await claims()).toBe(0);
+        // The id is free: the same click, sent again, takes effect once.
+        const undone = await card(script, "undo", id);
+        expect(undone.workReceipts?.[0]?.status).toBe("reversed");
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("against a Work delete of the same Work: one waits for the other, neither deadlocks", async () => {
+        const script = await madeWorkAndEdited();
+        const { app } = script.runtime;
+        const raced = await race<"undo" | "delete">(
+          db,
+          {
+            undo: () => card(script, "undo"),
+            delete: () =>
+              runWorkLifecycleCommand(app.works.transaction, () =>
+                app.works.softDelete(NEW_WORK_ID as never, async () => {}),
+              ),
+          },
+          "undo",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.undo).toMatchObject({ ok: true });
+        expect(raced.by.delete).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("against a second reversal in the same chat: the second reads what the first left", async () => {
+        const script = await madeWorkAndEdited();
+        const raced = await race<"first" | "second">(
+          db,
+          { first: () => card(script, "undo"), second: () => card(script, "undo") },
+          "first",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.first).toMatchObject({ ok: true });
+        expect(raced.by.second).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await claims()).toBe(2);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("a draft that joins the document between declare and commit reruns the command with its Work", async () => {
+        const script = await madeWorkAndEdited();
+        const other = runtimes.script(script.runtime, OTHER);
+        let claimed = 0;
+        const count = setTestHook("inverse.beforeCommitScope", async () => {
+          claimed += 1;
+        });
+        try {
+          const raced = await race<"undo" | "draft">(
+            db,
+            {
+              undo: () => card(script, "undo"),
+              draft: () =>
+                other.reply(async (edit) => {
+                  await edit("write", {
+                    command: "replace",
+                    path: "ch1",
+                    find: "Chapter",
+                    content: "Part",
+                  });
+                }),
+            },
+            "undo",
+            "inverse.afterCaptureRead",
+          );
+          expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+          expect(raced.by.draft).toMatchObject({ ok: true });
+        } finally {
+          count();
+        }
+        // The first attempt declared no draft Work; its commit found one, and the command ran again.
+        expect(claimed).toBe(2);
+        expect(await claims()).toBe(1);
+        expect(await workDeleted()).toBe(true);
       });
     });
   });

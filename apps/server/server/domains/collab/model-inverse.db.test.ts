@@ -21,6 +21,7 @@ import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
+import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
@@ -49,7 +50,11 @@ describe("model document stack", () => {
       const resolveDocumentUri = async (documentId: string) =>
         documentId === ALPHA_ID ? "manuscript/alpha.md" : null;
       const card = createTurnReversalService({
-        turnInverse: { reverseTurn: view.collab.reverseTurn },
+        turnInverse: {
+          reverseTurn: view.collab.reverseTurn,
+          reversalOwners: view.collab.reversalOwners,
+        },
+        lockOwners: createDrizzleReversalLocks(db),
         resolveDocumentUri,
         listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
         commands: createDrizzleDocumentCommands(db),

@@ -22,6 +22,7 @@ import type {
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
@@ -57,6 +58,11 @@ export type TurnInverseQuery = {
   principal?: Principal;
   /** A card's way of taking back a move between lists (`MoveBackAcrossLists`). */
   moveBackAcrossLists?: import("../contracts.js").MoveBackAcrossLists;
+  /**
+   * The owners the caller already locked (`ownersOf`): a commit that would lock any other
+   * throws `ReversalOwnersMoved` before taking a lock.
+   */
+  declared?: OwnerLocks;
 };
 export type InverseDocument = {
   documentId: DocumentId;
@@ -93,6 +99,17 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /**
+   * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
+   * documents' drafts, the reply's tree receipts and the grants of every document it writes.
+   * Read with no lock, for the caller to lock them first and declare them in the query.
+   * Throws `ReversalOwnersMoved` when the documents move under the read.
+   */
+  ownersOf(
+    query: TurnInverseQuery,
+    direction: "undo" | "redo",
+    userId: UserId | undefined,
+  ): Promise<OwnerLocks>;
   /** How many tree receipts of the reply this card reversal would take back. */
   treeStepCount(query: TurnInverseQuery, direction: "undo" | "redo"): Promise<number>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
@@ -319,6 +336,19 @@ export function createTurnInverseService(store: TurnInverseStore) {
           skips: undo.flatMap((plan) => plan.skips),
         };
       });
+    },
+    /** What a card reversal of this query locks, for its caller to hold first (`ownersOf`). */
+    reversalOwners(
+      query: TurnInverseQuery & {
+        direction: "undo" | "redo";
+        actor: { type: "user"; userId: string } | { type: "agent" };
+      },
+    ): Promise<OwnerLocks> {
+      return store.ownersOf(
+        query,
+        query.direction,
+        query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
+      );
     },
     async reverseTurn(
       query: TurnInverseQuery & {
