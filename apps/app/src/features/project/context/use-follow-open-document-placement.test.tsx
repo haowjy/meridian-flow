@@ -2,8 +2,8 @@
 /**
  * The route follows an open document's placement only while the selection is bound to it.
  *
- * Pins implementation decisions: `projectResourceDocument` is mocked to place the document at a new
- * path, since building a resource replica snapshot adds nothing to these cases.
+ * Pins implementation decisions: `useProjectTrees` is mocked to place the document at a new path,
+ * since building a list's replay adds nothing to these cases.
  */
 import "fake-indexeddb/auto";
 
@@ -29,14 +29,32 @@ const tab: OpenDocument = {
   filetype: "markdown",
   schemaType: "document",
 };
-const moved = { ...tab, path: "/new.md", name: "new.md" };
 
-vi.mock("./open-document-from-file", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./open-document-from-file")>()),
-  projectResourceDocument: () => ({
-    kind: "projected",
-    resourceHandle: "handle-a",
-    document: moved,
+vi.mock("@/client/query/useProjectTrees", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/query/useProjectTrees")>()),
+  useProjectTrees: () => ({
+    isComplete: true,
+    isError: false,
+    sources: [],
+    tree: () => null,
+    find: () => ({
+      source: { id: "s", scheme: "manuscript", name: "Manuscript", owner: { kind: "project" } },
+      file: {
+        kind: "file",
+        entryId: "doc-a",
+        parentId: "s",
+        documentId: "doc-a",
+        name: "new.md",
+        extension: "md",
+        path: "/new.md",
+        uri: "manuscript:///new.md",
+        provisionalName: false,
+        hasProperties: false,
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
+    }),
   }),
 }));
 
