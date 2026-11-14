@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../account-feature-context";
 
 export type EntryActions = {
@@ -19,16 +20,17 @@ export function useEntryActions(projectId: string): EntryActions {
   const account = useTreeActions({ kind: "account" });
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
+  const { view, pendingText } = useTreeVersion();
   return useMemo(
     () => ({
       project,
       account,
       holding: (node) => {
-        const own = accountList.session?.replay();
+        const own = accountList.session?.replay(view, pendingText);
         if (own?.nodes.has(node)) return { list: account, replay: own };
-        return { list: project, replay: projectList.session?.replay() ?? null };
+        return { list: project, replay: projectList.session?.replay(view, pendingText) ?? null };
       },
     }),
-    [project, account, projectList.session, accountList.session],
+    [project, account, projectList.session, accountList.session, view, pendingText],
   );
 }

@@ -15,7 +15,7 @@ found and deleted by its id). It runs when one of them changes; nothing polls.
 | What the observer reads | Views | Copy and session |
 |---|---|---|
 | The node is in Trash | close (main shows its Trash view with the session's text, read-only) | kept |
-| The node's source ended and can be restored (a deleted Work or chat) | close | kept |
+| The node's source ended and can be restored (a deleted chat, a lineage whose chats are all in Trash) | close | kept |
 | The list closed with 4401 (sign-in expired) | stay | kept; the writer is asked to sign in again |
 | The connection dropped, or the list is read-only | stay | kept |
 | A Discard of the document's draft | the review closes | kept |

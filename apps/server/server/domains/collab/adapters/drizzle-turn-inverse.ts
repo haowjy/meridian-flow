@@ -523,12 +523,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           } else skips.push(outcome);
         }
         // After the text: a node a reply made is taken back once the text written into it is.
-        if (tree.steps.length) {
+        if (tree.steps.length || tree.gone.length) {
           const now = await treePlanOf(query, direction);
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new InverseAttemptMiss();
-          const done = await treeInverse.run(now.steps, direction, {
+          const done = await treeInverse.run(now, direction, {
             threadId: query.threadId,
             userId,
             moveBackAcrossLists: query.moveBackAcrossLists,

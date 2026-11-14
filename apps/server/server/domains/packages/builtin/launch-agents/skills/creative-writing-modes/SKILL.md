@@ -1,6 +1,7 @@
 ---
 name: creative-writing-modes
-type: mode-shift
+metadata:
+  type: mode-shift
 description: >
   Load when putting prose on the page: draft, revise, bridge, vary, or polish.
 model-invocable: true

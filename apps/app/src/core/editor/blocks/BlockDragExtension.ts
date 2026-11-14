@@ -21,6 +21,7 @@
  * step reaches Yjs and no undo entry appears for picking a paragraph up.
  */
 
+import { extentOf, nestNodes } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -113,11 +114,20 @@ export const BlockDragExtension = Extension.create({
             const held = blockDragPluginKey.getState(state);
             if (!held?.lifted) return null;
             const pos = draggedBlockPos(state);
-            const node = pos === null ? null : state.doc.nodeAt(pos);
-            if (pos === null || !node) return null;
-            return DecorationSet.create(state.doc, [
-              Decoration.node(pos, pos + node.nodeSize, { class: BLOCK_LIFTED_CLASS }),
-            ]);
+            if (pos === null || !state.doc.nodeAt(pos)) return null;
+            // A list item lifts with what is under it: the run a drop moves.
+            const index = state.doc.resolve(pos).index(0);
+            const [from, to] = extentOf(nestNodes(state.doc.content.content), index);
+            const decorations: Decoration[] = [];
+            let at = pos;
+            for (let i = from; i < to; i++) {
+              const node = state.doc.child(i);
+              decorations.push(
+                Decoration.node(at, at + node.nodeSize, { class: BLOCK_LIFTED_CLASS }),
+              );
+              at += node.nodeSize;
+            }
+            return DecorationSet.create(state.doc, decorations);
           },
         },
       }),

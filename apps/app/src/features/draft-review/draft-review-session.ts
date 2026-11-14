@@ -11,7 +11,6 @@ export type ReviewToast = {
   id: number;
   code: ReviewToastCode;
   tone: "info" | "error";
-  unsentText?: string | null;
 };
 export type DraftReviewState = {
   surface: { kind: "none" } | InlineDraftReview;
@@ -22,7 +21,7 @@ export type DraftReviewAction =
   | (DraftReviewSelection & { type: "enterInline" })
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })
-  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error"; unsentText?: string | null }
+  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
   | { type: "exitInline" | "exitReview" };
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
@@ -48,12 +47,7 @@ export function draftReviewReducer(
       return {
         ...state,
         toastSeq: state.toastSeq + 1,
-        toast: {
-          id: state.toastSeq + 1,
-          code: action.code,
-          tone: action.tone,
-          unsentText: action.unsentText,
-        },
+        toast: { id: state.toastSeq + 1, code: action.code, tone: action.tone },
       };
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;

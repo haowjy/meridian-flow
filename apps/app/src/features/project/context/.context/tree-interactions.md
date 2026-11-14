@@ -115,7 +115,19 @@ entry inside another entry's folder goes with that folder, never on its own. A l
 take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
 comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
 delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
-Writer deletion has no confirmation step and no Undo here: the sidebar's Undo is step 8.
+Writer deletion has no confirmation step. Its notice ("Chapter 2 deleted.", Undo) is the Discard
+notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the sidebar for a
+delete made there, on Recently opened for one made there, and on the page main goes back to when
+the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
+(`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
+applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
+a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
+(`endWhenRestored`). A delete across the project and account lists is one notice, ended with the
+last of its steps.
+
+Inline create puts its naming row at the end of the folder, where the create appends, so nothing
+moves on Enter. The source header's New file and New folder name the folder the writer last
+opened or closed into, else the open document's folder, else the top.
 
 ## Downlinks
 
@@ -204,7 +216,7 @@ lineage tree, not a menu-node projection or a mutable folder. Selected
 files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
-and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
+and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`useWorkSourceWritable`, the one answer for a Work's source, which the sidebar's Scratch pane reads too); an archived, deleted or unlisted Work's Scratch remains navigable, its rows offer only Copy to…, and its area is not `writable`. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.
 
 ## Selecting and dragging rows
@@ -223,7 +235,7 @@ expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. Rows a delete or restore takes out of their list leave every list's
 selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
-folders inside a deleted folder: Trash rows share the `file:<documentId>` key, so a row deleted while
+folders inside a deleted folder: Trash rows share the tree rows' `file:` and `folder:` keys, so a row deleted while
 selected would otherwise arrive selected in Trash, and a restored one back in the tree. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
@@ -241,7 +253,7 @@ they can carry).
 
 Dragging a selected row carries the selection in screen order, minus rows inside
 a selected folder; dragging an unselected row carries only it. Each row carries
-what its surface grants (`EntryGrant`: `move`, `copy`; an archived Work's Scratch
+what its surface grants (`EntryGrant`: `move`, `copy`; an ended Work's Scratch
 grants Copy, not Move), and a drag starts when the row has either. A selection
 that holds a row without the grant an action needs, or one that lost a row (a peer
 deleted it, or its parent isn't known yet), does nothing for that action rather
@@ -333,9 +345,9 @@ is a new item there and a branch in the list's `choose`. The contract:
   views, `into` (a folder's id, or the source's id), `scheme`, `destinationName` (the tree's current name), `area` (the tree it lands in), `position`,
   `asks` (a reference, or a source in another system than the target), `insideItself`,
   `unavailable` (carried entries no shown tree places), `crossesLists` (an account row into a project, or the reverse) and `canMove`. Copy has no
-  condition; Move is refused for a row in the Scratch of an archived Work or of one the project
-  doesn't list (it fails closed), judged here from each source's placement so a new drag
-  source never says it. `resolveDrop` returns null
+  condition; Move is refused for a row whose area is not `writable` (an ended Work's Scratch, or
+  one the project doesn't list: it fails closed), judged here from each source's placement so a
+  new drag source never says it. A drop on such an area lands nowhere. `resolveDrop` returns null
   when the target isn't a place a drop can land. `planMove` and `planCopy` turn it
   into a plan; an action plans from the resolution and never resolves identities
   again.
@@ -437,9 +449,9 @@ appeared to accept but landed elsewhere would mislead.
 ## Trash rows dragged onto the tree
 
 A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
-the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
+the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
-`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per document and a
+`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
 `move` to the destination (`TreeActions.restore`, `TreeActions.move`).
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
@@ -451,5 +463,5 @@ Trash rows are `ListRow`s with the trees' menu and select like tree rows, throug
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` appends the `restore` records as one update per
 list; a refused one shows on its Trash row ("Couldn't restore … " and the reason), and one notice
-counts the ones that came back ("Restored 3 files.").
+counts the ones that came back ("Restored 3 items.").
 There is no Delete forever: permanent removal is only the scheduled purge.

@@ -20,6 +20,8 @@ export type ReversalRefusal = {
   direction: ReversalDirection;
   status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
   at?: string | null;
+  /** The file policy's reason, when the status is `permission_denied`. */
+  denial?: ReversalOutcome["denial"];
 };
 
 /** The reversal statuses that mean the manuscript changed as asked. */
@@ -46,8 +48,6 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
       return t`Redo is no longer available because the manuscript changed.`;
     case "nothing_to_undo":
       return t`Undo is no longer available.`;
-    case "cant_undo_dependent":
-      return dependentChangeCopy();
     case "expired":
       return t`This change is no longer reversible.`;
     case "partial":
@@ -62,7 +62,7 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
     case "binary_file":
       return t`This file is binary, so this change can't be reversed.`;
     case "permission_denied":
-      return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
+      return permissionDeniedCopy(refusal.denial);
     case "ancestor_taken":
     case "folder_missing":
     case "superseded":
@@ -75,6 +75,19 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
       // statuses keep the existing retry path.
       return reversalRetryCopy(refusal.direction);
     }
+  }
+}
+
+function permissionDeniedCopy(denial: ReversalOutcome["denial"]): string {
+  switch (denial) {
+    case "work_archived":
+      return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
+    case "chat_frozen":
+      return t`This document's chat was deleted. Restore the chat to reverse this change.`;
+    case "not_found":
+      return t`This document, or the Work it belongs to, was deleted or isn't available to you, so this change can't be reversed.`;
+    default:
+      return t`This document can't be edited now, so this change can't be reversed.`;
   }
 }
 
@@ -112,11 +125,6 @@ function treeFaultCopy(
         ? t`Can't redo: the document was moved or deleted after you undid this change.`
         : t`Can't undo: the document was moved or deleted after this change.`;
   }
-}
-
-/** The one sentence for "later live edits depend on this", wherever it surfaces. */
-export function dependentChangeCopy(): string {
-  return t`Later edits build on this change, so it can't be reversed. View the change instead.`;
 }
 
 function reversalRetryCopy(direction: ReversalDirection): string {

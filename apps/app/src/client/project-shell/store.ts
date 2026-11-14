@@ -1,7 +1,7 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope and one slot per kind of item, the last chat and the last document on
+ * It holds the Work scope, the sidebar's Live/Draft choice, and one slot per kind of item, the last chat and the last document on
  * screen in either pane (null: none, or the kind's empty page). Main's arrival writes the slot of
  * its kind (`useMainArrival`), a pick or link into the side writes the other; the side shows the
  * slot of the kind main is not. These are not the pane-state page's "current" items (what main
@@ -44,6 +44,26 @@ export function readProjectScope(accountId: string, projectId: string): ProjectS
 export function writeProjectScope(accountId: string, projectId: string, scope: ProjectScope): void {
   if (readProjectScope(accountId, projectId) === scope) return;
   writeRememberedId("work", accountId, projectId, scope);
+  notify(accountId, projectId);
+}
+
+/**
+ * The sidebar's Live/Draft toggle: whether the shell shows the picked Work's tree, and its drafts
+ * of the page, or live. It holds while the Work has pending changes; with none the shell is live.
+ */
+export type TreeVersionChoice = "live" | "draft";
+
+export function readTreeVersionChoice(accountId: string, projectId: string): TreeVersionChoice {
+  return readRememberedId("tree-version", accountId, projectId) === "draft" ? "draft" : "live";
+}
+
+export function writeTreeVersionChoice(
+  accountId: string,
+  projectId: string,
+  choice: TreeVersionChoice,
+): void {
+  if (readTreeVersionChoice(accountId, projectId) === choice) return;
+  writeRememberedId("tree-version", accountId, projectId, choice === "draft" ? choice : null);
   notify(accountId, projectId);
 }
 
@@ -93,6 +113,15 @@ export function useProjectScope(accountId: string, projectId: string): ProjectSc
     (listener) => subscribe(accountId, projectId, listener),
     () => readProjectScope(accountId, projectId),
     () => NO_SCOPE,
+  );
+}
+
+/** The Live/Draft choice, re-read when this tab's changes. */
+export function useTreeVersionChoice(accountId: string, projectId: string): TreeVersionChoice {
+  return useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readTreeVersionChoice(accountId, projectId),
+    () => "live",
   );
 }
 

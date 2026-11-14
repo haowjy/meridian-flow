@@ -18,7 +18,6 @@ import {
   type AgentRevision,
   createInMemoryAgentRevisionStore,
   seedGeneralAgent,
-  serializeMarkdownDefinition,
 } from "../../packages/index.js";
 import {
   createInMemoryRepositories,
@@ -161,26 +160,15 @@ async function fixture(
   const installed = await revisions.installSource({
     coordinate: "test/agents",
     files: {
-      "mars.toml": '[package]\nname = "test-agents"\n',
-      "agents/critic.md": serializeMarkdownDefinition(
-        {
-          name: "Critic",
-          model: "critic-model",
-          mode: "primary",
-          permission: "read",
-        },
-        "You are Critic.",
-      ),
-      "agents/hidden.md": serializeMarkdownDefinition(
-        { name: "Hidden", model: "hidden-model", "model-invocable": false },
-        "",
-      ),
+      "mars.toml": '[package]\nname = "test-agents"\nversion = "0.1.0"\nschema = 1\n',
+      "agents/critic.md":
+        "---\nname: Critic\nmodel: critic-model\nmode: primary\nharness-overrides:\n  meridian-flow:\n    permission: read\n---\nYou are Critic.",
+      "agents/hidden.md": "---\nname: Hidden\nmodel: hidden-model\nmodel-invocable: false\n---\n",
       "skills/continuity/SKILL.md":
         "---\nname: continuity\ndescription: Check facts against canon.\n---\n\ncontinuity body.\n",
       "skills/story-review/SKILL.md":
         "---\nname: story-review\ndescription: Review drafts after prose exists.\n---\n\nstory-review body.\n",
     },
-    dependencies: {},
   });
   const critic = installed.definitions.find((entry) => entry.slug === "critic");
   const hidden = installed.definitions.find((entry) => entry.slug === "hidden");
@@ -189,18 +177,10 @@ async function fixture(
   const parentInstalled = await revisions.installSource({
     coordinate: "test/parent",
     files: {
-      "mars.toml": '[package]\nname = "test-parent"\n',
-      "agents/parent.md": serializeMarkdownDefinition(
-        {
-          name: "Parent",
-          model: "parent-model",
-          effort: "high",
-          "disallowed-tools": ["ask_user"],
-        },
-        "",
-      ),
+      "mars.toml": '[package]\nname = "test-parent"\nversion = "0.1.0"\nschema = 1\n',
+      "agents/parent.md":
+        "---\nname: Parent\nmodel: parent-model\neffort: high\ntools:\n  ask_user: deny\n---\n",
     },
-    dependencies: {},
   });
   const parentRevision = parentInstalled.definitions[0];
   if (!parentRevision) throw new Error("Missing parent revision");

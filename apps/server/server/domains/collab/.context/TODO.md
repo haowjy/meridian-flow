@@ -1,5 +1,12 @@
 # collab TODO
 
+- Live rooms lose typing the same way a Work draft did: a writer typing offline inside a block a
+  peer or the model deletes live has the typing swallowed (`admitLiveWriterUpdate` journals it, the
+  room merges it under the deleted block). `findLostEdits` and `recoverLatePeerEdits` are pure over a
+  Y.Doc and would apply, but the live path needs a server-authored write into the room that commits
+  with the journal row, which no live path has yet (the live agent core writes only as a model
+  turn). Build that write, then call recovery from `admitLiveWriterUpdate`.
+
 - `adapters/drizzle-drafts.ts` (`ensureDocumentDraft`) and the live agent-edit
   coordinator: measure paths outside a command that hold a pooled connection while acquiring
   another (inside one, `assertOutsideCommandTransaction` refuses it in dev and test). Restructure

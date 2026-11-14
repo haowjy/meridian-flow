@@ -95,9 +95,10 @@ export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 export type CatalogEntry = CatalogFolderEntry | CatalogFileEntry;
 
 /**
- * A lineage's draft list is stale: its pending draft count moved, or it lost or regained its
- * last live chat (trash, restore). Truth-free, like the catalog hint; it rides the same
- * per-project subscription. Work branches keep the Work authority entry instead.
+ * A draft owner's list is stale: its pending draft count moved, or the owner's lifecycle changed
+ * (a Work archived, unarchived, deleted, restored or purged; a lineage that lost or regained its
+ * last live chat). For a Work, its row in the Works list is stale with it. Truth-free, like the
+ * catalog hint; it rides the same per-project subscription.
  */
 export type DraftOwnerHint = {
   type: "draft-owner-hint";

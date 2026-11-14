@@ -53,7 +53,10 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
-import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
+import {
+  branchFolderRevisions,
+  createDrizzleBranchTreeState,
+} from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -336,7 +339,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     codec: runtime.codec,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   const agentEdit = scopeAgentEdit(
@@ -360,8 +362,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     enterDraftSeam: async () => {
       await lockSeamWorks(deps.db, []);
     },
-    ensureWorkDraft: ({ documentId, branchId }) =>
-      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId }),
+    ensureWorkDraft: ({ documentId, branchId, seen }) =>
+      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId, seen }),
     lockDraft: async (draftId) => {
       await currentDrizzleDb(deps.db)
         .select({ id: documentDrafts.id })
@@ -503,6 +505,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         await draftPulls.flushLivePull(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
       },
+      merged: ({ commandId, kind, rules, overrode }) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "debug",
+            source: "collab.draft_review",
+            name: `${kind}.merge.counted`,
+            payload: { commandId, rules, overrode },
+          });
+      },
       measured: (measurement) => {
         if (deps.eventSink)
           emitEvent(deps.eventSink, {
@@ -535,6 +546,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
+    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(

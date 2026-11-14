@@ -32,7 +32,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteRequest } from "../routing/project-route";
-import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
+import { EndedWorkNotice } from "../work/EndedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { ProjectOwnerNamesProvider } from "./ProjectOwnerNamesProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
@@ -216,7 +216,7 @@ function ChatScreenLoaded({
               active={visible}
               composerStrip={
                 activeWork && isWorkArchived(activeWork) ? (
-                  <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
+                  <EndedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
                 ) : undefined
               }
               key={`${projectId}:${threadId}`}

@@ -154,14 +154,8 @@ export const contextSources = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
-    index("context_sources_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
       .where(

@@ -49,6 +49,5 @@ export default defineEventHandler(async (event) => {
   });
   if (!work) throw new Error("A restore answers its Work");
   app.projectWakeHub.publish({ type: "project-chats-hint", projectId: work.projectId });
-  app.projectWakeHub.publish({ type: "context-sources-hint", projectId: work.projectId });
   return serializeTransport(work);
 });

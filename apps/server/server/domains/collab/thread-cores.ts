@@ -8,7 +8,6 @@ import {
   type AgentEditCore,
   createAgentEditCore,
   type DocumentEdits,
-  type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
@@ -40,7 +39,6 @@ type ThreadCoresInput = {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   aheadRefs: AheadRefRegistrar;
-  semanticProvenance: SemanticProvenanceWriter;
   observability: AgentEditObservability;
 };
 
@@ -79,7 +77,6 @@ export function createThreadCores(input: ThreadCoresInput, max = 128) {
       documentEdits: input.documentEdits,
       codec: input.codec,
       model: input.model,
-      semanticProvenance: input.semanticProvenance,
       defaultThreadId: threadId,
       ...input.observability,
     });

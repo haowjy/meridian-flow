@@ -88,8 +88,8 @@ try {
   }
   const answer = await session.request(
     "POST",
-    `/api/projects/${draft.project_id}/works/${workId}/branches/discard`,
-    { branchId: draft.branch_id, commandId: randomUUID() },
+    `/api/projects/${draft.project_id}/branches/${draft.branch_id}/discard`,
+    { all: true, commandId: randomUUID() },
     { decode: unknownJsonResponse },
   );
   await until(() => closes.some((close) => close.code === 4205));

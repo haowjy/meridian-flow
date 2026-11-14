@@ -92,7 +92,8 @@ export type ReviewActionsProps = {
   /** Nothing beside the pair names its scope: the words on screen are the full names. */
   named?: boolean;
   density?: ReviewDensity;
-  onDiscard: () => void;
+  /** Absent withdraws Discard: a change no Discard command takes, such as a folder alone. */
+  onDiscard?: () => void;
   /** The Discard carries no Undo, so it asks first. */
   discardAsks?: boolean;
   /** Absent withdraws Apply; Discard still applies. */
@@ -138,7 +139,7 @@ export function ReviewActions({
           onKeep={() => setAsking(false)}
           onConfirm={() => {
             setAsking(false);
-            onDiscard();
+            onDiscard?.();
           }}
         />
       </span>
@@ -154,19 +155,21 @@ export function ReviewActions({
           className,
         )}
       >
-        <ReviewActionButton
-          density={density}
-          {...names("discard")}
-          icon={<X aria-hidden />}
-          variant="quiet"
-          touch={touch}
-          disabled={disabled}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (discardAsks) setAsking(true);
-            else onDiscard();
-          }}
-        />
+        {onDiscard ? (
+          <ReviewActionButton
+            density={density}
+            {...names("discard")}
+            icon={<X aria-hidden />}
+            variant="quiet"
+            touch={touch}
+            disabled={disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (discardAsks) setAsking(true);
+              else onDiscard();
+            }}
+          />
+        ) : null}
         {onApply ? (
           <ReviewActionButton
             density={density}

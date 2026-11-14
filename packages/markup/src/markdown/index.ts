@@ -7,14 +7,10 @@ import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
 import type { BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
 import {
-  blockquoteCodec,
-  bulletListCodec,
   codeBlockCodec,
   hardBreakCodec,
   horizontalRuleCodec,
   imageCodec,
-  listItemCodec,
-  orderedListCodec,
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
@@ -31,10 +27,6 @@ export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
   paragraphCodec,
   codeBlockCodec,
-  bulletListCodec,
-  orderedListCodec,
-  listItemCodec,
-  blockquoteCodec,
   imageCodec,
   hardBreakCodec,
   horizontalRuleCodec,

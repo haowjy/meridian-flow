@@ -26,6 +26,7 @@ import {
   linkedDocumentName,
 } from "@/core/editor/links";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeView } from "@/core/project-tree/tree-view";
 
 const CREATABLE_LINK_SCHEMES = [
@@ -63,8 +64,10 @@ export type CreateLinkedDocument = {
 };
 
 export function useCreateLinkedDocument(projectId: string | null): CreateLinkedDocument {
+  // The create writes the shell's version: the folders it finds are that version's.
   const trees = useProjectTreeViews(projectId ?? "", CREATABLE_LINK_SCHEMES, {
     enabled: projectId !== null,
+    version: useTreeVersion(),
   });
   const projectActions = useTreeActions({ kind: "project", projectId });
   const accountActions = useTreeActions({ kind: "account" });

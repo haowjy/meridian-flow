@@ -1,6 +1,6 @@
 /** Best-effort diagnostics delivery. Owners supply transitions; this owns only bounded delivery. */
 import {
-  type ClientFailureRecord,
+  type ClientDiagnosticRecord,
   clientFailureEvent,
   type FailureLog,
 } from "@meridian/contracts/failures";
@@ -8,9 +8,9 @@ import type { EventRecord } from "@meridian/contracts/observability";
 
 export function createBatchedFailureLog(ports: {
   local(event: EventRecord): void;
-  send(records: readonly ClientFailureRecord[]): Promise<void>;
+  send(records: readonly ClientDiagnosticRecord[]): Promise<void>;
 }) {
-  const queue: ClientFailureRecord[] = [];
+  const queue: ClientDiagnosticRecord[] = [];
   const seen = new Set<string>();
   let scheduled = false;
   let pending: Promise<void> | null = null;

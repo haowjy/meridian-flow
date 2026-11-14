@@ -42,19 +42,19 @@ const { classifyDocumentTransportClose, createHocuspocusDocumentTransport } = aw
 describe("Hocuspocus document transport adapter", () => {
   it("classifies terminal draft closes and leaves reconnects alone", () => {
     expect(
-      classifyDocumentTransportClose("document-1", {
+      classifyDocumentTransportClose({
         code: 4403,
         reason: "permission-denied",
       }),
     ).toEqual({ kind: "unauthorized", reason: "permission-denied", code: 4403 });
     expect(
-      classifyDocumentTransportClose("draft:draft-1", {
+      classifyDocumentTransportClose({
         code: 4205,
         reason: "discarded",
       }),
     ).toEqual({ kind: "reset", reason: "discarded", disposition: "closed", code: 4205 });
     expect(
-      classifyDocumentTransportClose("document-1", {
+      classifyDocumentTransportClose({
         code: 1006,
         reason: "",
       }),
@@ -74,7 +74,7 @@ describe("Hocuspocus document transport adapter", () => {
       pending: true,
       disposition: "closed",
     },
-    { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: "refused" },
+    { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: null },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
   ] as const)("classifies $signal $contract.reason with pending=$pending", async ({
     signal,
@@ -116,14 +116,14 @@ describe("Hocuspocus document transport adapter", () => {
           kind: "reset",
           reason: contract.reason,
           disposition,
-          code: signal === "denial" ? undefined : signal === "native" ? contract.code : 1000,
+          code: signal === "denial" ? undefined : 1000,
         });
         document.getText("body").insert(0, "after reset");
         expect(transport.unacknowledgedUpdates()).toEqual(carry);
       } else {
         expect(states.at(-1)?.kind).not.toBe("reset");
         expect(access.at(-1)).toBe("read");
-        expect(transport.unacknowledgedUpdates()).toBeNull();
+        expect(transport.unacknowledgedUpdates()).toEqual(carry);
       }
     } finally {
       transport.destroy();

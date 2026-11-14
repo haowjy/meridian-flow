@@ -101,6 +101,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       branchTree,
       close: draftClose,
       onCommitted: async () => {},
+      merged: () => {},
       measured: () => {},
     });
     const discard = createBranchDiscard({

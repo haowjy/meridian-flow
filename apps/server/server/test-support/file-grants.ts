@@ -51,6 +51,7 @@ export function testFileGrant(
               isNoWork: false,
               archived: false,
               deleted: false,
+              purged: false,
               frozen: false,
             },
           }

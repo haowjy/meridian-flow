@@ -1,8 +1,7 @@
 /**
  * Minimal ZIP builder for Mars package export — STORE method only, no extra deps.
- * Sufficient for text-heavy Mars directories; binary skill assets round-trip as-is.
+ * Sufficient for text-heavy Mars directories; every package file is UTF-8 text.
  */
-import { skillFileEntryToBuffer } from "./skill-files.js";
 import type { ExportedMarsDirectory } from "./types.js";
 
 interface ZipEntry {
@@ -35,7 +34,7 @@ export function buildMarsPackageZip(exported: ExportedMarsDirectory): Buffer {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([relativePath, entry]) => ({
       path: relativePath.replace(/\\/g, "/"),
-      data: typeof entry === "string" ? Buffer.from(entry, "utf8") : skillFileEntryToBuffer(entry),
+      data: Buffer.from(entry, "utf8"),
     }));
 
   const localParts: Buffer[] = [];

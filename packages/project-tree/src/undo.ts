@@ -1,7 +1,7 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter, type TreeProjection } from "./replay.js";
 import { descendantsOf, nameAmong } from "./shape.js";
-import { inForce, type View, viewRecords } from "./view.js";
+import { inForce, LIVE, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Whether the record is the one that last set the fact `setter` stands for. */
@@ -39,6 +39,21 @@ function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, re
   });
 }
 
+/** Whether the delete record, or the original an Undo's copy carries, still stands in the projection. */
+const standsIn = (projection: TreeProjection, record: TreeRecord) =>
+  projection.standingDeletes.has(record.id) ||
+  projection.standingDeletes.has(record.carries ?? record.id);
+
+/**
+ * Whether the delete `recordId` can still be undone: its Trash entry survives in the view (not
+ * lifted by a restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
+ */
+export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
+  const record = inForce(writer.doc, asked, recordId);
+  if (!record || record === "unknown" || record.type !== "delete") return false;
+  return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
+}
+
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
  * back, restore what was deleted, delete what was created). A move or rename goes back to the
@@ -47,16 +62,19 @@ function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, re
  * may have set to the same. Refused as "superseded" when something later changed the same
  * fact, when the folder a move would return to is in Trash, or when the node is gone from the
  * view (purged, or its create is not in force), where the replay would skip the opposite record.
+ * A drafted change an Apply landed is taken back in live, where its copy now stands: the
+ * opposite record's `draft` says which view it went to.
  */
 export function undoChange(
   writer: TreeWriter,
-  view: View,
+  asked: View,
   actor: Actor,
   recordId: string,
 ): TreeRecord | "superseded" | "unknown" {
-  const record = inForce(writer.doc, view, recordId);
+  const record = inForce(writer.doc, asked, recordId);
   if (record === "unknown") return record;
   if (!record) return "superseded";
+  const view = record.draft === null ? LIVE : asked;
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "superseded";
@@ -144,18 +162,8 @@ export function undoChange(
       );
     }
     case "delete": {
-      // Already lifted, by a restore of the node or by an earlier Undo of this delete.
-      const records = viewRecords(writer.doc, view);
-      const at = records.findIndex((other) => other.id === record.id);
-      const lifted = records
-        .slice(at + 1)
-        .some(
-          (other) =>
-            other.type === "restore" &&
-            other.node === record.node &&
-            (other.undoes === undefined || other.undoes === extra.undoes),
-        );
-      if (lifted) return "superseded";
+      // Lifted already, by a restore of the node or by an earlier Undo of this delete.
+      if (!standsIn(projection, record)) return "superseded";
       return writer.author(view, actor, { type: "restore", node: record.node }, extra);
     }
     case "restore":

@@ -95,8 +95,7 @@ so a close needs no invalidation.
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
-`{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
-peers in ID order, derives the durable
+`{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
 `closed_cause` (`document_removed` for a removal, else `discarded`), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
@@ -113,11 +112,8 @@ removal still stands: after every matching room load settles, one batched record
 read outside DB locks drops live rooms a Work Restore has since made living
 again (draft rooms close by exact draft id; a closed draft stays closed). A
 Restore that commits while that read is in flight can still have its new live
-connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
-reply's closed pin lost its write is one pure rule, `closedPinReason`
-(`domain/closed-pin-reason.ts`), shared by a model edit's check and a failed peer
-identity ensure: a draft closed `document_removed` is the removal's even when its document
-stands again (`removed: null`). The closer is
+connection closed `4208`; the app's stale-4208 recovery reconnects it. A draft closed `document_removed` stays the removal's even when its
+document stands again. The closer is
 built at the composition root and its retirement bound by the collab domain once
 rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as in
 fixtures without rooms, it retires nothing. A caller whose commit happens inside
@@ -480,15 +476,33 @@ background rebases keep archived drafts current. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
-Only hidden typing under a top-level block whose deletion is certified by a
-server row's immutable receipt is recovered. Receipt reads happen only for
-hidden typing, selected by block id. Recovery authors another client-1 server row
-in the same append; its opaque per-draft `LateTyping` memory installs only after
-commit. Deletion-only frames advance memory without writing; a contained echo with
-existing recovery observes its deleted separators without a row hold. Deferred
-observers read latest memory at commit, and finalizers retain observations made
-during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
-never remove recovered writing. Another writer's deleted block is not recovered.
+A writer's typing that the deleter never saw is recovered, whoever deleted: a
+rebase, a peer's Discard revert, another writer or the model. Two arrival orders
+find it. Typing that arrives under a block already deleted (its parent chain
+reaches a deleted item, judged by the committed document however the update
+encodes the ancestor), and a delete that arrives after the typing and removes it
+without listing it (a deleter's delete set lists every item its own transaction
+deleted, children included, so an unlisted item was typed unseen). The typist's
+view of the text beside its words is its own frame's delete set when the typing
+arrives second, and the document before the frame when the delete does.
+
+Whose text it is comes from the journal, never from a client id or a cache. A
+frame's typing counts when the row is `writer`'s. Typing a delete removed counts
+when `DraftStore.writerText` finds the inserting row: a `writer` row, or a
+recovery row (`updateMeta.lateTyping`) in `document_edit_parts` of the draft, or
+a row of the same append not yet journaled. The model's rows and the server's
+pulls never count, and nothing is lost when the process restarts. Recovery authors another client-1 server row
+in the same append; its opaque per-draft `LateTyping` memory (spans only, to extend
+a paragraph in place) installs only after commit. A paragraph is extended by
+inserting the new characters where the typist placed them among the old ones, so
+the characters a peer saw keep their ids; paragraphs the typist's edit would join
+stay separate for the same reason. Deletion-only frames advance memory
+without writing; a contained echo with existing recovery observes its deleted
+separators without a row hold. Deferred observers read latest memory at commit
+(`retainLateTypingDeletions` keeps the kernel's memory bound). Stale backspaces
+never remove recovered writing. Losses that stay are under Known losses in
+[content-merge](../../../../../../packages/agent-edit/.context/content-merge.md);
+live rooms have no recovery: see TODO.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
@@ -677,8 +691,7 @@ decides the answer: nothing left to end is `gone`, an applicable state that
 changed since the writer looked is `stale`, and a text draft that moved on is
 `draft_changed` (`work-branch-review-service.ts`).
 
-A reply's save applies ordered per-segment journal rows to a provisional Work-draft
-clone and never regenerates durable rows from a raw state-vector diff, which
+A draft write never regenerates durable rows from a raw state-vector diff, which
 would reintroduce cumulative tombstones. An unresolved sync dependency is an
 integrity failure, never a partially journaled update. Manifest membership
 mutations still journal cumulative sync bytes

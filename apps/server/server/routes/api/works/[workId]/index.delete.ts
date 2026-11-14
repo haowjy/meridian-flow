@@ -47,6 +47,5 @@ export default defineEventHandler(async (event) => {
     projectId: work.projectId,
     recheckTabs: true,
   });
-  app.projectWakeHub.publish({ type: "context-sources-hint", projectId: work.projectId });
   setResponseStatus(event, 204);
 });

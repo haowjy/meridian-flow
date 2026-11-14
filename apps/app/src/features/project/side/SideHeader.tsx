@@ -5,7 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { ArrowLeftRight, MessageSquare } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
@@ -19,6 +19,7 @@ import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
 import { useNewChatAbout, useSideItem } from "./SideView";
+import type { SideFailure } from "./side-item";
 
 /**
  * The side's chat's name: its title, or for a new chat what its composer will attach: main's
@@ -50,33 +51,35 @@ function SideBand({
   onOpenInMain?: () => void;
 }) {
   const side = useSideItem();
+  // The failure object lives as long as that failure, so a dismissal holds until a new one.
+  const [dismissed, setDismissed] = useState<SideFailure | null>(null);
+  const failed = side.failed !== dismissed ? side.failed : null;
   return (
-    <>
-      <PaneHeader
-        title={<SidePicker projectId={projectId} name={name} icon={icon} />}
-        actions={
-          // The corner toggle always floats over this band, open or closed: its spacer is the
-          // side's own, not PaneHeader's closed-rail one.
-          <div className="flex items-center gap-0.5">
-            {actions}
-            {onOpenInMain ? (
-              <IconButton size="sm" label={t`Swap with main`} onClick={onOpenInMain}>
-                <ArrowLeftRight aria-hidden />
-              </IconButton>
-            ) : null}
-            <PanelToggleSpacer />
-          </div>
-        }
-      />
-      {side.failed ? (
-        <div className="shrink-0 px-2 pb-1">
+    <PaneHeader
+      title={<SidePicker projectId={projectId} name={name} icon={icon} />}
+      actions={
+        // The corner toggle always floats over this band, open or closed: its spacer is the
+        // side's own, not PaneHeader's closed-rail one.
+        <div className="flex items-center gap-0.5">
+          {actions}
+          {onOpenInMain ? (
+            <IconButton size="sm" label={t`Swap with main`} onClick={onOpenInMain}>
+              <ArrowLeftRight aria-hidden />
+            </IconButton>
+          ) : null}
+          <PanelToggleSpacer />
+        </div>
+      }
+      notice={
+        failed ? (
           <InlineErrorRow
             message={t`Couldn't look up the document to show here.`}
-            onRetry={side.failed.retry}
+            onRetry={failed.retry}
+            onDismiss={() => setDismissed(failed)}
           />
-        </div>
-      ) : null}
-    </>
+        ) : null
+      }
+    />
   );
 }
 

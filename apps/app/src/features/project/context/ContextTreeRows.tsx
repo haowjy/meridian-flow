@@ -26,7 +26,7 @@ import {
 } from "@/features/import/tree-rows";
 import { focusWhenFree } from "@/lib/focus-follow";
 import type { ContextCreateKind } from "./context-create-kind";
-import type { ContextEntrySibling } from "./context-entry-name";
+import { type ContextEntrySibling, parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
@@ -49,8 +49,10 @@ export type TreeEnv = {
   owner: ContextOwner;
   capabilities: EntryCapabilities;
   scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  /** Main's document, marked current wherever this tree puts it. */
+  activeDocumentId: string | null;
+  /** On Live, what the Work's draft changes: each gets a jade dot. */
+  changed?: ReadonlySet<string> | null;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -59,6 +61,8 @@ export type TreeEnv = {
     /** The folder creation just made, until its row takes focus. */
     createdFolder: string | null;
     setCreatedFolder: (path: string | null) => void;
+    /** The writer opened or closed a folder: the header's New file and New folder go there. */
+    placeAt: (folderPath: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
@@ -126,15 +130,6 @@ export function TreeChildren({
   const siblings = useMemo(() => siblingsOf(children), [children]);
   return (
     <>
-      {env.creation?.creating?.parentPath === parentPath ? (
-        <CreateRow
-          kind={env.creation?.creating.kind}
-          parentId={parentId}
-          parent={parentPath}
-          depth={depth}
-          siblings={siblings}
-        />
-      ) : null}
       {children
         .filter(
           (child) =>
@@ -161,6 +156,16 @@ export function TreeChildren({
             />
           ),
         )}
+      {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
+      {env.creation?.creating?.parentPath === parentPath ? (
+        <CreateRow
+          kind={env.creation?.creating.kind}
+          parentId={parentId}
+          parent={parentPath}
+          depth={depth}
+          siblings={siblings}
+        />
+      ) : null}
     </>
   );
 }
@@ -238,6 +243,7 @@ function DirRow({
           title={dir.name}
           onOpen={() => {
             if (env.creation?.creating) env.creation.done();
+            env.creation?.placeAt(isOpen ? parentContextEntryPath(dir.path) : dir.path);
             env.toggleEntry(dir.entryId);
           }}
           selected={row.selected}
@@ -253,6 +259,8 @@ function DirRow({
                 reason={dir.failureReason}
                 folder
               />
+            ) : env.changed?.has(dir.entryId) ? (
+              <DraftChangeMark />
             ) : null
           }
           below={
@@ -337,7 +345,7 @@ function FileRow({
     onRequestDelete: env.onRequestDelete,
     siblings,
   });
-  const active = env.scheme === env.activeScheme && file.path === env.activePath;
+  const active = file.documentId === env.activeDocumentId;
   const row = useEntryRow(interaction.entry, { active });
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
@@ -365,6 +373,8 @@ function FileRow({
               move={Boolean(file.namespaceRepairMove)}
               reason={file.failureReason}
             />
+          ) : env.changed?.has(file.documentId) ? (
+            <DraftChangeMark />
           ) : null
         }
         below={
@@ -382,6 +392,17 @@ function FileRow({
         }
       />
     </EntryDestinationPicker>
+  );
+}
+
+/** A row the Work's draft changes, seen on Live: the page and Changes say what. */
+function DraftChangeMark() {
+  return (
+    <span className="mx-1 size-1.5 shrink-0 rounded-full bg-primary">
+      <span className="sr-only">
+        <Trans>, changed in the draft</Trans>
+      </span>
+    </span>
   );
 }
 

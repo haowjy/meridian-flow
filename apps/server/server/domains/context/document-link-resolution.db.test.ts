@@ -277,7 +277,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       expect(await resolve("outline.json")).toMatchObject({ documentId: data });
     });
-    it("resolves a contextual address in the current Work only, and archived but not deleted authority", async () => {
+    it("resolves a contextual address in the current Work only, and an archived or deleted Work's until its purge", async () => {
       const r = resolver();
       const local = await add("scratch", "Gate", a);
       await add("scratch", "Gate", b);
@@ -314,7 +314,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId: a,
           uri: "scratch://@w3/Gate",
         }),
-      ).toBeNull();
+      ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await change(sourceOf.get(local) as string, (writer) => writer.delete(LIVE, "system", local));
       expect(
         await r.resolve({

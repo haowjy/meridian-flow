@@ -63,17 +63,6 @@ export type ClosedTabsPort = {
   close(projectId: string, documentIds: readonly string[]): void;
 };
 
-/**
- * The cached answers to "what lives at this address". Kept by a query cache that outlives a
- * removal: an answer from before it would paint the document again.
- */
-export type AddressAnswersPort = {
-  /** Live no longer has these documents: an answer naming one is now "unavailable". */
-  removed(projectId: string, documentIds: readonly string[]): void;
-  /** Live has a document again: every answer is read afresh. */
-  available(projectId: string): void;
-};
-
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 export type DraftOnlyPort = {
   isDraftOnly(projectId: string, documentId: string): boolean;
@@ -149,7 +138,6 @@ export class ContextRemovalCoordinator {
   private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
-  private readonly addresses: AddressAnswersPort | null;
   private readonly tabs: ClosedTabsPort | null;
   /** The documents the list has taken out of the live tree and has not given back, by `projectId/documentId`. */
   private readonly gone = new Set<string>();
@@ -167,7 +155,6 @@ export class ContextRemovalCoordinator {
       notices?: RemovedPresentationPort;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
-      addresses?: AddressAnswersPort;
       tabs?: ClosedTabsPort;
     } = {},
   ) {
@@ -177,7 +164,6 @@ export class ContextRemovalCoordinator {
     this.notices = dependencies.notices ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
-    this.addresses = dependencies.addresses ?? null;
     this.tabs = dependencies.tabs ?? null;
   }
 
@@ -319,11 +305,8 @@ export class ContextRemovalCoordinator {
           projectId,
           removed.map((command) => command.documentId),
         );
-      if (restored.length > 0) {
-        // The documents are in the tree again: their holds end and every cached address is read afresh.
-        for (const command of restored) this.draftOnly?.promote(projectId, command.documentId);
-        this.addresses?.available(projectId);
-      }
+      // The documents are in the tree again: their holds end.
+      for (const command of restored) this.draftOnly?.promote(projectId, command.documentId);
     }
   }
 
@@ -343,7 +326,6 @@ export class ContextRemovalCoordinator {
     this.dropRecentRoutes(projectId, documentIds);
     const leaving = documentIds.filter((id) => !held.has(id));
     this.forget(projectId, leaving);
-    if (leaving.length > 0) this.addresses?.removed(projectId, leaving);
     this.notices?.presentedRemoved(
       projectId,
       presented.filter((tab) => tab.kind !== "new" && leaving.includes(tab.documentId)),
@@ -409,16 +391,17 @@ export class ContextRemovalCoordinator {
    * if it shows one of them, goes at once to the document it showed before, else to Recently
    * opened. Call before the removal. `landed`
    * hears where main went, or null when it did not move; nothing when main did not show them.
+   * Returns the document main is leaving, if it shows one of them.
    */
   beginOwnRemoval(
     projectId: string,
     documentIds: readonly string[],
     landed?: (landing: MainLanding | null) => void,
-  ): void {
+  ): string | null {
     this.notices?.markOwnRemoval(projectId, documentIds);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port;
-    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return;
+    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return null;
     const key = `${projectId}/${shown}`;
     this.goingBack.add(key);
     void route
@@ -433,6 +416,7 @@ export class ContextRemovalCoordinator {
         for (const listener of [...this.listeners]) listener();
       })
       .then((landing) => landed?.(landing));
+    return shown;
   }
 
   /**

@@ -7,19 +7,22 @@ import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { genScenario, Rng, resetWords, show, toPM } from "../content-merge/merge.fixtures.js";
+import { contentMerge } from "../content-merge/merge.js";
+import { pmNodeToYElement } from "../model/y-prosemirror.js";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
-import { genScenario, Rng, resetWords, show, toPM } from "./merge.fixtures.js";
-import { rebase } from "./merge.js";
-import { pmToY, writeBlocks } from "./writer.js";
+import { writeBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
 const FRAG = "prosemirror";
-const para = (s: string) => schema.nodes.paragraph.create(null, s ? schema.text(s) : undefined);
+/** A block pairs with the one of the same id, so every call names the block it is. */
+const para = (id: string, s: string) =>
+  schema.nodes.paragraph.create({ id }, s ? schema.text(s) : undefined);
 
 function seeded(blocks: readonly PMNode[]): Y.Doc {
   const doc = new Y.Doc();
-  doc.getXmlFragment(FRAG).insert(0, blocks.map(pmToY));
+  doc.getXmlFragment(FRAG).insert(0, blocks.map(pmNodeToYElement));
   return doc;
 }
 
@@ -38,9 +41,9 @@ const textOf = (frag: Y.XmlFragment, i: number) =>
 describe("minimal Yjs writer", () => {
   // Risk: a rebase that retypes the middle of a paragraph brings back a word a peer just deleted.
   it("keeps a peer's concurrent deletion of a word the rebase did not change", () => {
-    const merged = [para("AAA bbb ccc ddd EEE")]; // live changed the first and last words
+    const merged = [para("p1", "AAA bbb ccc ddd EEE")]; // live changed the first and last words
     const run = (write: (doc: Y.Doc) => void) => {
-      const server = seeded([para("aaa bbb ccc ddd eee")]);
+      const server = seeded([para("p1", "aaa bbb ccc ddd eee")]);
       const peerUpdate = peerOf(server, (f) => textOf(f, 0).delete(8, 4)); // "ccc "
       server.transact(() => write(server));
       Y.applyUpdate(server, peerUpdate);
@@ -65,17 +68,17 @@ describe("minimal Yjs writer", () => {
       [words, `${words} END`],
       [`${words} tail`, `START ${words}`],
     ]) {
-      const doc = seeded([para(from)]);
-      doc.transact(() => writeBlocks(doc.getXmlFragment(FRAG), schema, [para(to)]));
+      const doc = seeded([para("p2", from)]);
+      doc.transact(() => writeBlocks(doc.getXmlFragment(FRAG), schema, [para("p2", to)]));
       expect(readBlocks(doc.getXmlFragment(FRAG), schema)[0].textContent === to).toBe(true);
     }
 
-    const server = seeded([para("今天小明走过森林来到河边看见老虎")]);
+    const server = seeded([para("p3", "今天小明走过森林来到河边看见老虎")]);
     const peerUpdate = peerOf(server, (f) => {
       const t = textOf(f, 0);
       t.delete(t.toString().indexOf("森林"), 2);
     });
-    const target = para("昨日小明走过森林来到河边看见飞龙");
+    const target = para("p3", "昨日小明走过森林来到河边看见飞龙");
     server.transact(() => writeBlocks(server.getXmlFragment(FRAG), schema, [target]));
     Y.applyUpdate(server, peerUpdate);
     expect(readBlocks(server.getXmlFragment(FRAG), schema)[0].textContent).toBe(
@@ -90,7 +93,7 @@ describe("minimal Yjs writer", () => {
       resetWords();
       const sc = genScenario(new Rng(seed), {});
       const [B, L, D] = [toPM(schema, sc.base), toPM(schema, sc.live), toPM(schema, sc.draft)];
-      const { blocks } = rebase(schema, B, L, D);
+      const blocks = contentMerge(schema, B, L, D).blocks;
       const doc = seeded(D);
       doc.transact(() => writeBlocks(doc.getXmlFragment(FRAG), schema, blocks));
       if (!blocksEqual(readBlocks(doc.getXmlFragment(FRAG), schema), blocks))

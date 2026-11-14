@@ -19,6 +19,7 @@ export type {
 export {
   createReplyMutations,
   decodeSnapshot,
+  docAtFrontier,
   frontierBlockId,
   frontierDelta,
   projectSeedFrontier,
@@ -85,7 +86,6 @@ export type {
   CanonicalBlockIdentity,
   DocumentModel,
 } from "./ports/model.js";
-export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
   StaticCatalogDocument,
   StaticDocumentCatalog,
@@ -121,7 +121,6 @@ export {
   validateLoweredTargetPartition,
 } from "./prosemirror-lowering.js";
 export type {
-  RestorationCertificatePort,
   SemanticEditIRV1,
   SemanticOutputRun,
   Utf16Span,
@@ -171,7 +170,6 @@ export {
   structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
-export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

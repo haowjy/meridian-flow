@@ -48,8 +48,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         ownerUserId: null,
         coordinate: "meridian-launch-agents",
         currentRevisionId: source.packageRevisionId,
-        upstreamRevisionId: source.packageRevisionId,
-        origin: null,
       });
     });
     afterAll(() => db.close());

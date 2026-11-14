@@ -18,10 +18,10 @@ export function ReviewToast({
 }) {
   const id = toast?.id;
   useEffect(() => {
-    if (id === undefined || toast?.unsentText) return;
+    if (id === undefined) return;
     const timer = window.setTimeout(() => onDismiss(id), VISIBLE_MS);
     return () => window.clearTimeout(timer);
-  }, [id, onDismiss, toast?.unsentText]);
+  }, [id, onDismiss]);
 
   if (!toast) return null;
   return (
@@ -36,19 +36,6 @@ export function ReviewToast({
       )}
     >
       {toast.code === "draft-closed" ? <Trans>This draft was discarded.</Trans> : null}
-      {toast.unsentText ? (
-        <details>
-          <summary>
-            <Trans>Copy unsent text</Trans>
-          </summary>
-          <pre className="max-h-48 max-w-md select-text overflow-auto whitespace-pre-wrap">
-            {toast.unsentText}
-          </pre>
-          <button type="button" className="text-button" onClick={() => onDismiss(toast.id)}>
-            <Trans>Dismiss</Trans>
-          </button>
-        </details>
-      ) : null}
       {toast.code === "change-gone" ? <Trans>That change is no longer in the draft.</Trans> : null}
     </div>
   );

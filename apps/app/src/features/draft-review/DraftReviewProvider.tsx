@@ -20,7 +20,6 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
-  type DraftReviewStateOwner,
   useDraftReviewController,
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
@@ -61,7 +60,6 @@ export function useDraftReviewScopeValue({
   projectId,
   work,
   ownerKey,
-  stateOwner,
   threadId = null,
   marks,
   showLive,
@@ -71,7 +69,6 @@ export function useDraftReviewScopeValue({
   work: Work | null;
   /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
   ownerKey: string;
-  stateOwner?: DraftReviewStateOwner;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
   /** The host document's Show changes. */
@@ -82,8 +79,7 @@ export function useDraftReviewScopeValue({
   const effectiveProjectId = projectId ?? "";
   const drafts = useOwnerDrafts(projectId, ownerKey || null);
   const files = drafts.files ?? [];
-  const localStateOwner = useDraftReviewStateOwner();
-  const reviewState = stateOwner ?? localStateOwner;
+  const reviewState = useDraftReviewStateOwner();
   const scope = useRef({ projectId: effectiveProjectId, ownerKey, queryClient });
   const scopeChanged =
     scope.current.projectId !== effectiveProjectId ||
@@ -129,9 +125,17 @@ export function useDraftReviewScopeValue({
     [],
   );
 
+  // Only a real change of scope ends the review. A run with the same scope (a mount, React's
+  // development re-run) would end a review admission entered since, and admission doesn't retry.
   useLayoutEffect(() => {
+    const previous = scope.current;
     scope.current = { projectId: effectiveProjectId, ownerKey, queryClient };
-    controller.exitReview();
+    if (
+      previous.projectId !== effectiveProjectId ||
+      previous.ownerKey !== ownerKey ||
+      previous.queryClient !== queryClient
+    )
+      controller.exitReview();
   }, [effectiveProjectId, ownerKey, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;

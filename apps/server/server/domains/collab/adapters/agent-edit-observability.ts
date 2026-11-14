@@ -46,6 +46,16 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
         payload: unknownToEventPayload(cause),
       });
     },
+    merged({ documentId, rules, overrode }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "debug",
+        source: "collab.draft_pull",
+        name: "merge.counted",
+        correlation: { documentId },
+        payload: { rules, overrode },
+      });
+    },
   };
 }
 
@@ -92,6 +102,16 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         name: "append_prefix_missing",
         correlation: { draftId },
         payload: { clocks: clocks.slice(0, 16) },
+      });
+    },
+    lateTypingRecovered({ draftId, ...payload }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.draft",
+        name: "late_typing.recovered",
+        correlation: { draftId },
+        payload,
       });
     },
     roomReconciled({ draftId, trigger, ...payload }) {

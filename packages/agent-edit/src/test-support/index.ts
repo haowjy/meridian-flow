@@ -13,3 +13,4 @@ export {
   InMemoryAgentEditJournal,
   type InMemoryAgentEditJournalOptions,
 } from "./in-memory-agent-edit.js";
+export { applyTextEdit } from "./text-edit.js";

@@ -18,7 +18,7 @@ const DESTINATION_FREE_LINKS: DocumentLinkScope = {
 
 /** Each block's markdown with link and image destinations spelled empty. */
 export function destinationFreeBlocks(markup: MarkupCodec, blocks: readonly PMNode[]): string[] {
-  return markup.serializeBlocks(blocks, DESTINATION_FREE_LINKS);
+  return markup.serializeBlocks(blocks, DESTINATION_FREE_LINKS).map((entry) => entry.body);
 }
 
 /**

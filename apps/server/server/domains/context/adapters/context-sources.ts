@@ -11,9 +11,9 @@ import { sourceAuthority } from "./context-file-entry.js";
 const PROJECT_SLUGS = ["manuscript", "kb", "unfiled"];
 
 /**
- * The sources a project's owner reads. A Work's are listed unless the Work is deleted (an
- * archived Work's stay: its notes are read-only, not gone); a lineage's and a chat's until the
- * source itself ends.
+ * The sources a project's owner reads. A Work's are listed until the Work is purged: an archived
+ * or deleted Work's notes are read-only, not gone, and a purge takes the source rows with it. A
+ * lineage's and a chat's are listed until the source itself ends.
  */
 export function createDrizzleContextSources(db: Database): ContextSources {
   async function read(where: SQL | undefined): Promise<ContextSource[]> {
@@ -72,8 +72,7 @@ export function createDrizzleContextSources(db: Database): ContextSources {
       isNull(contextSources.rootThreadId),
       isNull(contextSources.chatThreadId),
     );
-  const ofWorks = (projectId: ProjectId) =>
-    and(eq(works.projectId, projectId), isNull(works.deletedAt));
+  const ofWorks = (projectId: ProjectId) => eq(works.projectId, projectId);
 
   return {
     inProject(projectId) {
@@ -90,7 +89,7 @@ export function createDrizzleContextSources(db: Database): ContextSources {
         .where(
           and(
             or(eq(contextSources.projectId, projectId), eq(works.projectId, projectId)),
-            or(isNotNull(contextSources.deletedAt), isNotNull(works.deletedAt)),
+            isNotNull(contextSources.deletedAt),
           ),
         );
       return rows.map((row) => row.id as ContextSourceId);

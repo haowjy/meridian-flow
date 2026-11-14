@@ -14,7 +14,11 @@ its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired
 `permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
-is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`.
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
+dropped from the grants and never run: it reports as skipped, and the rest of the reply still
+reverses (`TreePlan.gone`). Every other denial of a step's document refuses the whole reversal,
+a deleted Work's included, and the outcome carries the policy's reason (`denial`) for the card to
+word: archived Work, deleted chat, deleted document or Work, or no longer editable.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
 and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each
@@ -41,7 +45,9 @@ Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
-otherwise an invertible active part offers Undo. Effective action state is
+otherwise an invertible active part offers Undo. The card counts only a person's Undo
+(its own, `actor: "human"`): the model's undo in the reply is part of what the reply did and
+gives the card no Redo, the same rule as for tree receipts below. Effective action state is
 indexed per immutable part. A model count consumes original actions: once a
 partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit; Redo retains the exact parts that were
@@ -51,7 +57,7 @@ The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
 (destination) view. All three use Yjs identity: a part edited since is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
-or current text. Undo and Redo refuse `cant_*_changed` only when none of a text-only
+or current text. Undo and Redo refuse `cant_*_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port. Model actions
 cannot use a reconstruction endpoint, reversal table, or reserved client. A
@@ -60,10 +66,24 @@ last undone edit first; a count beyond what is available refuses with the
 available count and changes nothing. User-actuated entries refuse model stack commands. A card Undo pops the turn's
 poppable stack prefix and writes forward reverts for its other text parts, including applied
 parts. Both kinds share one action identity, so the card's Redo reverses exactly the parts its
-Undo accepted. The card names and skips a part whose draft was discarded (`expired`) or that a
-later writer edit depends on (`cant_undo_dependent`), and inverts the rest.
-A later item depends on an edit when its parent or left neighbour is the edit's text; an item merely placed ahead of it (a concurrent draft's block that Apply put before it) does not.
-A right origin that points at text the edit deleted does not count either: if an edit deletes a paragraph and the writer then places a paragraph in its place, Undo restores the deleted paragraph after the writer's, losing nothing. Counting those pointers would block "chat A replaces a paragraph, chat B places a block before it".
+Undo accepted. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
+Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
+the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
+never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
+the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
+writer deleted), a heading level or other attribute the writer set after the edit. An
+element the edit created that the writer typed in stays, holding only the writer's text.
+A replacement is a deleted run with the part's insertion beside it. The deleted run stays
+gone only when the insertion is gone and text written after the edit (the writer or a pull
+replaced it; a clock at or past the part's `frontier`, read on the original of an
+Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
+double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
+writes only the insertions inside a changed run that only gained characters (`retainShared` in
+`packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
+Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
+the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
+Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
+item can still be removed or restored, `undone` when only Redo can, else `changed`.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
@@ -117,7 +137,10 @@ A tree change (create, move, rename, delete, restore, folders included) is its o
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
 A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
-steps, newest receipt first; a Redo takes the receipts an Undo reversed, oldest first). It
+steps, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
+receipt the model's own `undo` reversed in the reply is part of what the reply did, and gives the
+card no Redo). The receipts one list holds go back in one update of that list, so a browser showing
+it redraws once for the whole Undo, not once a receipt. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
@@ -137,7 +160,7 @@ keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and on
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
 `e<N>` the model is given is the ordinal on the receipt's subject.
 
-A node has one history per chat: its tree receipts and its text edits, ordered by that ordinal,
+A node has one history per chat: this agent's own tree receipts and text edits (each agent is its own peer for the text, as above, so the writer's typing never drops an edit from it; only an edit with no item left to remove or restore does), ordered by that ordinal,
 with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
 not reversed, the receipts an Undo made and a Redo has not, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
@@ -195,9 +218,11 @@ after the commit, outside the scope.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
-`cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
-(`TurnInverseSkipCause`) and the app words it.
+`expired`, or `partial` with HTTP 200; callers retain
+those outcomes and refresh the turn query. A reversal that reversed nothing because a document
+blocks an ancestor folder, the folder is missing, or the document moved or was deleted again
+answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
+app words it; a tree skip names the path its entry was shown at.
 
 A released closed draft has no bytes from which to describe a receipt's prose.
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause

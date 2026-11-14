@@ -1050,13 +1050,12 @@ export function runTreeUndo(
   const outcomes: UndoneTree["outcomes"] = [];
   let inLive = scope.view.draft === null;
   for (const entry of [...records].reverse()) {
-    let back = undoChange(scope.writer, scope.view, scope.actor, entry.record);
-    if (typeof back === "string" && scope.view.draft !== null) {
-      back = undoChange(scope.writer, LIVE, scope.actor, entry.record);
-      if (typeof back !== "string") inLive = true;
-    }
+    const back = undoChange(scope.writer, scope.view, scope.actor, entry.record);
     if (typeof back === "string") outcomes.push(back);
-    else remember(cx, back.id, entry.node);
+    else {
+      if (back.draft === null) inLive = true;
+      remember(cx, back.id, entry.node);
+    }
   }
   const after =
     scope.view.draft !== null && inLive ? scope.writer.view(LIVE) : scope.writer.view(scope.view);

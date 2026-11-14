@@ -1,8 +1,7 @@
 import type { ParsedContent } from "@meridian/markup";
-import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
+import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
-import type { Span } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
@@ -23,14 +22,7 @@ import {
   uniqueHashesForBlocks,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
-
-interface TextSegment {
-  text: Y.XmlText;
-  start: number;
-  length: number;
-}
-
-type BindingMetadata = Parameters<typeof updateYFragment>[3];
+import { readRepairedRoot } from "./schema-repair.js";
 
 export type YProsemirrorDocumentModel = AgentEditModel & {
   schema: Schema;
@@ -75,8 +67,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectText(unwrapBlock(block));
     },
 
-    getVisibleContentLineage(block) {
-      return collectVisibleContentLineage(unwrapBlock(block));
+    nodeLineage(block, path) {
+      return collectVisibleContentLineage(nodeAt(unwrapBlock(block), path));
     },
 
     textblockLineage(block, path, from, to) {
@@ -95,10 +87,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       Y.applyUpdate(unwrapDoc(doc), update, origin);
     },
 
-    applyTextEdit(_doc, block, span, newText) {
-      applyTextEdit(unwrapBlock(block), span, newText);
-    },
-
     insertBlocks(doc, after, parsed) {
       return insertBlocks(unwrapDoc(doc), after ? unwrapBlock(after) : null, parsed).map(toRef);
     },
@@ -111,10 +99,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return applyOps(unwrapBlock(block), ops);
     },
 
-    applyBlockReplacement(doc, block, replacement) {
-      applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
-    },
-
     projectBlocks(doc) {
       return projectBlocks(unwrapDoc(doc), schema);
     },
@@ -125,10 +109,6 @@ export function fragmentOf(doc: Y.Doc): Y.XmlFragment {
   return doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
 }
 
-export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
-  return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
-}
-
 /**
  * One walk that pairs each top-level element with its node. Building the root repairs the
  * document (an element the schema can't build is deleted and dropped), so the surviving
@@ -136,7 +116,7 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
  * computed over them, never over the pre-repair list.
  */
 function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
-  const root = prosemirrorRootOf(doc, schema);
+  const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
   const elements = getTopLevelXmlBlocks(doc);
   if (elements.length !== root.childCount) {
     throw new Error(
@@ -149,122 +129,56 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
     id: getBlockItemId(element),
     hash: hashes[index],
     fullHash: fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(element))),
-    node: root.child(index),
+    // The model reads and writes Markdown, which has no ids, so its view of a block has none: a
+    // block it leaves alone compares equal to its own Markdown and keeps its element and id.
+    node: withoutBlockIds(root.child(index)),
   }));
 }
 
-export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
-  block = unwrapBlock(toRef(block));
-  const text = collectText(block);
-  if (span.from < 0 || span.to < span.from || span.to > text.length) {
-    throw new RangeError(
-      `Invalid text span ${span.from}..${span.to} for block length ${text.length}`,
-    );
-  }
-
-  // Equal text at either edge stays, so its items, anchors and attribution survive.
-  const trimmed = trimUnchangedEdges(text.slice(span.from, span.to), newText);
-  span = { from: span.from + trimmed.prefix, to: span.to - trimmed.suffix };
-  newText = trimmed.text;
-  if (span.from === span.to && newText.length === 0) return;
-
-  const segments = collectTextSegments(block);
-  const insertAttrs = attributesAtFlatOffset(segments, span.from);
-
-  // Insert before deleting: an insert into an already-deleted run anchors
-  // after it, beside any writer text typed at its end, and Yjs then orders
-  // the two by client id, which can put the writer's words in front.
-  if (newText.length > 0) {
-    const insertion = insertionPoint(block, segments, span.from);
-    insertion.text.insert(insertion.offset, newText, insertAttrs);
-  }
-  const from = span.from + newText.length;
-  const to = span.to + newText.length;
-  for (const segment of collectTextSegments(block).reverse()) {
-    const segmentFrom = Math.max(from, segment.start);
-    const segmentTo = Math.min(to, segment.start + segment.length);
-    if (segmentFrom < segmentTo) {
-      segment.text.delete(segmentFrom - segment.start, segmentTo - segmentFrom);
-    }
-  }
-}
-
-function trimUnchangedEdges(
-  oldText: string,
-  newText: string,
-): { prefix: number; suffix: number; text: string } {
-  const limit = Math.min(oldText.length, newText.length);
-  let prefix = 0;
-  while (prefix < limit && oldText.charCodeAt(prefix) === newText.charCodeAt(prefix)) prefix += 1;
-  // Never split a surrogate pair: Yjs would store each half as a broken character.
-  if (prefix > 0 && isHighSurrogate(newText.charCodeAt(prefix - 1))) prefix -= 1;
-  let suffix = 0;
-  while (
-    suffix < limit - prefix &&
-    oldText.charCodeAt(oldText.length - 1 - suffix) ===
-      newText.charCodeAt(newText.length - 1 - suffix)
-  ) {
-    suffix += 1;
-  }
-  if (suffix > 0 && isLowSurrogate(newText.charCodeAt(newText.length - suffix))) suffix -= 1;
-  return { prefix, suffix, text: newText.slice(prefix, newText.length - suffix) };
-}
-
-function isHighSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdbff;
-}
-
-function isLowSurrogate(code: number): boolean {
-  return code >= 0xdc00 && code <= 0xdfff;
-}
-
-/**
- * Rewrites a block as `replacement` in place: its attributes are written and
- * its content is diffed against the current children, so equal text keeps its
- * items, anchors and attribution.
- */
-export function applyBlockDiff(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  replacement: PMNode,
-): void {
-  const element = unwrapBlock(toRef(block));
-  if (element.nodeName !== replacement.type.name) {
-    throw new Error(
-      `Cannot update ${element.nodeName} block with ${replacement.type.name} content`,
-    );
-  }
-  writePmBlock(doc, element, replacement);
-}
-
-function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
-  updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
-}
+/** An operation with the elements it addresses, found before anything changed. */
+type Resolved =
+  | { op: Extract<EditOp, { kind: "text" }>; node: Y.XmlElement }
+  | { op: Extract<EditOp, { kind: "attrs" }>; node: Y.XmlElement }
+  | { op: Extract<EditOp, { kind: "insert" }>; node: Y.XmlElement; anchor: Y.XmlElement | null }
+  | { op: Extract<EditOp, { kind: "delete" }>; node: Y.XmlElement };
 
 /**
  * Every path and offset is checked before anything changes, so an operation means the
  * block as planned whatever ran before it, and a write that does not fit leaves it alone.
+ * Text and attributes go first, then inserts (each after an element found beforehand, which
+ * a delete may remove next), then deletes.
  */
-function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
-  const targets: Y.XmlElement[] = [];
+export function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
+  const resolved: Resolved[] = [];
   for (const op of ops) {
     const node = findNode(block, op.path);
     const problem = node ? opProblem(node, op) : "its path does not address an element";
     if (!node || problem) return invalidOp(`Cannot apply a ${op.kind} operation: ${problem}`);
-    targets.push(
-      op.kind === "attrs" && op.unit !== undefined ? (atomAt(node, op.unit) ?? node) : node,
-    );
+    if (op.kind === "insert") {
+      const anchor = op.after < 0 ? null : node.get(op.after);
+      resolved.push({ op, node, anchor: anchor instanceof Y.XmlElement ? anchor : null });
+    } else if (op.kind === "attrs" && op.unit !== undefined) {
+      resolved.push({ op, node: atomAt(node, op.unit) ?? node });
+    } else resolved.push({ op, node } as Resolved);
   }
-  for (const [index, op] of ops.entries()) {
-    const target = targets[index];
-    if (op.kind === "text") {
-      applyTextOp(target, op);
-      continue;
-    }
+  const of = <K extends EditOp["kind"]>(kind: K) =>
+    resolved.filter(
+      (entry): entry is Extract<Resolved, { op: { kind: K } }> => entry.op.kind === kind,
+    );
+  for (const { op, node } of of("text")) applyTextOp(node, op);
+  for (const { op, node } of of("attrs"))
     for (const [key, value] of Object.entries(op.attrs)) {
-      if (value === null || value === undefined) target.removeAttribute(key);
-      else target.setAttribute(key, value as string);
+      if (value === null || value === undefined) node.removeAttribute(key);
+      else node.setAttribute(key, value as string);
     }
+  for (const { op, node, anchor } of of("insert"))
+    node.insert(
+      anchor ? node.toArray().indexOf(anchor) + 1 : 0,
+      op.nodes.map((child) => pmNodeToYElement(withBlockIds(child))),
+    );
+  for (const { node } of of("delete")) {
+    const parent = node.parent as Y.XmlElement;
+    parent.delete(parent.toArray().indexOf(node), 1);
   }
   return { ok: true };
 }
@@ -306,22 +220,17 @@ function atomAt(leaf: Y.XmlElement, unit: number): Y.XmlElement | undefined {
 function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   if (op.kind === "attrs")
     return op.unit === undefined || atomAt(node, op.unit) ? undefined : "no atom at its unit";
+  if (op.kind === "insert")
+    return op.after < 0 || node.get(op.after) instanceof Y.XmlElement
+      ? undefined
+      : "no child to insert after";
+  if (op.kind === "delete")
+    return op.path.length > 0 ? undefined : "a block does not delete itself";
   const slots = slotsOf(node);
   const size = slots.reduce((sum, slot) => sum + slot.length, 0);
-  const slotAt = (unit: number) =>
-    slots.find((slot) => unit >= slot.start && unit < slot.start + slot.length);
   let cursor = 0;
-  for (const { from, to, content } of op.splices) {
+  for (const { from, to } of op.splices) {
     if (from < cursor || to < from || to > size) return `invalid splice ${from}..${to} of ${size}`;
-    let atoms = false;
-    content.forEach((child) => {
-      atoms ||= !child.isText;
-    });
-    // Replacing [from, to) leaves a run of text whole around the insertion point; an atom
-    // cannot go into one, since a run of text cannot be cut in two.
-    const inside = from > 0 && to < size ? slotAt(from - 1) : undefined;
-    if (atoms && inside && inside === slotAt(to) && inside.child instanceof Y.XmlText)
-      return "an inline atom cannot go inside a run of text";
     cursor = to;
   }
   for (const { from, to } of op.formats)
@@ -393,19 +302,46 @@ function insertContent(leaf: Y.XmlElement, at: number, content: Fragment): void 
       ]);
     return;
   }
-  const previous = runs.find((slot) => slot.length > 0 && slot.start + slot.length === at);
-  const next = runs.find((slot) => slot.length > 0 && slot.start === at);
+  // An atom cannot go inside a run of text, so the run is cut there: its tail moves to a run
+  // of its own after the atom, the way a peer's typed break would split it.
+  const inside = runs.find((slot) => slot.start < at && at < slot.start + slot.length);
+  let tail: Y.XmlText | undefined;
+  if (inside) {
+    tail = new Y.XmlText();
+    let seen = 0;
+    let end = 0;
+    for (const part of inside.child.toDelta() as Array<{
+      insert: string;
+      attributes?: Record<string, unknown>;
+    }>) {
+      const skip = Math.max(0, at - inside.start - seen);
+      seen += part.insert.length;
+      if (skip >= part.insert.length) continue;
+      const rest = part.insert.slice(skip);
+      tail.insert(end, rest, part.attributes);
+      end += rest.length;
+    }
+    inside.child.delete(at - inside.start, inside.length - (at - inside.start));
+  }
+  const previous =
+    inside ?? runs.find((slot) => slot.length > 0 && slot.start + slot.length === at);
+  const next: { child: Y.XmlText } | undefined = tail
+    ? { child: tail }
+    : runs.find((slot) => slot.length > 0 && slot.start === at);
   const children: Array<Y.XmlText | Y.XmlElement> = [];
-  const meta = createBindingMetadata();
   for (const [index, nodes] of texts.entries()) {
-    if (index > 0) children.push(pmNodeToYElement(atoms[index - 1], meta));
+    if (index > 0) children.push(pmNodeToYElement(atoms[index - 1]));
     if (nodes.length === 0) continue;
-    if (index === 0 && previous) insertInto(previous.child, previous.length, nodes);
+    if (index === 0 && previous) insertInto(previous.child, at - previous.start, nodes);
     else if (index === texts.length - 1 && next) insertInto(next.child, 0, nodes);
     else children.push(textNodesToYText(nodes));
   }
+  if (tail) children.push(tail);
+  const anchor = inside ?? undefined;
   leaf.insert(
-    slots.filter((slot) => slot !== next && slot.start + slot.length <= at).length,
+    anchor
+      ? anchor.index + 1
+      : slots.filter((slot) => slot !== next && slot.start + slot.length <= at).length,
     children,
   );
 }
@@ -422,7 +358,8 @@ export function insertBlocks(
   if (afterElement !== null && index === 0) {
     throw new Error("Cannot insert after a block that is not in the document");
   }
-  const inserted = parsed.blocks.map((block) => pmNodeToYElement(block, createBindingMetadata()));
+  // The codec's blocks have no ids: this is where they become stored blocks.
+  const inserted = parsed.blocks.map((block) => pmNodeToYElement(withBlockIds(block)));
   if (inserted.length > 0) fragment.insert(index, inserted);
   return inserted;
 }
@@ -522,24 +459,6 @@ function yTextPlainText(text: Y.XmlText): string {
     .join("");
 }
 
-function collectTextSegments(block: Y.XmlElement): TextSegment[] {
-  const segments: TextSegment[] = [];
-  let offset = 0;
-  const visit = (type: Y.XmlElement | Y.XmlText) => {
-    if (type instanceof Y.XmlText) {
-      const length = type.length;
-      segments.push({ text: type, start: offset, length });
-      offset += length;
-      return;
-    }
-    for (const child of type.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(block);
-  return segments;
-}
-
 function clearText(type: Y.XmlElement | Y.XmlText): void {
   if (type instanceof Y.XmlText) {
     type.delete(0, type.length);
@@ -550,60 +469,16 @@ function clearText(type: Y.XmlElement | Y.XmlText): void {
   }
 }
 
-function attributesAtFlatOffset(
-  segments: readonly TextSegment[],
-  flatOffset: number,
-): Record<string, unknown> | undefined {
-  for (const segment of segments) {
-    if (flatOffset >= segment.start && flatOffset <= segment.start + segment.length) {
-      return attributesAt(segment.text, flatOffset - segment.start);
-    }
-  }
-  return undefined;
-}
-
-function attributesAt(text: Y.XmlText, offset: number): Record<string, unknown> | undefined {
-  let cursor = 0;
-  let previous: Record<string, unknown> | undefined;
-  for (const delta of text.toDelta() as Array<{
-    insert?: string;
-    attributes?: Record<string, unknown>;
-  }>) {
-    const length = typeof delta.insert === "string" ? delta.insert.length : 0;
-    const attrs = delta.attributes;
-    if (offset >= cursor && offset < cursor + length) return attrs;
-    if (offset === cursor + length) previous = attrs;
-    cursor += length;
-  }
-  return previous;
-}
-
-function insertionPoint(
-  block: Y.XmlElement,
-  segments: readonly TextSegment[],
-  flatOffset: number,
-): { text: Y.XmlText; offset: number } {
-  for (const segment of segments) {
-    if (flatOffset >= segment.start && flatOffset <= segment.start + segment.length) {
-      return { text: segment.text, offset: flatOffset - segment.start };
-    }
-  }
-  const text = new Y.XmlText();
-  block.insert(0, [text]);
-  return { text, offset: 0 };
-}
-
-function pmNodeToYElement(node: PMNode, meta: BindingMetadata): Y.XmlElement {
+export function pmNodeToYElement(node: PMNode): Y.XmlElement {
   const element = new Y.XmlElement(node.type.name);
   for (const key of Object.keys(node.attrs)) {
     const value = node.attrs[key];
     if (value !== null && key !== "ychange") element.setAttribute(key, value);
   }
   const children = normalizeContent(node).map((child) =>
-    Array.isArray(child) ? textNodesToYText(child) : pmNodeToYElement(child, meta),
+    Array.isArray(child) ? textNodesToYText(child) : pmNodeToYElement(child),
   );
   if (children.length > 0) element.insert(0, children);
-  meta.mapping.set(element, node);
   return element;
 }
 
@@ -641,8 +516,4 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
-}
-
-function createBindingMetadata(): BindingMetadata {
-  return { mapping: new Map(), isOMark: new Map() };
 }

@@ -4,14 +4,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, Folder, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { SettledSearchField } from "@/components/ui/search-field";
-import type { TreeFile } from "@/core/project-tree/tree-view";
+import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -21,45 +21,56 @@ import {
 import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
+import { useOpenCreatedDocument } from "../review-launch";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
+import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
+import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
-import { fileSuggestion, matchFileSuggestions } from "./file-suggestions/file-suggestions";
+import { matchFileSuggestions, treeFileSuggestions } from "./file-suggestions/file-suggestions";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
+import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
+
+/** What a row offers in a tree that takes no change: its documents still copy out. */
+const READ_ONLY: EntryCapabilities = ["copy"];
 
 /**
  * An area's rows under its name, with New file, New folder and Import in the
- * heading. Creation requests come from the shell's `TreeCreationProvider`.
+ * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
+ * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
  */
 export function ContextTreePanel({
   treeState,
+  writable,
   projectId,
   editorWorkId,
   scheme,
-  activeScheme,
-  activePath,
+  activeDocumentId,
   onSelectFile,
+  onPicked,
   drop,
 }: {
   treeState: TreeViewResult;
+  writable: boolean;
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: TreeFile,
     options?: { focus?: true },
   ) => void;
+  /** A file the writer picked opened: the phone's drawer closes. */
+  onPicked?: () => void;
   drop: SourceDrop;
 }) {
   const controller = useOptionalTreeCreation();
@@ -88,9 +99,17 @@ export function ContextTreePanel({
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
-  const activeLocationPath = activeScheme === scheme ? activePath : null;
+  const shell = useShellTreeVersion();
+  const changed = shell?.showing === "live" && shell.offered ? shell.changed : null;
+  const activeLocationPath =
+    (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
+  // Where the header's New file and New folder go: the folder the writer last opened or closed
+  // into, else the open document's folder, else the top.
+  const [place, setPlace] = useState<{ folderPath: string; activePath: string | null } | null>(
+    null,
+  );
   const revealed = useRef<string | null>(null);
 
   const revealPath = useCallback(
@@ -145,9 +164,9 @@ export function ContextTreePanel({
       revealed.current = null;
       return;
     }
-    if (!tree?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
+    if (revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
-    revealPath(parentContextPath(activeLocationPath));
+    revealPath(parentContextEntryPath(activeLocationPath));
   }, [activeLocationPath, tree, revealPath]);
 
   const creatingParent = creating?.parentPath;
@@ -161,18 +180,24 @@ export function ContextTreePanel({
     [requestTreeCreate, scheme],
   );
 
-  // A created file opens once its row shows in the tree.
+  // A created file opens once its row shows in the tree, in the version it was made in.
+  const openCreated = useOpenCreatedDocument(projectId);
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const entry = tree.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
-    onSelectFile(scheme, entry, { focus: true });
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, onSelectFile, scheme]);
+    void openCreated(
+      entry.documentId,
+      async () => onSelectFile(scheme, entry, { focus: true }),
+      onPicked,
+    );
+  }, [pendingOpenPath, tree, onSelectFile, onPicked, scheme, openCreated]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
-  const importScheme = imports !== null && isImportScheme(scheme) ? scheme : null;
+  const importScheme = writable && imports !== null && isImportScheme(scheme) ? scheme : null;
+  const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
@@ -182,15 +207,12 @@ export function ContextTreePanel({
             projectId,
             owner,
             scheme,
-            capabilities: [
-              "rename",
-              "move",
-              "copy",
-              ...(scheme !== "uploads" ? (["delete"] as const) : []),
-            ],
-            activeScheme,
-            activePath,
-            creation: schemeAllowsCreation(scheme)
+            capabilities: writable
+              ? ["rename", "move", "copy", ...(scheme !== "uploads" ? (["delete"] as const) : [])]
+              : READ_ONLY,
+            activeDocumentId,
+            changed,
+            creation: creates
               ? {
                   creating,
                   request: requestCreate,
@@ -198,6 +220,7 @@ export function ContextTreePanel({
                   createdFile: setPendingOpenPath,
                   createdFolder,
                   setCreatedFolder,
+                  placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
                 }
               : undefined,
             onSelectFile,
@@ -221,8 +244,11 @@ export function ContextTreePanel({
       projectId,
       owner,
       scheme,
-      activeScheme,
-      activePath,
+      writable,
+      creates,
+      activeDocumentId,
+      activeLocationPath,
+      changed,
       creating,
       createdFolder,
       onSelectFile,
@@ -238,12 +264,18 @@ export function ContextTreePanel({
     ],
   );
 
-  const actions = schemeAllowsCreation(scheme) ? (
+  // Opening another document since moves the place to its folder.
+  const placed =
+    place && place.activePath === activeLocationPath
+      ? place.folderPath
+      : activeLocationPath && parentContextEntryPath(activeLocationPath);
+  const here = placed && tree?.findPath(placed)?.kind === "dir" ? placed : "";
+  const actions = creates ? (
     <>
-      <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
+      <IconButton label={t`New file`} onClick={() => requestCreate("file", here)}>
         <FilePlus aria-hidden />
       </IconButton>
-      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", "")}>
+      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", here)}>
         <FolderPlus aria-hidden />
       </IconButton>
       {importScheme ? (
@@ -281,12 +313,17 @@ export function ContextTreePanel({
       }
     >
       {search && tree ? (
-        <FoundFiles
-          files={tree.files()}
+        <FoundEntries
+          tree={tree}
           scheme={scheme}
           search={search}
-          activePath={activeScheme === scheme ? activePath : null}
+          activeDocumentId={activeDocumentId}
           onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
+          onOpenFolder={(folderId) => {
+            setSearch(null);
+            openFolder(folderId);
+            focusRow(`folder:${folderId}`);
+          }}
         />
       ) : env && tree ? (
         <TreeEnvProvider value={env}>
@@ -315,23 +352,27 @@ export function ContextTreePanel({
   );
 }
 
-/** A search's matches as one flat list, best first; the folder tells two of one name apart. */
-function FoundFiles({
-  files,
+/**
+ * A search's matches as one flat list, best first; the folder tells two of one name apart. A
+ * folder found opens in place in the tree, where its menu moves or deletes it.
+ */
+function FoundEntries({
+  tree,
   scheme,
   search,
-  activePath,
+  activeDocumentId,
   onOpen,
+  onOpenFolder,
 }: {
-  files: readonly TreeFile[];
+  tree: TreeView;
   scheme: ProjectContextTreeScheme;
   search: string;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onOpen: (file: TreeFile) => void;
+  onOpenFolder: (folderId: string) => void;
 }) {
-  const byId = new Map(files.map((file) => [file.documentId, file]));
   const found = matchFileSuggestions(
-    files.map((file) => fileSuggestion(scheme, file)),
+    treeFileSuggestions([{ scheme, tree }]).filter((entry) => entry.path !== "/"),
     search,
   );
   if (found.length === 0)
@@ -345,16 +386,26 @@ function FoundFiles({
   return (
     <div className="px-2">
       {found.map((match) => {
-        const file = byId.get(match.entryId);
-        if (!file) return null;
+        const entry = tree.entry(match.entryId);
+        if (!entry) return null;
+        if (entry.kind === "dir")
+          return (
+            <ListRow
+              key={entry.entryId}
+              icon={Folder}
+              title={entry.name}
+              meta={match.parents.at(-1)}
+              onOpen={() => onOpenFolder(entry.entryId)}
+            />
+          );
         return (
           <ListRow
-            key={file.documentId}
-            icon={fileKindIcon(file)}
-            title={file.name}
+            key={entry.documentId}
+            icon={fileKindIcon(entry)}
+            title={entry.name}
             meta={match.parents.at(-1)}
-            current={file.path === activePath}
-            onOpen={() => onOpen(file)}
+            current={entry.documentId === activeDocumentId}
+            onOpen={() => onOpen(entry)}
           />
         );
       })}
@@ -362,7 +413,11 @@ function FoundFiles({
   );
 }
 
-function parentContextPath(path: string): string {
-  const separator = path.lastIndexOf("/");
-  return separator <= 0 ? "" : path.slice(0, separator);
+/** Brings a tree row to the top of the list, so what it holds shows below it, and focuses it once drawn. */
+function focusRow(key: string) {
+  requestAnimationFrame(() => {
+    const row = document.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`);
+    row?.scrollIntoView({ block: "start" });
+    row?.focus({ preventScroll: true });
+  });
 }

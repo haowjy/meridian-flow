@@ -27,6 +27,7 @@ import {
   schemeIcon,
   schemeLabel,
 } from "@/features/project/context/context-schemes";
+import { useOpenCreatedDocument } from "@/features/project/review-launch";
 import type { LinkDocumentRef } from "./follow-link";
 import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
 
@@ -133,6 +134,7 @@ export function FollowOutcomeContent({
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
   const { create, failed: failedToCreate } = useCreateLinkedDocument(projectId);
+  const openCreated = useOpenCreatedDocument(projectId ?? "");
   const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
   const name = outcome.state === "missing" ? targetName(outcome) : "";
 
@@ -181,7 +183,9 @@ export function FollowOutcomeContent({
               const documentId = create(creation);
               if (!documentId) return;
               onClose();
-              await onOpen({ documentId, focus: true });
+              await openCreated(documentId, async () => {
+                await onOpen({ documentId, focus: true });
+              });
             }}
           >
             {t`Create “${name}”`}

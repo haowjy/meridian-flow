@@ -134,7 +134,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         writes,
-        drafts: collab,
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
@@ -311,7 +310,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         writes,
-        drafts: collab,
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,

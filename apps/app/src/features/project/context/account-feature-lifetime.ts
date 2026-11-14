@@ -1,10 +1,8 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
-import type { AccountId, DocumentAddressResult } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import type { AccountId } from "@meridian/contracts/protocol";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import {
@@ -16,6 +14,7 @@ import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
+import { notifyUnsentTyping } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
@@ -62,7 +61,6 @@ export class AccountFeatureLifetime {
 
   constructor(
     readonly accountId: string,
-    queryClient: QueryClient,
     _onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
@@ -104,36 +102,8 @@ export class AccountFeatureLifetime {
       tabs: {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
-      addresses: {
-        removed: (projectId, documentIds) => {
-          const queryKey = projectQueryKeys.documentAddresses(projectId);
-          const rewrite = () =>
-            queryClient.setQueriesData<DocumentAddressResult>({ queryKey }, (answer) =>
-              answer?.kind !== "unavailable" &&
-              answer &&
-              documentIds.includes(answer.document.documentId)
-                ? { kind: "unavailable" }
-                : answer,
-            );
-          rewrite();
-          // A lookup in flight was asked before the removal: its answer would land over the
-          // rewrite. Cancelling reverts it to its last answer, so rewrite again and ask afresh.
-          const inFlight = queryClient
-            .getQueryCache()
-            .findAll({ queryKey, fetchStatus: "fetching" });
-          if (inFlight.length === 0) return;
-          void queryClient.cancelQueries({ queryKey, fetchStatus: "fetching" }).then(() => {
-            rewrite();
-            for (const query of inFlight)
-              void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
-          });
-        },
-        available: (projectId) =>
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.documentAddresses(projectId),
-          }),
-      },
     });
+    this.registry.observeUnsentTyping(notifyUnsentTyping);
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.
     if (typeof window !== "undefined")

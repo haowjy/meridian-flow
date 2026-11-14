@@ -4,38 +4,23 @@
  * - Fence: this tab's Meridian is older than the chapter, so writing stops
  *   until the writer reloads. Error tone, Refresh on the bar.
  * - Repair: the editor removed prose this version can't display. Writing goes
- *   on. The bar says only that; Details opens the rescued words in a popover,
- *   as wide as the bar, so they never push the manuscript down.
+ *   on. The bar says only that; Details opens the rescued words (`RescuedText`)
+ *   in a popover, as wide as the bar, so they never push the manuscript down.
  *
  * One component owns both because Dismiss needs a place to send focus: the
  * editor, or Refresh while the fence holds the editor read-only.
- *
- * Copy is the point of the repair popover: it is the writer's way to keep the
- * words. So it goes through the feature's clipboard adapter and reports a
- * refusal on that fragment. (`CopyTextButton` swallows refusals.)
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Editor } from "@tiptap/core";
-import { Check, CircleAlert, Copy, Info } from "lucide-react";
-import {
-  type ReactNode,
-  type Ref,
-  type RefObject,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { CircleAlert, Info } from "lucide-react";
+import { type ReactNode, type Ref, type RefObject, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { SchemaFence } from "@/core/editor/schema-fence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { cn } from "@/lib/utils";
-import { writeClipboardText } from "./clipboard";
-
-const COPIED_RESET_MS = 1500;
+import { RescuedText, useCountRescues } from "./RescuedText";
 
 /** A 44px touch target under a coarse pointer, without making the bar taller. */
 const BAR_ACTION = "shrink-0 coarse:-my-2.5 coarse:h-11";
@@ -148,6 +133,17 @@ function SchemaRepairNotice({
   const [dismissedCount, setDismissedCount] = useState(0);
   const dismissing = useRef(false);
   const labelId = useId();
+  useCountRescues(
+    useMemo(
+      () =>
+        repairs.map((repair) => ({
+          occurrenceId: `schema:${repair.id}`,
+          rescue: { kind: "schema-removed-text" as const },
+          passages: [repair.removedText ?? null],
+        })),
+      [repairs],
+    ),
+  );
   if (repairs.length <= dismissedCount) return null;
 
   return (
@@ -191,104 +187,15 @@ function SchemaRepairNotice({
           focusAfterDismiss();
         }}
       >
-        <ol className="flex flex-col gap-2">
-          {repairs.map((repair, index) => (
-            // Events have no durable id; session append order and detection
-            // time together identify one rendering without inventing persistence.
-            <RemovedFragment key={`${repair.detectedAt}:${index}`} repair={repair} />
-          ))}
-        </ol>
-        <div className="flex items-center gap-3">
-          <p className="min-w-0 flex-1 text-muted-foreground">
-            <Trans>This version of Meridian can't display it.</Trans>
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            className="shrink-0 coarse:h-11"
-            onClick={() => {
-              dismissing.current = true;
-              setDismissedCount(repairs.length);
-            }}
-          >
-            <Trans>Dismiss</Trans>
-          </Button>
-        </div>
+        <RescuedText
+          passages={repairs.map((repair) => repair.removedText ?? null)}
+          note={<Trans>This version of Meridian can't display it.</Trans>}
+          onDismiss={() => {
+            dismissing.current = true;
+            setDismissedCount(repairs.length);
+          }}
+        />
       </PopoverContent>
     </Popover>
-  );
-}
-
-function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
-  const [copy, setCopy] = useState<"idle" | "copied" | "blocked">("idle");
-  const resetRef = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (resetRef.current !== null) window.clearTimeout(resetRef.current);
-    },
-    [],
-  );
-  const text = repair.removedText;
-
-  return (
-    <li
-      data-schema-repair
-      data-schema-repair-phase={repair.phase}
-      data-schema-repair-evidence={repair.evidenceDegraded ? "degraded" : "complete"}
-      className="flex flex-col gap-1"
-    >
-      {text ? (
-        <>
-          <div className="flex items-start gap-2 rounded-md border border-border-subtle bg-background py-1.5 pr-1.5 pl-3">
-            <pre
-              data-schema-repair-removed-text
-              // The rescued words in the reader's font, wrapped and bounded so one
-              // long passage doesn't hide the rest of the list.
-              className="max-h-32 min-w-0 flex-1 overflow-y-auto py-0.5 font-sans break-words whitespace-pre-wrap text-foreground"
-            >
-              {text}
-            </pre>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="shrink-0 coarse:h-11"
-              data-copy-schema-repair
-              onClick={() => {
-                void writeClipboardText(text).then((write) => {
-                  // A pending Copied reset must not erase a later refusal.
-                  if (resetRef.current !== null) window.clearTimeout(resetRef.current);
-                  resetRef.current = null;
-                  if (write.status !== "done") {
-                    setCopy("blocked");
-                    return;
-                  }
-                  setCopy("copied");
-                  resetRef.current = window.setTimeout(() => setCopy("idle"), COPIED_RESET_MS);
-                });
-              }}
-            >
-              {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
-              {copy === "copied" ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-            </Button>
-          </div>
-          {copy === "blocked" ? (
-            <InlineErrorRow
-              message={<Trans>Couldn't copy. Select the text to copy it.</Trans>}
-              className="p-0"
-            />
-          ) : null}
-        </>
-      ) : (
-        // The same box as a rescued passage, so it reads as its own item.
-        <p
-          data-schema-repair-no-text
-          className="rounded-md border border-border-subtle bg-background py-2 pr-1.5 pl-3 text-muted-foreground"
-        >
-          <Trans>This passage couldn't be recovered.</Trans>
-        </p>
-      )}
-    </li>
   );
 }

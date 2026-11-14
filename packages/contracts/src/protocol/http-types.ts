@@ -223,58 +223,12 @@ export type DeleteContextEntryRequest = {
   kind: "file" | "folder";
 };
 
-/** Where a restore lands instead of the original path: a parent, and where among its children. */
-const restoreDestinationSchema = z.object({
-  parent: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("folder"), folderId: z.string().uuid() }),
-    z.object({ kind: z.literal("root"), scheme: z.enum(["manuscript", "kb", "user"]) }),
-  ]),
-  /** The first restored document goes here, the rest follow it in request order. */
-  position: z
-    .discriminatedUnion("kind", [
-      z.object({ kind: z.enum(["before", "after"]), siblingId: z.string().uuid() }),
-      z.object({ kind: z.enum(["start", "end"]) }),
-    ])
-    .optional(),
-});
+/** How long Trash keeps an entry: until a date, or while Works have changes to it. */
+export type TrashRetention =
+  | { kind: "scheduled"; purgeAt: string }
+  | { kind: "held"; works: Array<{ id: string; name: string }> };
 
-export const restoreContextDocumentsRequestSchema = z.object({
-  documents: z
-    .array(
-      z.object({
-        documentId: z.string().uuid(),
-        removal: removalIdentitySchema,
-      }),
-    )
-    .min(1)
-    .refine(
-      (documents) =>
-        new Set(documents.map(({ documentId }) => documentId)).size === documents.length,
-      "Each document may be restored once per request",
-    ),
-  /** Omitted: each document returns to its original path. */
-  destination: restoreDestinationSchema.optional(),
-});
-export type RestoreContextDocumentsRequest = z.infer<typeof restoreContextDocumentsRequestSchema>;
-
-export type RestoreContextDocumentResult =
-  | { documentId: string; outcome: "restored"; landedAt?: string }
-  | {
-      documentId: string;
-      outcome:
-        | "superseded"
-        | "already_living"
-        | "ancestor_taken"
-        | "refused"
-        /** The destination is gone, in Trash, in another system than the document, or not the writer's to edit. */
-        | "destination_unavailable";
-    };
-
-export type RestoreContextDocumentsResponse = {
-  documents: RestoreContextDocumentResult[];
-};
-
-/** One restorable document in a project's trash. */
+/** One document in a project's trash, on its own or inside a deleted folder. */
 export type DocumentTrashEntry = {
   documentId: string;
   name: string;
@@ -283,13 +237,31 @@ export type DocumentTrashEntry = {
   formerPath: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
-  retention:
-    | { kind: "scheduled"; purgeAt: string }
-    | { kind: "held"; works: Array<{ id: string; name: string }> };
+  retention: TrashRetention;
 };
 
-export type ListDocumentTrashResponse = {
-  documents: DocumentTrashEntry[];
+/**
+ * One Trash entry, restored whole: a document deleted on its own, or a folder with what its
+ * delete took (an empty folder included).
+ */
+export type TrashEntry = {
+  /** The deleted document's or folder's id: what a restore names. */
+  nodeId: string;
+  kind: "document" | "folder";
+  name: string;
+  scheme: ProjectContextTreeScheme;
+  /** Source-relative path, without a leading slash; a folder's ends in `/`. */
+  formerPath: string;
+  removal: RemovalIdentity;
+  actor: DocumentRemovalRecord["actor"];
+  /** A folder is held while a Work has changes to any document it took. */
+  retention: TrashRetention;
+  /** The documents a folder's delete took with it; 0 for a document. */
+  documents: number;
+};
+
+export type ListTrashResponse = {
+  entries: TrashEntry[];
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */

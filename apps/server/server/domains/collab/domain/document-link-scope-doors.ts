@@ -120,7 +120,7 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
-    ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
+    draftCreatedDocuments: access.draftCreatedDocuments,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

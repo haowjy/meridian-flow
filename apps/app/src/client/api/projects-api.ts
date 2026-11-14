@@ -13,10 +13,8 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextSourcesResult,
   DocumentTrashEntry,
-  ListDocumentTrashResponse,
+  ListTrashResponse,
   ProjectChatFeedPage,
-  RestoreContextDocumentsRequest,
-  RestoreContextDocumentsResponse,
 } from "@meridian/contracts/protocol";
 import {
   API_ACCOUNT_CONTEXT_SOURCES_PATH,
@@ -29,7 +27,6 @@ import {
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextSourcesPath,
-  apiProjectDocumentAddressPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
@@ -49,10 +46,7 @@ import {
   contextReadResponseSchema,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
-  type DocumentAddressRequestOptions,
-  type DocumentAddressResult,
   deleteContextEntryResultSchema,
-  documentAddressSchema,
   type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
@@ -199,19 +193,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
 /** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
-}
-
-export async function getProjectDocumentAddress(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: DocumentAddressRequestOptions,
-  init?: RequestInitOptions,
-): Promise<DocumentAddressResult> {
-  return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {
-    headers: init?.headers,
-    schema: documentAddressSchema,
-  });
 }
 
 export async function getProjectWorkingSet(
@@ -382,22 +363,7 @@ export async function copyContextEntries(
   });
 }
 
-export function restoreContextDocuments(
-  projectId: string,
-  body: RestoreContextDocumentsRequest,
-  init?: RequestInitOptions,
-): Promise<RestoreContextDocumentsResponse> {
-  return postJson(
-    urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/restore`, init),
-    body,
-    { headers: init?.headers, signal: init?.signal },
-  );
-}
-
-export function getDocumentTrash(
-  projectId: string,
-  init?: RequestInitOptions,
-): Promise<ListDocumentTrashResponse> {
+export function getTrash(projectId: string, init?: RequestInitOptions): Promise<ListTrashResponse> {
   return getJson(urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/trash`, init), {
     headers: init?.headers,
     signal: init?.signal,

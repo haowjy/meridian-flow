@@ -303,7 +303,7 @@ function OpenPicker({
         scheme: destination.scheme,
         owner: destination.owner,
         tree: destination.tree,
-        accepts: true,
+        writable: true,
       },
       into: destination.entryId,
       copies,

@@ -22,7 +22,7 @@ import { createDb } from "@meridian/database";
 import { NoopEventSink } from "../../../../apps/server/server/domains/observability/index.ts";
 import { processDetachedWork } from "../../../../apps/server/server/domains/runtime/detached-work.ts";
 import {
-  handleDiscardAllWorkBranchRequest,
+  handleDiscardBranchRequest,
   selectBranchRouteServices,
 } from "../../../../apps/server/server/lib/branch-review-route.ts";
 import {
@@ -152,11 +152,11 @@ async function handle(message: Op): Promise<unknown> {
         projectId: message.projectId as never,
       });
     case "discard":
-      return handleDiscardAllWorkBranchRequest(selectBranchRouteServices(app), {
+      return handleDiscardBranchRequest(selectBranchRouteServices(app), {
         projectId: message.projectId as never,
         branchId: message.branchId as never,
         userId: message.userId as never,
-        request: { branchId: message.branchId, commandId: message.commandId },
+        request: { all: true, commandId: message.commandId },
       });
     case "timeout": {
       const registration = app.toolRegistry.getRegistration(message.tool);

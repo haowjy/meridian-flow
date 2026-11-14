@@ -67,7 +67,7 @@ export {
   type DefaultSiblingOrderEntry,
   type RankedSibling,
 } from "./siblings.js";
-export { undoChange } from "./undo.js";
+export { deleteStands, undoChange } from "./undo.js";
 export { type ReadRecord, readRecord } from "./validate.js";
 export {
   LIVE,

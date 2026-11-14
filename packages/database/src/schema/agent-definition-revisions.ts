@@ -7,8 +7,8 @@ import type {
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
-  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -26,7 +26,6 @@ export const agentPackageRevisions = pgTable(
   {
     id: idColumn(),
     coordinate: text("coordinate").notNull(),
-    schemaVersion: integer("schema_version").notNull(),
     contentDigest: text("content_digest").notNull(),
     source: jsonb("source").notNull(),
     createdAt: createdAt(),
@@ -39,21 +38,6 @@ export const agentPackageRevisions = pgTable(
   ],
 );
 
-/** FK-backed retained dependency edges, installed before the dependent source is published. */
-export const agentPackageDependencies = pgTable(
-  "agent_package_dependencies",
-  {
-    packageRevisionId: uuid("package_revision_id")
-      .notNull()
-      .references(() => agentPackageRevisions.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    dependencyRevisionId: uuid("dependency_revision_id")
-      .notNull()
-      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
-  },
-  (table) => [primaryKey({ columns: [table.packageRevisionId, table.name] })],
-);
-
 export const agentDefinitionRevisions = pgTable(
   "agent_definition_revisions",
   {
@@ -62,12 +46,26 @@ export const agentDefinitionRevisions = pgTable(
       .notNull()
       .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
     slug: text("slug").notNull(),
-    definition: jsonb("definition").notNull(),
-    definitionDigest: text("definition_digest").notNull(),
+    /** The reader that produced this row: the Mars schema version and Flow's own rules version. */
+    grammarVersion: text("grammar_version").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    /** Null when the Agent is unavailable: nothing is stored for anything to run. */
+    definition: jsonb("definition"),
+    /** Every finding on the Agent, Mars's and Flow's. */
+    diagnostics: jsonb("diagnostics").notNull(),
     createdAt: createdAt(),
   },
   (table) => [
-    uniqueIndex("agent_definition_revisions_package_slug").on(table.packageRevisionId, table.slug),
+    uniqueIndex("agent_definition_revisions_package_slug_grammar").on(
+      table.packageRevisionId,
+      table.slug,
+      table.grammarVersion,
+    ),
+    check(
+      "agent_definition_revisions_unavailable_says_why",
+      sql`${table.definition} IS NOT NULL OR jsonb_array_length(${table.diagnostics}) > 0`,
+    ),
   ],
 );
 
@@ -161,10 +159,6 @@ export const agentPackageInstallations = pgTable(
     currentRevisionId: uuid("current_revision_id")
       .notNull()
       .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
-    upstreamRevisionId: uuid("upstream_revision_id")
-      .notNull()
-      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
-    origin: jsonb("origin").$type<{ url: string; ref: string; commitSha: string | null } | null>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -176,19 +170,4 @@ export const agentPackageInstallations = pgTable(
       .on(table.coordinate)
       .where(sql`${table.ownerUserId} IS NULL`),
   ],
-);
-
-/** Owned source history authorizes restore without granting access to arbitrary retained revisions. */
-export const agentPackageInstallationHistory = pgTable(
-  "agent_package_installation_history",
-  {
-    installationId: uuid("installation_id")
-      .notNull()
-      .references(() => agentPackageInstallations.id, { onDelete: "cascade" }),
-    packageRevisionId: uuid("package_revision_id")
-      .notNull()
-      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
-    createdAt: createdAt(),
-  },
-  (table) => [primaryKey({ columns: [table.installationId, table.packageRevisionId] })],
 );

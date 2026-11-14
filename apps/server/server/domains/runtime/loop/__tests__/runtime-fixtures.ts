@@ -18,7 +18,7 @@ export function createTestAgentBinding(
           id: "fixture-definition",
           packageRevisionId: "fixture-source",
           slug: "general",
-          definitionDigest: "fixture-digest",
+          grammarVersion: "fixture",
           definition: {
             schemaVersion: 1,
             systemPrompt,

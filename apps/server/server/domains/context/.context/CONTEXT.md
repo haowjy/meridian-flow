@@ -169,8 +169,10 @@ document keys; a caller holds no document or namespace key when it submits. `con
   seeds live Yjs: whole-file seed is a live-only command.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit
   (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
-  `conflict`; a create never replaces or joins another document. A draft create also makes the
-  document's draft (`ensureCreatedDocumentDraft`).
+  `conflict`; a create never replaces or joins another document. A text document created in a
+  Work's version gets its Yjs authority and its Work text draft from the list store, in the
+  transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
+  writer's records through the list's room and the AI's through `submit` take the same path.
 - **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
   (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
   bytes. A move between a project and the account (`user://`) crosses two lists:
@@ -287,12 +289,12 @@ say is the project's **sources** (`context_sources`): which node root is the man
 a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
 
 - `GET /api/projects/:projectId/context/sources` answers `ContextSourcesResult` for the project's
-  owner: the project's own, each Work's (not a deleted Work's: an archived Work's stay), each
-  lineage's and each chat's, while the source itself has not ended (a trashed chat's lineage or
-  uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
+  owner: the project's own, each Work's until the Work is purged (an archived or deleted Work's
+  read, and refuse writes), each lineage's and each chat's, while the source itself has not ended
+  (a trashed chat's lineage or uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
   account's own `user://`. Each source carries the `authority` its addresses are spelled with.
-- A source that begins (its first write provisions it), ends or comes back (a chat or Work
-  trashed or restored) publishes a truth-free `context-sources-hint` on the project's
+- A source that begins (its first write provisions it), ends or comes back (a chat trashed or
+  restored) publishes a truth-free `context-sources-hint` on the project's
   subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
   until its next read.
 - A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
@@ -345,8 +347,8 @@ binds once, to the first live document at its exact address, for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
-capture each other's waiting refs; a soft-deleted Work keeps its identity, so
-refs to its address wait for restore. Refs in a draft's text register globally
+capture each other's waiting refs; a soft-deleted Work keeps its identity and
+its files until the purge, so refs to its address bind while it is deleted. Refs in a draft's text register globally
 and best effort (an agent's mint, a link typed in the review room, and Apply's
 prerequisite for the drafts it publishes); a failed registration never fails
 Apply. The context link-scope adapter must receive the same scope instance as
@@ -354,8 +356,10 @@ collab, whose [document authority notes](../../collab/.context/document-authorit
 hold the scope rules.
 
 Zero or multiple matches resolve to `null`; resolution never guesses. An
-archived Work still resolves as authority and lists its files (archive hides a
-Work from Active, not its contents); only deleted Works hide theirs.
+archived or deleted Work still resolves as authority and lists its files until
+its purge (`ProjectWorkAuthorityResolver`, `presentSourceId`, availability's
+`placed` and `held`): its addresses read, and file policy refuses the writes as
+if the files were gone. Only `lockById` refuses a deleted Work.
 
 A ref-less address resolves in its typed scope; only chat falls back to a
 document's previous locations, and only after a current miss. Personal scope
@@ -369,15 +373,10 @@ A link resolver is not a capability. A reader who cannot reach a ref receives
 path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
-Browser addresses normally resolve in the live tree. A review address may
-supply `reviewOwner` (a draft owner key) and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree, except
-for a drafted delete whose identity is intentionally absent there, which reads
-the live tree by the validated document identity. The branch's view decides whether the item's
-document is shown: one the Work's tree no longer shows reads as deleted there. Stale,
-foreign, or mismatched selectors return unavailable rather than falling back
-to live. The address resolver returns the canonical current locator; it never
-makes a path-only URL a capability.
+The address endpoint resolves a path in the live tree only; `./mf doc uri` reads it. The browser
+resolves every address from the replay of the project's tree list, a review address in its Work's
+tree included, and never asks this endpoint. The resolver returns the canonical current locator;
+it never makes a path-only URL a capability.
 
 ## Lineage and special namespaces
 

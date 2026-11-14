@@ -1,7 +1,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import type { Work } from "@meridian/contracts/works";
+import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -21,33 +21,45 @@ import {
 import { ChooserMark } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
+import { useBringWorkBack } from "../../work/EndedWorkNotice";
+import { useChangesScope } from "./ChangesSource";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
  * and whose chats the Chat list holds. A lens, not a move: picking a Work never
- * changes the open chapter or chat, and never rebinds a chat.
+ * changes the open chapter or chat, and never rebinds a chat. A picked Work that is
+ * archived or deleted, here or on another device, stays picked: the chip says so,
+ * and its menu brings the Work back.
  */
 export function WorkScopePicker({
   projectId,
+  chatThreadId,
   workId,
   onPick,
   onManage,
 }: {
   projectId: string;
+  /** The chat on screen: under None the chip names its Work, whose drafts the sidebar shows. */
+  chatThreadId: string | null;
   /** The scoped Work's id, the No Work row's included. */
   workId: string | null;
   onPick: (workId: string) => void;
   /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
   onManage: () => void;
 }) {
-  const { works, noWork } = useWorks(projectId);
+  const { works, deleted, noWork } = useWorks(projectId);
+  const bringBack = useBringWorkBack(projectId);
   const { threads } = useProjectThreads(projectId);
   const needsYou = useMemo(() => countNeedsYou(threads), [threads]);
   const active = works?.filter((work) => work.archivedAt === null) ?? [];
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
-  const scoped = works?.find((work) => work.id === workId) ?? null;
+  const scoped = [...(works ?? []), ...deleted].find((work) => work.id === workId) ?? null;
+  const ended = scoped ? workLifecycleState(scoped) : "active";
   const noWorkScoped = workId !== null && workId === noWork?.id;
-  const pending = scoped?.pendingDocumentCount ?? 0;
+  // The chip says whose drafts the toggle and Changes show, and the count Changes has.
+  const changes = useChangesScope(projectId, chatThreadId);
+  const pending = changes.count;
+  const shown = changes.work && !changes.work.isNoWork ? changes.work : scoped;
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
 
   return (
@@ -62,12 +74,19 @@ export function WorkScopePicker({
             role.selected,
           )}
         >
-          {scoped || noWorkScoped ? (
-            <WorkIdentity
-              work={scoped ?? noWork}
-              unavailableLabel={t`None`}
-              className={cn("flex-1", role.row)}
-            />
+          {shown || noWorkScoped ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <WorkIdentity
+                work={shown ?? noWork}
+                unavailableLabel={t`None`}
+                className={cn("min-w-0", role.row)}
+              />
+              {shown === scoped && ended !== "active" ? (
+                <span className={cn("shrink-0 text-xs", role.secondary)}>
+                  {ended === "deleted" ? <Trans>Deleted</Trans> : <Trans>Archived</Trans>}
+                </span>
+              ) : null}
+            </span>
           ) : (
             <span className={cn("min-w-0 flex-1 truncate", role.secondary)}>
               <Trans>Loading Works…</Trans>
@@ -77,7 +96,7 @@ export function WorkScopePicker({
             <Chip kind="count" tone="jade">
               <span aria-hidden>{pending}</span>
               <span className="sr-only">
-                {plural(pending, { one: "# document to review", other: "# documents to review" })}
+                {plural(pending, { one: "# change to review", other: "# changes to review" })}
               </span>
             </Chip>
           ) : null}
@@ -89,6 +108,18 @@ export function WorkScopePicker({
         className="w-[var(--radix-dropdown-menu-trigger-width)]"
         onCloseAutoFocus={onCloseAutoFocus}
       >
+        {scoped && ended !== "active" ? (
+          <>
+            <DropdownMenuItem onSelect={() => void bringBack(scoped)}>
+              {ended === "deleted" ? (
+                <Trans>Restore {scoped.name}</Trans>
+              ) : (
+                <Trans>Unarchive {scoped.name}</Trans>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {noWork ? (
           <PickRow
             name={t`None`}

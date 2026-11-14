@@ -169,7 +169,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       if (!facts || facts.projectDeleted) return null;
       const grants = await deps.grants.personGrants(principal.accountId, facts);
       if (!atLeast(personLevel(facts, grants), "read")) return null;
-      return facts.deleted || facts.ownerWork?.deleted === true ? "deleted" : "available";
+      return facts.deleted ? "deleted" : "available";
     },
 
     async listAccess(principal, documentIds, options) {
