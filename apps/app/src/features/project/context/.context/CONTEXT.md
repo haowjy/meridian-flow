@@ -11,7 +11,7 @@ removal host. Project-scoped files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` turns a known file identity into main's address before
 content opens: every door opens in main. An ID absent from the in-memory resource projection
-waits for one availability lookup; its available answer is consumed once by the destination.
+waits for one identity lookup; its available answer is consumed once by the destination.
 The destination alone opens local content, admits the live room, and presents Retry. Read-only
 Context files still open a viewer without live Yjs admission. Closing or replacing a
 destination discards its unconsumed answer.
@@ -26,32 +26,8 @@ without a resource handle waits for the first ready snapshot; pending is never
 treated as missing local content. A failed projection falls back to the
 transactional identity lookup.
 
-Availability command admission rejects while removal is suspended or disposed;
-an empty successful receipt would let the availability owner falsely acknowledge
-unapplied authority. Local settlement still differs from session-effect completion:
-failed session effects remain pending for retry. This is not durable namespace
-receipt recovery across account/authority shutdown.
-
-## Account resource ownership
-
-`AccountResourceReplica` is the sole browser owner for editable document
-resources. It composes the account-qualified metadata database, serialized
-catalog acquisition, namespace journal runner, exact local content access, and
-same-session server adoption. `AccountFeatureLifetime` installs it before
-project descendants and connects its two-phase close to the document-session
-runtime. Account close fences new commands immediately, aborts transport work,
-drains adoption/catalog/namespace operations, releases every retained session,
-and closes metadata last.
-Transient rename/move selection belongs to the account replica lifetime.
-Remembering an operation starts its projection watch independently of any
-mounted row. The latest matching intention supplies authority after rebase;
-cancellation, refusal and deletion retire immediately. Successful settlement
-leaves feedback until settlement plus four seconds, even
-when no note is mounted; the watch ends at expiry or earlier terminal evidence. Account close disposes every selection and timer.
-The authenticated provider boundary also re-scopes the client creation
-registry, clearing transient Project creation records when the account
-changes; Work command records (including creates) clear through the account's
-abort signal in `work-command-store`. Neither is reload recovery.
+What the list says about a document's removal reaches the coordinator through `applyRemovals`, which is
+refused while removal is suspended or disposed.
 
 The replica uses short account/resource Web Locks for namespace and terminal
 coordination. Typing and ordinary local content access do not hold those locks.
@@ -59,16 +35,13 @@ A stable resource handle survives document-ID remint; the exact persistence name
 and mounted Y.Doc do not change. The resource descriptor also retains the
 catalog-defined file classification so cached code never reopens as rich text.
 
-Availability becomes durable only through session authority for adopting or adopted
-local-origin documents retaining their lineage; all other durable deletions require receipts.
-
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
 path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
 address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
-`documents` are main's and the side's only (main first): the removal coordinator, availability
+`documents` are main's and the side's only (main first): the removal coordinator
 and removed notices read them to know what is on screen. Its `shown` list, every mounted document
 newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
 closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move

@@ -29,19 +29,14 @@ uncertainty leaves the submitted attempt recoverable. Rejected placement
 reopens the identity field. Cache absence never supplies
 removal evidence.
 
-The project availability coordinator watches presented documents (`PresentedDocuments`), bound route
-selection, retained sessions, and capped recent routes by stable file ID.
-Namespace receipt projections and explicit authorization-loss observers, plus
-focus, online, and bounded polling recheck watched identities. A catalog wake
-for a cold Work triggers the same exact-ID availability path without warming a
-second tree. Cache omission is presentation state and never removal evidence.
-Generation-bearing final commands own the atomic route, selection,
-admission, working-set, and Yjs session effects; same-ID moves and local-new
-documents survive. A door commits from catalog identity without inspecting content.
-The installed host opens known exact content through the resource owner before
-remote admission. Unacquired content requires exact final availability and the
-live opener. Verified-local readiness bypasses the first-sync wait, not upload
-authorization.
+Whether a document is still there is the project's list's answer, not a lookup: `ProjectStandings`
+reads the list's replay for a document and says it is in the tree, in Trash, purged, not in the
+list, or waiting for the list (an absence is not an answer until the list has been read). The
+removal observer (`list-removal-observer.ts`), the removed notice and the editor's own banner all
+read it, so nothing is polled and nothing is stamped with a generation. A document that leaves the
+live tree closes its views and leaves the recent routes; one that comes back is let back. The
+exact removal batch, on the route, selection, working set and views, is planned once
+(`context-removal-batch-planner.ts`) and applied by `ContextRemovalCoordinator.applyRemovals`.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
 never walks or caches a second recursive tree and never adds a server-search path; hosts constrain
@@ -54,8 +49,7 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 ## Presented documents and local documents
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
-removal of presented documents, route continuity, Work pruning, and generation-bearing
-availability effects. `AccountResourceReplica` independently owns resource and
+removal of presented documents, route continuity and Work pruning from what the list says. `AccountResourceReplica` independently owns resource and
 content durability. Neither owns the other's state.
 
 New creates one initialized local resource and opens its exact Y.Doc before any

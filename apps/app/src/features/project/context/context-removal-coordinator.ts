@@ -1,6 +1,7 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
 import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
+import { applyRecentAvailability, readAccountRecents } from "@/client/recents";
 import type { OpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -571,6 +572,8 @@ export class ContextRemovalCoordinator {
     const ids = new Set(this.presented.documents(projectId).map((tab) => tab.documentId));
     for (const route of this.workingSet.readRecentRoutes(projectId))
       if (route.documentId) ids.add(route.documentId);
+    for (const item of readAccountRecents(projectId))
+      if (item.address.kind === "document") ids.add(item.documentId);
     return [...ids];
   }
 
@@ -627,6 +630,11 @@ export class ContextRemovalCoordinator {
       held,
     });
     this.workingSet.replaceRecentRoutes(projectId, plan.recentRoutes);
+    if (this.accountId)
+      applyRecentAvailability(this.accountId, {
+        removed: documentIds.map((documentId) => ({ documentId, projectId })),
+        updates: [],
+      });
     state.selection = plan.selection;
     state.admitted = plan.admitted;
     state.removalFence = plan.removalFence;

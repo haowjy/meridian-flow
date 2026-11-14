@@ -49,7 +49,10 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
     acquireCatalogAfter: async () => ({ entries: new Map() }),
   }),
   useObservedResourceProjection: () => ({ records: [], placement: null }),
-  useOptionalProjectContextAvailabilityCoordinator: () => null,
+  useProjectStandings: () => ({
+    watch: () => () => undefined,
+    standing: () => ({ kind: "waiting" }),
+  }),
   useOptionalRemovedNotices: () => ({
     presentedRemoved: (_project: string, tabs: readonly OpenDocument[]) =>
       removedNotices.push(...tabs.map((tab) => tab.documentId)),

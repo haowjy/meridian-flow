@@ -19,51 +19,8 @@ export function assertAvailabilityGeneration(
   }
 }
 
-/** Stable identifier derived by the availability coordinator for one revocation command. */
-export type AvailabilityCommandId = string;
-
 /** The authenticated user is the account boundary for browser session authority. */
 export type AccountId = UserId;
-
-export type LiveDocumentSessionLease = {
-  accountId: AccountId;
-  projectId: ProjectId;
-  documentId: DocumentId;
-  generation: AvailabilityGeneration;
-};
-
-export type DocumentFenceKey = `document/${AccountId}/${DocumentId}`;
-export type AccessFenceKey = `access/${AccountId}/${ProjectId}/${DocumentId}`;
-
-export type RevocationFence = {
-  revokedThrough: AvailabilityGeneration;
-  commandId: AvailabilityCommandId;
-};
-
-export interface LiveDocumentSessionAuthority {
-  admit(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-  ): Promise<LiveDocumentSessionLease>;
-  /** `deletionVersion` is the namespace version that proved the deletion, kept by the terminal. */
-  revokeDocument(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    commandId: AvailabilityCommandId,
-    deletionVersion: string | null,
-  ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }>;
-  revokeAccess(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    commandId: AvailabilityCommandId,
-  ): Promise<{
-    revokedThrough: AvailabilityGeneration;
-    persistence: "cleared" | "retained-by-other-lease";
-  }>;
-}
 
 export type ProjectContextIdentityLookupRequest = {
   projectId: ProjectId;

@@ -4,14 +4,28 @@ This page covers contracts that cross the TipTap, Yjs, session, and feature
 boundaries. The app schema must remain structurally aligned with
 `@meridian/prosemirror-schema`; schema drift can corrupt shared documents.
 
-## Session authority
+## Sessions and local copies
 
-`document-session-cross-context-coordination.ts` owns admission, local session
-and lease maps, and account-close ordering. Recovery, locks, and wakeup request
-work through that owner; they must not create a second session map or authority
-store. `AccountResourceReplica` owns browser-local resource reservations and
-exact persistence. The editor session adopts acknowledged resource sessions
-without replacing their Y.Doc or IndexedDB database.
+`DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's live
+sessions: one per document id, held by retain/release, closed after a grace once no host wants
+it and its unsent edits are acknowledged. A lease is only the account's right to hold one
+document's session (`{accountId, projectId, documentId}`): nothing orders or fences it, because
+the project's list says whether a document is there.
+
+The browser's local copy of a live document is the IndexedDB database
+`documentSessionPersistenceKey(accountId, documentId)` (`local-document-copies.ts`). It is
+deleted only when it cannot come back to this account: the node's `purge`, the project, Work
+or chat deleted for good, the account removed from the project, or sign-out. A `delete` (a
+document in Trash) touches nothing: the server's text room admits a document in Trash until its
+purge, so text typed offline into a document someone else deleted is saved into it and a
+restore brings it back. `clearLocalCopy` closes the session and deletes the copy; it is called
+from the project's list (`features/project/context/list-removal-observer.ts`), which also lists
+local databases at start and clears the ones whose node the list says is purged (a tab that
+crashed half way leaves one).
+
+One Web Lock per copy keeps a tab from deleting a database another has open: a session holds it
+shared from creation to teardown, a deletion takes it exclusive and gives up when it is held.
+The tab that holds it clears the copy itself when it reads the same `purge`.
 
 Local document peers are scoped to the exact persistence incarnation and schema,
 not a path or unqualified document ID. They exchange Yjs updates and ephemeral
@@ -22,38 +36,13 @@ destroying persistence. A cross-tab cache deletion also fences peers on IndexedD
 The replay adapter uses y-indexeddb's public stores and
 does not create a second content journal.
 
-### Adoption protocol
+A document made in this browser has its session in the registry from the start, under its final
+id; there is no handover. Its room connects once the server has the `create` (the server closes
+a room for a document it does not know yet non-terminally, and the provider retries).
 
-`ResourceSessionAdoptionCoordinator` is the only driver of local-to-registry
-adoption. The durable state is the pair (resource obligation, room
-`persistence`): Owed (obligation only), Reserved (room `adopting-local`, which
-carries no generation), Committed (room `bindable{G}`), Settled (obligation
-dropped and `lifecycle.availabilityGeneration = G`), with `terminal-local` off to
-the side. No generation is stored before the one fenced commit that admits it.
-That commit is `Coordination.admit(..., { adoption })`: one operation-lock
-section in which `store.admit` decides the fences and writes
-`adopting-local -> bindable`, then the lease installs and content ownership
-converts. Its `prepareCommit`/`completeCommit` hooks return `undefined`, so an
-`async` hook does not typecheck (a `void` return would accept one); Web Locks
-are not reentrant. Every pass re-derives its step from durable state with a
-fresh admission, so reload, a busy lock, a fence refusal or a failed
-acknowledgement all resume the same way. `ResourceContentAccess.abortTransfer`
-settles both reservation owners (the content entry and the registry facet) and
-is a no-op after the commit.
-
-The acknowledged generation is the room's incarnation, never a lease's
-admission, which can be fresher. The local commit reads it from the store's
-decision. Server-session capture reads it from the registry's private
-`LiveSessionIncarnationPort` (`incarnationOf(session)`), keeps the fresh
-admission only for the fence check, and records both the lifecycle and the
-retained ownership at the incarnation.
-
-The production registry has one immutable account epoch. Account close fences
-admission synchronously, then drains providers, leases, adopted sessions, and
-registered feature resources. Removed sessions transfer to the teardown owner
-and remain quarantined until their retryable destroy ledger succeeds. A pending
-open may initiate close after an authority failure but must not await the same
-barrier that drains that open.
+The production registry has one immutable account epoch. Account close refuses new work
+synchronously, then drains providers and leases. Removed sessions transfer to the teardown owner
+and remain quarantined until their retryable destroy ledger succeeds.
 
 ## Mount and collaboration
 
@@ -88,18 +77,13 @@ barrier that drains that open.
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions use a qualified, generation-aware IndexedDB key. Draft sessions
+- Live sessions use the IndexedDB key of the account and the document id. Draft sessions
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
-  draft recovers unsent text. Terminal `closed`/`removed` session teardown clears that exact cache; the
-  painter and local Discard never do. `closeDraftRoom` also retires and drops
+  draft recovers unsent text. A terminal `closed` draft session's teardown clears that exact
+  cache; a `removed` live one (the server closed its room at the document's purge) keeps it
+  until the list's purge clears it; the painter and local Discard never do. `closeDraftRoom` also retires and drops
   the exact cache when the review owner learns closure through authoritative
   metadata before the socket frame. The pool refuses to reopen that closed id.
-
-Several windows of one browser profile share the authority store. A deleted document's lineage
-is finished by one window (`dispatchTerminalLineage`), which waits for every other window's
-hold on the document; each window therefore drains its own local room on any pending drain,
-including a `terminal-local` one (`DocumentSessionRecovery.reconcile`). Without it the owner
-waits forever, the record stays terminal and a restore cannot revive it until reload.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is

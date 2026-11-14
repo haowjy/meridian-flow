@@ -11,8 +11,7 @@
   this code gained no port when `LandingExtension` arrived, so it waits for the
   next door.
 - **The session files could move into `core/editor/session/`.** The directory
-  mixes session code with extensions. `document-session-authority-store.ts` is
-  near 1,000 lines; a move is the moment to split it.
+  mixes session code with extensions.
 - **`EditorView.tsx` churns on review state.** It rerenders on review changes
   it doesn't read.
 - **The app schema and `packages/prosemirror-schema` are kept in step by hand.**

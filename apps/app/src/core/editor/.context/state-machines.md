@@ -87,3 +87,23 @@ stateDiagram-v2
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
   closed for good stays unavailable.
 - A rebuild result is used only if it is still the newest attempt and the read is not disposed.
+
+## Account session runtime
+
+Whether the account's document sessions take new work (`AccountDocumentSessionRuntime` in
+`account-document-session-runtime.ts`, with the registry's own `accountRuntimeState`). Sign-out
+and switching accounts close it.
+
+```mermaid
+stateDiagram-v2
+  [*] --> open
+  open --> closing: sign-out or an account switch
+  closing --> closed: providers and sessions drained
+```
+
+- **`closing` refuses new work and lets go of what is held.** `release`, `releaseDraftRooms` and
+  `whenRefusedRoomDropped` still run, so a view unmounting during the close does not leak a hold.
+- **Closing the runtime does not delete local copies.** A copy goes at the node's purge or when
+  access is lost (`local-document-copies.ts`); closing ends the sessions and the copies stay for
+  the next sign-in of the same account. The decision also names sign-out as deleting them; the
+  `/logout` route is the server's and tells the browser nothing, so that is not done.

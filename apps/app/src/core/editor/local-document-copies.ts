@@ -2,7 +2,7 @@
  * This browser's local copies of live documents: the IndexedDB database a session persists a
  * document into, named by the account and the document id alone. A copy is deleted only when it
  * cannot come back to the account (its node's purge, its project, Work or chat deleted for good,
- * the account removed from the project, sign-out), so nothing here is ordered or fenced.
+ * the account removed from the project), so nothing here is ordered or fenced.
  *
  * One Web Lock per copy keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive and gives up when a hold exists.
