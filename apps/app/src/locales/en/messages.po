@@ -113,6 +113,16 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: entry.documents
+#: src/features/project/shell/sidebar/TrashSource.tsx
+msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
+msgstr "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
+
+#. placeholder {0}: counted(false)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{0, plural, one {# document} other {# documents}}"
+msgstr "{0, plural, one {# document} other {# documents}}"
+
 #. placeholder {0}: result.pendingDrafts
 #: src/features/export/ExportProjectDialog.tsx
 msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
@@ -122,6 +132,11 @@ msgstr "{0, plural, one {# draft the AI hasn't applied won't be included.} other
 #: src/features/import/import-presentation.ts
 msgid "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
 msgstr "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
+
+#. placeholder {0}: counted(true)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{0, plural, one {# folder} other {# folders}}"
+msgstr "{0, plural, one {# folder} other {# folders}}"
 
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/drop-choice.ts
@@ -173,6 +188,11 @@ msgstr "{0, plural, one {Couldn't move your queued message to the message box.} 
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 
+#. placeholder {0}: entry.documents
+#: src/features/project/shell/sidebar/TrashSource.tsx
+#~ msgid "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
+#~ msgstr "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
+
 #. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
@@ -180,13 +200,18 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: entries.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "{0, plural, one {Restored # file.} other {Restored # files.}}"
-msgstr "{0, plural, one {Restored # file.} other {Restored # files.}}"
+#~ msgid "{0, plural, one {Restored # file.} other {Restored # files.}}"
+#~ msgstr "{0, plural, one {Restored # file.} other {Restored # files.}}"
 
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
 msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
+
+#. placeholder {0}: entries.length
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "{0, plural, one {Restored # item.} other {Restored # items.}}"
+msgstr "{0, plural, one {Restored # item.} other {Restored # items.}}"
 
 #. placeholder {0}: skipped.length
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
@@ -474,6 +499,10 @@ msgstr "{files, plural, one {# file} other {# files}}"
 #: src/features/import/import-presentation.ts
 msgid "{files, plural, one {Imported {organized} of # file} other {Imported {organized} of # files}}"
 msgstr "{files, plural, one {Imported {organized} of # file} other {Imported {organized} of # files}}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{files} and {folders}"
+msgstr "{files} and {folders}"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "{full}, summary"
@@ -1472,28 +1501,32 @@ msgid "Change work for this chat, currently {name}"
 msgstr "Change work for this chat, currently {name}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Changed {count} documents"
-msgstr "Changed {count} documents"
+#~ msgid "Changed {count} documents"
+#~ msgstr "Changed {count} documents"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {count} Work"
 msgstr "Changed {count} Work"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Changed {folders} folders"
-msgstr "Changed {folders} folders"
+#~ msgid "Changed {folders} folders"
+#~ msgstr "Changed {folders} folders"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr "Changed {relativeTime}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Changed 1 document"
-msgstr "Changed 1 document"
+msgid "Changed {what}"
+msgstr "Changed {what}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Changed 1 folder"
-msgstr "Changed 1 folder"
+#~ msgid "Changed 1 document"
+#~ msgstr "Changed 1 document"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Changed 1 folder"
+#~ msgstr "Changed 1 folder"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed 1 Work"
@@ -2571,16 +2604,32 @@ msgid "Deleted from {place} by {name} on {deleted}."
 msgstr "Deleted from {place} by {name} on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by {name}."
+msgstr "Deleted from {place} by {name}."
+
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} by the AI in {chat} on {deleted}."
 msgstr "Deleted from {place} by the AI in {chat} on {deleted}."
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in {chat}."
+msgstr "Deleted from {place} by the AI in {chat}."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} by the AI in a chat on {deleted}."
 msgstr "Deleted from {place} by the AI in a chat on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in a chat."
+msgstr "Deleted from {place} by the AI in a chat."
+
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} by you on {deleted}."
 msgstr "Deleted from {place} by you on {deleted}."
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by you."
+msgstr "Deleted from {place} by you."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} on {deleted}."
@@ -2589,6 +2638,14 @@ msgstr "Deleted from {place} on {deleted}."
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place} with the Work {name} on {deleted}."
 msgstr "Deleted from {place} with the Work {name} on {deleted}."
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} with the Work {name}."
+msgstr "Deleted from {place} with the Work {name}."
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place}."
+msgstr "Deleted from {place}."
 
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
@@ -2620,8 +2677,8 @@ msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Deleted."
-msgstr "Deleted."
+#~ msgid "Deleted."
+#~ msgstr "Deleted."
 
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Deletes this document"
@@ -2806,12 +2863,16 @@ msgid "Draft: {owner}"
 msgstr "Draft: {owner}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {count} documents"
-msgstr "Drafted {count} documents"
+#~ msgid "Drafted {count} documents"
+#~ msgstr "Drafted {count} documents"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted 1 document"
-msgstr "Drafted 1 document"
+msgid "Drafted {what}"
+msgstr "Drafted {what}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Drafted 1 document"
+#~ msgstr "Drafted 1 document"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop to insert"
@@ -2865,12 +2926,16 @@ msgid "Edited {0}"
 msgstr "Edited {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Edited {count} documents"
-msgstr "Edited {count} documents"
+#~ msgid "Edited {count} documents"
+#~ msgstr "Edited {count} documents"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Edited 1 document"
-msgstr "Edited 1 document"
+msgid "Edited {what}"
+msgstr "Edited {what}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Edited 1 document"
+#~ msgstr "Edited 1 document"
 
 #: src/features/import/reason-copy.ts
 msgid "Edited after it uploaded. The imported copy is the earlier version."

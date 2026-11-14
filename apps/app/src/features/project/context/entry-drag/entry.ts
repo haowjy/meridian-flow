@@ -6,8 +6,8 @@
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   CopyContextEntryView,
-  DocumentTrashEntry,
   ProjectContextTreeScheme,
+  TrashEntry,
 } from "@meridian/contracts/protocol";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
 
@@ -26,17 +26,22 @@ export type DragEntry = { ref: EntryRef; name: string; view: CopyContextEntryVie
 /**
  * A list row dragged in its list's selection, or any other source naming a document or folder (a
  * chip, tab, crumb, Recent row, receipt or Uploads entry). Only a list row within one system moves
- * at once; a reference always asks. A `trash` row is a trashed document: dropped on the tree it is
- * restored there (`restore-drop.ts`), never moved or copied.
+ * at once; a reference always asks. A `trash` row is a Trash entry (a document or a folder): dropped
+ * on the tree it is restored there (`restore-drop.ts`), never moved or copied.
  */
 export type DragSource = "list-row" | "reference" | "trash";
 
 /** The entries being dragged and where they came from. */
 export type EntryDrag = { entries: readonly DragEntry[]; source: DragSource };
 
-/** A trashed document as a drag carries it: its identity and name. Its removal is read from Trash at the drop. */
-export function trashDragEntry(entry: Pick<DocumentTrashEntry, "documentId" | "name">): DragEntry {
-  return { ref: { kind: "file", id: entry.documentId }, name: entry.name, view: LIVE_VIEW };
+/** A Trash entry as a drag carries it: its identity and name. Its removal is read from Trash at the drop. */
+export function trashDragEntry(entry: Pick<TrashEntry, "nodeId" | "kind" | "name">): DragEntry {
+  return { ref: trashRef(entry), name: entry.name, view: LIVE_VIEW };
+}
+
+/** The node a Trash entry names, as a row or a restore names it. */
+export function trashRef(entry: Pick<TrashEntry, "nodeId" | "kind">): EntryRef {
+  return { kind: entry.kind === "folder" ? "folder" : "file", id: entry.nodeId };
 }
 
 export const LIVE_VIEW: CopyContextEntryView = { kind: "live" };

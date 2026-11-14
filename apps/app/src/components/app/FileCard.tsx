@@ -1,5 +1,6 @@
 /**
- * FileCard — a saved file this browser can't draw, as a card: name, type, size and Download.
+ * FileCard — a saved file this browser can't draw, as a card: name, type, size and Download
+ * (none for a file in Trash, which the server does not serve).
  *
  * Every surface that shows a stored file falls back to this one card: the context viewer's
  * body, and inline in a document where a picture would have been. It is spans throughout so it
@@ -16,8 +17,8 @@ export type FileCardProps = {
   name: string;
   mimeType: string;
   sizeBytes: number | null;
-  /** The stored file, which Download serves. */
-  url: string;
+  /** The stored file, which Download serves; absent when it can't be downloaded. */
+  url?: string;
   className?: string;
 };
 
@@ -40,16 +41,18 @@ export function FileCard({ name, mimeType, sizeBytes, url, className }: FileCard
         </span>
         {details ? <span className="text-xs text-muted-foreground">{details}</span> : null}
       </span>
-      <a
-        href={url}
-        download={name}
-        target="_blank"
-        rel="noreferrer"
-        className="text-button inline-flex shrink-0 items-center gap-1.5 text-sm"
-      >
-        <Download className="size-4" aria-hidden />
-        <Trans>Download</Trans>
-      </a>
+      {url ? (
+        <a
+          href={url}
+          download={name}
+          target="_blank"
+          rel="noreferrer"
+          className="text-button inline-flex shrink-0 items-center gap-1.5 text-sm"
+        >
+          <Download className="size-4" aria-hidden />
+          <Trans>Download</Trans>
+        </a>
+      ) : null}
     </span>
   );
 }

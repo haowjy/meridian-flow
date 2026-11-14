@@ -10,13 +10,11 @@
 import {
   isSourceRoot,
   LIVE,
-  listRecords,
   sourceIdOf,
   type TreeProjection,
   TreeWriter,
   undoChange,
   type View,
-  viewRecords,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
@@ -179,19 +177,8 @@ function takeBack(
   let undone = 0;
   // One update per opposite record: each is judged against the replay the one before it left.
   for (const record of [...step.records].reverse()) {
-    const answer = undoChange(writer, inForceView(writer, view, record), actor, record);
+    const answer = undoChange(writer, view, actor, record);
     if (typeof answer !== "string") undone += 1;
   }
   return undone > 0;
-}
-
-/** Live when the record's change was applied (its family's last record in force is live). */
-function inForceView(writer: TreeWriter, view: View, id: string): View {
-  if (view.draft === null) return view;
-  const named = listRecords(writer.doc).find((record) => record.id === id);
-  const root = named?.carries ?? id;
-  const last = viewRecords(writer.doc, view)
-    .filter((record) => (record.carries ?? record.id) === root)
-    .pop();
-  return last && last.draft === null ? LIVE : view;
 }
