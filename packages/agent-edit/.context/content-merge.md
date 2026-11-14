@@ -30,8 +30,8 @@ that when the draft deleted words live never touched. `conflicts` holds the clas
 tokens for the tests' oracle and does not leave the package. Every block it returns has an id (a
 paragraph it makes from nothing gets a fresh one, so `writeBlocks` never throws on its output).
 
-Counts reach the server's event sink as `merge.counted` (`collab.draft_pull`, and
-`collab.draft_review` for Apply and un-Apply). Apply and un-Apply report the sum over the click's
+Counts reach the server's event sink as `merge.counted` (source `collab.draft_pull`) and
+`apply.merge.counted` or `unapply.merge.counted` (source `collab.draft_review`). Apply and un-Apply report the sum over the click's
 groups.
 
 Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both sides added

@@ -515,8 +515,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           emitEvent(deps.eventSink, {
             level: "debug",
             source: "collab.draft_review",
-            name: "merge.counted",
-            payload: { commandId, kind, rules, overrode },
+            name: `${kind}.merge.counted`,
+            payload: { commandId, rules, overrode },
           });
       },
       measured: (measurement) => {
