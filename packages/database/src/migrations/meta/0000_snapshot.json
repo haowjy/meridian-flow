@@ -1332,7 +1332,7 @@
         "source_block_id": {
           "name": "source_block_id",
           "type": "uuid",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true
         },
         "room_key": {
@@ -1409,7 +1409,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "observation_frontiers_source_block_id_room_key_pk": {
+          "name": "observation_frontiers_source_block_id_room_key_pk",
+          "columns": [
+            "source_block_id",
+            "room_key"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6270,12 +6278,6 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
-        "tree_change": {
-          "name": "tree_change",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6396,10 +6398,334 @@
         "document_edits_kind_valid": {
           "name": "document_edits_kind_valid",
           "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert','rollback')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.tree_edit_receipt_nodes": {
+      "name": "tree_edit_receipt_nodes",
+      "schema": "",
+      "columns": {
+        "receipt_id": {
+          "name": "receipt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         },
-        "document_edits_tree_change_valid": {
-          "name": "document_edits_tree_change_valid",
-          "value": "\"document_edits\".\"tree_change\" IS NULL OR (\n        \"document_edits\".\"tree_change\"->>'op' IN ('create','move','delete','restore','settle')\n        AND \"document_edits\".\"tree_change\"->'destination'->>'kind' IN ('live','draft')\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'seq') = 'number'\n        AND jsonb_typeof(\"document_edits\".\"tree_change\"->'targets') = 'array'\n        AND (\"document_edits\".\"tree_change\"->>'op' <> 'settle' OR \"document_edits\".\"tree_change\" ? 'settles')\n      )"
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "w_id": {
+          "name": "w_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before_at": {
+          "name": "before_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after_at": {
+          "name": "after_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "tree_edit_receipt_nodes_node_idx": {
+          "name": "tree_edit_receipt_nodes_node_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "w_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tree_edit_receipt_nodes_receipt_id_tree_edit_receipts_id_fk": {
+          "name": "tree_edit_receipt_nodes_receipt_id_tree_edit_receipts_id_fk",
+          "tableFrom": "tree_edit_receipt_nodes",
+          "tableTo": "tree_edit_receipts",
+          "columnsFrom": [
+            "receipt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tree_edit_receipt_nodes_thread_id_threads_id_fk": {
+          "name": "tree_edit_receipt_nodes_thread_id_threads_id_fk",
+          "tableFrom": "tree_edit_receipt_nodes",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "tree_edit_receipt_nodes_receipt_id_node_id_pk": {
+          "name": "tree_edit_receipt_nodes_receipt_id_node_id_pk",
+          "columns": [
+            "receipt_id",
+            "node_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tree_edit_receipts": {
+      "name": "tree_edit_receipts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "tree_edit_receipts_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_id": {
+          "name": "response_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "edit_scope_id": {
+          "name": "edit_scope_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tool_call_id": {
+          "name": "tool_call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "records": {
+          "name": "records",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "op": {
+          "name": "op",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'write'"
+        },
+        "reverses": {
+          "name": "reverses",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_branch_id": {
+          "name": "draft_branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "across_lists": {
+          "name": "across_lists",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "shown_at": {
+          "name": "shown_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tree_edit_receipts_thread_idx": {
+          "name": "tree_edit_receipts_thread_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "shown_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_edit_receipts_turn_idx": {
+          "name": "tree_edit_receipts_turn_idx",
+          "columns": [
+            {
+              "expression": "turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_edit_receipts_reverses_idx": {
+          "name": "tree_edit_receipts_reverses_idx",
+          "columns": [
+            {
+              "expression": "reverses",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tree_edit_receipts_thread_id_threads_id_fk": {
+          "name": "tree_edit_receipts_thread_id_threads_id_fk",
+          "tableFrom": "tree_edit_receipts",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "tree_edit_receipts_turn_id_turns_id_fk": {
+          "name": "tree_edit_receipts_turn_id_turns_id_fk",
+          "tableFrom": "tree_edit_receipts",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "tree_edit_receipts_op_valid": {
+          "name": "tree_edit_receipts_op_valid",
+          "value": "\"tree_edit_receipts\".\"op\" IN ('create','move','delete','restore')"
+        },
+        "tree_edit_receipts_kind_valid": {
+          "name": "tree_edit_receipts_kind_valid",
+          "value": "\"tree_edit_receipts\".\"kind\" IN ('write','undo','redo')"
+        },
+        "tree_edit_receipts_reverses_valid": {
+          "name": "tree_edit_receipts_reverses_valid",
+          "value": "(\"tree_edit_receipts\".\"kind\" = 'write') = (\"tree_edit_receipts\".\"reverses\" IS NULL)"
         }
       },
       "isRLSEnabled": false

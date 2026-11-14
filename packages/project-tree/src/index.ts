@@ -26,6 +26,7 @@ export {
   listRoot,
   type MoveRecord,
   type NodeKind,
+  nameSet,
   newId,
   type PurgeRecord,
   type RenameRecord,

@@ -69,10 +69,11 @@ export class LiveCreate {
     target: CreateTarget,
     content: BoundWrite | null,
     extra: { options?: ContextWriteOptions } = {},
-  ): Promise<Result<{ documentId: string; markdown: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; record: string; markdown: string }, AdapterFault>> {
     const { options } = extra;
     let refusal: AdapterFault | null = null;
     let createdId: string | null = null;
+    let createdRecord: string | null = null;
     try {
       const created = await this.deps.documentCreation.createDocumentAtomically({
         persistIdentity: async () => {
@@ -97,6 +98,7 @@ export class LiveCreate {
             [(await this.deps.tree.sourceId()) as never],
           );
           createdId = made.value.id;
+          createdRecord = made.value.record;
           return made.value.id as DocumentId;
         },
         initializeContent: async (documentId) => {
@@ -121,8 +123,9 @@ export class LiveCreate {
         },
       });
       if (!created.created) return Err(refusal ?? { code: "conflict", occupantKind: "file" });
-      if (createdId === null) throw new Error("A created document reported no identity");
-      return Ok({ documentId: createdId, markdown: created.value });
+      if (createdId === null || createdRecord === null)
+        throw new Error("A created document reported no identity");
+      return Ok({ documentId: createdId, record: createdRecord, markdown: created.value });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
       throw error;

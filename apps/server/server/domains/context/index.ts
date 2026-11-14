@@ -91,8 +91,8 @@ export type {
   ContextListEntry,
   ContextListing,
   ContextListOptions,
-  ContextLocationChange,
-  ContextMoved,
+  ContextMoveAcrossListsChange,
+  ContextMovedAcrossLists,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -168,6 +168,14 @@ export {
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
+export {
+  createTrashEntries,
+  type DiscardedTree,
+  discardedTree,
+  restoreDiscardedTree,
+  type TrashEntries,
+  type TrashTreeEntry,
+} from "./tree/trash-entries.js";
 export * from "./tree/tree-view.js";
 export {
   createProductionUnifiedContextPortFactory,

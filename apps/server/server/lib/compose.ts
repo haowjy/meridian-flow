@@ -67,6 +67,7 @@ import {
   createProjectHints,
   createProjectWakeHub,
   createPromotionService,
+  createTrashEntries,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
@@ -79,6 +80,7 @@ import {
   type ProjectContextAvailabilityPort,
   type ProjectWakeHub,
   type PromotionService,
+  type TrashEntries,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -405,6 +407,8 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextSources: ContextSources;
   documentTrash: DocumentTrash;
+  /** Trash as the tree gives it, per view: one entry per delete in force. */
+  trashEntries: TrashEntries;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
@@ -707,6 +711,7 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextSources,
+    trashEntries: createTrashEntries({ db, store: treeLists }),
     documentTrash: createDrizzleDocumentTrash({
       db,
       objectStore,

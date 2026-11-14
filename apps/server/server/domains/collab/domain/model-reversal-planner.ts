@@ -40,7 +40,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     queryDestination.kind === "draft" && queryDestination.state === "gone"
       ? document.live
       : queryDestination.view;
-  const own = entries(document, query.threadId);
+  const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);
   const poppableByTurn = new Map<string, Set<string>>();
   const inspections = new Map<Y.Doc, Inspection>();
