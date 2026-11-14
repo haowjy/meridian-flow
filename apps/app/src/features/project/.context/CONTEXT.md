@@ -118,7 +118,7 @@ side. The click's modifier (cmd, ctrl, middle) places nothing and the link follo
 follow alike (a newer follow aborts the last): main's opener has no new-tab mode.
 A page only a draft holds (created by it, or deleted live) is described from the draft its
 view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
-the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
+the live tree has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, the panel toggle is
 the only way back to it.
 
@@ -163,7 +163,7 @@ Under it, the sidebar's sources (`shell/sidebar/SourcesBody.tsx`, also the phone
 strip, Chat, then the tree tabs the writer chose with ⋯ (`sidebar-tabs-store.ts`: Manuscript and
 Knowledge by default; ⋯ adds Your files), then Changes while it has something to offer; Scratch,
 Unfiled (with its count) and Trash are quiet rows at the foot. Scratch is the picked named Work's
-notes, one more tree source over that Work's catalog; under No Work there is none, and a chat's
+notes, one more tree source over that Work's tree; under No Work there is none, and a chat's
 notes stay in its Files menu. The shown pane follows main's item: a document's tree, Unfiled,
 Scratch for a note of the picked Work, Trash for a deleted one, the Chat list for a chat, unless
 Changes is on show. A document the sidebar doesn't list (another Work's note, a chat's) leaves the

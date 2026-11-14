@@ -2,6 +2,7 @@
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { parseActor } from "../../context/adapters/context-fs/tree-writes.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { readPendingTreeRecords, recordsOfItem } from "./drizzle-branch-tree-lists.js";
 
@@ -25,8 +26,9 @@ export function createDrizzleBranchTreeActors(
     for (const documentId of candidates) {
       const chats: string[] = [];
       for (const record of recordsOfItem(pending, documentId).reverse()) {
-        const chat = /^agent:([^/]+)\//.exec(record.actor)?.[1];
-        if (chat && !chats.includes(chat)) chats.push(chat);
+        const who = parseActor(record.actor);
+        if (who?.kind === "agent" && who.chatId && !chats.includes(who.chatId))
+          chats.push(who.chatId);
       }
       if (chats.length) actors.set(documentId, chats);
     }

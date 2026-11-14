@@ -54,7 +54,7 @@ then a folder with one document and an empty subfolder:
 7. **Deleted folder in an open menu.** Mention a folder in the composer, delete
    the folder from the sidebar, then click the chip. The menu says "This folder
    is no longer available."
-8. **Folder outside the loaded catalogs.** Create another Work and put a note
+8. **Folder outside the Editor's link index.** Create another Work and put a note
    under a Scratch folder, then create a manuscript document containing a link
    to that qualified folder. This setup keeps the foreign Work's Scratch out of
    the Editor's local link index:
@@ -71,30 +71,25 @@ then a folder with one document and an empty subfolder:
    ```
 
    Open Foreign Folder Link in the Editor. Remote Folder resolves with a filled
-   folder chip, and the console has no `catalog.folderAt is not a function`
+   folder chip, and the console has no `folderAt is not a function`
    error. Delete the Work with `./mf api DELETE "/api/works/$work_id" --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\"}"`. Without
    reloading, the chip turns dashed: the server's `gone` answer reached a link
-   whose target catalog was never loaded by this Editor.
+   whose target this Editor's link index never held. Known failure: the chip stays filled
+   and still opens the folder until a reload ([FUTURE](../FUTURE)).
 
 9. **Server identity boundaries.** Create a fresh holder whose first content
    includes a folder link, then rename the folder:
 
    ```bash
    project_id=$(./mf project default --json | jq -r .projectId)
-   ./mf doc put "manuscript://Folder Probe/Child.md" --text "Child"
+   child_id=$(./mf doc put "manuscript://Folder Probe/Child.md" --text "Child" --json | jq -r .documentId)
    ./mf doc put "manuscript://Folder Probe Holder.md" \
      --text '[Folder](<manuscript://Folder Probe/>)'
-   snapshot=$(./mf api GET "/api/projects/$project_id/context/catalog/snapshot?scope=project" --json)
-   folder_id=$(printf '%s' "$snapshot" | jq -r \
-     '.entries[] | select(.kind == "folder" and .uri == "manuscript://Folder Probe") | .entryId')
-   child_id=$(printf '%s' "$snapshot" | jq -r \
-     '.entries[] | select(.kind == "file" and .uri == "manuscript://Folder Probe/Child") | .entryId')
-   no_work_id=$(printf '%s' "$snapshot" | jq -r \
-     '.entries[] | select(.kind == "authority" and .authority.workHandle == null) | .entryId')
-   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-   ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/move" --data "$(jq -nc \
-     --arg operationId "$operation_id" \
-     '{operationId: $operationId, kind: "folder", name: "Folder Probe Renamed"}')"
+   ```
+
+   Rename `Folder Probe` to `Folder Probe Renamed` in the Files tree, then read the holder:
+
+   ```bash
    ./mf doc read "manuscript://Folder Probe Holder.md"
    ```
 
@@ -106,18 +101,17 @@ then a folder with one document and an empty subfolder:
 
    ```bash
    ./mf api POST "/api/projects/$project_id/links/resolve" --data "$(jq -nc \
-     --arg workId "$no_work_id" --arg holderDocumentId "$child_id" \
-     '{workId: $workId, baseUri: "manuscript://Folder Probe Renamed/Child", holderDocumentId: $holderDocumentId, links: [{ref: null, href: "../Folder Probe Renamed/"}]}')" --json
+     --arg holderDocumentId "$child_id" \
+     '{baseUri: "manuscript://Folder Probe Renamed/Child", holderDocumentId: $holderDocumentId, links: [{ref: null, href: "../Folder Probe Renamed/"}]}')" --json
    ```
 
    The answer is the folder named `Folder Probe Renamed`, not `gone`. Finally,
    send 129 distinct folder identities through the 200-link route boundary:
 
    ```bash
-   python3 - "$no_work_id" <<'PY' >/tmp/folder-links-129.json
+   python3 <<'PY' >/tmp/folder-links-129.json
    import json, sys, uuid
    print(json.dumps({
-       "workId": sys.argv[1],
        "baseUri": None,
        "links": [
            {"ref": f"folder:{uuid.uuid4()}", "href": f"manuscript://Batch {i}/"}
@@ -135,11 +129,9 @@ then a folder with one document and an empty subfolder:
    ```bash
    ./mf doc rm "manuscript://Folder Probe Holder.md"
    ./mf doc rm "manuscript://Folder Probe Renamed/Child.md"
-   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-   ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/delete" --data "$(jq -nc \
-     --arg operationId "$operation_id" \
-     '{operationId: $operationId, kind: "folder"}')"
    ```
+
+   Delete the `Folder Probe Renamed` folder from the Files tree.
 
 Record the commit, date, stack, outcome and screenshot paths in the active work
 directory after a run.

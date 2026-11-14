@@ -32,8 +32,8 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
 the effect of a removal on presented documents, notices and recent routes from what the list says;
-route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). `AccountResourceReplica` independently owns resource and
-content durability. Neither owns the other's state.
+route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). The account's document sessions (`core/editor/local-document-copies.ts`) independently
+own content durability. Neither owns the other's state.
 
 New appends a provisional `create` in Unfiled and opens the node by the name the replay gives
 it, before the server has heard of it; its text room connects once the create is admitted and is
@@ -163,8 +163,8 @@ being removed; a draft-only page is never recorded, so main never goes back
 to one), else to Recently opened itself (the bare Editor). The open replaces
 the history entry, so Back skips the removed document. A removal by someone
 else, from another device, or a remote Discard keeps the address on the
-removed document. Neither the tree delete nor a created document's Discard
-has an Undo; a restore from Trash never moves main. A Discard of an existing
+removed document. A tree delete's notice has an Undo (`entry-failure.ts`); a created
+document's Discard has none; a restore from Trash never moves main. A Discard of an existing
 document's edits removes nothing, so it marks nothing. Only documents a host
 presents are marked. While the
 mark lives every sighting is silent; "kept" releases it, and a settled

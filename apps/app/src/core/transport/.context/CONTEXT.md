@@ -56,7 +56,7 @@ what the write path accepts.
 Terminal for live and draft rooms alike: nothing rebuilds, replays or drops the room,
 and a draft review keeps the terminal session painted. Only a lookup after the close
 that proves the document present restarts the room, once per close. See
-`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`.
+`features/project/context/.context/presented-documents-and-editor-lifecycle.md`.
 
 ## Stateless document messages
 
@@ -93,7 +93,6 @@ races: native open clears the cancellation handle before the first frame settles
 attempt, and post-settlement close schedules a delayed reconnect that can replace a
 still-CONNECTING hinted socket.
 
-These listeners stay outside the shared hints: the resource replica's 30-second interval
-for pending HTTP work, working-set pagehide and hidden-visibility flushes (persistence
+These listeners stay outside the shared hints: working-set pagehide and hidden-visibility flushes (persistence
 signals), and local document peers and session wakeup (content recovery, independent of
 network jitter).
