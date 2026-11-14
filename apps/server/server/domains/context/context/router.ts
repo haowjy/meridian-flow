@@ -15,7 +15,7 @@ import {
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import { type EventSink, emitEvent } from "../../observability/index.js";
+import type { EventSink } from "../../observability/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";

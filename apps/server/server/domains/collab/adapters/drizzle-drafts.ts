@@ -62,7 +62,7 @@ import {
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
-import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
   commitRewriteWithinTx,

@@ -23,7 +23,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
 import { testHook } from "../../../shared/test-hooks.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
