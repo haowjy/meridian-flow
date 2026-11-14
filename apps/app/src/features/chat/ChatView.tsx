@@ -626,38 +626,32 @@ export function ChatView({
     projectId,
   ]);
 
-  // The composer's Agent control hands off from the last turn the server has finished; a queued
-  // message sits beyond the cutoff the server would use.
+  // The composer's Agent control hands off from the last complete turn, a writer message
+  // included (so a running reply is cut at the message it answers); a queued message sits
+  // beyond the cutoff the server would use.
   const handoffCutoff = canDerive
-    ? ([...storedTurns]
-        .reverse()
-        .find((turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id))?.id ??
-      null)
+    ? (storedTurns.findLast(
+        (turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id),
+      )?.id ?? null)
     : null;
   const handoffFromLatest = useCommittedEvent((agent: CreationAgent) => {
     if (handoffCutoff) handoffTurn(handoffCutoff, agent);
   });
+  const agentName = activeThread?.agentName ?? null;
+  const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
+  // Busy only while the server has yet to accept the chat's first send; a chat with nothing to
+  // hand off from (no turn yet, a subagent's) shows its Agent and offers no choice.
   const composerAgent = useMemo<ComposerAgentControlProps>(
     () =>
-      activeThread?.kind === "subagent"
-        ? { mode: "readonly", name: activeThread.agentName ?? DEFAULT_AGENT_NAME }
-        : {
+      handoffCutoff || pendingCreation
+        ? {
             mode: "handoff",
             projectId,
-            bound: {
-              name: activeThread?.agentName ?? null,
-              definitionRevisionId: activeThread?.agentDefinitionRevisionId ?? null,
-            },
+            bound: { name: agentName, definitionRevisionId: agentRevisionId },
             onHandoff: handoffCutoff ? handoffFromLatest : null,
-          },
-    [
-      activeThread?.kind,
-      activeThread?.agentName,
-      activeThread?.agentDefinitionRevisionId,
-      handoffCutoff,
-      handoffFromLatest,
-      projectId,
-    ],
+          }
+        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME },
+    [agentName, agentRevisionId, handoffCutoff, handoffFromLatest, pendingCreation, projectId],
   );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);

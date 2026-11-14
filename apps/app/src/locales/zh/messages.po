@@ -3955,6 +3955,10 @@ msgstr ""
 msgid "Moving to the top"
 msgstr ""
 
+#: src/features/project/context/IdentityPlacementField.tsx
+msgid "Name and location"
+msgstr ""
+
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"

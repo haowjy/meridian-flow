@@ -257,7 +257,7 @@ export function IdentityPlacementField({
   };
 
   return (
-    <fieldset className="contents" onBlur={exitOnLeave}>
+    <fieldset aria-label={t`Name and location`} className="contents" onBlur={exitOnLeave}>
       <Popover open>
         <PopoverAnchor asChild>
           <div
