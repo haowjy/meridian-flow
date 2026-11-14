@@ -1,4 +1,4 @@
-import { freeName } from "./names.js";
+import { freeName, shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -247,7 +247,7 @@ export function replay(
       nodes.set(record.node, {
         id: record.node,
         kind: record.kind,
-        name: record.name,
+        name: shownName(record.kind, record.name),
         parent: parentId,
         rank: record.rank,
         source: record.source,
@@ -320,10 +320,10 @@ export function replay(
             record,
             index,
             { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-            node.name !== record.name,
+            node.name !== shownName(node.kind, record.name),
             arrivedBefore,
           );
-          node.name = record.name;
+          node.name = shownName(node.kind, record.name);
           if (record.actor.startsWith("user:")) node.provisional = false;
         }
         node.parent = record.parent;
@@ -339,9 +339,9 @@ export function replay(
           record,
           index,
           { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-          node.name !== record.name,
+          node.name !== shownName(node.kind, record.name),
         );
-        node.name = record.name;
+        node.name = shownName(node.kind, record.name);
         if (record.filetype) node.filetype = record.filetype;
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;

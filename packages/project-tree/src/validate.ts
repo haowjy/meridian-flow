@@ -1,4 +1,3 @@
-import { nameFault } from "./names.js";
 import type { Actor, BlobRef, TreeRecord } from "./record.js";
 
 const ID = /^[0-9a-zA-Z_-]{1,64}$/;
@@ -75,8 +74,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
     v === undefined || ok(v);
   const id = (v: unknown): v is string => matches(v, ID);
   const who = (v: unknown): v is string => typeof v === "string" && v.length > 0;
-  const name = (v: unknown): v is string =>
-    typeof v === "string" && nameFault("folder", v) === null;
+  const name = (v: unknown): v is string => typeof v === "string";
 
   const { node, actor, draft } = value;
   // A node is never a source, but a record that names one is well formed and is refused later.
@@ -123,8 +121,6 @@ function read(value: unknown, client: Actor | null): ReadRecord {
         return fail("filetype");
       if (provisional !== undefined && provisional !== true) return fail("provisional");
       if (typeof value.name !== "string") return fail("create");
-      const fault = nameFault(nodeKind, value.name);
-      if (fault) return fail(`a name with ${fault}`);
       if (!matches(parent, PLACE) || !matches(source, ID) || !isRank(rank)) return fail("create");
       if (parent.startsWith("source:") && parent !== `source:${source}`) return fail("create");
       if (
@@ -178,8 +174,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
     case "rename": {
       const { fromName, filetype } = value;
       if (filetype !== undefined && !matches(filetype, TYPE)) return fail("filetype");
-      if (!name(value.name) || typeof fromName !== "string" || fromName.length > 255)
-        return fail("rename");
+      if (!name(value.name) || typeof fromName !== "string") return fail("rename");
       return {
         ok: true,
         record: {

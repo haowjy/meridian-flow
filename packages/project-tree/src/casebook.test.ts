@@ -946,13 +946,13 @@ describe("part 5: what a document is, and a move between two lists", () => {
       parent: ROOT,
       provisional: true,
     }).node;
-    t.w.rename(LIVE, CHAT, ch, "Untitled.txt", "text");
+    t.w.rename(LIVE, CHAT, ch, "Untitled.toml", "text");
     expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: true });
     expect(projectedRows(t.w.view(LIVE)).get(ch)).toMatchObject({
       filetype: "text",
-      extension: "txt",
+      extension: "toml",
     });
-    t.w.rename(LIVE, WRITER, ch, "Untitled.txt");
+    t.w.rename(LIVE, WRITER, ch, "Untitled.toml");
     expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: false });
   });
 

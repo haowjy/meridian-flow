@@ -15,6 +15,10 @@ it may write, whether a node id is in use) comes in as plain inputs.
   (copies, which carry `carries`; files, `purge`, settlements, `replaces`) is the server's, and
   `readRecord` refuses a client's update that carries it. Nothing reads a decoded record's
   fields directly: `replay`, `listRecords` and the list index read through `readStored`.
+- No name is refused. The replay and the writer store and show `normalEntryName(kind, typed)`
+  (contracts) for every create, rename and move name. **Frozen as the replay uses it:** the list
+  keeps what was typed and every client replays it through that function, so a change to what it
+  returns for an input needs a migration of the list.
 - Record ids are uuids, so any number of writers may share a copy. The server's Yjs client id is
   below 1,000.
 - What a document is (type, provisional name, aliases, properties mark) rides on its `create`

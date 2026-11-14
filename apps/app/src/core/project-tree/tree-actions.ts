@@ -10,7 +10,6 @@
 import {
   isSourceRoot,
   type NodeKind,
-  nameFault,
   sourceRoot,
   type TreeProjection,
   type TreeRecord,
@@ -120,8 +119,6 @@ export class TreeActions {
   }): TreeActionResult<{ node: string; name: string }> {
     const made = this.writable();
     if (!made.ok) return made;
-    const kind = input.kind === "folder" ? "folder" : "document";
-    if (nameFault(kind, input.name) !== null) return { ok: false, reason: "name" };
     const replay = made.replay();
     const parent = this.parentOf(replay, input.parentId);
     if (!holds(replay, parent)) return { ok: false, reason: "missing" };
@@ -144,7 +141,6 @@ export class TreeActions {
     if (!made.ok) return made;
     const current = made.replay().nodes.get(node);
     if (!current) return { ok: false, reason: "missing" };
-    if (nameFault(current.kind, name) !== null) return { ok: false, reason: "name" };
     const record = made.writer.rename(made.view, this.actor, node, name, filetype);
     this.remember(made, [record]);
     return { ok: true, name: record.name };

@@ -166,8 +166,6 @@ describe("an update the server refuses whole, storing nothing", () => {
       [record({ type: "purge" }), "unknown type"],
       [record({ type: "settle" }), "unknown type"],
       [record({ type: "create", kind: "file", name: "x.png" }), "kind"],
-      [record({ name: "" }), "rename"],
-      [record({ name: "x".repeat(300) }), "rename"],
       [record({ type: "create", node: "source:x" }), "id"],
       [record({ node: { evil: true } }), "id"],
       [record({ type: "move", rank: "not a rank!" }), "move"],
@@ -180,8 +178,6 @@ describe("an update the server refuses whole, storing nothing", () => {
       [record({ undoes: { a: 1 } }), "undoes"],
       [record({ type: "toString" }), "unknown type"],
       [record({ type: "create", rank: "x" }), "create"],
-      [record({ name: "a/b" }), "rename"],
-      [record({ name: ".." }), "rename"],
       [
         JSON.parse(
           '{"__proto__":{"blob":{}},"type":"restore","id":"p","node":"ch1","actor":"user:me","draft":null}',

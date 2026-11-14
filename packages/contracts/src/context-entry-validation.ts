@@ -1,10 +1,9 @@
 /** Shared normalization and validation for writer-visible context names and paths. */
 
+import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+
 export type ContextEntryValidationReason =
   | "name/empty"
-  | "name/invalid-character"
-  | "name/reserved"
-  | "name/reserved-authority-qualifier"
   | "path/empty-segment"
   | "path/unknown-root"
   | "path/trailing-separator";
@@ -13,41 +12,67 @@ export type ContextEntryValidationError = {
   ok: false;
   reason: ContextEntryValidationReason;
   segment?: string;
-  character?: string;
 };
 
 export type ContextEntryValidationResult =
   | { ok: true; value: string }
   | ContextEntryValidationError;
 
-const INVALID_NAME_CHARACTER = /[/\\:*?"<>|]/;
+const MAX_NAME = 255;
+const UNTITLED = "Untitled";
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this matches
+const CONTROL = /[\u0000-\u001f\u007f]/g;
+// Look-alikes for what a path cannot carry: the slash is the separator, a leading `@` or `~`
+// opens an owner or branch qualifier, and `.` / `..` are navigation.
+const LOOK_ALIKE: Record<string, string> = { "/": "\u2215", "@": "\uff20", "~": "\uff5e" };
 
-/** Trims and validates one filesystem entry name. */
+/**
+ * The one name every client, the replay, the routes and the tools store for what a writer typed.
+ * Total: any text gives a name, so no name is refused. A document's name is its codec spelling
+ * (`notes.md` is `notes`); a name with no stem is "Untitled".
+ *
+ * Two endings are address syntax, so a stored name may never end in them (the `@` or `~` is
+ * turned into the look-alike): a version on a path is `@live`, `@draft` or `@` and a handle (`@w5`,
+ * `@c12`, `@b7`, `@p3`: a letter w, c, b or p and digits), matched without regard to case, as in
+ * `Kael@live`, while `anna@example.com` is untouched; and a later sibling with the same name is
+ * addressed by `~` and the start of its uuid, so a name ending in `~` and four or more hex digits in either case (`Kael~b21c`, `Kael~B21C`) has that `~` turned into `～`.
+ *
+ * FROZEN as the project tree's replay uses it (the list stores what was typed and every client
+ * replays it through this): a change to what it returns for any input changes how old history
+ * replays, and needs a migration of the list.
+ */
+export function normalEntryName(kind: "document" | "folder", typed: string): string {
+  let name = typed
+    .replace(CONTROL, " ")
+    .trim()
+    .replaceAll("/", LOOK_ALIKE["/"] as string);
+  const first = name[0];
+  if (first === "@" || first === "~") name = (LOOK_ALIKE[first] as string) + name.slice(1);
+  if (name === "." || name === "..") name = name.replaceAll(".", "\uff0e");
+  if (name.length > MAX_NAME) {
+    let cut = "";
+    for (const char of name) {
+      if (cut.length + char.length > MAX_NAME) break;
+      cut += char;
+    }
+    name = cut.trimEnd();
+  }
+  if (kind === "document" && name) {
+    const parsed = parseDocumentFilename(name);
+    // The codec refuses a name with no stem (`.md`) and one that would show as another type;
+    // the second stays as typed.
+    if (parsed.ok) name = renderFilename(parsed.value.name, parsed.value.extension);
+    else if (parsed.error.message.startsWith("A document name")) name = "";
+  }
+  return (name || UNTITLED)
+    .replace(/@(?=(?:live|draft|[wcbp]\d+)$)/i, LOOK_ALIKE["@"] as string)
+    .replace(/~(?=[0-9a-f]{4,}$)/i, LOOK_ALIKE["~"] as string);
+}
+
+/** A segment of a path or a name: the same name as `normalEntryName`, empty when nothing was typed. */
 export function validateContextEntryName(raw: string): ContextEntryValidationResult {
-  const value = raw.trim();
-  if (!value) return { ok: false, reason: "name/empty" };
-  if (value.startsWith("@") || value.startsWith("~")) {
-    return {
-      ok: false,
-      reason: "name/reserved-authority-qualifier",
-      segment: value,
-    };
-  }
-  if (value === "." || value === "..") {
-    return { ok: false, reason: "name/reserved", segment: value };
-  }
-  const invalid = [...value].find(
-    (character) => character.charCodeAt(0) < 32 || INVALID_NAME_CHARACTER.test(character),
-  );
-  if (invalid) {
-    return {
-      ok: false,
-      reason: "name/invalid-character",
-      segment: value,
-      character: invalid,
-    };
-  }
-  return { ok: true, value };
+  if (!raw.trim()) return { ok: false, reason: "name/empty" };
+  return { ok: true, value: normalEntryName("folder", raw) };
 }
 
 export type ValidateContextEntryPathOptions = {

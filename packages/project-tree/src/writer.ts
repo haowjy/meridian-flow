@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import { freeName } from "./names.js";
+import { freeName, shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -136,7 +136,11 @@ export class TreeWriter {
           }));
           siblings.set(input.parent, kids);
         }
-        const name = freeName(input.kind, input.name, new Set(kids.map((kid) => kid.name)));
+        const name = freeName(
+          input.kind,
+          shownName(input.kind, input.name),
+          new Set(kids.map((kid) => kid.name)),
+        );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
         const rank = rankAmong(
           kids.map((kid) => kid.rank),
@@ -243,7 +247,9 @@ export class TreeWriter {
     return this.author(view, actor, {
       type: "rename",
       node,
-      name: current ? nameAmong(projection, current.parent, current.kind, name, node) : name,
+      name: current
+        ? nameAmong(projection, current.parent, current.kind, shownName(current.kind, name), node)
+        : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),
     }) as RenameRecord;

@@ -10,7 +10,7 @@ page says where each part lives and what the code decided where the design left 
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
 | `validate.ts` | `readRecord` (a client's value, for admission) and `readStored` (the server's list, for everything else): each builds the record a value stands for from its own allowed fields, or says why there is none; `writable`, which every record the package writes goes through |
-| `names.ts` | `nameFault`, `freeName`: a name's rules and numbering, from the contracts filename codec |
+| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: numbering, from the contracts filename codec |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 8, then one pass over the nodes for Trash, kept folders and names |

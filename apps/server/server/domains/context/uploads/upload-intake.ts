@@ -353,7 +353,7 @@ class FinishFault extends Error {}
 
 const invalidFilename = {
   ok: false,
-  error: { code: "invalid_filename", reason: "name/reserved" },
+  error: { code: "invalid_filename", reason: "name/empty" },
 } as const;
 
 export function createUploadIntake<Bound>(deps: {
@@ -384,7 +384,6 @@ export function createUploadIntake<Bound>(deps: {
           error: {
             code: "invalid_filename",
             reason: validation.reason,
-            ...(validation.character ? { character: validation.character } : {}),
           },
         };
       }

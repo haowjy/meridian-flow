@@ -15,7 +15,7 @@ export {
   restoreDiscard,
   undoApply,
 } from "./apply.js";
-export { nameFault } from "./names.js";
+export { shownName } from "./names.js";
 export {
   type Actor,
   type BlobRef,
