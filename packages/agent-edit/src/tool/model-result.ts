@@ -76,6 +76,8 @@ export interface AgentEditConcurrentGroup {
   /** Changed blocks the result does not render. */
   other?: string[];
   removed?: string[];
+  /** Blocks this author changed that the write then removed (deleted or joined). */
+  overwritten?: string[];
 }
 
 /**

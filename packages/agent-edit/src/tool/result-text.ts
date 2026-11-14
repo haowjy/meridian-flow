@@ -178,7 +178,7 @@ function concurrentLines(listing: AgentEditConcurrentListing, result: AgentEditR
       `${listing.reread} blocks were changed by others after you last read it, so this result has no echo and no list. The write landed. Your view of this file is out of date: ${read} before you edit it again.`,
     ];
   }
-  const lines = listing.groups.map((group) => {
+  const lines = listing.groups.flatMap((group) => {
     const changed = [
       ...(group.shown?.map((hash) => `${hash} (in the echo)`) ?? []),
       ...(group.other ?? []),
@@ -187,7 +187,12 @@ function concurrentLines(listing: AgentEditConcurrentListing, result: AgentEditR
       ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
       ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
     ];
-    return `${group.author} ${did.join(" and ")} after you last read it.`;
+    return [
+      ...(did.length ? [`${group.author} ${did.join(" and ")} after you last read it.`] : []),
+      ...(group.overwritten?.length
+        ? [`${group.author} changed ${group.overwritten.join(", ")}, which your write removed.`]
+        : []),
+    ];
   });
   const merged = listing.groups.some((group) => group.shown?.length);
   return [

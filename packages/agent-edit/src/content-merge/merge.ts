@@ -2,9 +2,10 @@
  * The content merge: a pure three-way merge of base, live and draft top-level blocks. It brings live's
  * newer edits into a Work draft (and, with the patch as the draft side, writes an Apply into live).
  *
- * Nothing relates the sides' Yjs items; the tokens of each side are aligned to base, paragraph moves are
- * lifted so the other side's edits travel with the paragraph (`merge-order.ts`), and the two hunk lists
- * are merged (`merge-hunks.ts`, `merge-settle.ts`). Hunks from one side apply. Overlapping hunks with
+ * Nothing relates the sides' Yjs items. Blocks pair with base by id, the tokens of each side are aligned
+ * to base, paragraph moves are lifted so the other side's edits travel with the paragraph
+ * (`merge-order.ts`), and the two hunk lists are merged (`merge-hunks.ts`, `merge-settle.ts`; all
+ * beside this file in `content-merge/`). Hunks from one side apply. Overlapping hunks with
  * equal results apply once. Insertions at one point keep both (live first). Anything else is a
  * conflict: the draft's version stays, so the conflict shows in review as diff(new base = live, draft).
  * It works on `align`'s uncleaned hunks for word precision. No Yjs here: the minimal Yjs writer is

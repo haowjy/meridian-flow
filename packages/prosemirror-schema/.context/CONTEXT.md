@@ -26,14 +26,14 @@ one side and fail on the other, so this package follows the editor's structural 
   leave their place: a copied or moved run drops the levels outside it, and a moved run
   keeps its depth, at most one level under the block it lands below. `sharedSteps` is how many
   leading steps a run of blocks sits in together, which is where a quote around them goes.
-  Removing the `blockquote` node was collab schema 5.0.0.
+  Removing the list and quote nodes was part of collab schema 3.0.0.
 
 - Every block node (the nine that carry nesting, plus `table_row`) has `id`, a permanent
   identity the merge, review and the Yjs writer pair blocks by. It is set once where a block
   is made and copied with the other attributes everywhere; Markdown never carries it, and a
   block read from the model's Markdown has none. Null means none recorded, which no stored
   block may be: `writeBlocks` refuses it and `insertBlocks` (the door for codec blocks) assigns
-  one. `block-id.ts` holds the generator and the walkers. Adding it was collab schema 4.0.0.
+  one. `block-id.ts` holds the generator and the walkers. Adding it was also part of collab schema 3.0.0.
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it

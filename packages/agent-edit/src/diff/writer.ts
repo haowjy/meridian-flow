@@ -32,7 +32,7 @@ export interface WriteStats {
 
 /**
  * Writes `target` into the fragment: unchanged blocks are untouched, a block whose type and inline
- * shape allow it is edited in place, the rest are replaced. Call inside the rebase transaction.
+ * shape allow it is edited in place, the rest are replaced. Call inside one transaction.
  */
 export function writeBlocks(
   frag: Y.XmlFragment,
@@ -253,7 +253,7 @@ function copiedUnits(
   return copies;
 }
 
-/** Discard-only identity preservation; AI and rebase allocation policies are unchanged. */
+/** `writeBlocks` for Discard: it also records which restored text copies which discarded text. */
 export function writeDiscardBlocks(
   frag: Y.XmlFragment,
   schema: Schema,

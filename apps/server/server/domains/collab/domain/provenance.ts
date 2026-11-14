@@ -1,12 +1,7 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
 import { APPLY_RECORD_ROOT, RESTORED_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
-import {
-  type LineageRange,
-  type SemanticEditIRV1,
-  type SemanticProvenanceWriter,
-  unwrapDoc,
-} from "@meridian/agent-edit/integration";
+import type { LineageRange } from "@meridian/agent-edit/integration";
 import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -65,12 +60,6 @@ export type AttributedJournalRow = JournalReplayKey & {
   update: Uint8Array;
 };
 
-export type ProvenanceRun = {
-  target: LineageRange;
-  root: LineageRange;
-  birthClass: SafetyBirthClass;
-};
-
 export type RootLineageRun = {
   target: LineageRange;
   root: LineageRange;
@@ -105,76 +94,8 @@ export function insertionAttributions(
   return result;
 }
 
-/** Derives the normalized view for an already-materialized durable settlement doc. */
-export function materializeProvenanceForDoc(input: {
-  doc: Y.Doc;
-  rows: readonly AttributedJournalRow[];
-  retainedAttributions?: readonly AttributionRunV1[];
-  /** Settlement lock cuts may contain writer-ingress roots captured before their
-   * attributed replay row; classify that unexplained birth source conservatively. */
-  fallbackBirthClass?: SafetyBirthClass;
-}): ProvenanceRun[] {
-  const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
-  for (const attribution of input.retainedAttributions ?? []) {
-    attributions.add(attribution.range, attribution, sameAttribution);
-  }
-  for (const row of input.rows) {
-    for (const range of journalInsertionRanges(row.update)) {
-      attributions.addUncovered(range, {
-        range,
-        birthClass: birthClassFromAttribution(row),
-        origin: replayKey(row),
-      });
-    }
-  }
-  return provenanceRunsForDoc(input.doc, attributions, input.fallbackBirthClass);
-}
-
-/** Re-materializes provenance after a candidate update without granting old roots to fresh prose. */
-export function materializeCandidateProvenance(
-  doc: Y.Doc,
-  retained: readonly ProvenanceRun[],
-): ProvenanceRun[] {
-  const attributions = new RangeIndex<AttributionRunV1>("retained root attribution");
-  for (const [index, run] of retained.entries()) {
-    attributions.add(
-      run.root,
-      {
-        range: run.root,
-        birthClass: run.birthClass,
-        origin: { admissionSequence: 0n, batchOrdinal: 0, journalRowId: BigInt(index) },
-      },
-      sameAttribution,
-    );
-  }
-  return provenanceRunsForDoc(doc, attributions, "agent");
-}
-
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
-}
-
-function provenanceRunsForDoc(
-  doc: Y.Doc,
-  attributions: RangeIndex<AttributionRunV1>,
-  fallbackBirthClass?: SafetyBirthClass,
-): ProvenanceRun[] {
-  const visible: ProvenanceRun[] = [];
-  for (const run of materializeRootLineageForDoc(doc)) {
-    for (let offset = 0; offset < run.root.length; offset += 1) {
-      const root = unit(run.root, offset);
-      const attribution = attributions.valueAt(root);
-      if (!attribution && !fallbackBirthClass) {
-        throw blocked("Provenance root has no retained journal attribution");
-      }
-      appendRun(visible, {
-        target: unit(run.target, offset),
-        root,
-        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
-      });
-    }
-  }
-  return visible;
 }
 
 /** Materializes only the visible target-to-root relation. Attention policy
@@ -277,34 +198,6 @@ export function validateProvenanceGraph(doc: Y.Doc): void {
 
 export class ReservedNamespaceAdmissionError extends Error {
   readonly name = "ReservedNamespaceAdmissionError";
-}
-
-export function createSemanticProvenanceWriter(): SemanticProvenanceWriter {
-  return {
-    writeCertifiedFacts(docHandle, ir, beforeStateVector) {
-      writeCertifiedProvenanceFacts(unwrapDoc(docHandle), ir, beforeStateVector);
-    },
-  };
-}
-
-/**
- * No edit the resolver produces carries a preserved or restoration run, and an `ops` edit's
- * output is only the text it inserts, so there is no block whose visible prose is the output
- * to materialize facts against.
- */
-function writeCertifiedProvenanceFacts(
-  _doc: Y.Doc,
-  ir: SemanticEditIRV1,
-  _beforeStateVector: Uint8Array,
-): void {
-  if (ir.intent.kind === "fullScopeFreshReplacement") return;
-  for (const { edit, outputRuns } of ir.intent.edits) {
-    if (outputRuns.some((run) => run.kind === "preserved" || run.kind === "restoration")) {
-      throw new ProvenanceMaterializationError(
-        `Certified ${edit.kind} output cannot materialize continuation or restoration facts`,
-      );
-    }
-  }
 }
 
 function resolvedRootUnits(
@@ -727,27 +620,6 @@ function parseRange(value: unknown): LineageRange {
     throw blocked("Lineage range is outside safe integer bounds");
   }
   return { clientID: Number(clientID), clock: Number(clock), length: Number(length) };
-}
-
-function appendRun(target: ProvenanceRun[], unitRun: ProvenanceRun): void {
-  const previous = target.at(-1);
-  if (
-    previous &&
-    previous.birthClass === unitRun.birthClass &&
-    previous.target.clientID === unitRun.target.clientID &&
-    end(previous.target) === unitRun.target.clock &&
-    previous.root.clientID === unitRun.root.clientID &&
-    end(previous.root) === unitRun.root.clock
-  ) {
-    previous.target.length += 1;
-    previous.root.length += 1;
-    return;
-  }
-  target.push({
-    target: { ...unitRun.target },
-    root: { ...unitRun.root },
-    birthClass: unitRun.birthClass,
-  });
 }
 
 function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun): void {

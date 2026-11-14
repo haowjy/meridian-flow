@@ -376,7 +376,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     codec: runtime.codec,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   // Scoped as composition scopes it, so a real link scope sees every model call.
