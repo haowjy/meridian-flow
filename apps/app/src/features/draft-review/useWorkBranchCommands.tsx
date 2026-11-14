@@ -630,6 +630,12 @@ export function useWorkBranchCommands({
               },
         })
         .then((answer) => {
+          if (answer.kind === "done" && !input.all) {
+            const ended = new Set(input.drafts.map((draft) => draft.itemKey));
+            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+              rows.filter((listed) => !ended.has(listed.itemKey)),
+            );
+          }
           refresh(documentIds);
           return answer;
         });

@@ -1033,7 +1033,13 @@ export class DraftCommandOwner {
               })),
             }),
       });
-      if (answer.status === "discarded") return { kind: "done" };
+      if (answer.status === "discarded") {
+        // A branch that closed ends its item keys; a selection's items stay the branch's, and
+        // the caller drops their rows with this answer, as an item's server Discard does.
+        if (!("all" in selection))
+          for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
+        return { kind: "done" };
+      }
       failed({ code: "discard-refused", serverCode: answer.status });
       return { kind: "change-refused", code: answer.status };
     } catch {

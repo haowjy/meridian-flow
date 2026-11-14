@@ -88,9 +88,14 @@ export class GroupApply {
       .then((revisions) =>
         this.input.post({
           commandId: this.commandId,
-          items: [...this.handed.values()].map(({ node, folder, body }) =>
-            folder ? { node, tree: { revision: revisions.get(node) ?? null } } : itemOf(node, body),
-          ),
+          // Folders first: what a document lands in comes before it.
+          items: [...this.handed.values()]
+            .sort((a, b) => Number(b.folder) - Number(a.folder))
+            .map(({ node, folder, body }) =>
+              folder
+                ? { node, tree: { revision: revisions.get(node) ?? null } }
+                : itemOf(node, body),
+            ),
           ...(this.input.restore ? { restore: true as const } : {}),
         }),
       )
