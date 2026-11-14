@@ -17,6 +17,7 @@ import {
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { Lease, RunClaim } from "../loop/ports.js";
+import { LostRunError } from "../loop/runtime-delivery.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { DeliveryLeaseStore, DeliveryStore } from "./delivery-ports.js";
 
@@ -30,6 +31,8 @@ export type ExecutionSettlementDeps = PersistenceDeps & {
   repos: import("../../threads/index.js").ThreadRepositories;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
+  /** Answers a dead turn's unanswered document commands before the turn is marked terminal; see `finalizeOrphanedTurns`. */
+  recoverCommands?(threadId: ThreadId, turn: Turn): Promise<void>;
   publishStatus?(threadId: ThreadId): Promise<void>;
   inbox: DeliveryStore;
   leaseStore: DeliveryLeaseStore;
@@ -127,6 +130,17 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
       return settleTerminal(input.lease, input.turnId, closeCause(input, receipt), receipt);
     });
 
+  /**
+   * Runs a write of a running run under the thread lock and the run's lease row. A row that is
+   * gone means another process took the run over and recovery has read what it will: the write
+   * rolls back and the run stops. Never nest it inside another thread-lock hold.
+   */
+  const storeUnderLease = <T>(lease: Lease, persist: () => Promise<T>) =>
+    threadLock.withThreadLock(lease.threadId, async () => {
+      if (!(await leaseStore.lockReceipt(lease))) throw new LostRunError(lease);
+      return persist();
+    });
+
   /** Persists a response and acknowledges what the response answered, under the receipt's run. */
   const ackWithResponse = <T>(
     lease: Lease,
@@ -134,11 +148,10 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
     byTurn: Pick<Turn, "id" | "position">,
     persist: () => Promise<T>,
   ) =>
-    threadLock.withThreadLock(lease.threadId, async () => {
+    storeUnderLease(lease, async () => {
       const result = await persist();
       if (ids.length > 0) {
-        if (!(await leaseStore.clearReceipt(lease, ids)))
-          throw new Error("Cannot ack after losing live run lease");
+        if (!(await leaseStore.clearReceipt(lease, ids))) throw new LostRunError(lease);
         await ack(lease.threadId, [...ids], deliveredBy(byTurn));
       }
       return result;
@@ -177,11 +190,11 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
 
   /**
    * Call holding the session claim. With no `repair`, this is the run starter's full
-   * settlement: the claim proves a stale lease's holder is gone, so every unsettled turn is
-   * repaired (reports publish, and the repairs may commit separately: a crash between them
-   * loses nothing, because the end is decided from turns that carry the execution's id, never
-   * from the row's receipt arrays). Then the lease ends in one transaction with the check that
-   * no turn of its execution is left unsettled.
+   * settlement: the claim proves a stale lease's holder is gone, so under one thread-lock hold
+   * every unsettled turn is repaired (command recovery included), every turn of the execution is
+   * checked terminal and the lease row ends. The old process's every store takes the same lock
+   * and checks the row, so nothing it stores can land between recovery's read and the row's end,
+   * and once the row is gone each of its stores is refused. Reports publish after the lock.
    *
    * A sweep lane passes its own `repair` and settles only what it names: a stale candidate
    * may not repair a newer receipt's execution, so the lease ends only when the repair
@@ -192,20 +205,19 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
     repair?: () => Promise<T>,
   ): Promise<T | undefined> {
     if (repair) return settleSweepLane(threadId, repair);
-    const reports = await threadLock.withThreadLock(threadId, async () =>
-      repairOrphans(threadId, (await leaseStore.lockThreadReceipt(threadId)) ? "claimed" : "sweep"),
-    );
-    await deps.publishFinalizedReports(reports);
-    await threadLock.withThreadLock(threadId, async () => {
+    const reports = await threadLock.withThreadLock(threadId, async () => {
       const stale = await leaseStore.lockThreadReceipt(threadId);
-      if (!stale) return;
+      const finalized = await repairOrphans(threadId, stale ? "claimed" : "sweep");
+      if (!stale) return finalized;
       const turns = await deps.repos.turns.listByExecution(threadId, stale.lease.executionId);
       if (turns.some((turn) => !isTerminalTurnStatus(turn.status)))
         throw new Error("A stale execution still has unsettled turns after repair");
       await endExecution(stale.lease);
       // The row's deletion is what turns the chat idle for readers.
       publishIdle(threadId);
+      return finalized;
     });
+    await deps.publishFinalizedReports(reports);
     return undefined;
   }
 
@@ -278,6 +290,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
     closeCause,
     settleClosed,
     ackWithResponse,
+    storeUnderLease,
     settleStaleExecution,
     releaseExecution,
     blockForUsage,

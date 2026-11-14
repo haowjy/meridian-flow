@@ -32,6 +32,14 @@ export class HandBackConflictError extends Error {
   }
 }
 
+/** A run's write was refused because its lease row is gone: another process took the run over. */
+export class LostRunError extends Error {
+  constructor(readonly lease: Lease) {
+    super(`Run ${lease.executionId} lost its lease`);
+    this.name = "LostRunError";
+  }
+}
+
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   acknowledge(ids: readonly string[]): Promise<void>;
@@ -250,6 +258,8 @@ export interface RuntimeDelivery
     byTurn: Pick<Turn, "id" | "position">,
     persist: () => Promise<T>,
   ): Promise<T>;
+  /** Runs a running run's write under the thread lock after checking its lease row; throws `LostRunError` when the row is gone. */
+  storeUnderLease<T>(lease: Lease, persist: () => Promise<T>): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
     input: DeliveryBoundary<TCurrent>,
   ): Promise<AdoptedBatch<TCurrent>>;
