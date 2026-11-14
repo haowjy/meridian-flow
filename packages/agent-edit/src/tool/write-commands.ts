@@ -1,6 +1,10 @@
 // Mutating and query write command handlers.
 import { type HolderLinkScope, settledAheads } from "@meridian/markup/links";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  isEmptyDocument,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks, snapshotProjected } from "../apply/echo.js";
@@ -10,10 +14,10 @@ import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
+import { landCopies } from "../resolver/land-copies.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
@@ -33,13 +37,7 @@ import { errorResponse, mutationMeta, parseFileAddress, readSuccess } from "./wr
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    | "model"
-    | "codec"
-    | "coordinator"
-    | "semanticProvenance"
-    | "links"
-    | "onLinkSpliceFallback"
-    | "onObservationFailed"
+    "model" | "codec" | "coordinator" | "links" | "onLinkSpliceFallback" | "onObservationFailed"
   >;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
@@ -199,10 +197,14 @@ export function createWriteCommands(deps: {
     if (address.fragment) {
       return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
-    const copiedNodes = command.command === "copy" ? context.copiedNodes : undefined;
-    if (command.command === "copy" && !copiedNodes) {
+    if (command.command === "copy" && !context.copiedNodes) {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
+    // A new document starts at the top: the copies lose the containers they sat in.
+    const copiedNodes =
+      command.command === "copy" && context.copiedNodes
+        ? landCopies(context.copiedNodes, null)
+        : undefined;
     const content = command.command === "create" ? (command.content ?? "") : "";
     // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
     const boundNodes = command.command === "create" ? context.boundNodes : undefined;
@@ -244,7 +246,7 @@ export function createWriteCommands(deps: {
             overwriting,
             alreadyExists,
           });
-        if (existing && hasText(room.doc))
+        if (existing && !isEmptyDocument(room.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)))
           return withPlanDoc(room, address.documentId, context, actor, plan);
         const created = await plan(room.doc);
         // The document began empty for the model: its later writes in this reply plan from that.
@@ -460,11 +462,9 @@ export function createWriteCommands(deps: {
       registerMinted(edit.assigner, docId, context),
       nextWriteIdentity(docId, session, context, command.tool_use_id),
     ]);
-    const _preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
     // The echo compares with what the model planned on, as the settled receipt does: a block
     // the writer changed since the view shows in full beside the write.
     const planned = snapshotBlocks(toDocHandle(planDoc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(planDoc);
     // A view lacks the room's newer clients; a fresh segment client must avoid them too.
     const roomClients =
       planDoc === room.doc
@@ -477,14 +477,7 @@ export function createWriteCommands(deps: {
       roomClients,
       (beforeSegment) => {
         if ("edits" in plan)
-          return applyEdits(
-            toDocHandle(planDoc),
-            options.model,
-            plan.edits,
-            origin,
-            beforeSegment,
-            certifySegment(planDoc, plan.ir, beforeVector),
-          );
+          return applyEdits(toDocHandle(planDoc), options.model, plan.edits, origin, beforeSegment);
         beforeSegment?.();
         let insertedBlocks: string[] = [];
         planDoc.transact(() => {
@@ -745,37 +738,9 @@ export function createWriteCommands(deps: {
       responseId: context.responseIdentity?.modelResponseId,
     };
   }
-
-  /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
-  function certifySegment(
-    doc: Y.Doc,
-    ir: SemanticEditIRV1,
-    beforeStateVector: Uint8Array,
-  ): (segment: readonly ResolvedEdit[]) => void {
-    return (segment) => {
-      const intent = ir.intent;
-      if (intent.kind === "fullScopeFreshReplacement") return;
-      const edits = intent.edits.filter(({ edit }) => segment.includes(edit));
-      options.semanticProvenance?.writeCertifiedFacts(
-        toDocHandle(doc),
-        { ...ir, intent: { ...intent, edits } },
-        beforeStateVector,
-      );
-    };
-  }
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
-
-/**
- * Whether the document holds anything beyond the one blank block an empty document keeps:
- * initializing an empty document isn't checked against the model's view.
- */
-function hasText(doc: Y.Doc): boolean {
-  return getTopLevelXmlBlocks(doc).some((block) =>
-    block.toArray().some((child) => !(child instanceof Y.XmlText) || child.length > 0),
-  );
-}
 
 /** The docs a write's links spell: the plan doc and, when it is a view, the room copy. */
 function planDocs(planDoc: Y.Doc, room: RoomCopy): Y.Doc[] {
@@ -787,7 +752,7 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
 }
 
 /**
- * Capture the synchronous content and certification transactions, not a state-vector
+ * Capture the synchronous content transactions, not a state-vector
  * diff: that diff includes every old tombstone and couples otherwise independent writes.
  */
 function captureWriteUpdate<T>(

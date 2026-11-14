@@ -21,10 +21,10 @@
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
  *   - updates refused (`updatesRefused`: the server kept refusing a draft
- *     room's updates) → "Couldn't save your latest changes (copy them before
- *     you reopen)" with Reopen draft
- *     when the owner offers `onReopen`. The editor stays read-only behind it so
- *     the unsent text can be copied first. Wins over the outage phase.
+ *     room's updates) → "Couldn't save your latest changes" with Try again
+ *     when the owner offers `onReopen`, which reopens the room and resends
+ *     them. The editor stays read-only behind it with the text on screen. Wins
+ *     over the outage phase.
  *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
  *     spends about a second there), so there is no timer and a first load never
  *     shows a label.
@@ -143,10 +143,10 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
         data-sync-refused
       >
         <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
-        <Trans>Couldn't save your latest changes (copy them before you reopen)</Trans>
+        <Trans>Couldn't save your latest changes</Trans>
         {onReopen ? (
           <Button type="button" size="xs" variant="secondary" onClick={onReopen}>
-            <Trans>Reopen draft</Trans>
+            <Trans>Try again</Trans>
           </Button>
         ) : null}
       </div>

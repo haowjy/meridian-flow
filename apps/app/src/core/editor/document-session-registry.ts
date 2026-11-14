@@ -13,6 +13,12 @@ export type RetainedLiveDocumentReference = Readonly<{
   documentId: DocumentId;
 }>;
 
+/** Why a room's unsent typing could not be delivered. */
+export type UnsentTypingCause = "closed" | "removed" | "access-changed";
+
+/** Typing a room ended with before the server acknowledged it, handed back once. */
+export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string }>;
+
 export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
@@ -45,6 +51,12 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
    * room's current session or no longer removed.
    */
   restartRemovedRoom(session: DocumentSession): Promise<boolean>;
+  /**
+   * The words a room, live or draft, held unacknowledged when it ended or its local copy was
+   * cleared (closed, removed, access changed), once per session, read before the copy goes. A
+   * room with no session in this tab has nothing to hand back.
+   */
+  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */

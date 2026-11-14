@@ -305,7 +305,7 @@ read, and from a second chat editing another block:
 ```
 
 Writes land on the current Yjs room and show the resulting block plus
-`concurrent edits by the user`. Draft writes stay in the Work draft and leave
+`the user changed <hash> after you last read it.` Draft writes stay in the Work draft and leave
 live text unchanged. Missing targets return `not_found` and change no text.
 
 ## RP-21: Listed reads after compaction fit the budget, in listed order

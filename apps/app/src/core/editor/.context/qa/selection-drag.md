@@ -88,3 +88,13 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
     the block drops at that point at once, and the right button's `pointerup` changes nothing.
     A touch tap on a highlight (`Input.dispatchTouchEvent`) places a caret and leaves the next
     press working.
+20. **Lists.** In a list with a nested item, drag the handle of an item that has children
+    below a later item: it moves with its children and keeps its depth; dropped
+    below a plain paragraph it stays an item, and its child stays its child. Alt+↓ and Alt+↑
+    step over the neighbouring item whole, children included, and never take another
+    item's children. Duplicate and Delete in the handle's menu act on the item and its
+    children. Copy a nested item's text alone: the clipboard text is the bare words; copy
+    it with its line ends and the next item: `- one` / `- two`, not `- - one`. Paste a
+    copied list into an empty line, into an item (the pasted items land beside it) and
+    into another app (a plain `contenteditable` page shows nested bullets); paste a list
+    copied from a web page or Google Docs: depth, numbering and checked boxes survive.

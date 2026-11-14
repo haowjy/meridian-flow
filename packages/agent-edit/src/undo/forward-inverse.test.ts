@@ -430,13 +430,11 @@ describe("forward inverse on cold Yjs replicas", () => {
     const v = base(["abc", "def"]);
     write(v, [
       (v) => {
-        const list = new Y.XmlElement("bullet_list"),
-          item = new Y.XmlElement("list_item");
-        item.insert(0, [paragraph("linked")]);
-        list.insert(0, [item]);
-        v.doc.getXmlFragment("prosemirror").insert(2, [list]);
-        const nested = item.get(0) as Y.XmlElement,
-          tx = nested.get(0) as Y.XmlText;
+        const item = paragraph("linked");
+        item.setAttribute("path", "-");
+        item.setAttribute("marker", "item");
+        v.doc.getXmlFragment("prosemirror").insert(2, [item]);
+        const tx = item.get(0) as Y.XmlText;
         tx.format(0, 6, { link: { href: "doc:path", ref: "keep" } });
         const atom = new Y.XmlElement("image");
         atom.setAttribute("src", "asset:image");
@@ -450,7 +448,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(xml(v)).toBe(original);
     inverse(v, atomParagraph, "reapply");
     expect(xml(v)).toBe(
-      '<paragraph>def</paragraph><bullet_list><list_item><paragraph><link href="doc:path" ref="keep">linked</link></paragraph></list_item></bullet_list>',
+      '<paragraph>def</paragraph><paragraph marker="item" path="-"><link href="doc:path" ref="keep">linked</link></paragraph>',
     );
     inverse(v, atomParagraph, "invert");
     expect(xml(v)).toBe(original);

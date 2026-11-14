@@ -7,8 +7,8 @@ import { droppedSlicePlan } from "./slice-drop";
 
 const schema = buildDocumentSchema();
 const paragraph = (text: string) => schema.node("paragraph", null, schema.text(text));
-const item = (text: string, blocks: PMNode[] = []) =>
-  schema.node("list_item", null, [paragraph(text), ...blocks]);
+const item = (text: string, path = "-") =>
+  schema.node("paragraph", { path, marker: "item" }, schema.text(text));
 const textblockPositions = (doc: PMNode) => {
   const positions = new Map<string, number>();
   doc.descendants((node, pos) => {
@@ -73,15 +73,15 @@ function dropRange(
 }
 
 it("keeps copied list items and their nested list in order", () => {
-  const nested = schema.node("bullet_list", null, [item("nested kid text")]);
-  const list = schema.node("bullet_list", null, [
+  const list = [
     item("first bullet text"),
-    item("second bullet text", [nested]),
+    item("second bullet text"),
+    item("nested kid text", "--"),
     item("third bullet text"),
     item("fourth bullet text"),
-  ]);
+  ];
   const state = dropRange(
-    schema.node("doc", null, [list, paragraph("landing words")]),
+    schema.node("doc", null, [...list, paragraph("landing words")]),
     { from: ["first bullet text", 2], to: ["fourth bullet text", 8] },
     ["landing words", 4],
     true,
@@ -93,14 +93,13 @@ it("keeps copied list items and their nested list in order", () => {
   expect(state.doc.toJSON()).toEqual(
     schema
       .node("doc", null, [
-        list,
+        ...list,
         paragraph("land"),
-        schema.node("bullet_list", null, [
-          item("rst bullet text"),
-          item("second bullet text", [nested]),
-          item("third bullet text"),
-          item("fourth b"),
-        ]),
+        item("rst bullet text"),
+        item("second bullet text"),
+        item("nested kid text", "--"),
+        item("third bullet text"),
+        item("fourth b"),
         paragraph("ing words"),
       ])
       .toJSON(),
@@ -108,10 +107,11 @@ it("keeps copied list items and their nested list in order", () => {
 });
 
 it("keeps a copied quote at one quote level", () => {
-  const quote = (...lines: string[]) => schema.node("blockquote", null, lines.map(paragraph));
+  const quote = (...lines: string[]) =>
+    lines.map((line) => schema.node("paragraph", { path: ">" }, schema.text(line)));
   const source = quote("q one", "q two", "q three");
   const state = dropRange(
-    schema.node("doc", null, [source, paragraph("landing words")]),
+    schema.node("doc", null, [...source, paragraph("landing words")]),
     { from: ["q one", 2], to: ["q three", 3] },
     ["landing words", 4],
     true,
@@ -120,9 +120,9 @@ it("keeps a copied quote at one quote level", () => {
   expect(state.doc.toJSON()).toEqual(
     schema
       .node("doc", null, [
-        source,
+        ...source,
         paragraph("land"),
-        quote("one", "q two", "q t"),
+        ...quote("one", "q two", "q t"),
         paragraph("ing words"),
       ])
       .toJSON(),

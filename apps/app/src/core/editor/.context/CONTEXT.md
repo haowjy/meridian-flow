@@ -61,6 +61,13 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
+- Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
+  not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
+  undo of the rule). The block the old document had at that place keeps its id; a split's other
+  half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
+  paste or drop keeps it. The id rides the clipboard as `data-block-id`. Transactions from the
+  Yjs binding (a peer's change, undo, redo, the first load) are left alone: their blocks
+  already have ids, and undo restores what was there.
 - A block's adjacent `Y.XmlText` children are one run of text: peers typing into
   an empty block at once create several. One rule reads and writes them
   everywhere: diff the run as one string, send each change to the `XmlText`
@@ -71,14 +78,13 @@ barrier that drains that open.
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
   `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
-  is not a dependency); `agent-edit`'s own writers restate the rule in
-  `src/yjs-text-runs.ts`. Stock y-tiptap and y-prosemirror fold the run into
+  is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
+  rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
   To drop the patch when upstream stops doing either, remove the grouping
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
-  read) and keep `refreshProseMirrorDoc`; then reduce `yjs-text-runs.ts` to what
-  the writers still need.
+  read) and keep `refreshProseMirrorDoc`.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
@@ -128,7 +134,11 @@ session verdicts. Delete-only candidates are correlated independently within a
 Yjs transaction batch by item identity; ordinary writer transactions produce no
 verdict. Mixed delete-and-insert normalization is intentionally not classified.
 Repairs are reported in the snapshot; they do not fence, quarantine, pause, or
-change connection status.
+change connection status. The witness counts each report with `countSchemaRepair("editor")`
+(`@meridian/agent-edit`); the removed-text extraction it reports lives in
+`rescued-text.ts`. The binding's delete reaches the server as an ordinary Yjs update,
+and the server journals it under no name (`isSchemaRepairUpdate`); Undo still reaches it, which
+re-inserts the element and has the binding delete it again.
 
 Local presence is owned by `local-presence.ts`. Extensions receive `setField`,
 read-only peer state, and an Awareness-shaped caret facade; they never receive
@@ -371,14 +381,15 @@ keyboard, pointer, drop, or draft-recovery answer.
   keeps its unselected text and type, with adjacent prose whitespace trimmed so
   the remainder does not start or end with the moved line's space. Code keeps
   its whitespace. A block the range covers whole goes, and so do the containers
-  that would be left empty. A block its parent can't lose (a list item's first
-  paragraph, the last block, or the last paragraph in a table cell) stays,
+  that would be left empty. A block its parent can't lose (the last block, or the last paragraph in a table cell) stays,
   emptied; a fully covered table leaves as one block. A move inside one
   textblock, a node move and a `CellSelection` still use `deleteSelection`.
   Several carried lines land at a gap: before the landing textblock at its start,
   after it at its end, or at a split inside it. The slice closes into blocks and
-  ProseMirror fits those blocks where the schema requires it. Lists keep their
-  container and order. A whole top-level textblock keeps its type; a top-level
+  ProseMirror fits those blocks where the schema requires it. List items and quoted blocks are
+  sibling blocks and keep their order and their depth relative to each other; a partly dropped
+  item stays an item, a partly dropped quote stays quoted, and the run is nested where it lands
+  like a paste (below). A whole top-level textblock keeps its type; a top-level
   textblock cut by the source selection takes the landing's type, and a cut last
   block joins the landing's tail. This applies to copies because the door reads
   their source selection too. A slice from outside has no source selection and
@@ -400,6 +411,37 @@ keyboard, pointer, drop, or draft-recovery answer.
   description (a hidden element named by `aria-describedby`) says so; there is
   no visible hint.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
+- **Lists and quotes are attributes** (`extensions/nesting/`, rules in the flat model design
+  section 4). A quote is a `>` step in a block's `path`: `toggleQuote` (toolbar, block menu, slash
+  menu, Mod-Shift-b) puts the selected blocks in a quote of their own inside the containers they
+  share (`sharedSteps`), and writes `|` so a quote just above or below stays separate; off takes
+  them out of the innermost quote they share. `> ` quotes one level deeper each time, as Markdown
+  reads it. The draw plugin gives each nested block its indent, its marker's offset and one bar
+  per quote; blocks of one quote meet through padding, so a bar runs unbroken.
+  Enter, Backspace and Mod-Enter register on the kernel at `document` scope, narrowed to
+  prose in the document or a cell, and decline wherever ProseMirror's own key is right; an
+  open menu's Enter outranks them. Enter splits with the block's nesting (no `|`, no
+  `start`, `done` becomes `todo`) and lifts an empty block; Backspace at an item's start
+  drops its marker so it joins the item above, and lifts a first item. A paste or drop is
+  nested where it lands (`landSlice`, called from `sliceForDestination`): a block with a
+  list level of its own lands beside the caret's item, any other takes the caret's item
+  kind and task state. A copy detaches its blocks (`copiedSlice`), and words from inside one
+  block carry no list. Clipboard HTML is nested on the way out (`NestingDOMSerializer`, the
+  serializer the link clipboard plugin owns) and flattened on the way in (`flattenDom`,
+  inside the paste sanitizer, before it drops list and quote elements; only the `data-`
+  values it writes survive). Pasted lists merge with a list beside them; two pasted quotes in a
+  row stay two (`|>`). A pasted item replaces an empty line instead of merging into it.
+- **A block changes type in one place** (`extensions/block-type.ts`): it keeps its `id`, its
+  nesting attributes and every other attribute the new type also has. The `#`/fence input rules
+  (`blockTypeInputRule`, never TipTap's `textblockTypeInputRule`), `setParagraph`,
+  `setCodeBlock`/`toggleCodeBlock` (toolbar, Turn into, block menu), the fence's own Backspace
+  and the slash menu's conversion of an empty block all go through it; ProseMirror's
+  `setBlockType`, TipTap's `setNode` and `clearNodes` build from defaults and drop both. So a
+  heading in a list item stays an item at every door; `setList` on a heading is the one
+  exception, making a body-text item. A slash insert lands after the list the caret's block is
+  in, inside the quotes around it (`afterList`); leaving a fence lands its new line where Enter
+  would (`landAt`). Questions about a block's place go through `nesting.ts` (`readPath`,
+  `isNested`, `isListed`, `isBodyText`), never a test on the `path` string.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,
@@ -436,11 +478,30 @@ keyboard, pointer, drop, or draft-recovery answer.
   never counts and a writer who types on a train gets delivery on reconnect, however
   long it takes. (Elapsed connected time, not a refusal count: the transport counts
   refusals for draft rooms only, and a live-room count would change every live session.)
-  The edits stay in IndexedDB in every case.
+  The edits stay in IndexedDB in every case but a removed room.
 - A removed room (4208) retires at once, before an availability check can prove a
-  restore and restart it; its edits wait in IndexedDB for the next open.
+  restore and restart it. `destroy` clears the local copy of a closed or removed room, so
+  its unsent edits do not wait in IndexedDB for a next open.
 - Restarting a removed or unavailable room cancels its pending teardown and schedules
   it again when no host retains the room.
+
+### Unsent typing handed back
+
+- Before a room's local copy goes with typing the server never acknowledged, the registry
+  reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
+  updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
+  `observeUnsentTyping` once per session. It reads them on a closing or removing reset
+  (its own subscription, made before the draft pool's, which retires the room on that same
+  notification) and in `drainDocument`, `drainAccess`
+  and `closeDraftRoom`. A 4409 access change is no reset: the room reconnects and keeps its
+  typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
+  the words back: an Undo or a Restore after it cannot.
+- What it cannot reach: a room with no session in this tab (the copy lives only in
+  IndexedDB, for a document no tab has open), and typing from before this tab's transport
+  existed (an offline reload replays it from IndexedDB, outside the transport's
+  unacknowledged updates). Both are known losses on
+  [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
 
 ### Draft room retirement
 
@@ -461,7 +522,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   the room, selection or UndoManager.
 - A draft update refusal (`1008`) is bounded: after three consecutive refusals
   without acknowledgement, the transport ends `DRAFT_UPDATES_REFUSED`
-  (`updatesRefused`). A retained room stays read-only with its unsent text and
-  offers Reopen draft; it does not retry indefinitely. A `4207
+  (`updatesRefused`). A retained room stays open read-only with the unsent text on
+  screen: `readDraftRoom` keeps it as `fenced`, and the status says "Couldn't save
+  your latest changes" with Try again, which rebuilds the room from IndexedDB and
+  resends the edits. It never retries on its own. A `4207
   draft-prefix-missing` close is an ordinary reconnect, not a refusal. The next
   handshake's SyncStep2 supplies missing bytes before held keystrokes.

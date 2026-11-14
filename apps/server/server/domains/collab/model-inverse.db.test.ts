@@ -12,6 +12,7 @@ import {
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
+import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -273,12 +274,7 @@ describe("model document stack", () => {
           const block = view.model.getBlocks(doc)[0];
           if (!block) throw new Error("live block missing");
           const before = Y.encodeStateVector(doc);
-          view.model.applyTextEdit(
-            doc,
-            block,
-            { from: 0, to: view.model.getText(block).length },
-            liveText,
-          );
+          applyTextEdit(block, { from: 0, to: view.model.getText(block).length }, liveText);
           const update = Y.encodeStateAsUpdate(doc, before);
           if (update.length)
             await view.persistence.journal.append(ALPHA_ID, update, { origin: "system", seq: 0 });

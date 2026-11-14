@@ -16,12 +16,12 @@ is best effort.
 Add a probe that moves a figure and verifies every other block keeps its hash
 while the moved figure receives a fresh Yjs item identity.
 
-## Task-list authoring
+## Lists and screen readers
 
-The shared schema and Markdown codec support `list_item.checked`, but no writer
-surface can author or toggle it. A surface should use `list_item` plus `checked`,
-with an input rule, keymap and checkbox DOM, not upstream `taskList` or `taskItem`
-nodes.
+List markers are generated content on flat sibling blocks, with `aria-level` on each listed
+block; there is no `role="list"` parent. What VoiceOver and NVDA announce is untested. If
+they do not read a list, the fallback is a visually hidden text marker in a widget
+decoration (flat model design, section 7).
 
 ## Two views of one session
 

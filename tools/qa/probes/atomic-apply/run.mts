@@ -42,6 +42,7 @@ import {
 import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { contentMerge } from "../../../../packages/agent-edit/src/content-merge/index.ts";
 import {
   applySpanPatches,
   baseViewDelta,
@@ -51,7 +52,6 @@ import {
   REVIEW_BASE_FRAGMENT,
   readApplyRecord,
   readBlocks,
-  rebase,
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
 import {
@@ -68,9 +68,18 @@ type FrozenClick = {
   patched: ReturnType<typeof readBlocks>;
 };
 const schema = buildDocumentSchema();
-const paragraph = (text: string) =>
-  schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
-const blocks = (texts: string[]) => texts.map(paragraph);
+// Ids by position: the merge pairs blocks by id, so each block of a document needs its own.
+const paragraph = (text: string, at = 0) =>
+  schema.nodes.paragraph.create({ id: `p${at}` }, text ? schema.text(text) : undefined);
+// A text starting with "+" is a block the writer made new (a split's second part): a new id. A text
+// ending in "@2" is the block that had position 2 in the base, wherever it stands now.
+const blocks = (texts: string[]) =>
+  texts.map((text, at) => {
+    const [, body, was] = /^(.*?)(?:@(\d+))?$/s.exec(text) ?? [];
+    return body.startsWith("+")
+      ? schema.nodes.paragraph.create({ id: `n${at}` }, schema.text(body.slice(1)))
+      : paragraph(body, was === undefined ? at : Number(was));
+  });
 const clone = (doc: Y.Doc, id = Math.floor(Math.random() * 1e9) + 100) => {
   const out = new Y.Doc({ gc: false });
   Y.applyUpdate(out, Y.encodeStateAsUpdate(doc));
@@ -137,6 +146,7 @@ async function fixture(
     close: createDraftClose(),
     releaseObjects: async () => {},
     onCommitted: async () => {},
+    merged: () => {},
     measured: (m) => measure.push(m),
   });
   const pending = createDrizzleWorkBranchPendingStore(h.db);
@@ -285,7 +295,27 @@ async function fixture(
       doc.on("update", (bytes) => {
         update = bytes;
       });
-      doc.transact(() => writeBlocks(doc.getXmlFragment("prosemirror"), schema, blocks(texts)));
+      // The ids an editor would keep: a block moved keeps its id, a block edited in place keeps its own.
+      const current = readBlocks(doc.getXmlFragment("prosemirror"), schema);
+      const used = new Set<string>();
+      const claim = (id: unknown) => {
+        if (typeof id !== "string" || used.has(id)) return undefined;
+        used.add(id);
+        return id;
+      };
+      const ids = texts.map((text) =>
+        claim(current.find((b) => b.textContent === text && !used.has(b.attrs.id))?.attrs.id),
+      );
+      const next = texts.map((text, at) =>
+        paragraph(text, 0).type.create(
+          {
+            id:
+              ids[at] ?? claim(current[at]?.attrs.id) ?? `n${at}-${texts.length}-${Math.random()}`,
+          },
+          text ? schema.text(text) : undefined,
+        ),
+      );
+      doc.transact(() => writeBlocks(doc.getXmlFragment("prosemirror"), schema, next));
       if (update)
         await h.persistence.journal.append(document.documentId, update, {
           origin: "system",
@@ -306,7 +336,7 @@ async function fixture(
           });
           const reviewBase = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
           const prose = prefix.getXmlFragment("prosemirror");
-          const merged = rebase(
+          const merged = contentMerge(
             schema,
             readBlocks(reviewBase, schema),
             upstream,
@@ -981,6 +1011,34 @@ try {
     assert.deepEqual(readApplyRecord(durable), []);
     durable.destroy();
     assert.deepEqual(await f.unapply(click, commandId), answer);
+    f.close();
+  });
+  await row("a click's groups chain: live ends at the draft, Un-Apply returns it", async () => {
+    // A join and, far from it, a split: with block ids a join is an edit of the first block and the
+    // removal of the second, a split an edit and a new block, so there are two groups to chain.
+    const long = "Then the long quiet hours of the night passed slowly by";
+    const f = await fixture(
+      ["She turned away", "She waited by", long, "He opened the door"],
+      ["She turned away She waited by", `${long}@2`, "He opened@3", "+the door"],
+    );
+    const click = f.click();
+    assert.equal(click.request.groupIds.length, 2);
+    await applied(f, click);
+    assert.deepEqual(await f.liveText(), [
+      "She turned away She waited by",
+      long,
+      "He opened",
+      "the door",
+    ]);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") assert.equal(answer.reversedGroupIds.length, 2);
+    assert.deepEqual(await f.liveText(), [
+      "She turned away",
+      "She waited by",
+      long,
+      "He opened the door",
+    ]);
     f.close();
   });
   await row("Un-Apply skips an edited group and reverses an intact peer", async () => {

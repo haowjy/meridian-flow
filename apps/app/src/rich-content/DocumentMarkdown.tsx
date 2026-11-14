@@ -1,5 +1,6 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
 import type { PresentationSourceRun } from "@meridian/markup";
+import { type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import {
   createElement,
@@ -137,6 +138,73 @@ function children(
   return result;
 }
 
+function siblingsOf(node: PMNode): PMNode[] {
+  const siblings: PMNode[] = [];
+  node.forEach((child) => {
+    siblings.push(child);
+  });
+  return siblings;
+}
+
+/**
+ * A run of sibling blocks drawn as the quotes, lists and items `nest` reads them as, so chat
+ * and previews keep real `ul`, `ol`, `li` and `blockquote`. `first` is the run's offset in
+ * its parent, which keeps source-map paths pointing at the right block.
+ */
+function renderBlocks(
+  blocks: readonly PMNode[],
+  breaks: boolean,
+  presentation: Presentation | undefined,
+  path: number[],
+  openCode: PMNode | null,
+  first = 0,
+): ReactNode[] {
+  const render = (nodes: readonly NestedNode[]): ReactNode[] =>
+    nodes.map((node) => {
+      if (node.type === "block") {
+        const index = first + node.index;
+        return (
+          <Fragment key={index}>
+            {renderDocumentNode(
+              blocks[node.index],
+              breaks,
+              presentation,
+              [...path, index],
+              openCode,
+            )}
+          </Fragment>
+        );
+      }
+      if (node.type === "quote")
+        return <blockquote key={key(node)}>{render(node.children)}</blockquote>;
+      const items = node.items.map((item, i) => (
+        <li
+          key={i}
+          data-checked={
+            item.marker === "todo" || item.marker === "done"
+              ? String(item.marker === "done")
+              : undefined
+          }
+        >
+          {render(item.children)}
+        </li>
+      ));
+      return node.list.kind === "ordered" ? (
+        <ol key={key(node)} start={node.list.start}>
+          {items}
+        </ol>
+      ) : (
+        <ul key={key(node)}>{items}</ul>
+      );
+    });
+  const key = (node: NestedNode): number => {
+    if (node.type === "block") return first + node.index;
+    const inner = node.type === "quote" ? node.children[0] : node.items[0]?.children[0];
+    return inner ? key(inner) : first;
+  };
+  return render(nestTree(nestNodes(blocks)));
+}
+
 /** Markdown nodes only; MDX's figure/JSX nodes belong to its separate codec. */
 function renderDocumentNode(
   node: PMNode,
@@ -187,7 +255,9 @@ function renderDocumentNode(
     }
     return content;
   }
-  const content = children(node, breaks, presentation, path, openCode);
+  const content = node.isTextblock
+    ? children(node, breaks, presentation, path, openCode)
+    : renderBlocks(siblingsOf(node), breaks, presentation, path, openCode);
   const alignment = node.attrs.align ? { textAlign: node.attrs.align } : undefined;
   switch (node.type.name) {
     case "doc":
@@ -197,18 +267,6 @@ function renderDocumentNode(
         node.attrs.level === null ? "p" : `h${node.attrs.level}`,
         { style: alignment },
         content,
-      );
-    case "blockquote":
-      return <blockquote>{content}</blockquote>;
-    case "bullet_list":
-      return <ul>{content}</ul>;
-    case "ordered_list":
-      return <ol start={node.attrs.order}>{content}</ol>;
-    case "list_item":
-      return (
-        <li data-checked={node.attrs.checked === null ? undefined : String(node.attrs.checked)}>
-          {content}
-        </li>
       );
     case "hard_break":
       return <br />;
@@ -263,17 +321,36 @@ function renderDocumentNode(
   }
 }
 
-const MarkdownBlock = memo(function MarkdownBlock({
-  node,
-  breaks,
-  openCode,
-}: {
-  node: PMNode;
-  breaks: boolean;
-  openCode: PMNode | null;
-}) {
-  return renderDocumentNode(node, breaks, undefined, [], openCode);
-});
+/** One top-level quote or list (or plain block): the unit that re-renders when its own blocks change. */
+const MarkdownGroup = memo(
+  function MarkdownGroup({
+    blocks,
+    first,
+    breaks,
+    openCode,
+  }: {
+    blocks: readonly PMNode[];
+    first: number;
+    breaks: boolean;
+    openCode: PMNode | null;
+  }) {
+    return renderBlocks(blocks, breaks, undefined, [], openCode, first);
+  },
+  (before, after) =>
+    before.first === after.first &&
+    before.breaks === after.breaks &&
+    before.openCode === after.openCode &&
+    before.blocks.length === after.blocks.length &&
+    before.blocks.every((block, index) => block === after.blocks[index]),
+);
+
+/** The block indexes a top-level tree node covers, which are contiguous. */
+function coveredBy(node: NestedNode): [number, number] {
+  if (node.type === "block") return [node.index, node.index + 1];
+  const inner = node.type === "quote" ? node.children : node.items.flatMap((item) => item.children);
+  const ranges = inner.map(coveredBy);
+  return [ranges[0]?.[0] ?? 0, ranges.at(-1)?.[1] ?? 0];
+}
 
 const MarkdownBlocks = memo(function MarkdownBlocks({
   snapshot,
@@ -283,16 +360,20 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   breaks: boolean;
 }) {
   if (!snapshot) return null;
-  return snapshot.blocks.map((node, index) => (
-    <MarkdownBlock
-      key={index}
-      node={node}
-      breaks={breaks}
-      openCode={
-        snapshot.openCode?.block === index ? nodeAtPath(snapshot.blocks, snapshot.openCode) : null
-      }
-    />
-  ));
+  const openCode = snapshot.openCode ? nodeAtPath(snapshot.blocks, snapshot.openCode) : null;
+  return nestTree(nestNodes(snapshot.blocks)).map((group) => {
+    const [from, to] = coveredBy(group);
+    const blocks = snapshot.blocks.slice(from, to);
+    return (
+      <MarkdownGroup
+        key={from}
+        blocks={blocks}
+        first={from}
+        breaks={breaks}
+        openCode={openCode && blocks.includes(openCode) ? openCode : null}
+      />
+    );
+  });
 });
 
 function StaticTranscript({
@@ -322,17 +403,13 @@ function StaticTranscript({
       skills: boundedRanges(skills, source.length),
     };
   }, [source, sourceMap, references, skills]);
-  return settled.blocks.map((node, index) => (
-    <Fragment key={index}>
-      {renderDocumentNode(
-        node,
-        breaks,
-        presentation,
-        [index],
-        settled.openCode?.block === index ? nodeAtPath(settled.blocks, settled.openCode) : null,
-      )}
-    </Fragment>
-  ));
+  return renderBlocks(
+    settled.blocks,
+    breaks,
+    presentation,
+    [],
+    settled.openCode ? nodeAtPath(settled.blocks, settled.openCode) : null,
+  );
 }
 
 export const DocumentMarkdown = memo(function DocumentMarkdown({

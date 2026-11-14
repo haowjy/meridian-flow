@@ -56,6 +56,7 @@ export function phase4Coordinator(
       compactionFailed: noop,
       roomReconciled: noop,
       appendPrefixMissing: noop,
+      lateTypingRecovered: noop,
       ...input.diagnostics,
     },
   });

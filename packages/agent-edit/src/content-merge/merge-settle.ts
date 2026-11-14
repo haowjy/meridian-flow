@@ -3,12 +3,10 @@
  * before each merged word. Both work on `MergedTok`s and know nothing about hunks or blocks.
  */
 import type { Mark } from "prosemirror-model";
+import { coreKey, isBlockTok, isWordTok, type Tok } from "../diff/tokens.js";
 import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
-import { coreKey, isBlockTok, isWordTok, type Tok } from "./tokens.js";
-
-/** Share of the larger word set two inserted paragraphs must have in common to be one paragraph. */
-const SAME_PARAGRAPH_SHARE = 0.5;
+import type { Fire } from "./rules.js";
 
 /** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
@@ -42,18 +40,15 @@ function splitParagraphs(run: MergedTok[]): { inline: MergedTok[]; paragraphs: M
 }
 
 /**
- * Both sides inserted at one point. Text before any new paragraph merges word by word (a shared
+ * Both sides inserted at one point (`insertions-kept-both`). Text before any new paragraph merges word by word (a shared
  * word is kept once, in the draft's form). New paragraphs merge whole: an identical paragraph is kept
- * once, different ones are both kept (live's first). A pair that is the same paragraph typed on both
- * sides and then changed differently keeps the draft's version and is reported (`chose`), so it is
- * never a silent choice.
+ * once, different ones are both kept (live's first). A live paragraph that could be one of the
+ * draft's, and is not equal to it, never gets here: `settleStretches` dropped it as a clash.
  */
-export function unionInsertions(
-  live: MergedTok[],
-  draft: MergedTok[],
-): { out: MergedTok[]; chose: boolean } {
-  if (isSubsequence(live, draft)) return { out: draft, chose: false };
-  if (isSubsequence(draft, live)) return { out: live, chose: false };
+export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fire): MergedTok[] {
+  fire("insertions-kept-both");
+  if (isSubsequence(live, draft)) return draft;
+  if (isSubsequence(draft, live)) return live;
   const { inline: liveInline, paragraphs: liveParagraphs } = splitParagraphs(live);
   const { inline: draftInline, paragraphs: draftParagraphs } = splitParagraphs(draft);
   const inline = isSubsequence(liveInline, draftInline)
@@ -63,46 +58,23 @@ export function unionInsertions(
       : unionWords(liveInline, draftInline);
 
   const paragraphKey = (p: MergedTok[]) => p.map((o) => o.tok.key).join("\u0002");
-  const wordsOf = (p: MergedTok[]) =>
-    new Set(p.filter((o) => isWordTok(o.tok)).map((o) => coreKey(o.tok)));
-  const sameParagraph = (a: MergedTok[], b: MergedTok[]) => {
-    const x = wordsOf(a);
-    const y = wordsOf(b);
-    if (!x.size || !y.size) return false;
-    let shared = 0;
-    for (const w of x) if (y.has(w)) shared++;
-    return shared >= 3 && shared / Math.max(x.size, y.size) >= SAME_PARAGRAPH_SHARE;
-  };
-  const liveKeys = liveParagraphs.map(paragraphKey);
-  const draftKeys = draftParagraphs.map(paragraphKey);
-
   const out: MergedTok[] = [...inline];
-  let chose = false;
-  // Between two identical paragraphs: pair up the near-identical ones (the draft's version stays where
-  // the draft put it); unpaired live paragraphs go first.
-  const flush = (liveRun: MergedTok[][], draftRun: MergedTok[][]) => {
-    const used = new Set<number>();
-    const unpaired: MergedTok[][] = [];
-    for (const l of liveRun) {
-      const k = draftRun.findIndex((d, j) => !used.has(j) && sameParagraph(l, d));
-      if (k >= 0) {
-        used.add(k);
-        chose = true;
-      } else unpaired.push(l);
-    }
-    for (const l of unpaired) out.push(...l);
-    for (const d of draftRun) out.push(...d);
-  };
   let i = 0;
   let j = 0;
-  for (const [mi, mj] of equalOrderedMatches(liveKeys, draftKeys)) {
-    flush(liveParagraphs.slice(i, mi), draftParagraphs.slice(j, mj));
+  for (const [mi, mj] of equalOrderedMatches(
+    liveParagraphs.map(paragraphKey),
+    draftParagraphs.map(paragraphKey),
+  )) {
+    // Between two identical paragraphs both sides' others stay, live's first.
+    for (const p of liveParagraphs.slice(i, mi)) out.push(...p);
+    for (const p of draftParagraphs.slice(j, mj)) out.push(...p);
     out.push(...draftParagraphs[mj]);
     i = mi + 1;
     j = mj + 1;
   }
-  flush(liveParagraphs.slice(i), draftParagraphs.slice(j));
-  return { out, chose };
+  for (const p of liveParagraphs.slice(i)) out.push(...p);
+  for (const p of draftParagraphs.slice(j)) out.push(...p);
+  return out;
 }
 
 // Scripts written without spaces between words: gluing two of their segments is normal.
@@ -132,6 +104,7 @@ export function settleWhitespace(
   docs: { base: Tok[]; live: Tok[]; draft: Tok[] },
   baseToLive: Int32Array,
   baseToDraft: Int32Array,
+  fire: Fire,
 ): Tok[] {
   const toksOf = [docs.base, docs.live, docs.draft];
   const indexIn = (o: MergedTok, doc: Origin) => {
@@ -163,16 +136,14 @@ export function settleWhitespace(
     const [baseTok, liveTok, draftTok] = neighbours;
     // Whoever changed the whitespace wins; the draft if both did.
     let from: TextTok | null;
-    if (liveKey !== null && draftKey !== null)
-      from =
-        baseKey !== null
-          ? liveKey === baseKey
-            ? draftTok
-            : draftKey === baseKey
-              ? liveTok
-              : draftTok
-          : draftTok;
-    else if (liveKey !== null) from = liveTok;
+    if (liveKey !== null && draftKey !== null) {
+      if (liveKey === baseKey) from = draftTok;
+      else if (draftKey === baseKey) from = liveTok;
+      else {
+        from = draftTok;
+        if (liveKey !== draftKey) fire("draft-wins-space");
+      }
+    } else if (liveKey !== null) from = liveTok;
     else if (draftKey !== null) from = draftTok;
     else from = baseTok;
 
@@ -184,6 +155,7 @@ export function settleWhitespace(
     } else if (atStart || !pred) ws = "";
     else {
       ws = tok.ws || (needsSpace(pred.tok, tok) ? " " : "");
+      if (!tok.ws && ws) fire("space-added-between-words");
       wsMarks = tok.ws ? tok.wsMarks : undefined;
     }
     if (ws === tok.ws && wsMarks === tok.wsMarks) result.push(tok);

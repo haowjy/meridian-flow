@@ -1,4 +1,4 @@
-/** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply, Discard and the rebase. */
+/** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply and Discard. */
 
 export { appliedParts } from "./applied-parts.js";
 export {
@@ -20,7 +20,6 @@ export {
   type WriterReceipt,
 } from "./attribution.js";
 export {
-  applyBase,
   applySpanPatches,
   baseViewDelta,
   composeHunks,
@@ -33,7 +32,7 @@ export { blocksEqual } from "./equal.js";
 export { REVIEW_BASE_FRAGMENT, readBlocks } from "./fragments.js";
 export { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
 export { deleterOf, type ItemAuthor, originOf } from "./item-authorship.js";
-export { findLostEdits, invisibleInsertions, type LostEdit } from "./late-peer.js";
+export { findLostEdits, type LostEdit } from "./late-peer.js";
 export {
   type LateRecovery,
   type LateTyping,
@@ -41,11 +40,6 @@ export {
   recoverLatePeerEdits,
   retainLateTypingDeletions,
 } from "./late-peer-recovery.js";
-export {
-  type Conflict,
-  type RebaseResult,
-  rebase,
-} from "./merge.js";
 export {
   appendRestorationLinks,
   RESTORED_ROOT,
@@ -65,4 +59,4 @@ export {
 } from "./review.js";
 export type { Tok } from "./tokens.js";
 export { countWords } from "./word-count.js";
-export { pmToY, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
+export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
