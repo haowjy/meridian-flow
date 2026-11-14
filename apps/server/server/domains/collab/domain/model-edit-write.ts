@@ -19,10 +19,6 @@ import {
 import type { DraftOwner, LinkView, ProjectId, ThreadId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
-import {
-  deferUntilDrizzleCommit,
-  isInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
@@ -59,6 +55,7 @@ export type ModelEditWriteDeps = {
     liveRoom: string | null;
     drafts: readonly { draftId: string; status: string }[];
   }>;
+  /** Runs once the command's transaction commits. */
   afterLiveCommit(documentId: DocumentId): void;
 };
 
@@ -98,8 +95,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       linkView: { kind: "live" },
       documentVersion: "live",
     });
-    if (!outcome.isError && documentId)
-      deferUntilDrizzleCommit(() => deps.afterLiveCommit(documentId));
+    if (!outcome.isError && documentId) deps.afterLiveCommit(documentId);
     return outcome;
   }
 
@@ -138,8 +134,6 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   }
 
   return (command, routed: RoutedWriteContext): Promise<RoutedWriteOutcome> => {
-    if (!isInDrizzleTransaction())
-      throw new Error("A model edit's write runs inside its command transaction");
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
     const inverse =

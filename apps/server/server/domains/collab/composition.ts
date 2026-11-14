@@ -452,7 +452,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
       drafts: await drafts.listWorkDraftStates(documentId),
     }),
-    afterLiveCommit: (documentId) => draftPulls.scheduleLivePull(documentId),
+    afterLiveCommit: (documentId) =>
+      deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
   });
   const modelEdits = createDrizzleModelEdits(deps.db, {
     write: scopeModelEditWrite(modelEditWrite, deps.links),
