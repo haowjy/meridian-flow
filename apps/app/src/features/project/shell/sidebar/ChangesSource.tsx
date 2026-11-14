@@ -29,6 +29,7 @@ import {
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -64,7 +65,7 @@ export type ChangesScope = {
   ownerKey: string;
   heading: string;
   empty: string;
-  /** What waits on the writer: the picker's count for a Work, the listed drafts for a chat. */
+  /** What waits on the writer: the documents and folders the Work or the chat changes. */
   count: number;
   /** Whether the strip offers the tab; under None only while the chat on screen's drafts wait. */
   offered: boolean;
@@ -82,9 +83,13 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }).drafts?.length;
   const { works } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
+  // The shell reads the Work's list and its tree: every document and folder it changes, each
+  // once, as the rows show them. The Work's own count, from the Works list, counts documents.
+  const shell = useShellTreeVersion();
+  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changed.size : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
-    const count = picked ? picked.pendingDocumentCount : (lineageCount ?? 0);
+    const count = changed ?? (picked ? picked.pendingDocumentCount : (lineageCount ?? 0));
     const others = (works ?? [])
       .filter((other) => other.id !== work?.id && !isWorkArchived(other))
       .filter((other) => other.pendingDocumentCount > 0)
@@ -114,7 +119,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       offered: Boolean(ownerKey) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, chatWorkId]);
+  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed]);
 }
 
 /**
@@ -171,7 +176,8 @@ export function ChangesSource({
     held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)];
   const listedFiles = listed.filter((file) => {
     const state = controller.owner.state(file.draft.itemKey);
-    if (state.hidden) return false;
+    // A command in flight hides its row, until its delivery needs the writer's Retry.
+    if (state.hidden && !state.stalled) return false;
     const read = readOf(file);
     return (
       file.draft.wholeItem ||
@@ -331,7 +337,9 @@ export function ChangesSource({
               disabled={archived}
               discardAsks={controller.frozen}
               onDiscard={
-                everyDraft.length > 0 ? () => void controller.discardDrafts(everyDraft) : undefined
+                everyDraft.length > 0 || changedFolders.length > 0
+                  ? () => void controller.discardAll(everyDraft)
+                  : undefined
               }
               onApply={
                 controller.canApply &&
@@ -365,6 +373,7 @@ export function ChangesSource({
               const head = group.folder ? (
                 <FolderGroupRow
                   key={`folder:${group.folder.id}`}
+                  branchId={drafts.branchId}
                   folder={group.folder}
                   open={!folded.has(group.folder.id)}
                   onToggle={() => fold(group.folder?.id ?? "")}
@@ -376,7 +385,13 @@ export function ChangesSource({
                     controller.canApply && !group.folder.fault && group.files.every(applicable)
                   }
                   onApply={(name) => startApply(group.files, group.folder?.folders ?? [], name)}
-                  onDiscard={() => void controller.discardDrafts(draftsOf(group.files))}
+                  onDiscard={(name) =>
+                    void controller.discardSelection({
+                      drafts: draftsOf(group.files),
+                      folders: group.folder?.folders ?? [],
+                      name,
+                    })
+                  }
                 />
               ) : null;
               const shown = group.folder && folded.has(group.folder.id) ? [] : group.files;
@@ -641,10 +656,12 @@ function useWorkTree(projectId: string, ownerKey: string) {
 /**
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
  * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
- * rows. A folder changed with no drafted document under it has its ✓ alone: no Discard takes a
- * folder by itself.
+ * rows. A folder changed with no drafted document under it takes its × and ✓ alone. Its own
+ * command's state (pending, refused, waiting for confirmation) shows under it, as a document's
+ * does under its row.
  */
 function FolderGroupRow({
+  branchId,
   folder,
   entry,
   open,
@@ -665,10 +682,19 @@ function FolderGroupRow({
   controller: WorkBranchCommands;
   touch: boolean;
   canApply: boolean;
-  /** `name`: the folder's, for what the Apply's Undo says. */
+  /** `name`: the folder's, for what the Apply's Undo and the Discard's notice say. */
   onApply: (name: string) => void;
-  onDiscard: () => void;
+  onDiscard: (name: string) => void;
+  /** The Work's branch, whose folder items hold the folder's command state. */
+  branchId: string | null;
 }) {
+  const keys = branchId ? folder.folders.map((id) => folderKey(branchId, id)) : [];
+  useSyncExternalStore(
+    controller.owner.subscribe,
+    controller.owner.snapshot,
+    controller.owner.snapshot,
+  );
+  const pending = keys.some((key) => controller.owner.state(key).pending);
   const name = entry?.name ?? t`Folder`;
   const { change } = folder;
   const was = change.kind === "changed" ? change.was : null;
@@ -695,31 +721,32 @@ function FolderGroupRow({
         }
         detail={detail}
         actions={
-          files.length > 0 || canApply ? (
-            <ReviewActions
-              scope="document"
-              labels={{
-                apply: t`Apply changes in ${name}`,
-                discard: t`Discard changes in ${name}`,
-              }}
-              density="icon"
-              touch={touch}
-              disabled={controller.dispositionLocked}
-              className={touch ? "gap-0" : "gap-0.5"}
-              onDiscard={files.length > 0 ? onDiscard : undefined}
-              onApply={canApply ? () => onApply(name) : undefined}
-            />
-          ) : undefined
+          <ReviewActions
+            scope="document"
+            labels={{
+              apply: t`Apply changes in ${name}`,
+              discard: t`Discard changes in ${name}`,
+            }}
+            density="icon"
+            touch={touch}
+            disabled={pending || controller.dispositionLocked}
+            className={touch ? "gap-0" : "gap-0.5"}
+            onDiscard={() => onDiscard(name)}
+            onApply={canApply ? () => onApply(name) : undefined}
+          />
         }
         below={
-          folder.fault ? (
-            <div className="pl-1">
+          <div className="pl-1">
+            {folder.fault ? (
               <InlineErrorRow
                 message={landingFaultSentence(folder.fault)}
                 className="p-0 text-xs"
               />
-            </div>
-          ) : undefined
+            ) : null}
+            {keys.map((key) => (
+              <DraftCommandStatus key={key} itemKey={key} />
+            ))}
+          </div>
         }
       />
     </li>

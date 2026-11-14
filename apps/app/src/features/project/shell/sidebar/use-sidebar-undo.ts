@@ -70,7 +70,10 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
   );
 }
 
-/** What a press says: which steps it skipped, or that an Apply's Undo didn't reach the server. */
+/**
+ * What a press says: which steps it skipped, the text an Apply's Undo left applied, or that it
+ * didn't reach the server.
+ */
 function noticeOf(outcome: UndoOutcome): string | null {
   const skipped = outcome.skipped;
   const [only] = skipped;
@@ -85,6 +88,15 @@ function noticeOf(outcome: UndoOutcome): string | null {
             one: "Skipped # change that was changed again since.",
             other: "Skipped # changes that were changed again since.",
           });
+  if (outcome.kind === "undone" && outcome.partial) {
+    const { name, textLeft } = outcome.partial;
+    const stayed = plural(textLeft, {
+      one: "# text change stayed: it was edited since.",
+      other: "# text changes stayed: they were edited since.",
+    });
+    const partial = `${t`Undid applying ${name}.`} ${stayed}`;
+    return said ? `${said} ${partial}` : partial;
+  }
   if (outcome.kind !== "failed") return said;
   const name = outcome.name;
   const failed = t`Couldn't undo applying ${name}. Try again.`;

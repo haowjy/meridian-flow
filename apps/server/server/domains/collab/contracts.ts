@@ -15,7 +15,7 @@ import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardItem } from "./domain/branch-discard.js";
+import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -504,8 +504,10 @@ export type DraftReviewApi = {
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
-  discardAll(input: {
+  /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
+  discardBranch(input: {
     branchId: BranchId;
+    selection: DiscardSelection;
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;

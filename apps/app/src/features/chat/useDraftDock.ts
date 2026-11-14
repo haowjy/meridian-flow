@@ -88,13 +88,12 @@ export function useDraftDock({
         ? { ...file, actionable: [] }
         : file;
     })
-    .filter(
-      (file) =>
-        !controller.owner.state(file.row.draft.itemKey).hidden &&
-        (isOnStrip(file) ||
-          controller.owner.state(file.row.draft.itemKey).pending ||
-          controller.owner.state(file.row.draft.itemKey).failure),
-    );
+    .filter((file) => {
+      const state = controller.owner.state(file.row.draft.itemKey);
+      // A command in flight hides its row, until its delivery needs the writer's Retry.
+      if (state.hidden && !state.stalled) return false;
+      return isOnStrip(file) || state.pending || state.failure;
+    });
 
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 

@@ -172,10 +172,15 @@ export function DraftNoticeLine({
             sentence: (name: string) => t`Draft of ${name} discarded.`,
             failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
           }
-        : {
-            sentence: (name: string) => t`Change to ${name} discarded.`,
-            failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-          };
+        : subject.kind === "folder"
+          ? {
+              sentence: (name: string) => t`Changes in ${name} discarded.`,
+              failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
+            }
+          : {
+              sentence: (name: string) => t`Change to ${name} discarded.`,
+              failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
+            };
   const failed = notice.status === "failed";
   if (notice.status === "partial") {
     const count = notice.leftOut;

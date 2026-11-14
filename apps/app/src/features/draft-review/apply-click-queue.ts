@@ -425,6 +425,12 @@ export class ApplyClickQueue {
       this.settle(command, answer);
       return;
     }
+    // The id is the server's for another command: resending it can only answer the same. A
+    // closed head reads its durable outcome instead, below.
+    if (answer?.status === "conflict" && !command.closed) {
+      this.settle(command, { status: "refused", commandId: answer.commandId, reason: "malformed" });
+      return;
+    }
     if (command.closed && answer?.status === "none") {
       this.settle(command, { status: "cancelled" });
       return;
@@ -464,6 +470,10 @@ export class ApplyClickQueue {
     }
     if (answer?.status === "closed" || answer?.status === "refused") {
       this.settle(command, answer);
+      return;
+    }
+    if (answer?.status === "conflict") {
+      this.settle(command, { status: "refused", commandId: answer.commandId });
       return;
     }
     this.scheduleRetry(command);

@@ -43,13 +43,19 @@ export type ApplyStep = {
   sources: readonly string[];
   /** What it applied, for the notice: "Ch 3 and Outline", "4 changes". */
   name: string;
-  unapply(): Promise<"unapplied" | "skipped" | "failed">;
+  /** `textLeft`: the text changes a later edit overlaps, which stay applied. */
+  unapply(): Promise<{ answer: "unapplied" | "skipped" | "failed"; textLeft?: number }>;
 };
 
 export type Skipped = { kind: "tree" | "apply"; name: string };
 
 export type UndoOutcome =
-  | { kind: "undone"; skipped: readonly Skipped[] }
+  /** `partial`: an Apply taken back but for text changes edited since, which stay applied. */
+  | {
+      kind: "undone";
+      skipped: readonly Skipped[];
+      partial?: { name: string; textLeft: number };
+    }
   | { kind: "nothing"; skipped: readonly Skipped[] }
   /** An Apply's Un-Apply didn't reach the server: the step stays on the stack. */
   | { kind: "failed"; skipped: readonly Skipped[]; name: string };
@@ -104,8 +110,13 @@ export async function undoLatest(
     if (!holds(step, source, view)) continue;
     stack.splice(at, 1);
     if (step.kind === "apply") {
-      const answer = await step.unapply();
-      if (answer === "unapplied") return { kind: "undone", skipped };
+      const { answer, textLeft = 0 } = await step.unapply();
+      if (answer === "unapplied")
+        return {
+          kind: "undone",
+          skipped,
+          ...(textLeft > 0 ? { partial: { name: step.name, textLeft } } : {}),
+        };
       if (answer === "failed") {
         stack.splice(at, 0, step);
         return { kind: "failed", skipped, name: step.name };

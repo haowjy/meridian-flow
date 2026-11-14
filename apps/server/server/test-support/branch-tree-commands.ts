@@ -28,7 +28,7 @@ import {
 import type { ContextPort, GrepQuery } from "../domains/context/ports/context-port.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
-  handleDiscardAllWorkBranchRequest,
+  handleDiscardBranchRequest,
   handleDiscardWorkDraftRequest,
   handleOwnerDraftListRequest,
   selectBranchRouteServices,
@@ -445,11 +445,11 @@ export function branchTreeCommands(
         (await ports().documentSync.branches.activeForOwner({ kind: "work", workId: work.id }))?.id;
       if (!branchId) throw new Error(`${work.handle} has no branch to discard`);
       return (
-        await handleDiscardAllWorkBranchRequest(routes(), {
+        await handleDiscardBranchRequest(routes(), {
           projectId,
           branchId: branchId as BranchId,
           userId,
-          request: { branchId, commandId: randomUUID() },
+          request: { all: true, commandId: randomUUID() },
         })
       ).body;
     }

@@ -6,8 +6,8 @@ import type {
   ApplyClickObservation,
   ApplyClickResult,
   ApplyItemsClick,
-  BranchDiscardAllRequest,
-  BranchDiscardAllResponse,
+  BranchDiscardRequest,
+  BranchDiscardResponse,
   DocumentCommandLookupResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
@@ -112,11 +112,9 @@ export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest)
     body,
   );
 }
-export function discardBranchDrafts(draft: DraftAddress, body: BranchDiscardAllRequest) {
-  return postJson<BranchDiscardAllResponse>(
-    apiProjectBranchDiscardPath(draft.projectId, body.branchId),
-    body,
-  );
+/** The branch's Discard: Discard all, or a selection of nodes, as one command. */
+export function discardBranch(projectId: string, branchId: string, body: BranchDiscardRequest) {
+  return postJson<BranchDiscardResponse>(apiProjectBranchDiscardPath(projectId, branchId), body);
 }
 /** A draft's branch, named by its item key (`${branchId}:${documentId}`). */
 export function branchOf(itemKey: string): string {

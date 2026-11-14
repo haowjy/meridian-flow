@@ -1,27 +1,30 @@
 /**
- * One Apply over several items, sent as one command (`ApplyItemsClick`). Each document's click
- * still waits in its own queue behind that document's earlier clicks, so its text cut is cut
- * against what they left; the command goes once every member has reached its queue's head and
- * handed over its click. A member that ends without sending (its draft closed, its room never
- * read) is left out. Every member's queue gets the one answer.
+ * One Apply over several items, sent as one command (`ApplyItemsClick`). Every member, a
+ * document or a folder, is a click in its own item's queue, which owns its pending, refused and
+ * unknown-delivery states and retries it with the same id. A document's click waits behind that
+ * document's earlier clicks, so its text cut is cut against what they left; the command goes
+ * once every member has reached its queue's head and handed over its click. A member that ends
+ * without sending (its draft closed, its room never read) is left out. Every member's queue gets
+ * the one answer.
  */
 import type { ApplyClick, ApplyClickAnswer, ApplyItemsClick } from "@meridian/contracts/branches";
 
 type Item = ApplyItemsClick["items"][number];
 
 export class GroupApply {
-  private readonly handed = new Map<number, Item>();
+  private readonly handed = new Map<number, { node: string; folder: boolean; body: ApplyClick }>();
   private readonly dropped = new Set<number>();
   private members = 0;
+  private sealedAll = false;
   private ready!: () => void;
   private readonly allHanded = new Promise<void>((resolve) => {
     this.ready = resolve;
   });
   private request: Promise<ApplyClickAnswer> | null = null;
-  private nodes: Promise<readonly Item[]> | null = null;
+  private revisions: Promise<ReadonlyMap<string, string>> | null = null;
   private answered: ApplyClickAnswer | null = null;
   private settle!: (answer: ApplyClickAnswer | null) => void;
-  /** The command's final answer; null when nothing was left to send. */
+  /** The command's final answer; null when every member ended without sending. */
   readonly answer = new Promise<ApplyClickAnswer | null>((resolve) => {
     this.settle = resolve;
   });
@@ -29,24 +32,31 @@ export class GroupApply {
   constructor(
     readonly commandId: string,
     private readonly input: {
-      /** Nodes with no queue of their own: folders, each with its tree cut, read once. */
-      nodes: () => Promise<readonly Item[]>;
-      /** Whether any such node was asked for: a command of none and no member sends nothing. */
-      hasNodes: boolean;
+      /**
+       * The folders' tree cuts: each one's revision of the Work's row. Read once, when the
+       * command first goes, so a resend carries the same body.
+       */
+      revisions: () => Promise<ReadonlyMap<string, string>>;
       restore: boolean;
       post(body: ApplyItemsClick): Promise<ApplyClickAnswer>;
     },
   ) {}
 
-  /** One document's place in the command: the send its queued click uses, and its way out. */
-  member(documentId: string): {
+  /**
+   * One member's place in the command: the send its queued click uses, and its way out. A
+   * folder's tree cut is its revision, read when the command goes.
+   */
+  member(
+    node: string,
+    folder = false,
+  ): {
     send(body: ApplyClick): Promise<ApplyClickAnswer>;
     drop(): void;
   } {
     const index = this.members++;
     return {
       send: async (body) => {
-        this.handed.set(index, itemOf(documentId, body));
+        this.handed.set(index, { node, folder, body });
         this.check();
         await this.allHanded;
         return this.answered ?? this.post();
@@ -59,57 +69,44 @@ export class GroupApply {
     };
   }
 
-  /** Called once every member is made: a command of folders alone goes now. */
+  /** Called once every member is made: until then a member that drops decides nothing. */
   sealed(): void {
+    this.sealedAll = true;
     this.check();
   }
 
   private check() {
-    if (this.handed.size + this.dropped.size < this.members) return;
+    if (!this.sealedAll || this.handed.size + this.dropped.size < this.members) return;
     this.ready();
-    if (this.handed.size === 0) {
-      if (this.input.hasNodes) void this.postAlone();
-      else this.settle(null);
-    }
-  }
-
-  /** With no queue to retry it, a command of folders alone retries here. */
-  private async postAlone() {
-    for (const delay of [0, 1000, 2000, 4000]) {
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      // An unknown delivery is sent again with the same id; the server answers it once.
-      const delivered = await this.post().then(
-        () => true,
-        () => false,
-      );
-      if (delivered) return;
-    }
-    this.settle(null);
+    if (this.handed.size === 0) this.settle(null);
   }
 
   /** One request at a time; a member's queue retries a failed delivery, with the same id. */
   private post(): Promise<ApplyClickAnswer> {
-    this.nodes ??= this.input.nodes();
-    this.request ??= this.nodes
-      .then((nodes) =>
+    this.revisions ??= this.input.revisions();
+    this.request ??= this.revisions
+      .then((revisions) =>
         this.input.post({
           commandId: this.commandId,
-          items: [...nodes, ...this.handed.values()],
+          items: [...this.handed.values()].map(({ node, folder, body }) =>
+            folder ? { node, tree: { revision: revisions.get(node) ?? null } } : itemOf(node, body),
+          ),
           ...(this.input.restore ? { restore: true as const } : {}),
         }),
       )
       .then(
         (answer) => {
-          if (answer.status !== "conflict") {
-            this.answered = answer;
-            this.settle(answer);
-          }
+          this.answered = answer;
+          this.settle(answer);
           this.request = null;
           return answer;
         },
         (cause: unknown) => {
           this.request = null;
-          this.nodes = null;
+          // A read that failed is read again; one that answered stays the command's cut.
+          void this.revisions?.catch(() => {
+            this.revisions = null;
+          });
           throw cause;
         },
       );

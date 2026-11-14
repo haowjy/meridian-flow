@@ -11,7 +11,7 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { parseDraftItemKey } from "@meridian/contracts";
+import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -25,7 +25,7 @@ import {
   applyDraftClick,
   applyItems,
   branchOf,
-  discardBranchDrafts,
+  discardBranch,
   discardDraftItem,
   observeDraftClick,
   unapplyDraftClick,
@@ -759,11 +759,14 @@ export class DraftCommandOwner {
   /**
    * Several documents and folders as one Apply command (`GroupApply`): an Apply all, a folder's
    * ✓. Every document's click is frozen in this event turn, as a single Apply's is, and waits in
-   * its own queue; `members[i]`'s outcome is `outcomes[i]`. `restore` is whether the writer chose
-   * to bring back what live deleted; a member's own `restore` says whether it is one of those.
+   * its own queue; a folder's is a tree cut in its own item's queue (`folderKey`), so a folder
+   * shows pending, refused and unknown delivery as a document does. `members[i]`'s outcome is
+   * `outcomes[i]`, then `folders[j]`'s. `restore` is whether the writer chose to bring back what
+   * live deleted; a member's own `restore` says whether it is one of those.
    */
   applyGroup(input: {
     projectId: string;
+    ownerKey: string;
     branchId: string;
     members: readonly {
       ref: DraftRef;
@@ -771,9 +774,9 @@ export class DraftCommandOwner {
       restore: boolean;
       tree?: { revision: string | null };
     }[];
-    /** Nodes with no draft of their own: folders, with their tree cut, read when it sends. */
-    nodes: () => Promise<readonly { node: string; tree: { revision: string | null } }[]>;
-    hasNodes: boolean;
+    folders: readonly string[];
+    /** The folders' revisions of the Work's row, read once when the command goes. */
+    revisions: () => Promise<ReadonlyMap<string, string>>;
     restore: boolean;
   }): {
     commandId: string;
@@ -781,24 +784,50 @@ export class DraftCommandOwner {
     outcomes: Promise<CommandOutcome>[];
   } {
     const group = new GroupApply(crypto.randomUUID(), {
-      nodes: input.nodes,
-      hasNodes: input.hasNodes,
+      revisions: input.revisions,
       restore: input.restore,
       post: (body) => applyItems(input.projectId, input.branchId, body),
     });
-    const outcomes = input.members.map(({ ref, target, restore, tree }) => {
-      const member = group.member(ref.documentId);
-      const started = this.apply(ref, target, restore, tree, null, {
-        commandId: group.commandId,
-        send: member.send,
-      });
+    const joined = (started: StartedApply | null, member: { drop(): void }) => {
       if (!started) {
         member.drop();
         return Promise.resolve<CommandOutcome>({ kind: "blocked" });
       }
       void started.outcome.then(member.drop);
       return started.outcome;
+    };
+    const outcomes = input.members.map(({ ref, target, restore, tree }) => {
+      const member = group.member(ref.documentId);
+      return joined(
+        this.apply(ref, target, restore, tree, null, {
+          commandId: group.commandId,
+          send: member.send,
+        }),
+        member,
+      );
     });
+    for (const node of input.folders) {
+      const member = group.member(node, true);
+      const ref = {
+        projectId: input.projectId,
+        ownerKey: input.ownerKey,
+        documentId: node,
+        itemKey: folderKey(input.branchId, node),
+      };
+      // A folder's cut already on its way is not sent twice.
+      const busy = this.items.get(ref.itemKey)?.queue.pending ?? false;
+      outcomes.push(
+        joined(
+          busy
+            ? null
+            : this.captureTree(ref, { revision: null }, false, {
+                commandId: group.commandId,
+                send: member.send,
+              }),
+          member,
+        ),
+      );
+    }
     group.sealed();
     return { commandId: group.commandId, answer: group.answer, outcomes };
   }
@@ -950,32 +979,68 @@ export class DraftCommandOwner {
       return { kind: "change-refused", code: "unknown" };
     }
   }
-  /** Every draft of the branch, on the server, as `commandId`, which its Undo names. */
-  async discardAll(
-    refs: readonly DraftRef[],
-    branchId: string,
-    commandId: string,
-  ): Promise<CommandOutcome> {
-    const ref = refs[0];
-    if (!this.active || !ref || this.closingBranches.has(branchId)) return { kind: "blocked" };
-    this.closingBranches.add(branchId);
-    const scope = new Map(refs.map((draft) => [draft.itemKey, draft]));
-    for (const entry of this.entries.values())
-      if (entry.ref.projectId === ref.projectId && branchOf(entry.ref.itemKey) === branchId)
-        scope.set(entry.ref.itemKey, entry.ref);
-    for (const draft of scope.values())
-      this.setState(draft.itemKey, { hidden: true, failure: null });
-    try {
-      const answer = await discardBranchDrafts(ref, { branchId, commandId });
-      if (answer.status !== "discarded") throw new Error("Drafts no longer active");
-      return { kind: "done" };
-    } catch {
+  /**
+   * The branch's Discard on the server, as `commandId`, which its Undo names: every change of the
+   * branch (`all`, the one command that closes it), or exactly the selected nodes, documents and
+   * folders, each ending as its `ends` says. What it takes hides until the answer; a refusal or
+   * an unknown delivery shows on each item it named.
+   */
+  async discardBranch(input: {
+    projectId: string;
+    branchId: string;
+    commandId: string;
+    selection:
+      | { all: true; refs: readonly DraftRef[] }
+      | {
+          items: readonly {
+            ref: DraftRef;
+            ends: "tree" | "item";
+            draftSeenAt?: string | null;
+          }[];
+        };
+  }): Promise<CommandOutcome> {
+    const { projectId, branchId, commandId, selection } = input;
+    if (!this.active || this.closingBranches.has(branchId)) return { kind: "blocked" };
+    const scope = new Map(
+      ("all" in selection ? selection.refs : selection.items.map(({ ref }) => ref)).map((ref) => [
+        ref.itemKey,
+        ref,
+      ]),
+    );
+    if ("all" in selection)
+      for (const entry of this.entries.values())
+        if (entry.ref.projectId === projectId && branchOf(entry.ref.itemKey) === branchId)
+          scope.set(entry.ref.itemKey, entry.ref);
+    if (scope.size === 0) return { kind: "blocked" };
+    // A Discard all closes the branch: nothing else is sent on it until it answers.
+    if ("all" in selection) this.closingBranches.add(branchId);
+    for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
+    const failed = (failure: BranchCommandFailure | null) => {
       if (this.active)
-        for (const draft of scope.values())
-          this.setState(draft.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
+        for (const ref of scope.values())
+          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
+    };
+    try {
+      const answer = await discardBranch(projectId, branchId, {
+        commandId,
+        ...("all" in selection
+          ? { all: true as const }
+          : {
+              items: selection.items.map(({ ref, ends, draftSeenAt }) => ({
+                node: ref.documentId,
+                ends,
+                ...(draftSeenAt !== undefined ? { draftSeenAt } : {}),
+              })),
+            }),
+      });
+      if (answer.status === "discarded") return { kind: "done" };
+      failed({ code: "discard-refused", serverCode: answer.status });
+      return { kind: "change-refused", code: answer.status };
+    } catch {
+      failed({ code: "discard-unknown" });
       return { kind: "change-refused", code: "unknown" };
     } finally {
-      this.closingBranches.delete(branchId);
+      if ("all" in selection) this.closingBranches.delete(branchId);
     }
   }
   close() {
@@ -984,3 +1049,7 @@ export class DraftCommandOwner {
     for (const item of this.items.values()) item.queue.close();
   }
 }
+
+/** A folder's item in a Work's branch: the key its commands' state is kept under. */
+export const folderKey = (branchId: string, folderId: string): string =>
+  draftItemKey(branchId as BranchId, folderId);

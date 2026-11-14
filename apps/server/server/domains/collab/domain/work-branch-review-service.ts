@@ -154,19 +154,23 @@ export function createWorkBranchReviewService(input: {
           );
         });
       },
-      async discardAll(command) {
-        const { envelope, branchId } = command;
+      async discardBranch(command) {
+        const { envelope, branchId, selection } = command;
         const first = await known(envelope);
         if (first) return first;
         const settled = (ended: DiscardResult): DiscardCommandResult =>
-          ended.status === "gone"
-            ? { status: "gone", branchId }
-            : { status: "discarded", branchId };
+          ended.status === "refused"
+            ? { status: ended.reason, branchId }
+            : ended.status === "gone"
+              ? { status: "gone", branchId }
+              : ended.branchClosed
+                ? { status: "discarded", branchId }
+                : { status: "discarded", branchId, closed: [...ended.closed] };
         return effect(envelope, async () =>
           settled(
             await input.discard.discardItems({
               branchId,
-              selection: { kind: "whole" },
+              selection,
               userId: command.userId,
               command: { envelope, result: settled },
             }),

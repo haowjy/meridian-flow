@@ -339,7 +339,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return { kind: "none" };
       },
       discardItem: (input) => gone(input.item),
-      discardAll: gone,
+      discardBranch: gone,
     },
   };
 }

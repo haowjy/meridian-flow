@@ -12,8 +12,8 @@ export type NoticeSurface =
   | { kind: "band"; documentId: string };
 
 export type NoticeSubject =
-  | { kind: "draft" | "change"; name: string }
-  | { kind: "drafts"; count: number };
+  /** `folder`: a folder's changes and everything listed under it. */
+  { kind: "draft" | "change" | "folder"; name: string } | { kind: "drafts"; count: number };
 
 export type DiscardUndoAnswer = {
   answer: "ok" | "failed" | "gone";
@@ -40,7 +40,7 @@ export type DiscardUndo = {
 export type DiscardPart = {
   documentId: string;
   name: string;
-  scope: "draft" | "change";
+  scope: "draft" | "change" | "folder";
   /** The drafts it stands for: a whole branch's Discard is one share for all of them. */
   count?: number;
   handle: DiscardUndo;

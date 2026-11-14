@@ -18,7 +18,7 @@ import {
   type ApplyClickResult,
   type ApplyItemsClick,
   type ApplyTextCut,
-  type BranchDiscardAllRequest,
+  type BranchDiscardRequest,
   type DiscardCommandResult,
   DOCUMENT_COMMAND_CONFLICT_CODE,
   DocumentCommandIdSchema,
@@ -40,6 +40,7 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime"
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
+import type { DiscardSelection } from "../domains/collab/domain/branch-discard.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import {
   commandDigest,
@@ -1023,35 +1024,62 @@ export async function handleDiscardWorkDraftRequest(
 }
 
 /**
- * Discard all (§12.3): the whole branch, one server command; it always closes the branch. The
- * request's branch must be the URL's active one (else `gone`).
+ * The branch's Discard (§12.3), one server command: Discard all, which always closes the branch,
+ * or a selection of nodes. A selected document needs the draft's grant, as an item Discard does;
+ * a folder has no file of its own, and the branch's identity proved the writer owns the project.
+ * A node the branch holds no change on refuses the whole selection as `stale`.
  */
-export async function handleDiscardAllWorkBranchRequest(
+export async function handleDiscardBranchRequest(
   deps: BranchRouteServices,
-  input: CommandScope & { request: BranchDiscardAllRequest },
+  input: CommandScope & { request: BranchDiscardRequest },
 ): Promise<CommandRouteResult> {
   const { request } = input;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
     kind: "discard",
-    branchId: request.branchId,
+    branchId: input.branchId,
     selectors: {},
     body,
   });
-  const branchId = request.branchId as BranchId;
+  const { branchId } = input;
   return commandIngress(deps, input, envelope, async ({ owner }) => {
-    if (!owner || branchId !== input.branchId) return { refusal: goneBranch(branchId) };
+    if (!owner) return { refusal: goneBranch(branchId) };
     const listed = await deps.documentSync.draftReview.listItems({ owner });
     if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
+    const discard = (selection: DiscardSelection) => () =>
+      deps.documentSync.draftReview.discardBranch({
+        branchId,
+        selection,
+        userId: input.userId,
+        envelope,
+      });
+    if ("all" in request)
+      return {
+        grants: await applyGrants(deps, { ...input, owner, items: listed.items }, "discard"),
+        effect: discard({ kind: "whole" }),
+      };
+    const byNode = new Map(listed.items.map((item) => [item.documentId as string, item]));
+    const folders = new Set(listed.folders.map((folder) => folder.id));
+    const items = request.items.flatMap((entry) => {
+      const item = byNode.get(entry.node);
+      return item ? [item] : [];
+    });
+    if (request.items.some((entry) => !byNode.has(entry.node) && !folders.has(entry.node)))
+      return {
+        refusal: () => ({ httpStatus: 200, body: { status: "stale", branchId } }),
+      };
     return {
-      grants: await applyGrants(deps, { ...input, owner, items: listed.items }, "discard"),
-      effect: () =>
-        deps.documentSync.draftReview.discardAll({
-          branchId,
-          userId: input.userId,
-          envelope,
-        }),
+      grants: await applyGrants(deps, { ...input, owner, items }, "discard"),
+      effect: discard({
+        kind: "items",
+        items: request.items.map((entry) => ({
+          documentId: entry.node as DocumentId,
+          origin: byNode.get(entry.node)?.origin ?? "edited",
+          ends: entry.ends,
+          ...(entry.draftSeenAt !== undefined ? { draftSeenAt: entry.draftSeenAt } : {}),
+        })),
+      }),
     };
   });
 }

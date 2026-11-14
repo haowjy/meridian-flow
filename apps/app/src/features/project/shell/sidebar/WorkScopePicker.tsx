@@ -96,7 +96,7 @@ export function WorkScopePicker({
             <Chip kind="count" tone="jade">
               <span aria-hidden>{pending}</span>
               <span className="sr-only">
-                {plural(pending, { one: "# document to review", other: "# documents to review" })}
+                {plural(pending, { one: "# change to review", other: "# changes to review" })}
               </span>
             </Chip>
           ) : null}
