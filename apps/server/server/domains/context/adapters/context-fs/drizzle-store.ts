@@ -4,7 +4,11 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type DocumentFileType,
+  type Filetype,
+} from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import {
@@ -50,6 +54,11 @@ function stemOf(row: Pick<DocumentRow, "name" | "extension">): string {
     : row.name;
 }
 
+function binaryKind(fileType: string | null): DocumentFileType {
+  const classified = classifyFiletype(fileType);
+  return classified.kind === "binary" ? classified.fileType : "binary";
+}
+
 export function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
   return {
@@ -57,7 +66,8 @@ export function mapDocument(row: DocumentRow): ContextDocument {
     folderId: row.folderId,
     name: stemOf(row),
     extension: row.extension,
-    fileType: isBinary ? (row.fileType as DocumentFileType) : null,
+    // The row keeps a stored file's own type (`png`); readers want its kind (`image`).
+    fileType: isBinary ? binaryKind(row.fileType) : null,
     filetype: isBinary ? null : (row.fileType as Filetype),
     storageUrl: row.storageUrl,
     mimeType: row.mimeType,

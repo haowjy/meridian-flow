@@ -36,6 +36,7 @@ export function createDrizzleDocumentPurgeDisposal(
       );
       // A document in Trash keeps its room; the purge closes it, once the content is released.
       deps.close.registerRemoved(sorted as DocumentId[], {
+        reason: "deleted",
         actor: null,
         time: new Date().toISOString(),
       });

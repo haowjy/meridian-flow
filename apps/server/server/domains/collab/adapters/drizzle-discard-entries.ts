@@ -5,11 +5,11 @@
  * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
  * restored, and a purged Work's branches (and so its entries) are gone.
  */
-import type { BranchId, DocumentCommandId, ProjectId } from "@meridian/contracts";
+import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { branches, documentCommands, documentDrafts, works } from "@meridian/database/schema";
+import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
@@ -17,26 +17,26 @@ export function createDrizzleDiscardEntries(db: Database) {
   return {
     async list(projectId: ProjectId, now: Date = new Date()): Promise<DiscardEntry[]> {
       const tx = currentDrizzleDb(db);
-      const commands = await tx
+      const rows = await tx
         .select({
-          id: documentCommands.id,
-          kind: documentCommands.kind,
-          at: documentCommands.createdAt,
-          outcome: documentCommands.outcome,
+          id: commands.id,
+          kind: commands.kind,
+          at: commands.createdAt,
+          outcome: commands.outcome,
         })
-        .from(documentCommands)
+        .from(commands)
         .where(
           and(
-            eq(documentCommands.projectId, projectId),
-            inArray(documentCommands.kind, ["discard", "undo_discard"]),
-            gt(documentCommands.createdAt, deletionPurgeCutoff(now)),
-            sql`${documentCommands.outcome}->>'status' = 'done'`,
+            eq(commands.projectId, projectId),
+            inArray(commands.kind, ["discard", "undo_discard"]),
+            gt(commands.createdAt, deletionPurgeCutoff(now)),
+            sql`${commands.outcome}->>'status' = 'done'`,
           ),
         )
-        .orderBy(desc(documentCommands.createdAt));
-      const ran = commands.flatMap((command) => {
+        .orderBy(desc(commands.createdAt));
+      const ran = rows.flatMap((command) => {
         const result = command.outcome.status === "never" ? null : command.outcome.result;
-        return result && "branchId" in result
+        return result && typeof result === "object" && "branchId" in result
           ? [{ ...command, branchId: result.branchId as BranchId }]
           : [];
       });
@@ -75,7 +75,7 @@ export function createDrizzleDiscardEntries(db: Database) {
         owners.has(command.branchId)
           ? [
               {
-                commandId: command.id as DocumentCommandId,
+                commandId: command.id as CommandId,
                 kind: command.kind as DiscardEntry["kind"],
                 at: command.at.toISOString(),
                 branchId: command.branchId,

@@ -41,22 +41,24 @@ const WAITING: ProjectTrees = {
   find: () => null,
 };
 
-/** `account` adds the account's own list (`user://`); `version` reads a Work's tree in place of live. */
+/**
+ * The project's list and the account's own (`user://`, Your files in every project): a document
+ * moved between them is still found. `version` reads a Work's tree in place of live.
+ */
 export function useProjectTrees(
   projectId: string,
-  options?: { account?: boolean; version?: TreeVersion },
+  options?: { version?: TreeVersion },
 ): ProjectTrees {
-  const wantsAccount = options?.account ?? false;
   const { view, pendingText } = options?.version ?? LIVE_VERSION;
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
-  const account = useTreeList(wantsAccount ? { kind: "account", userId: accountId } : null);
+  const account = useTreeList({ kind: "account", userId: accountId });
   const projectSources = useProjectContextSources(projectId);
-  const accountSources = useAccountContextSources(wantsAccount);
+  const accountSources = useAccountContextSources();
   return useMemo(() => {
     const lists = [
       { list: project, sources: projectSources },
-      ...(wantsAccount ? [{ list: account, sources: accountSources }] : []),
+      { list: account, sources: accountSources },
     ];
     if (lists.some(({ list, sources }) => !list.session || !list.snapshot || !sources))
       return WAITING;
@@ -112,7 +114,6 @@ export function useProjectTrees(
     account.snapshot?.version,
     projectSources,
     accountSources,
-    wantsAccount,
     view,
     pendingText,
   ]);

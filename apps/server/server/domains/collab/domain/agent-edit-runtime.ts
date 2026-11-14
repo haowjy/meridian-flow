@@ -24,7 +24,6 @@ import {
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
-import { createSemanticProvenanceWriter } from "./provenance.js";
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
@@ -55,7 +54,6 @@ export function createAgentEditRuntime(input: {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
-  const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
       links: createScopedDocumentLinks({
@@ -68,7 +66,6 @@ export function createAgentEditRuntime(input: {
       coordinator: input.agentCoordinator,
       codec,
       model,
-      semanticProvenance,
       ...input.observability,
     }),
   );
@@ -139,7 +136,6 @@ export function createAgentEditRuntime(input: {
     markdownDocuments,
     markupCodec,
     model,
-    semanticProvenance,
   };
 }
 

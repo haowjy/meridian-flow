@@ -18,6 +18,14 @@ import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 /** Owners a write set names: Works by id, lineages by root thread id. */
 export type OwnerLocks = { workIds: string[]; lineageRootIds: string[] };
 
+/** The owners of every set together, each list sorted and without repeats. */
+export function mergeOwnerLocks(...sets: readonly OwnerLocks[]): OwnerLocks {
+  return {
+    workIds: [...new Set(sets.flatMap((set) => set.workIds))].sort(),
+    lineageRootIds: [...new Set(sets.flatMap((set) => set.lineageRootIds))].sort(),
+  };
+}
+
 export type BranchOwnerLifecycle = "active" | "archived" | "frozen" | "deleted" | "missing";
 
 /** Identity is independent of availability: a trashed first chat can have live forks. */
@@ -146,17 +154,22 @@ export async function lockLineageOwners(
   return states;
 }
 
-/** Locks the lineages the given threads belong to, for a transition that changes their liveness. */
-export async function lockLineagesOfThreads(db: DrizzleDb, threadIds: readonly string[]) {
-  if (threadIds.length === 0) return;
-  const roots = await currentDrizzleDb(db)
-    .selectDistinct({ root: threads.rootThreadId })
-    .from(threads)
-    .where(inArray(threads.id, [...threadIds]));
-  await lockLineageOwners(
-    db,
-    roots.map((row) => row.root),
-  );
+/**
+ * Locks the lineages the given threads belong to, with `rootThreadIds` named outright, for a
+ * transition that changes their liveness.
+ */
+export async function lockLineagesOfThreads(
+  db: DrizzleDb,
+  threadIds: readonly string[],
+  rootThreadIds: readonly string[] = [],
+) {
+  const roots = threadIds.length
+    ? await currentDrizzleDb(db)
+        .selectDistinct({ root: threads.rootThreadId })
+        .from(threads)
+        .where(inArray(threads.id, [...threadIds]))
+    : [];
+  await lockLineageOwners(db, [...roots.map((row) => row.root), ...rootThreadIds]);
 }
 
 /** A lineage's drafts can't be written: no chat in it is live. */

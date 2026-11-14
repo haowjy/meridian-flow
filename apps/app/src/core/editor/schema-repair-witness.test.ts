@@ -44,6 +44,8 @@ function appendElement(
   origin: unknown = "seed",
 ): Y.XmlElement {
   const element = new Y.XmlElement(nodeName);
+  if (nodeName === "paragraph")
+    element.setAttribute("id", `p${doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).length}`);
   const yText = new Y.XmlText();
   doc.transact(() => {
     doc
@@ -140,6 +142,7 @@ describe("schema repair witness", () => {
     expect(editor.getText()).toContain("kept prose");
     expect(events).toEqual([
       {
+        id: expect.any(String),
         phase: "open",
         detectedAt: "2026-07-28T12:00:00.000Z",
         deletedNodeTypes: ["sidebar"],

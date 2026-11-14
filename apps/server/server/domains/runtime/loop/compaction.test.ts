@@ -166,27 +166,20 @@ function compactionBlock(
 }
 
 describe("resolveCompactionTrigger", () => {
-  it("clamps at the usable window, the absolute ceiling, and zero", () => {
+  it("waits for 90% of the smaller of the tier and the usable window, capped at the absolute ceiling", () => {
     expect(
       resolveCompactionTrigger({
-        autocompact: 50_000,
+        inputTierTokens: 50_000,
         contextWindow: 20_000,
         maxOutputTokens: 10_000,
       }).thresholdTokens,
-    ).toBe(10_000);
+    ).toBe(9_000);
     expect(
-      resolveCompactionTrigger({
-        autocompact: 900_000,
-        contextWindow: 1_000_000,
-        maxOutputTokens: 10_000,
-      }).thresholdTokens,
+      resolveCompactionTrigger({ contextWindow: 2_000_000, maxOutputTokens: 10_000 })
+        .thresholdTokens,
     ).toBe(FLOW_ABSOLUTE_CEILING);
     expect(
-      resolveCompactionTrigger({
-        autocompact_pct: 100,
-        contextWindow: 4_000,
-        maxOutputTokens: 8_000,
-      }).thresholdTokens,
+      resolveCompactionTrigger({ contextWindow: 4_000, maxOutputTokens: 8_000 }).thresholdTokens,
     ).toBe(0);
   });
 });

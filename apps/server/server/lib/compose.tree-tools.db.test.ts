@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
@@ -14,6 +15,10 @@ import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { discardedTree } from "../domains/context/tree/trash-entries.js";
+import { runWorkLifecycleCommand } from "../domains/projects/index.js";
+import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
+import { setTestHook } from "../shared/test-hooks.js";
+import { race } from "../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
 import { reverseTurnCard } from "./work-receipt-reversal.js";
 
@@ -33,6 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const {
       handleApplyClickRequest,
+      handleApplyItemsRequest,
       handleDiscardWorkDraftRequest,
       handleOwnerDraftListRequest,
       selectBranchRouteServices,
@@ -182,6 +188,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db
           .select({
             name: schema.treeNodes.name,
+            parentId: schema.treeNodes.parentId,
             sourceId: schema.treeNodes.contextSourceId,
             deletedAt: schema.treeNodes.trashedAt,
           })
@@ -453,13 +460,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(deleted)).toMatch(
         /^status: success; write: e\d+; version: live; deleted: 2 inside$/,
       );
-      const { trashEntries } = script.runtime.ports;
-      const lists = [await treeListOfSource(db, SOURCE_ID)];
-      const entries = await trashEntries.list({ lists, view: LIVE });
-      expect(entries).toMatchObject([{ name: "Arc 2", took: { documents: 2, folders: 1 } }]);
+      const { documentTrash } = script.runtime.ports;
+      const entries = await documentTrash.list(PROJECT_ID as ProjectId);
+      expect(entries).toMatchObject([{ name: "Arc 2", kind: "folder", documents: 2 }]);
       const restored = await call("write", { command: "restore", path: "Arc 2/" });
       expect(restored.isError, text(restored)).toBeFalsy();
-      expect(await trashEntries.list({ lists, view: LIVE })).toEqual([]);
+      expect(await documentTrash.list(PROJECT_ID as ProjectId)).toEqual([]);
       expect((await placement(CH2))?.deletedAt).toBeNull();
       // An undo of a delete names the path the model deleted.
       await call("write", { command: "delete", path: "Arc 2/" });
@@ -524,6 +530,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed");
         expect((await placement(CH1))?.name).toBe("ch1");
+      });
+
+      const cardUndo = () =>
+        reverseTurnCard(
+          {
+            ...composed.ports,
+            workContextNotices: { workChanged: async () => {} },
+            stopThreads: async () => {},
+          },
+          {
+            threadId: OTHER.threadId as never,
+            turnId: OTHER.turnId as never,
+            userId: USER_ID as never,
+            direction: "undo",
+            commandId: randomUUID() as never,
+          },
+        );
+
+      it("the card's Undo after an Apply takes the applied moves back though one drafted document was discarded", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+          await edit("write", { command: "create", path: "part1/fresh", content: "Fresh." });
+        });
+        const routes = selectBranchRouteServices(script.runtime.app);
+        const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
+        const owner = `work:${OTHER_WORK_ID}`;
+        const { items } = await handleOwnerDraftListRequest(routes, { ...scope, owner } as never);
+        const created = items.find((item) => item.documentId !== CH1);
+        await review(script).discard(created?.documentId as string, { ends: "item" });
+        const { items: left } = await handleOwnerDraftListRequest(routes, {
+          ...scope,
+          owner,
+        } as never);
+        await handleApplyItemsRequest(routes, {
+          ...scope,
+          branchId: await branchOf(OTHER_WORK_ID),
+          request: {
+            commandId: randomUUID(),
+            items: left.map((item) => ({
+              node: item.documentId,
+              tree: { revision: item.tree?.revision ?? null },
+            })),
+          },
+        } as never);
+        const [part1] = await placementsNamed("part1");
+        expect((await placement(CH1))?.parentId).toBe(part1?.id);
+        const undone = await cardUndo();
+        expect(undone.status, JSON.stringify(undone)).not.toBe("permission_denied");
+        expect((await placement(CH1))?.parentId).toBeNull();
+        expect(await placementsNamed("fresh")).toEqual([]);
+        expect(
+          await composed.ports.documentSync.getTurnReceiptChip(
+            OTHER.threadId as never,
+            OTHER.turnId as never,
+          ),
+        ).toMatchObject({ control: "redo" });
+      });
+
+      it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
+        const script = await start();
+        await drafting(script).reply(async (edit) => {
+          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        });
+        await db
+          .update(schema.works)
+          .set({ deletedAt: new Date() })
+          .where(eq(schema.works.id, OTHER_WORK_ID));
+        const undone = await cardUndo();
+        expect(undone).toMatchObject({ status: "permission_denied", denial: "not_found" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {
@@ -844,6 +920,229 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const redone = await call("write", { command: "redo", path: "ch1" });
         expect(redone.isError, text(redone)).toBeFalsy();
         expect(await ls(call, "user://")).toContain("mine");
+      });
+    });
+
+    describe("a card Undo of a turn that made a Work and edited a document", () => {
+      const NEW_WORK_ID = "00000000-0000-4000-8000-000000000d20";
+      const NEW_WORK_THREAD = "00000000-0000-4000-8000-000000000d21";
+
+      /** The turn made Work "Fresh" (its receipt) and replaced the text of ch1. */
+      async function madeWorkAndEdited() {
+        const script = await start();
+        await db.insert(schema.works).values({
+          id: NEW_WORK_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Fresh",
+          handle: "w3",
+        });
+        await db.insert(schema.threads).values({
+          rootThreadId: NEW_WORK_THREAD,
+          id: NEW_WORK_THREAD,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Fresh",
+          kind: "primary",
+          status: "idle",
+          aiWriteMode: "direct",
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: NEW_WORK_THREAD,
+          workId: NEW_WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        await db.insert(schema.turnBlocks).values({
+          id: randomUUID(),
+          turnId: THREAD.turnId,
+          blockType: "custom",
+          sequence: 1,
+          content: {
+            metadata: {
+              workReceipt: {
+                operation: "create",
+                changed: true,
+                workId: NEW_WORK_ID,
+                workName: "Fresh",
+                before: null,
+                after: { name: "Fresh", goal: null, status: null, archived: false },
+                inverse: { command: "delete", workId: NEW_WORK_ID },
+              },
+            },
+          },
+        } as never);
+        await script.reply(async (edit) => {
+          await edit("write", { command: "replace", path: "ch1", find: "one", content: "ONE" });
+        });
+        return script;
+      }
+      const card = (
+        script: Awaited<ReturnType<typeof start>>,
+        direction: "undo" | "redo",
+        commandId = randomUUID(),
+        thread = THREAD,
+      ) =>
+        reverseTurnCard(
+          {
+            ...script.runtime.ports,
+            workContextNotices: { workChanged: async () => {} },
+            stopThreads: script.runtime.app.stopThreads,
+          },
+          {
+            threadId: thread.threadId as never,
+            turnId: thread.turnId as never,
+            userId: USER_ID as never,
+            direction,
+            commandId: commandId as never,
+          },
+        );
+      const workDeleted = async () =>
+        (
+          await db
+            .select({ deletedAt: schema.works.deletedAt })
+            .from(schema.works)
+            .where(eq(schema.works.id, NEW_WORK_ID))
+        )[0]?.deletedAt != null;
+      const ch1 = async (script: Awaited<ReturnType<typeof start>>) => script.text("ch1", "live");
+      const claims = async () =>
+        (await db.select().from(schema.commands).where(eq(schema.commands.kind, "reverse_turn")))
+          .length;
+
+      it("takes back the document and the Work in one command, and a resend answers it", async () => {
+        const script = await madeWorkAndEdited();
+        expect(await ch1(script)).toContain("ONE");
+        const id = randomUUID();
+        const undone = await card(script, "undo", id);
+        expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
+          expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
+        ]);
+        expect(undone.acceptedParts).toBeGreaterThan(0);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+        expect(await claims()).toBe(1);
+        // The same click again: the stored answer, nothing done twice.
+        expect(await card(script, "undo", id)).toEqual(undone);
+        expect(await claims()).toBe(1);
+        const redone = await card(script, "redo");
+        expect(redone.workReceipts).toEqual([
+          expect.objectContaining({ workId: NEW_WORK_ID, status: "redone" }),
+        ]);
+        expect(await workDeleted()).toBe(false);
+        expect(await ch1(script)).toContain("ONE");
+      });
+
+      it("a crash after the documents and before the commit leaves neither half", async () => {
+        const script = await madeWorkAndEdited();
+        const id = randomUUID();
+        const remove = setTestHook("command.beforeCommit", async () => {
+          throw new Error("crash between the halves");
+        });
+        try {
+          await expect(card(script, "undo", id)).rejects.toThrow("crash between the halves");
+        } finally {
+          remove();
+        }
+        expect(await workDeleted()).toBe(false);
+        expect(await ch1(script)).toContain("ONE");
+        expect(await claims()).toBe(0);
+        // The id is free: the same click, sent again, takes effect once.
+        const undone = await card(script, "undo", id);
+        expect(undone.workReceipts?.[0]?.status).toBe("reversed");
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("against a Work delete of the same Work: one waits for the other, neither deadlocks", async () => {
+        const script = await madeWorkAndEdited();
+        const { app } = script.runtime;
+        const raced = await race<"undo" | "delete">(
+          db,
+          {
+            undo: () => card(script, "undo"),
+            delete: () =>
+              runWorkLifecycleCommand(app.works.transaction, () =>
+                app.works.softDelete(NEW_WORK_ID as never, app.stopThreads),
+              ),
+          },
+          "undo",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.undo).toMatchObject({ ok: true });
+        expect(raced.by.delete).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("against the runtime's thread lock on the made Work's chat: neither deadlocks", async () => {
+        const script = await madeWorkAndEdited();
+        const threadLock = createDrizzleThreadLock(db);
+        const raced = await race<"undo" | "inbox">(
+          db,
+          {
+            undo: () => card(script, "undo"),
+            inbox: () => threadLock.withThreadLock(NEW_WORK_THREAD as never, async () => "held"),
+          },
+          "undo",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+        expect(raced.by.inbox, JSON.stringify(raced.by.inbox)).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await workDeleted()).toBe(true);
+      });
+
+      it("against a second reversal in the same chat: the second reads what the first left", async () => {
+        const script = await madeWorkAndEdited();
+        const raced = await race<"first" | "second">(
+          db,
+          { first: () => card(script, "undo"), second: () => card(script, "undo") },
+          "first",
+          "inverse.beforeCommitScope",
+        );
+        expect(raced.by.first).toMatchObject({ ok: true });
+        expect(raced.by.second).toMatchObject({ ok: true });
+        expect(raced.bWaited).toBe(true);
+        expect(await claims()).toBe(2);
+        expect(await workDeleted()).toBe(true);
+        expect(await ch1(script)).toContain("one");
+      });
+
+      it("a draft that joins the document between declare and commit reruns the command with its Work", async () => {
+        const script = await madeWorkAndEdited();
+        const other = runtimes.script(script.runtime, OTHER);
+        let claimed = 0;
+        const count = setTestHook("inverse.beforeCommitScope", async () => {
+          claimed += 1;
+        });
+        try {
+          const raced = await race<"undo" | "draft">(
+            db,
+            {
+              undo: () => card(script, "undo"),
+              draft: () =>
+                other.reply(async (edit) => {
+                  await edit("write", {
+                    command: "replace",
+                    path: "ch1",
+                    find: "Chapter",
+                    content: "Part",
+                  });
+                }),
+            },
+            "undo",
+            "inverse.afterCaptureRead",
+          );
+          expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+          expect(raced.by.draft).toMatchObject({ ok: true });
+        } finally {
+          count();
+        }
+        // The first attempt declared no draft Work; its commit found one, and the command ran again.
+        expect(claimed).toBe(2);
+        expect(await claims()).toBe(1);
+        expect(await workDeleted()).toBe(true);
       });
     });
   });

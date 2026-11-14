@@ -1,6 +1,7 @@
 /** Defines document-toolbar state and commands. */
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -12,7 +13,11 @@ import {
   redoEditorHistory,
   undoEditorHistory,
 } from "@/core/editor/editor-history";
-import type { HeadingLevel } from "@/core/editor/extensions/meridian-extensions";
+import {
+  selectedSequence,
+  selectionIsQuoted,
+  selectionListKind,
+} from "@/core/editor/extensions/nesting";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -68,34 +73,44 @@ export type BlockTypeState = ToolbarControlState & { blockedBy: BlockTypeRefusal
 
 export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
 
+/** A heading level as a block type: `heading1` is a paragraph at level 1. */
+export type HeadingBlockTypeId = `heading${HeadingLevel}`;
+
 /** The block types "Turn into" offers. */
 export type BlockTypeId =
   | "paragraph"
-  | "heading1"
-  | "heading2"
-  | "heading3"
+  | HeadingBlockTypeId
   | "bulletList"
   | "orderedList"
-  | "blockquote"
+  | "quote"
   | "codeBlock";
 
-export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
+/** Body text and every heading level the schema allows. */
+const TEXT_LEVEL_BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
   "paragraph",
-  "heading1",
-  "heading2",
-  "heading3",
+  ...HEADING_LEVELS.map((level): HeadingBlockTypeId => `heading${level}`),
+];
+
+export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
+  ...TEXT_LEVEL_BLOCK_TYPE_IDS,
   "bulletList",
   "orderedList",
-  "blockquote",
+  "quote",
   "codeBlock",
 ];
 
-/** The three heading levels "Turn into" offers; the schema allows six. */
-const BLOCK_TYPE_HEADING_LEVELS = {
-  heading1: 1,
-  heading2: 2,
-  heading3: 3,
-} as const satisfies Partial<Record<BlockTypeId, HeadingLevel>>;
+const HEADING_BLOCK_TYPE_LEVELS: Partial<Record<BlockTypeId, HeadingLevel>> = Object.fromEntries(
+  HEADING_LEVELS.map((level) => [`heading${level}`, level]),
+);
+
+export function headingLevelOf(id: HeadingBlockTypeId): HeadingLevel {
+  return HEADING_BLOCK_TYPE_LEVELS[id] as HeadingLevel;
+}
+
+/** The level a block type sets: null for body text, undefined for a type that is no level. */
+export function blockTypeLevel(id: BlockTypeId): HeadingLevel | null | undefined {
+  return id === "paragraph" ? null : HEADING_BLOCK_TYPE_LEVELS[id];
+}
 
 /** Alignment as the dropdown speaks it: `null` on the wire reads as default. */
 export type ToolbarAlignmentValue = "default" | Exclude<BlockAlignment, null>;
@@ -125,8 +140,6 @@ const CONTROL_IDS: readonly ToolbarControlId[] = [
   "uploadFigure",
 ];
 
-const TOOLBAR_HEADING_LEVEL = 1;
-
 export function documentToolbarControls(context: ToolbarContext): ToolbarControlStates {
   const { editor } = context;
   if (!editor || editor.isDestroyed) return everyControlBlockedBy("editor-loading");
@@ -147,7 +160,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? (context.canRedo ? null : "empty-history"),
     },
     heading: {
-      active: editor.isActive("paragraph", { level: TOOLBAR_HEADING_LEVEL }),
+      active: currentHeadingLevel(editor) !== null,
       blockedBy: readOnly ?? blockType,
     },
     bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
@@ -157,7 +170,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? codeBlockRefusal(editor),
     },
     bulletList: {
-      active: editor.isActive("bullet_list"),
+      active: activeListKind(editor) === "bullet",
       blockedBy: readOnly ?? blockType,
     },
     // No precondition on having a selection: a bare caret opens the
@@ -204,22 +217,37 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
   ) as Record<BlockTypeId, BlockTypeState>;
 }
 
+/**
+ * The toolbar's heading menu: Turn into's body text and heading rows, current by level alone, so
+ * an item or a quoted line still shows the level it has.
+ */
+export function textLevelStates(editor: Editor): { id: BlockTypeId; state: BlockTypeState }[] {
+  const states = blockTypeStates(editor);
+  // Undefined when the blocks share no level, so no row reads as current.
+  const level = editor.isActive("paragraph", { level: null })
+    ? null
+    : (currentHeadingLevel(editor) ?? undefined);
+  return TEXT_LEVEL_BLOCK_TYPE_IDS.map((id) => ({
+    id,
+    state: { active: blockTypeLevel(id) === level, blockedBy: states[id].blockedBy },
+  }));
+}
+
 /** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (editor.isActive("code_block")) return "codeBlock";
-  if (editor.isActive("bullet_list")) return "bulletList";
-  if (editor.isActive("ordered_list")) return "orderedList";
-  if (editor.isActive("blockquote")) return "blockquote";
-  for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
-    if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
-  }
+  const listKind = activeListKind(editor);
+  if (listKind === "bullet") return "bulletList";
+  if (listKind === "ordered") return "orderedList";
+  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
+  const level = currentHeadingLevel(editor);
+  if (level !== null) return `heading${level}`;
   return editor.isActive("paragraph", { level: null }) ? "paragraph" : null;
 }
 
-function headingLevel(id: BlockTypeId): HeadingLevel | null {
-  return id in BLOCK_TYPE_HEADING_LEVELS
-    ? BLOCK_TYPE_HEADING_LEVELS[id as keyof typeof BLOCK_TYPE_HEADING_LEVELS]
-    : null;
+/** The heading level every block under the selection has, or null when they share none. */
+export function currentHeadingLevel(editor: Editor): HeadingLevel | null {
+  return HEADING_LEVELS.find((level) => editor.isActive("paragraph", { level })) ?? null;
 }
 
 /** Convert the blocks under the selection in place. */
@@ -233,18 +261,19 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
 
 /** The conversion behind Turn into for one selection, toggle semantics intact. */
 function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
-  const level = headingLevel(id);
-  if (level) return editor.chain().focus().toggleHeading({ level }).run();
+  const level = blockTypeLevel(id);
+  if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
+    // Body text from any text block, a fence included: a level change touches paragraphs only.
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":
-      return toggleListBlock(editor, "bullet_list");
+      return editor.chain().focus().toggleListKind("bullet").run();
     case "orderedList":
-      return toggleListBlock(editor, "ordered_list");
-    case "blockquote":
-      return editor.chain().focus().toggleBlockquote().run();
+      return editor.chain().focus().toggleListKind("ordered").run();
+    case "quote":
+      return editor.chain().focus().toggleQuote().run();
     default:
       return editor.chain().focus().toggleCodeBlock().run();
   }
@@ -258,7 +287,7 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
   let head = selection.$headCell.pos;
 
   // Every conversion moves the positions after it; the walk follows the
-  // document the same way `toggleListBlock` does.
+  // document through the transaction events.
   const followDocument = ({ transaction }: { transaction: Transaction }) => {
     if (!transaction.docChanged) return;
     for (const cell of cells) {
@@ -305,11 +334,6 @@ export function blockedFirst<Outranking, Reason>(
   state: { active: boolean; blockedBy: Reason | null },
 ): { active: boolean; blockedBy: Outranking | Reason | null } {
   return outranking ? { active: state.active, blockedBy: outranking } : state;
-}
-
-/** True toggle: pressing on an H1 returns the block to a paragraph (). */
-export function toggleHeadingBlock(editor: Editor): boolean {
-  return turnIntoBlockType(editor, "heading1");
 }
 
 /** True toggle: one press fences the block, one press returns it to prose. */
@@ -372,75 +396,9 @@ function hasCollaborativeHistory(editor: Editor): boolean {
   return !editor.isDestroyed && typeof editor.commands.undo === "function";
 }
 
-/** TipTap reverses a list by looking for an ancestor whose extension group holds "list", and the Meridian list nodes declare `group: "block"` to stay in parity with the server schema — so its own toggle only ever wraps. */
-function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
-  if (!editor.isActive(listType)) {
-    const chain = editor.chain().focus();
-    return listType === "bullet_list"
-      ? chain.toggleBulletList().run()
-      : chain.toggleOrderedList().run();
-  }
-
-  let range = { from: editor.state.selection.from, to: editor.state.selection.to };
-  const followDocument = ({ transaction }: { transaction: Transaction }) => {
-    if (!transaction.docChanged) return;
-    range = {
-      from: transaction.mapping.map(range.from, 1),
-      to: transaction.mapping.map(range.to, -1),
-    };
-  };
-  editor.on("transaction", followDocument);
-
-  try {
-    let lifted = false;
-    // Each lift removes at least the two tokens of the list it unwrapped, so
-    // the document's own size is a bound that always terminates.
-    for (let guard = editor.state.doc.content.size; guard > 0; guard -= 1) {
-      const target = listRangeReachedBy(editor.state, listType, range);
-      if (!target) break;
-      const chain = editor.chain().focus().setTextSelection(target);
-      if (!chain.liftListItem("list_item").run()) break;
-      lifted = true;
-    }
-    // The writer selected words, not list items; give them back what they had.
-    if (lifted) editor.commands.setTextSelection(range);
-    return lifted;
-  } finally {
-    editor.off("transaction", followDocument);
-  }
-}
-
-/** The part of the next list of this type that the writer's range actually reaches, or null when none is left. */
-function listRangeReachedBy(
-  state: EditorState,
-  listType: string,
-  range: { from: number; to: number },
-): { from: number; to: number } | null {
-  const { doc } = state;
-  const from = Math.max(0, Math.min(range.from, doc.content.size));
-  const to = Math.max(from, Math.min(range.to, doc.content.size));
-
-  let found: { from: number; to: number } | null = null;
-  doc.nodesBetween(from, to, (node, pos) => {
-    if (found) return false;
-    if (node.type.name !== listType) return true;
-
-    const contentFrom = pos + 1;
-    const contentTo = pos + node.nodeSize - 1;
-    if (from === to && (from <= contentFrom || from >= contentTo)) return true;
-
-    const overlapFrom = Math.max(from, contentFrom);
-    const overlapTo = Math.min(to, contentTo);
-    if (overlapFrom > overlapTo) return true;
-
-    // A list's own boundary positions hold list items, not inline content, so
-    // a text selection cannot sit on them; `between` walks in to the nearest
-    // positions that can hold a caret.
-    const snapped = TextSelection.between(doc.resolve(overlapFrom), doc.resolve(overlapTo));
-    found = { from: snapped.from, to: snapped.to };
-    return false;
-  });
-  return found;
+/** The kind of list every selected block sits in, or null when they are not all in one kind. */
+function activeListKind(editor: Editor): "bullet" | "ordered" | null {
+  return selectionListKind(selectedSequence(editor.state.selection));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

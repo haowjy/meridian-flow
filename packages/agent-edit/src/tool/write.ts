@@ -58,7 +58,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       codec: options.codec,
       coordinator: options.coordinator,
       links: options.links,
-      semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
       onObservationFailed: options.onObservationFailed,
     },

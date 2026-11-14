@@ -9,12 +9,17 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  appendApplyRecord,
+  addCounts,
   applyBase,
+  contentMerge,
+  type RuleCounts,
+  ruleCounter,
+} from "@meridian/agent-edit/content-merge";
+import {
+  appendApplyRecord,
   baseViewDelta,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
-  rebase,
   removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -58,7 +63,7 @@ import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
-import { runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -90,6 +95,13 @@ export function createDrizzleApplyClick(
     branchTree: BranchTreeStateReader;
     close: Pick<DraftClose, "closeDrafts">;
     onCommitted(documentId: DocumentId): Promise<void>;
+    /** What the click's content merges did: how often each rule fired, and the live words the draft overrode. */
+    merged(input: {
+      commandId: string;
+      kind: "apply" | "unapply";
+      rules: RuleCounts;
+      overrode: number;
+    }): void;
     measured(input: {
       commandId: string;
       compileClickMs?: number;
@@ -129,20 +141,18 @@ export function createDrizzleApplyClick(
     };
     live.on("update", capture);
     try {
-      const merged = rebase(
-        schema,
-        click.optimistic,
-        readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-        click.patched,
-      );
+      let overrode = 0;
+      const merged = ruleCounter();
       const liveEffects: { groupId: string; seq: number | null }[] = [];
       for (const group of click.groups) {
-        const groupMerge = rebase(
+        const groupMerge = contentMerge(
           schema,
-          click.optimistic,
+          group.before,
           readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
           group.patched,
         );
+        overrode += groupMerge.overrode;
+        addCounts(merged.fire, groupMerge.rules);
         update = undefined;
         live.transact(
           () =>
@@ -159,6 +169,7 @@ export function createDrizzleApplyClick(
           : null;
         liveEffects.push({ groupId: group.groupId, seq });
       }
+      deps.merged({ commandId, kind: "apply", rules: merged.counts, overrode });
       await stampLiveEditsWithCommand(
         tx,
         commandId,
@@ -179,7 +190,7 @@ export function createDrizzleApplyClick(
               row = undefined;
               const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
               const before = readBlocks(fragment, schema);
-              const after = applyBase(schema, before, click.optimistic, group.patched);
+              const after = applyBase(schema, before, group.before, group.patched);
               prefix.transact(() => {
                 writeBlocks(fragment, schema, after);
                 appendApplyRecord(prefix, group.record);
@@ -230,7 +241,7 @@ export function createDrizzleApplyClick(
         await deps.liveCoordinator.deliver(node);
         await deps.onCommitted(node);
       });
-      return { overrode: merged.overrode ?? 0 };
+      return { overrode };
     } finally {
       live.off("update", capture);
       live.destroy();
@@ -284,7 +295,7 @@ export function createDrizzleApplyClick(
       };
       const lives: Y.Doc[] = [];
       try {
-        return await runCommand(
+        return await runDocumentCommand(
           db,
           command.envelope,
           () =>
@@ -369,7 +380,11 @@ export function createDrizzleApplyClick(
                   const inverse = computeInverse(
                     live,
                     history,
-                    targeted.map(({ part }) => ({ part, direction: "invert" as const })),
+                    // Latest group first: a group's live update builds on the earlier groups' items, so the
+                    // earlier group is intact only once the later one is out.
+                    [...targeted]
+                      .reverse()
+                      .map(({ part }) => ({ part, direction: "invert" as const })),
                     { actionId: commandId, allocateClient: allocateDocumentClient },
                   );
                   const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
@@ -459,6 +474,7 @@ export function createDrizzleApplyClick(
                   const reversedWithLive = plan.reversed.filter(
                     (effect) => effect.liveUpdateSeq !== null,
                   );
+                  let unapplyMerged = { rules: {} as RuleCounts, overrode: 0 };
                   const write = deps.coordinator.prepareAppend(currentBase, [], {
                     authorServerRows(prefix) {
                       let row: Uint8Array | undefined;
@@ -470,13 +486,20 @@ export function createDrizzleApplyClick(
                         prefix.transact(() => {
                           const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
                           let current = readBlocks(fragment, schema);
-                          for (const effect of [...reversedWithLive].reverse())
-                            current = rebase(
+                          const total = ruleCounter();
+                          let overrode = 0;
+                          for (const effect of [...reversedWithLive].reverse()) {
+                            const merge = contentMerge(
                               schema,
                               effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
                               current,
                               effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
-                            ).blocks;
+                            );
+                            addCounts(total.fire, merge.rules);
+                            overrode += merge.overrode;
+                            current = merge.blocks;
+                          }
+                          unapplyMerged = { rules: total.counts, overrode };
                           writeBlocks(fragment, schema, current);
                           removeApplyRecords(prefix, applyCommandId, groupIds);
                         }, "unapply");
@@ -493,6 +516,7 @@ export function createDrizzleApplyClick(
                   } finally {
                     write.dispose();
                   }
+                  deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
                   await tx
                     .update(applyCommandEffects)
                     .set({ unappliedBy: commandId })
@@ -549,7 +573,7 @@ export function createDrizzleApplyClick(
       let committedAt: number | undefined;
       try {
         return await applyTiming.run({ commandId, measured: deps.measured }, () =>
-          runCommand(
+          runDocumentCommand(
             db,
             envelope,
             async (): Promise<ApplyClickResult> => {

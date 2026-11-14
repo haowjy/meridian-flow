@@ -5,7 +5,12 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
+import {
+  docAtFrontier,
+  type JournalSnapshot,
+  type ObservationFrontier,
+  type UpdateJournal,
+} from "@meridian/agent-edit/integration";
 import type { BranchId, DraftOwner } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -296,17 +301,30 @@ export function createDrizzleDraftStore(
   async function ensureLiveDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
+    seen?: ObservationFrontier | null;
   }): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    return withJournalDocument(input.documentId, (liveDoc, snapshot) => {
+    return withJournalDocument(input.documentId, async (liveDoc, snapshot) => {
       if (!snapshot.authority)
         throw new Error(`Live document ${input.documentId} has no authority binding`);
-      return ensureDocumentDraft({
-        ...input,
-        liveDoc,
-        liveRoom: liveRoom(input.documentId, snapshot.authority.generation),
-      });
+      const room = liveRoom(input.documentId, snapshot.authority.generation);
+      // A model that read live plans on that cut: seeded from it, the draft lacks what the
+      // writer typed since, and the pull merges it without the write overwriting it.
+      const cut = input.seen?.room === room ? docAtFrontier(liveDoc, input.seen) : null;
+      try {
+        return await ensureDocumentDraft({
+          documentId: input.documentId,
+          branchId: input.branchId,
+          liveDoc: cut ?? liveDoc,
+          liveRoom: room,
+          ...(cut && input.seen?.position !== undefined
+            ? { livePosition: input.seen.position }
+            : {}),
+        });
+      } finally {
+        cut?.destroy();
+      }
     });
   }
 
@@ -531,8 +549,14 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    async serverDeletedBlocks(draftId, ids) {
+    async writerText(draftId, ids) {
       if (!ids.length) return new Set<string>();
+      const runs: { client: number; lo: number; hi: number }[] = [];
+      for (const id of [...ids].sort((a, b) => a.client - b.client || a.clock - b.clock)) {
+        const last = runs[runs.length - 1];
+        if (last && last.client === id.client && id.clock <= last.hi + 1) last.hi = id.clock;
+        else runs.push({ client: id.client, lo: id.clock, hi: id.clock });
+      }
       const rows = await currentDrizzleDb(db)
         .select({ effect: documentEditParts.effect })
         .from(documentEditParts)
@@ -544,12 +568,12 @@ export function createDrizzleDraftStore(
           and(
             sql`${documentEditParts.origin}->>'kind' = 'pending'`,
             sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
-            eq(draftWriteJournal.source, "server"),
-            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
+            sql`(${draftWriteJournal.source} = 'writer' or ${draftWriteJournal.updateMeta}->>'lateTyping' = 'true')`,
+            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'inserted') r
             where ${sql.join(
-              ids.map(
-                (id) =>
-                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
+              runs.map(
+                (run) =>
+                  sql`((r->>'client')::bigint = ${run.client} and (r->>'clock')::bigint <= ${run.hi} and (r->>'clock')::bigint + (r->>'len')::bigint > ${run.lo})`,
               ),
               sql` or `,
             )})`,
@@ -559,7 +583,7 @@ export function createDrizzleDraftStore(
         ids
           .filter((id) =>
             rows.some((row) =>
-              row.effect.deleted.some(
+              row.effect.inserted.some(
                 (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
               ),
             ),

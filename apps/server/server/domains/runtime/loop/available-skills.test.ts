@@ -42,8 +42,6 @@ async function publishSource(
     ownerUserId,
     coordinate: source.coordinate,
     currentRevisionId: installed.packageRevisionId,
-    upstreamRevisionId: installed.packageRevisionId,
-    origin: null,
   });
   if (!installation) throw new Error(`Failed to publish ${source.coordinate}`);
   return installed;
@@ -60,6 +58,7 @@ describe("skill catalogs", () => {
     const installed = await publishSource(agentRevisions, {
       coordinate: "meridian-launch-agents",
       files: {
+        "mars.toml": '[package]\nname = "launch"\nversion = "0.1.0"\nschema = 1\n',
         "agents/writer.md": `---
 name: Writer
 mode: primary
@@ -84,7 +83,8 @@ You are Writer.
         }),
       },
     });
-    const writer = installed.definitions.find((definition) => definition.slug === "writer");
+    const writerRow = installed.definitions.find((definition) => definition.slug === "writer");
+    const writer = writerRow && (await agentRevisions.readRevision(writerRow.id));
     if (!writer) throw new Error("Writer definition missing");
     const configuration = await resolveAgentConfiguration({
       revision: writer,

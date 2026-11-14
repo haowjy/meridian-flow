@@ -84,11 +84,19 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
           validateContextEntryName (pure)
 ```
 
-Document trash is a server snapshot separate from the replay of the project's list.
-The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
-listing it newest first on `ListRow`s that select and drag like the trees'. A deleted document has its own address,
+Trash is a server snapshot of the lists' entries, separate from the replay: one entry per delete
+in force, a document deleted on its own or a folder with what its delete took (an empty folder too),
+restored whole. The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
+listing it newest first on `ListRow`s that select and drag like the trees'. An entry shows while
+the replay has a delete of its node in force. A folder entry has no page yet (opening a deleted
+folder is the design's later step): its menu and a drag restore it. A deleted document has its own address,
 `/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
 row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
+An uploaded file shows its card (name, type, size from the replay's blob) instead of text: the
+server serves no file in Trash, so the card has no Download.
+The notice's place, author and the tab's name come from the replay, so they read offline; the
+date and retention come from the server's read of the document, else from the Trash list the
+browser holds.
 It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever
 Restore brought it back, by opening it in place. The record reads the server's Markdown,
 serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;

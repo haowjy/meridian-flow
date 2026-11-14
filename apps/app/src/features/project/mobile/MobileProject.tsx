@@ -5,7 +5,6 @@ import { useBlocker, useRouterState } from "@tanstack/react-router";
 import { Maximize2, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
-import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -19,6 +18,7 @@ import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import { TrashedDocument } from "../context/TrashedDocument";
+import { useDocumentStanding } from "../context/use-document-standing";
 import { useNewDocument } from "../context/use-new-document";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { PanePlaceContext } from "../pane-place";
@@ -71,7 +71,8 @@ export function MobileProject(props: MobileProjectProps) {
   }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const trashedId = useTrashNavigation().shown;
-  const trashedName = useTrashedDocument(props.projectId, trashedId ?? null).data?.name;
+  const trashed = useDocumentStanding(props.projectId, trashedId ?? null);
+  const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
     : contextBreadcrumbSegments(props);

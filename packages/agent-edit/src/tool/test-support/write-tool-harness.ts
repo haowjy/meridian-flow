@@ -21,7 +21,6 @@ import {
 } from "../../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
-import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import { createStaticDocumentLinks } from "../../ports/static-document-links.js";
 import type { JournalBatchAppendEntry, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
@@ -41,7 +40,6 @@ export function harness(
     onUnexpectedWriteError?: Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal;
     model?: AgentEditModel;
-    semanticProvenance?: SemanticProvenanceWriter;
     links?: DocumentLinksPort;
     onLinkSpliceFallback?: Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"];
   } = {},
@@ -58,7 +56,6 @@ export function harness(
     codec: codecFactory,
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
-    semanticProvenance: options.semanticProvenance,
     ...(options.onUnexpectedWriteError
       ? { onUnexpectedWriteError: options.onUnexpectedWriteError }
       : {}),

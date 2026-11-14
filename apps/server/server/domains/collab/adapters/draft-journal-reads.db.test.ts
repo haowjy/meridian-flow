@@ -2,7 +2,7 @@
  * A save's journal reads stay on the save's own connection (contract §2.3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ambient save-transaction ownership of concurrent journal reads (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#a-response-commits-as-one-unit-of-work)
+ * - a command's journal reads stay on its own connection (kb/wiki/collaboration/durability-and-honest-outcomes.md#one-lock-order-for-every-command)
  */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { afterAll, describe, expect, it } from "vitest";

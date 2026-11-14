@@ -1,18 +1,16 @@
 /**
- * Reusable suggestion list for save destinations, composer attachments, and
- * future quick-open hosts. Hosts own the popover/input; this component owns
- * rows, roving keyboard focus, selection, and dismissal. A host `header`
- * (e.g. a validation note) renders inside the roving boundary: any focusable
- * it marks with `data-list-item` joins the arrow-key walk in visual
- * order, so keyboard users can reach its actions.
+ * The folder and file list under `IdentityPlacementField`'s name field. The
+ * host owns the popover and the input; this list is a `Picker` whose Escape
+ * calls `onClose`. A host `header` (e.g. a validation note) renders inside the
+ * picker: any focusable it marks with `data-list-item` joins the arrow-key
+ * walk in visual order.
  */
 
 import { t } from "@lingui/core/macro";
 import { Folder } from "lucide-react";
-import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
-import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
-import { handleListKeys } from "@/components/ui/list-keys";
-import { ListLine } from "@/components/ui/list-row";
+import { forwardRef, type ReactNode, useImperativeHandle, useRef } from "react";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
 import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel, schemeLocation } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
@@ -36,7 +34,7 @@ export const FileSuggestionList = forwardRef<
     /** Browse mode: rows share one folder, so per-row parent labels are noise. */
     hideParents?: boolean;
     emptyMessage: string;
-    /** Rendered above the rows, inside the roving-focus boundary. */
+    /** Rendered above the rows, inside the picker's keyboard walk. */
     header?: ReactNode;
   }
 >(function FileSuggestionList(
@@ -45,96 +43,62 @@ export const FileSuggestionList = forwardRef<
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const focusStops = () =>
-    Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-list-item]") ?? []);
+    Array.from(rootRef.current?.querySelectorAll<HTMLElement>("[data-list-item]") ?? []);
   useImperativeHandle(ref, () => ({
     focusFirst: () => focusStops()[0]?.focus(),
     focusLast: () => focusStops().at(-1)?.focus(),
   }));
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    handleListKeys(event);
-  };
-
-  const rowClass = dropdownRowVariants();
 
   return (
-    // The keydown boundary wraps header + rows so one arrow walk covers both;
-    // the listbox role stays on the rows alone (the header is not an option).
-    // biome-ignore lint/a11y/noStaticElementInteractions: keydown-only composite boundary — the focusables inside carry the interactive roles, and no ARIA role fits a note+listbox composite. slop-lint: allow suppression the reason is stated in this comment
-    <div ref={rootRef} onKeyDown={handleKeyDown}>
+    <Picker ref={rootRef} label={t`File suggestions`} onEscape={onClose}>
       {header}
-      <div role="listbox" aria-label={t`File suggestions`}>
-        <ul className="flex flex-col p-1.5">
+      <PickerResults>
+        <PickerSection>
           {onNavigateUp ? (
             <li>
-              <button
-                data-list-item
-                type="button"
-                role="option"
-                tabIndex={-1}
-                aria-label={t`Enclosing folder`}
-                onClick={onNavigateUp}
-                className={rowClass}
-              >
-                <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="text-muted-foreground">..</span>
-              </button>
+              <ListRow
+                density="menu"
+                icon={Folder}
+                title={<span className="text-muted-foreground">..</span>}
+                controlProps={{ "aria-label": t`Enclosing folder` }}
+                onOpen={onNavigateUp}
+              />
             </li>
           ) : null}
-          {suggestions.length === 0 ? (
-            <li>
-              <ListLine density="menu" iconSlot>
-                {emptyMessage}
-              </ListLine>
-            </li>
-          ) : (
-            suggestions.map((suggestion) => {
-              // Scheme roots are contexts, not folders — they carry their
-              // identity icon (same mapping the tree panel uses).
-              const Icon =
-                suggestion.path === "/"
-                  ? schemeIcon(suggestion.scheme)
-                  : suggestion.kind === "dir"
-                    ? Folder
-                    : fileKindIcon(suggestion.name);
-              const displayName =
-                suggestion.path === "/" ? schemeLabel(suggestion.scheme) : suggestion.name;
-              const parent = suggestion.hint
-                ? suggestion.hint
-                : hideParents
-                  ? ""
-                  : suggestion.path === "/"
-                    ? ""
-                    : schemeLocation(suggestion.scheme, suggestion.parents);
-              return (
-                <li key={suggestion.entryId}>
-                  <button
-                    data-list-item
-                    type="button"
-                    role="option"
-                    tabIndex={-1}
-                    onClick={() => onSelect(suggestion)}
-                    className={rowClass}
-                  >
-                    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <span className="min-w-0 truncate">{displayName}</span>
-                    {parent ? (
-                      <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
-                        {parent}
-                      </span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      </div>
-    </div>
+          {suggestions.map((suggestion) => {
+            const root = suggestion.path === "/";
+            return (
+              <li key={suggestion.entryId}>
+                <ListRow
+                  density="menu"
+                  // Scheme roots are contexts, not folders: they carry their
+                  // identity icon (same mapping the tree panel uses).
+                  icon={
+                    root
+                      ? schemeIcon(suggestion.scheme)
+                      : suggestion.kind === "dir"
+                        ? Folder
+                        : fileKindIcon(suggestion.name)
+                  }
+                  title={root ? schemeLabel(suggestion.scheme) : suggestion.name}
+                  meta={
+                    suggestion.hint ??
+                    (hideParents || root
+                      ? undefined
+                      : schemeLocation(suggestion.scheme, suggestion.parents) || undefined)
+                  }
+                  onOpen={() => onSelect(suggestion)}
+                />
+              </li>
+            );
+          })}
+        </PickerSection>
+        {suggestions.length === 0 ? (
+          <ListLine density="menu" iconSlot>
+            {emptyMessage}
+          </ListLine>
+        ) : null}
+      </PickerResults>
+    </Picker>
   );
 });

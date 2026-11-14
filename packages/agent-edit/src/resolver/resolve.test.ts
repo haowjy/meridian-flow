@@ -443,7 +443,8 @@ it("lowers changed marks and text around hard breaks as operations in one segmen
     const blocks = bodies.map((body) => ({ ref: { body } as unknown as BlockRef, node: { body } }));
     const ctx = {
       codec: {
-        serializeBlockBodies: (nodes: readonly { body: string }[]) => nodes.map((n) => n.body),
+        serializeBlockBodies: (nodes: readonly { body: string }[]) =>
+          nodes.map((n, index) => ({ body: n.body, gap: index === 0 ? "" : "\n\n" })),
       } as unknown as AgentEditCodec,
       projected: blocks as unknown as readonly ProjectedBlock[],
     };

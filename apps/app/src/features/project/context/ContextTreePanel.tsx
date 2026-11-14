@@ -4,14 +4,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, Folder, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { SettledSearchField } from "@/components/ui/search-field";
-import type { TreeFile } from "@/core/project-tree/tree-view";
+import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -26,9 +26,10 @@ import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
+import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
-import { fileSuggestion, matchFileSuggestions } from "./file-suggestions/file-suggestions";
+import { matchFileSuggestions, treeFileSuggestions } from "./file-suggestions/file-suggestions";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
@@ -104,6 +105,11 @@ export function ContextTreePanel({
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
+  // Where the header's New file and New folder go: the folder the writer last opened or closed
+  // into, else the open document's folder, else the top.
+  const [place, setPlace] = useState<{ folderPath: string; activePath: string | null } | null>(
+    null,
+  );
   const revealed = useRef<string | null>(null);
 
   const revealPath = useCallback(
@@ -160,7 +166,7 @@ export function ContextTreePanel({
     }
     if (revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
-    revealPath(parentContextPath(activeLocationPath));
+    revealPath(parentContextEntryPath(activeLocationPath));
   }, [activeLocationPath, tree, revealPath]);
 
   const creatingParent = creating?.parentPath;
@@ -214,6 +220,7 @@ export function ContextTreePanel({
                   createdFile: setPendingOpenPath,
                   createdFolder,
                   setCreatedFolder,
+                  placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
                 }
               : undefined,
             onSelectFile,
@@ -240,6 +247,7 @@ export function ContextTreePanel({
       writable,
       creates,
       activeDocumentId,
+      activeLocationPath,
       changed,
       creating,
       createdFolder,
@@ -256,12 +264,18 @@ export function ContextTreePanel({
     ],
   );
 
+  // Opening another document since moves the place to its folder.
+  const placed =
+    place && place.activePath === activeLocationPath
+      ? place.folderPath
+      : activeLocationPath && parentContextEntryPath(activeLocationPath);
+  const here = placed && tree?.findPath(placed)?.kind === "dir" ? placed : "";
   const actions = creates ? (
     <>
-      <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
+      <IconButton label={t`New file`} onClick={() => requestCreate("file", here)}>
         <FilePlus aria-hidden />
       </IconButton>
-      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", "")}>
+      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", here)}>
         <FolderPlus aria-hidden />
       </IconButton>
       {importScheme ? (
@@ -299,12 +313,17 @@ export function ContextTreePanel({
       }
     >
       {search && tree ? (
-        <FoundFiles
-          files={tree.files()}
+        <FoundEntries
+          tree={tree}
           scheme={scheme}
           search={search}
           activeDocumentId={activeDocumentId}
           onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
+          onOpenFolder={(folderId) => {
+            setSearch(null);
+            openFolder(folderId);
+            focusRow(`folder:${folderId}`);
+          }}
         />
       ) : env && tree ? (
         <TreeEnvProvider value={env}>
@@ -333,23 +352,27 @@ export function ContextTreePanel({
   );
 }
 
-/** A search's matches as one flat list, best first; the folder tells two of one name apart. */
-function FoundFiles({
-  files,
+/**
+ * A search's matches as one flat list, best first; the folder tells two of one name apart. A
+ * folder found opens in place in the tree, where its menu moves or deletes it.
+ */
+function FoundEntries({
+  tree,
   scheme,
   search,
   activeDocumentId,
   onOpen,
+  onOpenFolder,
 }: {
-  files: readonly TreeFile[];
+  tree: TreeView;
   scheme: ProjectContextTreeScheme;
   search: string;
   activeDocumentId: string | null;
   onOpen: (file: TreeFile) => void;
+  onOpenFolder: (folderId: string) => void;
 }) {
-  const byId = new Map(files.map((file) => [file.documentId, file]));
   const found = matchFileSuggestions(
-    files.map((file) => fileSuggestion(scheme, file)),
+    treeFileSuggestions([{ scheme, tree }]).filter((entry) => entry.path !== "/"),
     search,
   );
   if (found.length === 0)
@@ -363,16 +386,26 @@ function FoundFiles({
   return (
     <div className="px-2">
       {found.map((match) => {
-        const file = byId.get(match.entryId);
-        if (!file) return null;
+        const entry = tree.entry(match.entryId);
+        if (!entry) return null;
+        if (entry.kind === "dir")
+          return (
+            <ListRow
+              key={entry.entryId}
+              icon={Folder}
+              title={entry.name}
+              meta={match.parents.at(-1)}
+              onOpen={() => onOpenFolder(entry.entryId)}
+            />
+          );
         return (
           <ListRow
-            key={file.documentId}
-            icon={fileKindIcon(file)}
-            title={file.name}
+            key={entry.documentId}
+            icon={fileKindIcon(entry)}
+            title={entry.name}
             meta={match.parents.at(-1)}
-            current={file.documentId === activeDocumentId}
-            onOpen={() => onOpen(file)}
+            current={entry.documentId === activeDocumentId}
+            onOpen={() => onOpen(entry)}
           />
         );
       })}
@@ -380,7 +413,11 @@ function FoundFiles({
   );
 }
 
-function parentContextPath(path: string): string {
-  const separator = path.lastIndexOf("/");
-  return separator <= 0 ? "" : path.slice(0, separator);
+/** Brings a tree row to the top of the list, so what it holds shows below it, and focuses it once drawn. */
+function focusRow(key: string) {
+  requestAnimationFrame(() => {
+    const row = document.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`);
+    row?.scrollIntoView({ block: "start" });
+    row?.focus({ preventScroll: true });
+  });
 }

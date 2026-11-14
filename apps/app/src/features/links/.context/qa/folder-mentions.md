@@ -62,7 +62,7 @@ then a folder with one document and an empty subfolder:
    ```bash
    project_id=$(./mf project default --json | jq -r .projectId)
    work=$(./mf api POST "/api/projects/$project_id/works" \
-     --data '{"name":"Foreign Scratch"}' --json)
+     --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"name\":\"Foreign Scratch\"}" --json)
    work_id=$(printf '%s' "$work" | jq -r .id)
    work_handle=$(printf '%s' "$work" | jq -r .handle)
    ./mf doc put "scratch://Remote Folder/Seed.md" --work "$work_handle" --text "Seed"
@@ -72,7 +72,7 @@ then a folder with one document and an empty subfolder:
 
    Open Foreign Folder Link in the Editor. Remote Folder resolves with a filled
    folder chip, and the console has no `catalog.folderAt is not a function`
-   error. Delete the Work with `./mf api DELETE "/api/works/$work_id"`. Without
+   error. Delete the Work with `./mf api DELETE "/api/works/$work_id" --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\"}"`. Without
    reloading, the chip turns dashed: the server's `gone` answer reached a link
    whose target catalog was never loaded by this Editor.
 

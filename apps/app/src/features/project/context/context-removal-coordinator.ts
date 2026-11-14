@@ -391,16 +391,17 @@ export class ContextRemovalCoordinator {
    * if it shows one of them, goes at once to the document it showed before, else to Recently
    * opened. Call before the removal. `landed`
    * hears where main went, or null when it did not move; nothing when main did not show them.
+   * Returns the document main is leaving, if it shows one of them.
    */
   beginOwnRemoval(
     projectId: string,
     documentIds: readonly string[],
     landed?: (landing: MainLanding | null) => void,
-  ): void {
+  ): string | null {
     this.notices?.markOwnRemoval(projectId, documentIds);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port;
-    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return;
+    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return null;
     const key = `${projectId}/${shown}`;
     this.goingBack.add(key);
     void route
@@ -415,6 +416,7 @@ export class ContextRemovalCoordinator {
         for (const listener of [...this.listeners]) listener();
       })
       .then((landing) => landed?.(landing));
+    return shown;
   }
 
   /**

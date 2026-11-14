@@ -304,7 +304,7 @@ export interface ToolRegistration {
   timeoutMs?: number;
   sequential?: boolean;
   /**
-   * The call's effect is a command in `document_commands` (`modelEdits().run`): the executor
+   * The call's effect is a command in `commands` (`modelEdits().run`): the executor
    * gives the handler a `modelEdit` context, and a call that does not finish asks the command
    * for its outcome instead of assuming it did not run.
    */

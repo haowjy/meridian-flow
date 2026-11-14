@@ -1,7 +1,8 @@
 /**
  * One notice per draft owner (`work:<id>`, `lineage:<root>`): the owner's latest Discard with its
- * Undo, or the facts its latest Apply brought. The account command owner holds it, so a notice
- * outlives the surface that made it; a reload starts with none.
+ * Undo, or the facts its latest Apply brought; and per project the writer's latest delete
+ * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step. The account command owner holds
+ * them, so a notice outlives the surface that made it; a reload starts with none.
  */
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 
@@ -9,11 +10,18 @@ export type NoticeSurface =
   | { kind: "changes" }
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
-  | { kind: "band"; documentId: string };
+  | { kind: "band"; documentId: string }
+  /** Where a delete made there shows: the sidebar's trees, or main's Recently opened. */
+  | { kind: "tree" | "landing" };
+
+/** The key a project's delete notice is held under, beside the draft owners'. */
+export const deleteNoticeKey = (projectId: string) => `delete:${projectId}`;
 
 export type NoticeSubject =
-  /** `folder`: a folder's changes and everything listed under it. */
-  { kind: "draft" | "change" | "folder"; name: string } | { kind: "drafts"; count: number };
+  /** `folder`: a folder's changes and everything listed under it. `deleted`: the writer's delete. */
+  | { kind: "draft" | "change" | "folder" | "deleted"; name: string }
+  | { kind: "drafts"; count: number }
+  | { kind: "deletes"; count: number };
 
 export type DiscardUndoAnswer = {
   answer: "ok" | "failed" | "gone";
@@ -40,8 +48,8 @@ export type DiscardUndo = {
 export type DiscardPart = {
   documentId: string;
   name: string;
-  scope: "draft" | "change" | "folder";
-  /** The drafts it stands for: a whole branch's Discard is one share for all of them. */
+  scope: "draft" | "change" | "folder" | "deleted";
+  /** What it stands for: a whole branch's Discard is one share for all its drafts, a delete for all it took. */
   count?: number;
   handle: DiscardUndo;
   /** The draft's review, for the view to follow an Undo back to. */
@@ -112,10 +120,18 @@ export class DraftNotices {
       if (
         notice.kind === "discarded" &&
         notice.projectId === projectId &&
-        notice.surface.kind === "band" &&
-        (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
+        (notice.surface.kind === "band"
+          ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
+          : notice.surface.kind === "landing" && documentId === null)
       )
         return notice;
+    return null;
+  }
+
+  /** The Discard notice whose Undo brings this document back, wherever it was made. */
+  discarding(documentId: string): DraftNotice | null {
+    for (const notice of this.notices.values())
+      if (notice.kind === "discarded" && notice.documentIds.includes(documentId)) return notice;
     return null;
   }
 
@@ -262,7 +278,9 @@ export class DraftNotices {
       subject:
         count === 1 && only
           ? { kind: only.scope, name: only.name }
-          : { kind: "drafts" as const, count },
+          : only?.scope === "deleted"
+            ? { kind: "deletes" as const, count }
+            : { kind: "drafts" as const, count },
       documentIds: parts.map((part) => part.documentId),
       review: (count === 1 && only?.review) || null,
     };

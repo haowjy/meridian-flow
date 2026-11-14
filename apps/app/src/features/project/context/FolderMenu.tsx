@@ -73,7 +73,7 @@ export function FolderMenuBody({
   ...handlers
 }: { host: FolderMenuHost; folderId: string } & MenuContentHandlers) {
   const { projectId } = host;
-  const trees = useProjectTrees(projectId, { account: true, version: useTreeVersion() });
+  const trees = useProjectTrees(projectId, { version: useTreeVersion() });
   const own = useMemo(() => {
     for (const source of trees.sources)
       if (trees.tree(source.id)?.entry(folderId))

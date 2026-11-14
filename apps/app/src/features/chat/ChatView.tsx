@@ -708,7 +708,6 @@ export function ChatView({
                       >
                         <TurnList
                           threadId={threadId}
-                          uploadsChat={topChat.chatRef ?? undefined}
                           view={view}
                           historySettled={historySettled}
                           tailFollowRevision={tailFollowRevision}

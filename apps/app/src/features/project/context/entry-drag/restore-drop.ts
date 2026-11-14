@@ -5,7 +5,7 @@
  * synchronous: hovering plans on every `dragover`.
  */
 import { t } from "@lingui/core/macro";
-import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
+import type { TrashEntry } from "@meridian/contracts/protocol";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
@@ -17,7 +17,7 @@ export type RestorePlan =
   | { kind: "refuse"; label: string }
   | {
       kind: "ready";
-      entries: readonly DocumentTrashEntry[];
+      entries: readonly TrashEntry[];
       destination: TreeDestination;
       destinationName: string;
       /** The sibling an edge drop lands beside, by name, for the hint. */
@@ -34,7 +34,7 @@ export function restoreLabel({ destinationName, beside }: ReadyRestore): string 
 
 export function planRestore(
   view: PlacementView,
-  entries: readonly DocumentTrashEntry[],
+  entries: readonly TrashEntry[],
   target: TreeDropTarget,
 ): RestorePlan {
   const area = view.areas.find((candidate) => candidate.tree.root.entryId === target.treeRootId);

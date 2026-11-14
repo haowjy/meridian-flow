@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, DocumentCommandId, DocumentId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
@@ -74,7 +74,7 @@ export type DraftClose = {
     db: DrizzleDb,
     selection: DraftSelection,
     cause: DraftCloseCause,
-    by?: DocumentCommandId,
+    by?: CommandId,
   ): Promise<readonly (ClosedDraft & { branchId: string })[]>;
   /**
    * Runs `run`, holding back the retirements its commits schedule until it settles. A caller

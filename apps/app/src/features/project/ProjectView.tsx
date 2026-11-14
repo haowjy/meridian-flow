@@ -10,9 +10,8 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
+import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
-import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useProjectWake } from "@/client/query/useProjectWake";
@@ -399,27 +398,9 @@ function HydratedReviewControllers({
     threadId: chatThreadId,
     surface: "strip",
   });
-  const accountId = useAccountId();
-  const draftOnly = useOptionalDraftOnlyPresentations();
   // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
   const { notices } = useDraftCommandOwner();
   useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
-  // A Work pick returns the sidebar and every document showing a draft to Live. A draft-only page
-  // has no Live version: it keeps its draft.
-  const scopeWorkId = props.editorWorkId;
-  const priorScope = useRef(scopeWorkId);
-  useEffect(() => {
-    if (priorScope.current === scopeWorkId) return;
-    if (priorScope.current !== null) {
-      writeTreeVersionChoice(accountId, props.projectId, "live");
-      returnDraftsToLive(
-        accountId,
-        props.projectId,
-        (documentId) => draftOnly?.isDraftOnly(props.projectId, documentId) ?? false,
-      );
-    }
-    priorScope.current = scopeWorkId;
-  }, [accountId, draftOnly, props.projectId, scopeWorkId]);
   const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
   useReviewAddressSync({
     projectId: props.projectId,

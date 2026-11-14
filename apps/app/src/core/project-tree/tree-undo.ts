@@ -4,18 +4,18 @@
  * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
  * stored. Whether a step can still be taken is read from the list at the press (`undoChange`: by
  * history), or asked of the server for an Apply, and a step that no longer fits is skipped for
- * the one before it. There is no Redo: an Undo's own records go on no stack.
+ * the one before it. A notice's Undo (`undoStep`) takes back the same step a press would. There is
+ * no Redo: an Undo's own records go on no stack.
  */
 import {
+  deleteStands,
   isSourceRoot,
   LIVE,
-  listRecords,
   sourceIdOf,
   type TreeProjection,
   TreeWriter,
   undoChange,
   type View,
-  viewRecords,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
@@ -31,6 +31,8 @@ export type TreeStep = {
   sources: readonly string[];
   /** The nodes it acted on, for the notice. */
   nodes: readonly string[];
+  /** Hears the step leave the stack, taken back or skipped: a notice holding its Undo ends. */
+  ended?: () => void;
 };
 
 /**
@@ -109,6 +111,7 @@ export async function undoLatest(
     const step = stack[at] as UndoStep;
     if (!holds(step, source, view)) continue;
     stack.splice(at, 1);
+    if (step.kind === "tree") step.ended?.();
     if (step.kind === "apply") {
       const { answer, textLeft = 0 } = await step.unapply();
       if (answer === "unapplied")
@@ -124,36 +127,83 @@ export async function undoLatest(
       skipped.push({ kind: "apply", name: step.name });
       continue;
     }
-    const { doc } = session.getSnapshot();
-    const writer = new TreeWriter(doc, "local", (asked) =>
-      asked.draft === null
-        ? session.replay(LIVE)
-        : asked.draft === view.draft
-          ? session.replay(asked, pendingText)
-          : null,
-    );
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],
     );
-    let undone = 0;
-    // One update per opposite record: each is judged against the replay the one before it left.
-    for (const record of [...step.records].reverse()) {
-      const answer = undoChange(writer, inForceView(writer, view, record), actor, record);
-      if (typeof answer !== "string") undone += 1;
-    }
-    if (undone > 0) return { kind: "undone", skipped };
+    if (takeBack(session, step, view, actor, pendingText)) return { kind: "undone", skipped };
     skipped.push({ kind: "tree", name: names[0] ?? "" });
   }
   return { kind: "nothing", skipped };
 }
 
-/** Live when the record's change was applied (its family's last record in force is live). */
-function inForceView(writer: TreeWriter, view: View, id: string): View {
-  if (view.draft === null) return view;
-  const named = listRecords(writer.doc).find((record) => record.id === id);
-  const root = named?.carries ?? id;
-  const last = viewRecords(writer.doc, view)
-    .filter((record) => (record.carries ?? record.id) === root)
-    .pop();
-  return last && last.draft === null ? LIVE : view;
+/**
+ * A notice's Undo: takes back `step` if it is still on the stack, as a press would. False when a
+ * press took it first or nothing of it can be taken back any more.
+ */
+export function undoStep(
+  session: TreeListSession,
+  step: TreeStep,
+  actor: string,
+  pendingText?: ReadonlySet<string>,
+): boolean {
+  const stack = stackOf(session);
+  const at = stack.indexOf(step);
+  if (at < 0) return false;
+  stack.splice(at, 1);
+  return takeBack(
+    session,
+    step,
+    step.draft === null ? LIVE : { draft: step.draft },
+    actor,
+    pendingText,
+  );
+}
+
+/**
+ * Ends the delete `step` when none of its records can be undone any more (their Trash entries
+ * are gone: restored by anyone, or purged): a notice offers an Undo that no longer applies. A
+ * folder's other children still in the entry keep it standing. Returns the stop for the watch.
+ */
+export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
+  const view: View = step.draft === null ? LIVE : { draft: step.draft };
+  const stop = session.subscribe(() => {
+    const writer = writerOf(session, view);
+    if (step.records.some((record) => deleteStands(writer, view, record))) return;
+    stop();
+    const stack = stackOf(session);
+    const at = stack.indexOf(step);
+    if (at < 0) return;
+    stack.splice(at, 1);
+    step.ended?.();
+  });
+  return stop;
+}
+
+function writerOf(session: TreeListSession, view: View, pendingText?: ReadonlySet<string>) {
+  const { doc } = session.getSnapshot();
+  return new TreeWriter(doc, "local", (asked) =>
+    asked.draft === null
+      ? session.replay(LIVE)
+      : asked.draft === view.draft
+        ? session.replay(asked, pendingText)
+        : null,
+  );
+}
+
+/** Writes the step's opposite records; true when any was written. */
+function takeBack(
+  session: TreeListSession,
+  step: TreeStep,
+  view: View,
+  actor: string,
+  pendingText?: ReadonlySet<string>,
+): boolean {
+  const writer = writerOf(session, view, pendingText);
+  let undone = 0;
+  // One update per opposite record: each is judged against the replay the one before it left.
+  for (const record of [...step.records].reverse()) {
+    const answer = undoChange(writer, view, actor, record);
+    if (typeof answer !== "string") undone += 1;
+  }
+  return undone > 0;
 }

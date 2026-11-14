@@ -1,6 +1,5 @@
 /** Name, description, and invocable flags from a retained or pasted SKILL.md. */
-import { booleanAt, stringAt } from "./helpers.js";
-import { parseMarkdownDefinition } from "./mars-source.js";
+import { bodyOf, readSkill } from "./mars.js";
 
 export interface SkillListing {
   slug: string;
@@ -11,16 +10,29 @@ export interface SkillListing {
   modelInvocable: boolean;
 }
 
+/**
+ * Never throws: it runs on every turn of a bound chat, on a skill that passed when it was
+ * compiled and may not pass a later reader. A file Mars cannot read lists as its slug and text.
+ */
 export function skillListingFromMarkdown(raw: string, slug: string): SkillListing {
-  const parsed = parseMarkdownDefinition(raw);
+  const reading = readSkill(slug, raw);
+  const { fields } = reading;
+  if (!fields) {
+    return {
+      slug,
+      name: slug,
+      description: "",
+      body: raw,
+      userInvocable: true,
+      modelInvocable: true,
+    };
+  }
   return {
     slug,
-    name: stringAt(parsed.meta.name)?.trim() || slug,
-    description: stringAt(parsed.meta.description)?.trim() ?? "",
-    body: parsed.body,
-    userInvocable:
-      booleanAt(parsed.meta.userInvocable) ?? booleanAt(parsed.meta["user-invocable"]) ?? true,
-    modelInvocable:
-      booleanAt(parsed.meta.modelInvocable) ?? booleanAt(parsed.meta["model-invocable"]) ?? true,
+    name: fields.name ?? slug,
+    description: fields.description ?? "",
+    body: bodyOf(reading),
+    userInvocable: fields["user-invocable"],
+    modelInvocable: fields["model-invocable"],
   };
 }

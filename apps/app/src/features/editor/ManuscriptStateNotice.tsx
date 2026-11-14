@@ -34,6 +34,7 @@ import { tabLocation } from "@/features/project/context/identity-location";
 import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
 import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
@@ -65,8 +66,11 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  // The page's notice says what the toggle's Work does to it; this says what other Works do.
+  // The page's notice says what the toggle's Work does to it on Live, and on Draft the page is that
+  // Work's draft: this says what other Works do.
   const cue = useLiveDraftCue(projectId, tab);
+  const shell = useShellTreeVersion();
+  const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
   if (deleted) {
     const sentence = deletedFromManuscriptSentence(
       title,
@@ -83,7 +87,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
       dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
-    hint.tree && hint.owner !== cue?.ownerKey ? [{ work: hint.label, line: hint.tree }] : [],
+    hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
   if (pending.length > 0) {
     const location = tabLocation(tab);

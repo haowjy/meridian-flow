@@ -22,11 +22,12 @@ import {
   AlignRight,
   Bold,
   Code,
-  Heading1,
+  Heading,
   ImageUp,
   Italic,
   Link as LinkIcon,
   List,
+  type LucideIcon,
   Redo2,
   Undo2,
 } from "lucide-react";
@@ -37,20 +38,22 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { openLinkForm } from "@/core/editor/links";
 import { EditorMenu, EditorMenuRadioGroup, EditorMenuRadioItem } from "@/features/editor/chrome";
 import { cn } from "@/lib/utils";
+import { BlockTypeMenuItem, HEADING_ICONS } from "./BlockTypeMenuItem";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import {
   canRedoDocument,
   canUndoDocument,
   currentAlignmentValue,
+  currentHeadingLevel,
   documentToolbarControls,
   redoDocument,
   setToolbarAlignment,
   type ToolbarAlignmentValue,
   type ToolbarControlId,
   type ToolbarControlState,
+  textLevelStates,
   toggleBulletListBlock,
   toggleCodeBlockBlock,
-  toggleHeadingBlock,
   toggleTextMark,
   undoDocument,
 } from "./toolbar-commands";
@@ -87,13 +90,14 @@ export const DocumentToolbar = memo(function DocumentToolbar({
       }),
       alignment:
         target && !target.isDestroyed ? currentAlignmentValue(target) : ("default" as const),
+      headingLevel: target && !target.isDestroyed ? currentHeadingLevel(target) : null,
     }),
     [editable, schemaType, uploadAvailable],
   );
   // Compare the matrix, not transaction revisions: review metadata and focus
-  // transactions must not rebuild the row. Alignment's value matters even
-  // when its active flag stays true (center to right).
-  const { controls, alignment } =
+  // transactions must not rebuild the row. Alignment's value and the heading
+  // level matter even when their active flag stays true (center to right).
+  const { controls, alignment, headingLevel } =
     useEditorState({
       editor,
       selector: selectToolbarState,
@@ -124,9 +128,24 @@ export const DocumentToolbar = memo(function DocumentToolbar({
           keeps it legible as its own group without adding a second row. */}
         <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border-subtle" aria-hidden />
         <div className="flex shrink-0 flex-wrap items-center gap-1">
-          <ToolbarControl id="heading" state={controls.heading} onPress={run(toggleHeadingBlock)}>
-            <Heading1 aria-hidden />
-          </ToolbarControl>
+          <ToolbarMenuControl
+            editor={editor}
+            id="heading"
+            state={controls.heading}
+            icon={headingLevel === null ? Heading : HEADING_ICONS[headingLevel]}
+          >
+            {(target) =>
+              textLevelStates(target).map(({ id, state }) => (
+                <BlockTypeMenuItem
+                  key={id}
+                  editor={target}
+                  id={id}
+                  active={state.active}
+                  blockedReason={blockedReasonMessage("block-type", state.blockedBy)}
+                />
+              ))
+            }
+          </ToolbarMenuControl>
           <ToolbarControl
             id="bold"
             state={controls.bold}
@@ -161,7 +180,32 @@ export const DocumentToolbar = memo(function DocumentToolbar({
           <ToolbarControl id="link" state={controls.link} onPress={() => openLinkForm(editor)}>
             <LinkIcon aria-hidden />
           </ToolbarControl>
-          <AlignmentControl editor={editor} state={controls.alignment} value={alignment} />
+          <ToolbarMenuControl
+            editor={editor}
+            id="alignment"
+            state={controls.alignment}
+            icon={ALIGNMENT_ICONS[alignment]}
+          >
+            {(target) => (
+              <EditorMenuRadioGroup
+                value={alignment}
+                onValueChange={(next) => setToolbarAlignment(target, next as ToolbarAlignmentValue)}
+              >
+                <EditorMenuRadioItem value="default">
+                  <AlignLeft aria-hidden />
+                  {t`Default alignment`}
+                </EditorMenuRadioItem>
+                <EditorMenuRadioItem value="center">
+                  <AlignCenter aria-hidden />
+                  {t`Center`}
+                </EditorMenuRadioItem>
+                <EditorMenuRadioItem value="right">
+                  <AlignRight aria-hidden />
+                  {t`Right`}
+                </EditorMenuRadioItem>
+              </EditorMenuRadioGroup>
+            )}
+          </ToolbarMenuControl>
           <ToolbarControl
             id="uploadFigure"
             state={controls.uploadFigure}
@@ -204,34 +248,32 @@ const ALIGNMENT_ICONS = {
   right: AlignRight,
 } as const;
 
-function AlignmentControl({
+/** A control that opens a menu of values, each a verb on the selection. */
+function ToolbarMenuControl({
   editor,
+  id,
   state,
-  value,
+  icon,
+  children,
 }: {
   editor: Editor | null;
+  id: ToolbarControlId;
   state: ToolbarControlState;
-  value: ToolbarAlignmentValue;
+  /** What the button wears: the value the selection already has. */
+  icon: LucideIcon;
+  children: (editor: Editor) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const label = toolbarControlLabel("alignment");
+  const label = toolbarControlLabel(id);
   // Without an editor the matrix already says "still opening"; naming it here
   // is what lets the rest of this component assume one.
-  const blockedReason = blockedReasonMessage(
-    "alignment",
-    editor ? state.blockedBy : "editor-loading",
-  );
+  const blockedReason = blockedReasonMessage(id, editor ? state.blockedBy : "editor-loading");
 
   // A greyed control opens nothing, so no menu is composed around it at all;
   // the button keeps its geometry and explains itself instead.
   if (!editor || blockedReason) {
     return (
-      <AlignmentTrigger
-        label={label}
-        blockedReason={blockedReason}
-        active={state.active}
-        alignment={value}
-      />
+      <MenuTrigger label={label} blockedReason={blockedReason} active={state.active} icon={icon} />
     );
   }
 
@@ -241,56 +283,37 @@ function AlignmentControl({
     // to the prose rather than to this button.
     <EditorMenu
       editor={editor}
-      id="toolbar-alignment"
+      id={`toolbar-${id}`}
       open={open}
       onOpenChange={setOpen}
       align="start"
-      trigger={<AlignmentTrigger label={label} active={state.active} alignment={value} />}
+      trigger={<MenuTrigger label={label} active={state.active} icon={icon} />}
     >
-      <EditorMenuRadioGroup
-        value={value}
-        onValueChange={(next) => setToolbarAlignment(editor, next as ToolbarAlignmentValue)}
-      >
-        <EditorMenuRadioItem value="default">
-          <AlignLeft aria-hidden />
-          {t`Default alignment`}
-        </EditorMenuRadioItem>
-        <EditorMenuRadioItem value="center">
-          <AlignCenter aria-hidden />
-          {t`Center`}
-        </EditorMenuRadioItem>
-        <EditorMenuRadioItem value="right">
-          <AlignRight aria-hidden />
-          {t`Right`}
-        </EditorMenuRadioItem>
-      </EditorMenuRadioGroup>
+      {children(editor)}
     </EditorMenu>
   );
 }
 
 /**
- * The control itself, live or greyed, and the one thing on this row that is a
- * menu trigger.
+ * A menu control's button, live or greyed.
  *
  * The rest props are the menu's. `EditorMenu` hands its trigger to Radix as a
  * slot, so the press, the ARIA state, and the anchor's ref arrive here and go
  * on through the tooltip to the button — a trigger that swallowed them would
  * be a control that cannot be opened.
  */
-function AlignmentTrigger({
+function MenuTrigger({
   label,
   blockedReason,
   active,
-  alignment,
+  icon: Icon,
   ...rest
 }: ComponentProps<"button"> & {
   label: string;
   blockedReason?: string | null;
   active: boolean;
-  /** Which icon the button wears: the alignment the selection already has. */
-  alignment: ToolbarAlignmentValue;
+  icon: LucideIcon;
 }) {
-  const Icon = ALIGNMENT_ICONS[alignment];
   const blocked = Boolean(blockedReason);
 
   return (

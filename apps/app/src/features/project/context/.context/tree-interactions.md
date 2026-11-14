@@ -115,8 +115,19 @@ entry inside another entry's folder goes with that folder, never on its own. A l
 take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
 comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
 delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
-Writer deletion has no confirmation step; the sidebar's Ctrl+Z takes it back
-(`core/project-tree/tree-undo.ts`).
+Writer deletion has no confirmation step. Its notice ("Chapter 2 deleted.", Undo) is the Discard
+notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the sidebar for a
+delete made there, on Recently opened for one made there, and on the page main goes back to when
+the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
+(`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
+applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
+a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
+(`endWhenRestored`). A delete across the project and account lists is one notice, ended with the
+last of its steps.
+
+Inline create puts its naming row at the end of the folder, where the create appends, so nothing
+moves on Enter. The source header's New file and New folder name the folder the writer last
+opened or closed into, else the open document's folder, else the top.
 
 ## Downlinks
 
@@ -224,7 +235,7 @@ expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. Rows a delete or restore takes out of their list leave every list's
 selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
-folders inside a deleted folder: Trash rows share the `file:<documentId>` key, so a row deleted while
+folders inside a deleted folder: Trash rows share the tree rows' `file:` and `folder:` keys, so a row deleted while
 selected would otherwise arrive selected in Trash, and a restored one back in the tree. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
@@ -438,9 +449,9 @@ appeared to accept but landed elsewhere would mislead.
 ## Trash rows dragged onto the tree
 
 A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
-the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
+the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
-`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per document and a
+`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
 `move` to the destination (`TreeActions.restore`, `TreeActions.move`).
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
@@ -452,5 +463,5 @@ Trash rows are `ListRow`s with the trees' menu and select like tree rows, throug
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` appends the `restore` records as one update per
 list; a refused one shows on its Trash row ("Couldn't restore … " and the reason), and one notice
-counts the ones that came back ("Restored 3 files.").
+counts the ones that came back ("Restored 3 items.").
 There is no Delete forever: permanent removal is only the scheduled purge.

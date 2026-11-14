@@ -47,7 +47,7 @@ describe("ProseMirror semantic lowering", () => {
       build(transform) {
         const range = transform.doc.resolve(1).blockRange(transform.doc.resolve(9));
         if (!range) throw new Error("missing wrap range");
-        transform.wrap(range, [{ type: schema.nodes.blockquote }]);
+        transform.wrap(range, [{ type: schema.nodes.jsx_container, attrs: { name: "Panel" } }]);
       },
     });
     expect(lowered.transform.steps[0]?.constructor.name).toBe("ReplaceAroundStep");

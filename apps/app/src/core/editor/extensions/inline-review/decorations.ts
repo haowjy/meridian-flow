@@ -30,6 +30,8 @@ const EMPHASIS_CLASS = "meridian-review-emphasized";
 const ARRIVED_CLASS = "meridian-review-arrived";
 /** Modifier on the insert class when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
+/** A block whose nesting changed: its marker, indent and bar are painted, its text is not. */
+const NESTED_CLASS = "meridian-review-nested";
 /** Written on every mark and removal so a click, and the bar, find their change. */
 export const CHANGE_ATTR = "data-review-change";
 
@@ -72,11 +74,33 @@ export function paintDecorations(
 
   for (const group of groups) {
     const focused = group.id === activeChangeId;
-    for (const raw of group.hunks) {
+    // A table edited in its cells paints each cell's change; they share the table change's key.
+    const parts = group.hunks.flatMap((outer) =>
+      (outer.inner ?? [outer]).map((part, n) => [part, n] as const),
+    );
+    for (const [raw, n] of parts) {
       const hunk = singleCharacterReplacement(doc, raw);
       const key = keys.get(hunk.index) ?? "";
       if (focused) focusedEnd = Math.max(focusedEnd ?? 0, hunk.inserted?.to ?? hunk.anchor);
-      const ranges = hunk.formatContext?.inserted ?? (hunk.inserted ? [hunk.inserted] : []);
+      const attributes = hunk.attributes;
+      // A nesting change with the same text paints the marker, indent and bar alone.
+      const nestedOnly = attributes?.only && attributes.nested.length > 0;
+      const ranges = nestedOnly
+        ? []
+        : (hunk.formatContext?.inserted ?? (hunk.inserted ? [hunk.inserted] : []));
+      for (const at of attributes?.nested ?? []) {
+        const block = doc.nodeAt(at);
+        if (!block) continue;
+        if (focused) focusedEnd = Math.max(focusedEnd ?? 0, at + block.nodeSize);
+        retainOrAdd(`${key}:nested`, at, at + block.nodeSize, () =>
+          Decoration.node(
+            at,
+            at + block.nodeSize,
+            { class: NESTED_CLASS, [RENDER_ATTR]: key },
+            { renderKey: key, key: `${key}:nested` },
+          ),
+        );
+      }
       for (const range of ranges) {
         if (focused) focusedEnd = Math.max(focusedEnd ?? 0, range.to);
         for (const mark of addedMarks(doc, range.from, range.to)) {
@@ -98,9 +122,10 @@ export function paintDecorations(
           });
         }
       }
-      // Formatting has a before and after too; only whitespace needs no struck copy.
+      // Formatting has a before and after too; whitespace and an attribute-only change (the text is the
+      // same on both sides) need no struck copy.
       const removed = hunk.formatContext?.removed ?? hunk.removed;
-      if (hunk.kind !== "whitespace" && removed.length > 0) {
+      if (hunk.kind !== "whitespace" && !attributes?.only && removed.length > 0) {
         const block = !doc.resolve(hunk.anchor).parent.inlineContent;
         const paragraphs = removedParagraphs(removed);
         removals.push({
@@ -112,7 +137,8 @@ export function paintDecorations(
           // A token carries the space before it, so a removed word brings its own, drawn unstruck.
           spaceBefore: !block && removed[0]?.type === "text" && /^\s/u.test(removed[0].text ?? ""),
           changeId: group.id,
-          identity: key,
+          // The paint view finds the change by the part before `~`.
+          identity: n ? `${key}~${n}` : key,
         });
       }
     }
@@ -215,6 +241,7 @@ function addedMarks(doc: PMNode, from: number, to: number): AddedMark[] {
 /** Class name constants exported for tests + optional consumer selectors. */
 export const inlineReviewClassNames = {
   added: ADDED_CLASS,
+  nested: NESTED_CLASS,
   emphasized: EMPHASIS_CLASS,
   arrived: ARRIVED_CLASS,
   block: BLOCK_CLASS,

@@ -2,8 +2,8 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import type { AccountSkillInstallStore } from "../ports/account-skill-install-store.js";
 import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
-import type { SkillFiles } from "./skill-files.js";
 import { skillListingFromMarkdown } from "./skill-listing.js";
+import type { SkillFiles } from "./types.js";
 
 export class PackagedSkillNotFoundError extends Error {
   readonly name = "PackagedSkillNotFoundError";
@@ -49,6 +49,6 @@ function parsePackagedSkillFile(
   slug: string,
 ): { name: string; description: string; body: string } | undefined {
   const entry = files?.[path];
-  if (typeof entry !== "string") return undefined;
+  if (entry === undefined) return undefined;
   return skillListingFromMarkdown(entry, slug);
 }

@@ -19,11 +19,12 @@ shows. Change the code and this page together.
 stateDiagram-v2
     [*] --> Live
     Live --> Draft: toggle, Show draft, the Work's draft picked in the chip, or one of its drafts opened
+    Live --> Draft: Work picked while a page is on its draft
     Draft --> Live: toggle, or Live picked in the chip
-    Draft --> Live: Work picked (choice reset)
+    Draft --> Live: Work picked, no page on its draft
     Draft --> ShownLive: nothing pending (choice kept)
     ShownLive --> Draft: something pending again
-    ShownLive --> Live: Work picked
+    ShownLive --> Live: Work picked, no page on its draft
 ```
 
 ## Rules
@@ -50,7 +51,11 @@ stateDiagram-v2
   on its draft and says live has no version of it; its chip reads Draft.
 - **The Work chip** under None names the chat's Work when its drafts drive the toggle, with the
   count Changes shows; the pick itself stays None.
-- **A Work pick** returns the toggle to Live with every page (`returnDraftsToLive`).
+- **A Work pick** keeps every page that is on one of the picked Work's drafts on it, and then puts
+  the toggle on Draft; every other page showing a draft returns to Live with the toggle
+  (`pickWorkViews`, written with the scope in `useWorkScope`). A writer who opened a Work's
+  draft under another scope and then picks that Work stays on the draft. A page live doesn't
+  have keeps its draft and does not move the toggle.
 - **An archived or deleted Work stays picked** (`use-work-scope.ts`): only the writer's pick
   changes the scope, here or on another device. The chip says Archived or Deleted with Unarchive
   or Restore in its menu; Changes and the Draft view show its draft read-only (`TreeVersion.ended`
@@ -58,7 +63,9 @@ stateDiagram-v2
   change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
   server wakes the Works list with the Work's `draft-owner-hint`.
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
-  showing (`core/project-tree/tree-undo.ts`). The stack is record ids per list copy, in memory;
+  showing (`core/project-tree/tree-undo.ts`). It hears the press anywhere in the sidebar, which
+  takes focus itself when a click lands on no control. A delete's notice Undo is the same step
+  (`undoStep`): whichever runs first, the other finds nothing, and a press ends the notice. The stack is record ids per list copy, in memory;
   a reload empties it. A step `undoChange` refuses is dropped with a notice and the press goes
   on to the one before it. A change since applied is taken back live. An Apply is one step in
   either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is

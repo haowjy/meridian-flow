@@ -1,11 +1,17 @@
 import type { DraftOwnerKey } from "@meridian/contracts/branches";
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
-import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
+import { pickWorkViews } from "@/client/project-shell/document-views";
+import {
+  NO_SCOPE,
+  useProjectScope,
+  writeProjectScope,
+  writeTreeVersionChoice,
+} from "@/client/project-shell/store";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { useAccountId } from "./context/account-feature-context";
+import { useAccountId, useOptionalDraftOnlyPresentations } from "./context/account-feature-context";
 
 /** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
 export type WorkScope =
@@ -40,9 +46,10 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
 }
 
 /**
- * Pick a Work, or No Work by its row id. Only the scope changes: main, the address and the open
- * documents stay put. The project view then drops every pinned draft, so each document re-resolves
- * under the new scope.
+ * Pick a Work, or No Work by its row id. Main, the address and the open documents stay put; a page
+ * on the picked Work's draft stays on it with the toggle on Draft, and every other page showing a
+ * draft returns to Live with the toggle (`pickWorkViews`). Written with the scope, so the first
+ * render under the new scope already shows them.
  */
 export function useWorkScope(projectId: string): {
   workId: string | null;
@@ -52,11 +59,20 @@ export function useWorkScope(projectId: string): {
   const works = useWorks(projectId);
   const noWorkId = works.noWork?.id ?? null;
   const { workId } = useWorkScopeState(projectId);
+  const draftOnly = useOptionalDraftOnlyPresentations();
   const setWorkId = useCallback(
     (id: string) => {
+      if (id === workId) return;
+      const onWorkDraft = pickWorkViews(
+        accountId,
+        projectId,
+        id === noWorkId ? null : workOwnerKey({ id }),
+        (documentId) => draftOnly?.isDraftOnly(projectId, documentId) ?? false,
+      );
+      writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, noWorkId],
+    [accountId, projectId, noWorkId, workId, draftOnly],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }

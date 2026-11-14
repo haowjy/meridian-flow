@@ -169,6 +169,7 @@ export function itemFor(
 export function typeLink(href: string, aheadId: string) {
   return (doc: Y.Doc) => {
     const paragraph = new Y.XmlElement("paragraph");
+    paragraph.setAttribute("id", "p");
     const text = new Y.XmlText();
     text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
     paragraph.insert(0, [text]);

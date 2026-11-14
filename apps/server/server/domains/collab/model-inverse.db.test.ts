@@ -12,6 +12,7 @@ import {
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
+import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -21,6 +22,7 @@ import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
+import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
@@ -49,7 +51,11 @@ describe("model document stack", () => {
       const resolveDocumentUri = async (documentId: string) =>
         documentId === ALPHA_ID ? "manuscript/alpha.md" : null;
       const card = createTurnReversalService({
-        turnInverse: { reverseTurn: view.collab.reverseTurn },
+        turnInverse: {
+          reverseTurn: view.collab.reverseTurn,
+          reversalOwners: view.collab.reversalOwners,
+        },
+        lockOwners: createDrizzleReversalLocks(db),
         resolveDocumentUri,
         listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
         commands: createDrizzleDocumentCommands(db),
@@ -273,12 +279,7 @@ describe("model document stack", () => {
           const block = view.model.getBlocks(doc)[0];
           if (!block) throw new Error("live block missing");
           const before = Y.encodeStateVector(doc);
-          view.model.applyTextEdit(
-            doc,
-            block,
-            { from: 0, to: view.model.getText(block).length },
-            liveText,
-          );
+          applyTextEdit(block, { from: 0, to: view.model.getText(block).length }, liveText);
           const update = Y.encodeStateAsUpdate(doc, before);
           if (update.length)
             await view.persistence.journal.append(ALPHA_ID, update, { origin: "system", seq: 0 });
@@ -433,7 +434,7 @@ describe("model document stack", () => {
 it.each([
   "undo",
   "redo",
-] as const)("model %s follows its edit to the draft and refuses only after none remains", async (direction) => {
+] as const)("model %s follows its edit to the draft, keeps the writer's typing, and refuses only after none remains", async (direction) => {
   const { harness, view, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -486,14 +487,14 @@ it.each([
     } finally {
       doc.destroy();
     }
-    const expected = direction === "undo" ? "Alpha Ga!mma.\n\nBlue.\n" : "Alpha Be!ta.\n\nBlue.\n";
+    const expected = direction === "undo" ? "Alpha Beta!.\n\nBlue.\n" : "Alpha !Gamma.\n\nBlue.\n";
     expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-      status: `cant_${direction}_changed`,
-    });
-    expect(await core.write({ ...command, command: "revert", edit: "e1" }, context)).toMatchObject({
-      status: "nothing_to_revert",
+      status: "success",
     });
     expect(await view.draftMarkdown(draftId)).toBe(expected);
+    expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
+      status: `nothing_to_${direction}`,
+    });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     await harness.dispose();

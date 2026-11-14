@@ -177,6 +177,36 @@
     0 0 0 5px var(--review-ring);
 }
 
+/* A block whose nesting changed with its text untouched: only its marker, indent and bar are painted, in
+   the insert tint. The indent is an inset shadow as wide as the block's own indent, so the text keeps
+   no mark; the marker gets a ring, because a pseudo-element cannot take a decoration of its own. */
+.meridian-editor .ProseMirror .meridian-review-nested {
+  --review-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  --review-border: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  --review-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  --review-ring: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  box-shadow: inset var(--nest-indent) 0 0 0 var(--review-tint);
+  transition: box-shadow var(--default-transition-duration) ease;
+}
+
+.meridian-editor .ProseMirror .meridian-review-nested:dir(rtl) {
+  box-shadow: inset calc(-1 * var(--nest-indent)) 0 0 0 var(--review-tint);
+}
+
+.meridian-editor .ProseMirror .meridian-review-nested.meridian-review-emphasized {
+  box-shadow: inset var(--nest-indent) 0 0 0 var(--review-emphasis);
+}
+
+.meridian-editor .ProseMirror .meridian-review-nested.meridian-review-emphasized:dir(rtl) {
+  box-shadow: inset calc(-1 * var(--nest-indent)) 0 0 0 var(--review-emphasis);
+}
+
+.meridian-editor .ProseMirror .meridian-review-nested[data-item]::before {
+  outline: 1.5px solid var(--review-ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
 /* Forced colours drop the tint and the shadow lines, which are all that mark added text. It is
    underlined instead, a whole added block framed, and the change in focus drawn heavier. */
 @media (forced-colors: active) {
@@ -187,6 +217,10 @@
 
   .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
     text-decoration-thickness: 3px;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-nested {
+    box-shadow: inset var(--nest-indent) 0 0 0 Highlight;
   }
 
   .meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {

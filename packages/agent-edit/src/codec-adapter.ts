@@ -4,7 +4,9 @@ import type {
   MarkupCodec,
   ParsedContent,
   ParsedContentWithSpans,
+  ParseOptions,
   PMNode,
+  SerializedBlock,
 } from "@meridian/markup";
 import { createShownLinkLedger, type ShownLinkLedger } from "./links/shown.js";
 import { toHashline } from "./model/hashline.js";
@@ -14,11 +16,13 @@ export interface AgentEditCodec {
   /** The underlying pure markup codec. */
   readonly markup: MarkupCodec;
 
-  parse(content: string): ParsedContent;
+  /** `within`: the `open` of the block the content lands beside, so its nesting reads there. */
+  parse(content: string, options?: ParseOptions): ParsedContent;
   /** Parse with each link occurrence's source span (pure syntax, like `parse`). */
-  parseWithSpans(content: string): ParsedContentWithSpans;
+  parseWithSpans(content: string, options?: ParseOptions): ParsedContentWithSpans;
   serialize(blocks: PMNode[]): string;
-  serializeBlockBodies(blocks: readonly PMNode[]): string[];
+  /** Each block as it sits in the document, with the gap that separates it from the one before. */
+  serializeBlockBodies(blocks: readonly PMNode[]): SerializedBlock[];
 
   /** Serialize a single block with the hash prefix used by agent-edit echoes. */
   serializeBlock(block: PMNode, hash: string): string;
@@ -28,6 +32,16 @@ export interface AgentEditCodec {
    * showed in the shown-link ledger. Compose the line with `toHashline`.
    */
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
+
+  /**
+   * The blocks at `picked` of a whole document, each as it sits there (its containers' prefixes
+   * and its gap), recording the links they showed. `hashes` are the whole document's.
+   */
+  serializeSelection(
+    document: readonly PMNode[],
+    hashes: readonly string[],
+    picked: readonly number[],
+  ): SerializedBlock[];
 
   /**
    * Host-only facts for items this codec rendered as hashlines (whole or as a
@@ -61,8 +75,8 @@ function agentEditCodecForScope(markup: MarkupCodec, links: DocumentLinkScope): 
   const ledger = createShownLinkLedger(links, markup);
   return {
     markup,
-    parse: (content) => markup.parse(content),
-    parseWithSpans: (content) => markup.parseWithSpans(content),
+    parse: (content, options) => markup.parse(content, options),
+    parseWithSpans: (content, options) => markup.parseWithSpans(content, options),
     serialize: (blocks) => markup.serialize(blocks, links),
     serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks, links),
 
@@ -73,9 +87,20 @@ function agentEditCodecForScope(markup: MarkupCodec, links: DocumentLinkScope): 
     },
 
     serializeBlocks(blocks, hashes) {
-      const bodies = markup.serializeBlocks(blocks, links);
+      const bodies = markup.serializeBlocks(blocks, links).map((entry) => entry.body);
       ledger.record(blocks, hashes, bodies);
       return bodies;
+    },
+
+    serializeSelection(document, hashes, picked) {
+      const all = markup.serializeBlocks(document, links);
+      const entries = picked.map((index) => all[index]);
+      ledger.record(
+        picked.map((index) => document[index]),
+        picked.map((index) => hashes[index]),
+        entries.map((entry) => entry.body),
+      );
+      return entries;
     },
 
     shownLinks: (items) => ledger.shownLinks(items),

@@ -14,6 +14,7 @@ import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
+import { notifyUnsentTyping } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
@@ -102,6 +103,7 @@ export class AccountFeatureLifetime {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
     });
+    this.registry.observeUnsentTyping(notifyUnsentTyping);
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.
     if (typeof window !== "undefined")

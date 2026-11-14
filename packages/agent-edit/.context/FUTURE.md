@@ -1,13 +1,5 @@
 # agent-edit FUTURE
 
-## Model guidance for mangled merges
-
-The `concurrent edits by <author>:` listing names who changed the document but
-not how the merge turned out. Consider letting the model repair a visibly mangled
-merge if real transcripts show it needs guidance and prompt validation confirms
-the copy does not invite unwanted rewriting. The seam is echo and response
-formatting.
-
 ## Complete-plan apply preflight
 
 A write that a later group or provenance materializer rejects leaves nothing

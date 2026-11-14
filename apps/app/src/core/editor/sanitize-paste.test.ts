@@ -36,8 +36,10 @@ describe("sanitizePastedHTML", () => {
     `);
 
     expect(sanitized).toContain("<h2><strong>Heading</strong> <em>emphasis</em></h2>");
-    expect(sanitized).toContain("<blockquote><p>Quote</p></blockquote>");
-    expect(sanitized).toContain("<ul><li>one</li></ul><ol><li>two</li></ol>");
+    expect(sanitized).toContain('<p data-path=">">Quote</p>');
+    expect(sanitized).toContain(
+      '<p data-path="-" data-marker="item">one</p><p data-path="-" data-kind="ordered" data-marker="item">two</p>',
+    );
     expect(sanitized).toContain("<pre><code>const answer = 42;</code></pre>");
     expect(sanitized).toContain("<table><thead><tr><th>A</th></tr></thead>");
     expect(sanitized).toContain('<a href="https://example.com">site</a>');

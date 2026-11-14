@@ -1,7 +1,7 @@
 // Shared assertions and document inspection helpers for write-tool tests.
 import { expect } from "vitest";
 import type * as Y from "yjs";
-
+import { applyTextEdit } from "../../test-support/text-edit.js";
 import { renderAgentEditResult } from "../result-text.js";
 import type { WriteOutcome, WriteStatus } from "../types.js";
 import { model } from "./write-tool-harness.js";
@@ -41,7 +41,7 @@ export function humanText(
   if (!block) throw new Error(`No block at ${blockIndex}`);
   doc.transact(
     () => {
-      model.applyTextEdit(doc, block, span, text);
+      applyTextEdit(block, span, text);
     },
     { type: "human" },
   );

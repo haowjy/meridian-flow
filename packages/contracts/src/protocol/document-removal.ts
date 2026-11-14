@@ -11,6 +11,7 @@ type DocumentRemovalActor =
   | { kind: "system"; cause: DocumentRemovalCause };
 
 export type DocumentRemovalRecord = {
+  reason: "deleted" | "discarded";
   /** Unknown when the actor's account or Work was purged. */
   actor: DocumentRemovalActor | null;
   time: string;

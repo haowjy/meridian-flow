@@ -15,7 +15,7 @@ import type { BranchId } from "@meridian/contracts";
 import type { UndoDiscardResult } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { documentCommands, documentDrafts } from "@meridian/database/schema";
+import { commands, documentDrafts } from "@meridian/database/schema";
 import { discardedBy, restoreDiscard } from "@meridian/project-tree";
 import { and, eq, sql } from "drizzle-orm";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
@@ -27,7 +27,7 @@ import { ApplyClickRefused } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discard.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
-import { runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
@@ -46,14 +46,14 @@ async function restoredBefore(
   request: UndoDiscardCommand["request"],
 ): Promise<boolean> {
   const [found] = await tx
-    .select({ id: documentCommands.id })
-    .from(documentCommands)
+    .select({ id: commands.id })
+    .from(commands)
     .where(
       and(
-        eq(documentCommands.kind, "undo_discard"),
-        eq(documentCommands.accountId, userId),
-        sql`${documentCommands.outcome} -> 'result' ->> 'status' = 'restored'`,
-        sql`${documentCommands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
+        eq(commands.kind, "undo_discard"),
+        eq(commands.accountId, userId),
+        sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
+        sql`${commands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
       ),
     )
     .limit(1);
@@ -74,7 +74,7 @@ export function createDrizzleUndoDiscard(
       const { branchId, userId, request, envelope } = command;
       const commandId = envelope.commandId;
       const refused = (reason: Refusal) => ({ status: "refused", commandId, reason }) as const;
-      return runCommand(
+      return runDocumentCommand(
         db,
         envelope,
         async () => {
@@ -90,16 +90,13 @@ export function createDrizzleUndoDiscard(
               // It must be this account's own command that took effect, inside the retention.
               const [discard] = await tx
                 .select({
-                  kind: documentCommands.kind,
-                  outcome: documentCommands.outcome,
-                  at: documentCommands.createdAt,
+                  kind: commands.kind,
+                  outcome: commands.outcome,
+                  at: commands.createdAt,
                 })
-                .from(documentCommands)
+                .from(commands)
                 .where(
-                  and(
-                    eq(documentCommands.id, request.discardCommandId),
-                    eq(documentCommands.accountId, userId),
-                  ),
+                  and(eq(commands.id, request.discardCommandId), eq(commands.accountId, userId)),
                 );
               if (
                 !discard ||

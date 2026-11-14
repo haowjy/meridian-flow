@@ -15,7 +15,6 @@ import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import { mainTabKey } from "@/client/project-shell/main-tabs";
-import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
@@ -27,6 +26,7 @@ import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { TrashedDocument } from "./context/TrashedDocument";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { useDocumentStanding } from "./context/use-document-standing";
 import { useNewDocument } from "./context/use-new-document";
 import { useOpenTabSessions } from "./context/use-open-tab-sessions";
 import {
@@ -100,7 +100,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   };
   const masked = isProjectRouteMasked(mask);
   const trashedId = useTrashNavigation().shown;
-  const trashedName = useTrashedDocument(projectId, trashedId ?? null).data?.name;
+  const trashed = useDocumentStanding(projectId, trashedId ?? null);
+  const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;
   // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 

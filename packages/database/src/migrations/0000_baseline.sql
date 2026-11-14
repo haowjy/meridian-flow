@@ -34,23 +34,13 @@ CREATE TABLE "agent_definition_revisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"package_revision_id" uuid NOT NULL,
 	"slug" text NOT NULL,
-	"definition" jsonb NOT NULL,
-	"definition_digest" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "agent_package_dependencies" (
-	"package_revision_id" uuid NOT NULL,
+	"grammar_version" text NOT NULL,
 	"name" text NOT NULL,
-	"dependency_revision_id" uuid NOT NULL,
-	CONSTRAINT "agent_package_dependencies_package_revision_id_name_pk" PRIMARY KEY("package_revision_id","name")
-);
---> statement-breakpoint
-CREATE TABLE "agent_package_installation_history" (
-	"installation_id" uuid NOT NULL,
-	"package_revision_id" uuid NOT NULL,
+	"description" text NOT NULL,
+	"definition" jsonb,
+	"diagnostics" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "agent_package_installation_history_installation_id_package_revision_id_pk" PRIMARY KEY("installation_id","package_revision_id")
+	CONSTRAINT "agent_definition_revisions_unavailable_says_why" CHECK ("agent_definition_revisions"."definition" IS NOT NULL OR jsonb_array_length("agent_definition_revisions"."diagnostics") > 0)
 );
 --> statement-breakpoint
 CREATE TABLE "agent_package_installations" (
@@ -58,8 +48,6 @@ CREATE TABLE "agent_package_installations" (
 	"owner_user_id" uuid,
 	"coordinate" text NOT NULL,
 	"current_revision_id" uuid NOT NULL,
-	"upstream_revision_id" uuid NOT NULL,
-	"origin" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -67,7 +55,6 @@ CREATE TABLE "agent_package_installations" (
 CREATE TABLE "agent_package_revisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"coordinate" text NOT NULL,
-	"schema_version" integer NOT NULL,
 	"content_digest" text NOT NULL,
 	"source" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -888,6 +875,18 @@ CREATE TABLE "apply_command_trees" (
 	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
 );
 --> statement-breakpoint
+CREATE TABLE "commands" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"kind" text NOT NULL,
+	"account_id" uuid NOT NULL,
+	"project_id" uuid,
+	"thread_id" uuid,
+	"request_digest" text,
+	"outcome" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create'))
+);
+--> statement-breakpoint
 CREATE TABLE "document_block_rooms" (
 	"room_id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "document_block_rooms_room_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"document_id" uuid NOT NULL,
@@ -910,18 +909,6 @@ CREATE TABLE "document_blocks" (
 	CONSTRAINT "document_blocks_room_id_block_id_pk" PRIMARY KEY("room_id","block_id")
 );
 --> statement-breakpoint
-CREATE TABLE "document_commands" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"kind" text NOT NULL,
-	"account_id" uuid NOT NULL,
-	"project_id" uuid,
-	"thread_id" uuid,
-	"request_digest" text NOT NULL,
-	"outcome" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy'))
-);
---> statement-breakpoint
 CREATE TABLE "document_drafts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"document_id" uuid NOT NULL,
@@ -940,7 +927,7 @@ CREATE TABLE "document_drafts" (
 	"seed_live_position" bigint,
 	"has_effect" boolean DEFAULT true NOT NULL,
 	"has_effect_revision" bigint DEFAULT -1 NOT NULL,
-	"schema_version" integer DEFAULT 2000000 NOT NULL,
+	"schema_version" integer DEFAULT 3000000 NOT NULL,
 	"revision" bigint DEFAULT 0 NOT NULL,
 	"checkpoint_revision" bigint DEFAULT 0 NOT NULL,
 	"checkpoint_seq" bigint DEFAULT 0 NOT NULL,
@@ -976,7 +963,7 @@ CREATE TABLE "document_yjs_heads" (
 	"authority_generation" bigint DEFAULT 1 NOT NULL,
 	"next_admission_sequence" bigint DEFAULT 1 NOT NULL,
 	"fragment_name" text DEFAULT 'prosemirror' NOT NULL,
-	"schema_version" integer DEFAULT 2000000 NOT NULL,
+	"schema_version" integer DEFAULT 3000000 NOT NULL,
 	"retired_through_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_update_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_state_vector" "bytea",
@@ -1033,13 +1020,8 @@ ALTER TABLE "agent_catalog_entries" ADD CONSTRAINT "agent_catalog_entries_select
 ALTER TABLE "agent_catalog_revisions" ADD CONSTRAINT "agent_catalog_revisions_catalog_entry_id_agent_catalog_entries_id_fk" FOREIGN KEY ("catalog_entry_id") REFERENCES "public"."agent_catalog_entries"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_catalog_revisions" ADD CONSTRAINT "agent_catalog_revisions_definition_revision_id_agent_definition_revisions_id_fk" FOREIGN KEY ("definition_revision_id") REFERENCES "public"."agent_definition_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_definition_revisions" ADD CONSTRAINT "agent_definition_revisions_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_package_dependencies" ADD CONSTRAINT "agent_package_dependencies_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_package_dependencies" ADD CONSTRAINT "agent_package_dependencies_dependency_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("dependency_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_package_installation_history" ADD CONSTRAINT "agent_package_installation_history_installation_id_agent_package_installations_id_fk" FOREIGN KEY ("installation_id") REFERENCES "public"."agent_package_installations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_package_installation_history" ADD CONSTRAINT "agent_package_installation_history_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_package_installations" ADD CONSTRAINT "agent_package_installations_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_package_installations" ADD CONSTRAINT "agent_package_installations_current_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("current_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_package_installations" ADD CONSTRAINT "agent_package_installations_upstream_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("upstream_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_agent_removals" ADD CONSTRAINT "project_agent_removals_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_agent_removals" ADD CONSTRAINT "project_agent_removals_catalog_entry_id_agent_catalog_entries_id_fk" FOREIGN KEY ("catalog_entry_id") REFERENCES "public"."agent_catalog_entries"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1139,14 +1121,13 @@ ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_user
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "commands" ADD CONSTRAINT "commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_block_rooms" ADD CONSTRAINT "document_block_rooms_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_blocks" ADD CONSTRAINT "document_blocks_room_id_document_block_rooms_room_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."document_block_rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_checkpoints" ADD CONSTRAINT "document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1165,7 +1146,7 @@ CREATE UNIQUE INDEX "account_skill_installs_owner_slug" ON "account_skill_instal
 CREATE UNIQUE INDEX "agent_catalog_entries_personal_key" ON "agent_catalog_entries" USING btree ("owner_user_id","logical_key") WHERE "agent_catalog_entries"."owner_user_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_catalog_entries_system_key" ON "agent_catalog_entries" USING btree ("logical_key") WHERE "agent_catalog_entries"."owner_user_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "agent_catalog_entries_owner_name" ON "agent_catalog_entries" USING btree ("owner_user_id","name_sort_key","id");--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_definition_revisions_package_slug" ON "agent_definition_revisions" USING btree ("package_revision_id","slug");--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_definition_revisions_package_slug_grammar" ON "agent_definition_revisions" USING btree ("package_revision_id","slug","grammar_version");--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_installations_personal_coordinate" ON "agent_package_installations" USING btree ("owner_user_id","coordinate") WHERE "agent_package_installations"."owner_user_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_installations_system_coordinate" ON "agent_package_installations" USING btree ("coordinate") WHERE "agent_package_installations"."owner_user_id" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_revisions_coordinate_digest" ON "agent_package_revisions" USING btree ("coordinate","content_digest");--> statement-breakpoint
@@ -1274,8 +1255,8 @@ CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> s
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","document_id","group_id");--> statement-breakpoint
+CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX "document_commands_thread" ON "document_commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_drafts_closed_by" ON "document_drafts" USING btree ("closed_by") WHERE "document_drafts"."closed_by" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "document_drafts_active_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint

@@ -15,7 +15,7 @@
  * Every draft the kernel closes retires after commit through the one close.
  */
 
-import type { BranchId, DocumentCommandId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, CommandId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
@@ -36,7 +36,7 @@ import {
 import type { Branches } from "../domain/branches.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
-import { runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
@@ -116,7 +116,7 @@ async function closeBranchDrafts(
     currentDrizzleDb(db),
     documentIds ? { documentIds, branchId } : { branchId },
     cause,
-    input.command as DocumentCommandId | undefined,
+    input.command as CommandId | undefined,
   );
 }
 
@@ -242,7 +242,7 @@ export function createDrizzleBranchDiscard(
     kernel,
     async discardLocked({ kernel: input, command }) {
       const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = { ended: null };
-      await runCommand(
+      await runDocumentCommand(
         db,
         command.envelope,
         // The branch's owner enters the Work boundary after the claim, before the branch row
