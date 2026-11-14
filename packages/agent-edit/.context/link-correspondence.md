@@ -33,7 +33,7 @@ following scope:
 - insert/append has no old occurrence;
 - create-overwrite uses whole-document correspondence;
 - find uses the affected splice;
-- copies, inverse edits, and reply-save bytes already carry refs.
+- copies and inverse edits already carry refs.
 
 A find splice preserves occurrences outside the written span. If reparsing
 changes surrounding syntax so spans cannot be trusted, assign the whole group

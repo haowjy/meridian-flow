@@ -3,8 +3,8 @@ import { resolveProjectId } from "./resolve";
 
 export const projectDefaultCommand: CommandSpec = {
   path: ["project", "default"],
-  summary: "Ensure and print the default project id",
-  route: "POST /api/projects/bootstrap-default",
+  summary: "Print the default project id",
+  route: "GET /api/projects",
   examples: ["./mf project default"],
   async run(ctx) {
     const session = await ctx.session();

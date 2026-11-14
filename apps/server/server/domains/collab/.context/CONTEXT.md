@@ -7,20 +7,20 @@ reversal, and WebSocket details; this page keeps their shared rules.
 ## Boundary and destinations
 
 `CollabDomain` supplies Postgres/Hocuspocus adapters around
-`@meridian/agent-edit`. Model reads and writes enter through the thread-peer
-pool and carry an explicit destination. A `live` destination uses the live
-core and creates no Work draft or thread peer; a `draft` destination uses the
-thread-peer core and names its owner: the chat's Work, or for a chat with no Work
+`@meridian/agent-edit`. A model's document write is a command
+(`modelEdits().run` and `.write`, [model edits](model-edits.md)); its reads enter
+through the agent-edit router (`domain/agent-edit-router.ts`) and carry an explicit
+destination. A `live` destination uses the live core and creates no Work draft; a
+`draft` destination uses the thread's core over the Work draft (`thread-cores.ts`)
+and names its owner: the chat's Work, or for a chat with no Work
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
 writes and Apply are refused and Discard still works. Scratch and upload content is always live.
 
-A reply may hold a live core and a thread core at once. Staged writes overlay
-only reads of the destination to which they were pinned. A live read never
-shows staged draft content. Rebinding is resolved again for each query; a
-read-only draft query without a peer may rebase live content into the owner's draft,
-but does not create a peer.
+Nothing holds a write: each lands in its command's transaction, so a read always shows
+the writes before it. Rebinding is resolved again for each query; a read-only draft query
+without a Work draft may rebase live content into the owner's draft but creates none.
 
 The composition root wires required services and provider ports. It owns no
 business behavior, mutable runtime state, or optional capability matrix.
@@ -46,7 +46,7 @@ certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
-record and terminal command outcome atomically. A stored result
+record and the command's outcome atomically. A stored outcome
 wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
 for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery
@@ -70,13 +70,14 @@ Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decide
 the kernel compares it under the draft's row lock and refuses `draft_changed` when the
 draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
 `revision` is the fence because content-free folds keep it. The answer's `itemClosed`
-is what the kernel ended, and the command row is claimed pending and settled with that
-answer in the kernel's transaction. Nothing left to end answers `stale` without changing
-text or claiming a command. The tree half of every Discard is the package's `discardDraft`,
-run with `treeListStore.submit` in each list the Work spans (`adapters/drizzle-branch-discard.ts`): the
-pending records are settled `discarded` with the command's id. A discarded drafted create is in
-no view, and its `documents` row and text stay until the retention job purges them; Discard
-releases nothing. Work Discard all and purge share the same kernel.
+is what the kernel ended. Its command row is claimed first in the kernel's transaction and
+holds the answer when it commits; `stale` and `draft_changed` are stored answers too. Nothing
+left to end answers `stale` without changing text. The tree half of every Discard is the
+package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
+(`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
+command's id. A discarded drafted create is in no view, and its `documents` row and text stay
+until the retention job purges them; Discard releases nothing. Work Discard all and purge share
+the same kernel.
 
 ## Revision and review authority
 
@@ -87,9 +88,9 @@ pure deletion and a document snapshot misses tree-only moves. Reads and applies
 compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
-A whole-item Discard closes its addressed drafts and peers; Work Discard
-all closes the branch. Edited-text Discard closes no server peer. Thread-core
-invalidation follows committed close retirement.
+A whole-item Discard closes its addressed drafts; Work Discard
+all closes the branch. Edited-text Discard closes no draft. A thread core holds no draft state,
+so a close needs no invalidation.
 
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
@@ -100,8 +101,7 @@ peers in ID order, derives the durable
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
-removed retires as a removal whatever its own cause (its rooms close `4208`,
-its peers' staged writes are refused `{ removed: record }`), so a Discard that
+removed retires as a removal whatever its own cause (its rooms close `4208`), so a Discard that
 closes a created document's drafts closes their rooms stale, and one that Apply took out of
 live closes them `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
@@ -115,7 +115,7 @@ again (draft rooms close by exact draft id; a closed draft stays closed). A
 Restore that commits while that read is in flight can still have its new live
 connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
 reply's closed pin lost its write is one pure rule, `closedPinReason`
-(`domain/closed-pin-reason.ts`), shared by the save fence and a failed peer
+(`domain/closed-pin-reason.ts`), shared by a model edit's check and a failed peer
 identity ensure: a draft closed `document_removed` is the removal's even when its document
 stands again (`removed: null`). The closer is
 built at the composition root and its retirement bound by the collab domain once
@@ -123,11 +123,10 @@ rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as i
 fixtures without rooms, it retires nothing. A caller whose commit happens inside
 process-level live scopes (Discard) runs under `holdRetirement`, so retirement,
 and a save racing it, never wait on scopes the committer still holds.
-Retraction takes the same lock order before checking for other contributions
-and closes rather than deleting. Removed documents refuse new Work drafts under
+Removed documents refuse new Work drafts under
 their document mutation lock, after Work/thread and branch admission; an
 existing active Work draft is returned whatever the document's state, and a
-thread peer forks one that outlived a live delete (`requireDraftableDocument`).
+write forks one that outlived a live delete (`requireDraftableDocument`).
 
 Only a committed removal closes live sockets with `4208`, and the draft sockets
 of the drafts it closed (a discard's). The room
@@ -186,11 +185,10 @@ bounded writer evidence and its kernel naming before enabling that mode.
 
 ## Save, replay, and grants
 
-The thread-peer pool is the only model document entry point. Each call carries
-the caller's `FileGrant`; writes run under the grant scope and a reply pins a
-document to its first grant. The response transaction saves all live and draft
-journals, receipt records, and callbacks together. Live rooms receive writes only
-after commit, so rollback is invisible to open editors.
+A model's write runs in its command's transaction: the append, the receipt and the
+stored tool result commit together, and live rooms receive the write only after commit,
+so a rollback is invisible to open editors. The grant is confirmed once per write and a
+write whose Work lost access is refused.
 
 A chat's write mode decides only where its new AI writes go; chats in
 one Work may differ. A draft write never pushes itself live: a draft
@@ -199,55 +197,38 @@ there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Drafts carry
 no push policy. Active unapplied rows do not delay a terminal receipt.
 
-A reply's save resolves exactly the peer each document was pinned to and
-refuses that document stale when the pin no longer holds (closed peer or
-closed draft, closed branch). Peers are created only by the identity ensure for a tool access, never by a save.
-
-Save confirms every grant used by the reply once, drops writes whose Work lost
-access, and marks the remaining writes for the journal's no-grant guard. A write into a room where the model has no frontier plans on the current room.
+A write into a room where the model has no frontier plans on the current room.
 A write with a usable frontier plans on that offline view and merges onto the
 current room. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
 Every model call reads its room fresh through agent-edit's `readRoom`. The
 draft adapter (`domain/draft-agent-edit.ts`) runs the live→Work rebase, copies
-the Work draft replica and reconciles the edit scope's staged entries against
-the scope's first-stage snapshot cut; entries an earlier, now closed peer of
-the scope accepted are refused with the Discard's reason. The live adapter
+the Work draft replica. The live adapter
 (`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and
 the room without the document mutex. A room is named from what was read:
 `draft:<workDraftId>` (never the peer id or the generation) or
 `live:<documentId>:<authorityGeneration>` from the copy's bound authority
 (`domain/observation-rooms.ts`). The effective reader reads through the same
 door and the same route: the pool's `routeRead` serves the tool read and
-`readRoom` alike. The reply's pinned participant wins with its edit scope (so a
-live read keeps the reply's staged live writes); an explicit live read never
-takes a draft pin; otherwise a draft read goes to the thread's core when the
-thread has a Work draft of the document, else live.
+`readRoom` alike. A draft read goes to the thread's core when
+the thread has a Work draft of the document, else live; an explicit live read always
+goes live.
 
 A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier
 in the room its result rendered from. A write plans on the `planning` lookup
 when usable, otherwise on the current room; neither path refuses concurrent text.
 An undo, redo or revert records in the room its inverse committed into
-(`DocumentEditResult.room`). A staged write records nothing. The reply's save,
-given `recordingFrontier`, records each saved document in the room the save
-committed into (the draft adapter's `prepareSave` room, or the live room under
-the save's lock) at the save's after-state. `format: "edits"` reads record none.
-See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+(`DocumentEditResult.room`). `format: "edits"` reads record none.
+A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A draft-mode access whose bound peer a Discard took is named, not failed:
-`peerLossReason` (`domain/draft-pulls.ts`) classifies it in the save fence's
-precedence (closed branch, then closed Work draft, then closed peer), and the
-draft adapter throws agent-edit's `DocumentAccessLostError(reason)`, which the
-write's result carries as the same refusal its save receipt would.
+A write to a Work draft that a Discard closed after the model last read it is refused by
+the closed-draft rule in `model-edit-write.ts` (`sawClosedDraft`): the model reads again.
 
-Prepared replay treats ordinary concurrent chat edits and writer deletions as
-Yjs peers. A planning-visible item disappearing is not by itself rollback
-evidence. Only immutable inverse removals after
-the scope snapshot cut revoke a staged write. Replay drops the rejected logical write
-and its later dependency closure, retains independent writes, and reports the
-typed refusal in notices and receipts.
+Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
+planning-visible item disappearing is not by itself evidence against a write. Only
+immutable inverse removals after the model's frontier revoke one.
 
 ## Work mode and draft persistence
 
@@ -263,8 +244,7 @@ document and creates a new one at the same URI, and the new identity inherits
 no drafts.
 
 A Work draft is shared by every thread editing the same document in that Work.
-Thread peers retain their upstream draft identity for binding and retirement, but perform
-no content pull, catch-up or write. There is no draft reset or peer re-fork.
+There is no draft reset or re-fork.
 
 Attribution is based on immutable journal provenance and dependency closure,
 not text similarity or block proximity. Writer rows retain their identity.
@@ -311,15 +291,14 @@ An **exact** rewrite commits only at the revision it was computed at: a
 checkpoint rewrite at an inverse's destination. A miss surfaces as `DraftCasConflictError`, and the attempt
 captures again. Close locks active draft rows in ID order, writes only their
 closed status and cause, and bumps revision; it does not settle receipts or
-journal statuses. `rollback_pending` remains a journal diagnostic, not part
-disposition. A **fold** (compaction) commits over the replica's
+journal statuses. A **fold** (compaction) commits over the replica's
 cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a draft is frozen is derived on every
 read from its branch's origin Work (archived, deleted, or missing), never
 stored. Archive and restore lock no draft row and bump no revision (Work deletion also
 removes its owned documents through the tree removal protocol; a `deleted` removal leaves their drafts active):
-every rewrite and reply save locks the Work through the Works
+every rewrite and model edit locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its
 statement's snapshot, so an `UPDATE` that started before an Archive committed,
@@ -340,7 +319,7 @@ locks the Works a write names, directly or through its branches and drafts,
 `FOR NO KEY UPDATE` in id order, in the caller's transaction, before any branch,
 inverse, document or draft lock, so every write enters Work, branch, document,
 draft, the order the transitions take. A caller hands it its whole write set
-once, through `lockWorks` (opening a branch, Apply's batch plan, a reply save's
+once, through `lockWorks` (opening a branch, Apply's batch plan, a model edit's
 grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
 either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
@@ -432,7 +411,7 @@ append/rewrite ownership, monotonic installation/delivery and maintenance. Its
 first makes the fold miss; the next append past the bound tries again. Failure
 is logged as `collab.draft` `compaction.failed`. Neither maintenance nor dirty
 signaling runs before the root commit, even when a prepared append's savepoint
-has released. `domain/draft-coordinator.ts` owns read and staged-save operation policy; `domain/draft-writer-frames.ts` owns writer admission.
+has released. `domain/draft-coordinator.ts` owns read and save operation policy; `domain/draft-writer-frames.ts` owns writer admission.
 
 The shared `prepareAppend(base, rows, { admitted?, authorServerRows?, precondition? })` prepares
 no server bytes before the lock. `finalizeAppend` first materializes the committed
@@ -463,37 +442,28 @@ unwind disposes the rest, including a write whose own statement succeeded in a
 scope a later miss rolled back. An append (a frame, a reply's rows, a content rebase or an Apply review-base update) is one
 attempt and never retries; exact and fold rewrites recapture on a miss. The bound's exhaustion outcome stays with each caller.
 
-A reply save is an attempt across every participating core: prepare
-reconciles each staged document on a candidate of its Work draft, consume
-appends per upstream inside one savepoint, install delivers. A miss unwinds the
-savepoint and prepares again from the original staged buffer, up to four
-attempts; the reply's `confirm` runs once, and an attempt prepared before it is
-disposed if it throws. The save and a thread core's tool-time reads hold no
-draft: they go through the coordinator's `copyDraft` and `prepareStagedRows`,
-which read committed replicas and read the journal through one
-`DraftReplayJournalReads` port. The reply's rows reach each Work draft as a
-sequenced append, like a frame's, and never miss on a revision; a peer takes
-no rows. The confirmation is
-the retained exception: it runs once, outside the save attempt, and holds
-its Work rows and branch-row and live advisory locks across attempts 2 to 4; only
-draft rows release on the savepoint rollback. A reply's draft rows are sequenced under the row hold; a revision change does not
-make that append retry.
+A model write is one `modelEdits().write` in its command's transaction: it reads the
+committed replica and the journal through one `DraftReplayJournalReads` port,
+`prepareSave` plans on a private copy, and the rows reach the Work draft as a sequenced
+append under its row hold, like a frame's, never missing on a revision. Its confirmation
+runs once, and its Work rows and branch-row and live advisory locks are taken first
+(`enterDraftSeam`, `approveBranchWriteJoin`).
 
-An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
-captures without any lock: one read-only snapshot of each document's live
-head, each committed draft at its revision without merging live identity, the
-history and each draft's lifecycle. It plans on that capture, then commits in
-one scope: the live mutexes of its live destinations, then a seam boundary
+An inverse (Undo, Redo, revert, and the model's `undo`/`redo`)
+captures without any lock: each document's live state, each committed draft at
+its revision without merging live identity, the history and each draft's
+lifecycle. Those reads need not agree with each other. It plans on that capture,
+then commits in one scope: a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
 grant Work).
-Then its documents' mutation locks in id order,
-the live head check, and each draft destination's exact checkpoint rewrite at
-its captured revision. Those captured fences, not a lock of the inverse's own,
+Then its documents' mutation locks in id order, its drafts' rows, the capture
+taken again under them and compared (`confirmCapture`), and each draft
+destination's exact checkpoint rewrite at its captured revision. Those captured fences, not a lock of the inverse's own,
 order two inverses of the same edit: the second misses, recaptures and finds
 the edit already reversed (probe `d22-concurrent-undo` in
-[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
+[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or capture unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. Historical disposition reads include closed drafts; the
@@ -520,9 +490,6 @@ observers read latest memory at commit, and finalizers retain observations made
 during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
 never remove recovered writing. Another writer's deleted block is not recovered.
 
-Thread peers have no content jobs: no pull, exact catch-up checkpoint or peer-bound
-write. Identity provisioning and exact peer retirement remain for Track M4.
-
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
 before committing the peer in a root transaction (a Work draft it needs
@@ -539,20 +506,37 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
 database Work rows (only through the Works mutation boundary, in ID order, with the
 lifecycle and grant locks `lockSeamWorks` takes), the branch row, a project's or an
-account's tree list key, then the sorted document advisory keys
-(`lockDocumentMutation`'s keys in ID order), then draft rows, an
-upstream before its peer, otherwise ID order. The list's key sorts before every
-document key, not among them by ID: a path that needs a list and
-documents takes the list first (several lists: by list ID, which `submit` does for the lists it is given). Apply and Discard reach the lists
-through `treeListStore.submit` inside their transaction and take the documents' keys after it. Closing a Work's draft (`DraftClose.closeDrafts`) and
-ending a branch call the store's `resync`, so a path that closes drafts holds the lists' keys already or takes them before any document key. A tree list's write
-(`withList`) takes the seam's Work locks first, so the append under the key takes no lock
-it lacks; a Work's close, archive, restore and delete takes the project's list key
-after its Work row and before its document keys (`lockProjectTreeList`), so the open Works
-an admission reads under that key are current.
+account's tree list key (by list ID when a path takes several), then the sorted document
+advisory keys (`lockDocumentMutation`'s keys in ID order), then draft rows in ID order. The
+list's key sorts before every document key, not among them by ID: a path that needs a list and
+documents takes the list first. Apply, Discard and a tree tool call reach the lists through
+`treeListStore.submit` inside their command's transaction and take the documents' keys after
+it. Closing a Work's draft (`DraftClose.closeDrafts`) and ending a branch call the store's
+`resync`, so a path that closes drafts holds the lists' keys already or takes them before any
+document key. A tree list's write (`withLists`) takes the seam's Work locks first, so the append
+under the key takes no lock it lacks; a Work's close, archive, restore and delete takes the
+project's list key after its Work row and before its document keys (`lockProjectTreeList`), so
+the open Works an admission reads under that key are current.
 No path takes a Work row, a live lock or a list's key after a draft row, and none takes a
-list's key while holding a document key. Live mutexes are held around a commit scope (an
-inverse's live destinations). No writer-ingress epoch barrier remains.
+list's key while holding a document key. No writer-ingress epoch barrier remains.
+
+A document command (a model edit, a tree tool call, `reverse_turn`, Apply, Un-Apply, Discard,
+Copy, the server's move between a project's list and the account's) runs in
+`runCommand` (`adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
+whose first write is the claim, then the list above from the Work rows on. It takes no
+`withDocument` mutex: a command that needs a live room reads its journal in the transaction
+under the document key (`ensureLiveDocumentDraft`, `committedCopy` under `inLockedWrite()`). A
+read a command plans on is taken, or taken again, under the locks of what it read: the inverse
+captures off-lock, then `confirmCapture` repeats the capture under its Works, document keys and
+draft rows and writes nothing unless the two agree. A miss the server retries (a deadlock, a
+serialization failure, a moved capture or revision) rolls back past the claim and is never stored
+as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
+transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
+Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
+copy is marked `pending` by the transaction that changed it, and any other transaction reloads),
+so it joins the command's transaction. A card Undo's Work receipts are a second command
+after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
+document key.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. Background timers remain armed across failed
 pulls; only a committed run with no newer work may clear them.
@@ -621,8 +605,7 @@ Stored text is never substituted for live Yjs when serving document content, wit
 exception: `grep` matches a document's stored text (the blocks' `text` joined with `\n`
 in `block_order`, in one statement with the freshness check, and equal byte for byte to
 the room-copy path's text) when the room is current,
-the reader's own Work has no active draft of the document, and this reply has staged no
-write to it. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
+the reader's own Work has no active draft of the document. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
 Nothing else reads stored markdown: `ls -v` word counts come from `BlockText.wordCounts`
 (current rooms only), the trash preview is the engine's `readFrozenMarkdown`, which
 serializes the stored Yjs on request, and `ensureDocumentAuthority` seeds an empty document
@@ -652,7 +635,7 @@ settlements from the same cut.
 
 A result's concurrent attribution reads only the room journal interval after its
 stored observation position through the rendered cut. A read uses the resolved
-Work-draft identity directly, so a chat that has never written needs no thread peer.
+Work-draft identity directly, so a chat that has never written needs no Work draft.
 There is no preflight or second recheck. Baseline containment compares struct clocks
 and the delete set: equal state vectors alone do not establish equality, so delete-only
 writer edits are still attributed. Drafts have no generation or epoch reset.
@@ -683,17 +666,16 @@ Draft-origin Revert never targets live. Applied parts revert in an active draft
 as pending changes; closed drafts supply disposition but never write admission.
 
 Every model call obtains a private room copy through `readRoom`; no resident helper
-or thread-peer content cache survives between calls. Planning uses the model's
-recorded frontier and the reply's own accepted mutations, while rendering uses
-the fresh room copy. Replay drops a rejected logical write and its dependent
-closure; the next call reads a fresh room and the surviving stages. Whole Discard
-retires the addressed peer and does not roll back unrelated documents in the reply.
+or content cache survives between calls. Planning uses the model's
+recorded frontier, while rendering uses the fresh room copy. A Discard closes the
+addressed draft and leaves the Work's other documents alone.
 
 ## Focused references
 
 - [Draft model and durable records](draft-model-and-records.md)
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
+- [Model edits as commands](model-edits.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 

@@ -1,6 +1,6 @@
 /**
- * Ending drafts: the one close for every cause, locking upstream Work drafts before thread
- * peers, and the retirement it owes once the root transaction commits.
+ * Ending drafts: the one close for every cause, and the retirement it owes once the root
+ * transaction commits.
  *
  * Every close joins its root transaction's retirement batch (a transaction participant, so a
  * rolled-back savepoint's closes leave with it); a removal registers its documents and record
@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, DocumentId, ThreadId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
@@ -31,12 +31,11 @@ import type {
 } from "../domain/draft-retirement.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 
-/** Which drafts a close takes: by document (optionally one branch's), branch, id or upstream. */
+/** Which drafts a close takes: by document (optionally one branch's), branch or id. */
 export type DraftSelection =
   | { documentIds: readonly DocumentId[]; branchId?: BranchId }
   | { branchId: BranchId }
-  | { draftIds: readonly string[] }
-  | { upstreamDraftIds: readonly string[] };
+  | { draftIds: readonly string[] };
 
 export function draftSelectionPredicate(selection: DraftSelection): SQL | undefined {
   if ("documentIds" in selection)
@@ -45,34 +44,17 @@ export function draftSelectionPredicate(selection: DraftSelection): SQL | undefi
       selection.branchId ? eq(documentDrafts.branchId, selection.branchId) : undefined,
     );
   if ("draftIds" in selection) return inArray(documentDrafts.id, [...selection.draftIds]);
-  if ("upstreamDraftIds" in selection)
-    return inArray(documentDrafts.upstreamDraftId, [...selection.upstreamDraftIds]);
   return eq(documentDrafts.branchId, selection.branchId);
 }
 
-/** The caller holds its Work/branch and document admission locks; pulls lock upstream first too. */
+/** The caller holds its Work/branch and document admission locks. */
 export async function lockActiveDrafts(db: DrizzleDb, selection: DraftSelection) {
-  const rows = [];
-  for (const kind of ["work_draft", "thread_peer"] as const) {
-    rows.push(
-      ...(await db
-        .select({
-          id: documentDrafts.id,
-          threadId: documentDrafts.threadId,
-        })
-        .from(documentDrafts)
-        .where(
-          and(
-            draftSelectionPredicate(selection),
-            eq(documentDrafts.status, "active"),
-            eq(documentDrafts.kind, kind),
-          ),
-        )
-        .orderBy(asc(documentDrafts.id))
-        .for("update")),
-    );
-  }
-  return rows;
+  return db
+    .select({ id: documentDrafts.id })
+    .from(documentDrafts)
+    .where(and(draftSelectionPredicate(selection), eq(documentDrafts.status, "active")))
+    .orderBy(asc(documentDrafts.id))
+    .for("update");
 }
 
 type Batch = { closed: ClosedDraft[]; removed: Map<DocumentId, DocumentRemovalRecord> };
@@ -173,7 +155,6 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
             .returning({
               draftId: documentDrafts.id,
               documentId: documentDrafts.documentId,
-              threadId: documentDrafts.threadId,
               branchId: documentDrafts.branchId,
               kind: documentDrafts.kind,
             })
@@ -190,7 +171,6 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
       const ended = closed.map((row) => ({
         draftId: row.draftId,
         documentId: row.documentId as DocumentId,
-        threadId: (row.threadId as ThreadId | null) ?? null,
         branchId: row.branchId,
         cause,
       }));

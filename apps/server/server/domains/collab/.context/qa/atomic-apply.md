@@ -39,6 +39,6 @@ particular, verify that:
 
 When changing admission or hold timing, pause `apply.beforeBoundary`, close the
 addressed draft through the production close kernel inside its Work boundary,
-then resume. Apply must answer `closed` with unchanged live text, no command
-claim or lineage, and no room delivery. A previously landed command still wins
+then resume. Apply must answer `closed` with unchanged live text, a stored `closed`
+outcome and nothing else, and no room delivery. A previously landed command still wins
 on retry.

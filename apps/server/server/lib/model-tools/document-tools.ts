@@ -1,7 +1,6 @@
 /**
  * The `read` and `write` tools: a path resolves to its tracked document,
- * the file policy grants the call, and the collab pool reads or writes under
- * that grant. `skills://` paths go to the skill files.
+ * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
  */
 
 import type {
@@ -21,9 +20,14 @@ import {
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
-import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
+import {
+  createCopyIdentityMap,
+  ModelEditRefusal,
+  remapCopiedBlocks,
+} from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -33,6 +37,7 @@ import {
 } from "../../domains/file-policy/index.js";
 import {
   isSkillsUri,
+  type ModelEditHandlerResult,
   type ResultEvidence,
   readSkill,
   refuseSkillWrite,
@@ -60,7 +65,6 @@ import {
   removalBehind,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
-import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   areaOfPath,
@@ -245,19 +249,21 @@ async function writeUnderGrant(
   if (isToolError(grant)) return grant;
   let written: WriteOutcome;
   try {
+    // The write runs under its own lock, inside the command's transaction.
     written = await deps.documentSync
-      .agentEdit()
+      .modelEdits()
       .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
         responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
-        createdDocument: address.created === true,
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
-        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
+        ...(ctx.frontiers
+          ? { frontiers: ctx.frontiers, creditedBlockIds: ctx.frontiers.credited() }
+          : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -420,39 +426,39 @@ export function createReadHandler(deps: ToolWiringDeps) {
 }
 
 export function createWriteHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
-    let written = input as WriteToolInput;
+  return async (input: unknown, handlerCtx: ToolHandlerContext) => {
+    const ctx = handlerCtx;
+    const edit = ctx.modelEdit;
+    if (!edit) throw new Error("A write is a document command: the executor keys it");
+    const written = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(written);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(written.command, call.output.message);
+    const settle = effectSettler(deps, ctx, edit);
     if (
       written.command === "move" ||
       written.command === "delete" ||
       written.command === "restore" ||
       (written.command === "create" && written.path.endsWith("/"))
     )
-      return runTreeToolCommand(deps, call, written, ctx);
-    // What the tree took back of this call's `count`, said before the text engine's own line.
-    let treeUndone: string[] = [];
-    if (written.command === "undo" || written.command === "redo" || written.command === "revert") {
-      const tree = await runTreeInverse(deps, call, written, ctx);
-      if (tree?.kind === "answer") return tree.answer;
-      if (tree?.kind === "then_text") {
-        treeUndone = tree.undone;
-        written = { ...written, count: tree.count } as typeof written;
-      }
-    }
+      return runTreeToolCommand(deps, call, written, ctx, settle);
     const { context, principal } = call;
     const isInverse =
       written.command === "undo" || written.command === "redo" || written.command === "revert";
     const creates = written.command === "create" || written.command === "copy";
-    // The path the model wrote is the node it was shown: a create only looks up its folders.
-    const reached = await reachShown(call, ctx, written.command, written.path, {
-      folderOf: creates,
-    });
-    if (isToolError(reached)) return reached;
-    const parsed = { ...written, path: reached.path } as typeof written;
+    // The path the model wrote is the node it was shown: a create only looks up its folders. An
+    // inverse reaches it after its tree half, which may have moved the node.
+    const reach = (path: string) =>
+      reachShown(call, ctx, written.command, path, { folderOf: creates });
+    let reached: Reached | undefined;
+    let parsed = written;
+    if (!isInverse) {
+      const first = await reach(written.path);
+      if (isToolError(first)) return first;
+      reached = first;
+      parsed = { ...written, path: first.path } as typeof written;
+    }
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
@@ -486,8 +492,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         }
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
         // holding the branch's own object (12b-Q2).
-        return inContainer(deps, principal, parsed.command, target, () =>
-          copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
+        return settle(() =>
+          inContainer(deps, principal, parsed.command, target, () =>
+            copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
+          ),
         );
       }
       const read = await readTrackedCopySource(
@@ -510,173 +518,202 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    const address = await inContainer(deps, principal, parsed.command, target, () =>
-      resolveDocumentAddress(context, parsed.command, parsed.path, {
-        origin: {
-          type: "agent",
-          agentSlug: ctx.agentSlug,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-        },
-        ...(parsed.command === "copy" && copied
-          ? {
-              metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
-              sourceExtension: sourceExtension(copied.copiedFrom.uri),
-            }
-          : {}),
-        ...(creates
-          ? {
-              recordCreate: async ({ documentId, record, draftBranchId }) => {
-                await deps.documentSync.treeHistory().recordAgentTreeChange({
-                  subject: documentId,
-                  nodes: [{ nodeId: documentId, beforeAt: null, afterAt: parsed.path }],
-                  records: [{ record, node: documentId }],
-                  threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
-                  ...(ctx.turnId
-                    ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
-                    : {}),
-                  ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-                  ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-                  op: "create",
-                  ...(draftBranchId ? { draftBranchId } : {}),
-                  shownAt: parsed.path,
-                });
-              },
-            }
-          : {}),
-      }),
-    );
-    if (isToolError(address)) return address;
-
-    if (parsed.command === "copy" && copied) {
-      // The copy's new identity is known now: a whole document's own links name the copy, not
-      // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
-      // A selection is not the copied set: its links to the whole source keep naming it.
-      copied = {
-        ...copied,
-        nodes: remapCopiedBlocks({
-          blocks: copied.nodes,
-          sourceHolderUri: copied.copiedFrom.uri,
-          aheadSettlements: copied.aheadSettlements,
-          map: createCopyIdentityMap({
-            documents: copied.wholeDocument
-              ? [
-                  {
-                    sourceDocumentId: copied.sourceDocumentId,
-                    sourceUri: copied.copiedFrom.uri,
-                    documentId: address.documentId,
-                    uri: address.uri,
-                  },
-                ]
-              : [],
-            folders: [],
-          }),
-        }),
-      };
+    // A write to an existing document finds it before the command claims its id. A drafted write
+    // plans on a draft caught up with live, and the pull opens a connection of its own.
+    let existing: ResolvedDocumentAddress | undefined;
+    if (!isInverse && !creates) {
+      const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
+      if (isToolError(found)) return found;
+      await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
+      existing = found;
     }
 
-    let outcome = await writeUnderGrant(
-      deps,
-      principal,
-      parsed,
-      address,
-      copied,
-      ctx,
-      context.resolution.uploadsOwner?.chatRef,
-    );
-    // A reversed move left the document somewhere else: the result names where it is now. A
-    // reversed creation removed the document, so its text half must not claim an empty document
-    // survived the tree half of the same inverse.
-    if (isInverse && !outcome.isError && outcome.result.status === "success") {
-      const located = await call.context.port.locate(address.documentId);
-      const now = located.ok ? (located.value?.uri ?? null) : null;
-      if (now && now !== outcome.result.path)
-        outcome = { ...outcome, result: { ...outcome.result, path: now } };
-      else if (!now && outcome.result.documentEmpty)
-        outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
-    }
-    if (treeUndone.length > 0 && !outcome.isError)
-      outcome = {
-        ...outcome,
-        result: {
-          ...outcome.result,
-          message: [`undone: ${treeUndone.join(", ")}`, outcome.result.message]
-            .filter(Boolean)
-            .join("\n"),
-        },
-      };
-    const stagedCreate =
-      creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
-    if (outcome.isError) {
-      if (stagedCreate) {
-        try {
-          await retractCreatedTrackedDocument({
-            port: context.port,
-            uri: address.uri,
-            documentId: address.documentId,
-            cause: "create_failed",
-          });
-        } catch (error) {
-          return writeToolError(
-            parsed.command,
-            `Failed to discard staged create for ${parsed.path}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-            "internal_error",
-          );
+    let refresh: DocumentId | undefined;
+    const effect = async () => {
+      // What the tree took back of this call's `count`, said before the text engine's own line.
+      let treeUndone: string[] = [];
+      let engine = parsed;
+      if (isInverse) {
+        const tree = await runTreeInverse(
+          deps,
+          call,
+          written as Parameters<typeof runTreeInverse>[2],
+          ctx,
+        );
+        if (tree?.kind === "answer") return tree.answer;
+        if (tree?.kind === "then_text") {
+          treeUndone = tree.undone;
+          engine = { ...written, count: tree.count } as typeof written;
         }
+        const first = await reach(written.path);
+        // A reversed creation took the document and its text steps with it.
+        if (isToolError(first)) return tree?.kind === "then_text" ? tree.answer : first;
+        reached = first;
+        engine = { ...engine, path: first.path } as typeof written;
       }
-      return { isError: true, output: outcome.output, evidence: outcome.evidence };
-    }
-    if (stagedCreate) {
-      const responseId = ctx.responseIdentity?.editScopeId;
-      if (responseId === undefined) {
-        return writeToolError(parsed.command, "Missing staged response id", "internal_error");
-      }
-      deps.responseWrites.trackStagedCreate({
-        responseId,
-        port: context.port,
-        uri: address.uri,
-        documentId: address.documentId,
-      });
-    }
+      const address =
+        existing ??
+        (await inContainer(deps, principal, engine.command, target, () =>
+          resolveDocumentAddress(context, engine.command, engine.path, {
+            origin: {
+              type: "agent",
+              agentSlug: ctx.agentSlug,
+              threadId: ctx.threadId,
+              turnId: ctx.turnId,
+            },
+            ...(engine.command === "copy" && copied
+              ? {
+                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
+                  sourceExtension: sourceExtension(copied.copiedFrom.uri),
+                }
+              : {}),
+            ...(creates
+              ? {
+                  recordCreate: async ({ documentId, record, draftBranchId }) => {
+                    await deps.documentSync.treeHistory().recordAgentTreeChange({
+                      subject: documentId,
+                      nodes: [{ nodeId: documentId, beforeAt: null, afterAt: engine.path }],
+                      records: [{ record, node: documentId }],
+                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                      ...(ctx.turnId
+                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                        : {}),
+                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+                      op: "create",
+                      ...(draftBranchId ? { draftBranchId } : {}),
+                      shownAt: engine.path,
+                    });
+                  },
+                }
+              : {}),
+          }),
+        ));
+      if (isToolError(address)) return address;
 
-    // Settlement phase, not command names, decides who still owes admission.
-    const unchanged = outcome.result.unchanged === true;
-    const stagedWrite = outcome.status === "success" && outcome.phase === "staged";
-    if (!stagedWrite && !unchanged) {
+      if (engine.command === "copy" && copied) {
+        // The copy's new identity is known now: a whole document's own links name the copy, not
+        // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+        // A selection is not the copied set: its links to the whole source keep naming it.
+        copied = {
+          ...copied,
+          nodes: remapCopiedBlocks({
+            blocks: copied.nodes,
+            sourceHolderUri: copied.copiedFrom.uri,
+            aheadSettlements: copied.aheadSettlements,
+            map: createCopyIdentityMap({
+              documents: copied.wholeDocument
+                ? [
+                    {
+                      sourceDocumentId: copied.sourceDocumentId,
+                      sourceUri: copied.copiedFrom.uri,
+                      documentId: address.documentId,
+                      uri: address.uri,
+                    },
+                  ]
+                : [],
+              folders: [],
+            }),
+          }),
+        };
+      }
+
+      let outcome = await writeUnderGrant(
+        deps,
+        principal,
+        engine,
+        address,
+        copied,
+        ctx,
+        context.resolution.uploadsOwner?.chatRef,
+      );
+      // A reversed move left the document somewhere else: the result names where it is now. A
+      // reversed creation removed the document, so its text half must not claim an empty document
+      // survived the tree half of the same inverse.
+      if (isInverse && !outcome.isError && outcome.result.status === "success") {
+        const located = await call.context.port.locate(address.documentId);
+        const now = located.ok ? (located.value?.uri ?? null) : null;
+        if (now && now !== outcome.result.path)
+          outcome = { ...outcome, result: { ...outcome.result, path: now } };
+        else if (!now && outcome.result.documentEmpty)
+          outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
+      }
+      if (outcome.isError)
+        return { isError: true, output: outcome.output, evidence: outcome.evidence };
+      if (treeUndone.length > 0)
+        outcome = {
+          ...outcome,
+          result: {
+            ...outcome.result,
+            message: [`undone: ${treeUndone.join(", ")}`, outcome.result.message]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        };
+
+      if (outcome.result.unchanged !== true) refresh = address.documentId as DocumentId;
+      const notice = await deps.contextPorts.chatFiles.notice(
+        context.resolution.thread.projectId,
+        engine.path,
+        address.uri,
+      );
+      return {
+        output: notice ? { ...outcome.result, ...notice } : outcome.result,
+        metadata: documentRevisionMetadata(address, outcome.revision),
+        evidence: {
+          ...outcome.evidence,
+          ...namesEvidence(
+            // A create's own name and an inverse's new place are printed too.
+            await printedOf(call, address, creates || isInverse ? null : (reached ?? null)),
+          ),
+        },
+      };
+    };
+    const result = await settle(effect);
+    // The projection catches up once the edit is durable, whoever stored it.
+    if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({
-        documentId: address.documentId,
+        documentId: refresh,
         threadId: ctx.threadId,
       });
-    }
-    const notice = await deps.contextPorts.chatFiles.notice(
-      context.resolution.thread.projectId,
-      parsed.path,
-      address.uri,
-    );
-    return {
-      output: notice ? { ...outcome.result, ...notice } : outcome.result,
-      metadata: {
-        ...documentRevisionMetadata(address, outcome.revision),
-        ...(stagedWrite
-          ? {
-              documentId: address.documentId,
-              stagedWrite: true,
-              ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
-              ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-            }
-          : {}),
-      },
-      evidence: {
-        ...outcome.evidence,
-        ...namesEvidence(
-          // A create's own name and an inverse's new place are printed too.
-          await printedOf(call, address, creates || isInverse ? null : reached),
-        ),
-      },
-    };
+    return result;
   };
+}
+
+/**
+ * Runs a call's effect as the command the executor keyed it by, which stores its result with
+ * its outcome. An error result is the command's refusal: whatever the effect changed rolls
+ * back with it.
+ */
+function effectSettler(
+  deps: ToolWiringDeps,
+  ctx: ToolHandlerContext,
+  edit: NonNullable<ToolHandlerContext["modelEdit"]>,
+): (effect: () => Promise<unknown>) => Promise<unknown> {
+  return async (effect): Promise<ModelEditHandlerResult> => {
+    const { outcome, evidence } = await deps.documentSync.modelEdits().run({
+      key: edit.key,
+      owner: { threadId: ctx.threadId, turnId: ctx.turnId },
+      signal: ctx.signal,
+      async effect() {
+        const raw = await effect();
+        const rendered = edit.render(raw);
+        if (isErrorOutput(raw)) throw new ModelEditRefusal(rendered.toolResult, rendered.evidence);
+        return rendered;
+      },
+    });
+    return { modelEdit: outcome, ...(evidence ? { evidence } : {}) };
+  };
+}
+
+function isErrorOutput(value: unknown): boolean {
+  return (
+    typeof value === "object" && value !== null && (value as { isError?: unknown }).isError === true
+  );
+}
+
+function isCommandResult(value: unknown): value is ModelEditHandlerResult {
+  return typeof value === "object" && value !== null && "modelEdit" in value;
 }
 
 function sourceExtension(uri: string): string {

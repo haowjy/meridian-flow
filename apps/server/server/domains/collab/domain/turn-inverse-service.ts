@@ -36,7 +36,6 @@ export type StoredInversePart = InversePart & {
   threadId: ThreadId | null;
   turnId: TurnId | null;
   responseId: string | null;
-  editScopeId: string | null;
   toolCallId: string | null;
   consumes: string[];
   actor: "agent" | "human" | "system";
@@ -47,7 +46,7 @@ export type StoredInversePart = InversePart & {
 export type TurnInverseQuery = {
   threadId: ThreadId;
   turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
   draftId?: string | null;
@@ -98,7 +97,7 @@ export interface TurnInverseStore {
   commit(input: {
     plans: PreparedDocumentInverse[];
     sequence: { plan: PreparedDocumentInverse; step: InverseStep }[];
-    kind: "undo" | "redo" | "revert" | "rollback";
+    kind: "undo" | "redo" | "revert";
     userId?: UserId;
     query: TurnInverseQuery;
   }): Promise<{
@@ -120,14 +119,11 @@ export interface TurnInverseStore {
     part: StoredInversePart,
   ): { before: string; after: string };
 }
-type TurnRow = Pick<StoredInversePart, "actor" | "kind" | "threadId" | "turnId" | "editScopeId">;
+type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
-  (query.responseIdentity
-    ? part.actor === "agent" && part.kind !== "rollback"
-    : part.kind === "write" || part.kind === "revert") &&
+  (part.kind === "write" || part.kind === "revert") &&
   part.threadId === query.threadId &&
-  part.turnId === query.turnId &&
-  (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);
+  part.turnId === query.turnId;
 
 /**
  * Each document's ordered steps, for both command and dry run; each step lands where its
@@ -139,10 +135,10 @@ function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
-  kind: "undo" | "redo" | "rollback",
+  kind: "undo" | "redo",
   actionId: string,
 ): PreparedDocumentInverse[] {
-  const direction = kind === "redo" ? "redo" : "undo";
+  const direction = kind;
   const keys = new Set(
     documents.flatMap((document) =>
       document.history.filter((part) => targetsTurn(part, query)).map(partKey),
@@ -158,11 +154,10 @@ function prepare(
     const targets = document.history.filter(
       (part) => targetsTurn(part, query) && (direction !== "redo" || accepted.has(partKey(part))),
     );
-    const rolledBack = (part: StoredInversePart) => index.rolledBack.has(partKey(part));
     const reversals =
       direction === "undo"
-        ? targets.filter((part) => !rolledBack(part))
-        : document.history.filter((part) => part.actionId === selectedAction && !rolledBack(part));
+        ? targets
+        : document.history.filter((part) => part.actionId === selectedAction);
     const skips: TurnInverseSkip[] = [];
     const entryPlanner = createCapturedReversalPlanner(document, query);
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) =>
@@ -185,7 +180,7 @@ function prepare(
     const order: {
       editId: string;
       destination: InverseDestination;
-      actionKind: "undo" | "redo" | "revert" | "rollback";
+      actionKind: "undo" | "redo" | "revert";
       at: number;
     }[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
@@ -204,7 +199,7 @@ function prepare(
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
         parts,
       };
-      const planned = entryPlanner.turnTextPlan(entry, direction, kind, query, inverseParts);
+      const planned = entryPlanner.turnTextPlan(entry, direction, query, inverseParts);
       if ("causes" in planned) {
         for (const [i, part] of parts.entries())
           skip(part, planned.causes[i] as TurnInverseSkipCause);
@@ -212,10 +207,6 @@ function prepare(
       }
       for (const { part, direction: partDirection } of planned.selection) {
         const selectedPart = part as StoredInversePart;
-        if (rolledBack(selectedPart)) {
-          skip(selectedPart, "rolled_back");
-          continue;
-        }
         selection.set(planned.destination, [
           ...(selection.get(planned.destination) ?? []),
           { part: selectedPart, direction: partDirection },
@@ -226,13 +217,13 @@ function prepare(
         order.push({
           editId: parts[0].editId,
           destination: planned.destination,
-          actionKind: planned.actionKind as "undo" | "redo" | "revert" | "rollback",
+          actionKind: planned.actionKind as "undo" | "redo" | "revert",
           at,
         });
     }
     // Each destination's parts compute as one selection in step order over that destination's
     // view; one edit lands in one destination. Review membership does not decide inverse
-    // eligibility, including rollback.
+    // eligibility.
     const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
         return [destination, entryPlanner.compute(destination, parts, actionId)];
@@ -388,24 +379,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
           skips,
           acceptedParts: accepted,
         };
-      });
-    },
-    async rollbackResponse(
-      query: TurnInverseQuery & {
-        responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
-      },
-    ): Promise<TurnInverseSkip[]> {
-      return store.withCapturedDocuments(query, async (documents) => {
-        const plans = prepare(store, documents, query, "rollback", randomUUID());
-        // The store also marks only this response's remaining pending target rows. A step that
-        // can't run is reported and the rest still run.
-        const { skips } = await store.commit({
-          plans,
-          sequence: inSequence(plans, "undo"),
-          kind: "rollback",
-          query,
-        });
-        return [...plans.flatMap((plan) => plan.skips), ...skips];
       });
     },
   };

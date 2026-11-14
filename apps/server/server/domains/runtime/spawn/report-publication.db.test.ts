@@ -87,7 +87,7 @@ else
         payload: { private: "detail" },
       });
       await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -122,7 +122,7 @@ else
       await terminal();
       if (placeholder)
         await finalizeExecution(
-          { repos, eventWriter },
+          { repos, eventWriter, recoverCommands: async () => {} },
           {
             threadId: ids.child,
             turnId: placeholder.id,
@@ -173,6 +173,7 @@ else
       let reportPage = lane === "child-report" ? staleReports : [];
       let placeholderPage = stalePlaceholders;
       const repair = createOrphanReportRepair({
+        recoverCommands: async () => {},
         repos: {
           ...repos,
           turns: {
@@ -295,7 +296,7 @@ else
         payload,
       });
       await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -358,7 +359,7 @@ else
         payload: objectPayload,
       });
       await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.nextExecution,
@@ -438,8 +439,8 @@ else
           turnId: ids.callerTurn,
           blockSeqRef: { value: 8 },
           allBlocks: [],
+          store: (persist) => delivery.withThreadLock(ids.caller, persist),
         },
-        delivery,
         card: originalCard,
         props: invocationCardProps({
           agent: "critic",
@@ -597,7 +598,7 @@ else
         cardBlockId: null,
       });
       await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.nextExecution,

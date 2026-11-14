@@ -7,6 +7,8 @@ import { z } from "zod";
 const toolCallSchema = z
   .strictObject({
     name: z.string().min(1),
+    /** The call's id as the provider names it; default `call_mock_<request>_<index>`. */
+    id: z.string().min(1).optional(),
     args: z.record(z.string(), z.unknown()).optional(),
     /** The arguments string sent as is, for malformed JSON; replaces `args`. */
     rawArgs: z.string().max(100_000).optional(),

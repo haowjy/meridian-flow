@@ -1,9 +1,14 @@
 # collab TODO
 
-- `adapters/drizzle-drafts.ts` (`ensureThreadPeerDraft`) and the live agent-edit
-  coordinator: measure paths that hold a pooled connection while acquiring
-  another, including an ambient reply transaction. Restructure on demonstrated
-  pool exhaustion; preserve lock order and independent root rebase transactions.
+- `adapters/drizzle-drafts.ts` (`ensureDocumentDraft`) and the live agent-edit
+  coordinator: measure paths outside a command that hold a pooled connection while acquiring
+  another (inside one, `assertOutsideCommandTransaction` refuses it in dev and test). Restructure
+  on demonstrated pool exhaustion; preserve lock order and independent root rebase transactions.
+- `context/adapters/project-context-availability.ts` `lookup`: reached from a model edit's
+  `links.prepare`, it joins the command transaction and so reads its heads, documents, folders,
+  removals and branches at read committed, not as one repeatable-read cut. The generation is read
+  first, so a torn read errs toward newer data; no wrong outcome is shown. Read it under the tree
+  scope's locks if one appears.
 - `domain/markdown-document.ts`: evaluate replacing the constrained code schema
   with one shared schema and presentation/input policy ([#212]). Until a safe
   conversion exists, retain the document/code rename guard so normalization
@@ -16,11 +21,8 @@
   determine what remains of [#931].
 - Live document persistence and mutation adapters: move the remaining live
   in-process/advisory lock model to checkpoint, tail and revision under [#934].
-- Response-transaction integration: replace the duplicated `deferUntilCommit`
-  declarations and participant layer with one unit-of-work port ([#935]).
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931
 [#932]: https://github.com/haowjy/meridian-flow/issues/932
 [#934]: https://github.com/haowjy/meridian-flow/issues/934
-[#935]: https://github.com/haowjy/meridian-flow/issues/935

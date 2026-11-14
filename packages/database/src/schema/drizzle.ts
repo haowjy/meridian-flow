@@ -11,6 +11,7 @@ export * from "./content";
 export * from "./context-availability";
 export * from "./document-edits";
 export * from "./imports";
+export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";

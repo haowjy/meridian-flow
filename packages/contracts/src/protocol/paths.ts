@@ -133,13 +133,9 @@ export function apiProjectBranchPath(projectId: string, branchId: string): strin
   return `${apiProjectPath(projectId)}/branches/${branchId}`;
 }
 
-/** Observes one Apply or Discard command by its client `commandId`. */
-export function apiProjectBranchCommandPath(
-  projectId: string,
-  branchId: string,
-  commandId: string,
-): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/commands/${commandId}`;
+/** Observes one document command by its client-minted id: the stored outcome, or `none`. */
+export function apiDocumentCommandPath(commandId: string): string {
+  return `/api/document-commands/${commandId}`;
 }
 
 /** Discard all: one command over the whole branch. */
@@ -239,10 +235,6 @@ export function apiProjectContextMovePath(projectId: string): string {
 /** One Copy command: many sources, one destination, one receipt. */
 export function apiProjectContextCopyPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/copy`;
-}
-
-export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
-  return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
 
 /** Delete one entry (file or folder) by id. */

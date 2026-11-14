@@ -49,7 +49,6 @@ async function moveOne(
   },
 ) {
   const port = contextPortForThread(deps.contextPorts, call.context.resolution, {
-    responseId: ctx.responseIdentity?.editScopeId ?? null,
     liveWrites: true,
   });
   const history = deps.documentSync.treeHistory();
@@ -103,6 +102,8 @@ export async function runMoveAcrossLists(
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
+  /** Runs the moves as the call's command. */
+  settle: (effect: () => Promise<unknown>) => Promise<unknown>,
 ) {
   const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const sources = command.from.map((from) => areaOfPath(from));
@@ -116,77 +117,80 @@ export async function runMoveAcrossLists(
       "move",
       "One move can't both stay in a list and leave it: move them in separate calls.",
     );
-  const shown = await shownNamesOf(ctx);
-  const moved: Moved[] = [];
-  const notMoved: string[] = [];
-  let handle: string | undefined;
-  let landed: string | undefined;
-  for (const from of command.from) {
-    const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
-    const found = await call.context.port.readTree(source.area, {
-      read: (scope) => reachPath(scope, source.area, shown, source.rest, "move"),
-    });
-    const reached = found.ok ? found.value : undefined;
-    if (reached?.kind !== "node" || reached.node.kind === "folder") {
-      const why =
-        reached?.kind === "refused"
-          ? reached.refused.status
-          : reached?.kind === "node"
-            ? "a folder"
-            : "not found";
-      if (!command.many) return writeToolError("move", `Nothing moved: ${from} (${why}).`);
-      notMoved.push(`${from} (${why})`);
-      continue;
+  return settle(async () => {
+    const shown = await shownNamesOf(ctx);
+    const moved: Moved[] = [];
+    const notMoved: string[] = [];
+    let handle: string | undefined;
+    let landed: string | undefined;
+    for (const from of command.from) {
+      const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
+      const found = await call.context.port.readTree(source.area, {
+        read: (scope) => reachPath(scope, source.area, shown, source.rest, "move"),
+      });
+      const reached = found.ok ? found.value : undefined;
+      if (reached?.kind !== "node" || reached.node.kind === "folder") {
+        const why =
+          reached?.kind === "refused"
+            ? reached.refused.status
+            : reached?.kind === "node"
+              ? "a folder"
+              : "not found";
+        if (!command.many) return writeToolError("move", `Nothing moved: ${from} (${why}).`);
+        notMoved.push(`${from} (${why})`);
+        continue;
+      }
+      // A path ending in `/` is the folder it goes into, under its own name; else the leaf renames it.
+      const intoFolder = command.many || command.path.endsWith("/");
+      const leaf = lastSegment(to.rest);
+      const renamed =
+        !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(lastSegment(source.rest));
+      const folderUri = `${to.area}${intoFolder ? to.rest : folderPart(to.rest)}`;
+      const result = await moveOne(deps, call, ctx, grants, {
+        node: reached.node.id,
+        fromUri: reached.uri,
+        fromArea: source.area,
+        folderUri,
+        ...(renamed ? { name: leaf } : {}),
+        shownAt: `${source.area}${source.rest}`,
+      });
+      if (result.refused) {
+        if (!command.many) return result.refused;
+        notMoved.push(`${from} (not moved)`);
+        continue;
+      }
+      moved.push(result.moved);
+      handle = result.handle;
+      const expected = intoFolder
+        ? `${folderUri}${canonicalLeaf(lastSegment(source.rest))}`
+        : `${to.area}${to.rest}`;
+      if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected)) landed = result.moved.uri;
     }
-    // A path ending in `/` is the folder it goes into, under its own name; else the leaf renames it.
-    const intoFolder = command.many || command.path.endsWith("/");
-    const leaf = lastSegment(to.rest);
-    const renamed = !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(lastSegment(source.rest));
-    const folderUri = `${to.area}${intoFolder ? to.rest : folderPart(to.rest)}`;
-    const result = await moveOne(deps, call, ctx, grants, {
-      node: reached.node.id,
-      fromUri: reached.uri,
-      fromArea: source.area,
-      folderUri,
-      ...(renamed ? { name: leaf } : {}),
-      shownAt: `${source.area}${source.rest}`,
-    });
-    if (result.refused) {
-      if (!command.many) return result.refused;
-      notMoved.push(`${from} (not moved)`);
-      continue;
-    }
-    moved.push(result.moved);
-    handle = result.handle;
-    const expected = intoFolder
-      ? `${folderUri}${canonicalLeaf(lastSegment(source.rest))}`
-      : `${to.area}${to.rest}`;
-    if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected)) landed = result.moved.uri;
-  }
-  if (moved.length === 0) return writeToolError("move", `Nothing moved: ${notMoved.join("; ")}`);
-  const names = await printedNames(
-    call,
-    to.area,
-    moved.map((entry) => entry.node),
-  );
-  return {
-    output: modelResult({
-      command: "move",
-      status: "success",
-      phase: "committed",
-      payload: {
-        ...(!command.many && landed ? { path: landed } : {}),
-        destination: "live" as const,
-        ...(handle ? { write: { id: handle } } : {}),
-        tree: {
-          ...(command.many ? { moved: { made: moved.length, of: command.from.length } } : {}),
-          ...(notMoved.length > 0 ? { notMoved } : {}),
+    if (moved.length === 0) return writeToolError("move", `Nothing moved: ${notMoved.join("; ")}`);
+    const names = await printedNames(
+      call,
+      to.area,
+      moved.map((entry) => entry.node),
+    );
+    return {
+      output: modelResult({
+        command: "move",
+        status: "success",
+        phase: "committed",
+        payload: {
+          ...(!command.many && landed ? { path: landed } : {}),
+          destination: "live" as const,
+          ...(handle ? { write: { id: handle } } : {}),
+          tree: {
+            ...(command.many ? { moved: { made: moved.length, of: command.from.length } } : {}),
+            ...(notMoved.length > 0 ? { notMoved } : {}),
+          },
         },
-      },
-    }),
-    metadata: { treeWrite: true },
-    evidence: { shown: [], ...namesEvidence(names) },
-  };
+      }),
+      metadata: { treeWrite: true },
+      evidence: { shown: [], ...namesEvidence(names) },
+    };
+  });
 }
 
 /** Takes a move between lists back (or does an undone one again): the node goes the other way. */

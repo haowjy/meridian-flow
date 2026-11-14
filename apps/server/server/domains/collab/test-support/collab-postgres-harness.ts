@@ -1,10 +1,10 @@
 /** Focused real-Postgres harness for collab durability tests. */
 
+import type { WriteCommand } from "@meridian/agent-edit/integration";
 import {
   createAgentEditCodecFactory,
   type ObservationFrontier,
   toDocHandle,
-  unwrapDoc,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
@@ -12,38 +12,44 @@ import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { updateYFragment } from "@tiptap/y-tiptap";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { expect } from "vitest";
+import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import type { FileGrant } from "../../file-policy/index.js";
-import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
+import { createDrizzleAuthorityGenerationReader } from "../adapters/drizzle-document-authority-head.js";
+import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
 import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
+import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
+import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
+import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
+import { createAgentEditRouter } from "../domain/agent-edit-router.js";
 import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
+import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
 import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
+import { createModelEditWriter } from "../domain/model-edit-write.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
-import { writeMarkdown } from "./bound-writes.js";
-import { readResolvedDraft } from "./draft-store-seam.js";
-import { commitDraftRows } from "./draft-update-writes.js";
-import { captureHistoricalDraftRow } from "./historical-draft-row.js";
+import { createThreadCores } from "../thread-cores.js";
+import { modelWrite } from "./model-write.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -75,18 +81,12 @@ const { createDrizzleBranchTreeState } = await import("../adapters/drizzle-branc
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
 const { treeSeeder } = await import("../../../test-support/tree-seed.js");
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
-const { documentAuthority } = await import("../domain/document-handle.js");
-const { readDocumentAuthorityHead, replaceGeneration } = await import(
-  "../adapters/drizzle-document-authority-head.js"
-);
-const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
 );
 const {
   createAgentEditObservabilityOptions,
-  createDraftAgentEditDiagnostics,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
@@ -99,22 +99,12 @@ const { settleBefore } = await import("./converged-review.js");
 const { createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
 );
-const { enlistResponseParticipant, runResponseTransaction } = await import(
-  "../domain/response-transaction.js"
-);
-const { createResponseWriteFinalizer } = await import("../domain/response-write-finalizer.js");
-const { createPostDurabilityNoticeService, createReversalNoticePort } = await import(
-  "../domain/reversal-notices.js"
-);
-const { createDraftThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
+const { createReversalNoticePort } = await import("../domain/reversal-notices.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
 const { createWorkBranchReviewService } = await import("../domain/work-branch-review-service.js");
-const { createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } = await import(
-  "../domain/provenance.js"
-);
 
 /** Each suite owns its connection; importing this module allocates no database resources. */
 export function createTestDatabase(): Database {
@@ -232,15 +222,6 @@ export async function closeDatabase(db: Database): Promise<void> {
   await closeTestDatabase(db);
 }
 
-export function markdownFromUpdate(update: Uint8Array): string {
-  const doc = new Y.Doc({ gc: false });
-  try {
-    Y.applyUpdate(doc, update);
-    return serializeMarkdown(doc);
-  } finally {
-    doc.destroy();
-  }
-}
 export type CollabHarnessOptions = {
   ids?: CollabScenarioIds;
   /** Default: every grant is confirmed. */
@@ -249,19 +230,10 @@ export type CollabHarnessOptions = {
   links?: DocumentLinkScopes;
 };
 
-export type MatrixDraftStep = {
-  source: "writer" | "agent";
-  markdown: string;
-  remint?: boolean;
-  /** Certifies a length-preserving structural re-mint as one preserved root run. */
-  certifiedCarry?: boolean;
-  transientInsertDelete?: string;
-};
-
 export function createHarness(db: Database, options: CollabHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
-  const { ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const { ALPHA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const documentName = (documentId: DocumentId) =>
     documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
   const DRAFT_DESTINATION = {
@@ -270,7 +242,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     ownerHandle: "atomicity-work",
   } as const;
   const persistence = createDrizzleCollabPersistence(db);
-  const testJournal = grantedJournal(persistence.journal);
+  const _testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
@@ -282,7 +254,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   // One closer for the harness's drafts, Discard and removals; its retirement binds below.
   const { draftClose, treeLists, removals } = createTestRemovalDeps(db);
-  const realDraftStore = createFixtureDraftStore(db, {
+  const draftStore = createFixtureDraftStore(db, {
     close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
     live: {
@@ -290,36 +262,10 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     branches: workBranches,
   });
-  let journalInsertCount = 0;
-  // Which draft journal insert of the next save fails, counting from 1.
-  const state = {
-    failJournalInsertAt: null as number | null,
-    failFirstRefresh: false,
-    refreshedDocuments: [] as string[],
-    refreshObservedDurability: false,
-  };
-  function injectSecondJournalFailure(): void {
-    if (++journalInsertCount === state.failJournalInsertAt) {
-      throw new Error(
-        state.failJournalInsertAt === 2
-          ? "injected second-document journal failure"
-          : "injected draft journal failure",
-      );
-    }
-  }
-  const draftStore = {
-    ...realDraftStore,
-    async appendRows(input: Parameters<typeof realDraftStore.appendRows>[0]) {
-      injectSecondJournalFailure();
-      return realDraftStore.appendRows(input);
-    },
-  };
-  const draftBroadcasts: string[] = [];
   const draftCoordinator = createDraftCoordinator({
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
     store: draftStore,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
-    onDraftUpdate: ({ draftId }) => draftBroadcasts.push(draftId),
   });
   const draftPulls = createDraftPullService({
     outsideTransaction: runOutsideWrite,
@@ -361,18 +307,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     flush: async () => {},
   };
-  const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
-    const doc = hocuspocus.documents.get(documentId);
-    if (!doc) throw new Error("warm live document is unavailable after push commit");
-    const block = model.getBlocks(toDocHandle(doc))[0];
-    if (!block) throw new Error("writer target is unavailable after push commit");
-    const before = Y.encodeStateVector(doc);
-    model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
-    await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
-  };
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
@@ -384,7 +318,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
     drafts: draftStore,
-    coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
@@ -408,56 +341,75 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     observability,
     inTransaction: isInDrizzleTransaction,
   });
-  const projections = {
-    // Records each post-commit refresh so a test can prove one failure skips no later document.
-    async refresh(...args: Parameters<typeof runDocumentWriteHook>) {
-      state.refreshedDocuments.push(args[0].documentId);
-      if (state.failFirstRefresh && state.refreshedDocuments.length === 1) {
-        const rows = await db
-          .select()
-          .from(schema.draftWriteJournal)
-          .where(eq(schema.draftWriteJournal.source, "agent"));
-        state.refreshObservedDurability = rows.length > 0 && !isInDrizzleTransaction();
-        throw new Error("injected post-root-commit refresh failure");
-      }
-      return runDocumentWriteHook(...args);
-    },
-  };
+  const projections = { refresh: runDocumentWriteHook };
+  const threadCore = createThreadCores({
+    documentEdits: modelDocumentEdits,
+    journal: persistence.journal,
+    drafts: draftStore,
+    draftCoordinator,
+    draftPulls,
+    draftJournal: durableDraftJournalReadStore,
+    model: runtime.model,
+    codec: runtime.codec,
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
+    semanticProvenance: runtime.semanticProvenance,
+    observability,
+  });
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
-    createDraftThreadPeerAgentEditCore({
-      documentEdits: modelDocumentEdits,
+    createAgentEditRouter({
       branches: workBranches,
-      fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-      removals,
-      lockOwners: async () => {},
-      lockLiveDocuments: async () => {},
-      liveUtilityCore: runtime.liveUtilityCore,
-      journal: persistence.journal,
       drafts: draftStore,
-      draftCoordinator,
-      draftPulls,
-      draftJournal: durableDraftJournalReadStore,
-      diagnostics: createDraftAgentEditDiagnostics(eventSink),
-      model: runtime.model,
-      codec: runtime.codec,
-      links,
-      aheadRefs: UNSUPPORTED_AHEAD_REFS,
-      semanticProvenance: runtime.semanticProvenance,
-      observability,
-      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
-      attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
-      responseTransactionSettlement: {
-        deferUntilCommit: deferUntilDrizzleCommit,
-        deferUntilRollback: deferUntilDrizzleRollback,
-      },
-      responseTransactions: {
-        enlist: enlistResponseParticipant,
-        run: runResponseTransaction,
-      },
+      liveUtilityCore: runtime.liveUtilityCore,
+      threadCore,
     }),
     links,
   );
+  const ensureWorkDraft = ({
+    documentId,
+    branchId,
+  }: {
+    documentId: DocumentId;
+    branchId: string;
+  }) => draftStore.ensureLiveDocumentDraft({ documentId, branchId: branchId as never });
+  const modelEvidence = createDrizzleModelEvidence(db);
+  const modelEdits = createDrizzleModelEdits(
+    db,
+    {
+      write: scopeModelEditWrite(
+        createModelEditWriter({
+          evidence: modelEvidence,
+          liveCore: runtime.liveUtilityCore,
+          threadCore,
+          branches: workBranches,
+          fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
+          enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
+          enterDraftSeam: async () => {
+            await lockSeamWorks(db, []);
+          },
+          ensureWorkDraft,
+          lockDraft: async (draftId) => {
+            await currentDrizzleDb(db)
+              .select({ id: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
+              .where(eq(schema.documentDrafts.id, draftId))
+              .for("update");
+          },
+          roomsOf: async (documentId) => ({
+            liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
+            drafts: await draftStore.listWorkDraftStates(documentId),
+          }),
+          afterLiveCommit: (documentId) =>
+            deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
+        }),
+        links,
+      ),
+      catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+    },
+    modelEvidence,
+  );
+  const readAuthorityGeneration = createDrizzleAuthorityGenerationReader(db);
   const turnInverse = createDrizzleTurnInverseService({
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db,
@@ -477,20 +429,11 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     removals,
     fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
   });
-  const responseFinalizer = createResponseWriteFinalizer({
-    agentEdit,
-    rollback: turnInverse,
-    projections,
-    notices: createPostDurabilityNoticeService({
-      notices,
-      documentUriResolver: resolveDocumentUri,
-      diagnostics: createReversalNoticeDiagnostics(eventSink),
-    }),
-  });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     turnInverse,
     resolveDocumentUri,
+    commands: createDrizzleDocumentCommands(db),
   });
   const reviewItems = createBranchReviewItems({
     tree: createDrizzleBranchTreeState(db, createTreeReader(db)),
@@ -514,7 +457,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       async closeRemovedRooms(_documentIds, draftIds) {
         for (const draftId of draftIds) closeDraftRoom(draftId);
       },
-      agentEdit,
     }),
     (error) => {
       throw error;
@@ -535,7 +477,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     identity,
     discard: createBranchDiscard({
       branches: workBranches,
-      attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
         close: draftClose,
@@ -545,40 +486,37 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       }),
       holdRetirement: draftClose.holdRetirement,
     }),
-    commands: createDrizzleBranchCommands(db),
+    commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
-  // Tests mint a destination grant without a target; a write's grant names its document.
-  const grantedAgentEdit = new Proxy(agentEdit, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (property !== "write" || typeof value !== "function") return value;
-      return (command: { documentId?: string }, context: { grant: FileGrant<"edit"> }) =>
-        value.call(
-          target,
-          command,
-          command.documentId
-            ? {
-                ...context,
-                grant: {
-                  ...context.grant,
-                  facts: {
-                    ...context.grant.facts,
-                    target: { kind: "document", documentId: command.documentId },
-                  },
-                },
-              }
-            : context,
-        );
+  // Tests mint a destination grant without a target; a write's grant names its document. A
+  // write is the model's tool call as the chat loop sends it: one command, one transaction.
+  const testAgentEdit = {
+    ...agentEdit,
+    write: (command: WriteCommand, context: RoutedWriteContext) => {
+      const target = "documentId" in command ? command.documentId : undefined;
+      return modelWrite(
+        modelEdits,
+        command,
+        target
+          ? {
+              ...context,
+              grant: {
+                ...context.grant,
+                facts: { ...context.grant.facts, target: { kind: "document", documentId: target } },
+              },
+            }
+          : context,
+        { accountId: USER_ID, projectId: PROJECT_ID },
+      );
     },
-  });
+  };
   const collab = {
-    agentEdit: () => grantedAgentEdit,
+    agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
-    ...responseFinalizer,
     ...branches,
   };
   // Review membership is projected after an append commits; review reads wait for it.
@@ -587,14 +525,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   // The host's frontier store: a seeded write plans on the view its read showed.
   const shownFrontiers = new Map<string, ObservationFrontier>();
   const lookupShown = async (room: string) => shownFrontiers.get(room) ?? null;
-  const modelFrontiers = { recording: lookupShown, planning: lookupShown };
-  function remember<T extends { frontier?: ObservationFrontier }>(outcome: T): T {
+  const _modelFrontiers = { recording: lookupShown, planning: lookupShown };
+  function _remember<T extends { frontier?: ObservationFrontier }>(outcome: T): T {
     if (outcome.frontier) shownFrontiers.set(outcome.frontier.room, outcome.frontier);
     return outcome;
   }
 
   /**
-   * The Work draft and thread peer a draft-mode write ensures before its room read. A read
+   * The Work draft a draft-mode write ensures before its room read. A read
    * never makes them (S1), so a fixture that seeds drafted content provisions them first.
    */
   async function provisionDraft(documentId: DocumentId = ALPHA_ID) {
@@ -609,224 +547,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       threadId: THREAD_ID,
       userId: USER_ID as never,
     });
-    return draftPulls.ensureThreadPeer({ documentId, threadId: THREAD_ID, branchId: branch.id });
-  }
-
-  /**
-   * Stages one write each to alpha and beta in one reply, both drafted. With
-   * `liveBeta`, beta's write goes live and is staged first, so a save that
-   * fails at alpha's draft journal fails after beta's live append ran. A live
-   * write records its authoring response, so `responseId` must then be a UUID.
-   */
-  async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
-    await writeMarkdown(collab, {
-      documentId: ALPHA_ID,
-      markdown: "Alpha base.",
-      origin: { type: "user", actorUserId: USER_ID as never },
-      threadId: THREAD_ID,
-    });
-    await writeMarkdown(collab, {
-      documentId: BETA_ID,
-      markdown: "Beta base.",
-      origin: { type: "user", actorUserId: USER_ID as never },
-      threadId: THREAD_ID,
-    });
-    const context = {
-      sessionId: THREAD_ID,
-      grant: testFileGrant(DRAFT_DESTINATION),
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      frontiers: modelFrontiers,
-    };
-    // Establish thread peers first, then append a real concurrent work-draft row.
-    // The following staged write must capture that row as a pending watermark.
-    for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID])
-      await provisionDraft(documentId);
-    remember(
-      await collab
-        .agentEdit()
-        .read(
-          { file: "alpha.md", documentId: ALPHA_ID },
-          { ...context, responseIdentity: undefined },
-        ),
-    );
-    if (options.liveBeta) {
-      await db.insert(schema.modelResponses).values({
-        id: responseId as never,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-    }
-    const betaContext = options.liveBeta
-      ? { ...context, grant: testFileGrant({ kind: "live" }) }
-      : context;
-    remember(
-      await collab
-        .agentEdit()
-        .read(
-          { file: "beta.md", documentId: BETA_ID },
-          { ...betaContext, responseIdentity: undefined },
-        ),
-    );
-    for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID]) {
-      const draft = await readResolvedDraft(
-        draftStore,
-        await draftStore.resolveWorkDraftForThread(documentId, THREAD_ID),
-      );
-      const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
-      model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
-      await commitDraftRows(draftCoordinator, {
-        draftId: draft.draftId,
-        sourceDoc: draft.doc,
-        rows: [
-          {
-            draftId: draft.draftId,
-            updateData: await captureHistoricalDraftRow(draftCoordinator, draft.draftId, draft.doc),
-            source: "writer",
-            actorUserId: USER_ID as never,
-            threadId: THREAD_ID,
-            turnId: null,
-            wId: null,
-            updateMeta: null,
-          },
-        ],
-      });
-      draft.doc.destroy();
-    }
-    const stageAlpha = () =>
-      expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "alpha.md",
-            documentId: ALPHA_ID,
-            content: "Agent alpha.",
-          },
-          context,
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-    const stageBeta = () =>
-      expect(
-        collab
-          .agentEdit()
-          .write(
-            { command: "insert", file: "beta.md", documentId: BETA_ID, content: "Agent beta." },
-            betaContext,
-          ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-    if (options.liveBeta) {
-      await stageBeta();
-      await stageAlpha();
-    } else {
-      await stageAlpha();
-      await stageBeta();
-    }
-    // Staging pulls legitimately deliver into loaded draft rooms. Start the
-    // measurement window after staging so it covers only the commit attempt.
-    draftBroadcasts.length = 0;
-    hocuspocus.broadcasts.length = 0;
-    const workDrafts = await db
-      .select({ id: schema.documentDrafts.id })
-      .from(schema.documentDrafts)
-      .where(eq(schema.documentDrafts.kind, "work_draft"));
-    return workDrafts.map((documentDraft) => documentDraft.id).sort();
-  }
-
-  async function seedAndStageDestructive(
-    responseId: string,
-    documentId: DocumentId = ALPHA_ID,
-    journalWriterEdit = true,
-    markdown = "Alpha base.\n\nWriter block.",
-    writerBlockIndex = 1,
-    writerEditBeforeWrite = false,
-    sameIdentityRewrite = false,
-  ) {
-    const file = `${documentName(documentId)}.md`;
-    await writeMarkdown(collab, {
-      documentId,
-      markdown,
-      origin: { type: "user", actorUserId: USER_ID as never },
-      threadId: THREAD_ID,
-    });
-    const context = {
-      sessionId: THREAD_ID,
-      grant: testFileGrant(DRAFT_DESTINATION),
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      createdDocument: false,
-      frontiers: modelFrontiers,
-    };
-    await provisionDraft(documentId);
-    remember(
-      await collab
-        .agentEdit()
-        .read({ file, documentId }, { ...context, responseIdentity: undefined }),
-    );
-    if (writerEditBeforeWrite) {
-      await db.insert(schema.modelResponses).values({
-        id: responseId as never,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-    }
-    const applyWriterEdit = () =>
-      liveCoordinator.withDocument(documentId, async (doc) => {
-        const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
-        if (!writerBlock) throw new Error("writer block missing before concurrent edit");
-        const before = Y.encodeStateVector(doc);
-        model.applyTextEdit(
-          toDocHandle(doc),
-          writerBlock,
-          { from: 0, to: 0 },
-          "Writer concurrent edit: ",
-        );
-        if (journalWriterEdit) {
-          await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-            origin: `human:${USER_ID}`,
-            seq: 0,
-          });
-        }
-      });
-    // The probe edit lands after the response's read but before the destructive
-    // tool call. Journaled fixtures retain their older phase-C timing.
-    if (writerEditBeforeWrite) {
-      await applyWriterEdit();
-    }
-    await expect(
-      collab.agentEdit().write(
-        sameIdentityRewrite
-          ? {
-              command: "replace",
-              file,
-              documentId,
-              find: writerEditBeforeWrite ? `Writer concurrent edit: ${markdown}` : markdown,
-              content: "Agent replacement.",
-            }
-          : {
-              command: "create",
-              file,
-              documentId,
-              content: "# Agent replacement",
-              overwrite: true,
-            },
-        context,
-      ),
-    ).resolves.toMatchObject({ status: "success", phase: "staged" });
-    if (!writerEditBeforeWrite) await applyWriterEdit();
-    const workDraft = await draftStore.resolveWorkDraftForThread(documentId, THREAD_ID);
-    return workDraft.draftId;
+    return ensureWorkDraft({ documentId, branchId: branch.id });
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
@@ -847,497 +568,15 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+        responseIdentity: { modelResponseId: responseId },
       },
-    );
-  }
-
-  async function seedAuthorityReplacementProbe(): Promise<number> {
-    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Restored base.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, documentAuthority(doc));
-      if (!cut) throw new Error("Replacement probe checkpoint cut is unavailable");
-      await persistence.journal.storeCheckpoint(cut);
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
-
-      const block = model.getBlocks(toDocHandle(doc))[0];
-      if (!block) throw new Error("replacement probe block is unavailable");
-      before = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      return checkpoint.id;
-    });
-  }
-
-  async function authorityReplacementProbeResult(generation: bigint): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const snapshot = await persistence.journal.read(ALPHA_ID);
-    const coldDoc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-    const coldMarkdown = serializeMarkdown(coldDoc);
-    coldDoc.destroy();
-    const currentGenerationUpdateCount = (
-      await db
-        .select()
-        .from(schema.documentYjsUpdates)
-        .where(
-          and(
-            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
-            eq(schema.documentYjsUpdates.authorityGeneration, generation),
-          ),
-        )
-    ).length;
-    return { coldMarkdown, currentGenerationUpdateCount };
-  }
-
-  async function compactAfterAuthorityReplacement(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-    const replaced = await replaceGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authorityHead.generation,
-    });
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
-  async function compactWhileAuthorityReplacementWaits(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-    let releaseBlocker!: () => void;
-    let blockerReady!: () => void;
-    const blockerRelease = new Promise<void>((resolve) => {
-      releaseBlocker = resolve;
-    });
-    const blockerAcquired = new Promise<void>((resolve) => {
-      blockerReady = resolve;
-    });
-    const blocker = db.transaction(async (tx) => {
-      await lockDocumentMutation(tx, ALPHA_ID);
-      blockerReady();
-      await blockerRelease;
-    });
-    await blockerAcquired;
-
-    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await db.execute<{ waiting: number }>(sql`
-          SELECT count(*)::int AS waiting
-          FROM pg_locks
-          WHERE locktype = 'advisory'
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            AND NOT granted
-        `);
-        if ((row?.waiting ?? 0) >= expected) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      throw new Error(`expected ${expected} waiting document mutation locks`);
-    }
-
-    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceGeneration> | undefined;
-    try {
-      await waitForAdvisoryLockWaiters(1);
-      replacement = replaceGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId,
-        expectedGeneration: authorityHead.generation,
-      });
-      await waitForAdvisoryLockWaiters(2);
-    } finally {
-      releaseBlocker();
-      await blocker;
-    }
-    if (!replacement) {
-      throw new Error("durable authority head generation replacement did not enter the lock queue");
-    }
-    const [, replaced] = await Promise.all([compact, replacement]);
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
-  async function seedLiveCertifiedCarry(input: {
-    initialMarkdown: string;
-    carriedMarkdown: string | readonly string[];
-    responseId: string;
-  }): Promise<string> {
-    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      const carries = Array.isArray(input.carriedMarkdown)
-        ? input.carriedMarkdown
-        : [input.carriedMarkdown];
-      for (const markdown of carries) {
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        const source = block ? model.getVisibleContentLineage(block)[0] : undefined;
-        const replacement = markupCodec.parse(markdown).blocks[0];
-        if (!block || !source || !replacement || source.length !== replacement.textContent.length) {
-          throw new Error("live certified carry requires one length-preserving block");
-        }
-        before = Y.encodeStateVector(doc);
-        remintMarkdown(doc, markdown);
-        const ir = {
-          version: 1 as const,
-          documentId: ALPHA_ID,
-          inputRevision: "fixture-revision" as never,
-          scope: [source],
-          deleted: [source],
-          intent: {
-            kind: "mappedEdits" as const,
-            edits: [
-              {
-                edit: {
-                  documentId: ALPHA_ID,
-                  file: "alpha.md",
-                  kind: "block" as const,
-                  block,
-                  replacement,
-                },
-                outputRuns: [
-                  {
-                    kind: "preserved" as const,
-                    source,
-                    output: { from: 0, to: source.length },
-                  },
-                ],
-              },
-            ],
-          },
-        };
-        createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(doc), ir, before);
-        await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `agent:${TURN_ID}`,
-          actorTurnId: TURN_ID,
-          seq: 0,
-        });
-      }
-    });
-    await provisionDraft();
-    await collab.agentEdit().read(
-      { file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        grant: testFileGrant(DRAFT_DESTINATION),
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
-      },
-    );
-    const documentDraft = await draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
-    return documentDraft.draftId;
-  }
-
-  /** Runs an agent command through the certified semantic-mutation admission path. */
-  async function stageCertifiedReplace(input: {
-    responseId: string;
-    find: string;
-    content: string;
-  }): Promise<string> {
-    // Resolving the draft creates it before the write.
-    const documentDraft = await draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
-    const context = {
-      sessionId: THREAD_ID,
-      grant: testFileGrant(DRAFT_DESTINATION),
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
-    };
-    await expect(
-      collab.agentEdit().write(
-        {
-          command: "replace",
-          file: "alpha.md",
-          documentId: ALPHA_ID,
-          find: input.find,
-          content: input.content,
-        },
-        context,
-      ),
-    ).resolves.toMatchObject({ status: "success", phase: "staged" });
-    await expect(
-      collab.finalizeResponseCommit(
-        { providerResponseId: input.responseId, editScopeId: input.responseId },
-        {
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-        },
-      ),
-    ).resolves.toMatchObject({ status: "committed" });
-    return documentDraft.draftId;
-  }
-
-  async function seedCheckpointRestoredExplicitDelete(responseId: string): Promise<string> {
-    const restored = "Explicit restored writer root.";
-    const draftId = await seedLiveCertifiedCarry({
-      responseId,
-      initialMarkdown: restored,
-      carriedMarkdown: restored,
-    });
-    const authorityHead = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-      documentAuthority(doc),
-    );
-    const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, authorityHead);
-    if (!cut) throw new Error("Restoration checkpoint cut is unavailable");
-    const checkpointId = Number(
-      await persistence.store.createCheckpoint(cut, "oracle-explicit-restoration"),
-    );
-    const replaced = await replaceGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authorityHead.generation,
-    });
-    if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
-
-    // Recreate the carried prose after the generation replacement as an explicit
-    // restoration of the pre-carry writer root, not as fresh agent ancestry.
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const priorBlock = model.getBlocks(toDocHandle(doc))[0];
-      const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-      const facts = [
-        ...doc
-          .getMap<{
-            target: { clientID: number; clock: number; length: number };
-            root: { clientID: number; clock: number; length: number };
-          }>(PROVENANCE_TARGETS_TYPE)
-          .values(),
-      ];
-      const fact = facts.find(
-        ({ target }) =>
-          source &&
-          target.clientID === source.clientID &&
-          target.clock <= source.clock &&
-          target.clock + target.length >= source.clock + source.length,
-      );
-      const replacement = markupCodec.parse(restored).blocks[0];
-      if (!priorBlock || !source || !fact || !replacement) {
-        throw new Error("carried checkpoint root is unavailable for restoration");
-      }
-      const [installedCheckpoint] = await db
-        .select({ manifest: schema.documentYjsCheckpoints.attributionManifest })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      const manifest = installedCheckpoint?.manifest as {
-        attributions?: Array<{
-          range: { clientID: number; clock: number; length: number };
-        }>;
-      };
-      if (
-        !manifest.attributions?.some(
-          ({ range }) =>
-            range.clientID === fact.root.clientID &&
-            range.clock <= fact.root.clock &&
-            range.clock + range.length >= fact.root.clock + fact.root.length,
-        )
-      ) {
-        throw new Error(
-          `checkpoint omitted carried writer root ${JSON.stringify(fact.root)} from ${JSON.stringify(manifest.attributions?.map(({ range }) => range))}`,
-        );
-      }
-      const before = Y.encodeStateVector(doc);
-      remintMarkdown(doc, restored);
-      createSemanticProvenanceWriter().writeCertifiedFacts(
-        toDocHandle(doc),
-        {
-          version: 1,
-          documentId: ALPHA_ID,
-          inputRevision: "fixture-revision" as never,
-          scope: [source],
-          deleted: [source],
-          intent: {
-            kind: "mappedEdits",
-            edits: [
-              {
-                edit: {
-                  documentId: ALPHA_ID,
-                  file: "alpha.md",
-                  kind: "block",
-                  block: priorBlock,
-                  replacement,
-                },
-                outputRuns: [
-                  {
-                    kind: "restoration",
-                    root: fact.root,
-                    payload: restored,
-                    output: { from: 0, to: source.length },
-                  },
-                ],
-              },
-            ],
-          },
-        },
-        before,
-      );
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-    });
-    await provisionDraft();
-    await collab.agentEdit().read(
-      { file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        grant: testFileGrant(DRAFT_DESTINATION),
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      },
-    );
-    void draftId;
-    return stageCertifiedReplace({ responseId, find: restored, content: "" });
-  }
-
-  async function draftsByKind(kind: "thread_peer" | "work_draft") {
-    return db.select().from(schema.documentDrafts).where(eq(schema.documentDrafts.kind, kind));
-  }
-
-  async function markdownByKind(kind: "thread_peer" | "work_draft") {
-    const rows = await draftsByKind(kind);
-    return Promise.all(
-      rows
-        .sort((left, right) => left.documentId.localeCompare(right.documentId))
-        .map((row) => draftCoordinator.readDraft(row.id, async (doc) => serializeMarkdown(doc))),
     );
   }
 
   return {
-    set failFirstRefresh(value: boolean) {
-      state.failFirstRefresh = value;
-    },
-    get refreshObservedDurability() {
-      return state.refreshObservedDurability;
-    },
-    get refreshedDocuments() {
-      return [...state.refreshedDocuments];
-    },
-    get failSecondJournalInsert() {
-      return state.failJournalInsertAt === 2;
-    },
-    set failSecondJournalInsert(value: boolean) {
-      this.failJournalInsertAt = value ? 2 : null;
-    },
-    get failJournalInsertAt() {
-      return state.failJournalInsertAt;
-    },
-    set failJournalInsertAt(value: number | null) {
-      state.failJournalInsertAt = value;
-      journalInsertCount = 0;
-    },
-    seedAndStage,
-    seedAndStageDestructive,
-    seedProbeTimelineSweep: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
-      seedAndStageDestructive(
-        responseId,
-        documentId,
-        true,
-        "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
-        2,
-        true,
-      ),
-    seedProbeTimelineAfterRead: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
-      seedAndStageDestructive(
-        responseId,
-        documentId,
-        true,
-        "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
-        2,
-        true,
-      ),
-    /** An outstanding tool reply on a real thread peer, not a journaled Work draft. */
-    async stagePeerReply(documentId: DocumentId, responseId: string) {
-      const context = {
-        grant: testFileGrant(DRAFT_DESTINATION),
-        sessionId: THREAD_ID,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      };
-      const file = `${documentName(documentId)}.md`;
-      await provisionDraft(documentId);
-      await collab
-        .agentEdit()
-        .read({ file, documentId }, { ...context, responseIdentity: undefined });
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file,
-            documentId,
-            content: "Outstanding peer reply.",
-          },
-          context,
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      const [peer] = await db
-        .select()
-        .from(schema.documentDrafts)
-        .where(
-          and(
-            eq(schema.documentDrafts.kind, "thread_peer"),
-            eq(schema.documentDrafts.documentId, documentId),
-            eq(schema.documentDrafts.threadId, THREAD_ID),
-          ),
-        );
-      if (!peer) throw new Error("staged reply has no thread peer");
-      return peer.id;
-    },
-    /** The reply's staged view of a document: its buffered writes live in the response, not the peer draft. */
-    async stagedReplyMarkdown(responseId: string, documentId: DocumentId) {
-      const room = await collab
-        .agentEdit()
-        .readRoom({ documentId, threadId: THREAD_ID, responseId, live: false });
-      try {
-        return serializeMarkdown(unwrapDoc(room.doc));
-      } finally {
-        room.dispose();
-      }
-    },
     draftMarkdown: (draftId: string) =>
       draftCoordinator.readDraft(draftId, async (doc) => serializeMarkdown(doc)),
     seedWriterDocument,
-    compactAfterAuthorityReplacement,
-    compactWhileAuthorityReplacementWaits,
-    seedLiveCertifiedCarry,
-    stageCertifiedReplace,
-    seedCheckpointRestoredExplicitDelete,
-    /** A writer edit on the warm room, journaled first, as a socket write would be. */
-    appendWriterPrefix,
     crossWorkProbeFixture: () => ({
       provisionDraft,
       runtime,
@@ -1360,7 +599,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
-      this.destroyWarmState();
+      for (const doc of hocuspocus.documents.values()) doc.destroy();
+      hocuspocus.documents.clear();
+      hocuspocus.broadcasts.length = 0;
     },
     /** Cancels future pulls while a race fixture keeps the rest of its runtime active. */
     cancelScheduledPulls: () => {
@@ -1368,74 +609,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     /** Waits for every draft-effect judgement the test's writes scheduled. */
     settleDraftEffects: () => draftEffects.flush(),
-    async stageAnotherDestructiveEdit(draftId: string) {
-      const staged = await draftCoordinator.readDraft(draftId, async (doc, _snapshot) => {
-        const stagedDoc = new Y.Doc({ gc: false });
-        Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
-        return { doc: stagedDoc };
-      });
-      try {
-        const doc = staged.doc;
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        if (!block) throw new Error("draft block missing before subsequent edit");
-        model.deleteBlock(toDocHandle(doc), block);
-        await commitDraftRows(draftCoordinator, {
-          draftId: draftId,
-          sourceDoc: doc,
-          rows: [
-            {
-              draftId: draftId,
-              updateData: await captureHistoricalDraftRow(draftCoordinator, draftId, doc),
-              source: "agent",
-              actorUserId: null,
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-              wId: null,
-              updateMeta: null,
-            },
-          ],
-        });
-      } finally {
-        staged.doc.destroy();
-      }
-    },
-    markTurnError: () =>
-      db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
-    rollbackResponse: (responseId: string) =>
-      collab.finalizeResponseRollback(
-        { providerResponseId: responseId, editScopeId: responseId },
-        { threadId: THREAD_ID, turnId: TURN_ID },
-      ),
-    addLiveDependency: () =>
-      liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        if (!block) throw new Error("live dependency block missing");
-        const before = Y.encodeStateVector(doc);
-        model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer follow-up: ");
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        });
-      }),
-    async attemptSnapshotReplacement() {
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .limit(1);
-      if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
-      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-      return replaceGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId: checkpoint.id,
-        expectedGeneration: authorityHead.generation,
-      });
-    },
-    destroyWarmState() {
-      for (const doc of hocuspocus.documents.values()) doc.destroy();
-      hocuspocus.documents.clear();
-      hocuspocus.broadcasts.length = 0;
-    },
     reverseTurn: (direction: "undo" | "redo") =>
       collab.reverseTurn({
         threadId: THREAD_ID,
@@ -1446,129 +619,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
-    activePushJournalCount: async () =>
-      (
-        await db
-          .select()
-          .from(schema.draftWriteJournal)
-          .where(eq(schema.draftWriteJournal.status, "active"))
-      ).length,
-    async makeJournalOwnershipMixed() {
-      const [owned] = await db
-        .select()
-        .from(schema.draftWriteJournal)
-        .where(eq(schema.draftWriteJournal.status, "active"));
-      if (!owned) throw new Error("missing owned journal row");
-      await db.insert(schema.draftWriteJournal).values({
-        draftId: owned.draftId,
-        wId: owned.wId,
-        source: owned.source,
-        threadId: owned.threadId,
-        turnId: null,
-        actorUserId: owned.actorUserId,
-        updateData: owned.updateData,
-        updateMeta: owned.updateMeta,
-      });
-    },
-    async makeJournalOwnershipNull() {
-      await db
-        .update(schema.draftWriteJournal)
-        .set({ turnId: null })
-        .where(eq(schema.draftWriteJournal.status, "active"));
-    },
-    hardDeleteDocument: (documentId: DocumentId) =>
-      db.delete(schema.documents).where(eq(schema.documents.id, documentId)),
-    async hardDeleteThread() {
-      await db.delete(schema.turns).where(eq(schema.turns.threadId, THREAD_ID));
-      await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
-    },
-    commit: (responseId: string) =>
-      collab.finalizeResponseCommit(
-        { providerResponseId: responseId, editScopeId: responseId },
-        { threadId: THREAD_ID, turnId: TURN_ID },
-      ),
-    afterCommitEffects: () => ({
-      draftBroadcasts: [...draftBroadcasts].sort(),
-    }),
-    openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
-    liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
-    /** Agent-origin live journal rows for a document. */
-    async liveAgentUpdateCount(documentId: DocumentId) {
-      const rows = await db
-        .select({ id: schema.documentYjsUpdates.id })
-        .from(schema.documentYjsUpdates)
-        .where(
-          and(
-            eq(schema.documentYjsUpdates.documentId, documentId),
-            eq(schema.documentYjsUpdates.originType, "agent"),
-          ),
-        );
-      return rows.length;
-    },
-    stagedUpdates: (responseId: string) => [
-      collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
-      collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
-    ],
-    eventsNamed: (name: string) => events.filter((event) => event.name === name),
-    responseEvents: (responseId: string) =>
-      events
-        .filter((event) => event.payload.responseId === responseId)
-        .map((event) => ({
-          transition: event.name.replace("response_committer.", ""),
-          phase: event.payload.phase,
-        })),
-    responseJournalRows: () =>
-      db
-        .select()
-        .from(schema.draftWriteJournal)
-        .where(
-          and(
-            eq(schema.draftWriteJournal.threadId, THREAD_ID),
-            eq(schema.draftWriteJournal.turnId, TURN_ID),
-          ),
-        ),
-    noticeRows: () => db.select().from(schema.pendingNotices),
-    threadPeerMarkdown: () => markdownByKind("thread_peer"),
-    workDraftMarkdown: () => markdownByKind("work_draft"),
-    async databaseDraftHashes() {
-      return databaseDraftHashes();
-    },
-    async captureState() {
-      return {
-        databaseDraftHashes: await this.databaseDraftHashes(),
-        threadPeerMarkdown: await this.threadPeerMarkdown(),
-        workDraftMarkdown: await this.workDraftMarkdown(),
-      };
-    },
-    async expectSuccessfulCommit(responseId: string) {
-      expect(await this.responseJournalRows()).toHaveLength(2);
-      expect(await this.workDraftMarkdown()).toEqual([
-        expect.stringContaining("Agent alpha."),
-        expect.stringContaining("Agent beta."),
-      ]);
-      expect(this.stagedUpdates(responseId)).toEqual([[], []]);
-      expect(this.responseEvents(responseId)).toContainEqual({
-        transition: "closed",
-        phase: "closed",
-      });
-      // Each document's Work draft takes the reply's rows and reaches its room; a thread peer
-      // is identity only and takes none.
-      expect(draftBroadcasts).toHaveLength(2);
-      expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
-    },
   };
-
-  async function databaseDraftHashes() {
-    const rows = await db.select().from(schema.documentDrafts);
-    return rows
-      .map((row) => ({
-        id: row.id,
-        revision: row.revision,
-        state: Buffer.from(row.state).toString("base64"),
-        stateVector: Buffer.from(row.stateVector).toString("base64"),
-      }))
-      .sort((left, right) => left.id.localeCompare(right.id));
-  }
 }
 
 function serializeMarkdown(doc: Y.Doc): string {
@@ -1582,14 +633,6 @@ function replaceMarkdown(doc: Y.Doc, markdown: string): void {
   updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
     mapping: new Map(),
     isOMark: new Map(),
-  });
-}
-
-function remintMarkdown(doc: Y.Doc, markdown: string): void {
-  doc.transact(() => {
-    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    if (fragment.length > 0) fragment.delete(0, fragment.length);
-    replaceMarkdown(doc, markdown);
   });
 }
 

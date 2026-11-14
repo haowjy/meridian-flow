@@ -13,12 +13,10 @@ import type {
   ContextDestinationParent,
   ContextEntryRef,
   ContextError,
-  ContextMoveResult,
   ContextSiblingPosition,
   CopyContextEntriesResult,
   DocumentFileType,
   Filetype,
-  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -50,8 +48,6 @@ export interface ThreadContextView {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;
-  /** The reply in progress, whose own staged writes reads still see. */
-  responseId?: string | null;
   /** The owner whose branch this thread's drafted writes land in; null outside draft mode. */
   branchOwner: BranchOwnerRef | null;
   version?: "draft" | "live";
@@ -449,16 +445,6 @@ export interface ContextPort {
     uri: string,
     options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
-
-  /**
-   * Reverse a create this port made when its write failed (contract §12.5): a live create
-   * goes to Trash; a drafted one is discarded unless the document's draft already holds
-   * committed text. A draft-mode port's `delete` never reverses a branch's create.
-   */
-  retractCreate(
-    uri: string,
-    options: { documentId: string; cause: RetractionCause },
-  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

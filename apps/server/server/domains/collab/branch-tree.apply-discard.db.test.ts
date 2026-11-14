@@ -8,7 +8,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { BranchId, DocumentId, UserId } from "@meridian/contracts";
+import type { BranchId, DocumentCommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -57,6 +58,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     let branchId: BranchId;
 
     const { draftClose, treeLists } = createTestRemovalDeps(db);
+    /** A Discard is a command: its claim, and the answer it stores. */
+    const asCommand = () => ({
+      envelope: {
+        commandId: randomUUID() as DocumentCommandId,
+        accountId: USER,
+        projectId: PROJECT as never,
+        kind: "discard" as const,
+        digest: randomUUID(),
+      },
+      result: () => ({ status: "discarded", branchId }) as DiscardCommandResult,
+    });
     const workProjection = createTestWorkProjectionMutation(db);
     const workBranches = createBranches({
       store: createDrizzleBranchStore(db),
@@ -136,7 +148,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       return {
         commandId,
         accountId: USER,
-        kind: "apply_click" as const,
+        kind: "apply" as const,
         branchId,
         digest: commandId,
       };
@@ -266,6 +278,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           kind: "items",
           items: [{ documentId: made, origin: "created", ends: "item" }],
         },
+        command: asCommand(),
       });
       expect(result).toMatchObject({ status: "discarded", closed: [made] });
       // The discarded create is in no view and keeps its document row for retention.
@@ -347,6 +360,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         branchId,
         userId: USER,
         selection: { kind: "whole" },
+        command: asCommand(),
       });
       expect(result).toMatchObject({ status: "discarded", branchClosed: true });
       expect(await liveRow(a)).toMatchObject({ trashRecord: null });
@@ -363,8 +377,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           userId: USER,
           selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "tree" }] },
+          command: asCommand(),
         }),
-      ).rejects.toThrow(/nothing left to discard/);
+      ).resolves.toMatchObject({ status: "refused", reason: "stale" });
     });
   },
 );

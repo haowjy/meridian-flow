@@ -19,6 +19,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDraftDispositionReader } from "./domain/draft-disposition.js";
@@ -43,7 +44,7 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 describe("model document stack", () => {
   it("authorizes live model revert through card Undo and Redo, without treating stack actions as card targets", async () => {
-    const { harness, view, context, responseId } = await fixture();
+    const { harness, view, context } = await fixture();
     try {
       const resolveDocumentUri = async (documentId: string) =>
         documentId === ALPHA_ID ? "manuscript/alpha.md" : null;
@@ -51,6 +52,7 @@ describe("model document stack", () => {
         turnInverse: { reverseTurn: view.collab.reverseTurn },
         resolveDocumentUri,
         listTurnTargets: createDrizzleTurnLiveLineageStore(db).listEditedDocumentIdsForTurn,
+        commands: createDrizzleDocumentCommands(db),
         threadContext: { requireThreadOwner: async () => ({ projectId: PROJECT_ID }) },
       });
       const liveContext = { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) };
@@ -72,10 +74,6 @@ describe("model document stack", () => {
           liveContext,
         ),
       ).toMatchObject({ status: "success" });
-      await view.collab.finalizeResponseCommit(
-        { providerResponseId: responseId, editScopeId: responseId },
-        { threadId: THREAD_ID, turnId: TURN_ID },
-      );
       let position = 2;
       const command = async (kind: "undo" | "redo" | "revert") => {
         const turnId = randomUUID();
@@ -110,7 +108,7 @@ describe("model document stack", () => {
             {
               ...liveContext,
               turnId,
-              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+              responseIdentity: { modelResponseId: responseId },
             },
           ),
         ).toMatchObject({ status: "success" });
@@ -124,6 +122,7 @@ describe("model document stack", () => {
         for (const direction of ["undo", "redo"] as const) {
           expect(
             await card.reverseThreadContext({
+              commandId: randomUUID(),
               threadId: THREAD_ID,
               turnId,
               direction,
@@ -140,6 +139,7 @@ describe("model document stack", () => {
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
       expect(
         await card.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD_ID,
           turnId,
           direction: "undo",
@@ -149,6 +149,7 @@ describe("model document stack", () => {
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(
         await card.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD_ID,
           turnId,
           direction: "redo",
@@ -164,7 +165,7 @@ describe("model document stack", () => {
     "stepwise",
     "count",
   ] as const)("overlapping replacements compose %s undo and redo", async (schedule) => {
-    const { harness, view, context, responseId } = await fixture();
+    const { harness, view, context } = await fixture();
     try {
       for (const [index, [find, content]] of [
         ["Beta", "Gold"],
@@ -184,7 +185,6 @@ describe("model document stack", () => {
             context,
           ),
         ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
-      await harness.commit(responseId);
       const draftId = await readDraftId(db, ALPHA_ID);
       let call = 0;
       const write = async (command: "undo" | "redo", count?: number) =>
@@ -234,7 +234,6 @@ describe("model document stack", () => {
           context,
         ),
       ).toMatchObject({ status: "success", writeId: "e1" });
-      await harness.commit(responseId);
       const draftId = await readDraftId(db, ALPHA_ID);
       const pm = buildDocumentSchema();
       const applyDraft = async (liveText: string) => {
@@ -332,7 +331,7 @@ describe("model document stack", () => {
       });
       const secondContext = {
         ...context,
-        responseIdentity: { providerResponseId: responseId, editScopeId: randomUUID() },
+        responseIdentity: { modelResponseId: responseId },
       };
       await core.read(address, secondContext);
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
@@ -374,8 +373,6 @@ describe("model document stack", () => {
     ["draft", "stepwise"],
     ["live", "short"],
     ["draft", "short"],
-    ["live", "rollback"],
-    ["draft", "rollback"],
   ] as const)("two-edit undo in %s supports %s redo", async (destination, schedule) => {
     const { harness, view, context, responseId } = await fixture();
     try {
@@ -391,11 +388,10 @@ describe("model document stack", () => {
         { ...address, command: "replace", find: "Gold", content: "Silver" },
         initial,
       );
-      await harness.commit(responseId);
       const draftId = await readDraftId(db, ALPHA_ID);
       const prose = () =>
         destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draftId);
-      const responseIdentity = { providerResponseId: responseId, editScopeId: randomUUID() };
+      const responseIdentity = { modelResponseId: responseId };
       const inverse = { ...initial, responseIdentity };
       const write = (command: "undo" | "redo", count = 1) =>
         core.write({ ...address, command, count }, inverse);
@@ -404,23 +400,7 @@ describe("model document stack", () => {
         result: { message: "undone: e2, e1" },
       });
       expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
-      if (schedule === "rollback") {
-        const actions = await db
-          .select()
-          .from(schema.documentEdits)
-          .where(eq(schema.documentEdits.editScopeId, responseIdentity.editScopeId));
-        expect(actions).toHaveLength(2);
-        expect(new Set(actions.map((action) => action.actionId)).size).toBe(2);
-        for (let attempt = 0; attempt < 2; attempt++) {
-          await view.collab.finalizeResponseRollback(responseIdentity, {
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-          });
-          expect(await prose()).toBe("Alpha Silver.\n\nBlue.\n");
-        }
-        expect(await write("redo")).toMatchObject({ status: "nothing_to_redo" });
-        expect(await write("undo", 2)).toMatchObject({ status: "success" });
-      } else if (schedule === "short") {
+      if (schedule === "short") {
         expect(await write("redo", 3)).toMatchObject({
           status: "insufficient_redo",
           result: { message: expect.stringContaining("Only 2 edits to redo") },
@@ -443,9 +423,7 @@ describe("model document stack", () => {
           result: { message: "redone: e1, e2" },
         });
       }
-      expect(await prose()).toBe(
-        schedule === "rollback" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Silver.\n\nBlue.\n",
-      );
+      expect(await prose()).toBe("Alpha Silver.\n\nBlue.\n");
     } finally {
       await harness.dispose();
     }
@@ -456,12 +434,11 @@ it.each([
   "undo",
   "redo",
 ] as const)("model %s follows its edit to the draft and refuses only after none remains", async (direction) => {
-  const { harness, view, context, responseId } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
     const command = { documentId: ALPHA_ID, file: "alpha.md" };
     await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    await harness.commit(responseId);
     const draftId = await readDraftId(db, ALPHA_ID);
     if (direction === "redo")
       expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
@@ -536,7 +513,6 @@ it("model inverse receipts echo only changed blocks and their immediate context"
     expect(
       await core.write({ ...address, command: "replace", find: "Beta", content: "Gamma" }, context),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     for (const command of ["undo", "redo"] as const) {
       const result = await core.write({ ...address, command }, context);
       expect(result.status).toBe("success");

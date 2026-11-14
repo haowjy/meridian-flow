@@ -8,13 +8,15 @@ import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { modelResponses } from "@meridian/database/schema";
+import { modelResponses, observationFrontiers, threads } from "@meridian/database/schema";
+import { and, asc, eq } from "drizzle-orm";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import { TREE_NAMES_ROOM } from "../domains/runtime/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
 
@@ -122,22 +124,43 @@ export function useComposedRuntimes(db: () => Database) {
   }
 
   /**
-   * Model replies on one thread. Each `reply` records a response, runs its
-   * tool calls through the executor, then saves the reply.
+   * Model replies on one thread. Each `reply` records a response and runs its
+   * tool calls through the executor.
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
-    // What the conversation was shown of the tree: each result's added names, as the runtime keeps them.
-    const shownNames: Uint8Array[] = [];
+    // What the conversation was shown of the tree: the names a stored result recorded, and those
+    // a refused one carried back (a refusal stores none).
+    const refusedNames: Uint8Array[] = [];
+    const shownNames = async () => [
+      ...(
+        await db()
+          .select({ snapshot: observationFrontiers.snapshot })
+          .from(observationFrontiers)
+          .where(
+            and(
+              eq(observationFrontiers.threadId, thread.threadId),
+              eq(observationFrontiers.roomKey, TREE_NAMES_ROOM),
+            ),
+          )
+          .orderBy(asc(observationFrontiers.recordedSeq))
+      ).map((row) => new Uint8Array(row.snapshot)),
+      ...refusedNames,
+    ];
     const begin = async () => {
       await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
+      const [owner] = await db()
+        .select({ accountId: threads.createdByUserId, projectId: threads.projectId })
+        .from(threads)
+        .where(eq(threads.id, thread.threadId));
       const call: ToolCall = async (name, args) => {
         const result = await runtime.app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
-            shownNames: async () => shownNames,
-            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            shownNames,
+            responseIdentity: { modelResponseId: responseId },
+            commandOwner: owner as never,
             agentSlug: null,
             // No one answers here: a `work` call the policy asks about gets the refusal.
             request: async () => ({
@@ -146,25 +169,19 @@ export function useComposedRuntimes(db: () => Database) {
             }),
           },
         );
-        if (result.evidence?.names) shownNames.push(result.evidence.names.snapshot);
+        if (result.evidence?.names) refusedNames.push(result.evidence.names.snapshot);
         return result;
       };
-      const save = () =>
-        runtime.ports.documentSync.finalizeResponseCommit(
-          { providerResponseId: responseId, editScopeId: responseId },
-          thread as never,
-        );
-      return { responseId, call, save };
+      return { responseId, call };
     };
     const reply = async (steps: (call: ToolCallText) => Promise<void>) => {
-      const { call, save } = await begin();
+      const { call } = await begin();
       await steps(async (name, args) => {
         const result = await call(name, args);
         const output = String(toolContentText(result.content));
         if (result.isError) throw new Error(`${name} failed:\n${output}`);
         return output;
       });
-      await save();
     };
     const text = async (path: string, version?: "live") => {
       let output = "";

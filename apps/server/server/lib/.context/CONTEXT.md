@@ -141,8 +141,7 @@ destination parsers are in `context-destination.ts`. `destination_missing` stays
 sends `name` and `destinationParent` only when the writer chose them (see
 `MoveContextEntryRequest`); `locateEntry` supplies the rest. The model goes through the port with the
 same node and an `at` destination: the folder it typed, validated by the mover with the reasons
-`resolveMutation` gives, and `onlyAt` for a create's retraction, which records the address the create
-landed at (`address.uri`), not what the model typed.
+`resolveMutation` gives.
 
 The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
 has not settled, and it settles a refusal only from a typed non-retryable 4xx (the

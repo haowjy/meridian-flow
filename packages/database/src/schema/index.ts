@@ -6,6 +6,7 @@ export * from "./branches";
 export * from "./content";
 export * from "./context-availability";
 export * from "./imports";
+export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
@@ -25,6 +26,7 @@ import * as content from "./content";
 import * as contextAvailability from "./context-availability";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
+import * as modelEvidence from "./model-evidence";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as threadAsks from "./thread-asks";
@@ -55,6 +57,7 @@ export const schema = {
   ...workingSets,
   ...yjs,
   ...documentEdits,
+  ...modelEvidence,
 };
 
 export * from "./document-edits";

@@ -1,12 +1,7 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
-import type {
-  FrontierLookup,
-  ObservationFrontier,
-  ResponseCommitWriteReceipt,
-} from "@meridian/agent-edit/integration";
-import type { BranchId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { BranchCommandResult } from "@meridian/contracts/branches";
+import type { BranchId, DocumentCommandId, DraftOwner, LinkView } from "@meridian/contracts";
+import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -19,25 +14,21 @@ import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
-import type {
-  RefusedResponseDocument,
-  ThreadPeerAgentEditCore,
-} from "./domain/agent-edit-cores.js";
-
-export type { RefusedResponseDocument };
-
-import type {
-  BranchCommandEnvelope,
-  CommandLookup,
-  CommandLookupKey,
-} from "./domain/branch-commands.js";
+import type { AgentEditRouter } from "./domain/agent-edit-router.js";
 import type { DiscardItem } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
+import type {
+  CommandLookup,
+  CommandLookupKey,
+  DocumentCommandEnvelope,
+} from "./domain/document-commands.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
+import type { ModelEdits } from "./domain/model-edit.js";
+import type { ModelEvidence } from "./domain/model-evidence.js";
 import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -163,8 +154,12 @@ export type CollabTransport = {
 };
 
 export type AgentEditAccess = {
-  /** The one model read/write entry point; each call names its destination. */
-  agentEdit(): ThreadPeerAgentEditCore;
+  /** The model's reads; each names its destination. */
+  agentEdit(): AgentEditRouter;
+  /** A model's document-changing calls as commands. */
+  modelEdits(): ModelEdits;
+  /** What the model was shown of documents: written at an edit and at a stored result. */
+  modelEvidence(): ModelEvidence;
   /** The model's moves and deletes in the documents' edit history. */
   treeHistory(): AgentTreeHistory;
 };
@@ -187,7 +182,7 @@ export type TreeReceiptInput = {
   op: "create" | "move" | "delete" | "restore";
   threadId: ThreadId;
   turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   /** The Work's branch the record was drafted in; absent when it is live. */
   draftBranchId?: import("@meridian/contracts").BranchId;
@@ -254,6 +249,14 @@ export type ReverseThreadContextInput = {
   userId: UserId;
   direction: "undo" | "redo";
   turnId: TurnId;
+  /** Minted by the browser for each click; a resend under it answers the stored outcome. */
+  commandId: DocumentCommandId;
+  /**
+   * The click's second part (the Work receipts a turn made), on the documents' outcome: its
+   * own command, under an id derived from `commandId`, once the documents' committed. Its
+   * stored outcome is the click's answer.
+   */
+  alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
 };
 
 export type TurnReversalAccess = {
@@ -363,56 +366,6 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
-export type ResponseWriteStagedCreates = {
-  committed: DocumentId[];
-  discarded: DocumentId[];
-};
-
-export type ResponseWriteCommitDocument = {
-  documentId: DocumentId;
-  updateCount: number;
-  receipts: ResponseCommitWriteReceipt[];
-  /** Host-only, when the save recorded one: the document's frontier at the save's after-state. */
-  frontier?: ObservationFrontier;
-};
-
-export type BranchClosedFinalizeResult = {
-  status: "branch_closed";
-  responseId: string;
-  mode: "draft";
-  documents: [];
-  stagedCreates: ResponseWriteStagedCreates;
-};
-
-export type ResponseWriteCommitFinalizeResult =
-  | {
-      status: "committed";
-      documents: ResponseWriteCommitDocument[];
-      stagedCreates: ResponseWriteStagedCreates;
-      /** Documents the save left out; their writes were not saved. */
-      refused: RefusedResponseDocument[];
-      awarenessDegraded?: boolean;
-    }
-  | BranchClosedFinalizeResult;
-
-export type ResponseWriteRollbackFinalizeResult = {
-  stagedCreates: ResponseWriteStagedCreates;
-  /** What the rollback couldn't reverse (a blocked folder path, for example); the rest it did. */
-  skipped: import("@meridian/contracts/protocol").TurnInverseSkip[];
-};
-
-export type ResponseWriteFinalizer = {
-  finalizeResponseCommit(
-    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier?: FrontierLookup },
-    beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
-  ): Promise<ResponseWriteCommitFinalizeResult>;
-  finalizeResponseRollback(
-    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId },
-  ): Promise<ResponseWriteRollbackFinalizeResult>;
-};
-
 export type DocumentCheckpoints = {
   checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
   restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
@@ -420,12 +373,11 @@ export type DocumentCheckpoints = {
 };
 
 /**
- * A writer command's answer (§4.6): the stored wire body, still pending, blocked, or the id
- * belongs to a different command. The route maps these to HTTP.
+ * A writer command's answer: the stored wire body, or the id belongs to a different command.
+ * The route maps these to HTTP.
  */
 export type CommandOutcome =
-  | { kind: "result"; result: BranchCommandResult }
-  | { kind: "pending" }
+  | { kind: "result"; result: DiscardCommandResult }
   | { kind: "conflict" };
 
 /** The model-facing list row: which documents have a draft, nothing more. */
@@ -441,13 +393,13 @@ export type DraftReviewApi = {
     branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").ApplyClick;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   unapplyClick(input: {
     branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
@@ -488,12 +440,12 @@ export type DraftReviewApi = {
     ends: DiscardItem["ends"];
     draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
   discardAll(input: {
     branchId: BranchId;
     userId: UserId;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
 };
 
@@ -556,14 +508,12 @@ export type DraftPeerShadowAccess = {
   /**
    * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
    * derived outputs are current, no active draft stands between a draft reader and the live
-   * text, and the reply has staged no writes of its own (they leave no draft row, so only the
-   * reply's room says the derivation is behind its view). Documents left out need a read.
+   * text. Documents left out need a read.
    */
   readStoredGrepTexts(
     input: {
       documentIds: DocumentId[];
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Map<DocumentId, string>>;
   /** Words per document whose derived outputs are current; the others are absent. */
@@ -572,7 +522,6 @@ export type DraftPeerShadowAccess = {
     input: {
       documentId: DocumentId;
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   /**
@@ -593,7 +542,6 @@ export type DraftPeerShadowAccess = {
     input: {
       documentId: DocumentId;
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
@@ -605,15 +553,6 @@ export type DraftPeerShadowAccess = {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
-  /**
-   * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the branch's draft on the document (or a thread peer of it) holds a
-   * contribution; otherwise closes the drafts, which retire after commit.
-   */
-  retractCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<"stands" | "retracted">;
 };
 
 export type DraftAttributionAccess = {
@@ -647,7 +586,6 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
   DraftAttributionAccess &

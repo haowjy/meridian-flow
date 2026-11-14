@@ -99,6 +99,17 @@ export const LIVE_VIEW: LinkView = { kind: "live" };
 
 /** Durable ahead-ref registration (context's `LinkAheadRegistry.register`). */
 export interface AheadRefRegistrar {
+  /**
+   * `register` for a write already inside its command transaction: it takes the targets'
+   * namespace keys on that transaction's connection, never a second one.
+   */
+  registerInCommand(
+    registrations: readonly {
+      aheadId: string;
+      holderProjectId: string;
+      address: string;
+    }[],
+  ): Promise<void>;
   register(
     registrations: readonly {
       aheadId: string;

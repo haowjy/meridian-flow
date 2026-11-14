@@ -21,7 +21,7 @@ export type InvalidOperationReason =
   | "no_draft";
 
 export type ContextError =
-  | { code: "operation_mismatch"; uri: string }
+  | { code: "command_conflict"; uri: string }
   | { code: "invalid_name"; uri: string; message: string }
   | { code: "not_found"; uri: string }
   | { code: "destination_missing"; uri: string }

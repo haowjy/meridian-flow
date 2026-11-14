@@ -9,6 +9,7 @@ import type {
   WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
 import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
+import type { ResponseAuthorship } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import {
@@ -24,7 +25,7 @@ import type {
   AgentEditAccess,
   CollabBranches,
   DocumentProjectionRefresher,
-  ResponseWriteFinalizer,
+  ModelEvidence,
 } from "../../domains/collab/index.js";
 import {
   contextPortForThread,
@@ -44,23 +45,17 @@ import type {
   WorkRepository,
 } from "../../domains/projects/index.js";
 import type { PermissionGrantStore } from "../../domains/runtime/index.js";
-import {
-  type ShownLinkStore,
-  SKILLS_URI_ROOT,
-  type SkillFilesDeps,
-} from "../../domains/runtime/index.js";
+import { SKILLS_URI_ROOT, type SkillFilesDeps } from "../../domains/runtime/index.js";
 import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
 import { agentPrincipal } from "./file-access.js";
-import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle.js";
 
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
-  responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
+  documentSync: AgentEditAccess & DocumentProjectionRefresher;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   permissionGrants: PermissionGrantStore;
@@ -92,9 +87,9 @@ export interface ToolWiringDeps {
   /**
    * Links shown to the model, per thread and document; writes bind to them
    * (contract §7). Handlers only read here: they return what they showed as
-   * `shown`, and dispatch records it with the persisted result.
+   * `shown`, and the document side records it with the result.
    */
-  shownLinks: Pick<ShownLinkStore, "forDocument">;
+  shownLinks: Pick<ModelEvidence, "forDocument">;
 }
 
 export type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -153,15 +148,10 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
-  ctx: { threadId: string; responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+  ctx: { threadId: string; responseIdentity?: ResponseAuthorship },
   version?: DocumentVersion,
 ): Promise<ToolCall | ToolErrorOutput> {
-  const context = await resolveContextPort(
-    deps,
-    ctx.threadId,
-    ctx.responseIdentity?.editScopeId,
-    version,
-  );
+  const context = await resolveContextPort(deps, ctx.threadId, version);
   if (isToolError(context)) return context;
   const { primaryWorkId, primaryWork } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);
@@ -175,7 +165,6 @@ export async function resolveToolCall(
 export async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
-  responseId?: string,
   version?: DocumentVersion,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
@@ -190,10 +179,7 @@ export async function resolveContextPort(
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
     resolution,
-    port: contextPortForThread(deps.contextPorts, resolution, {
-      responseId,
-      ...(version ? { version } : {}),
-    }),
+    port: contextPortForThread(deps.contextPorts, resolution, version ? { version } : {}),
   };
 }
 

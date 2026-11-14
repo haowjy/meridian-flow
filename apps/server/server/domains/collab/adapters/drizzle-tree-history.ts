@@ -11,6 +11,7 @@ import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
+import { boundCommandId } from "./drizzle-document-edits.js";
 
 export function createDrizzleTreeHistory(
   db: Database,
@@ -26,8 +27,8 @@ export function createDrizzleTreeHistory(
         .values({
           threadId: input.threadId,
           turnId: input.turnId ?? null,
-          responseId: input.responseIdentity?.providerResponseId ?? null,
-          editScopeId: input.responseIdentity?.editScopeId ?? null,
+          responseId: input.responseIdentity?.modelResponseId ?? null,
+          commandId: boundCommandId(),
           toolCallId: input.toolCallId ?? null,
           nodeId: input.subject,
           records: input.records,

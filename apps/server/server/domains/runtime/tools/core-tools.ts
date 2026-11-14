@@ -326,6 +326,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: writeDocumentText,
       historySummary: documentHistorySummary,
       sequential: true,
+      documentCommand: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),

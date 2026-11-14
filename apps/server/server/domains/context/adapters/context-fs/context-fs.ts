@@ -5,13 +5,11 @@
  * record of the project's list made at the call (`tree-writes.ts`).
  */
 
-import type { BranchId } from "@meridian/contracts";
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   canonicalLeaf,
   type ParsedDocumentFilename,
   parseDocumentFilename,
-  type RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
@@ -102,7 +100,7 @@ export interface ContextFSDeps {
   actor: string;
   /** Settles ahead refs when a document arrives; absent in a composition without them. */
   arrivals?: DocumentArrivals;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   documentSync: MarkdownDocumentStore &
     Pick<
       DraftPeerShadowAccess,
@@ -436,24 +434,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.placement.ensureTracked(path, options);
   }
 
-  /**
-   * Reverse this adapter's create of `documentId` after its write failed (§12.5): a live
-   * create goes to Trash; a branch's create is discarded unless another contribution makes it
-   * stand.
-   */
-  retractCreate(
-    path: string,
-    documentId: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    return this.placement.retract(
-      documentId,
-      joinPath(dir.join("/"), canonicalLeaf(filename)),
-      cause,
-    );
-  }
-
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
@@ -622,12 +602,10 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView():
-    | ({ threadId: ThreadId; responseId?: string | null } & EffectiveReadVersion)
-    | null {
+  private threadView(): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
     const view = this.readView;
     if (!view) return null;
-    const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
+    const reader = { threadId: view.threadId as ThreadId };
     // Without a separate draft both versions are the same document.
     const drafted = sourceDestination(this.scheme, view.branchOwner).kind === "draft";
     return view.version !== "live" && drafted && view.branchOwner

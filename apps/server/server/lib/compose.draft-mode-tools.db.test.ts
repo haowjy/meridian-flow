@@ -31,7 +31,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { branchTreeScenario } = await import("../test-support/branch-tree-scenario.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -150,7 +149,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch needle notes.",
       });
       expect(notes.result).toMatchObject({ destination: "live" });
-      await first.save();
 
       call = (await script.begin()).call;
       const draftRead = await call("read", { path: CHAPTER });
@@ -188,7 +186,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Writer live content.",
         content: "Kept draft content.",
       });
-      await first.save();
       await db
         .update(schema.threads)
         .set({ aiWriteMode: "direct" })
@@ -320,7 +317,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await create(reply.call, "after")).result).toMatchObject({
           destination: "draft",
         });
-        await reply.save();
         expect(await switchTurns()).toEqual([]);
 
         // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
@@ -430,7 +426,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(bySection.isError).toBeFalsy();
       expect(text(bySection)).toContain(`${CHAPTER}#the-midnight-duel`);
       expect(text(bySection)).not.toContain(".md");
-      await first.save();
 
       const { call: next } = await script.begin();
       const duel = text(await next("read", { path: "scratch://duel" }));
@@ -485,35 +480,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("rolls a copy back with its reply", async () => {
-      await db
-        .update(schema.threads)
-        .set({ aiWriteMode: "direct" })
-        .where(eq(schema.threads.id, THREAD.threadId));
-      const script = await startWithChapter("Writer live content.");
-      const { call, responseId } = await script.begin();
-
-      const copied = await call("write", {
-        command: "copy",
-        from: { path: CHAPTER },
-        path: "manuscript://rolled-back",
-      });
-      expect(copied.isError).toBeFalsy();
-      const documentId = (copied.metadata as { documentId?: unknown } | undefined)?.documentId;
-      if (typeof documentId !== "string") throw new Error("the copy reported no documentId");
-
-      const rolledBack = await script.runtime.ports.documentSync.finalizeResponseRollback(
-        { providerResponseId: responseId, editScopeId: responseId },
-        THREAD as never,
-      );
-
-      expect(rolledBack.stagedCreates.discarded).toContain(documentId);
-      const content = await script.runtime.ports.documentSync.readAsMarkdown(documentId);
-      expect(content.ok ? content.value.trim() : "").toBe("");
-    });
-
-    // §12.5, O-11: a rolled-back reply retracts its draft create, unless another thread in
-    // the Work already committed text to it.
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
         .update(schema.threads)
@@ -557,20 +523,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       if (!written.ok) throw new Error(JSON.stringify(written.error));
 
-      // Outside a reply, as a tool call with no model response.
-      await bindEditAgent(runtime, THREAD.threadId);
-      const copied = await runtime.app.toolExecutor.executeTool(
-        {
-          id: crypto.randomUUID(),
-          name: "write",
-          arguments: {
-            command: "copy",
-            from: { path: "manuscript://scan.pdf" },
-            path: "kb://scan-copy.pdf",
-          },
-        },
-        { ...THREAD, agentSlug: null },
-      );
+      const { call } = await runtimes.script(runtime, THREAD).begin();
+      const copied = await call("write", {
+        command: "copy",
+        from: { path: "manuscript://scan.pdf" },
+        path: "kb://scan-copy.pdf",
+      });
 
       expect(copied.result).toMatchObject({
         status: "success",

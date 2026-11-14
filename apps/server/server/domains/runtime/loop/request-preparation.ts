@@ -61,7 +61,6 @@ export type PrepareRequestInput = {
   controlMessageId?: string;
   instructions?: string;
   control?: ControlMessage | null;
-  assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;

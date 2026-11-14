@@ -67,12 +67,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         works: app.workRepo,
         workAuthorityResolver: app.workAuthorityResolver,
       };
-      // Any model tool through the executor, outside a reply.
+      // Any model tool through the executor, in the turn's recorded response.
       const callTool = async (name: string, input: Record<string, unknown>) => {
         await bindEditAgent(runtime, THREAD_ID);
         return app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: input },
-          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseIdentity: { modelResponseId: TURN_ID },
+            commandOwner: { accountId: USER_ID, projectId: PROJECT_ID } as never,
+            agentSlug: null,
+          },
         );
       };
       const callWrite = (input: Record<string, unknown>) => callTool("write", input);

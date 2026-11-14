@@ -546,12 +546,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       it("undo reaches a move by any moved document's path, and by count across text and tree", async () => {
         const script = await start();
-        let { call, save } = await script.begin();
+        let { call } = await script.begin();
         await call("write", { command: "move", from: { paths: ["ch1", "ch2"] }, path: "part1/" });
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "ONE" });
-        await save();
         // The text edit is the newest: it goes first, then the move is next, by a moved document's path.
-        ({ call, save } = await script.begin());
+        ({ call } = await script.begin());
         const first = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(first), text(first)).toContain("undone: e");
         const second = await call("write", { command: "undo", path: "part1/ch2" });
@@ -565,7 +564,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ls(call, "manuscript://part1/")).toContain("ch2");
         // count 2 takes a text edit and the move before it, in one call.
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "1" });
-        await save();
         ({ call } = await script.begin());
         const both = await call("write", { command: "undo", path: "part1/ch1", count: 2 });
         expect(both.isError, text(both)).toBeFalsy();
@@ -633,7 +631,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const shared = drafting(script);
         const draftEdit = await shared.begin();
         await draftEdit.call("write", { command: "create", path: "private/" });
-        await draftEdit.save();
         await asWriter((writer) =>
           writer.create(LIVE, WRITER, {
             kind: "folder",

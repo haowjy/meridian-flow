@@ -1,6 +1,7 @@
 // Immutable document edit receipts, independent of compactable transport journals.
 import type {
   BranchId,
+  DocumentCommandId,
   DocumentId,
   EditOrigin,
   ThreadId,
@@ -50,7 +51,8 @@ export const documentEdits = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
-    editScopeId: text("edit_scope_id"),
+    /** The command that made this edit; no foreign key: the receipt outlives the command row. */
+    commandId: uuid("command_id").$type<DocumentCommandId>(),
     /** The model tool call that made this edit; scoped by its response identity. */
     toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
@@ -58,7 +60,7 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
+    kind: text("kind").$type<"write" | "undo" | "redo" | "revert">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
@@ -67,11 +69,9 @@ export const documentEdits = pgTable(
     index("document_edits_document_idx").on(t.documentId),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
+    index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
-    check(
-      "document_edits_kind_valid",
-      sql`${t.kind} IN ('write','undo','redo','revert','rollback')`,
-    ),
+    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','redo','revert')`),
   ],
 );
 export const documentEditParts = pgTable(
@@ -126,7 +126,8 @@ export const treeEditReceipts = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
-    editScopeId: text("edit_scope_id"),
+    /** The command that made this change; no foreign key: the receipt outlives the command row. */
+    commandId: uuid("command_id").$type<DocumentCommandId>(),
     toolCallId: text("tool_call_id"),
     /** A document's or a folder's node id: a folder has no `documents` row. */
     nodeId: uuid("node_id").notNull(),
@@ -146,6 +147,7 @@ export const treeEditReceipts = pgTable(
   (t) => [
     index("tree_edit_receipts_thread_idx").on(t.threadId, t.shownAt),
     index("tree_edit_receipts_turn_idx").on(t.turnId),
+    index("tree_edit_receipts_command_idx").on(t.commandId),
     index("tree_edit_receipts_reverses_idx").on(t.reverses),
     check("tree_edit_receipts_op_valid", sql`${t.op} IN ('create','move','delete','restore')`),
     check("tree_edit_receipts_kind_valid", sql`${t.kind} IN ('write','undo','redo')`),

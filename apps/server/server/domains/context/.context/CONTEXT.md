@@ -101,8 +101,7 @@ spends its own budget waiting, and returns stopped and empty. No per-user cap ex
 Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view (a code file's text is the file itself, with no fence). Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
-sees (current derivation, no active draft in the reader's own Work, no staged writes of
-the reply), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
+sees (current derivation, no active draft in the reader's own Work), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
 same door for `ls -v`: it answers for current derivations only, and a document it leaves out
 lists with no word count. Context never reads the block tables itself. Candidate paths are spelled through
 the tree view's folder chain; a document under a deleted ancestor has no path and is not
@@ -131,8 +130,7 @@ chat's write mode, checks project-final availability, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
 live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
-independent pull transaction rules. It reports settled authority, not a
-response's staged overlay.
+independent pull transaction rules. It reports settled authority.
 
 A project-final identity lookup distinguishes missing, deleted, and
 reversibly hidden authority; foreign identities stay indistinguishable from
@@ -182,17 +180,20 @@ document keys; a caller holds no document or namespace key when it submits. `con
   `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
   `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
   another node answers `conflict`.
-- **Delete.** `port.delete` is the live one-record delete the upload remove and the placement's
-  retraction use (`SourceTree.delete`): the node and its subtree go to Trash together; the result
+- **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
   lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
   that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
-- **Retraction.** `retractCreate` reverses a create whose write failed: live goes to Trash, drafted
-  is discarded when the document's draft holds nothing else.
 - **Edit history.** The model's tree entry (`recordAgentTreeChange`) is written in the same
   transaction through `inTransaction` / `afterWrite`.
 
-There is no untitled create, provisional name, hidden row, forward, operation receipt, folder
-table or catalog refresh: the replay is the only tree, and readers see it through the view.
+- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the
+  receipt) owns the transaction: the claim is its first write, a refusal after it is stored, a
+  transient `io_error` rolls the claim back so the id stays retryable, and another request under
+  the id answers `command_conflict`. Inside it the command transaction
+  (`commandTransaction.run`) takes the destination's Work and, through `treeListStore.submit`,
+  its list. The sources are a frozen cut, so their lists are not locked
+  and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
+  identity destination through the router's one resolver (`destination_missing` when the
 
 ## Copy
 
