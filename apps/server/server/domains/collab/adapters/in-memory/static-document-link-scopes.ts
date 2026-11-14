@@ -43,4 +43,7 @@ export const UNSUPPORTED_AHEAD_REFS: AheadRefRegistrar = {
   async register() {
     throw new Error("Ahead-ref registration is not supported in the in-memory composition");
   },
+  async registerInCommand() {
+    throw new Error("Ahead-ref registration is not supported in the in-memory composition");
+  },
 };

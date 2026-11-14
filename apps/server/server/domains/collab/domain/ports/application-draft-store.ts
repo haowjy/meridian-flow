@@ -8,6 +8,12 @@ import type { DraftSnapshot, DraftStore } from "../draft-store.js";
 export type ApplicationDraftStore = DraftStore &
   DraftResolver & {
     listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
+    /** Every Work draft of the document, any status and branch. */
+    listWorkDraftStates(
+      documentId: DocumentId,
+    ): Promise<{ draftId: string; status: DraftSnapshot["status"] }[]>;
+    /** The branch's active draft of the document, or null. */
+    findBranchDraft(documentId: DocumentId, branchId: BranchId): Promise<DraftSnapshot | null>;
     /**
      * The branch's draft on the document, made from `liveDoc` if absent: a write boundary
      * only. Never makes a branch; refuses a closed one in the insert's transaction.

@@ -62,6 +62,8 @@ export interface LinkAheadRegistry {
    * there, whether or not the id was registered before.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
+  /** `register` inside the caller's transaction: it takes the namespace keys on that connection. */
+  registerInCommand(registrations: readonly AheadRegistration[]): Promise<void>;
   /** Caller transaction already holds every canonical target namespace key. */
   registerWithinTransaction(registrations: readonly AheadRegistration[]): Promise<void>;
   /**

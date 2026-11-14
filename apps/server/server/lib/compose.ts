@@ -1488,6 +1488,7 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("Ahead registration requires Postgres");
     },
     register: async () => unsupported(),
+    registerInCommand: async () => unsupported(),
     settleArrivals: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };

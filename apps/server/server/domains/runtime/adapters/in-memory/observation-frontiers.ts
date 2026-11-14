@@ -44,5 +44,14 @@ export function createInMemoryObservationFrontiers(deps: {
           }
         : null;
     },
+    async latestRoom(roomKeys, sourceBlockIds) {
+      let latest: Row | undefined;
+      for (const id of sourceBlockIds) {
+        const row = rows.get(id);
+        if (row && roomKeys.includes(row.room) && (!latest || row.recordedSeq > latest.recordedSeq))
+          latest = row;
+      }
+      return latest?.room ?? null;
+    },
   };
 }

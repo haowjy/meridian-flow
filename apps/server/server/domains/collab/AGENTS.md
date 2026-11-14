@@ -22,6 +22,7 @@ Durable Yjs coordination and persistence for live documents and Work drafts.
   database watermark.
 - Schema-aware reads, seeds and writes go through `domain/markdown-document.ts` and
   the scoped link codec.
+- A model edit plans under the lock its append takes, on the one connection of its command (`modelEdits().write`). Nothing reachable from it may open a second connection or wait on one; see [model edits](.context/model-edits.md).
 - Destination selection is explicit: don't infer live versus draft from a thread mode.
 
 ## Depth

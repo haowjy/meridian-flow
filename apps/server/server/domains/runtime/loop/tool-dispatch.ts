@@ -38,7 +38,12 @@ import type {
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { createDeltaJournal } from "./delta-journal.js";
-import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
+import {
+  type CreditedBlocks,
+  frontierLookup,
+  latestRoomLookup,
+  recordFrontier,
+} from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
@@ -374,6 +379,7 @@ export async function dispatchToolCall(
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        latestRoom: latestRoomLookup(deps, () => ctx.credited.ids(), correlation),
         reply: ctx.replyMutations,
       },
     },

@@ -74,7 +74,7 @@ export function replay<R extends StoredDocumentCommandResult>(
   return found.outcome.result as R;
 }
 
-const DONE_STATUSES: ReadonlySet<string> = new Set(["applied", "unapplied", "discarded"]);
+const DONE_STATUSES: ReadonlySet<string> = new Set(["applied", "unapplied", "discarded", "edited"]);
 
 /** `done` when the effect committed; every other answer is a refusal that changed nothing. */
 export function outcomeOf(result: StoredDocumentCommandResult): DocumentCommandOutcome {

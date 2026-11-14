@@ -14,6 +14,7 @@
 import type { DraftPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
+import type { ModelEdits } from "./model-edit.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function scopeMarkdownEngine(
@@ -90,6 +91,24 @@ export function scopeAgentEdit(
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),
   });
+}
+
+/** A model edit's write is scoped as the held write is: by its grant's project and its thread. */
+export function scopeModelEditWrite(
+  write: ModelEdits["write"],
+  scopes: DocumentLinkScopes,
+): ModelEdits["write"] {
+  return (command, context) =>
+    scopes.within(
+      {
+        projectId: context.grant.facts.projectId,
+        viewer: {
+          accountId: context.grant.principal.accountId,
+          ...(context.threadId ? { threadId: context.threadId } : {}),
+        },
+      },
+      () => write(command, context),
+    );
 }
 
 /** A reply's save renders the receipts the model reads next, in its thread's project. */

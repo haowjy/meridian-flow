@@ -58,7 +58,7 @@ export type StoredInversePart = InversePart & {
 export type TurnInverseQuery = {
   threadId: ThreadId;
   turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
   draftId?: string | null;

@@ -26,6 +26,7 @@ export {
   LinkBindingInsideTransactionError,
   type PlannedMarkdownInput,
 } from "./domain/link-binding.js";
+export { ModelEditRefusal } from "./domain/model-edit.js";
 export type { Branch, BranchStatus } from "./domain/ports/branch-store.js";
 export {
   type DocumentLinkScopes,

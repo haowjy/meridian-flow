@@ -38,6 +38,7 @@ import {
   type DraftSnapshot,
   DraftStaleUpdateError,
 } from "./draft-store.js";
+import { inLockedWrite } from "./locked-write.js";
 import { draftRoom } from "./observation-rooms.js";
 import type { ReplyPin } from "./reply-save-fences.js";
 
@@ -57,9 +58,16 @@ export function createDraftAgentEditCoordinator(input: {
   branches: Pick<Branches, "shareActive">;
 }): DocumentCoordinator {
   function draftRows(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
+    for (const entry of entries)
+      if (entry.mutation?.mode !== "threadPeer")
+        throw new Error("thread_peer_commit_missing_identity");
+    return rowsFor(draftId, entries);
+  }
+
+  function rowsFor(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
       const mutation = entry.mutation;
-      if (mutation?.mode !== "threadPeer") throw new Error("thread_peer_commit_missing_identity");
+      if (!mutation) throw new Error("A draft write carries its mutation");
       return (mutation.editParts ?? [entry.update]).map((updateData) => ({
         draftId,
         source: "agent" as const,
@@ -181,6 +189,53 @@ export function createDraftAgentEditCoordinator(input: {
     return input.drafts.resolveWorkDraftForThread(documentId, input.threadId);
   }
 
+  /**
+   * A model edit's save, straight to the Work draft its host ensured and locked: every entry is
+   * kept, since the plan was made under the append's lock and nothing can retire it before.
+   */
+  async function saveToWorkDraft(
+    workDraftId: string,
+    entries: readonly JournalBatchAppendEntry[],
+    precondition: Parameters<DocumentCoordinator["prepareSave"]>[0]["precondition"],
+  ): Promise<StagedWriteSaveResult> {
+    const blockOrigins = blockOriginsFromDraftSeed(
+      (await input.drafts.getDraft(workDraftId))?.seed ?? null,
+    );
+    const { result, write } = await drafts.prepareStagedRows(
+      workDraftId,
+      async (doc) => {
+        for (const entry of entries) Y.applyUpdate(doc, entry.update);
+        return {
+          result: {
+            kept: entries.flatMap((entry) =>
+              entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+            ),
+            rejected: [],
+            room: draftRoom(workDraftId),
+          },
+          rows: rowsFor(workDraftId, entries),
+        };
+      },
+      true,
+      precondition,
+    );
+    return {
+      ...result,
+      ...(blockOrigins ? { blockOrigins } : {}),
+      write: write
+        ? {
+            kind: "write",
+            async persist() {
+              await write.persist();
+              return write.cut();
+            },
+            transfer: () => write.transfer(),
+            dispose: () => write.dispose(),
+          }
+        : { kind: "no-effect" },
+    };
+  }
+
   return {
     async readRoom(docId, staged, access) {
       const peer = access?.pinnedDraftId;
@@ -206,7 +261,8 @@ export function createDraftAgentEditCoordinator(input: {
           throw cause;
         }
       };
-      await input.flushLivePull(docId as DocumentId);
+      // A model edit read under its lock pulled before it took it (a pull opens its own connection).
+      if (!inLockedWrite()) await input.flushLivePull(docId as DocumentId);
       return peer
         ? underAccess(peer, (workDraftId) => read(workDraftId, true))
         : read(access?.workDraftId ?? (await threadWorkDraft(docId as DocumentId)).draftId, false);
@@ -219,6 +275,8 @@ export function createDraftAgentEditCoordinator(input: {
       access,
       precondition,
     }): Promise<StagedWriteSaveResult> {
+      if (access?.workDraftId && !access.pinnedDraftId)
+        return saveToWorkDraft(access.workDraftId, entries, precondition);
       const peerId =
         access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
       return underAccess(peerId, async (workDraftId) => {

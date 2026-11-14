@@ -201,6 +201,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     agentEdit: {
       agentEdit: () => agentEdit,
+      modelEdits: () => {
+        throw new Error("Model edits require the command-backed Postgres adapter");
+      },
       treeHistory: () => {
         throw new Error("Tree history requires the receipt-backed Postgres adapter");
       },

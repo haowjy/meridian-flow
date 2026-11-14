@@ -103,11 +103,24 @@ export async function runInDrizzleTransaction<T>(
   return result;
 }
 
+const joinsRoots = { name: "joins-roots" };
+
+/**
+ * Marks the ambient transaction as the only connection its work may hold: a root transaction or
+ * read snapshot opened under it runs inside it instead. A model edit holds its document's lock
+ * while it plans; a second connection waiting on a lock the first holds would never return.
+ */
+export function joinRootTransactionsInAmbient(): void {
+  if (!setDrizzleTransactionLocal(joinsRoots, true))
+    throw new Error("joinRootTransactionsInAmbient requires an ambient transaction");
+}
+
 export async function runInRootDrizzleTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
   options?: { isolationLevel?: "repeatable read"; accessMode?: "read only" },
 ): Promise<T> {
+  if (getDrizzleTransactionLocal<boolean>(joinsRoots)) return operation();
   return transactionStorage.exit(async () => {
     const context = newTransactionContext(db);
     let result: T;

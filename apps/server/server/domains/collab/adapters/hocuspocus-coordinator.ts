@@ -28,6 +28,7 @@ import {
   RetiredDocumentHandleError,
   retireDocumentHandle,
 } from "../domain/document-handle.js";
+import { inLockedWrite } from "../domain/locked-write.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
@@ -99,7 +100,9 @@ export function createDeferredLiveProjectionCoordinator(deps: {
   // The transaction's own rows stay out of the copy, as they stay out of the room until
   // commit; only a document created in this transaction has nothing committed to start from.
   const committedCopy = async (docId: string) => {
-    if (!deps.transactions.inTransaction()) return liveRoomCopy(deps, docId);
+    // A model edit reads under the document's lock, in the transaction that will append: its
+    // own earlier rows are part of what it plans on.
+    if (!deps.transactions.inTransaction() || inLockedWrite()) return liveRoomCopy(deps, docId);
     const copy = await deps.transactions
       .outsideTransaction(() => liveRoomCopy(deps, docId))
       .catch((cause: unknown) => {

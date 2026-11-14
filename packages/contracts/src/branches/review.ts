@@ -8,7 +8,8 @@
  */
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
-import type { BranchId, DocumentCommandId, DraftItemKey } from "../ids.js";
+import type { BranchId, DocumentCommandId, DraftItemKey, ProjectId, UserId } from "../ids.js";
+import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
 import type { DraftOwnerKey } from "./owner.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
@@ -125,7 +126,34 @@ export type UnapplyClickAnswer =
 export type StoredDocumentCommandResult =
   | DiscardCommandResult
   | ApplyClickResult
-  | UnapplyClickResult;
+  | UnapplyClickResult
+  | ModelEditCommandResult;
+
+/** The tool result a model's edit stores: what its result block holds, before the block's own ids. */
+export type ModelEditToolResult = {
+  toolCallId: string;
+  content: ToolContentPart[];
+  result: JsonValue;
+  isError?: boolean;
+  metadata?: JsonObject;
+};
+
+/**
+ * What names one model tool call's effect: the call, in its response, for its account. Both
+ * the loop and a recovering process derive the same command id from it.
+ */
+export type ModelEditKey = {
+  responseId: string;
+  toolCallId: string;
+  accountId: UserId;
+  projectId: ProjectId;
+};
+
+/** A model's edit settled: `edited` committed it, `refused` answered it with nothing changed. */
+export type ModelEditCommandResult = {
+  status: "edited" | "refused";
+  toolResult: ModelEditToolResult;
+};
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -216,11 +244,16 @@ export type DraftMetadataResponse =
 // answer contract above.
 
 /** Which kind of command a `commandId` was recorded for. */
-export const DOCUMENT_COMMAND_KINDS = ["apply", "unapply", "discard"] as const;
+export const DOCUMENT_COMMAND_KINDS = ["apply", "unapply", "discard", "model_edit"] as const;
 export type DocumentCommandKind = (typeof DOCUMENT_COMMAND_KINDS)[number];
 
 /** HTTP 409 code: the `commandId` was already used for a different command. */
 export const DOCUMENT_COMMAND_CONFLICT_CODE = "command_conflict";
+
+/** What a model edit's command row holds: its result, or `never` when the call was stopped before it ran. */
+export type ModelEditOutcome =
+  | { status: "done" | "refused"; result: ModelEditCommandResult }
+  | { status: "never" };
 
 /**
  * The outcome a command's transaction commits. `done`: the effect committed. `refused`: the

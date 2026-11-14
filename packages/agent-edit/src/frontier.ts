@@ -106,6 +106,11 @@ export interface FrontierLookups {
   recording: FrontierLookup;
   /** Required for a model reply's write; a read plans nothing. */
   planning?: FrontierLookup;
+  /**
+   * Which of these rooms the model last saw, null when it saw none (same credited blocks as
+   * `recording`). The host's closed-draft admission asks it before a write.
+   */
+  latestRoom?(rooms: readonly string[]): Promise<string | null>;
   reply?: ReplyMutations;
 }
 
