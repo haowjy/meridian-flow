@@ -477,9 +477,8 @@ export function rebase(
       merged.push(...draftVersion);
       continue;
     }
-    // An unpaired replacement says the blocks are not each other: nothing to merge by index inside.
     const nested =
-      lo === hi || [...liveHunks, ...draftHunks].some((h) => h.unpaired)
+      lo === hi
         ? null
         : mergeContainers(schema, baseToks.slice(lo, hi), liveVersion, draftVersion, idsIn(lo, hi));
     if (nested) {

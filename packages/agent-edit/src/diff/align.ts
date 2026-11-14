@@ -6,7 +6,7 @@
  *
  * Within a unit, words align before punctuation, and paragraph starts follow their first matched word.
  * That keeps a small split or join reading as one edit instead of unrelated paragraph replacements.
- * Blocks between units are a removed run, an added run, or one replacement marked `unpaired`.
+ * Blocks between units are a removed run and an added run.
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import { equalOrderedMatches } from "../ordered-matching.js";
@@ -33,15 +33,24 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   const hunks: Hunk[] = [];
   let pb = 0;
   let ps = 0;
+  // A removed run and an added run between two units are not each other: a removal, then an addition
+  // after it, so a side that removed the same blocks and added others keeps its additions.
   const between = (b1: number, s1: number) => {
-    if (pb < b1 || ps < s1)
+    if (pb < b1)
       hunks.push({
         from: B.starts[pb],
         to: B.starts[b1],
         sfrom: S.starts[ps],
+        sto: S.starts[ps],
+        ins: [],
+      });
+    if (ps < s1)
+      hunks.push({
+        from: B.starts[b1],
+        to: B.starts[b1],
+        sfrom: S.starts[ps],
         sto: S.starts[s1],
         ins: S.toks.slice(S.starts[ps], S.starts[s1]),
-        ...(pb < b1 && ps < s1 ? { unpaired: true } : {}),
       });
   };
   for (let i = 0; i < B.blocks.length; i++) {

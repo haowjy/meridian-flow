@@ -245,13 +245,16 @@ function correspondById(
     [i0, j0] = [i1 + 1, j1 + 1];
   }
 
-  findPieces(old, next, c);
-  const byId = new Set(inOrder.map(([i]) => i));
-  rootUnits(old, next, c, byId);
-  // A pair out of order is a move, unless a piece already took one of its blocks.
+  const owned = { old: new Uint8Array(old.length), next: new Uint8Array(next.length) };
+  for (const [i, j] of pairs) {
+    owned.old[i] = 1;
+    owned.next[j] = 1;
+  }
+  findPieces(old, next, c, owned);
+  rootUnits(old, next, c, new Set(inOrder.map(([i]) => i)));
+  // A pair out of order is a move.
   pairs.forEach(([i, j], k) => {
     if (stay.has(k)) return;
-    if (c.partner[i] >= 0 || c.oldPiece[i] >= 0 || c.back[j] >= 0 || c.nextPiece[j] >= 0) return;
     c.partner[i] = j;
     c.back[j] = i;
     c.moved.add(i);
@@ -449,17 +452,23 @@ const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
  * on the two sides when a split lands inside a word of a script without spaces, so the piece also
  * counts when pair and piece together are exact text of the other side.
  */
-function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspondence) {
+function findPieces(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  c: Correspondence,
+  /** Blocks that have a pair of their own by id, so they are nobody's piece. */
+  owned?: { old: Uint8Array; next: Uint8Array },
+) {
   const { partner, back } = c;
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
     if (j < 0 || !sameType(old[i], next[j])) continue;
     // Most pairs have no unpaired neighbour; counting words for them dominates a large document.
-    const open = (k: number, side: readonly PMNode[], other: Int32Array) =>
-      k >= 0 && k < side.length && other[k] < 0;
+    const open = (k: number, side: readonly PMNode[], other: Int32Array, own?: Uint8Array) =>
+      k >= 0 && k < side.length && other[k] < 0 && !own?.[k];
     if (
-      !(open(i - 1, old, partner) || open(i + 1, old, partner)) &&
-      !(open(j - 1, next, back) || open(j + 1, next, back))
+      !(open(i - 1, old, partner, owned?.old) || open(i + 1, old, partner, owned?.old)) &&
+      !(open(j - 1, next, back, owned?.next) || open(j + 1, next, back, owned?.next))
     )
       continue;
     let ow = contentWords(old[i]);
@@ -468,7 +477,12 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
     for (const dir of [-1, 1]) {
       for (
         let k = i + dir;
-        k >= 0 && k < old.length && partner[k] < 0 && c.oldPiece[k] < 0 && sameType(old[i], old[k]);
+        k >= 0 &&
+        k < old.length &&
+        partner[k] < 0 &&
+        !owned?.old[k] &&
+        c.oldPiece[k] < 0 &&
+        sameType(old[i], old[k]);
         k += dir
       ) {
         const w = contentWords(old[k]);
@@ -489,6 +503,7 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
         k >= 0 &&
         k < next.length &&
         back[k] < 0 &&
+        !owned?.next[k] &&
         c.nextPiece[k] < 0 &&
         sameType(next[j], next[k]);
         k += dir

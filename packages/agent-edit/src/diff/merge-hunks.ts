@@ -66,7 +66,7 @@ export function overlaps(x: Hunk, y: Hunk, baseToks: Tok[]): boolean {
       return false;
     let host = insert.from - 1;
     while (host > 0 && !isBlockTok(baseToks[host])) host--;
-    return deletion.from <= host && (deletion.unpaired || !deletion.ins.some(isBlockTok));
+    return deletion.from <= host && !deletion.ins.some(isBlockTok);
   };
   if (typedAtEndOfDeleted(x, y) || typedAtEndOfDeleted(y, x)) return true;
   if (xIsInsert && yIsInsert) return x.from === y.from;

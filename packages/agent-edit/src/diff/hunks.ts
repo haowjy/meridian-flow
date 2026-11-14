@@ -16,7 +16,6 @@ export interface Hunk {
   sfrom: number; // side token range this hunk came from: set where the hunk is made, never by a filter
   sto: number;
   ins: Tok[]; // the payload: all of sfrom..sto, or what a filter kept of it
-  unpaired?: boolean; // a removed run and an added run that are not each other
   sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
 

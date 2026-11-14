@@ -8,7 +8,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Conservative attribution when Apply evidence is unavailable
  */
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ import {
 } from "./attribution.js";
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
-import { tagged } from "./merge.fixtures.js";
+import { tagBySide, tagged } from "./merge.fixtures.js";
 import { rebase } from "./merge.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
@@ -122,7 +122,14 @@ function room(blocks: Array<string | PMNode>) {
       });
     },
     rebase(live: PMNode[]) {
-      const result = rebase(schema, base, live, readBlocks(frag(draft), schema));
+      // The rows write every block with one id; the merge pairs by id, so give each side's blocks the
+      // ids an editor would have kept (by guess), as the model's write does.
+      const [b, l, d] = tagBySide(
+        base.map(withoutBlockIds),
+        live.map(withoutBlockIds),
+        readBlocks(frag(draft), schema).map(withoutBlockIds),
+      );
+      const result = rebase(schema, b, l, d);
       draft.clientID = 1;
       draft.transact(() => writeBlocks(frag(draft), schema, tagged(result.blocks)));
       draft.clientID = 9;
