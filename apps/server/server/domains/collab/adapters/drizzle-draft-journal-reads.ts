@@ -20,7 +20,6 @@ const journalColumns = {
   turnId: draftWriteJournal.turnId,
   actorUserId: draftWriteJournal.actorUserId,
   updateData: draftWriteJournal.updateData,
-  status: draftWriteJournal.status,
   updateMeta: draftWriteJournal.updateMeta,
 };
 type JournalRecord = Pick<typeof draftWriteJournal.$inferSelect, keyof typeof journalColumns>;
@@ -77,7 +76,6 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
           and(
             eq(documentDrafts.documentId, options.documentId),
             eq(draftWriteJournal.draftId, draftId),
-            eq(draftWriteJournal.status, "active"),
             gt(draftWriteJournal.id, options.after),
             lte(draftWriteJournal.id, options.through),
           ),
@@ -100,7 +98,6 @@ function mapJournalRow(row: JournalRecord, threadHandle: string | null): DraftJo
     turnId: row.turnId,
     actorUserId: row.actorUserId,
     updateData: row.updateData,
-    status: row.status,
     updateMeta: row.updateMeta,
   };
 }

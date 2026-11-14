@@ -1,4 +1,4 @@
-/** Live→Work draft pulls (debounced and at tool boundaries), and a thread peer's identity step. */
+/** Live→Work draft pulls (debounced and at tool boundaries). */
 
 import {
   blocksEqual,
@@ -7,47 +7,15 @@ import {
   rebase,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
-import {
-  isDocumentNotFoundError,
-  type RetiredWriteReason,
-  type UpdateJournal,
-} from "@meridian/agent-edit/integration";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { DocumentRemovals } from "../../context/ports/document-removal.js";
-import type { Branches } from "./branches.js";
-import { closedPinReason } from "./closed-pin-reason.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
-import {
-  DraftCasConflictError,
-  type DraftSeedRecord,
-  type DraftSnapshot,
-  DraftStaleUpdateError,
-} from "./draft-store.js";
-import { liveRoom } from "./observation-rooms.js";
-import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
   listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
-  ensureThreadPeerDraft(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    branchId?: BranchId;
-    /** Live as it stands, asked for only when the ensure makes a Work draft to seed. */
-    liveDoc: () => Promise<{ doc: Y.Doc; room: string | null; position?: number }>;
-  }): Promise<{
-    documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId">;
-    workDraft: Pick<DraftSnapshot, "draftId" | "seed">;
-  }>;
-};
-
-export type EnsuredThreadPeer = {
-  peerDraftId: string;
-  upstreamDraftId: string;
-  seed: DraftSeedRecord | null;
 };
 
 export type DraftPullService = {
@@ -57,68 +25,7 @@ export type DraftPullService = {
   /** Stop scheduling and join pulls already in flight before their store is destroyed. */
   shutdown(): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  ensureThreadPeer(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    branchId?: BranchId;
-  }): Promise<EnsuredThreadPeer>;
 };
-
-/**
- * A thread-peer pull whose draft operations lost to a Discard (stale, CAS-lost, closed or missing
- * draft, or an upstream closed after its read), carrying the peer and upstream it had
- * captured so a caller can say which one went. Any other failure of the pull is not wrapped.
- */
-export class ThreadPeerPullLost extends Error {
-  constructor(
-    readonly peerDraftId: string,
-    readonly upstreamDraftId: string,
-    cause: unknown,
-  ) {
-    super(`Thread peer ${peerDraftId} pull lost its drafts`, { cause });
-    this.name = "ThreadPeerPullLost";
-  }
-}
-
-/**
- * Why a draft access failure is a writer's Discard, in the save fence's precedence: the branch
- * it wrote for is closed (Discard all), else the peer's Work draft is closed or gone (the
- * document's Discard), else the peer is (an item Discard re-forked it). `undefined` when no
- * Discard explains it.
- */
-export async function peerLossReason(
-  deps: {
-    branches: Pick<Branches, "shareActive">;
-    drafts: {
-      getDraft(
-        draftId: string,
-      ): Promise<Pick<DraftSnapshot, "status" | "closedCause" | "documentId"> | null>;
-    };
-    removals: DocumentRemovals;
-  },
-  cause: unknown,
-  branchId: BranchId | undefined,
-  documentId?: string | null,
-): Promise<RetiredWriteReason | undefined> {
-  if (isDocumentNotFoundError(cause) && cause.removal) return { removed: cause.removal };
-  const lost = cause instanceof ThreadPeerPullLost;
-  if (!lost && !(cause instanceof DraftStaleUpdateError || cause instanceof DraftCasConflictError))
-    return undefined;
-  const branchActive = !branchId || Boolean(await deps.branches.shareActive(branchId));
-  if (!lost) return branchActive ? undefined : "discarded_draft";
-  const [upstream, peer] = await Promise.all([
-    deps.drafts.getDraft(cause.upstreamDraftId),
-    deps.drafts.getDraft(cause.peerDraftId),
-  ]);
-  const id = documentId ?? upstream?.documentId ?? peer?.documentId;
-  const removals = id ? await deps.removals.lookup([id as DocumentId]) : undefined;
-  return closedPinReason({
-    branchActive,
-    upstream,
-    peer,
-    removal: removals?.get(id as DocumentId),
-  });
-}
 
 export type DraftPullDiagnostics = {
   backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
@@ -145,47 +52,6 @@ export function createDraftPullService(input: {
       queued?: Promise<void>;
     }
   >();
-
-  function outsideCallerTransactions<T>(operation: () => T): T {
-    return input.outsideTransaction(() => runOutsideResponseTransaction(operation));
-  }
-
-  async function liveSnapshot(
-    documentId: DocumentId,
-  ): Promise<{ doc: Y.Doc; room: string | null; position: number }> {
-    // Releasing the room checkpoints it under the document's mutation lock. In
-    // a caller's transaction that lock would outlive the snapshot and block the
-    // root pull in `run` that the caller then waits on.
-    const captured = await input
-      .outsideTransaction(async () => {
-        const cut = await input.liveJournal.read(documentId);
-        const doc = new Y.Doc({ gc: false });
-        if (cut.checkpoint) Y.applyUpdate(doc, cut.checkpoint);
-        for (const row of cut.updates) Y.applyUpdate(doc, row.update);
-        const authority = cut.authority;
-        const state = Y.encodeStateAsUpdate(doc);
-        doc.destroy();
-        return {
-          state,
-          room: authority ? liveRoom(documentId, authority.generation) : null,
-          position: cut.persistenceWatermark ?? 0,
-        };
-      })
-      .catch((cause: unknown) => {
-        // A live side with no state yet (a hidden creation) is an empty upstream; a removed
-        // document is not, and its pull fails by name.
-        if (isDocumentNotFoundError(cause) && !cause.removal)
-          return {
-            state: Y.encodeStateAsUpdate(new Y.Doc({ gc: false })),
-            room: null,
-            position: 0,
-          };
-        throw cause;
-      });
-    const doc = new Y.Doc({ gc: false });
-    Y.applyUpdate(doc, captured.state);
-    return { doc, room: captured.room, position: captured.position };
-  }
 
   const schema = buildDocumentSchema();
 
@@ -264,7 +130,7 @@ export function createDraftPullService(input: {
       // A joiner needs a snapshot captured after its call, not the in-flight
       // snapshot that may predate a writer edit. Coalesce joins into one rerun.
       const running = current.running;
-      current.queued ??= outsideCallerTransactions(() => {
+      current.queued ??= input.outsideTransaction(() => {
         const rerun = () => {
           current.queued = undefined;
           return run(documentId);
@@ -274,7 +140,7 @@ export function createDraftPullService(input: {
       return current.queued;
     }
     const entry = current ?? {};
-    const running = outsideCallerTransactions(() =>
+    const running = input.outsideTransaction(() =>
       pullLive(documentId)
         .then(() => {
           // A queued snapshot may include newer edits; its retries still need these timers.
@@ -285,7 +151,7 @@ export function createDraftPullService(input: {
           entry.max = undefined;
         })
         .finally(() =>
-          outsideCallerTransactions(() => {
+          input.outsideTransaction(() => {
             entry.running = undefined;
             if (!entry.queued && !entry.debounce && !entry.max) timers.delete(documentId);
           }),
@@ -345,34 +211,6 @@ export function createDraftPullService(input: {
 
     flushLivePull(documentId) {
       return run(documentId);
-    },
-
-    ensureThreadPeer(inputPeer) {
-      return runOutsideResponseTransaction(async () => {
-        // An existing peer takes no live snapshot: it seeds only a Work draft the ensure makes.
-        let seed: { doc: Y.Doc; room: string | null; position: number } | undefined;
-        let ensured: Awaited<ReturnType<WorkDraftLookup["ensureThreadPeerDraft"]>>;
-        try {
-          ensured = await input.drafts.ensureThreadPeerDraft({
-            ...inputPeer,
-            liveDoc: async () => {
-              seed ??= await liveSnapshot(inputPeer.documentId);
-              return seed;
-            },
-          });
-        } finally {
-          seed?.doc.destroy();
-        }
-        const peer = ensured.documentDraft;
-        const upstreamDraftId = peer.upstreamDraftId;
-        if (!upstreamDraftId)
-          throw new Error(`Thread peer ${peer.draftId} has no upstream Work draft`);
-        return {
-          peerDraftId: peer.draftId,
-          upstreamDraftId,
-          seed: ensured.workDraft.seed,
-        };
-      });
     },
   };
 }

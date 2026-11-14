@@ -40,10 +40,6 @@ interface WriteOutcomeBase {
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. e3. */
   writeId?: string;
-  /** Unique host-only correlation for replacing a staged result with its settled receipt. */
-  settlementId?: string;
-  /** Machine-readable error detail for host observability; the model reads the rendered `result`. */
-  error?: WriteErrorDetail;
   /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
   /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
@@ -65,52 +61,6 @@ interface WriteOutcomeBase {
   frontier?: ObservationFrontier;
 }
 
-export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
-export type ResponseLifecycleClosedState = "committed" | "rolledBack";
-
-export interface ResponseLifecycleErrorDetail {
-  type: "response_lifecycle";
-  code: "response_closed";
-  responseId: string;
-  operation: ResponseLifecycleOperation;
-  state: ResponseLifecycleClosedState;
-  documentId?: string;
-  threadId?: string;
-  turnId?: string;
-  writeId?: string;
-}
-
-/**
- * A mutation-bearing write claimed for a document was dropped from an open
- * response by thread invalidation while other documents in the same response
- * stayed staged and eventually committed. The model already saw `tool_result
- * status: "success"` for the dropped write; this event makes the non-durability
- * loud alongside the durable commit of the survivors.
- */
-export interface ResponseClaimDiscardedEntry {
-  documentId: string;
-  threadId: string;
-  updateCount: number;
-}
-
-export interface ResponseLifecycleClaimDiscardedDetail {
-  type: "response_lifecycle";
-  code: "claimed_write_discarded";
-  responseId: string;
-  documents: readonly ResponseClaimDiscardedEntry[];
-}
-
-/** Host observability when a tool_use_id replay returns a cached write outcome. */
-export interface WriteIdempotencyHitDetail {
-  toolUseId: string;
-  scopeKind: "response" | "turn" | null;
-  scopeId: string | null;
-  sessionId: string;
-  outcome:
-    | { status: "success"; phase: WriteSuccessPhase }
-    | { status: Exclude<WriteStatus, "success"> };
-}
-
 /** Host-only evidence for a dispatch failure collapsed to the stable internal-error outcome. */
 export interface UnexpectedWriteErrorDetail {
   cause: unknown;
@@ -122,44 +72,6 @@ export interface UnexpectedWriteErrorDetail {
   responseId?: string;
   toolUseId?: string;
 }
-
-export type ResponseLifecycleEvent =
-  | ResponseLifecycleErrorDetail
-  | ResponseLifecycleClaimDiscardedDetail;
-
-export type ResponseCommitterPhase = "buffered" | "journalStaged" | "closed";
-
-export type ResponseCommitterTransition =
-  | "stage"
-  | "drop_for_thread"
-  | "journal_staged"
-  | "document_saved"
-  | "closed"
-  | "rollback"
-  | "evicted";
-
-export interface ResponseCommitterTransitionDetail {
-  type: "response_committer";
-  transition: ResponseCommitterTransition;
-  responseId: string;
-  phase: ResponseCommitterPhase;
-  closedOutcome?: ResponseLifecycleClosedState;
-  documentId?: string;
-  threadId?: string;
-  droppedUpdateCount?: number;
-}
-
-export type WriteErrorDetail = ResponseLifecycleErrorDetail;
-
-export type InteractionContext =
-  | { mode: "live" }
-  | {
-      /** A draft-mode write, bound to its thread peer's identity before its room read. */
-      mode: "threadPeer";
-      /** Host peer identity, for exact retirement independently of generation replay. */
-      peerDraftId?: string;
-      upstreamDraftId?: string;
-    };
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
@@ -175,23 +87,16 @@ export interface WriteContext {
   threadId?: string;
   /** Host turn id for undo metadata; cross-call turn grouping is completed above this API later. */
   turnId?: string;
-  /** Host/tool-call idempotency key. Replays return the original outcome. */
+  /** The tool call's id: it scopes the write's durable id within its turn. */
   tool_use_id?: string;
-  /** Immutable provider authorship and the independently rotated prepared scope. */
+  /** The response the write is authored in. */
   responseIdentity?: ResponseAuthorship;
-  /**
-   * Host-captured interaction identity: baseline, journal floor, draft
-   * generation, and optional attempt guard travel as one object.
-   */
-  interactionContext?: InteractionContext;
-  /** Host-routed: the Work draft a draft read bound to no peer reads (`DocumentAccess.workDraftId`). */
+  /** Host-routed: the Work draft a draft call reads and saves (`DocumentAccess.workDraftId`). */
   workDraftId?: string;
   /** Version requested at the routing boundary, independent of the view used to render links. */
   documentVersion?: "live" | "draft";
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
-  /** True only when the host resolved this create to a previously missing document. */
-  createdDocument?: boolean;
   /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */
   includeNodes?: boolean;
   /**
@@ -229,7 +134,7 @@ export interface WriteContext {
 }
 
 export type MutationActor =
-  | { kind: "agent"; turnId: string; threadId: string; responseId?: string; editScopeId?: string }
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 
@@ -238,53 +143,3 @@ export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
-
-export interface ResponseCommitDocumentResult {
-  documentId: string;
-  updateCount: number;
-  receipts: ResponseCommitWriteReceipt[];
-  /**
-   * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
-   * the frontier at the save's after-state, crediting every accepted receipt and what the last
-   * one lists.
-   */
-  frontier?: ObservationFrontier;
-}
-
-export interface ResponseCommitWriteReceipt {
-  revision: string | null;
-  writeId: string;
-  settlementId: string;
-  result: AgentEditResultV1;
-  /** Host-only: what the settled receipt's echo showed the model, from the commit's own links. */
-  showing?: LinkShowing;
-}
-
-export interface ResponseStagedCreateOutcome {
-  committed: string[];
-  discarded: string[];
-}
-
-export interface ResponseCommitSuccessResult {
-  status: "committed";
-  responseId: string;
-  documentCount: number;
-  updateCount: number;
-  documents: ResponseCommitDocumentResult[];
-  stagedCreates: ResponseStagedCreateOutcome;
-  /** Recovery committed the journal but could not verify concurrent-content awareness. */
-  awarenessDegraded?: boolean;
-  /**
-   * Mutation-bearing writes the model was already told succeeded, dropped
-   * before commit by a per-doc `dropForThread`, while other docs in this
-   * response committed durably. Always non-empty when the
-   * `claimed_write_discarded` lifecycle event fires.
-   */
-  discardedClaims?: readonly ResponseClaimDiscardedEntry[];
-}
-
-export interface ResponseRollbackResult {
-  status: "rolledBack";
-  responseId: string;
-  stagedCreates: ResponseStagedCreateOutcome;
-}

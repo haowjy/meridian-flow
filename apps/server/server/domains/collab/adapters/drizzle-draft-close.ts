@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, DocumentId, ThreadId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
@@ -50,27 +50,12 @@ export function draftSelectionPredicate(selection: DraftSelection): SQL | undefi
 
 /** The caller holds its Work/branch and document admission locks; pulls lock upstream first too. */
 export async function lockActiveDrafts(db: DrizzleDb, selection: DraftSelection) {
-  const rows = [];
-  for (const kind of ["work_draft", "thread_peer"] as const) {
-    rows.push(
-      ...(await db
-        .select({
-          id: documentDrafts.id,
-          threadId: documentDrafts.threadId,
-        })
-        .from(documentDrafts)
-        .where(
-          and(
-            draftSelectionPredicate(selection),
-            eq(documentDrafts.status, "active"),
-            eq(documentDrafts.kind, kind),
-          ),
-        )
-        .orderBy(asc(documentDrafts.id))
-        .for("update")),
-    );
-  }
-  return rows;
+  return db
+    .select({ id: documentDrafts.id })
+    .from(documentDrafts)
+    .where(and(draftSelectionPredicate(selection), eq(documentDrafts.status, "active")))
+    .orderBy(asc(documentDrafts.id))
+    .for("update");
 }
 
 type Batch = { closed: ClosedDraft[]; removed: Map<DocumentId, DocumentRemovalRecord> };
@@ -171,14 +156,12 @@ export function createDraftClose(): DraftClose {
             .returning({
               draftId: documentDrafts.id,
               documentId: documentDrafts.documentId,
-              threadId: documentDrafts.threadId,
               branchId: documentDrafts.branchId,
             })
         : [];
       const ended = closed.map((row) => ({
         draftId: row.draftId,
         documentId: row.documentId as DocumentId,
-        threadId: (row.threadId as ThreadId | null) ?? null,
         branchId: row.branchId,
         cause,
       }));

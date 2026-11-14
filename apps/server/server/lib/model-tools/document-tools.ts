@@ -1,7 +1,6 @@
 /**
  * The `read` and `write` tools: a path resolves to its tracked document,
- * the file policy grants the call, and the collab pool reads or writes under
- * that grant. `skills://` paths go to the skill files.
+ * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
  */
 
 import type {
@@ -69,7 +68,6 @@ import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inve
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { removedPathError } from "./removed-path.js";
-import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
@@ -243,24 +241,21 @@ async function writeUnderGrant(
   if (isToolError(grant)) return grant;
   let written: WriteOutcome;
   try {
-    // A call that is a command writes under its own lock, inside its transaction.
-    const edits = deps.documentSync;
-    written = await (ctx.modelEdit ? edits.modelEdits() : edits.agentEdit()).write(
-      buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied),
-      {
+    // The write runs under its own lock, inside the command's transaction.
+    written = await deps.documentSync
+      .modelEdits()
+      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
         responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
-        createdDocument: address.created === true,
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
         ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
-      },
-    );
+      });
   } catch (cause) {
     // A removal that won the document's lock after the grant (a pull, a staged or immediate
     // commit): the model's interim answer is `document_not_found`, with the record's sentence.
@@ -403,23 +398,15 @@ export function createReadHandler(deps: ToolWiringDeps) {
 
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, handlerCtx: ToolHandlerContext) => {
-    // A call that is a command has no reply scope, even while the loop still opens one for the
-    // held writes beside it: nothing below may stage under it.
-    const ctx: ToolHandlerContext =
-      handlerCtx.modelEdit && handlerCtx.responseIdentity
-        ? {
-            ...handlerCtx,
-            responseIdentity: {
-              providerResponseId: handlerCtx.responseIdentity.providerResponseId,
-            },
-          }
-        : handlerCtx;
+    const ctx = handlerCtx;
+    const edit = ctx.modelEdit;
+    if (!edit) throw new Error("A write is a document command: the executor keys it");
     const parsed = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
-    const settle = effectSettler(deps, ctx);
+    const settle = effectSettler(deps, ctx, edit);
     if (parsed.command === "move" || parsed.command === "delete")
       return runNamespaceCommand(deps, call, parsed, ctx, settle);
     const { context, principal } = call;
@@ -500,8 +487,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             : null;
         return removed ?? found;
       }
-      if (ctx.modelEdit)
-        await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
+      await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
       existing = found;
     }
 
@@ -623,46 +609,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         else if (!now && outcome.result.documentEmpty)
           outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
       }
-      const stagedCreate =
-        creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
-      if (outcome.isError) {
-        if (stagedCreate) {
-          try {
-            await retractCreatedTrackedDocument({
-              port: context.port,
-              uri: address.uri,
-              documentId: address.documentId,
-              cause: "create_failed",
-            });
-          } catch (error) {
-            return writeToolError(
-              parsed.command,
-              `Failed to discard staged create for ${parsed.path}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              "internal_error",
-            );
-          }
-        }
+      if (outcome.isError)
         return { isError: true, output: outcome.output, evidence: outcome.evidence };
-      }
-      if (stagedCreate) {
-        const responseId = ctx.responseIdentity?.editScopeId;
-        if (responseId === undefined) {
-          return writeToolError(parsed.command, "Missing staged response id", "internal_error");
-        }
-        deps.responseWrites.trackStagedCreate({
-          responseId,
-          port: context.port,
-          uri: address.uri,
-          documentId: address.documentId,
-        });
-      }
 
-      // Settlement phase, not command names, decides who still owes admission.
-      const unchanged = outcome.result.unchanged === true;
-      const stagedWrite = outcome.status === "success" && outcome.phase === "staged";
-      if (!stagedWrite && !unchanged) refresh = address.documentId as DocumentId;
+      if (outcome.result.unchanged !== true) refresh = address.documentId as DocumentId;
       const notice = await deps.contextPorts.chatFiles.notice(
         context.resolution.thread.projectId,
         parsed.path,
@@ -670,17 +620,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       );
       return {
         output: notice ? { ...outcome.result, ...notice } : outcome.result,
-        metadata: {
-          ...documentRevisionMetadata(address, outcome.revision),
-          ...(stagedWrite
-            ? {
-                documentId: address.documentId,
-                stagedWrite: true,
-                ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
-                ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-              }
-            : {}),
-        },
+        metadata: documentRevisionMetadata(address, outcome.revision),
         evidence: outcome.evidence,
       };
     };
@@ -696,16 +636,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
 }
 
 /**
- * How a call's effect runs: directly, or as the command the executor keyed it by, which stores
- * its result with its outcome. An error result is the command's refusal: whatever the effect
- * changed rolls back with it.
+ * Runs a call's effect as the command the executor keyed it by, which stores its result with
+ * its outcome. An error result is the command's refusal: whatever the effect changed rolls
+ * back with it.
  */
-export function effectSettler(
+function effectSettler(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,
+  edit: NonNullable<ToolHandlerContext["modelEdit"]>,
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
-  const edit = ctx.modelEdit;
-  if (!edit) return (effect) => effect();
   return async (effect): Promise<ModelEditHandlerResult> => {
     const { outcome, evidence } = await deps.documentSync.modelEdits().run({
       key: edit.key,

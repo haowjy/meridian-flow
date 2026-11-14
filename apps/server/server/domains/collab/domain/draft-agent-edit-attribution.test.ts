@@ -41,36 +41,22 @@ function fixture(existingUpstream?: Y.Doc) {
   docs.push(upstream, baseline);
   const rows: DraftJournalRow[] = [];
   const snapshot = (draftId: string): DraftSnapshot =>
-    testDraftRow({ draftId, documentId, upstreamDraftId: draftId === "peer" ? "draft" : null });
+    testDraftRow({ draftId, documentId, upstreamDraftId: null });
   const coordinator = createDraftAgentEditCoordinator({
-    removals: { lookup: async () => new Map() },
     threadId,
     liveJournal: {
       readUpdates: async () => [],
     },
     draftCoordinator: createDraftCoordinator({
       onAppendCommitted: () => {},
-      store: new MemoryDraftStore(
-        ["draft", "peer"].map((id) => memoryDraft(snapshot(id), upstream)),
-      ),
+      store: new MemoryDraftStore(["draft"].map((id) => memoryDraft(snapshot(id), upstream))),
     }),
     drafts: {
       getDraft: async (id) => snapshot(id),
-      resolveThreadDraft: async () => ({
-        draftId: "peer",
-        status: "active",
-        lifecycle: "active",
-        seed: null,
-      }),
-      ensureThreadPeerDraft: async () => ({
-        documentDraft: snapshot("peer"),
-        workDraft: snapshot("draft"),
-      }),
       listActiveWorkDraftIds: async () => ["draft"],
       resolveWorkDraftForThread: async () => snapshot("draft"),
     },
     flushLivePull: async () => {},
-    branches: { shareActive: async () => null },
     journalRows: {
       listConcurrentJournalRows: async () => rows,
       listJournalRowsForDraft: async () => [],
@@ -86,7 +72,6 @@ function fixture(existingUpstream?: Y.Doc) {
       turnId: null,
       actorUserId: null,
       updateData,
-      status: "active",
     };
   }
   async function check() {
@@ -104,7 +89,7 @@ function fixture(existingUpstream?: Y.Doc) {
 }
 
 describe("draft concurrent attribution", () => {
-  it("reports writer content arriving before the save reads the room in the actual response save", async () => {
+  it("reports writer content arriving before the save reads the room", async () => {
     let beforeSave = () => {};
     const ctx = createWriteToolHarness({ "chapter.md": "Alpha para.\n\nBeta para." });
     const prepareSave = ctx.coordinator.prepareSave.bind(ctx.coordinator);
@@ -120,7 +105,7 @@ describe("draft concurrent attribution", () => {
       sessionId: "session",
       threadId: "thread-a",
       turnId: "turn-late",
-      responseIdentity: { providerResponseId: "reply-late", editScopeId: "reply-late" },
+      responseIdentity: { providerResponseId: "reply-late" },
       frontiers: {
         recording: async () => frontier,
         planning: async () => frontier,
@@ -128,22 +113,17 @@ describe("draft concurrent attribution", () => {
     };
     const read = await ctx.core.read({ file: "chapter.md" }, context);
     frontier = read.frontier ?? null;
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
-      context,
-    );
     beforeSave = () => {
       const vector = Y.encodeStateVector(f.upstream);
       humanText(f.upstream, 0, { from: 11, to: 11 }, " WRITER");
       f.rows.push(f.row(Y.encodeStateAsUpdate(f.upstream, vector)));
     };
-    const saved = await ctx.core.commitResponse("reply-late", {
-      recordingFrontier: async () => frontier,
-    });
+    const written = await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
+      context,
+    );
     expect(blockTexts(f.upstream)).toEqual(["Alpha AI edit. WRITER", "Beta para."]);
-    const receipt = saved.documents[0]?.receipts.at(-1)?.result;
-    if (!receipt) throw new Error("Missing saved receipt");
-    const rendered = renderAgentEditResult(receipt);
+    const rendered = renderAgentEditResult(written.result);
     expect(rendered).toContain("Alpha AI edit. WRITER");
     expect(rendered).toContain("concurrent edits by the user:");
   });

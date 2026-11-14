@@ -44,7 +44,6 @@ export async function stageDraft(
     expect(outcome).toMatchObject({ status: "success", phase: "staged" });
     identities.push(outcome.writeId);
   }
-  expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
   const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
   const draftId = documentDraft.draftId;
   const rows = await db
@@ -88,7 +87,7 @@ export function responseContext(responseId: string) {
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    responseIdentity: { providerResponseId: responseId },
     grant: inProject(
       testFileGrant({
         kind: "draft",

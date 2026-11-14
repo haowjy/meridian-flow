@@ -1,10 +1,5 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
-import type {
-  FrontierLookup,
-  ObservationFrontier,
-  ResponseCommitWriteReceipt,
-} from "@meridian/agent-edit/integration";
 import type { BranchId, DocumentCommandId, DraftOwner, LinkView } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
@@ -19,13 +14,7 @@ import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
-import type {
-  RefusedResponseDocument,
-  ThreadPeerAgentEditCore,
-} from "./domain/agent-edit-cores.js";
-
-export type { RefusedResponseDocument };
-
+import type { AgentEditRouter } from "./domain/agent-edit-router.js";
 import type { DiscardItem } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
@@ -164,8 +153,8 @@ export type CollabTransport = {
 };
 
 export type AgentEditAccess = {
-  /** The one model read/write entry point; each call names its destination. */
-  agentEdit(): ThreadPeerAgentEditCore;
+  /** The model's reads; each names its destination. */
+  agentEdit(): AgentEditRouter;
   /** A model's document-changing calls as commands. */
   modelEdits(): ModelEdits;
   /** The model's moves and deletes in the documents' edit history. */
@@ -345,56 +334,6 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
-export type ResponseWriteStagedCreates = {
-  committed: DocumentId[];
-  discarded: DocumentId[];
-};
-
-export type ResponseWriteCommitDocument = {
-  documentId: DocumentId;
-  updateCount: number;
-  receipts: ResponseCommitWriteReceipt[];
-  /** Host-only, when the save recorded one: the document's frontier at the save's after-state. */
-  frontier?: ObservationFrontier;
-};
-
-export type BranchClosedFinalizeResult = {
-  status: "branch_closed";
-  responseId: string;
-  mode: "draft";
-  documents: [];
-  stagedCreates: ResponseWriteStagedCreates;
-};
-
-export type ResponseWriteCommitFinalizeResult =
-  | {
-      status: "committed";
-      documents: ResponseWriteCommitDocument[];
-      stagedCreates: ResponseWriteStagedCreates;
-      /** Documents the save left out; their writes were not saved. */
-      refused: RefusedResponseDocument[];
-      awarenessDegraded?: boolean;
-    }
-  | BranchClosedFinalizeResult;
-
-export type ResponseWriteRollbackFinalizeResult = {
-  stagedCreates: ResponseWriteStagedCreates;
-  /** What the rollback couldn't reverse (a blocked folder path, for example); the rest it did. */
-  skipped: import("@meridian/contracts/protocol").TurnInverseSkip[];
-};
-
-export type ResponseWriteFinalizer = {
-  finalizeResponseCommit(
-    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier?: FrontierLookup },
-    beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
-  ): Promise<ResponseWriteCommitFinalizeResult>;
-  finalizeResponseRollback(
-    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId },
-  ): Promise<ResponseWriteRollbackFinalizeResult>;
-};
-
 export type DocumentCheckpoints = {
   checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
   restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
@@ -537,14 +476,12 @@ export type DraftPeerShadowAccess = {
   /**
    * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
    * derived outputs are current, no active draft stands between a draft reader and the live
-   * text, and the reply has staged no writes of its own (they leave no draft row, so only the
-   * reply's room says the derivation is behind its view). Documents left out need a read.
+   * text. Documents left out need a read.
    */
   readStoredGrepTexts(
     input: {
       documentIds: DocumentId[];
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Map<DocumentId, string>>;
   /** Words per document whose derived outputs are current; the others are absent. */
@@ -553,7 +490,6 @@ export type DraftPeerShadowAccess = {
     input: {
       documentId: DocumentId;
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   /**
@@ -574,7 +510,6 @@ export type DraftPeerShadowAccess = {
     input: {
       documentId: DocumentId;
       threadId?: ThreadId | null;
-      responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
@@ -588,8 +523,7 @@ export type DraftPeerShadowAccess = {
   }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
   /**
    * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the branch's draft on the document (or a thread peer of it) holds a
-   * contribution; otherwise closes the drafts, which retire after commit.
+   * `stands` when the branch's draft on the document holds a contribution; otherwise closes the drafts, which retire after commit.
    */
   retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
@@ -628,7 +562,6 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
   DraftAttributionAccess &

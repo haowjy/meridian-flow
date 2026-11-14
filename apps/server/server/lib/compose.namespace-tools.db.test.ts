@@ -339,7 +339,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await first.call("write", { command: "replace", path: "ch1", find: "one", content: "1" }))
           .isError,
       ).toBeFalsy();
-      await first.save();
       expect(
         (await first.call("write", { command: "move", from: { path: "ch1" }, path: "intro" }))
           .isError,
@@ -355,7 +354,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })
         ).isError,
       ).toBeFalsy();
-      await later.save();
       const textUndo = await later.call("write", { command: "undo", path: "intro" });
       expect(textUndo.isError, text(textUndo)).toBeFalsy();
       expect(await script.text("intro")).toContain("Chapter 1.");
@@ -403,7 +401,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })
         ).isError,
       ).toBeFalsy();
-      await compound.save();
       const deleting = await runtimes
         .script(script.runtime, { ...THREAD, turnId: NEXT_TURN })
         .begin();
@@ -654,7 +651,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "manuscript://sect-notes",
       });
       expect(undone.isError, text(undone)).toBeFalsy();
-      await undoTurn.save();
       expect(await review(script).item(SCRATCH_NOTE)).toBeUndefined();
 
       const redoTurn = await drafting.begin();
@@ -663,7 +659,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "scratch://@w2/sect-notes",
       });
       expect(redone.isError, text(redone)).toBeFalsy();
-      await redoTurn.save();
 
       expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
       expect(await placement(SCRATCH_NOTE)).toMatchObject({

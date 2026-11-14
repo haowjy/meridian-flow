@@ -42,17 +42,15 @@ type StoredDraft = MemoryDraft & { state: Uint8Array; stateVector: Uint8Array };
 function draftSnapshot(input: {
   draftId: string;
   doc: Y.Doc;
-  kind?: "work_draft" | "thread_peer";
   upstreamDraftId?: string | null;
 }): MemoryDraft {
   return memoryDraft(
     testDraftRow({
       draftId: input.draftId,
       documentId: DOCUMENT_ID,
-      kind: input.kind ?? "work_draft",
+      kind: "work_draft",
       upstreamDraftId: input.upstreamDraftId ?? null,
       workId: WORK_ID,
-      threadId: input.kind === "thread_peer" ? THREAD_ID : null,
     }),
     input.doc,
   );

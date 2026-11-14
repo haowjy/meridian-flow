@@ -38,7 +38,7 @@ import { projectedFrontiers } from "./seed-frontier.js";
 /** What a model edit's write needs from the rest of collab; the seams here are the adapters'. */
 export type ModelEditWriteDeps = {
   liveCore: LiveAgentEditCore;
-  /** The thread's core over Work drafts; it holds no response state a model edit touches. */
+  /** The thread's core over Work drafts. */
   threadCore(threadId: ThreadId): AgentEditCore;
   branches: Pick<Branches, "ensureActiveForWrite" | "viewForOwner">;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;

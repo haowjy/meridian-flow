@@ -3,7 +3,6 @@
 import type { TurnReversalAccess } from "../contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type {
-  PostDurabilityNoticeService,
   ReversalNoticeDiagnostics,
   TurnInverseNoticePort,
 } from "../domain/reversal-notices.js";
@@ -27,10 +26,6 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
 export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
   async () => threadContextReversalUnsupported();
 
-export const SILENT_POST_DURABILITY_NOTICES: PostDurabilityNoticeService = {
-  async recordAwarenessDegraded() {},
-};
-
 export const SILENT_TURN_INVERSE_NOTICES: TurnInverseNoticePort = {
   async record() {},
 };
@@ -44,5 +39,4 @@ export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnosti
 
 export const SILENT_REVERSAL_NOTICE_DIAGNOSTICS: ReversalNoticeDiagnostics = {
   documentUriMissing() {},
-  recordFailedAfterDurability() {},
 };

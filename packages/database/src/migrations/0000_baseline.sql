@@ -802,7 +802,6 @@ CREATE TABLE "document_edits" (
 	"thread_id" uuid,
 	"turn_id" uuid,
 	"response_id" text,
-	"edit_scope_id" text,
 	"command_id" uuid,
 	"tool_call_id" text,
 	"actor" text NOT NULL,
@@ -814,7 +813,7 @@ CREATE TABLE "document_edits" (
 	"tree_change" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_edits_actor_valid" CHECK ("document_edits"."actor" IN ('agent','human','system')),
-	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert','rollback')),
+	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert')),
 	CONSTRAINT "document_edits_tree_change_valid" CHECK ("document_edits"."tree_change" IS NULL OR (
         "document_edits"."tree_change"->>'op' IN ('create','move','delete','restore','settle')
         AND "document_edits"."tree_change"->'destination'->>'kind' IN ('live','draft')
@@ -1038,7 +1037,6 @@ CREATE TABLE "document_drafts" (
 	"kind" text NOT NULL,
 	"upstream_draft_id" text,
 	"branch_id" uuid NOT NULL,
-	"thread_id" uuid,
 	"status" text DEFAULT 'active' NOT NULL,
 	"closed_cause" text,
 	"state" "bytea" NOT NULL,
@@ -1057,12 +1055,11 @@ CREATE TABLE "document_drafts" (
 	"checkpoint_seq" bigint DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_drafts_kind_valid" CHECK ("document_drafts"."kind" IN ('work_draft', 'thread_peer')),
+	CONSTRAINT "document_drafts_kind_valid" CHECK ("document_drafts"."kind" = 'work_draft'),
 	CONSTRAINT "document_drafts_closed_cause_presence" CHECK (("document_drafts"."status" = 'closed') = ("document_drafts"."closed_cause" IS NOT NULL)),
 	CONSTRAINT "document_drafts_closed_cause_valid" CHECK ("document_drafts"."closed_cause" IN ('discarded', 'document_removed')),
 	CONSTRAINT "document_drafts_status_valid" CHECK ("document_drafts"."status" IN ('active', 'closed')),
-	CONSTRAINT "document_drafts_seed_record_shape" CHECK ((("document_drafts"."seed_origins" IS NULL AND "document_drafts"."seed_live_room" IS NULL AND "document_drafts"."seed_live_snapshot" IS NULL AND "document_drafts"."seed_draft_snapshot" IS NULL) OR ("document_drafts"."kind" = 'work_draft' AND "document_drafts"."seed_origins" IS NOT NULL AND "document_drafts"."seed_live_room" IS NOT NULL AND "document_drafts"."seed_live_snapshot" IS NOT NULL AND "document_drafts"."seed_draft_snapshot" IS NOT NULL)) AND (("document_drafts"."seed_live_state" IS NULL AND "document_drafts"."seed_live_position" IS NULL) OR ("document_drafts"."seed_live_state" IS NOT NULL AND "document_drafts"."seed_live_position" IS NOT NULL))),
-	CONSTRAINT "document_drafts_owner_shape" CHECK (("document_drafts"."kind" = 'work_draft' AND "document_drafts"."thread_id" IS NULL) OR ("document_drafts"."kind" = 'thread_peer' AND "document_drafts"."thread_id" IS NOT NULL))
+	CONSTRAINT "document_drafts_seed_record_shape" CHECK ((("document_drafts"."seed_origins" IS NULL AND "document_drafts"."seed_live_room" IS NULL AND "document_drafts"."seed_live_snapshot" IS NULL AND "document_drafts"."seed_draft_snapshot" IS NULL) OR ("document_drafts"."kind" = 'work_draft' AND "document_drafts"."seed_origins" IS NOT NULL AND "document_drafts"."seed_live_room" IS NOT NULL AND "document_drafts"."seed_live_snapshot" IS NOT NULL AND "document_drafts"."seed_draft_snapshot" IS NOT NULL)) AND (("document_drafts"."seed_live_state" IS NULL AND "document_drafts"."seed_live_position" IS NULL) OR ("document_drafts"."seed_live_state" IS NOT NULL AND "document_drafts"."seed_live_position" IS NOT NULL)))
 );
 --> statement-breakpoint
 CREATE TABLE "document_yjs_checkpoints" (
@@ -1120,10 +1117,8 @@ CREATE TABLE "draft_write_journal" (
 	"actor_user_id" uuid,
 	"update_data" "bytea" NOT NULL,
 	"update_meta" jsonb,
-	"status" text DEFAULT 'active' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "draft_write_journal_source_valid" CHECK ("draft_write_journal"."source" IN ('agent', 'writer', 'server')),
-	CONSTRAINT "draft_write_journal_status_valid" CHECK ("draft_write_journal"."status" IN ('active', 'rollback_pending'))
+	CONSTRAINT "draft_write_journal_source_valid" CHECK ("draft_write_journal"."source" IN ('agent', 'writer', 'server'))
 );
 --> statement-breakpoint
 CREATE TABLE "pending_notices" (
@@ -1270,7 +1265,6 @@ ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_project_id_pro
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_upstream_draft_id_document_drafts_id_fk" FOREIGN KEY ("upstream_draft_id") REFERENCES "public"."document_drafts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_checkpoints" ADD CONSTRAINT "document_yjs_checkpoints_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk" FOREIGN KEY ("latest_checkpoint_id") REFERENCES "public"."document_yjs_checkpoints"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1411,14 +1405,12 @@ CREATE INDEX "collab_staged_states_project_idx" ON "collab_staged_states" USING 
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_drafts_active_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
-CREATE UNIQUE INDEX "document_drafts_active_thread_peer" ON "document_drafts" USING btree ("document_id","thread_id") WHERE "document_drafts"."kind" = 'thread_peer' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "document_yjs_checkpoints_initial" ON "document_yjs_checkpoints" USING btree ("document_id") WHERE "document_yjs_checkpoints"."up_to_seq" = 0;--> statement-breakpoint
 CREATE INDEX "document_yjs_updates_document_id" ON "document_yjs_updates" USING btree ("document_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_yjs_updates_authority_admission" ON "document_yjs_updates" USING btree ("authority_id","authority_generation","admission_sequence","batch_ordinal");--> statement-breakpoint
 CREATE INDEX "draft_write_journal_draft" ON "draft_write_journal" USING btree ("draft_id","id");--> statement-breakpoint
 CREATE INDEX "draft_write_journal_thread_turn" ON "draft_write_journal" USING btree ("draft_id","thread_id","turn_id");--> statement-breakpoint
-CREATE INDEX "draft_write_journal_active" ON "draft_write_journal" USING btree ("draft_id","status") WHERE "draft_write_journal"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "pending_notices_thread" ON "pending_notices" USING btree ("thread_id","created_at","id");
 --> statement-breakpoint
 -- Capture only generation-qualified checkpoint and journal references. The

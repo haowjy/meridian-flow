@@ -34,11 +34,10 @@ export type StoredTreeEntry = {
   threadId: ThreadId | null;
   turnId: TurnId | null;
   responseId: string | null;
-  editScopeId: string | null;
   toolCallId: string | null;
   actor: "agent" | "human" | "system";
   wId: number | null;
-  kind: "write" | "undo" | "redo" | "revert" | "rollback";
+  kind: "write" | "undo" | "redo" | "revert";
   actionId: string | null;
   consumes: string[];
   /** `tree.targets`, here so the action index reads tree and text rows alike. */
@@ -218,9 +217,8 @@ export function advanceStates(states: TreeStates, planned: PlannedTreeInverse): 
 }
 
 /**
- * The latest row that applied or reversed `entry` and was not itself rolled back: the entry, a
- * row naming it, or a row reversing such a row (an undo of a revert reapplies the entry; a
- * rollback of an undo leaves it as the undo found it). Its `after` is what the destination
+ * The latest row that applied or reversed `entry`: the entry, a row naming it, or a row
+ * reversing such a row (an undo of a revert reapplies the entry). Its `after` is what the destination
  * holds while nothing else changed it; `stands` says whether the entry's effect is in place.
  * `tree` is ordered by id.
  */
@@ -229,7 +227,6 @@ export function latestTransition<
 >(
   entry: T & { tree: TreeTransitionChange },
   tree: readonly T[],
-  rolledBack: ReadonlySet<string>,
 ): { row: T & { tree: TreeTransitionChange }; stands: boolean } {
   // Each row in the chain, with whether it left the entry standing.
   const stood = new Map<string, boolean>([[entry.editId, true]]);
@@ -238,8 +235,7 @@ export function latestTransition<
     stands: true,
   };
   for (const row of tree) {
-    if (row.id <= entry.id || !isTransitionEntry(row) || rolledBack.has(treeKey(row.editId)))
-      continue;
+    if (row.id <= entry.id || !isTransitionEntry(row)) continue;
     for (const target of row.targets) {
       const prior = stood.get(target.editId);
       if (prior === undefined) continue;

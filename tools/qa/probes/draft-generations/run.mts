@@ -114,7 +114,6 @@ try {
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),
       closeRemovedRooms: async () => {},
-      agentEdit: { retireThreadPeers: async () => {} },
     }),
     (cause) => {
       throw cause;

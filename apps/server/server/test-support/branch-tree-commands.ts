@@ -48,12 +48,10 @@ import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
 
-/** One model reply on a Work's thread: tool calls staged until `save` or `rollback`. */
+/** One model reply on a Work's thread: its tool calls, each committed as it runs. */
 export interface ScenarioReply {
   responseId: string;
   call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
-  save(): Promise<unknown>;
-  rollback(): Promise<unknown>;
 }
 
 export interface ScenarioModel {
@@ -247,22 +245,7 @@ export function branchTreeCommands(
       const { runtime, runtimes } = composed();
       const thread = { threadId: work.threadId, turnId: work.turnId };
       const { responseId, call } = await runtimes.script(runtime, thread).begin();
-      // The runtime loop's own lifecycle: its save and rollback retract staged creates.
-      const lifecycle = runtime.app.responseWrites;
-      return {
-        responseId,
-        call,
-        save: () =>
-          lifecycle.commitResponse(
-            { providerResponseId: responseId, editScopeId: responseId },
-            thread,
-          ),
-        rollback: () =>
-          lifecycle.rollbackResponse(
-            { providerResponseId: responseId, editScopeId: responseId },
-            thread,
-          ),
-      };
+      return { responseId, call };
     }
     async function succeed(result: ToolExecutionResult) {
       if (result.isError) throw new Error(`model call failed: ${JSON.stringify(result.content)}`);
@@ -280,7 +263,6 @@ export function branchTreeCommands(
         const created = await succeed(
           await turn.call("write", { command: "create", path: uri(path), content: text }),
         );
-        await turn.save();
         const documentId = (created.metadata as { documentId?: unknown } | undefined)?.documentId;
         if (typeof documentId === "string") return documentId as DocumentId;
         const stat = await view(work).stat(path);
@@ -292,7 +274,6 @@ export function branchTreeCommands(
         const copied = await succeed(
           await turn.call("write", { command: "copy", from: { path: uri(from) }, path: uri(to) }),
         );
-        await turn.save();
         return copied;
       },
       async edit(path, find, content) {
@@ -301,7 +282,6 @@ export function branchTreeCommands(
         await succeed(
           await turn.call("write", { command: "replace", path: uri(path), find, content }),
         );
-        await turn.save();
       },
     };
   }

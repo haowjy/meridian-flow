@@ -25,7 +25,6 @@ export function testDraftRow(
     workId: null,
     rootThreadId: null,
     projectId: "project-1" as DraftSnapshot["projectId"],
-    threadId: null,
     status: "active",
     closedCause: null,
     revision: 0,

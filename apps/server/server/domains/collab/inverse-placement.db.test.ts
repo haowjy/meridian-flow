@@ -20,7 +20,7 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it("card Undo during an open response drops writes into undone text and keeps an independent write", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     expect(
       await view.collab.agentEdit().write(
@@ -35,7 +35,6 @@ it("card Undo during an open response drops writes into undone text and keeps an
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     const second = randomUUID();
     await db.insert(schema.modelResponses).values({
       id: second as never,
@@ -62,7 +61,7 @@ it("card Undo during an open response drops writes into undone text and keeps an
             content,
             tool_use_id: find,
           },
-          { ...context, responseIdentity: { providerResponseId: second, editScopeId: second } },
+          { ...context, responseIdentity: { providerResponseId: second } },
         ),
       ).toMatchObject({ status: "success", phase: "staged" });
     expect(
@@ -82,13 +81,12 @@ it("card Undo during an open response drops writes into undone text and keeps an
         content: "retry",
         tool_use_id: "after-undo",
       },
-      { ...context, responseIdentity: { providerResponseId: second, editScopeId: second } },
+      { ...context, responseIdentity: { providerResponseId: second } },
     );
     expect(missing.status).toBe("not_found");
     expect(missing.result.message).toContain("an inverse removed the text it edited");
     expect(missing.result.message).toContain('"Gamma" → "Gild"');
     expect(missing.result.message).toContain('"Gild" → "Bronze"');
-    await harness.commit(second);
     const [documentDraft] = await db
       .select()
       .from(schema.documentDrafts)

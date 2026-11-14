@@ -132,7 +132,6 @@ async function fixture() {
         readBlocks(doc.getXmlFragment("prosemirror"), pm),
       );
     });
-    await save();
   }
   return { doc, draftId, ai, save, apply };
 }
@@ -153,7 +152,6 @@ it("reads applied and discarded historical parts after close, independent of pla
     f.doc.transact(() =>
       writeBlocks(f.doc.getXmlFragment("prosemirror"), pm, [para("The bright mountain waits.")]),
     );
-    await f.save();
     expect((await review(f.draftId)).parts.find((p) => p.editId === discarded)?.disposition).toBe(
       "discarded",
     );
@@ -271,7 +269,6 @@ it("retains Apply evidence when Undo restored AI items before they were applied"
     );
     history.undo();
     history.destroy();
-    await f.save();
     expect((await review(f.draftId)).parts[0].disposition).toBe("pending");
     await f.apply();
     await f.save("closed");
