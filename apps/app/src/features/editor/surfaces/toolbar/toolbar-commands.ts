@@ -1,6 +1,7 @@
 /** Defines document-toolbar state and commands. */
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -12,7 +13,6 @@ import {
   redoEditorHistory,
   undoEditorHistory,
 } from "@/core/editor/editor-history";
-import type { HeadingLevel } from "@/core/editor/extensions/meridian-extensions";
 import {
   selectedSequence,
   selectionIsQuoted,
@@ -73,34 +73,44 @@ export type BlockTypeState = ToolbarControlState & { blockedBy: BlockTypeRefusal
 
 export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
 
+/** A heading level as a block type: `heading1` is a paragraph at level 1. */
+export type HeadingBlockTypeId = `heading${HeadingLevel}`;
+
 /** The block types "Turn into" offers. */
 export type BlockTypeId =
   | "paragraph"
-  | "heading1"
-  | "heading2"
-  | "heading3"
+  | HeadingBlockTypeId
   | "bulletList"
   | "orderedList"
   | "quote"
   | "codeBlock";
 
-export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
+/** Body text and every heading level the schema allows. */
+const TEXT_LEVEL_BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
   "paragraph",
-  "heading1",
-  "heading2",
-  "heading3",
+  ...HEADING_LEVELS.map((level): HeadingBlockTypeId => `heading${level}`),
+];
+
+export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
+  ...TEXT_LEVEL_BLOCK_TYPE_IDS,
   "bulletList",
   "orderedList",
   "quote",
   "codeBlock",
 ];
 
-/** The three heading levels "Turn into" offers; the schema allows six. */
-const BLOCK_TYPE_HEADING_LEVELS = {
-  heading1: 1,
-  heading2: 2,
-  heading3: 3,
-} as const satisfies Partial<Record<BlockTypeId, HeadingLevel>>;
+const HEADING_BLOCK_TYPE_LEVELS: Partial<Record<BlockTypeId, HeadingLevel>> = Object.fromEntries(
+  HEADING_LEVELS.map((level) => [`heading${level}`, level]),
+);
+
+export function headingLevelOf(id: HeadingBlockTypeId): HeadingLevel {
+  return HEADING_BLOCK_TYPE_LEVELS[id] as HeadingLevel;
+}
+
+/** The level a block type sets: null for body text, undefined for a type that is no level. */
+export function blockTypeLevel(id: BlockTypeId): HeadingLevel | null | undefined {
+  return id === "paragraph" ? null : HEADING_BLOCK_TYPE_LEVELS[id];
+}
 
 /** Alignment as the dropdown speaks it: `null` on the wire reads as default. */
 export type ToolbarAlignmentValue = "default" | Exclude<BlockAlignment, null>;
@@ -130,8 +140,6 @@ const CONTROL_IDS: readonly ToolbarControlId[] = [
   "uploadFigure",
 ];
 
-const TOOLBAR_HEADING_LEVEL = 1;
-
 export function documentToolbarControls(context: ToolbarContext): ToolbarControlStates {
   const { editor } = context;
   if (!editor || editor.isDestroyed) return everyControlBlockedBy("editor-loading");
@@ -152,7 +160,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? (context.canRedo ? null : "empty-history"),
     },
     heading: {
-      active: editor.isActive("paragraph", { level: TOOLBAR_HEADING_LEVEL }),
+      active: currentHeadingLevel(editor) !== null,
       blockedBy: readOnly ?? blockType,
     },
     bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
@@ -209,6 +217,22 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
   ) as Record<BlockTypeId, BlockTypeState>;
 }
 
+/**
+ * The toolbar's heading menu: Turn into's body text and heading rows, current by level alone, so
+ * an item or a quoted line still shows the level it has.
+ */
+export function textLevelStates(editor: Editor): { id: BlockTypeId; state: BlockTypeState }[] {
+  const states = blockTypeStates(editor);
+  // Undefined when the blocks share no level, so no row reads as current.
+  const level = editor.isActive("paragraph", { level: null })
+    ? null
+    : (currentHeadingLevel(editor) ?? undefined);
+  return TEXT_LEVEL_BLOCK_TYPE_IDS.map((id) => ({
+    id,
+    state: { active: blockTypeLevel(id) === level, blockedBy: states[id].blockedBy },
+  }));
+}
+
 /** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (editor.isActive("code_block")) return "codeBlock";
@@ -216,16 +240,14 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
   if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
-  for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
-    if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
-  }
+  const level = currentHeadingLevel(editor);
+  if (level !== null) return `heading${level}`;
   return editor.isActive("paragraph", { level: null }) ? "paragraph" : null;
 }
 
-function headingLevel(id: BlockTypeId): HeadingLevel | null {
-  return id in BLOCK_TYPE_HEADING_LEVELS
-    ? BLOCK_TYPE_HEADING_LEVELS[id as keyof typeof BLOCK_TYPE_HEADING_LEVELS]
-    : null;
+/** The heading level every block under the selection has, or null when they share none. */
+export function currentHeadingLevel(editor: Editor): HeadingLevel | null {
+  return HEADING_LEVELS.find((level) => editor.isActive("paragraph", { level })) ?? null;
 }
 
 /** Convert the blocks under the selection in place. */
@@ -239,10 +261,11 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
 
 /** The conversion behind Turn into for one selection, toggle semantics intact. */
 function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
-  const level = headingLevel(id);
-  if (level) return editor.chain().focus().toggleHeading({ level }).run();
+  const level = blockTypeLevel(id);
+  if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
+    // Body text from any text block, a fence included: a level change touches paragraphs only.
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":
@@ -311,11 +334,6 @@ export function blockedFirst<Outranking, Reason>(
   state: { active: boolean; blockedBy: Reason | null },
 ): { active: boolean; blockedBy: Outranking | Reason | null } {
   return outranking ? { active: state.active, blockedBy: outranking } : state;
-}
-
-/** True toggle: pressing on an H1 returns the block to a paragraph (). */
-export function toggleHeadingBlock(editor: Editor): boolean {
-  return turnIntoBlockType(editor, "heading1");
 }
 
 /** True toggle: one press fences the block, one press returns it to prose. */
