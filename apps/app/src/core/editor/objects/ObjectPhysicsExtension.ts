@@ -1,6 +1,6 @@
 /** Coordinates selection, engagement, and key behavior for registered editor objects. */
 
-import { type Editor, Extension } from "@tiptap/core";
+import { type Editor, Extension, isMacOS } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { isRemoteDocumentRebuild } from "../anchors";
@@ -11,6 +11,7 @@ import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
   deleteObjectTransaction,
+  documentEdgeTransaction,
   type ObjectAt,
   objectBeside,
   selectedObject,
@@ -203,6 +204,18 @@ export const ObjectPhysicsExtension = Extension.create({
               },
             }),
             chrome?.registerKeymap({
+              id: "object-document-edges",
+              scope: "document",
+              bindings: {
+                "Mod-Home": toDocumentStart,
+                "Mod-End": toDocumentEnd,
+                // The Mac's own keys for the document's ends.
+                ...(isMacOS()
+                  ? { "Mod-ArrowUp": toDocumentStart, "Mod-ArrowDown": toDocumentEnd }
+                  : {}),
+              },
+            }),
+            chrome?.registerKeymap({
               id: "object-remove",
               scope: "object",
               bindings: { Delete: removeSelected, Backspace: removeSelected },
@@ -338,6 +351,17 @@ const removeSelected: KeymapBinding = (state, dispatch) => {
   dispatch?.(transaction);
   return true;
 };
+
+const toDocumentEdge =
+  (edge: "start" | "end"): KeymapBinding =>
+  (state, dispatch) => {
+    const transaction = documentEdgeTransaction(state, edge);
+    if (!transaction) return false;
+    dispatch?.(transaction);
+    return true;
+  };
+const toDocumentStart = toDocumentEdge("start");
+const toDocumentEnd = toDocumentEdge("end");
 
 const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
 const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);

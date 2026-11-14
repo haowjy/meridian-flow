@@ -67,7 +67,7 @@ import {
 } from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
 import { type DroppedEntry, useFileDrop } from "./use-file-drop";
-import { useRestoredReferences } from "./useRestoredReferences";
+import { useLiveReferences } from "./useLiveReferences";
 
 export type {
   ComposerDraftChange,
@@ -380,7 +380,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
     },
   });
-  useRestoredReferences(editor, initialDraft, referenceCatalog);
+  useLiveReferences(editor, initialDraft, referenceCatalog);
   useLayoutEffect(() => {
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);

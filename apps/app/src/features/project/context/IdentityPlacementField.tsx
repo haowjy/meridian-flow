@@ -4,14 +4,14 @@
  * Provisional documents open empty with a content-derived ghost name; settled
  * documents open with their current name selected. Picking folders builds a
  * read-only destination prefix. Enter or Save commits through one identity
- * seam; Esc, blur, or Cancel revert it.
+ * seam; Esc, Cancel, focus leaving the field, or opening an existing file revert it.
  */
 
 import { t } from "@lingui/core/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Check, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { OpenDocument } from "@/client/stores";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
@@ -149,15 +149,11 @@ export function IdentityPlacementField({
   );
   const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
     isWorkScopedScheme(scheme) ? owner : { workId: null };
-  const suggestionOptions = useMemo(
-    () => ({
-      schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
-      kinds: ["dir", "file"] as const,
-      owner,
-    }),
-    [location.scheme, owner],
+  const allEntries = useFileSuggestions(
+    projectId,
+    [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
+    owner,
   );
-  const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
     () =>
       WRITABLE_IDENTITY_DESTINATIONS.map((scheme) => ({
@@ -250,126 +246,136 @@ export function IdentityPlacementField({
     setCommitReason(null);
   };
 
+  // Focus moving among the input, Save, Cancel and the suggestions keeps the field open, so Tab
+  // reaches Save and Cancel; leaving all of them reverts.
+  const exitOnLeave = (event: FocusEvent<HTMLElement>) => {
+    if (saving) return;
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    if (next instanceof HTMLElement && next.closest("[data-file-suggestion]")) return;
+    onExit("blur");
+  };
+
   return (
-    <Popover open>
-      <PopoverAnchor asChild>
-        <div
-          className={cn(
-            "flex min-w-0 max-w-96 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-sm",
-            IDENTITY_BAR_BOX_CLASS,
-          )}
+    <fieldset className="contents" onBlur={exitOnLeave}>
+      <Popover open>
+        <PopoverAnchor asChild>
+          <div
+            className={cn(
+              "flex min-w-0 max-w-96 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-sm",
+              IDENTITY_BAR_BOX_CLASS,
+            )}
+          >
+            {destination ? (
+              <span
+                aria-hidden
+                className="shrink-0 select-none whitespace-pre text-muted-foreground"
+              >
+                {prefix}
+              </span>
+            ) : null}
+            <input
+              ref={inputRef}
+              className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+              aria-label={t`Document name and location`}
+              value={value}
+              placeholder={ghost || location.leaf}
+              spellCheck={false}
+              disabled={saving}
+              aria-invalid={Boolean(note)}
+              onChange={(event) => {
+                clearFeedback();
+                setValue(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  if (event.key === "ArrowDown") listRef.current?.focusFirst();
+                  else listRef.current?.focusLast();
+                  return;
+                }
+                if (event.key === "Enter") void submit();
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onExit("escape");
+                }
+                if (
+                  !value &&
+                  ((event.key === "Tab" && !event.shiftKey) || event.key === "ArrowRight") &&
+                  (ghost || location.leaf)
+                ) {
+                  event.preventDefault();
+                  const accepted = ghost || location.leaf;
+                  setValue(accepted);
+                  window.requestAnimationFrame(() => {
+                    inputRef.current?.focus();
+                    inputRef.current?.setSelectionRange(accepted.length, accepted.length);
+                  });
+                }
+              }}
+            />
+          </div>
+        </PopoverAnchor>
+        <IconButton
+          label={t`Save name and location`}
+          disabled={saving}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => void submit()}
         >
-          {destination ? (
-            <span aria-hidden className="shrink-0 select-none whitespace-pre text-muted-foreground">
-              {prefix}
-            </span>
-          ) : null}
-          <input
-            ref={inputRef}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-            aria-label={t`Document name and location`}
-            value={value}
-            placeholder={ghost || location.leaf}
-            spellCheck={false}
-            disabled={saving}
-            aria-invalid={Boolean(note)}
-            onChange={(event) => {
+          <Check aria-hidden />
+        </IconButton>
+        <IconButton
+          label={t`Cancel editing`}
+          disabled={saving}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onExit("escape")}
+        >
+          <X aria-hidden />
+        </IconButton>
+        <PopoverContent
+          data-file-suggestion
+          align="start"
+          className={dropdownSurfaceVariants({ measure: "catalog" })}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <FileSuggestionList
+            ref={listRef}
+            header={note}
+            suggestions={rows}
+            onSelect={(entry) => {
               clearFeedback();
-              setValue(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                if (event.key === "ArrowDown") listRef.current?.focusFirst();
-                else listRef.current?.focusLast();
+              if (entry.kind === "dir") {
+                setDestination({
+                  scheme: entry.scheme,
+                  folderPath: entry.path,
+                  ...(entry.path === "/" ? {} : { parentId: entry.entryId }),
+                });
+                inputRef.current?.focus();
                 return;
               }
-              if (event.key === "Enter") void submit();
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onExit("escape");
-              }
-              if (
-                !value &&
-                (event.key === "Tab" || event.key === "ArrowRight") &&
-                (ghost || location.leaf)
-              ) {
-                event.preventDefault();
-                const accepted = ghost || location.leaf;
-                setValue(accepted);
-                window.requestAnimationFrame(() => {
-                  inputRef.current?.focus();
-                  inputRef.current?.setSelectionRange(accepted.length, accepted.length);
-                });
-              }
-            }}
-            onBlur={(event) => {
-              if (saving) return;
-              const next = event.relatedTarget as HTMLElement | null;
-              if (next?.closest("[data-file-suggestion]")) return;
+              onOpenExisting(entry.scheme, entry.path, ownerOfScheme(entry.scheme));
               onExit("blur");
             }}
-          />
-        </div>
-      </PopoverAnchor>
-      <IconButton
-        label={t`Save name and location`}
-        disabled={saving}
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={() => void submit()}
-      >
-        <Check aria-hidden />
-      </IconButton>
-      <IconButton
-        label={t`Cancel editing`}
-        disabled={saving}
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={() => onExit("escape")}
-      >
-        <X aria-hidden />
-      </IconButton>
-      <PopoverContent
-        data-file-suggestion
-        align="start"
-        className={dropdownSurfaceVariants({ measure: "catalog" })}
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <FileSuggestionList
-          ref={listRef}
-          header={note}
-          suggestions={rows}
-          onSelect={(entry) => {
-            clearFeedback();
-            if (entry.kind === "dir") {
-              setDestination({
-                scheme: entry.scheme,
-                folderPath: entry.path,
-                ...(entry.path === "/" ? {} : { parentId: entry.entryId }),
-              });
-              inputRef.current?.focus();
-              return;
+            onClose={() => onExit("escape")}
+            onNavigateUp={
+              destination
+                ? () =>
+                    setDestination(
+                      destination.folderPath === "/"
+                        ? null
+                        : {
+                            scheme: destination.scheme,
+                            folderPath: parentFolderPath(destination.folderPath),
+                          },
+                    )
+                : undefined
             }
-            onOpenExisting(entry.scheme, entry.path, ownerOfScheme(entry.scheme));
-          }}
-          onClose={() => onExit("escape")}
-          onNavigateUp={
-            destination
-              ? () =>
-                  setDestination(
-                    destination.folderPath === "/"
-                      ? null
-                      : {
-                          scheme: destination.scheme,
-                          folderPath: parentFolderPath(destination.folderPath),
-                        },
-                  )
-              : undefined
-          }
-          hideParents
-          emptyMessage={t`Nothing here yet`}
-        />
-      </PopoverContent>
-    </Popover>
+            hideParents
+            emptyMessage={t`Nothing here yet`}
+          />
+        </PopoverContent>
+      </Popover>
+    </fieldset>
   );
 }
 

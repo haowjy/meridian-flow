@@ -59,6 +59,9 @@ import {
   useFileDrop,
 } from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
+import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
+import { DEFAULT_AGENT_NAME } from "@/features/agents/constants";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
 import {
@@ -275,7 +278,6 @@ export function ChatView({
     [canStopSeed, turns],
   );
   const running = run !== null || working;
-  const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
   // Uploads belong to the chat; a thread not in the list yet is a New chat's own.
@@ -624,6 +626,40 @@ export function ChatView({
     projectId,
   ]);
 
+  // The composer's Agent control hands off from the last turn the server has finished; a queued
+  // message sits beyond the cutoff the server would use.
+  const handoffCutoff = canDerive
+    ? ([...storedTurns]
+        .reverse()
+        .find((turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id))?.id ??
+      null)
+    : null;
+  const handoffFromLatest = useCommittedEvent((agent: CreationAgent) => {
+    if (handoffCutoff) handoffTurn(handoffCutoff, agent);
+  });
+  const composerAgent = useMemo<ComposerAgentControlProps>(
+    () =>
+      activeThread?.kind === "subagent"
+        ? { mode: "readonly", name: activeThread.agentName ?? DEFAULT_AGENT_NAME }
+        : {
+            mode: "handoff",
+            projectId,
+            bound: {
+              name: activeThread?.agentName ?? null,
+              definitionRevisionId: activeThread?.agentDefinitionRevisionId ?? null,
+            },
+            onHandoff: handoffCutoff ? handoffFromLatest : null,
+          },
+    [
+      activeThread?.kind,
+      activeThread?.agentName,
+      activeThread?.agentDefinitionRevisionId,
+      handoffCutoff,
+      handoffFromLatest,
+      projectId,
+    ],
+  );
+
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
   useChatThreadSession({
@@ -681,7 +717,7 @@ export function ChatView({
                   chatId={topChat.chatId}
                   active={active}
                   activeWork={activeWork}
-                  agentName={composerAgentName}
+                  agent={composerAgent}
                   running={running}
                   stopStatus={chatStop.status}
                   generating={generating}
