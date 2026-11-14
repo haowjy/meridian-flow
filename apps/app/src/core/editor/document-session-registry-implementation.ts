@@ -51,13 +51,17 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 
-/** The resets that end a room's unsent typing; the others keep or rebuild the room's text. */
+/**
+ * The resets whose teardown clears the room's local copy (`DocumentSession.destroy`). A refused
+ * room is not among them: a live one loses its copy through `drainAccess`, which hands back
+ * there, and a draft one is rebuilt from its IndexedDB copy, typing included.
+ */
 const UNSENT_CAUSE_OF_RESET: Readonly<
   Record<ResetDisposition | "none", UnsentTypingCause | undefined>
 > = {
   closed: "closed",
   removed: "removed",
-  refused: "access-changed",
+  refused: undefined,
   superseded: undefined,
   rebuild: undefined,
   schema: undefined,

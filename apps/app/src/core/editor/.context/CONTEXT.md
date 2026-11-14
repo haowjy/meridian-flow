@@ -480,10 +480,11 @@ keyboard, pointer, drop, or draft-recovery answer.
 - Before a room's local copy goes with typing the server never acknowledged, the registry
   reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
   updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
-  `observeUnsentTyping` once per session. It reads them on a closing, removing or refusing
-  reset (its own subscription, made before the draft pool's and the refused drop's, which
-  retire the room on that same notification) and in `drainDocument`, `drainAccess` and
-  `closeDraftRoom`. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  `observeUnsentTyping` once per session. It reads them on a closing or removing reset
+  (its own subscription, made before the draft pool's, which retires the room on that same
+  notification) and in `drainDocument`, `drainAccess` (a refused live room's drop ends there)
+  and `closeDraftRoom`. A refused draft room hands nothing back: its rebuild keeps the typing
+  from IndexedDB. The account lifetime shows them in a toast (`notifyUnsentTyping`,
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back: an Undo or a Restore after it cannot.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
