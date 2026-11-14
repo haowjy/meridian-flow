@@ -73,20 +73,29 @@ stateDiagram-v2
   rebuilding --> error: the rebuild threw
   usable --> fenced: this tab's document schema no longer fits the room
   usable --> fenced: the server refused its updates three times in a row
+  usable --> fenced: the server closed the draft (a Discard; 4205, or its answer first)
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
   fenced --> rebuilding: retry, for a room whose updates were refused
+  fenced --> rebuilding: retry, for a closed draft a restore reopened
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
 
 - **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
-  read-only with its notice: a schema fence, or "Couldn't save your latest changes" with Try
-  again. A command on it would write what the server has refused.
+  read-only with its notice: a schema fence, "Couldn't save your latest changes" with Try
+  again, or "This draft is in Trash" with Restore. A command on it would write what the server
+  has refused.
+- **A closed draft stays closed until a restore.** The pool keeps a retained closed room's
+  session (`draftClosed`; `endClosed` when the server's answer came before the socket's close)
+  and refuses to open its id again; when a fresh draft metadata answer shows the same draft
+  active after this tab saw it end (`DraftCommandOwner.metadataActive`), the pool lets the id
+  open (`reopenDraftRoom`) and the read rebuilds. A wrong answer costs one refused join, which
+  closes it again.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
   `usable`; the server's new scope only makes it read-only or writable again.
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
-  closed for good stays unavailable.
+  holds closed stays unavailable.
 - A rebuild result is used only if it is still the newest attempt and the read is not disposed.
 
 ## Account session runtime

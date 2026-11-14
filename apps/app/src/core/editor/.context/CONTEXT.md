@@ -123,7 +123,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   draft recovers unsent text. No close deletes a draft's cache: a Discard can be undone, so the
   copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
   retires the room when the review owner learns closure through authoritative metadata before
-  the socket frame, and the pool refuses to reopen that closed id for the rest of the page.
+  the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
+  draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive`). A room still on screen is
+  kept read-only (`endClosed`), so a draft discarded elsewhere stays readable, in Trash.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
   back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
   delivers it on the room's next open.

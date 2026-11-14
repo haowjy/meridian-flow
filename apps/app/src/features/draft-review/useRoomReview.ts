@@ -36,16 +36,26 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       result.isError,
     ]),
   );
-  useEffect(() => {
-    for (const [index, result] of metadata.entries())
-      if (result.data?.status === "gone") void owner.metadataGone(drafts[index]);
-  }, [metadataKey, owner]);
   const [held, setHeld] = useState<ReadonlyMap<string, HeldReview>>(new Map());
   const leases = useRef(new Map<string, () => void>());
+  const reads = useRef(new Map<string, DraftRoomRead>());
+  useEffect(() => {
+    for (const [index, result] of metadata.entries()) {
+      const { data } = result;
+      if (data?.status === "gone") void owner.metadataGone(drafts[index]);
+      // A restore reopened a draft this tab saw end: its room joins again under the same id.
+      else if (
+        data?.status === "active" &&
+        owner.metadataActive(drafts[index], data.draftId, result.dataUpdatedAt)
+      )
+        reads.current.get(data.reviewRoomName)?.retry();
+    }
+  }, [metadataKey, owner]);
   useEffect(
     () => () => {
       for (const release of leases.current.values()) release();
       leases.current.clear();
+      reads.current.clear();
       setHeld(new Map());
     },
     [registry],
@@ -56,6 +66,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       if (wanted.has(name)) continue;
       release();
       leases.current.delete(name);
+      reads.current.delete(name);
       setHeld((prior) => {
         const next = new Map(prior);
         next.delete(name);
@@ -101,6 +112,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       };
       const unwatch = read.subscribe(follow);
       follow();
+      reads.current.set(name, read);
       leases.current.set(name, () => {
         unwatch();
         releaseAttribution();

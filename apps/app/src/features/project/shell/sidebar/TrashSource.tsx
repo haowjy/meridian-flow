@@ -2,8 +2,10 @@ import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { TrashEntry } from "@meridian/contracts/protocol";
 import { Folder } from "lucide-react";
-import { useMemo } from "react";
-import { useDocumentTrash } from "@/client/query/useDocumentTrash";
+import { useMemo, useRef } from "react";
+import { useDocumentTrash, useTrashDiscards } from "@/client/query/useDocumentTrash";
+import { useProjectTrees } from "@/client/query/useProjectTrees";
+import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord, withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -17,6 +19,7 @@ import {
 } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
+import { useRestoreDiscard } from "../../context/use-restore-discard";
 import {
   type NoticePlace,
   type TreeNoticeWords,
@@ -25,10 +28,11 @@ import {
 import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
+import { type DiscardEntry, TrashDiscardRow } from "./TrashDiscardRow";
 
 /**
  * Trash as a source: its entries, newest first, a deleted folder as one entry with what its
- * delete took. Rows dropped on it are deleted at once; its rows drag out to be restored where
+ * delete took, and each Discard as one entry with the drafts it took. Rows dropped on it are deleted at once; its rows drag out to be restored where
  * they land. Picking a document or an uploaded file shows it in main, read-only with Restore.
  */
 export function TrashSource({
@@ -57,12 +61,35 @@ export function TrashSource({
     trashKey,
     restored.filter(({ key }) => notices.restored(key)),
   );
+  const discards = useTrashDiscardRows(projectId);
+  const lines = [
+    ...rows.map(({ row, gone }) => ({ at: row.removal.time, entry: row, gone, discard: null })),
+    ...discards.rows.map((discard) => ({
+      at: discard.entry.at,
+      entry: null,
+      gone: false,
+      discard,
+    })),
+  ].sort((left, right) => right.at.localeCompare(left.at));
   return (
     <SourcePane label={t`Trash`} drop={drop} notice={notices.header}>
-      {rows.length > 0 ? (
+      {lines.length > 0 ? (
         <div className="px-2">
-          {rows.map(({ row: entry, gone }) =>
-            gone ? (
+          {lines.map(({ entry, gone, discard }) =>
+            discard ? (
+              <TrashDiscardRow
+                key={discard.entry.commandId}
+                entry={discard.entry}
+                names={discard.names}
+                workName={discard.workName}
+                now={now}
+                state={discards.states.get(discard.entry.commandId)}
+                onRestore={() => {
+                  notices.end();
+                  discards.restore(discard.entry);
+                }}
+              />
+            ) : !entry ? null : gone ? (
               <ListRow
                 key={entry.nodeId}
                 gone
@@ -98,9 +125,15 @@ export function TrashSource({
           )}
         </div>
       ) : null}
-      {query.isError ? (
-        <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
-      ) : rows.length > 0 ? null : (
+      {query.isError || discards.isError ? (
+        <InlineErrorRow
+          message={t`Couldn't load Trash.`}
+          onRetry={() => {
+            void query.refetch();
+            void discards.refetch();
+          }}
+        />
+      ) : lines.length > 0 ? null : (
         <div className="px-2">
           {query.isPending ? (
             <ListLine iconSlot status>
@@ -177,3 +210,57 @@ function deletedFrom(entry: TrashEntry, location: string): string {
     other: `# documents, deleted from ${location}`,
   });
 }
+
+/**
+ * Trash's Discard entries with what names them: each document by its name in the tree, a
+ * created one by the name its creation had, and the Work they were taken from. An entry restored
+ * here stays, struck through, until the next restore or the pane closes.
+ */
+function useTrashDiscardRows(projectId: string) {
+  const query = useTrashDiscards(projectId);
+  const trees = useProjectTrees(projectId);
+  const { works, deleted } = useWorks(projectId);
+  const { states, restore } = useRestoreDiscard(projectId);
+  const restored = useRef(new Map<string, DiscardEntry>());
+  const listed = query.data?.entries ?? [];
+  for (const entry of listed)
+    if (states.get(entry.commandId)?.kind === "restored")
+      restored.current.set(entry.commandId, entry);
+  const entries = [
+    ...listed,
+    ...[...restored.current.values()].filter(
+      (held) => !listed.some((entry) => entry.commandId === held.commandId),
+    ),
+  ];
+  const rows = entries.map((entry) => {
+    const created = new Map(entry.tree.created.map((node) => [node.node, node.name]));
+    const names = documentsOf(entry).map(
+      (documentId) =>
+        created.get(documentId) ?? trees.find(documentId)?.file.name ?? t`Untitled document`,
+    );
+    const work = [...(works ?? []), ...deleted].find(({ id }) => id === entry.workId);
+    return { entry, names, workName: work?.name ?? null };
+  });
+  return {
+    rows,
+    states,
+    isError: query.isError,
+    refetch: query.refetch,
+    restore: (entry: DiscardEntry) => {
+      restored.current.clear();
+      restore({
+        commandId: entry.commandId,
+        branchId: entry.branchId,
+        documentIds: documentsOf(entry),
+      });
+    },
+  };
+}
+
+/** The documents a Discard took: its drafts' and the ones its tree half created. */
+const documentsOf = (entry: DiscardEntry) => [
+  ...new Set([
+    ...entry.drafts.map((draft) => draft.documentId),
+    ...entry.tree.created.map((node) => node.node),
+  ]),
+];

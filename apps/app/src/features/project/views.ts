@@ -12,6 +12,7 @@
  * a draft shown, its owner's list not loaded  → pending (never Live first)
  * the list read failed                        → failed (shown on the document, the pin kept)
  * the draft's item is listed                  → that draft
+ * the draft painted was discarded elsewhere    → that draft, in Trash, until the writer moves on
  * the list lacks a pinned item                → pending, until a fresh read also lacks it and
  *                                               the pin goes (`verifyPin`); then continue
  * otherwise                                   → Live
@@ -22,8 +23,16 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   type DocumentView,
@@ -34,10 +43,11 @@ import {
 } from "@/client/project-shell/document-views";
 import { type TreeVersionChoice, useTreeVersionChoice } from "@/client/project-shell/store";
 import { unwrapListQuery } from "@/client/query/list-query";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
-import { useAccountId } from "./context/account-feature-context";
+import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
@@ -157,13 +167,43 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const scopeRow = documentId
     ? scopeRows.rows.find((row) => row.documentId === documentId)
     : undefined;
-  const pin = shownDraft({
+  const chosen = shownDraft({
     pin: stored.pin,
     scopeOwnerKey,
     scopeItemKey: scopeRow?.itemKey,
     choice,
     draftOnly,
   });
+  // The draft this page painted, and what the writer had chosen then: a Discard made anywhere
+  // else leaves its list without the draft, and the page stays on it, in Trash, until the
+  // writer chooses something else or a restore lists it again.
+  const commands = useDraftCommandOwner();
+  const painted = useRef<{ documentId: string; draft: DraftPin; chose: string } | null>(null);
+  const choseKey = JSON.stringify([stored.pin?.ownerKey, stored.pin?.itemKey, choice]);
+  const heldItem =
+    painted.current?.documentId === documentId && painted.current.chose === choseKey
+      ? painted.current.draft
+      : null;
+  // What became of it here: `trash` once its room says it closed by a Discard made elsewhere,
+  // `asking` while its metadata is read again, `ended` when this tab ended it.
+  const fateOf = () => {
+    if (!heldItem) return "ended";
+    const command = commands.state(heldItem.itemKey);
+    if (command.hidden || command.closedHere || command.removed) return "ended";
+    if (command.closed) return "trash";
+    return command.checkingClose ? "asking" : "open";
+  };
+  const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
+  const asking =
+    useIsFetching({
+      queryKey: projectQueryKeys.ownerDraftMetadataOf(
+        projectId,
+        heldItem?.ownerKey ?? "",
+        documentId ?? "",
+      ),
+    }) > 0;
+  const held = heldItem && fate !== "ended" ? heldItem : null;
+  const pin = chosen ?? held ?? undefined;
   const foreign = pin !== undefined && pin.ownerKey !== scopeOwnerKey;
   // A page the scope's version doesn't govern shows Live, and holds no ended review open.
   const view = useMemo<DocumentView>(
@@ -173,7 +213,18 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinRows = useOwnerDraftRows(projectId, foreign ? pin.ownerKey : null);
   const pinList = foreign ? pinRows : scopeRows;
   const pinListed = pin ? pinList.rows.some((row) => row.itemKey === pin.itemKey) : false;
-  const pinMissing = pin !== undefined && pinList.status === "ready" && !pinListed;
+  // The painted draft left its list: in Trash it stays painted, and while its end is read again
+  // it stays too; any other end (an Apply took its changes) lets the page go on.
+  const unlisted =
+    held !== null && pin?.itemKey === held.itemKey && pinList.status === "ready" && !pinListed
+      ? fate === "trash"
+        ? ("trash" as const)
+        : fate === "asking" || asking
+          ? ("asking" as const)
+          : ("gone" as const)
+      : null;
+  const pinMissing =
+    pin !== undefined && pinList.status === "ready" && !pinListed && unlisted === null;
 
   const queryClient = useQueryClient();
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
@@ -196,12 +247,23 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinOwner = pin?.ownerKey;
   const pinItem = pin?.itemKey;
   const pinChange = pin?.changeId;
+  const paints = pinListed || unlisted === "trash" || unlisted === "asking";
+  useEffect(() => {
+    const kept = painted.current?.documentId === documentId && painted.current.chose === choseKey;
+    if (documentId && pinOwner && pinItem && paints)
+      painted.current = {
+        documentId,
+        draft: { ownerKey: pinOwner, itemKey: pinItem },
+        chose: choseKey,
+      };
+    else if (!kept || unlisted === "gone" || fate === "ended") painted.current = null;
+  }, [documentId, pinOwner, pinItem, paints, choseKey, unlisted, fate]);
   return useMemo((): DocumentPaint => {
     const scopeDraft =
       scopeOwnerKey && scopeRow ? { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } : null;
     const base = { scopeOwnerKey, scopeDraft, view };
-    if (pinOwner && pinItem) {
-      if (pinListed)
+    if (pinOwner && pinItem && unlisted !== "gone") {
+      if (pinListed || unlisted === "trash" || unlisted === "asking")
         return {
           ...base,
           showing: "draft",
@@ -214,13 +276,23 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
         };
       return {
         ...base,
-        showing: pinList.status === "failed" ? "failed" : "pending",
+        showing: pinList.status === "failed" && !unlisted ? "failed" : "pending",
         draft: null,
         outOfScope: false,
       };
     }
     return { ...base, showing: "live", draft: null, outOfScope: false };
-  }, [scopeOwnerKey, scopeRow, view, pinOwner, pinItem, pinChange, pinList.status, pinListed]);
+  }, [
+    scopeOwnerKey,
+    scopeRow,
+    view,
+    pinOwner,
+    pinItem,
+    pinChange,
+    pinList.status,
+    pinListed,
+    unlisted,
+  ]);
 }
 
 /** What a view holds. A chat with no id is a new chat's composer; `about` is the document it attaches. */

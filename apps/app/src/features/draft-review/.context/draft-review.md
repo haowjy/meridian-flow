@@ -238,6 +238,16 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
+A draft a Discard closed anywhere but in this tab stays on screen (`closedHere` false): the
+review keeps its room's session read-only, the route keeps its address, and the page keeps
+painting it while the list no longer has it (`useDocumentPaint`, until the writer chooses
+another version). The editor's status pill says "This draft is in Trash" with Restore
+(`InTrashStatus`, which a document removed elsewhere and still in Trash shares). This tab's own
+Discard leaves for Live, where its notice has the Undo. Restore, the notice's Undo and Trash's
+Restore send the one `restoreDiscard`; every tab learns of it from fresh draft metadata (the
+owner hint re-reads it), and `metadataActive` clears what the tab held as ended and lets the
+room join again under the same id.
+
 Every Discard of a whole draft is a server command under an id the client mints, so Trash
 lists it and Restore brings it back: one document's draft as an item Discard
 (`discardOnServer`, everything the branch holds on the document), a move or delete as

@@ -53,6 +53,12 @@ export function useProjectWake(projectId: string): void {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
         });
+        // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
+        // this tab holds as ended, and its rows and rooms follow the fresh answer.
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.ownerDraftMetadataOfOwner(projectId, hint.owner),
+        });
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
         // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
         if (workIdOfDraftOwnerKey(hint.owner)) void repairWorksSnapshot(queryClient, projectId);
         void queryClient.invalidateQueries({

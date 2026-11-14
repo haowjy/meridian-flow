@@ -59,6 +59,8 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
+  /** A restore reopened the draft: its room may open again under the same id. */
+  reopenDraftRoom(roomKey: string): void;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(

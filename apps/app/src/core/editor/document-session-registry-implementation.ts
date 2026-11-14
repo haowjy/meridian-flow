@@ -255,6 +255,10 @@ export class DocumentSessionRegistry {
     return this.draftRooms.close(roomKey);
   }
 
+  reopenDraftRoom(roomKey: string): void {
+    this.draftRooms.reopen(roomKey);
+  }
+
   getDraftRoom(roomKey: string): DocumentSession {
     return this.draftRooms.get(roomKey);
   }

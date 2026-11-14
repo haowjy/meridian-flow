@@ -278,7 +278,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-          {/* With no review read, the Discard goes to the server and has no Undo: it asks first. */}
+          {/* With no review read, Discard still goes to the server, and its notice has the Undo. */}
           {props.reviewItemKey &&
           controller.inlineReview?.documentId === props.documentId &&
           controller.inlineReview.itemKey === props.reviewItemKey ? (

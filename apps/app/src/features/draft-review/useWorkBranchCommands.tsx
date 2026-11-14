@@ -86,6 +86,7 @@ export function useWorkBranchCommands({
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
       refreshTurnCards(queryClient);
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
       });
@@ -370,7 +371,6 @@ export function useWorkBranchCommands({
         landed: Promise.resolve(),
         ...(await restoreDiscard(queryClient, {
           projectId,
-          ownerKey,
           branchId,
           discardCommandId,
           documentIds,
@@ -705,20 +705,20 @@ export function useWorkBranchCommands({
 
 /**
  * The one Undo of a Discard: the notice's Undo, Trash's Restore and an editor's Restore all send
- * it. A fresh command id each time: a resend of a stored refusal would only replay it. `ownerKey`
- * is the Work's draft owner, whose list it reads again; `documentIds` the documents it touched.
+ * it. A fresh command id each time: a resend of a stored refusal would only replay it. Every draft
+ * list is read again (a Trash entry names its Work, not the owner a surface reads); `documentIds`:
+ * the documents it touched.
  */
 export async function restoreDiscard(
   queryClient: QueryClient,
   input: {
     projectId: string;
-    ownerKey: string;
     branchId: string;
     discardCommandId: string;
     documentIds: readonly string[];
   },
 ): Promise<Omit<DiscardUndoAnswer, "landed">> {
-  const { projectId, ownerKey } = input;
+  const { projectId } = input;
   try {
     const answer = await undoDiscard(projectId, input.branchId, {
       commandId: crypto.randomUUID(),
@@ -726,13 +726,9 @@ export async function restoreDiscard(
     });
     refreshTurnCards(queryClient);
     void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
-    void queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-    });
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) });
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.draftMetadataOf(projectId) });
     for (const documentId of input.documentIds) {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.ownerDraftMetadataOf(projectId, ownerKey, documentId),
-      });
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
       });

@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
-import { WS_CLOSE } from "@meridian/contracts/protocol";
+import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -20,7 +20,11 @@ import {
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
-import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import {
+  type DocumentSession,
+  type DocumentSessionSnapshot,
+  draftClosed,
+} from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
@@ -44,6 +48,7 @@ import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusOnLoad } from "./focus-on-open";
+import { InTrashStatus } from "./InTrashStatus";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
@@ -163,12 +168,16 @@ function ActiveSessionEditorView({
   const { documentId, projectId } = identity;
   const inReview = identity.surface === "review";
   // A room the server closed as removed (4208) says why while its tab stays open.
-  const removal = useRemovalRecord(
-    projectId ?? "",
-    snapshot.connectionState?.kind === "reset" && snapshot.connectionState.disposition === "removed"
-      ? documentId
-      : null,
-  );
+  const removed =
+    snapshot.connectionState?.kind === "reset" &&
+    snapshot.connectionState.disposition === "removed";
+  const removal = useRemovalRecord(projectId ?? "", removed ? documentId : null);
+  // A draft discarded elsewhere, or a document removed elsewhere and still in Trash, stays on
+  // screen read-only; the pill says so and restores it.
+  const closedRoom =
+    inReview && draftClosed(snapshot.connectionState) ? parseYjsRoomName(identity.roomName) : null;
+  const closedDraft = closedRoom?.kind === "draft" ? closedRoom.draftId : undefined;
+  const removedInTrash = removal?.kind === "removed" && removal.inTrash;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -420,7 +429,15 @@ function ActiveSessionEditorView({
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
-          <SyncStatus session={session} onReopen={onReopen} removal={removal} />
+          {projectId && (closedDraft || removedInTrash) ? (
+            <InTrashStatus
+              projectId={projectId}
+              documentId={documentId}
+              draftId={closedDraft ?? null}
+            />
+          ) : (
+            <SyncStatus session={session} onReopen={onReopen} removal={removal} />
+          )}
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
         <EditorCanvas

@@ -240,7 +240,13 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const draftCommands = useDraftCommandOwner();
   const closeSnapshot = () => {
     const state = draftCommands.state(address.itemKey ?? "");
-    return JSON.stringify([state.closed, state.removed, state.checkingClose, state.liveUri]);
+    return JSON.stringify([
+      state.closed,
+      state.closedHere,
+      state.removed,
+      state.checkingClose,
+      state.liveUri,
+    ]);
   };
   useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
   const closeState = draftCommands.state(address.itemKey ?? "");
@@ -577,7 +583,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [shownTrashed, openTrashed],
   );
   useEffect(() => {
-    if (!closingRef || !closeState.closed || closeState.removed) return;
+    // A draft discarded anywhere but here stays on screen, in Trash, until the writer moves on.
+    if (!closingRef || !closeState.closed || closeState.removed || !closeState.closedHere) return;
     const itemKey = closingRef.itemKey;
     let current = true;
     // The address names the item; a newer draft of it may have replaced the closed one.
@@ -608,7 +615,13 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     return () => {
       current = false;
     };
-  }, [address.itemKey, closeState.closed, closeState.removed, closeState.liveUri]);
+  }, [
+    address.itemKey,
+    closeState.closed,
+    closeState.closedHere,
+    closeState.removed,
+    closeState.liveUri,
+  ]);
   const closeDestination = useCallback(
     (target: ContextRouteRequest | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;

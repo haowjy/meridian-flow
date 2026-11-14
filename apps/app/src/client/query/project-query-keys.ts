@@ -57,6 +57,9 @@ export const projectQueryKeys = {
   ownerDraftMetadata: (projectId: string, owner: string, documentId: string, itemKey?: string) =>
     ["projects", projectId, "draft-metadata", owner, documentId, itemKey ?? null] as const,
   /** Every item's draft metadata read of one document of an owner. */
+  draftMetadataOf: (projectId: string) => ["projects", projectId, "draft-metadata"] as const,
+  ownerDraftMetadataOfOwner: (projectId: string, owner: string) =>
+    ["projects", projectId, "draft-metadata", owner] as const,
   ownerDraftMetadataOf: (projectId: string, owner: string, documentId: string) =>
     ["projects", projectId, "draft-metadata", owner, documentId] as const,
   contextSources: (projectId: string) => ["projects", projectId, "context-sources"] as const,

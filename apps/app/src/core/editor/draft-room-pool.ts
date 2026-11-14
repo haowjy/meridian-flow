@@ -5,15 +5,16 @@
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  *
  * A closed room keeps its local copy: a Discard can be undone, so the copy goes with its document
- * (`LocalDocumentCopies`), never with the room.
+ * (`LocalDocumentCopies`), never with the room. It stays closed until a restore reopens it.
  *
- * A room whose updates the server kept refusing (`updatesRefused`) is not
- * retired on that close: it stays open, read-only, so its owner can show the
- * unsent text, until the owner rebuilds it or the last owner leaves.
+ * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
+ * closed (`draftClosed`: it is in Trash), is not retired on that close: it stays open, read-only,
+ * so its owner can show its text, until the owner rebuilds it (a restore reopened the draft) or
+ * the last owner leaves.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import { type DocumentSession, updatesRefused } from "./document-session";
+import { type DocumentSession, draftClosed, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import type { CopyHold } from "./local-document-copies";
 
@@ -68,9 +69,8 @@ export class DraftRoomPool {
   }
 
   async rebuild(roomKey: string): Promise<DocumentSession> {
-    const refused = this.rooms.get(roomKey);
-    if (refused && updatesRefused(refused.getSnapshot().connectionState))
-      this.retire(roomKey, refused);
+    const kept = this.rooms.get(roomKey);
+    if (kept && keptForOwner(kept)) this.retire(roomKey, kept);
     // A reset draft session is already retired; wait out its teardown quarantine.
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
     // The last owner can leave while the drain waits. Reopening then would start a session
@@ -92,9 +92,9 @@ export class DraftRoomPool {
     this.holds.set(roomKey, this.deps.hold(documentId));
     const session = this.deps.openSession(roomKey, documentId);
     this.rooms.set(roomKey, session);
-    session.subscribe((snapshot) => {
+    session.subscribe(() => {
       if (this.rooms.get(roomKey) !== session) return;
-      if (updatesRefused(snapshot.connectionState)) {
+      if (keptForOwner(session)) {
         if (!this.isRetained(roomKey)) this.retire(roomKey, session);
       } else if (session.isRoomEnded()) {
         this.retire(roomKey, session);
@@ -112,8 +112,16 @@ export class DraftRoomPool {
   async close(roomKey: string): Promise<void> {
     this.closed.add(roomKey);
     const session = this.rooms.get(roomKey);
-    if (session) this.retire(roomKey, session);
+    // An owner still showing it keeps it, read-only, as the socket's own close would.
+    if (session && this.isRetained(roomKey)) session.endClosed();
+    if (session && !(keptForOwner(session) && this.isRetained(roomKey)))
+      this.retire(roomKey, session);
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
+  }
+
+  /** A restore reopened the draft: the next `get` or `rebuild` opens its room again. */
+  reopen(roomKey: string): void {
+    this.closed.delete(roomKey);
   }
 
   /** The account runtime is closing: forget every owner and retire every room. */
@@ -179,4 +187,10 @@ export class DraftRoomPool {
       .catch((error: unknown) => reportError(error))
       .then(async () => (await hold)?.release());
   }
+}
+
+/** A room ended in a way its owner still shows, read-only: refused updates, or a closed draft. */
+function keptForOwner(session: DocumentSession): boolean {
+  const { connectionState } = session.getSnapshot();
+  return updatesRefused(connectionState) || draftClosed(connectionState);
 }

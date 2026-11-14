@@ -55,6 +55,8 @@ export type DraftCommandState = {
   discarding: ((change: ReviewChange) => boolean) | null;
   failure: BranchCommandFailure | null;
   closed: boolean;
+  /** This tab's own Discard closed it; any other close leaves the draft on screen, in Trash. */
+  closedHere: boolean;
   checkingClose: boolean;
   removed: boolean;
   liveUri: string | null;
@@ -68,6 +70,7 @@ const EMPTY: DraftCommandState = {
   discarding: null,
   failure: null,
   closed: false,
+  closedHere: false,
   checkingClose: false,
   removed: false,
   liveUri: null,
@@ -155,6 +158,10 @@ export class DraftCommandOwner {
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
+  /** Drafts (by id, or item key before one is known) this tab's own Discard ended. */
+  private readonly discardedHere = new Set<string>();
+  /** When this tab saw each draft end: a server answer after it may show the draft open again. */
+  private readonly endedAt = new Map<string, number>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   /** Final paths allocated by Apply, until dismissed or another document shows. */
@@ -166,6 +173,8 @@ export class DraftCommandOwner {
   constructor(
     private readonly registry: DraftRoomRegistry & {
       closeDraftRoom(roomKey: string): Promise<void>;
+      /** A restore reopened the draft: the page may open its room again. */
+      reopenDraftRoom(roomKey: string): void;
     },
     private readonly lifecycle: {
       resolveGone?(
@@ -499,6 +508,41 @@ export class DraftCommandOwner {
     return reconcile;
   }
 
+  /**
+   * The server answers the draft open (`draftId`), at `at`, after this tab saw it end: a restore
+   * reopened it, here or anywhere. Its ended state goes and its room may open again under the same
+   * id; a room the server still holds closed refuses the join, which ends it again. True when it
+   * reopened.
+   */
+  metadataActive(ref: DraftRef, draftId: string, at: number): boolean {
+    if (!this.active) return false;
+    const ended = [draftId, ref.itemKey].filter((key) => (this.endedAt.get(key) ?? at) < at);
+    if (ended.length === 0) return false;
+    for (const key of ended) {
+      this.endedAt.delete(key);
+      this.discardedHere.delete(key);
+      this.setState(
+        ref.itemKey,
+        {
+          closed: false,
+          closedHere: false,
+          hidden: false,
+          removed: false,
+          checkingClose: false,
+          liveUri: null,
+          failure: null,
+        },
+        key,
+      );
+    }
+    if (this.identities.get(ref.itemKey) !== draftId) {
+      this.identities.set(ref.itemKey, draftId);
+      this.publish();
+    }
+    this.registry.reopenDraftRoom(draftRoomName(draftId));
+    return true;
+  }
+
   private finishClose(
     ref: DraftRef,
     id: string,
@@ -508,10 +552,12 @@ export class DraftCommandOwner {
     const record = this.records.get(id) ?? EMPTY;
     if (!this.active || record.closed) return;
     const entry = this.entries.get(id);
+    this.endedAt.set(id, Date.now());
     this.setState(
       ref.itemKey,
       {
         closed: true,
+        closedHere: this.discardedHere.has(id) || this.discardedHere.has(ref.itemKey),
         checkingClose: false,
         removed: disposition === "removed",
         liveUri: liveUri ?? null,
@@ -875,6 +921,8 @@ export class DraftCommandOwner {
     commandId: string,
   ): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
+    const own = this.generation(ref.itemKey);
+    this.discardedHere.add(own);
     this.setState(
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
@@ -893,12 +941,14 @@ export class DraftCommandOwner {
         // State held under the item key itself (no draft room ever bound, as for a picture)
         // would hide the document's next item in this branch too; the caller drops the row.
         const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
+        if (hides) this.endedAt.set(this.generation(ref.itemKey), Date.now());
         this.setState(
           ref.itemKey,
           hides ? { hidden: true, discarding: null } : { discarding: null },
         );
         return { kind: "done" };
       }
+      this.discardedHere.delete(own);
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
@@ -906,6 +956,7 @@ export class DraftCommandOwner {
       });
       return { kind: "change-refused", code: result.status };
     } catch {
+      this.discardedHere.delete(own);
       if (this.active)
         this.setState(ref.itemKey, {
           hidden: false,
@@ -999,8 +1050,11 @@ export class DraftCommandOwner {
     if (scope.size === 0) return { kind: "blocked" };
     // A Discard all closes the branch: nothing else is sent on it until it answers.
     if ("all" in selection) this.closingBranches.add(branchId);
+    const own = [...scope.values()].map((ref) => this.generation(ref.itemKey));
+    for (const key of own) this.discardedHere.add(key);
     for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
     const failed = (failure: BranchCommandFailure | null) => {
+      for (const key of own) this.discardedHere.delete(key);
       if (this.active)
         for (const ref of scope.values())
           this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
