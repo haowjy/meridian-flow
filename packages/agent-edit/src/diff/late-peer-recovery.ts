@@ -77,6 +77,7 @@ export function retainLateTypingDeletions(memory: LateTyping, observed: LateTypi
   return size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans: memory.spans, deleted };
 }
 
+const LATE_PEER_ORIGIN = "late-peer";
 const keyOf = (id: Y.ID) => `${id.client}:${id.clock}`;
 const elementOf = (item: Y.Item) => (item.content as Y.ContentType).type as Y.XmlElement;
 
@@ -273,10 +274,19 @@ export function recoverLatePeerEdits(input: {
   });
   if (!aligned)
     for (const [anchor, added] of insertAfter) if (anchor >= 0) for (const p of added) push(p);
-  const before = Y.encodeStateVector(doc);
   doc.clientID = input.clientId;
-  doc.transact(() => writeBlocks(fragment, schema, target), "late-peer");
-  out.update = Y.encodeStateAsUpdate(doc, before);
+  // Only this transaction's update: `encodeStateAsUpdate` always carries the whole delete set,
+  // which holds the binding's repair of an element the schema cannot build (`readBlocks` above).
+  // That repair is schema repair's to journal, never the recovery's.
+  const onUpdate = (update: Uint8Array, origin: unknown) => {
+    if (origin === LATE_PEER_ORIGIN) out.update = update;
+  };
+  doc.on("update", onUpdate);
+  try {
+    doc.transact(() => writeBlocks(fragment, schema, target), LATE_PEER_ORIGIN);
+  } finally {
+    doc.off("update", onUpdate);
+  }
   const after = fragment.toArray();
   if (after.length === target.length)
     for (const [at, span] of placed) {
