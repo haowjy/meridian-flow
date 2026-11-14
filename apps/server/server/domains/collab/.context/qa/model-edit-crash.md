@@ -47,9 +47,8 @@ response's id and the call id, so cases share no command rows.
 - **Lost claim**: `dropRunClaim` terminates the backend that holds a child's session advisory
   lock, as a dropped connection does, so a second process can take over a chat whose first
   process is alive.
-  A child whose claim was cut dies with an uncaught `TypeError` from `postgres.js` when it next
-  uses the reserved session connection (the library writes to a closed socket from a timer; no
-  promise rejects). The takeover cases kill such a child instead of stopping it cleanly.
+  A child whose claim was cut gets `CONNECTION_CLOSED` from `postgres.js` when it next uses the
+  reserved session connection. The takeover cases kill such a child rather than stop it.
 - **Takeover**: a second child runs `sweep` (orphan repair and wake scan), the real recovery.
 
 `CASE=<text>` runs only the cases whose name contains it. `start(pool)` gives a child more
