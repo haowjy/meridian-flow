@@ -32,7 +32,7 @@ export function useLiveDraftCue(projectId: string, document: OpenDocument): Live
   const draft = shell.draftOf(document.documentId);
   if (!draft) return null;
   const work = hints.find((hint) => hint.owner === shell.ownerKey)?.label ?? shell.name;
-  const showDraft = () => shell.showDraft(document.documentId);
+  const showDraft = () => shell.show("draft");
   if (draft.draft.isNew)
     return { ownerKey: shell.ownerKey, sentence: newInDraftSentence(work), showDraft };
   if (paint?.showing !== "live") return null;

@@ -423,6 +423,7 @@ function HydratedReviewControllers({
   const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
   useReviewAddressSync({
     projectId: props.projectId,
+    chatThreadId,
     locationKey: props.routeLocationKey,
     reviewOwner: props.reviewOwner ?? null,
     address: {

@@ -25,6 +25,7 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
+import { draftTreeVersion } from "@/features/project/tree-version";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, DiscardUndo, NoticeSurface } from "./draft-notices";
@@ -204,7 +205,12 @@ export function useWorkBranchCommands({
       const handle = treeLists.acquire({ kind: "project", projectId });
       const session = handle.session;
       // The Work's tree shows every node the Apply took, before it and after.
-      const shown = session.replay({ draft: branchId });
+      const { view, pendingText } = draftTreeVersion(
+        branchId,
+        cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? null,
+        work ? workLifecycleState(work) : "active",
+      );
+      const shown = session.replay(view, pendingText);
       const documentIds = nodes.filter((node) => shown.nodes.get(node)?.kind !== "folder");
       // A resend after a lost answer names the same Un-Apply: the server answers it once.
       const unapplyId = crypto.randomUUID();
@@ -710,6 +716,7 @@ export function useWorkBranchCommands({
     surface,
     reviewEditor,
     queryClient,
+    work,
   ]);
 }
 

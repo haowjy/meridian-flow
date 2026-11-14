@@ -2,16 +2,16 @@
  * The shell's version: the sidebar's one Live/Draft toggle. On Draft the shell shows the picked
  * Work's tree (live, then the Work's pending records, replayed in the browser), and every tree
  * action, click and Ctrl+Z in the sidebar acts there; on Live it is the live tree. The toggle is
- * offered while the Work has pending changes, and with none the shell is live. Flipping it moves
- * main's page to the Work's draft of it, or back to Live. The page's version chip is the same
- * state: picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
- * (`review-launch`), sets the toggle with it.
+ * offered while the Work has pending changes, and with none the shell is live. Every page shows
+ * the version it says (`shownDraft` in `views.ts`): the Work's draft where it has one, else Live,
+ * and a page live doesn't have stays on its draft. The page's version chip is the same state:
+ * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
+ * (`review-launch`, a review address), sets the toggle.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
-import { setDocumentView } from "@/client/project-shell/document-views";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
@@ -23,9 +23,7 @@ import {
 } from "@/core/project-tree/tree-version";
 import { workDisplayName } from "@/lib/work-name";
 import { useAccountId } from "./context/account-feature-context";
-import { useIsDraftOnly } from "./context/use-is-draft-only";
 import { useScopeDraftOwner } from "./use-work-scope";
-import { useOptionalMainItem } from "./views";
 
 export type ShellTreeVersion = {
   version: TreeVersion;
@@ -43,10 +41,8 @@ export type ShellTreeVersion = {
   /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
   flip: () => void;
-  /** Sets the toggle alone: the page already shows the version it names. */
+  /** Sets the toggle: every page that has the Work's draft shows it, or Live. */
   show: (next: "live" | "draft") => void;
-  /** The toggle to Draft, with this page on the Work's draft of it. */
-  showDraft: (documentId: string) => void;
 };
 
 const ShellTreeVersionContext = createContext<ShellTreeVersion | null>(null);
@@ -55,26 +51,44 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
   return useContext(ShellTreeVersionContext);
 }
 
-/** A Work's tree: live, then the branch's pending records, keeping what it holds text on. */
+/**
+ * A Work's tree: live, then the branch's pending records, keeping what it holds text on. One
+ * value per branch while what it holds is unchanged, whoever reads it (the shell, a review's
+ * route, an Apply's Undo step): the list replays a view once per change only for one set.
+ */
+export function draftTreeVersion(
+  branchId: string,
+  rows: readonly ThreadDraftListItem[] | null,
+  lifecycle: WorkLifecycleState = "active",
+): TreeVersion {
+  const pendingText = new Set(rows?.flatMap((row) => (row.hasDraft ? [row.documentId] : [])));
+  const ended = lifecycle !== "active" ? lifecycle : undefined;
+  const held = draftVersions.get(branchId);
+  if (held && held.ended === ended && sameSet(held.pendingText, pendingText)) return held;
+  const version: TreeVersion = {
+    view: { draft: branchId },
+    pendingText,
+    ...(ended ? { ended } : {}),
+  };
+  draftVersions.set(branchId, version);
+  return version;
+}
+const draftVersions = new Map<string, TreeVersion>();
+
+function sameSet(a: ReadonlySet<string> | undefined, b: ReadonlySet<string>): boolean {
+  if (a?.size !== b.size) return false;
+  for (const id of b) if (!a.has(id)) return false;
+  return true;
+}
+
 export function useDraftTreeVersion(
   branchId: string | null,
   rows: readonly ThreadDraftListItem[] | null,
   lifecycle: WorkLifecycleState = "active",
 ): TreeVersion | null {
-  const pendingText = useMemo(
-    () => new Set(rows?.filter((row) => row.hasDraft).map((row) => row.documentId)),
-    [rows],
-  );
-  return useMemo<TreeVersion | null>(
-    () =>
-      branchId
-        ? {
-            view: { draft: branchId },
-            pendingText,
-            ...(lifecycle !== "active" ? { ended: lifecycle } : {}),
-          }
-        : null,
-    [branchId, pendingText, lifecycle],
+  return useMemo(
+    () => (branchId ? draftTreeVersion(branchId, rows, lifecycle) : null),
+    [branchId, rows, lifecycle],
   );
 }
 
@@ -116,35 +130,12 @@ export function TreeVersionProvider({
   );
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
-  const main = useOptionalMainItem()?.item;
-  const mainDocument = main?.kind === "document" ? main.documentId : null;
-  const isDraftOnly = useIsDraftOnly(projectId);
+  // Every page follows the choice (`shownDraft`): writing it is the whole flip.
   const show = useCallback(
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],
   );
-  const showDraft = useCallback(
-    (documentId: string) => {
-      show("draft");
-      const draft = fileForDocument(documentId);
-      if (draft)
-        setDocumentView(accountId, projectId, documentId, {
-          pin: { ownerKey, itemKey: draft.draft.itemKey },
-        });
-    },
-    [show, fileForDocument, accountId, projectId, ownerKey],
-  );
-  const flip = useCallback(() => {
-    if (showing === "live") {
-      if (mainDocument) showDraft(mainDocument);
-      else show("draft");
-      return;
-    }
-    show("live");
-    // A page live has no version of keeps its draft on Live, as a Work pick leaves it.
-    if (mainDocument && !isDraftOnly(mainDocument))
-      setDocumentView(accountId, projectId, mainDocument, { version: "live" });
-  }, [showing, show, showDraft, accountId, projectId, mainDocument, isDraftOnly]);
+  const flip = useCallback(() => show(showing === "live" ? "draft" : "live"), [show, showing]);
 
   const name = work && !work.isNoWork ? workDisplayName(work) : null;
   const state = useMemo<ShellTreeVersion>(
@@ -159,21 +150,8 @@ export function TreeVersionProvider({
       draftOf: fileForDocument,
       flip,
       show,
-      showDraft,
     }),
-    [
-      version,
-      draftVersion,
-      showing,
-      offered,
-      ownerKey,
-      name,
-      changed,
-      fileForDocument,
-      flip,
-      show,
-      showDraft,
-    ],
+    [version, draftVersion, showing, offered, ownerKey, name, changed, fileForDocument, flip, show],
   );
   return (
     <ShellTreeVersionContext.Provider value={state}>

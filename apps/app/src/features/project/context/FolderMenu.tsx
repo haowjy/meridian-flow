@@ -8,6 +8,7 @@
  * only while the menu is open, so a transcript full of folder chips costs nothing
  * until one is clicked.
  */
+
 import { t } from "@lingui/core/macro";
 import {
   type ComponentPropsWithoutRef,
@@ -21,6 +22,7 @@ import { useProject } from "@/client/query/useProjectList";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent, type DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { useOnScreenChatScratchSource } from "../chat/use-chat-scratch-source";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
@@ -71,7 +73,7 @@ export function FolderMenuBody({
   ...handlers
 }: { host: FolderMenuHost; folderId: string } & MenuContentHandlers) {
   const { projectId } = host;
-  const trees = useProjectTrees(projectId, { account: true });
+  const trees = useProjectTrees(projectId, { account: true, version: useTreeVersion() });
   const own = useMemo(() => {
     for (const source of trees.sources)
       if (trees.tree(source.id)?.entry(folderId))

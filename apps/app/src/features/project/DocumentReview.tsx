@@ -32,6 +32,7 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
+import { useShellTreeVersion } from "./tree-version";
 import {
   type ReviewAddressAdmission,
   type ReviewAdmissionPort,
@@ -85,9 +86,13 @@ export function useDocumentReview(
     }),
     [accountId, projectId, documentId, showChanges],
   );
+  // Live for the scope's draft is the toggle's Live (`shownDraft`); another owner's pin just goes.
+  const shell = useShellTreeVersion();
+  const scopeShown = paint.draft !== null && !paint.outOfScope;
   const showLive = useCallback(() => {
     if (documentId) setDocumentView(accountId, projectId, documentId, { version: "live" });
-  }, [accountId, projectId, documentId]);
+    if (scopeShown) shell?.show("live");
+  }, [accountId, projectId, documentId, scopeShown, shell]);
   const value = useDraftReviewScopeValue({
     projectId,
     work: reviewWork,

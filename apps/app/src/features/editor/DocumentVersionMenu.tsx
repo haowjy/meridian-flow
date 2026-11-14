@@ -43,7 +43,7 @@ export function DocumentVersionMenu({
   const { documentId } = document;
   const accountId = useAccountId();
   const paint = useHostDocumentPaint();
-  // The chip and the sidebar's Live/Draft toggle are one state: a pick here sets both.
+  // The chip and the sidebar's Live/Draft toggle are one state (`shownDraft`): a pick here sets it.
   const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works } = useWorks(projectId);
@@ -88,10 +88,12 @@ export function DocumentVersionMenu({
     current: shown?.ownerKey === hint.owner,
     scope: hint.owner === scopeOwner,
     onSelect: () => {
-      setDocumentView(accountId, projectId, documentId, {
-        pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
-      });
+      // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft.
       if (hint.owner === shell?.ownerKey) shell.show("draft");
+      else
+        setDocumentView(accountId, projectId, documentId, {
+          pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
+        });
       followToChip(documentId);
     },
   }));
