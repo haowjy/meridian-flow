@@ -78,7 +78,14 @@ and remain quarantined until their retryable destroy ledger succeeds.
   To drop the patch when upstream stops doing either, remove the grouping
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
-  read) and keep `refreshProseMirrorDoc`.
+  read) and keep `refreshProseMirrorDoc` and `sameBlock`.
+- The binding never writes a node into an element with a different block `id`
+  (`sameBlock` in `updateYFragment`). Stock y-tiptap updates the left element in
+  place when the two candidates tie, so a paragraph inserted before an empty
+  paragraph took over the old element, and a peer's concurrent typing landed
+  in the new paragraph under a duplicated `id`. The fold fuzz
+  (`qa/fold-fuzz.md`) catches a binding change that breaks this or the text rule
+  above; run it by hand when the patch changes.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
