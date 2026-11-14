@@ -9,6 +9,7 @@ export function opsOutput(ops: readonly EditOp[]): string {
     if (op.kind === "text")
       for (const splice of op.splices)
         output += splice.content.textBetween(0, splice.content.size, "");
+    else if (op.kind === "insert") for (const node of op.nodes) output += node.textContent;
   return output;
 }
 
@@ -23,7 +24,7 @@ export type ResolvedEdit = {
   structuralBoundary?: object;
 } & (
   | {
-      /** The smallest changes to one block's text, formatting and attributes. */
+      /** The smallest changes to one block: its text, formatting, attributes and nodes. */
       kind: "ops";
       block: BlockRef;
       ops: readonly EditOp[];
@@ -44,11 +45,6 @@ export type ResolvedEdit = {
   | {
       kind: "delete";
       block: BlockRef;
-    }
-  | {
-      kind: "block";
-      block: BlockRef;
-      replacement: Block;
     }
 );
 

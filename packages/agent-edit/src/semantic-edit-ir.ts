@@ -135,8 +135,6 @@ function editOutput(edit: ResolvedEdit): string {
       return edit.newText;
     case "ops":
       return opsOutput(edit.ops);
-    case "block":
-      return edit.replacement.textContent;
     case "delete":
       return "";
   }
