@@ -11,6 +11,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -136,6 +137,8 @@ export const treeEditReceipts = pgTable(
     reverses: uuid("reverses"),
     /** The Work's branch the record was drafted in; null when it is live. */
     draftBranchId: uuid("draft_branch_id").$type<BranchId>(),
+    /** The change moved a document between a project's list and the account's: its records are in two lists. */
+    acrossLists: boolean("across_lists").notNull().default(false),
     /** The path the model gave, for the turn's receipt lines and the Undo of a deleted node. */
     shownAt: text("shown_at"),
     createdAt: createdAt(),

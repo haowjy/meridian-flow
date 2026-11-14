@@ -6,7 +6,6 @@
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts";
 import { type Database, treeEditReceiptNodes, treeEditReceipts } from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
@@ -36,6 +35,7 @@ export function createDrizzleTreeHistory(
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
           draftBranchId: input.draftBranchId ?? null,
+          acrossLists: input.acrossLists ?? false,
           shownAt: input.shownAt,
         })
         .returning({ id: treeEditReceipts.id });
@@ -106,6 +106,8 @@ export function createDrizzleTreeHistory(
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
           wId: treeEditReceiptNodes.wId,
+          beforeAt: treeEditReceiptNodes.beforeAt,
+          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(inArray(treeEditReceiptNodes.receiptId, ids));
@@ -114,12 +116,16 @@ export function createDrizzleTreeHistory(
         const row = byId.get(entry.receiptId);
         if (!row) return [];
         const own = touched.filter((node) => node.receiptId === row.id);
+        const subject = own.find((node) => node.nodeId === row.nodeId);
         return [
           receiptOf(
             row,
             own.map((node) => node.nodeId),
             entry.wId,
-            own.find((node) => node.nodeId === row.nodeId)?.wId ?? entry.wId,
+            subject?.wId ?? entry.wId,
+            row.acrossLists && subject?.beforeAt && subject.afterAt
+              ? { from: subject.beforeAt, to: subject.afterAt }
+              : undefined,
           ),
         ];
       });
@@ -159,8 +165,10 @@ function receiptOf(
   nodes: string[],
   wId: number,
   handle = wId,
+  across?: { from: string; to: string },
 ): TreeReceipt {
   return {
+    ...(across ? { across } : {}),
     id: row.id,
     subject: row.nodeId,
     records: row.records,

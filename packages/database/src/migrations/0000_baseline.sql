@@ -667,6 +667,16 @@ CREATE TABLE "document_edits" (
 	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert','rollback'))
 );
 --> statement-breakpoint
+CREATE TABLE "tree_edit_receipt_nodes" (
+	"receipt_id" uuid NOT NULL,
+	"thread_id" uuid,
+	"node_id" uuid NOT NULL,
+	"w_id" integer NOT NULL,
+	"before_at" text,
+	"after_at" text,
+	CONSTRAINT "tree_edit_receipt_nodes_receipt_id_node_id_pk" PRIMARY KEY("receipt_id","node_id")
+);
+--> statement-breakpoint
 CREATE TABLE "tree_edit_receipts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "tree_edit_receipts_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
@@ -680,10 +690,9 @@ CREATE TABLE "tree_edit_receipts" (
 	"op" text NOT NULL,
 	"kind" text DEFAULT 'write' NOT NULL,
 	"reverses" uuid,
-	"w_id" integer NOT NULL,
 	"draft_branch_id" uuid,
+	"across_lists" boolean DEFAULT false NOT NULL,
 	"shown_at" text,
-	"landed_at" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "tree_edit_receipts_op_valid" CHECK ("tree_edit_receipts"."op" IN ('create','move','delete','restore')),
 	CONSTRAINT "tree_edit_receipts_kind_valid" CHECK ("tree_edit_receipts"."kind" IN ('write','undo','redo')),
@@ -1134,6 +1143,8 @@ ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_document_id_document
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipt_nodes" ADD CONSTRAINT "tree_edit_receipt_nodes_receipt_id_tree_edit_receipts_id_fk" FOREIGN KEY ("receipt_id") REFERENCES "public"."tree_edit_receipts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipt_nodes" ADD CONSTRAINT "tree_edit_receipt_nodes_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1267,8 +1278,10 @@ CREATE INDEX "document_edit_parts_live_origin_seq" ON "document_edit_parts" USIN
 CREATE INDEX "document_edits_document_idx" ON "document_edits" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_edits_turn_idx" ON "document_edits" USING btree ("turn_id");--> statement-breakpoint
 CREATE INDEX "document_edits_action_idx" ON "document_edits" USING btree ("action_id");--> statement-breakpoint
-CREATE INDEX "tree_edit_receipts_node_idx" ON "tree_edit_receipts" USING btree ("node_id","thread_id","seq");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipt_nodes_node_idx" ON "tree_edit_receipt_nodes" USING btree ("thread_id","node_id","w_id");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipts_thread_idx" ON "tree_edit_receipts" USING btree ("thread_id","shown_at");--> statement-breakpoint
 CREATE INDEX "tree_edit_receipts_turn_idx" ON "tree_edit_receipts" USING btree ("turn_id");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipts_reverses_idx" ON "tree_edit_receipts" USING btree ("reverses");--> statement-breakpoint
 CREATE INDEX "import_entries_import_order" ON "import_entries" USING btree ("import_id","ordinal");--> statement-breakpoint
 CREATE INDEX "import_entries_import_state" ON "import_entries" USING btree ("import_id","state");--> statement-breakpoint
 CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","created_at");--> statement-breakpoint

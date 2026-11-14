@@ -193,6 +193,8 @@ export type TreeReceiptInput = {
   draftBranchId?: import("@meridian/contracts").BranchId;
   /** The path the model gave. */
   shownAt: string;
+  /** The change moved a document between two lists (a project's and the account's). */
+  acrossLists?: true;
   /** An undo or redo names the receipt it reverses. */
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
@@ -211,6 +213,8 @@ export type TreeReceipt = {
   handle: number;
   /** Every node the call changed. */
   nodes: string[];
+  /** For a move between two lists: the subject's address before and after. */
+  across?: { from: string; to: string };
 };
 
 /**

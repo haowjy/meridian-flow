@@ -32,6 +32,7 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
+import { crossesLists, runMoveAcrossLists } from "./tree-across-lists.js";
 
 type MoveInput = Extract<WriteToolInput, { command: "move" }>;
 type DeleteInput = Extract<WriteToolInput, { command: "delete" }>;
@@ -80,8 +81,8 @@ function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false
 }
 
 /**
- * A tree command: the grant on the area it changes, then one command on its list. Every path
- * stays in one area; a move between areas is not made.
+ * A tree command: the grant on the area it changes, then one command on its list. A move between
+ * a project's files and the account's is the server's move between two lists.
  */
 export async function runTreeToolCommand(
   deps: ToolWiringDeps,
@@ -96,12 +97,6 @@ export async function runTreeToolCommand(
   const areas = [...new Set(located.map((place) => place?.area))];
   if (areas.some((area) => area === undefined))
     return writeToolError(input.command, "That path names no source.");
-  // The account's `user://` files are another list: a move between lists is not made here.
-  if (areas.length > 1 && areas.some((area) => area?.startsWith("user://")))
-    return writeToolError(
-      input.command,
-      "A tree command can't move between a project's files and the account's files. Copy, then delete.",
-    );
   const roots = new Map<string, string>();
   for (const area of areas as string[]) {
     const top = await call.context.port.readTree(area, { read: (scope) => scope.root });
@@ -121,6 +116,15 @@ export async function runTreeToolCommand(
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
+  const crossing =
+    command.command === "move" &&
+    command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
+  if (crossing && draftArea !== undefined)
+    return writeToolError(
+      input.command,
+      "A change in a Work's draft can't move files between a project and the account's files.",
+    );
+  if (crossing) return runMoveAcrossLists(deps, call, ctx, grants, command as never);
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;

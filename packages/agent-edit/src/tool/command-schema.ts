@@ -192,7 +192,7 @@ const MUTATION_BRANCHES = {
 const NAMESPACE_BRANCHES = {
   move: {
     description:
-      "Move or rename a document or folder: from `from.path` to `path` (a folder ends in `/`). Its identity, content and history stay the same, and links to it follow, so don't edit them. To reorder, give the same `path` with `position`. To move into a folder, give the folder (ending in `/`) as `path`: a document keeps its name there, and `from.paths` moves several at once. A drafted move waits for the user's review.",
+      "Move or rename a document or folder: from `from.path` to `path` (a folder ends in `/`). Its identity, content and history stay the same, and links to it follow, so don't edit them. A `path` that ends in `/` and names another existing folder (or any folder, for a document) is the folder it goes into, under its own name; otherwise `path` is where the node itself ends up, its name included. To reorder, give the node's own `path` with `position`. `from.paths` moves several into the folder `path` at once. Documents also move between a project's files and `user://`; a folder doesn't. A drafted move waits for the user's review.",
     fields: {
       from: z
         .object({

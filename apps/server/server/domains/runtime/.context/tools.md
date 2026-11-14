@@ -139,10 +139,12 @@ reply's save, and a failed reply leaves what its calls did. A path resolves thro
 names the model was shown: `ls` and every tree result record, per chat, which name meant
 which node (host-only evidence, `observation_frontiers` room `tree`, never shown to the
 model), so a stale path reaches the node the model meant and a name reused for another
-document is refused as `path_changed`. The call keeps a receipt (`tree_edit_receipts`:
-its record ids, the `e<N>` handle, the Work's branch) and `undo`, `redo` and `revert` of
-a tree change go by it through the package's `undoChange`, in the Work's draft and, after
-an Apply or a restored Discard, through `carries` in live. In a draft-mode chat the
+document is refused as `path_changed`. Every tool that prints a path
+records exactly the names it printed, from the nodes that produced them (`printedDelta`), and
+a name shown in the other view still means its node in this one. The call keeps a receipt
+(`tree_edit_receipts` and one row per node it changed, `collab/.context/reversal.md`); `undo`,
+`redo` and `revert` choose from the node's one history across text and tree edits. A command
+that refuses stores nothing (`SourceTree.run` drops what `make` wrote). In a draft-mode chat the
 records are the Work's branch's and live is untouched until the user applies them; Scratch
 and upload content stays live while its placement can be drafted
 (`collab/.context/apply.md`). Skills retain Mars
@@ -158,11 +160,7 @@ Command details the model sees:
   AI-marked and leave comments, authorship and hashes behind. Document copy
   keeps the source's type; a binary copy duplicates its storage object live,
   with no write handle, and refuses an existing destination.
-- `move` refuses only a destination that cannot exist. The model sees
-  `location_taken` (a document sits where the path needs a folder) and
-  `destination_missing` (a missing folder); Apply and the reversal paths call
-  the same cases `ancestor_taken` and `folder_missing`. A folder source refuses
-  as `source_is_folder`. Neither `move` nor `delete` runs the shown-view check.
+- `move`: a `path` that names an existing folder (always, for a document; for a folder, one that is not the folder moved) is the folder the node goes into under its own name; any other `path` is where the node itself ends up, name included, and the same `path` with `position` is a reorder. `position.sibling` is looked up by name in the destination folder. Moves into a folder deleted since are made and the folder stands (`kept:`). A document also moves between a project's files and `user://` (`lib/model-tools/tree-across-lists.ts`, `port.moveAcrossLists`: two lists, one transaction); a folder does not.
 - When a deleted document and a moved one both left a path, `undo` on that path
   picks the deleted one, so moving a blocker aside never makes `undo` pick the
   blocker.

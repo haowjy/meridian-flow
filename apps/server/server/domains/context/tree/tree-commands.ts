@@ -673,7 +673,8 @@ function keptStanding(
   const holder = after.nodes.get(folder);
   const first = kept[0];
   if (!holder || first === undefined) return undefined;
-  const placer = actorOfRecord(cx, after.setters.get(first)?.place?.id);
+  const placer =
+    actorOfRecord(cx, after.setters.get(first)?.place?.id) ?? after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
@@ -791,7 +792,13 @@ export function runTreeCommand(
           (!fromPath.folder ||
             (() => {
               const there = resolveShown(projection, shown, to.root, to, { through: true });
-              return there.kind === "node" && there.node.kind === "folder";
+              const self = resolveShown(projection, shown, fromPath.root, fromPath);
+              // The folder named is another folder: the same path with a position is a reorder.
+              return (
+                there.kind === "node" &&
+                there.node.kind === "folder" &&
+                !(self.kind === "node" && self.node.id === there.node.id)
+              );
             })());
         const leaf = fromPath.segments.at(-1) ?? "";
         const target: Located = into
