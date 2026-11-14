@@ -44,6 +44,12 @@ export { bodyRange, destinationFreeBlocks, grepBlockText } from "./model/grep-te
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";
 export { markdownPlainText, markdownTextView } from "./model/markdown-text-view.js";
+export type { SchemaRepairPath } from "./model/schema-repair.js";
+export {
+  countSchemaRepair,
+  isSchemaRepairUpdate,
+  schemaRepairCounts,
+} from "./model/schema-repair.js";
 export {
   markdownSections,
   normalizeRequestedSlug,

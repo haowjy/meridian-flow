@@ -135,7 +135,11 @@ session verdicts. Delete-only candidates are correlated independently within a
 Yjs transaction batch by item identity; ordinary writer transactions produce no
 verdict. Mixed delete-and-insert normalization is intentionally not classified.
 Repairs are reported in the snapshot; they do not fence, quarantine, pause, or
-change connection status.
+change connection status. The witness counts each report with `countSchemaRepair("editor")`
+(`@meridian/agent-edit`); the removed-text extraction it reports lives in
+`schema-repair-evidence.ts`. The binding's delete reaches the server as an ordinary Yjs update,
+and the server journals it under no name (`isSchemaRepairUpdate`); Undo still reaches it, which
+re-inserts the element and has the binding delete it again.
 
 Local presence is owned by `local-presence.ts`. Extensions receive `setField`,
 read-only peer state, and an Awareness-shaped caret facade; they never receive
