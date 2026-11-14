@@ -154,6 +154,7 @@ import {
   type ProjectWorkAuthorityResolver,
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
+  type WorkProjectionMutation,
 } from "../domains/projects/index.js";
 import {
   createDrizzleRecentDocumentsRepository,
@@ -403,6 +404,8 @@ export type ProductionAppPorts = {
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
+  /** The Works projection: counts, revisions, and the wake a Work's change sends. */
+  workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
   /**
    * Per-(project, reader) link snapshots: every serializing door spells
@@ -573,7 +576,12 @@ export async function createProductionAppPorts(input: {
   // thread peers) exists only once the collab domain does, which binds it; nothing retires
   // before a commit, so the late binding is never observed unbound in production.
   // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
-  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+  const treeLists = createDrizzleTreeListStore({
+    db,
+    journal: createDrizzleJournal(db),
+    // Collab is composed below, before anything can submit or admit a record.
+    draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
+  });
   const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
@@ -714,6 +722,7 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     projectWakeHub,
+    workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
       sources: contextSources,
       workAuthorityResolver,
@@ -971,6 +980,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
@@ -1618,9 +1628,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAddresses: {
-      async resolveById() {
-        return { kind: "unavailable" };
-      },
       async resolve() {
         return { kind: "unavailable" };
       },

@@ -88,13 +88,12 @@ export function useDraftDock({
         ? { ...file, actionable: [] }
         : file;
     })
-    .filter(
-      (file) =>
-        !controller.owner.state(file.row.draft.itemKey).hidden &&
-        (isOnStrip(file) ||
-          controller.owner.state(file.row.draft.itemKey).pending ||
-          controller.owner.state(file.row.draft.itemKey).failure),
-    );
+    .filter((file) => {
+      const state = controller.owner.state(file.row.draft.itemKey);
+      // A command in flight hides its row, until its delivery needs the writer's Retry.
+      if (state.hidden && !state.stalled) return false;
+      return isOnStrip(file) || state.pending || state.failure;
+    });
 
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
@@ -130,7 +129,8 @@ export function useDraftDock({
   };
   /**
    * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
-   * it resolves to the files a delete the strip hadn't shown yet held back (`needs-restore`).
+   * it resolves to the files a delete the strip hadn't shown yet held the command back for
+   * (`needs-restore`).
    */
   const send = useCallback(
     (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
@@ -143,10 +143,14 @@ export function useDraftDock({
               target: targetOfChanges(file.actionable),
             }));
       if (items.length === 0) return Promise.resolve([]);
-      // The runner hides every file's selection at the click and returns each as
-      // its own command answers; the records carry the outcomes.
-      return runner.batch(mode, items, restore).then(
-        (outcomes) => files.filter((_file, index) => outcomes[index]?.kind === "needs-restore"),
+      // An Apply is one command over every file; a Discard is one notice with one Undo.
+      const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
+      return sent.then(
+        (outcomes) =>
+          files.filter((_file, index) => {
+            const outcome = outcomes[index];
+            return outcome?.kind === "needs-restore" && outcome.deleted === true;
+          }),
         () => [],
       );
     },

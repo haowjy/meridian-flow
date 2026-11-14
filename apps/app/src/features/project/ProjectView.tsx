@@ -12,6 +12,7 @@ import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protoco
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
+import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useProjectWake } from "@/client/query/useProjectWake";
@@ -56,6 +57,7 @@ import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
 import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
+import { TreeVersionProvider } from "./tree-version";
 import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import type { ReviewAddressAdmission } from "./use-review-admission";
@@ -402,23 +404,26 @@ function HydratedReviewControllers({
   // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
   const { notices } = useDraftCommandOwner();
   useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
-  // A Work pick returns every document showing a draft to Live. A draft-only page has no Live
-  // version: it keeps its draft.
+  // A Work pick returns the sidebar and every document showing a draft to Live. A draft-only page
+  // has no Live version: it keeps its draft.
   const scopeWorkId = props.editorWorkId;
   const priorScope = useRef(scopeWorkId);
   useEffect(() => {
     if (priorScope.current === scopeWorkId) return;
-    if (priorScope.current !== null)
+    if (priorScope.current !== null) {
+      writeTreeVersionChoice(accountId, props.projectId, "live");
       returnDraftsToLive(
         accountId,
         props.projectId,
         (documentId) => draftOnly?.isDraftOnly(props.projectId, documentId) ?? false,
       );
+    }
     priorScope.current = scopeWorkId;
   }, [accountId, draftOnly, props.projectId, scopeWorkId]);
   const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
   useReviewAddressSync({
     projectId: props.projectId,
+    chatThreadId,
     locationKey: props.routeLocationKey,
     reviewOwner: props.reviewOwner ?? null,
     address: {
@@ -444,7 +449,9 @@ function HydratedReviewControllers({
       <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
         <DraftOnlySettlement projectId={props.projectId} />
         <LiveTabsProvider projectId={props.projectId}>
-          {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+          <TreeVersionProvider projectId={props.projectId} chatThreadId={chatThreadId}>
+            {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+          </TreeVersionProvider>
         </LiveTabsProvider>
       </MainReviewAddressContext.Provider>
     </ChatThreadNavigationProvider>

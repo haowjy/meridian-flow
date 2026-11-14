@@ -18,6 +18,7 @@ import {
 import {
   type BranchRow,
   branchRows,
+  type CreateRecord,
   changedRows,
   LIVE,
   type ProjectedRow,
@@ -258,7 +259,7 @@ async function insertDocumentRows(
   projectId: string,
   records: readonly TreeRecord[],
   shown: (id: string) => boolean,
-): Promise<void> {
+): Promise<CreateRecord[]> {
   const created = records.flatMap((record) =>
     record.type === "create" && record.kind !== "folder" && shown(record.node) ? [record] : [],
   );
@@ -276,6 +277,7 @@ async function insertDocumentRows(
           : {}),
       })),
     );
+  return created;
 }
 
 async function writeLive(
@@ -468,7 +470,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
  * Brings the rows to the list's replay: `added` are the records this transaction admitted, whose
  * documents get their `documents` rows. Call under the list's lock, after the update is
  * journaled, so the rows are never behind the list. The views replayed are live and every open
- * Work with pending tree records or pending text.
+ * Work with pending tree records or pending text. Returns the creates that made a document row.
  */
 export async function syncRows(
   db: DrizzleDb,
@@ -476,7 +478,7 @@ export async function syncRows(
   listId: string,
   doc: Y.Doc,
   added: readonly TreeRecord[],
-): Promise<void> {
+): Promise<CreateRecord[]> {
   const tx = currentDrizzleDb(db as Database);
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
@@ -492,13 +494,15 @@ export async function syncRows(
     [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
   );
 
-  if (added.length > 0)
-    await insertDocumentRows(
-      tx,
-      await projectOfList(tx, list),
-      added,
-      (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
-    );
+  const created =
+    added.length > 0
+      ? await insertDocumentRows(
+          tx,
+          await projectOfList(tx, list),
+          added,
+          (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
+        )
+      : [];
   const changed = await writeLive(tx, listId, liveRows, trashRecords(live));
   await testHook("treeList.afterLiveRows");
 
@@ -514,4 +518,5 @@ export async function syncRows(
       )),
     );
   await markUnviewed(tx, changed);
+  return created;
 }

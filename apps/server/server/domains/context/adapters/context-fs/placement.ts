@@ -12,7 +12,7 @@ import { renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
-import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
+import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
@@ -73,7 +73,6 @@ export interface CreatePlacementDeps {
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
   documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces">;
   liveCreate: LiveCreate;
 }
@@ -220,9 +219,8 @@ function draftPlacement(
           ...(options?.metadata ? { metadata: options.metadata } : {}),
         });
         if (!created.ok) return created;
+        // The create's admission made its authority and its Work text draft.
         const documentId = created.value.id as DocumentId;
-        await deps.documentSync.ensureDocumentAuthority(documentId);
-        await deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id });
         await options?.recordCreate?.({
           documentId,
           record: created.value.record,

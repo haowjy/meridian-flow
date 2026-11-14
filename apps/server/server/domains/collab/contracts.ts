@@ -15,7 +15,7 @@ import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardItem } from "./domain/branch-discard.js";
+import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -466,6 +466,8 @@ export type DraftReviewApi = {
   listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
+    /** The folders the branch has a row on, with the revision an Apply of one freezes. */
+    folders: { id: string; revision: string }[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
   /** Pending documents summed over the project's active branches. */
@@ -502,8 +504,10 @@ export type DraftReviewApi = {
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
-  discardAll(input: {
+  /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
+  discardBranch(input: {
     branchId: BranchId;
+    selection: DiscardSelection;
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
@@ -607,14 +611,14 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The branch's draft for a document it just created or joined, seeded from its live
-   * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
-   * idempotent against a racing peer ensure (contract §6.2 step 5).
+   * Each text document a branch's admitted create just made gets its Yjs authority and its
+   * Work text draft (empty: a draft create never seeds live Yjs), in the admitting
+   * transaction under the list's key: the tree list store calls it for every create in a
+   * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
    */
-  ensureCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
+  draftCreatedDocuments(
+    created: readonly { documentId: DocumentId; branchId: BranchId }[],
+  ): Promise<void>;
 };
 
 export type DraftAttributionAccess = {

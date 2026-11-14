@@ -1,7 +1,7 @@
 /**
  * DocumentPaneChrome — what sits above an open document's editor: the passage
  * notice, the frozen-document notice (an archived Work, a trashed chat), a failed
- * review command, and the document's properties. Main's page and the side's
+ * review command, the document's properties, and on Live what the Work's draft does to it. Main's page and the side's
  * document stack the same chrome. The document's identity and state are elsewhere:
  * in main at the end of the toolbar row, in the side in its header (the Live
  * menu lists other owners' drafts).
@@ -9,11 +9,13 @@
 import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { UnsentDraftTextNotice } from "@/features/draft-review/UnsentDraftTextNotice";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useAiDraftLauncher } from "../review-launch";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentProperties } from "./DocumentProperties";
+import { LiveDraftNotice } from "./LiveDraftNotice";
 import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
@@ -45,6 +47,8 @@ export function DocumentPaneChrome({
       {reviewNotices ? <ReviewFailureNotices document={document} /> : null}
       <DocumentProperties projectId={projectId} document={document} />
       <DraftedDeleteNotice documentId={document.documentId} />
+      <LiveDraftNotice projectId={projectId} document={document} />
+      <UnsentDraftTextNotice projectId={projectId} documentId={document.documentId} />
     </>
   );
 }

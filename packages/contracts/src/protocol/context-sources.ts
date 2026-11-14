@@ -28,9 +28,10 @@ export type ContextSource = {
 export type ContextSourcesResult = {
   sources: readonly ContextSource[];
   /**
-   * Sources that ended and can come back (a deleted Work's, a deleted chat's): readers drop them,
-   * and a browser keeps its copies of their documents. A source named by neither list was purged
-   * for good.
+   * Sources that ended and can come back (a lineage whose every chat is in Trash, a deleted
+   * chat's): readers drop them, and a browser keeps its copies of their documents. An archived or
+   * deleted Work's sources are not here: they stay in `sources`, read-only, until the Work is
+   * purged. A source named by neither list was purged for good.
    */
   ended: readonly ContextSourceId[];
 };

@@ -303,7 +303,6 @@ async function harness(
     store: store_,
     writes: {} as never,
     actor: `user:${USER}`,
-    drafts: {} as never,
     scheme: "user",
     documentSync: documentSync as never,
   });

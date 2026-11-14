@@ -243,10 +243,6 @@ async function executeWorkCommand<Op extends WorkOperation>(
       refetchType: "none",
     });
   }
-  // A restored Work gives its Scratch documents back; an address left on one while the Work was
-  // deleted answers "unavailable" until re-read, and nothing else tells the route.
-  if (record.operation === "restore")
-    void client.invalidateQueries({ queryKey: projectQueryKeys.documentAddresses(projectId) });
   if (current()) retire(client, projectId, record);
   return null;
 }

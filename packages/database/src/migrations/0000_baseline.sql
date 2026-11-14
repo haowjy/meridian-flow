@@ -457,7 +457,6 @@ CREATE TABLE "context_sources" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone,
-	"deleted_by_work_id" uuid,
 	CONSTRAINT "context_sources_exactly_one_scope" CHECK (("context_sources"."scope" = 'project' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'work' AND "context_sources"."project_id" IS NULL AND "context_sources"."work_id" IS NOT NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'lineage' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NOT NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."slug" = 'scratch') OR ("context_sources"."scope" = 'chat' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NOT NULL AND "context_sources"."slug" = 'uploads')),
 	CONSTRAINT "context_sources_uploads_chat_only" CHECK ("context_sources"."slug" <> 'uploads' OR "context_sources"."scope" = 'chat'),
 	CONSTRAINT "context_sources_scope_valid" CHECK ("context_sources"."scope" IN ('project', 'work', 'lineage', 'chat')),
@@ -1096,7 +1095,6 @@ ALTER TABLE "branches" ADD CONSTRAINT "branches_origin_work_id_works_id_fk" FORE
 ALTER TABLE "branches" ADD CONSTRAINT "branches_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_work_id_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."works"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_deleted_by_work_id_works_id_fk" FOREIGN KEY ("deleted_by_work_id") REFERENCES "public"."works"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_links" ADD CONSTRAINT "document_links_source_document_id_documents_id_fk" FOREIGN KEY ("source_document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_previous_locations" ADD CONSTRAINT "document_previous_locations_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_previous_locations" ADD CONSTRAINT "document_previous_locations_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1219,7 +1217,6 @@ CREATE INDEX "credit_transactions_consumption_group" ON "credit_transactions" US
 CREATE INDEX "branches_active_origin_work" ON "branches" USING btree ("origin_work_id","created_at") WHERE "branches"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "branches_active_origin_lineage" ON "branches" USING btree ("project_id","origin_root_thread_id","created_at") WHERE "branches"."status" = 'active' AND "branches"."origin_root_thread_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "branches_project" ON "branches" USING btree ("project_id");--> statement-breakpoint
-CREATE INDEX "context_sources_deleted_by_work_idx" ON "context_sources" USING btree ("deleted_by_work_id") WHERE "context_sources"."deleted_by_work_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_project_scope_slug" ON "context_sources" USING btree ("project_id","slug") WHERE "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_work_slug" ON "context_sources" USING btree ("work_id","slug") WHERE "context_sources"."work_id" IS NOT NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_lineage_slug" ON "context_sources" USING btree ("root_thread_id","slug") WHERE "context_sources"."root_thread_id" IS NOT NULL;--> statement-breakpoint

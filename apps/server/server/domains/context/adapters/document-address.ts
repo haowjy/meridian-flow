@@ -268,11 +268,10 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
         });
         if (!sourceId) return null;
         const tree = createTreeReader(db);
-        const view = input.view ?? LIVE_TREE;
         const query = { contextSourceId: sourceId, path: input.path };
-        const asDocument = await tree.resolveDocumentAddress(view, query);
+        const asDocument = await tree.resolveDocumentAddress(LIVE_TREE, query);
         const current =
-          asDocument.kind === "found" ? asDocument : await tree.resolveAddress(view, query);
+          asDocument.kind === "found" ? asDocument : await tree.resolveAddress(LIVE_TREE, query);
         if (current.kind === "found")
           return current.node.kind === "document"
             ? { kind: "current", documentId: current.node.document.id }

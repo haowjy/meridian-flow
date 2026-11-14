@@ -33,6 +33,7 @@ function openFacts(request: FileFactsRequest): FileFacts {
             isNoWork: false,
             archived: false,
             deleted: false,
+            purged: false,
             frozen: false,
           },
         }

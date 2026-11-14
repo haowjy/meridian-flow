@@ -34,6 +34,5 @@ export default defineEventHandler(async (event) => {
     throw error;
   });
   app.projectWakeHub.publish({ type: "project-chats-hint", projectId: work.projectId });
-  app.projectWakeHub.publish({ type: "context-sources-hint", projectId: work.projectId });
   return serializeTransport(work);
 });

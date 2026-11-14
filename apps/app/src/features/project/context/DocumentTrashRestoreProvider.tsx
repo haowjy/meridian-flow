@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
+import { StatusToast, type StatusToastNotice } from "@/components/app/StatusToast";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { useAccountId, useOptionalContextRemovalCoordinator } from "./account-feature-context";
 import { useEntryActions } from "./entry-drag/entry-actions";
@@ -41,12 +42,8 @@ type RestoreContextValue = {
   ) => void;
 };
 
-type RestoredNotice = {
-  id: number;
-  text: string;
-  /** Puts the restored documents back in Trash. */
-  undo?: () => void;
-};
+/** `undo` puts the restored documents back in Trash. */
+type RestoredNotice = StatusToastNotice;
 
 const RESTORED_MARK_MS = 10_000;
 
@@ -217,7 +214,7 @@ export function DocumentTrashRestoreProvider({
   return (
     <RestoreContext.Provider value={value}>
       {children}
-      <RestoredNoticeToast notice={notice} onDismiss={() => setNotice(null)} />
+      <StatusToast notice={notice} onDismiss={() => setNotice(null)} />
     </RestoreContext.Provider>
   );
 }
@@ -235,40 +232,4 @@ function restoredText(restored: readonly RestorableDocument[], destinationName: 
     one: `Restored # item to ${destinationName}.`,
     other: `Restored # items to ${destinationName}.`,
   });
-}
-
-function RestoredNoticeToast({
-  notice,
-  onDismiss,
-}: {
-  notice: RestoredNotice | null;
-  onDismiss: () => void;
-}) {
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(onDismiss, notice.undo ? 8_000 : 4_000);
-    return () => window.clearTimeout(timer);
-  }, [notice, onDismiss]);
-  if (!notice) return null;
-  return (
-    <div
-      key={notice.id}
-      role="status"
-      className="fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-md bg-foreground px-3 py-1.5 text-background text-xs shadow-float"
-    >
-      <span>{notice.text}</span>
-      {notice.undo ? (
-        <button
-          type="button"
-          className="font-semibold underline underline-offset-2"
-          onClick={() => {
-            notice.undo?.();
-            onDismiss();
-          }}
-        >
-          {t`Undo`}
-        </button>
-      ) : null}
-    </div>
-  );
 }

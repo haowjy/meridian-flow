@@ -10,7 +10,7 @@ import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import { entrySystem } from "./entry";
-import { indexAt, type MoveView } from "./move-plan";
+import { indexAt, type PlacementView } from "./move-plan";
 
 export type RestorePlan =
   | { kind: "none" }
@@ -33,12 +33,12 @@ export function restoreLabel({ destinationName, beside }: ReadyRestore): string 
 }
 
 export function planRestore(
-  view: MoveView,
+  view: PlacementView,
   entries: readonly DocumentTrashEntry[],
   target: TreeDropTarget,
 ): RestorePlan {
   const area = view.areas.find((candidate) => candidate.tree.root.entryId === target.treeRootId);
-  if (!area?.accepts || target.scheme !== area.scheme || entries.length === 0)
+  if (!area?.writable || target.scheme !== area.scheme || entries.length === 0)
     return { kind: "none" };
   const folder = target.folder ? area.tree.entry(target.folder.entryId) : null;
   if (target.folder && folder?.kind !== "dir") return { kind: "none" };

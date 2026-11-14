@@ -11,9 +11,10 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { parseDraftItemKey } from "@meridian/contracts";
+import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
+  ApplyClickAnswer,
   DraftMetadataResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
@@ -22,8 +23,9 @@ import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import {
   applyDraftClick,
+  applyItems,
   branchOf,
-  discardBranchDrafts,
+  discardBranch,
   discardDraftItem,
   observeDraftClick,
   unapplyDraftClick,
@@ -38,6 +40,7 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
+import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, ReviewChange, TextTarget } from "./review-model";
@@ -54,9 +57,10 @@ export type DraftCommandState = {
   closed: boolean;
   checkingClose: boolean;
   removed: boolean;
-  unsentText: string | null;
   liveUri: string | null;
 };
+/** A closed draft's text, typed here, that its server room never took. */
+export type UnsentDraftText = { draftId: string; text: string };
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
@@ -68,13 +72,14 @@ const EMPTY: DraftCommandState = {
   closed: false,
   checkingClose: false,
   removed: false,
-  unsentText: null,
   liveUri: null,
 };
 export type CommandOutcome =
   | { kind: "blocked" }
   | {
       kind: "done";
+      /** The Apply command that landed it, which an Un-Apply names. */
+      commandId?: string;
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
       /** Per-item facts committed by this click. */
@@ -84,8 +89,11 @@ export type CommandOutcome =
         renamed?: string;
       }[];
     }
-  /** The document was deleted and the click didn't say the writer knew: nothing changed. */
-  | { kind: "needs-restore" }
+  /**
+   * The document was deleted and the click didn't say the writer knew: nothing changed. In an
+   * Apply of several, every item answers it; `deleted` marks the ones live deleted.
+   */
+  | { kind: "needs-restore"; deleted?: true }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -113,13 +121,9 @@ type Entry = {
   lease: DraftRoomRead | null;
   unwatchLease(): void;
 };
-export type CapturedApply = {
-  /** Releases the already-queued click to send. A preceding click may have settled its tree cut. */
-  release(options?: { omitTree?: boolean; cancel?: boolean }): {
-    sent: boolean;
-    outcome: Promise<CommandOutcome>;
-  };
-};
+/** A click that is one member of a several-item Apply: it takes the group's id and send. */
+type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
+export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
 /**
  * A refusal the screen already explains reverts silently (offer only what
  * applies): an archived Work removes its commands and shows its own notice with
@@ -143,20 +147,14 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
-function sendBarrier() {
-  let release!: (value: { omitTree?: boolean; cancel?: boolean }) => void;
-  const promise = new Promise<{ omitTree?: boolean; cancel?: boolean }>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
-
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
   private readonly entries = new Map<string, Entry>();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
+  /** Per document (`[projectId, documentId]`), until dismissed: the latest closed draft's. */
+  private readonly unsent = new Map<string, UnsentDraftText>();
   private readonly listeners = new Set<() => void>();
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
@@ -389,6 +387,8 @@ export class DraftCommandOwner {
         this.detach(entry);
         entry.item.queue.refuseUnsent(entry.draftId);
       }
+      // A released room is kept while it holds typing it can still send; this lets it go.
+      this.releaseIdle(entry);
     });
     // subscribe publishes synchronously, including an already retired session.
     if (entry.binding !== binding) stopSession();
@@ -517,13 +517,18 @@ export class DraftCommandOwner {
       disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
+    // The local copy stays (a Discard can be undone); this is the writer's way to the text now.
+    if (unsentText)
+      this.unsent.set(JSON.stringify([ref.projectId, ref.documentId]), {
+        draftId: id,
+        text: unsentText,
+      });
     this.setState(
       ref.itemKey,
       {
         closed: true,
         checkingClose: false,
         removed: disposition === "removed",
-        unsentText,
         liveUri: liveUri ?? null,
       },
       id,
@@ -535,9 +540,28 @@ export class DraftCommandOwner {
       void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
   }
 
+  /** The text a closed draft of this document held that its room never took, until dismissed. */
+  unsentText(projectId: string, documentId: string): UnsentDraftText | null {
+    return this.unsent.get(JSON.stringify([projectId, documentId])) ?? null;
+  }
+
+  dismissUnsentText(projectId: string, documentId: string): void {
+    if (this.unsent.delete(JSON.stringify([projectId, documentId]))) this.publish();
+  }
+
+  /**
+   * A room nothing shows still holds typing the server hasn't taken: keep observing it, so a
+   * close that ends it (another device's Discard) still leaves the writer the text.
+   */
+  private holdsUnsentEdits(entry: Entry): boolean {
+    const session = entry.binding?.session;
+    return !!session && session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+  }
+
   private releaseIdle(entry: Entry) {
     if (
       entry.users ||
+      this.holdsUnsentEdits(entry) ||
       this.textClicks(entry).length ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId) ||
       this.entries.get(entry.draftId) !== entry
@@ -559,19 +583,26 @@ export class DraftCommandOwner {
   }
 
   /** A click's answer, as its caller's outcome and a refusal on the generation it was made for. */
-  private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
+  private settled(
+    ref: DraftRef,
+    id: string,
+    answer: ApplyClickOutcome,
+    restore: boolean,
+  ): CommandOutcome {
     if (answer.status !== "applied" && answer.status !== "landed" && answer.status !== "cancelled")
       this.setState(
         ref.itemKey,
         { failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }) },
         id,
       );
-    return this.outcomeOf(ref, answer);
+    return this.outcomeOf(ref, answer, restore);
   }
 
-  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
+  /** `restore`: this click brought its document back, as a group's `restored` says of some. */
+  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome, restore: boolean): CommandOutcome {
     if (answer.status === "applied") {
-      if (answer.restored) {
+      const restored = answer.restored && restore;
+      if (restored) {
         this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
       }
       for (const item of answer.applied) {
@@ -580,10 +611,11 @@ export class DraftCommandOwner {
         if (documentId)
           this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
       }
-      if (answer.restored || answer.applied.some((item) => item.renamed)) this.publish();
+      if (restored || answer.applied.some((item) => item.renamed)) this.publish();
       return {
         kind: "done",
-        ...(answer.restored ? { restored: true as const } : {}),
+        commandId: answer.commandId,
+        ...(restored ? { restored: true as const } : {}),
         applied: answer.applied.map((item) => ({
           itemKey: item.itemKey,
           ...(item.transition ? { transition: item.transition } : {}),
@@ -591,7 +623,7 @@ export class DraftCommandOwner {
         })),
       };
     }
-    if (answer.status === "landed") return { kind: "done" };
+    if (answer.status === "landed") return { kind: "done", commandId: answer.commandId };
     if (answer.status === "cancelled") return { kind: "blocked" };
     if (answer.status === "needs_restore") return { kind: "needs-restore" };
     return { kind: "change-refused", code: refusalCode(answer) };
@@ -612,21 +644,9 @@ export class DraftCommandOwner {
      * a whole-item Apply, or text groups chosen with the tree line.
      */
     requested?: { revision: string | null },
-  ): { sent: boolean; outcome: Promise<CommandOutcome> } {
-    return this.captureApply(ref, target, restore, requested)?.release() ?? this.blockedApply();
-  }
-
-  /**
-   * Freezes one click without sending it. Apply all calls this for every item in its event turn,
-   * then dispatches the captured clicks in server order; a single Apply uses the same path.
-   */
-  captureApply(
-    ref: DraftRef,
-    target: ChangeTarget,
-    restore = false,
-    requested?: { revision: string | null },
     history?: EditorHistoryHandle | null,
-  ): CapturedApply | null {
+    joint?: Joint,
+  ): StartedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
     // A tree cut already on its way is not sent twice; the same revision would answer `changed`.
     const tree = this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree)
@@ -641,21 +661,8 @@ export class DraftCommandOwner {
         !(
           entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
         ));
-    if (textless) return tree ? this.captureTree(ref, tree, restore) : null;
-    return this.captureText(ref, target, restore, tree, history);
-  }
-
-  private blockedApply() {
-    return {
-      sent: false,
-      outcome: Promise.resolve<CommandOutcome>({ kind: "blocked" }),
-    };
-  }
-
-  private capturedOutcome(outcome: CommandOutcome): CapturedApply {
-    return {
-      release: () => ({ sent: false, outcome: Promise.resolve(outcome) }),
-    };
+    if (textless) return tree ? this.captureTree(ref, tree, restore, joint) : null;
+    return this.captureText(ref, target, restore, tree, history, joint);
   }
 
   /** A tree cut alone (design-v2 §4): no room, no snapshot, its applied answer settles it. */
@@ -663,11 +670,13 @@ export class DraftCommandOwner {
     ref: DraftRef,
     tree: { revision: string | null },
     restore: boolean,
-  ): CapturedApply {
+    joint?: Joint,
+  ): StartedApply {
     const id = this.generation(ref.itemKey);
     const frozen: FrozenApply = {
+      ...(joint ? { send: joint.send } : {}),
       body: {
-        commandId: crypto.randomUUID(),
+        commandId: joint?.commandId ?? crypto.randomUUID(),
         groupIds: [],
         baseViewDelta: [],
         // The cut is the revision alone: the list item's `tree` also says what it does.
@@ -678,27 +687,14 @@ export class DraftCommandOwner {
       patched: [],
       acknowledged: Promise.resolve(),
     };
-    const barrier = sendBarrier();
     this.setState(ref.itemKey, { hidden: true, failure: null }, id);
-    const queued = this.item(ref)
-      .queue.enqueue(frozen, barrier.promise)
+    const outcome = this.item(ref)
+      .queue.enqueue(frozen)
       .then((answer) => {
         this.setState(ref.itemKey, { hidden: false }, id);
-        return this.settled(ref, id, answer);
+        return this.settled(ref, id, answer, restore);
       });
-    let released = false;
-    return {
-      release: ({ omitTree = false, cancel = false } = {}) => {
-        if (!released) {
-          released = true;
-          barrier.release({ omitTree, cancel: cancel || omitTree });
-        }
-        return {
-          sent: !cancel && !omitTree,
-          outcome: cancel || omitTree ? Promise.resolve({ kind: "done" }) : queued,
-        };
-      },
-    };
+    return { sent: true, outcome };
   }
 
   private captureText(
@@ -707,7 +703,8 @@ export class DraftCommandOwner {
     restore: boolean,
     tree: { revision: string | null } | undefined,
     history?: EditorHistoryHandle | null,
-  ): CapturedApply | null {
+    joint?: Joint,
+  ): StartedApply | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
     if (!entry || !binding?.runtime.state().ready || this.records.get(entry.draftId)?.closed)
@@ -722,7 +719,10 @@ export class DraftCommandOwner {
       this.setState(ref.itemKey, {
         failure: { code: "apply-refused", serverCode: "review_updated" },
       });
-      return this.capturedOutcome({ kind: "change-refused", code: "review_updated" });
+      return {
+        sent: false,
+        outcome: Promise.resolve({ kind: "change-refused", code: "review_updated" }),
+      };
     }
     const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
     if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
@@ -735,7 +735,7 @@ export class DraftCommandOwner {
       "base",
     );
     const body: ApplyClick = {
-      commandId: crypto.randomUUID(),
+      commandId: joint?.commandId ?? crypto.randomUUID(),
       draftId: entry.draftId,
       snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(binding.session.document))),
       groupIds: [...ids],
@@ -748,13 +748,17 @@ export class DraftCommandOwner {
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
-    const barrier = sendBarrier();
     this.setState(ref.itemKey, { failure: null });
-    const frozen = { body, optimistic, patched, acknowledged } satisfies FrozenApply;
+    const frozen: FrozenApply = {
+      body,
+      optimistic,
+      patched,
+      acknowledged,
+      ...(joint ? { send: joint.send } : {}),
+    };
     const scheduled = history
       ? entry.item.queue.enqueueHistory({
           frozen,
-          release: barrier.promise,
           patchFor: (groupIds) =>
             applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
           intent: () => this.setState(entry.ref.itemKey, { failure: null }),
@@ -770,39 +774,90 @@ export class DraftCommandOwner {
               failure: { code: "unapply-refused", serverCode: answer.status },
             }),
         })
-      : { outcome: entry.item.queue.enqueue(frozen, barrier.promise), handle: null };
+      : { outcome: entry.item.queue.enqueue(frozen), handle: null };
     if (scheduled.handle && history)
       entry.item.applyEntries.add(history.captureApply(scheduled.handle));
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) => this.settled(ref, entry.draftId, answer));
-    let released = false;
-    return {
-      release: ({ omitTree = false, cancel = false } = {}) => {
-        if (!released) {
-          released = true;
-          barrier.release({ omitTree, cancel });
-        }
-        return { sent: !cancel, outcome: cancel ? Promise.resolve({ kind: "done" }) : outcome };
-      },
-    };
+    const outcome = scheduled.outcome.then((answer) =>
+      this.settled(ref, entry.draftId, answer, restore),
+    );
+    return { sent: true, outcome };
   }
 
-  /** Releases a captured batch in server order while every intent remains owner-held. */
-  async releaseBatch(
-    items: readonly { itemKey: string; command: CapturedApply | null }[],
-  ): Promise<CommandOutcome[]> {
-    const settledTrees = new Set<string>();
-    const outcomes: CommandOutcome[] = [];
-    for (const { itemKey, command } of items) {
-      const omitTree = settledTrees.has(itemKey);
-      const outcome = await (command?.release({ omitTree }).outcome ??
-        Promise.resolve<CommandOutcome>({ kind: "blocked" }));
-      outcomes.push(outcome);
-      if (outcome.kind === "done")
-        for (const item of outcome.applied ?? [])
-          if (item.transition) settledTrees.add(item.itemKey);
+  /**
+   * Several documents and folders as one Apply command (`GroupApply`): an Apply all, a folder's
+   * ✓. Every document's click is frozen in this event turn, as a single Apply's is, and waits in
+   * its own queue; a folder's is a tree cut in its own item's queue (`folderKey`), so a folder
+   * shows pending, refused and unknown delivery as a document does. `members[i]`'s outcome is
+   * `outcomes[i]`, then `folders[j]`'s. `restore` is whether the writer chose to bring back what
+   * live deleted; a member's own `restore` says whether it is one of those.
+   */
+  applyGroup(input: {
+    projectId: string;
+    ownerKey: string;
+    branchId: string;
+    members: readonly {
+      ref: DraftRef;
+      target: ChangeTarget;
+      restore: boolean;
+      tree?: { revision: string | null };
+    }[];
+    folders: readonly string[];
+    /** The folders' revisions of the Work's row, read once when the command goes. */
+    revisions: () => Promise<ReadonlyMap<string, string>>;
+    restore: boolean;
+  }): {
+    commandId: string;
+    answer: Promise<ApplyClickAnswer | null>;
+    outcomes: Promise<CommandOutcome>[];
+  } {
+    const group = new GroupApply(crypto.randomUUID(), {
+      revisions: input.revisions,
+      restore: input.restore,
+      post: (body) => applyItems(input.projectId, input.branchId, body),
+    });
+    const joined = (started: StartedApply | null, member: { drop(): void }) => {
+      if (!started) {
+        member.drop();
+        return Promise.resolve<CommandOutcome>({ kind: "blocked" });
+      }
+      void started.outcome.then(member.drop);
+      return started.outcome;
+    };
+    const outcomes = input.members.map(({ ref, target, restore, tree }) => {
+      const member = group.member(ref.documentId);
+      return joined(
+        this.apply(ref, target, restore, tree, null, {
+          commandId: group.commandId,
+          send: member.send,
+        }),
+        member,
+      );
+    });
+    for (const node of input.folders) {
+      const member = group.member(node, true);
+      const ref = {
+        projectId: input.projectId,
+        ownerKey: input.ownerKey,
+        documentId: node,
+        itemKey: folderKey(input.branchId, node),
+      };
+      // A folder's cut already on its way is not sent twice.
+      const busy = this.items.get(ref.itemKey)?.queue.pending ?? false;
+      outcomes.push(
+        joined(
+          busy
+            ? null
+            : this.captureTree(ref, { revision: null }, false, {
+                commandId: group.commandId,
+                send: member.send,
+              }),
+          member,
+        ),
+      );
     }
-    return outcomes;
+    group.sealed();
+    return { commandId: group.commandId, answer: group.answer, outcomes };
   }
 
   /** Whether a local text Discard can start on the item now: its room is read, bound and has changes. */
@@ -849,16 +904,18 @@ export class DraftCommandOwner {
   /**
    * Discards a whole item on the server: a created document, which the draft alone holds, a
    * picture, a frozen owner's draft, whose room refuses the writer's text, a move or delete
-   * with its text, or a draft whose room isn't read (`canDiscardLocally`). No Undo. A created
-   * document leaves at once; any other stays in review, discarding, until the server answers, so
-   * a refusal shows on it. A Discard decided on the frozen reading names the draft the writer
-   * saw, so the server refuses it if the chat came back and the draft moved on. Server-only
-   * lifecycle commands share this account owner, never the Apply-all route.
+   * with its text, or a draft whose room isn't read (`canDiscardLocally`). Its Undo is the
+   * server's, by `commandId`. A created document leaves at once; any other stays in review,
+   * discarding, until the server answers, so a refusal shows on it. A Discard decided on the
+   * frozen reading names the draft the writer saw, so the server refuses it if the chat came
+   * back and the draft moved on. Server-only lifecycle commands share this account owner, never
+   * the Apply route.
    */
   async discardOnServer(
     ref: DraftRef,
     item: ThreadDraftListItem,
     frozen: boolean,
+    commandId: string,
   ): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
     this.setState(
@@ -870,7 +927,7 @@ export class DraftCommandOwner {
       const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
-        commandId: crypto.randomUUID(),
+        commandId,
         ends: "item",
         ...(frozen ? { draftSeenAt: item.hasDraft ? item.updatedAt : null } : {}),
       });
@@ -903,36 +960,40 @@ export class DraftCommandOwner {
   }
   /**
    * An item's Discard when its branch moves or deletes the document: the move or delete (its
-   * tree line) and, unless only the line was chosen, the chosen text, as one command. The
-   * server drops the row's facts and settles them, which no Undo reverses (#763), so the text
-   * offers none either: it would bring back the text without the move or delete. Its notice
-   * ends here; the accepted write keeps its paint opportunity and releases its room after.
+   * tree line), discarded on the server as `commandId`, and unless only the line was chosen, the
+   * chosen text, here. Its Undo takes back both: the text's `handle` and the server's command.
+   * Null when the chosen text couldn't be written: the move or delete stays with it.
    */
   discardItem(
     ref: DraftRef,
     item: ThreadDraftListItem,
     target: ChangeTarget,
     history: Editor | "notice" | null,
-  ): Promise<CommandOutcome> {
-    if (!this.active || !item.tree) return Promise.resolve({ kind: "blocked" });
+    commandId: string,
+  ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
+    if (!this.active || !item.tree) return null;
     const text =
       item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
-    // The chosen text couldn't be written: the move or delete stays with it.
-    if (item.hasDraft && target.kind !== "tree" && !text)
-      return Promise.resolve({ kind: "blocked" });
-    text?.handle?.end();
-    return Promise.all([this.discardTree(ref, item), text?.outcome]).then(([tree, discarded]) =>
-      tree.kind === "done" && discarded ? discarded : tree,
-    );
+    if (item.hasDraft && target.kind !== "tree" && !text) return null;
+    return {
+      handle: text?.handle ?? null,
+      outcome: Promise.all([this.discardTree(ref, item, commandId), text?.outcome]).then(
+        ([tree, discarded]) => (tree.kind === "done" && discarded ? discarded : tree),
+      ),
+    };
   }
 
-  private async discardTree(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
+  private async discardTree(
+    ref: DraftRef,
+    item: ThreadDraftListItem,
+    commandId: string,
+  ): Promise<CommandOutcome> {
     if (!this.active || !item.tree) return { kind: "blocked" };
     try {
       const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
-        commandId: crypto.randomUUID(),
+        commandId,
         ends: "tree",
       });
       if (!this.active) return { kind: "blocked" };
@@ -946,27 +1007,74 @@ export class DraftCommandOwner {
       return { kind: "change-refused", code: "unknown" };
     }
   }
-  async discardAll(refs: readonly DraftRef[], branchId: string): Promise<CommandOutcome> {
-    const ref = refs[0];
-    if (!this.active || !ref || this.closingBranches.has(branchId)) return { kind: "blocked" };
-    this.closingBranches.add(branchId);
-    const scope = new Map(refs.map((draft) => [draft.itemKey, draft]));
-    for (const entry of this.entries.values())
-      if (entry.ref.projectId === ref.projectId && branchOf(entry.ref.itemKey) === branchId)
-        scope.set(entry.ref.itemKey, entry.ref);
-    for (const draft of scope.values())
-      this.setState(draft.itemKey, { hidden: true, failure: null });
-    try {
-      const answer = await discardBranchDrafts(ref, { branchId, commandId: crypto.randomUUID() });
-      if (answer.status !== "discarded") throw new Error("Drafts no longer active");
-      return { kind: "done" };
-    } catch {
+  /**
+   * The branch's Discard on the server, as `commandId`, which its Undo names: every change of the
+   * branch (`all`, the one command that closes it), or exactly the selected nodes, documents and
+   * folders, each ending as its `ends` says. What it takes hides until the answer; a refusal or
+   * an unknown delivery shows on each item it named.
+   */
+  async discardBranch(input: {
+    projectId: string;
+    branchId: string;
+    commandId: string;
+    selection:
+      | { all: true; refs: readonly DraftRef[] }
+      | {
+          items: readonly {
+            ref: DraftRef;
+            ends: "tree" | "item";
+            draftSeenAt?: string | null;
+          }[];
+        };
+  }): Promise<CommandOutcome> {
+    const { projectId, branchId, commandId, selection } = input;
+    if (!this.active || this.closingBranches.has(branchId)) return { kind: "blocked" };
+    const scope = new Map(
+      ("all" in selection ? selection.refs : selection.items.map(({ ref }) => ref)).map((ref) => [
+        ref.itemKey,
+        ref,
+      ]),
+    );
+    if ("all" in selection)
+      for (const entry of this.entries.values())
+        if (entry.ref.projectId === projectId && branchOf(entry.ref.itemKey) === branchId)
+          scope.set(entry.ref.itemKey, entry.ref);
+    if (scope.size === 0) return { kind: "blocked" };
+    // A Discard all closes the branch: nothing else is sent on it until it answers.
+    if ("all" in selection) this.closingBranches.add(branchId);
+    for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
+    const failed = (failure: BranchCommandFailure | null) => {
       if (this.active)
-        for (const draft of scope.values())
-          this.setState(draft.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
+        for (const ref of scope.values())
+          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
+    };
+    try {
+      const answer = await discardBranch(projectId, branchId, {
+        commandId,
+        ...("all" in selection
+          ? { all: true as const }
+          : {
+              items: selection.items.map(({ ref, ends, draftSeenAt }) => ({
+                node: ref.documentId,
+                ends,
+                ...(draftSeenAt !== undefined ? { draftSeenAt } : {}),
+              })),
+            }),
+      });
+      if (answer.status === "discarded") {
+        // A branch that closed ends its item keys; a selection's items stay the branch's, and
+        // the caller drops their rows with this answer, as an item's server Discard does.
+        if (!("all" in selection))
+          for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
+        return { kind: "done" };
+      }
+      failed({ code: "discard-refused", serverCode: answer.status });
+      return { kind: "change-refused", code: answer.status };
+    } catch {
+      failed({ code: "discard-unknown" });
       return { kind: "change-refused", code: "unknown" };
     } finally {
-      this.closingBranches.delete(branchId);
+      if ("all" in selection) this.closingBranches.delete(branchId);
     }
   }
   close() {
@@ -975,3 +1083,7 @@ export class DraftCommandOwner {
     for (const item of this.items.values()) item.queue.close();
   }
 }
+
+/** A folder's item in a Work's branch: the key its commands' state is kept under. */
+export const folderKey = (branchId: string, folderId: string): string =>
+  draftItemKey(branchId as BranchId, folderId);

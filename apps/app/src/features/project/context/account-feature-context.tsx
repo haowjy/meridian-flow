@@ -1,5 +1,3 @@
-/** Authenticated-account scope for the project feature lifetime. */
-import type { QueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -38,22 +36,19 @@ const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime[
 
 export function AccountFeatureComposition({
   accountId,
-  queryClient,
   children,
 }: {
   accountId: string;
-  queryClient: QueryClient;
   children: React.ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
-  const desired = useRef({ accountId, queryClient });
-  desired.current = { accountId, queryClient };
+  const desired = useRef({ accountId });
+  desired.current = { accountId };
   const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
     () =>
       new AccountFeatureLifetime(
         accountId,
-        queryClient,
         (error) => invalidationHandler.current(error),
         connectivityHints,
       ),
@@ -77,7 +72,6 @@ export function AccountFeatureComposition({
         setLifetime(
           new AccountFeatureLifetime(
             next.accountId,
-            next.queryClient,
             (error) => invalidationHandler.current(error),
             connectivityHints,
           ),

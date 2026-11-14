@@ -443,7 +443,7 @@ async function readBranchOwner(
     return work
       ? {
           holder: work,
-          facts: { owner, ...workFacts(work), frozen: false },
+          facts: { owner, ...workFacts(work), purged: false, frozen: false },
         }
       : null;
   }
@@ -468,13 +468,22 @@ async function readBranchOwner(
           isNoWork: false,
           archived: false,
           deleted: false,
+          purged: false,
           frozen: !root.live,
         },
       }
     : null;
 }
 
-/** A purged Work or lineage reads as deleted, never as a free pass. */
+/** A purged Work or lineage is gone, never a free pass. */
 function missingOwner(owner: DraftOwner): FileBranchOwnerFacts {
-  return { owner, handle: null, isNoWork: false, archived: false, deleted: true, frozen: false };
+  return {
+    owner,
+    handle: null,
+    isNoWork: false,
+    archived: false,
+    deleted: true,
+    purged: true,
+    frozen: false,
+  };
 }

@@ -21,7 +21,9 @@ import {
 import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
+import { useOpenCreatedDocument } from "../review-launch";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
+import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
@@ -32,34 +34,42 @@ import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
+import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
+
+/** What a row offers in a tree that takes no change: its documents still copy out. */
+const READ_ONLY: EntryCapabilities = ["copy"];
 
 /**
  * An area's rows under its name, with New file, New folder and Import in the
- * heading. Creation requests come from the shell's `TreeCreationProvider`.
+ * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
+ * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
  */
 export function ContextTreePanel({
   treeState,
+  writable,
   projectId,
   editorWorkId,
   scheme,
-  activeScheme,
-  activePath,
+  activeDocumentId,
   onSelectFile,
+  onPicked,
   drop,
 }: {
   treeState: TreeViewResult;
+  writable: boolean;
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: TreeFile,
     options?: { focus?: true },
   ) => void;
+  /** A file the writer picked opened: the phone's drawer closes. */
+  onPicked?: () => void;
   drop: SourceDrop;
 }) {
   const controller = useOptionalTreeCreation();
@@ -88,7 +98,10 @@ export function ContextTreePanel({
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
-  const activeLocationPath = activeScheme === scheme ? activePath : null;
+  const shell = useShellTreeVersion();
+  const changed = shell?.showing === "live" && shell.offered ? shell.changed : null;
+  const activeLocationPath =
+    (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
   const revealed = useRef<string | null>(null);
@@ -145,7 +158,7 @@ export function ContextTreePanel({
       revealed.current = null;
       return;
     }
-    if (!tree?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
+    if (revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
     revealPath(parentContextPath(activeLocationPath));
   }, [activeLocationPath, tree, revealPath]);
@@ -161,18 +174,24 @@ export function ContextTreePanel({
     [requestTreeCreate, scheme],
   );
 
-  // A created file opens once its row shows in the tree.
+  // A created file opens once its row shows in the tree, in the version it was made in.
+  const openCreated = useOpenCreatedDocument(projectId);
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const entry = tree.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
-    onSelectFile(scheme, entry, { focus: true });
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, onSelectFile, scheme]);
+    void openCreated(
+      entry.documentId,
+      async () => onSelectFile(scheme, entry, { focus: true }),
+      onPicked,
+    );
+  }, [pendingOpenPath, tree, onSelectFile, onPicked, scheme, openCreated]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
-  const importScheme = imports !== null && isImportScheme(scheme) ? scheme : null;
+  const importScheme = writable && imports !== null && isImportScheme(scheme) ? scheme : null;
+  const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
@@ -182,15 +201,12 @@ export function ContextTreePanel({
             projectId,
             owner,
             scheme,
-            capabilities: [
-              "rename",
-              "move",
-              "copy",
-              ...(scheme !== "uploads" ? (["delete"] as const) : []),
-            ],
-            activeScheme,
-            activePath,
-            creation: schemeAllowsCreation(scheme)
+            capabilities: writable
+              ? ["rename", "move", "copy", ...(scheme !== "uploads" ? (["delete"] as const) : [])]
+              : READ_ONLY,
+            activeDocumentId,
+            changed,
+            creation: creates
               ? {
                   creating,
                   request: requestCreate,
@@ -221,8 +237,10 @@ export function ContextTreePanel({
       projectId,
       owner,
       scheme,
-      activeScheme,
-      activePath,
+      writable,
+      creates,
+      activeDocumentId,
+      changed,
       creating,
       createdFolder,
       onSelectFile,
@@ -238,7 +256,7 @@ export function ContextTreePanel({
     ],
   );
 
-  const actions = schemeAllowsCreation(scheme) ? (
+  const actions = creates ? (
     <>
       <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
         <FilePlus aria-hidden />
@@ -285,7 +303,7 @@ export function ContextTreePanel({
           files={tree.files()}
           scheme={scheme}
           search={search}
-          activePath={activeScheme === scheme ? activePath : null}
+          activeDocumentId={activeDocumentId}
           onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
         />
       ) : env && tree ? (
@@ -320,13 +338,13 @@ function FoundFiles({
   files,
   scheme,
   search,
-  activePath,
+  activeDocumentId,
   onOpen,
 }: {
   files: readonly TreeFile[];
   scheme: ProjectContextTreeScheme;
   search: string;
-  activePath: string | null;
+  activeDocumentId: string | null;
   onOpen: (file: TreeFile) => void;
 }) {
   const byId = new Map(files.map((file) => [file.documentId, file]));
@@ -353,7 +371,7 @@ function FoundFiles({
             icon={fileKindIcon(file)}
             title={file.name}
             meta={match.parents.at(-1)}
-            current={file.path === activePath}
+            current={file.documentId === activeDocumentId}
             onOpen={() => onOpen(file)}
           />
         );

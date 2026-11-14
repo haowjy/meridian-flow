@@ -10,15 +10,6 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name the owner (`work:<id>` or `lineage:<root>`) and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
-export type DocumentAddressReviewSelector = {
-  owner: string;
-  itemKey: string;
-};
-export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
-  review?: DocumentAddressReviewSelector;
-};
-
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
   query: URLSearchParams,
@@ -66,14 +57,10 @@ export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: DocumentAddressRequestOptions,
+  opts?: ProjectContextRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
-  if (opts?.review) {
-    query.set("reviewOwner", opts.review.owner);
-    query.set("itemKey", opts.review.itemKey);
-  }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 

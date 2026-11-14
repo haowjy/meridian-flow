@@ -1,5 +1,5 @@
 import type { DraftOwnerKey } from "@meridian/contracts/branches";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
 import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
@@ -14,9 +14,9 @@ export type WorkScope =
 
 /**
  * The one Work scope per project: whose drafts, chats and Scratch the shell shows. It is a stored
- * value, never read from the address, and only the Work picker writes it. A stored Work the
- * catalog no longer holds, or that is archived (it refuses new chats and freezes its drafts), resolves
- * to No Work, and nothing navigates.
+ * value, never read from the address, and only the writer's pick changes it. An archived or
+ * deleted Work stays picked (it is ended, restorable, and its sources still read); only a Work the
+ * catalog no longer holds (purged) resolves to No Work, and nothing navigates.
  */
 export function useWorkScopeState(projectId: string): WorkScope & { retry: () => void } {
   const accountId = useAccountId();
@@ -27,7 +27,8 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
   const ready = works.status === "ready" || works.status === "empty";
   const known =
     stored !== NO_SCOPE &&
-    (works.works?.some((work) => work.id === stored && !isWorkArchived(work)) ||
+    (works.works?.some((work) => work.id === stored) ||
+      works.deleted.some((work) => work.id === stored) ||
       works.creations.has(stored));
   return useMemo(() => {
     const scope: WorkScope =
@@ -61,27 +62,31 @@ export function useWorkScope(projectId: string): {
 }
 
 /**
- * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's own,
- * when that chat has no Work (a chat on a named Work keeps its drafts in that Work). `ownerKey`
- * is "" when there are none to show; `work` is the Work its commands act for.
+ * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
+ * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
+ * and the Work chip all show these, so under No Work they follow the chat. `ownerKey` is "" when
+ * there are none to show; `work` is the Work its commands act for.
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
 ): { picked: Work | null; work: Work | null; ownerKey: DraftOwnerKey | "" } {
   const { workId } = useWorkScope(projectId);
-  const { works, noWork } = useWorks(projectId);
+  const { works, deleted, noWork } = useWorks(projectId);
   const thread = useDisplayedThread(projectId, chatThreadId);
   const snapshot = noWork ? { works: works ?? [], noWork } : null;
-  const picked = workId && workId !== noWork?.id ? workFromSnapshot(snapshot, workId) : null;
+  // A deleted Work stays the pick until it is purged, as the scope keeps it.
+  const picked =
+    workId && workId !== noWork?.id
+      ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
+      : null;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  const lineageKey =
-    !picked && chatWork?.isNoWork ? chatOwnerKey(chatWork, thread?.rootThreadId ?? null) : "";
+  const chatKey = picked ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
   return useMemo(
     () =>
       picked
         ? { picked, work: picked, ownerKey: workOwnerKey(picked) }
-        : { picked: null, work: lineageKey ? chatWork : null, ownerKey: lineageKey },
-    [picked, chatWork, lineageKey],
+        : { picked: null, work: chatKey ? chatWork : null, ownerKey: chatKey },
+    [picked, chatWork, chatKey],
   );
 }

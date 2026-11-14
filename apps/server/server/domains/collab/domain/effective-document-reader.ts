@@ -42,7 +42,7 @@ export function createEffectiveDocumentReader(input: {
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: AgentEditRouter;
-  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
+  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument" | "ensureDocumentAuthority">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
@@ -166,8 +166,11 @@ export function createEffectiveDocumentReader(input: {
         return readHashlines(doc, scope, input.model, input.codec, verbatim);
       });
     },
-    ensureCreatedDocumentDraft(command) {
-      return input.drafts.ensureCreatedDocumentDraft(command);
+    async draftCreatedDocuments(created) {
+      for (const { documentId, branchId } of created) {
+        await input.documents.ensureDocumentAuthority(documentId);
+        await input.drafts.ensureCreatedDocumentDraft({ documentId, branchId });
+      }
     },
   };
 }

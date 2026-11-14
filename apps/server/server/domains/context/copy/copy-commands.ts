@@ -8,7 +8,7 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
+import { runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
 import { lookupCommand, runCommand } from "../../collab/adapters/drizzle-document-commands.js";
 import {
   commandDigest,

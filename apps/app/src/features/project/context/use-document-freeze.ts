@@ -1,13 +1,13 @@
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
+import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { useOwnerDraftsFrozen } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 
 /**
- * Why an open document is read-only: its archived Work (the Work that owns the file, or the
- * Work whose draft is under review), or the trashed chat whose draft is under review.
+ * Why an open document is read-only: its archived or deleted Work (the Work that owns the file,
+ * or the Work whose draft is under review), or the trashed chat whose draft is under review.
  */
 export type DocumentFreeze = { kind: "work"; work: Work } | { kind: "chat"; ownerKey: string };
 
@@ -21,14 +21,16 @@ export function useDocumentFreeze(
   tab: OpenDocument | null,
   reviewOwner: string | null,
 ): DocumentFreeze | null {
-  const { works } = useWorks(projectId);
+  const { works, deleted } = useWorks(projectId);
   const chatFrozen = useOwnerDraftsFrozen(projectId, reviewOwner ?? "");
   const workId =
     tab && tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme)
       ? tab.workId
       : reviewOwner && workIdOfDraftOwnerKey(reviewOwner);
-  const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-  if (work && isWorkArchived(work)) return { kind: "work", work };
+  const work = workId
+    ? [...(works ?? []), ...deleted].find((candidate) => candidate.id === workId)
+    : undefined;
+  if (work && workLifecycleState(work) !== "active") return { kind: "work", work };
   if (reviewOwner && chatFrozen) return { kind: "chat", ownerKey: reviewOwner };
   return null;
 }

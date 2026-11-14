@@ -12,24 +12,37 @@ export type NoticeSurface =
   | { kind: "band"; documentId: string };
 
 export type NoticeSubject =
-  | { kind: "draft" | "change"; name: string }
-  | { kind: "drafts"; count: number };
+  /** `folder`: a folder's changes and everything listed under it. */
+  { kind: "draft" | "change" | "folder"; name: string } | { kind: "drafts"; count: number };
 
-/** One room's share of a Discard's Undo (`startDraftDiscardSession`). */
+export type DiscardUndoAnswer = {
+  answer: "ok" | "failed" | "gone";
+  landed: Promise<void>;
+  /** What the Discard held that could not come back (`UndoDiscardResult.leftOut`). */
+  leftOut?: number;
+};
+
+/**
+ * One share of a Discard's Undo: a room's text (`startDraftDiscardSession`), or a Discard the
+ * server ran, which its Undo command takes back.
+ */
 export type DiscardUndo = {
   /**
-   * Takes the room's share back now. `ok` once the prose is back in the room, with `landed`
-   * settling when the server holds it; `gone`: nothing is left to take back (the room ended or
-   * turned read-only, or the write never landed).
+   * Takes the share back now. `ok` once the prose is back in the room (or the server made its
+   * copies), with `landed` settling when the server holds it; `gone`: nothing is left to take
+   * back (the room ended or turned read-only, the write never landed, or it was taken back).
+   * A room's answer is known at once; the server's comes back.
    */
-  undo(): { answer: "ok" | "failed" | "gone"; landed: Promise<void> };
+  undo(): DiscardUndoAnswer | Promise<DiscardUndoAnswer>;
   end(): void;
 };
 
 export type DiscardPart = {
   documentId: string;
   name: string;
-  scope: "draft" | "change";
+  scope: "draft" | "change" | "folder";
+  /** The drafts it stands for: a whole branch's Discard is one share for all of them. */
+  count?: number;
   handle: DiscardUndo;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
@@ -49,7 +62,9 @@ export type DraftNotice =
       documentIds: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
-      status: "ready" | "undoing" | "failed";
+      /** `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back. */
+      status: "ready" | "undoing" | "failed" | "partial";
+      leftOut: number;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
       /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
@@ -61,6 +76,8 @@ export type DraftNotice =
       restored: readonly string[];
       renamed: readonly string[];
       alsoApplied: readonly string[];
+      /** Documents the Apply put in a new place, a new one included: where each went now. */
+      landed: readonly { documentId: string; uri: string }[];
       dismiss(): void;
     });
 
@@ -155,6 +172,7 @@ export class DraftNotices {
       surface: input.surface,
       left: null,
       status: "ready",
+      leftOut: 0,
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
@@ -208,14 +226,21 @@ export class DraftNotices {
     if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
       return "failed";
     this.update(ownerKey, id, () => ({ status: "undoing" }));
-    // Retry takes back only the rooms that failed: a part that undid has ended and left the list.
-    const answers = [...parts].map((part) => ({ part, ...part.handle.undo() }));
+    // Retry takes back only the shares that failed: a share that undid has left the list. Every
+    // room's share is taken back in this event turn; the server's answers come back.
+    const answers = await Promise.all(
+      [...parts].map(async (part) => ({ part, ...(await part.handle.undo()) })),
+    );
+    const leftOut = answers.reduce((sum, { leftOut: left = 0 }) => sum + left, 0);
     const listed = answers.flatMap(({ part, answer, landed }) =>
       answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
     const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));
     if (this.notices.get(ownerKey)?.id === id) {
-      if (failed.length === 0) {
+      if (failed.length === 0 && leftOut > 0) {
+        this.parts.set(id, []);
+        this.update(ownerKey, id, () => ({ status: "partial", leftOut }));
+      } else if (failed.length === 0) {
         this.notices.delete(ownerKey);
         this.parts.delete(id);
         this.publish();
@@ -232,13 +257,14 @@ export class DraftNotices {
 
   private subjectOf(parts: readonly DiscardPart[]) {
     const [only] = parts;
+    const count = parts.reduce((sum, part) => sum + (part.count ?? 1), 0);
     return {
       subject:
-        parts.length === 1 && only
+        count === 1 && only
           ? { kind: only.scope, name: only.name }
-          : { kind: "drafts" as const, count: parts.length },
+          : { kind: "drafts" as const, count },
       documentIds: parts.map((part) => part.documentId),
-      review: (parts.length === 1 && only?.review) || null,
+      review: (count === 1 && only?.review) || null,
     };
   }
 

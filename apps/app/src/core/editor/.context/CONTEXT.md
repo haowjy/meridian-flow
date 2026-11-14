@@ -82,11 +82,15 @@ and remain quarantined until their retryable destroy ledger succeeds.
   effect dependency list.
 - Live sessions use the IndexedDB key of the account and the document id. Draft sessions
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
-  draft recovers unsent text. A terminal `closed` draft session's teardown clears that exact
-  cache; a `removed` live one (the server closed its room at the document's purge) keeps it
-  until the list's purge clears it; the painter and local Discard never do. `closeDraftRoom` also retires and drops
-  the exact cache when the review owner learns closure through authoritative
-  metadata before the socket frame. The pool refuses to reopen that closed id.
+  draft recovers unsent text. No close deletes a draft's cache: a Discard can be undone, so the
+  copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
+  retires the room when the review owner learns closure through authoritative metadata before
+  the socket frame, and the pool refuses to reopen that closed id for the rest of the page.
+- Typing a closed draft's room never sent is offered, not dropped. The account command owner
+  keeps observing a draft room nothing shows while it holds edits it can still send (the page
+  often switches to Live, from the draft list, before the socket hears `4205`); its close
+  records the draft's text per document, and `UnsentDraftTextNotice` offers it until dismissed.
+  An Undo that reopens the same draft row will deliver the kept copy on the room's next open.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -433,8 +437,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   before retirement. The drain ends when the server acknowledges the edits or when
   `canDeliverUnsentEdits()` turns false, read-only access included. Ordinary retirement keeps IndexedDB state. There is no
   draft-generation replacement or writer-operation handoff to a new draft.
-- Terminal `4205` (`closed`) and `4208` (`removed`) end that identity and clear
-  its exact cache. The account command owner also handles authoritative metadata
+- Terminal `4205` (`closed`) and `4208` (`removed`) end that identity; its cache stays. The account command owner also handles authoritative metadata
   `gone` through the same disposition, including when metadata beats the socket
   close. Availability decides live navigation versus removal presentation;
   failed reads never prove closure. See the

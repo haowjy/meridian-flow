@@ -42,7 +42,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     return row?.settledDocumentId ?? null;
   };
 
-  it("create, upload, folder move-in and Work restore each settle once against the final tree", async () => {
+  it("create, upload, folder move-in and a deleted Work's file each settle once against the final tree", async () => {
     await deleteDrizzleRows(db, [users]);
     const userId = randomUUID();
     const projectId = randomUUID();
@@ -188,13 +188,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(destination)).toBe(moved);
       expect(await settlement(vacated)).toBe(moved);
 
-      // Work restore: the hidden document reappears at its address and settles the waiting ref.
+      // A deleted Work keeps its identity and its files until the purge: a ref registered
+      // while it is deleted binds at once, and a restore leaves it bound.
       const notes = await create("scratch://@w1/notes.toml");
       await ports.workRepo.softDelete(workId as WorkId);
-      // Registered while the Work is deleted: it keeps its identity, so the ref registers
-      // against it and stays unsettled until the restore makes the address live again.
       const waiting = await register("scratch://@w1/notes.toml");
-      expect(await settlement(waiting)).toBeNull();
+      expect(await settlement(waiting)).toBe(notes);
       await ports.workRepo.restore(workId as WorkId);
       expect(await settlement(waiting)).toBe(notes);
     } finally {

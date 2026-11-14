@@ -27,6 +27,7 @@ export function createWorkBranchReviewService(input: {
   undoDiscard: CollabBranches["draftReview"]["undoDiscard"];
   commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
+  folderRevisions(branchId: BranchId): Promise<{ id: string; revision: string }[]>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
 }): CollabBranches {
   async function ownerItems(
@@ -96,7 +97,8 @@ export function createWorkBranchReviewService(input: {
         const threadTitles = await input.resolveThreadTitles([
           ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
-        return { branchId, items, threadTitles };
+        const folders = branchId ? await input.folderRevisions(branchId) : [];
+        return { branchId, items, folders, threadTitles };
       },
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
@@ -152,19 +154,23 @@ export function createWorkBranchReviewService(input: {
           );
         });
       },
-      async discardAll(command) {
-        const { envelope, branchId } = command;
+      async discardBranch(command) {
+        const { envelope, branchId, selection } = command;
         const first = await known(envelope);
         if (first) return first;
         const settled = (ended: DiscardResult): DiscardCommandResult =>
-          ended.status === "gone"
-            ? { status: "gone", branchId }
-            : { status: "discarded", branchId };
+          ended.status === "refused"
+            ? { status: ended.reason, branchId }
+            : ended.status === "gone"
+              ? { status: "gone", branchId }
+              : ended.branchClosed
+                ? { status: "discarded", branchId }
+                : { status: "discarded", branchId, closed: [...ended.closed] };
         return effect(envelope, async () =>
           settled(
             await input.discard.discardItems({
               branchId,
-              selection: { kind: "whole" },
+              selection,
               userId: command.userId,
               command: { envelope, result: settled },
             }),

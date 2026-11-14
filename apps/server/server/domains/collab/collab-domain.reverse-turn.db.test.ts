@@ -73,7 +73,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db,
           sourceId: async () => SOURCE_ID,
         }),
-        drafts: collab,
         actor: `user:${USER_ID}`,
         documentCreation: collab,
         documentSync: {

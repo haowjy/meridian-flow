@@ -278,7 +278,7 @@ function createInMemoryDraftPeerStub(
         const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
         return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
-    async ensureCreatedDocumentDraft() {
+    async draftCreatedDocuments() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },
   };
@@ -312,7 +312,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], threadTitles: new Map() };
+        return { branchId: null, items: [], folders: [], threadTitles: new Map() };
       },
       async pendingDocumentCount() {
         return 0;
@@ -339,7 +339,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return { kind: "none" };
       },
       discardItem: (input) => gone(input.item),
-      discardAll: gone,
+      discardBranch: gone,
     },
   };
 }

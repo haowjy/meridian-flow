@@ -320,6 +320,16 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
   /**
+   * The owner's active branch, null when it has none: the `draft` its tree records carry, which
+   * the browser replays as the Work's tree (a change to a folder alone lists no item).
+   */
+  branchId: BranchId | null;
+  /**
+   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
+   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
+   */
+  folders: { id: string; revision: string }[];
+  /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.
@@ -408,16 +418,39 @@ export type DraftDiscardRequest = {
   commandId: DocumentCommandId;
 } & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
-export const BranchDiscardAllRequestSchema = z.object({
-  /** A `branches` row id, never a per-document draft id. */
-  branchId: z.string().uuid(),
-  commandId: DocumentCommandIdSchema,
-});
-export type BranchDiscardAllRequest = z.infer<typeof BranchDiscardAllRequestSchema>;
-/** `discarded` closes the branch (the only wire signal of closure); `gone` names one that is not the Work's active branch. */
-export type BranchDiscardAllResponse =
-  | { status: "discarded"; branchId: BranchId }
-  | { status: "gone"; branchId: BranchId };
+/**
+ * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
+ * change of the branch, which closes it; only an explicit `all` does that. `items`: any selection
+ * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
+ * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
+ * moved into a folder the Work created). Its text halves close on the server, and Undo of a
+ * Discard brings both halves back.
+ */
+export const BranchDiscardRequestSchema = z.union([
+  z.strictObject({ commandId: DocumentCommandIdSchema, all: z.literal(true) }),
+  z.strictObject({
+    commandId: DocumentCommandIdSchema,
+    items: z
+      .array(
+        z.strictObject({
+          node: z.string().min(1),
+          ends: z.enum(["tree", "item"]),
+          draftSeenAt: z.string().nullable().optional(),
+        }),
+      )
+      .min(1),
+  }),
+]);
+export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
+/**
+ * `discarded` with `all` closes the branch (the only wire signal of closure); with `items`,
+ * `closed` names the selected nodes nothing of the branch remains on. `gone` names a branch
+ * that is not the Work's active one; `stale` and `draft_changed` refuse a selection the
+ * branch's state no longer allows, and nothing ended.
+ */
+export type BranchDiscardResponse =
+  | { status: "discarded"; branchId: BranchId; closed?: string[] }
+  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId };
 
 /** A Discard's terminal body, exactly what its 200 carries. */
-export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;
+export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

@@ -94,7 +94,9 @@ separate browser check covers rendering and native keyboard history.
 | A second Discard or an Apply by the same Work | It replaces the notice. |
 | Reload | The notice ends; discarded text persists. |
 | Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |
-| Discard a new document, a move or delete, or a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
+| Discard a new document, a move or delete | No question; the notice shows, and Undo brings back the document, the move or delete and its text. |
+| Discard a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
+| Discard all with a move and text, then Undo | Both come back as pending; a document drafted again meanwhile keeps its newer draft, and the notice says how many couldn't come back. |
 | Discard the draft of a chapter another session deleted | Main goes back at once to the document opened before (never "This destination is unavailable"); the notice shows there; Undo returns main to the draft. |
 | AI A's removal discarded, then AI B removes the written-back words | No byline names A. |
 | A reply writes through Discard | It continues in the same draft; later edits are new changes. |
@@ -115,7 +117,8 @@ binding removes it and shows a live repair notice with the recovered prose.
 ## Frozen Apply FIFO
 
 Each document has one FIFO and one in-flight command; documents are independent.
-Work Apply all sends one frozen click per text draft, never a Work-wide Apply.
+Work Apply all freezes one click per text draft, each in its own FIFO, and sends them as one
+command (`POST …/branches/:branchId/apply`) once every member is its queue's head.
 
 | Controlled schedule | Required result |
 |---|---|

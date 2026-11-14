@@ -28,7 +28,6 @@ import {
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextSourcesPath,
-  apiProjectDocumentAddressPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
@@ -48,10 +47,7 @@ import {
   contextReadResponseSchema,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
-  type DocumentAddressRequestOptions,
-  type DocumentAddressResult,
   deleteContextEntryResultSchema,
-  documentAddressSchema,
   type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
@@ -190,19 +186,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
 /** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
-}
-
-export async function getProjectDocumentAddress(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: DocumentAddressRequestOptions,
-  init?: RequestInitOptions,
-): Promise<DocumentAddressResult> {
-  return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {
-    headers: init?.headers,
-    schema: documentAddressSchema,
-  });
 }
 
 export async function getProjectWorkingSet(
