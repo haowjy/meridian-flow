@@ -248,13 +248,11 @@ export class DocumentSessionRegistry {
       session ? [{ documentId, session, hold }] : [],
     );
     this.liveRooms.clear();
-    for (const { documentId, session, hold } of liveSessions) {
-      void this.teardownOwner
-        .retire({ kind: "live", roomKey: documentId }, session)
-        .then(async () => (await hold)?.release())
-        .catch(() => undefined);
-    }
-    return this.teardownOwner.drain();
+    const retired = liveSessions.map(async ({ documentId, session, hold }) => {
+      await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, session);
+      (await hold)?.release();
+    });
+    return Promise.all([...retired, this.teardownOwner.drain()]).then(() => undefined);
   }
 
   private clearRetainedLiveDocuments(): void {
