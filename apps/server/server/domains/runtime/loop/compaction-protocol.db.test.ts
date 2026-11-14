@@ -10,13 +10,13 @@ import type { JsonObject } from "@meridian/contracts/threads";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import {
   CompactionMetadataCodec,
   encodeMediaInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import { processDetachedWork } from "../detached-work.js";
 import { MediaResolutionError } from "../ports/media-resolver.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { grepDocumentText, readDocumentText, writeDocumentText } from "../tools/document-text.js";

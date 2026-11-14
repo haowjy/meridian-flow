@@ -27,6 +27,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
+import { processDetachedWork } from "../../shared/detached-work.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import {
@@ -35,7 +36,6 @@ import {
   provisionProjectSources,
 } from "../context/index.js";
 import { createNoopEventSink } from "../observability/index.js";
-import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore } from "../storage/index.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
 import { createDrizzleOrganizeQueue } from "./adapters/drizzle-organize-queue.js";
