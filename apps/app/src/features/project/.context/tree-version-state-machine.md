@@ -8,8 +8,8 @@ it is flipped. Change the code and this page together.
 
 - **choice** (`live` | `draft`): the writer's, kept per (account, project) in this browser tab
   and seeded from the device (`client/project-shell/store.ts`, `tree-version`).
-- **offered**: the picked Work (or, under None, the chat's lineage) has an active branch with
-  something pending: a drafted document in its list, or a pending tree record in the browser's
+- **offered**: the picked Work (or, under None, the chat on screen's: its Work's drafts, or its
+  own when it has no Work) has an active branch with something pending: a drafted document in its list, or a pending tree record in the browser's
   copy (a folder change alone lists no document).
 - **showing** = `draft` when offered and choice is `draft`, else `live`. Nothing else reads the
   choice.
@@ -17,8 +17,8 @@ it is flipped. Change the code and this page together.
 ```mermaid
 stateDiagram-v2
     [*] --> Live
-    Live --> Draft: toggle pressed (offered)
-    Draft --> Live: toggle pressed
+    Live --> Draft: toggle, Show draft, the Work's draft picked in the chip, or one of its drafts opened
+    Draft --> Live: toggle, or Live picked in the chip
     Draft --> Live: Work picked (choice reset)
     Draft --> ShownLive: nothing pending (choice kept)
     ShownLive --> Draft: something pending again
@@ -33,6 +33,15 @@ stateDiagram-v2
   live's Trash.
 - **Flipping** moves main's document to the Work's draft of it (a pin, as the version menu
   does) or back to Live; a document live has no version of keeps its draft.
+- **The page's version chip is the same state.** Picking the Work's draft or Live in its menu
+  sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
+  review link: `review-launch.tsx`) puts it on Draft. The chip on Live is neutral with a jade
+  dot while a draft waits, jade on Draft.
+- **On Live** each row the Work changes carries a jade dot, and a page the Work drafts says
+  what the draft does to it with Show draft (`LiveDraftNotice`). A page the draft created stays
+  on its draft and says live has no version of it; its chip reads Draft.
+- **The Work chip** under None names the chat's Work when its drafts drive the toggle, with the
+  count Changes shows; the pick itself stays None.
 - **A Work pick** returns the toggle to Live with every page (`returnDraftsToLive`).
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
   showing (`core/project-tree/tree-undo.ts`). The stack is record ids per list copy, in memory;

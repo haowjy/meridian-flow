@@ -88,6 +88,10 @@ msgstr "{agentName} deleted a passage"
 msgid ", "
 msgstr ", "
 
+#: src/features/project/context/ContextTreeRows.tsx
+msgid ", changed in the draft"
+msgstr ", changed in the draft"
+
 #: src/components/ui/list-row.tsx
 msgid ", selected"
 msgstr ", selected"
@@ -746,12 +750,28 @@ msgid "{work} is deleting this."
 msgstr "{work} is deleting this."
 
 #: src/features/draft-review/tree-line.ts
+msgid "{work} is editing this."
+msgstr "{work} is editing this."
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is moving this to {place} and editing it."
+msgstr "{work} is moving this to {place} and editing it."
+
+#: src/features/draft-review/tree-line.ts
 msgid "{work} is moving this to {place}."
 msgstr "{work} is moving this to {place}."
 
 #: src/features/draft-review/tree-line.ts
+msgid "{work} is renaming this to {place} and editing it."
+msgstr "{work} is renaming this to {place} and editing it."
+
+#: src/features/draft-review/tree-line.ts
 msgid "{work} is renaming this to {place}."
 msgstr "{work} is renaming this to {place}."
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is reordering this and editing it."
+msgstr "{work} is reordering this and editing it."
 
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is reordering this."
@@ -788,12 +808,28 @@ msgid "A chat is deleting this."
 msgstr "A chat is deleting this."
 
 #: src/features/draft-review/tree-line.ts
+msgid "A chat is editing this."
+msgstr "A chat is editing this."
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is moving this to {place} and editing it."
+msgstr "A chat is moving this to {place} and editing it."
+
+#: src/features/draft-review/tree-line.ts
 msgid "A chat is moving this to {place}."
 msgstr "A chat is moving this to {place}."
 
 #: src/features/draft-review/tree-line.ts
+msgid "A chat is renaming this to {place} and editing it."
+msgstr "A chat is renaming this to {place} and editing it."
+
+#: src/features/draft-review/tree-line.ts
 msgid "A chat is renaming this to {place}."
 msgstr "A chat is renaming this to {place}."
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is reordering this and editing it."
+msgstr "A chat is reordering this and editing it."
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is reordering this."
@@ -3547,6 +3583,14 @@ msgstr "Live"
 msgid "Live artifact view"
 msgstr "Live artifact view"
 
+#: src/features/draft-review/tree-line.ts
+msgid "Live has no version of this page: it is new in {work}."
+msgstr "Live has no version of this page: it is new in {work}."
+
+#: src/features/draft-review/tree-line.ts
+msgid "Live has no version of this page: it is new in a chat's draft."
+msgstr "Live has no version of this page: it is new in a chat's draft."
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr "Live view"
@@ -5068,6 +5112,10 @@ msgstr "Show {sheetName}"
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
 msgstr "Show changes"
+
+#: src/features/project/context/LiveDraftNotice.tsx
+msgid "Show draft"
+msgstr "Show draft"
 
 #: src/features/chat/ClippedExpand.tsx
 #: src/features/project/work/WorkMetadata.tsx

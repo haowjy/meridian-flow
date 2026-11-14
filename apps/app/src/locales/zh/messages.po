@@ -88,6 +88,10 @@ msgstr ""
 msgid ", "
 msgstr "，"
 
+#: src/features/project/context/ContextTreeRows.tsx
+msgid ", changed in the draft"
+msgstr ""
+
 #: src/components/ui/list-row.tsx
 msgid ", selected"
 msgstr ""
@@ -746,11 +750,27 @@ msgid "{work} is deleting this."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "{work} is editing this."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is moving this to {place} and editing it."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "{work} is moving this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "{work} is renaming this to {place} and editing it."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "{work} is renaming this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "{work} is reordering this and editing it."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
@@ -788,11 +808,27 @@ msgid "A chat is deleting this."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "A chat is editing this."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is moving this to {place} and editing it."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "A chat is moving this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
+msgid "A chat is renaming this to {place} and editing it."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
 msgid "A chat is renaming this to {place}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "A chat is reordering this and editing it."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
@@ -3547,6 +3583,14 @@ msgstr ""
 msgid "Live artifact view"
 msgstr ""
 
+#: src/features/draft-review/tree-line.ts
+msgid "Live has no version of this page: it is new in {work}."
+msgstr ""
+
+#: src/features/draft-review/tree-line.ts
+msgid "Live has no version of this page: it is new in a chat's draft."
+msgstr ""
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr ""
@@ -5067,6 +5111,10 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
+msgstr ""
+
+#: src/features/project/context/LiveDraftNotice.tsx
+msgid "Show draft"
 msgstr ""
 
 #: src/features/chat/ClippedExpand.tsx
