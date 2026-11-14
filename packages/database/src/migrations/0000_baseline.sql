@@ -2,8 +2,6 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS btree_gin;
 CREATE EXTENSION IF NOT EXISTS pg_bigm;
 --> statement-breakpoint
-CREATE SEQUENCE "public"."context_availability_generation_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
-CREATE SEQUENCE "public"."context_namespace_observation_version_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE TABLE "account_skill_installs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"owner_user_id" uuid NOT NULL,
@@ -598,13 +596,6 @@ CREATE TABLE "works" (
 	CONSTRAINT "works_handle_valid" CHECK ("works"."handle" IS NULL OR "works"."handle" ~ '^w[1-9][0-9]*$'),
 	CONSTRAINT "works_status_length" CHECK ("works"."status" IS NULL OR char_length("works"."status") <= 32),
 	CONSTRAINT "works_default_ai_write_mode_valid" CHECK ("works"."default_ai_write_mode" IN ('direct', 'draft'))
-);
---> statement-breakpoint
-CREATE TABLE "context_availability_heads" (
-	"authority_key" text PRIMARY KEY NOT NULL,
-	"generation" bigint NOT NULL,
-	"namespace_generation" bigint DEFAULT 0 NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "document_edit_parts" (

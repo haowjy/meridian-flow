@@ -25,9 +25,12 @@ function resolver(input: {
   reads: string[];
 }) {
   const availability = {
-    async lookup() {
+    async placed() {
+      const answer = input.availability ?? { kind: "available", entry: { uri: reference.uri } };
       return {
-        resolutions: [input.availability ?? { kind: "available", entry: { uri: reference.uri } }],
+        documents: new Map(answer.kind === "available" ? [[reference.documentId, answer]] : []),
+        folders: new Map(),
+        inconsistent: new Set(answer.kind === "indeterminate" ? [reference.documentId] : []),
       };
     },
   } as unknown as ProjectContextAvailabilityPort;
