@@ -42,7 +42,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { runWorkCommand } = await import("../../lib/work-command.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
@@ -163,7 +162,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         return {
           name: answered.name,
-          settled: stored.kind === "stored" ? (stored.outcome as any).result.settled : null,
+          settled:
+            stored.kind === "stored"
+              ? (stored.outcome as { result: { settled?: unknown } }).result.settled
+              : null,
         };
       };
 
