@@ -19,7 +19,7 @@ export interface Hunk {
   sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
 
-/** "format" changes marks or a block's type, "whitespace" only spacing, "text" anything else. */
+/** "format" changes marks or a block's type or attributes, "whitespace" only spacing, "text" anything else. */
 export type HunkKind = "text" | "format" | "whitespace";
 
 /** Base token -> side token outside hunks, else -1. */
@@ -73,6 +73,12 @@ export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
     const x = bt[h.from + k];
     const y = h.ins[k];
     if (x.kind === "block" && y.kind === "block") {
+      differs ||= x.key !== y.key;
+      continue;
+    }
+    // A rule, figure or table that kept its content and changed its attributes is a format change.
+    if (x.kind === "atom" && y.kind === "atom" && x.node.type === y.node.type) {
+      if (!x.node.content.eq(y.node.content)) return "text";
       differs ||= x.key !== y.key;
       continue;
     }
@@ -148,7 +154,7 @@ export function diffBlocks(
 ): BlockDiff {
   const B = buildSide(base);
   const D = buildSide(draft);
-  const alignment = align(B, D, correspond(base, draft));
+  const alignment = align(B, D, correspond(base, draft, { byId: true }));
   let hunks = alignment.hunks;
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);

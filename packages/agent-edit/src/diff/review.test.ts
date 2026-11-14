@@ -14,8 +14,12 @@ import { diffBlocks } from "./hunks.js";
 import { composeGroups, projectReview } from "./review.js";
 
 const schema = buildDocumentSchema();
+// A block's id is its marker word, so a move or an edit keeps the block.
 const para = (text: string) =>
-  schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
+  schema.nodes.paragraph.create(
+    { id: text ? text.split(" ")[0].toLowerCase() : null },
+    text ? schema.text(text) : undefined,
+  );
 const doc = (texts: string[]) => texts.map(para);
 const textOf = (blocks: readonly PMNode[]) => blocks.map((b) => b.textContent);
 const project = (base: string[], draft: string[]) =>
@@ -173,10 +177,12 @@ describe("draft positions", () => {
       "The crane watched the silent valley.",
       "Lin held a copper token beneath the old gate.",
       "Beyond the bridge, the river carried fallen leaves.",
+      "Marsh fires burned low beyond the ferry.",
     ];
     const draft = [
       base[0].replace("silent valley", "roaring canyon"),
       base[2],
+      base[3],
       base[1].replace("copper token", "silver compass"),
     ];
     const p = project(base, draft);
@@ -192,7 +198,7 @@ describe("draft positions", () => {
     expect(hunks[1].inserted).toBeNull();
     expect(hunks[1].anchor).toBe(p.blockStarts[1]);
     expect(hunks[2].removed).toEqual([]);
-    expect(hunks[2].inserted).toEqual({ from: p.blockStarts[2], to: d.content.size - 1 });
+    expect(hunks[2].inserted).toEqual({ from: p.blockStarts[3], to: d.content.size - 1 });
     const ids = p.groups.map((g) => g.id);
     expect(
       textOf(applySpanPatches(doc(base), composeGroups(schema, p, ids, "apply"), "base")),

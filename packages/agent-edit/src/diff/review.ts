@@ -2,8 +2,8 @@
  * The review projection: one `BlockDiff` read as the changes a writer reviews.
  *
  * Hunks join into a change when only a short run of unchanged words separates them (`CHANGE_MARGIN`),
- * across paragraph breaks. A block removed in one place and added in another pairs as a move and
- * joins both places into one group, so Apply and Discard can never take half of a move. Each group
+ * across paragraph breaks. A block the id pairing found moved is a removal in one place and an
+ * addition in another, and both join one group, so Apply and Discard can never take half of a move. Each group
  * carries a content-derived id, the draft positions the editor decorates, and a short excerpt.
  *
  * The projection reads tokens and (for positions) node sizes only. Unchanged nodes are never touched
@@ -14,14 +14,10 @@ import { type ComposeMode, composeHunks, type SpanPatch } from "./compose.js";
 import { Dsu } from "./dsu.js";
 import type { BlockDiff, Hunk, HunkKind } from "./hunks.js";
 import { hunkKind } from "./hunks.js";
-import { blockKey, isBlockTok, isWordTok, type Side, similarity, type Tok } from "./tokens.js";
+import { isBlockTok, isWordTok, type Side, type Tok } from "./tokens.js";
 
 /** Words of unchanged text that keep two hunks apart; a block start counts as one word. */
 export const CHANGE_MARGIN = 3;
-/** Share of the shorter block's words a pair must keep, in order, to count as one moved paragraph. */
-export const MOVE_SIMILARITY = 0.6;
-/** Near-equal move pairing compares every removed block with every added one; past this it keeps exact pairs only. */
-const NEAR_PAIR_LIMIT = 40_000;
 const EXCERPT_MAX = 120;
 
 export type ProseMirrorJSON = ReturnType<PMNode["toJSON"]>;
@@ -58,8 +54,6 @@ export interface ReviewProjection {
   diff: BlockDiff;
   blockStarts: number[]; // draft position of each top-level block, plus the document size last
 }
-
-const isStart = (s: Side, p: number) => p >= s.toks.length || isBlockTok(s.toks[p]);
 
 export function projectReview(diff: BlockDiff): ReviewProjection {
   const { hunks, base: B, draft: D } = diff;
@@ -144,71 +138,35 @@ export function composeGroups(
 }
 
 // ---------- moves ----------
-interface BlockCandidate {
-  hunk: number;
-  node: PMNode;
-}
-
-/** Whole-block removals and additions, paired exact first, then by in-order word overlap, best first. */
+/**
+ * The hunk pairs that are one block moved: a block the id pairing found out of order is a removal
+ * where it was and an addition where it is, and the two stay in one group.
+ */
 function pairMoves(diff: BlockDiff): Array<[number, number]> {
   const { hunks, base: B, draft: D } = diff;
-  const removals: BlockCandidate[] = [];
-  const additions: BlockCandidate[] = [];
-  // A hunk can hold whole blocks beside other edits (a moved paragraph that lands next to a changed word).
-  hunks.forEach((h, i) => {
-    for (
-      let b = isStart(B, h.from) ? B.blockOf[h.from] : B.blockOf[h.from] + 1;
-      B.starts[b + 1] <= h.to;
-      b++
-    )
-      if (b < B.blocks.length && B.starts[b] >= h.from)
-        removals.push({ hunk: i, node: B.blocks[b] });
-    const endsAtStart = isStart(D, h.sfrom + h.ins.length);
-    for (let k = 0; k < h.ins.length; k++) {
-      const t = h.ins[k];
-      if (!isBlockTok(t)) continue;
-      let j = k + 1;
-      while (j < h.ins.length && !isBlockTok(h.ins[j])) j++;
-      if (j < h.ins.length || endsAtStart)
-        additions.push({ hunk: i, node: (t as Tok & { node: PMNode }).node });
+  // Hunks run in order on both sides, so the one holding a token is found by search.
+  const holding = (tok: number, lo: (h: Hunk) => number, hi: (h: Hunk) => number) => {
+    let [a, b] = [0, hunks.length];
+    while (a < b) {
+      const mid = (a + b) >> 1;
+      if (hi(hunks[mid]) <= tok) a = mid + 1;
+      else b = mid;
     }
-  });
-  if (!removals.length || !additions.length) return [];
-
+    return a < hunks.length && lo(hunks[a]) <= tok ? a : -1;
+  };
   const pairs: Array<[number, number]> = [];
-  const usedR = new Set<number>();
-  const usedA = new Set<number>();
-  const exact = new Map<string, number[]>();
-  removals.forEach((r, i) => {
-    const key = blockKey(r.node);
-    const q = exact.get(key);
-    if (q) q.push(i);
-    else exact.set(key, [i]);
-  });
-  additions.forEach((a, j) => {
-    const i = exact.get(blockKey(a.node))?.shift();
-    if (i === undefined) return;
-    usedR.add(i);
-    usedA.add(j);
-    if (removals[i].hunk !== a.hunk) pairs.push([removals[i].hunk, a.hunk]);
-  });
-
-  const restR = removals.map((_, i) => i).filter((i) => !usedR.has(i));
-  const restA = additions.map((_, j) => j).filter((j) => !usedA.has(j));
-  if (restR.length * restA.length <= NEAR_PAIR_LIMIT) {
-    const scored: Array<{ i: number; j: number; s: number }> = [];
-    for (const i of restR)
-      for (const j of restA) {
-        const s = similarity(removals[i].node, additions[j].node, true, MOVE_SIMILARITY);
-        if (s >= MOVE_SIMILARITY) scored.push({ i, j, s });
-      }
-    scored.sort((x, y) => y.s - x.s);
-    for (const { i, j } of scored) {
-      if (usedR.has(i) || usedA.has(j)) continue;
-      usedR.add(i);
-      usedA.add(j);
-      if (removals[i].hunk !== additions[j].hunk) pairs.push([removals[i].hunk, additions[j].hunk]);
-    }
+  for (const [i, j] of diff.alignment.moves) {
+    const removed = holding(
+      B.starts[i],
+      (h) => h.from,
+      (h) => h.to,
+    );
+    const added = holding(
+      D.starts[j],
+      (h) => h.sfrom,
+      (h) => h.sto,
+    );
+    if (removed >= 0 && added >= 0 && removed !== added) pairs.push([removed, added]);
   }
   return pairs;
 }
