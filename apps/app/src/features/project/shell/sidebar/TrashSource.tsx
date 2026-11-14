@@ -1,6 +1,7 @@
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
+import type { TrashEntry } from "@meridian/contracts/protocol";
+import { Folder } from "lucide-react";
 import { useMemo } from "react";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -13,16 +14,16 @@ import {
   type TrashRestoreState,
   useDocumentTrashRestore,
 } from "../../context/DocumentTrashRestoreProvider";
-import { trashDragEntry } from "../../context/entry-drag/entry";
+import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
 import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
 
 /**
- * Trash as a source: deleted documents, newest first. Rows dropped on it are
- * deleted at once; its rows drag out to be restored where they land. Picking
- * one shows it in main, read-only with Restore.
+ * Trash as a source: its entries, newest first, a deleted folder as one entry with what its
+ * delete took. Rows dropped on it are deleted at once; its rows drag out to be restored where
+ * they land. Picking a document or an uploaded file shows it in main, read-only with Restore.
  */
 export function TrashSource({
   projectId,
@@ -37,24 +38,30 @@ export function TrashSource({
   const { states, restore } = useDocumentTrashRestore();
   const trash = useTrashNavigation();
   const now = useMinuteClock();
-  const entries = query.data?.documents ?? [];
+  const entries = query.data?.entries ?? [];
   return (
     <SourcePane label={t`Trash`} drop={drop}>
       {entries.length > 0 ? (
         <div className="px-2">
           {entries.map((entry) => (
             <TrashRow
-              key={entry.documentId}
+              key={entry.nodeId}
               entry={entry}
               now={now}
-              active={entry.documentId === trash.shown}
-              state={states.get(entry.documentId)}
+              active={entry.nodeId === trash.shown}
+              state={states.get(entry.nodeId)}
               onOpen={() => {
-                void trash.open(entry.documentId);
+                // A folder has no page of its own yet: its menu and a drag restore it.
+                if (entry.kind === "folder") return;
+                void trash.open(entry.nodeId);
                 onPicked?.();
               }}
               onRestore={(ids) =>
-                restore(entries.filter(({ documentId }) => ids.includes(documentId)))
+                restore(
+                  entries
+                    .filter(({ nodeId }) => ids.includes(nodeId))
+                    .map((each) => ({ ref: trashRef(each), name: each.name })),
+                )
               }
             />
           ))}
@@ -79,7 +86,7 @@ export function TrashSource({
   );
 }
 
-/** A deleted document: its age at the right, where it was under its name; its menu restores. */
+/** A Trash entry: its age at the right, where it was deleted from under its name; its menu restores. */
 function TrashRow({
   entry,
   now,
@@ -88,27 +95,26 @@ function TrashRow({
   onOpen,
   onRestore,
 }: {
-  entry: DocumentTrashEntry;
+  entry: TrashEntry;
   now: number;
   active: boolean;
   state?: TrashRestoreState;
   onOpen: () => void;
-  /** Restores these documents: this row, or the selection its menu acted on. */
-  onRestore: (documentIds: readonly string[]) => void;
+  /** Restores these entries by node id: this row, or the selection its menu acted on. */
+  onRestore: (nodeIds: readonly string[]) => void;
 }) {
   const location = documentPlace(entry.scheme, entry.formerPath);
-  const restoring = state?.kind === "restoring";
   const dragged = useMemo(() => trashDragEntry(entry), [entry]);
-  const row = useEntryRow(dragged, { active, draggable: !restoring, source: "trash" });
-  const menu = useEntryMenu(dragged, restoring ? [] : RESTORE, (_action, rows) =>
-    onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.documentId]),
+  const row = useEntryRow(dragged, { active, draggable: true, source: "trash" });
+  const menu = useEntryMenu(dragged, RESTORE, (_action, rows) =>
+    onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.nodeId]),
   );
   return (
     <ListRow
-      icon={fileKindIcon(entry.name)}
+      icon={entry.kind === "folder" ? Folder : fileKindIcon(entry.name)}
       title={entry.name}
-      meta={restoring ? <Trans>Restoring</Trans> : relativeTime(entry.removal.time, now)}
-      detail={<span title={location}>{location}</span>}
+      meta={relativeTime(entry.removal.time, now)}
+      detail={<span title={location}>{deletedFrom(entry, location)}</span>}
       onOpen={onOpen}
       current={active && "page"}
       selected={row.selected}
@@ -125,3 +131,12 @@ function TrashRow({
 }
 
 const RESTORE = ["restore"] as const;
+
+/** Where it was deleted from; a folder leads with what went with it, which a narrow row keeps. */
+function deletedFrom(entry: TrashEntry, location: string): string {
+  if (entry.documents === 0) return t`Deleted from ${location}`;
+  return plural(entry.documents, {
+    one: `# document, deleted from ${location}`,
+    other: `# documents, deleted from ${location}`,
+  });
+}

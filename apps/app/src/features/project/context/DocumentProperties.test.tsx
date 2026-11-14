@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The properties block is fetched only when the catalog says so, and is read-only. */
+/** The properties block is fetched only when the list says so, and is read-only. */
 import type { DocumentProperties as Dto } from "@meridian/contracts";
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
@@ -16,9 +16,11 @@ vi.mock("@/client/api/document-properties-api", () => ({
   fetchDocumentProperties: (projectId: string, documentId: string) =>
     fetchProperties(projectId, documentId),
 }));
-vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: () => ({
-    catalog: { findDocument: () => ({ hasProperties }) },
+vi.mock("@/client/query/useProjectTree", () => ({
+  useProjectTreeView: () => ({
+    tree: { findDocument: () => ({ hasProperties }) },
+    isComplete: true,
+    isError: false,
   }),
 }));
 

@@ -16,10 +16,6 @@ export type ProjectNavigationPort = {
     options: { replace: boolean; state?: Record<string, unknown> },
   ): Promise<void>;
 };
-export type DisplayedProjectSelection = {
-  /** Existing local ownership pointer, never content or a new draft instance. */
-  local?: { accountId: string; projectId: string; resourceHandle: string };
-};
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
   | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
@@ -47,18 +43,13 @@ export type ProjectLeaveGuard = {
 
 /** Whether the entry already holds exactly this address. */
 function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
-  // An Untitled page shares Recently opened's href; its history pointer is what names it.
-  return entry.href === projectAddressHref(address) && entry.state.meridianProjectSelection == null;
+  return entry.href === projectAddressHref(address);
 }
 
-export function createProjectNavigation(
-  port: ProjectNavigationPort,
-  displayed: () => DisplayedProjectSelection,
-) {
+export function createProjectNavigation(port: ProjectNavigationPort) {
   let revision = 0;
   let guard: ProjectLeaveGuard | null = null;
   let cancelDecision: (() => void) | null = null;
-  let departureWrite = false;
   let pending: {
     id: string;
     commit?: () => void;
@@ -66,7 +57,6 @@ export function createProjectNavigation(
   } | null = null;
   const unsubscribe = port.subscribe(() => {
     revision += 1;
-    if (departureWrite) return;
     cancelDecision?.();
     const operation = pending;
     if (!operation) return;
@@ -132,17 +122,6 @@ export function createProjectNavigation(
     return parseProjectAddress(cut < 0 ? href : href.slice(0, cut), cut < 0 ? "" : href.slice(cut));
   }
 
-  function freezeDeparture(): void {
-    const entry = port.read();
-    const parsed = parsedEntry(entry);
-    if (parsed.kind !== "valid") return;
-    const shown = displayed();
-    port.replaceEntry(projectAddressHref(parsed.address), {
-      ...entry.state,
-      meridianProjectSelection: shown.local ? { version: 2, ...shown.local } : undefined,
-    });
-  }
-
   function transition(
     address: ProjectAddress,
     options: { replace: boolean; state?: Record<string, unknown> },
@@ -187,15 +166,7 @@ export function createProjectNavigation(
             resolve({ kind: "applied" });
             return;
           }
-          if (!options.replace) {
-            departureWrite = true;
-            try {
-              freezeDeparture();
-              port.flush();
-            } finally {
-              departureWrite = false;
-            }
-          }
+          if (!options.replace) port.flush();
           const id = crypto.randomUUID();
           const operation = {
             id,

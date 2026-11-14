@@ -16,8 +16,7 @@ and names its owner: the chat's Work, or for a chat with no Work
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
-writes and Apply are refused and Discard still works. Scratch and upload content is always live;
-their placement can still be a Work branch fact.
+writes and Apply are refused and Discard still works. Scratch and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows
 the writes before it. Rebinding is resolved again for each query; a read-only draft query
@@ -65,15 +64,20 @@ with the document's agent edits (partial actor index) and joins parts by edit
 and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
 The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
 delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
-everything the branch holds on the document: a still-hidden creation (always ended
+everything the branch holds on the document: a creation only the Work shows (always ended
 whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
 Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
 the kernel compares it under the draft's row lock and refuses `draft_changed` when the
 draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
 `revision` is the fence because content-free folds keep it. The answer's `itemClosed`
 is what the kernel ended. Its command row is claimed first in the kernel's transaction and
-holds the answer when it commits; `stale` and `draft_changed` are stored answers too.
-Work Discard all and purge keep the shared close/end-use kernel.
+holds the answer when it commits; `stale` and `draft_changed` are stored answers too. Nothing
+left to end answers `stale` without changing text. The tree half of every Discard is the
+package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
+(`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
+command's id. A discarded drafted create is in no view, and its `documents` row and text stay
+until the retention job purges them; Discard releases nothing. Work Discard all and purge share
+the same kernel.
 
 ## Revision and review authority
 
@@ -97,8 +101,9 @@ retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
 removed retires as a removal whatever its own cause (its rooms close `4208`), so a Discard that
-closes a created document's drafts and then tombstones it still closes their
-rooms `4208`; any other closed draft's room closes `4205` (`discarded`). Every removal registers its
+closes a created document's drafts closes their rooms stale, and one that Apply took out of
+live closes them `4208`; any other closed draft's room closes stale and its peers are
+refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
 closes their drafts. A live delete closes no draft: the drafts stay
 ordinary active drafts and their rooms stay open. A removed document's live
@@ -448,8 +453,7 @@ then commits in one scope: a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
-grant Work). Tree inverses use the context domain's shared tree-edit admission;
-the inverse still owns retry so a moved tree scope causes a complete recapture.
+grant Work).
 Then its documents' mutation locks in id order, its drafts' rows, the capture
 taken again under them and compared (`confirmCapture`), and each draft
 destination's exact checkpoint rewrite at its captured revision. Those captured fences, not a lock of the inverse's own,
@@ -472,15 +476,33 @@ background rebases keep archived drafts current. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
-Only hidden typing under a top-level block whose deletion is certified by a
-server row's immutable receipt is recovered. Receipt reads happen only for
-hidden typing, selected by block id. Recovery authors another client-1 server row
-in the same append; its opaque per-draft `LateTyping` memory installs only after
-commit. Deletion-only frames advance memory without writing; a contained echo with
-existing recovery observes its deleted separators without a row hold. Deferred
-observers read latest memory at commit, and finalizers retain observations made
-during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
-never remove recovered writing. Another writer's deleted block is not recovered.
+A writer's typing that the deleter never saw is recovered, whoever deleted: a
+rebase, a peer's Discard revert, another writer or the model. Two arrival orders
+find it. Typing that arrives under a block already deleted (its parent chain
+reaches a deleted item, judged by the committed document however the update
+encodes the ancestor), and a delete that arrives after the typing and removes it
+without listing it (a deleter's delete set lists every item its own transaction
+deleted, children included, so an unlisted item was typed unseen). The typist's
+view of the text beside its words is its own frame's delete set when the typing
+arrives second, and the document before the frame when the delete does.
+
+Whose text it is comes from the journal, never from a client id or a cache. A
+frame's typing counts when the row is `writer`'s. Typing a delete removed counts
+when `DraftStore.writerText` finds the inserting row: a `writer` row, or a
+recovery row (`updateMeta.lateTyping`) in `document_edit_parts` of the draft, or
+a row of the same append not yet journaled. The model's rows and the server's
+pulls never count, and nothing is lost when the process restarts. Recovery authors another client-1 server row
+in the same append; its opaque per-draft `LateTyping` memory (spans only, to extend
+a paragraph in place) installs only after commit. A paragraph is extended by
+inserting the new characters where the typist placed them among the old ones, so
+the characters a peer saw keep their ids; paragraphs the typist's edit would join
+stay separate for the same reason. Deletion-only frames advance memory
+without writing; a contained echo with existing recovery observes its deleted
+separators without a row hold. Deferred observers read latest memory at commit
+(`retainLateTypingDeletions` keeps the kernel's memory bound). Stale backspaces
+never remove recovered writing. Losses that stay are under Known losses in
+[content-merge](../../../../../../packages/agent-edit/.context/content-merge.md);
+live rooms have no recovery: see TODO.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
@@ -495,15 +517,37 @@ peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
-live `withDocument` mutexes (sorted) before any transaction, then inside the
-database Work rows (only through the Works mutation boundary), the branch row,
-sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
-ID order), then draft rows in ID order. No path takes a Work row, a
-live lock or a namespace lock after a draft row, and none takes a namespace
-lock while holding a document lock: it computes the complete namespace set
-first and revalidates. No writer-ingress epoch barrier remains.
 
-A document command (a model edit, `reverse_turn`, Apply, Un-Apply, Discard, Copy) runs in
+1. Live `withDocument` mutexes (sorted), before any transaction.
+2. In the database, the command's claim row (`runCommand`).
+3. Work rows (only through the Works mutation boundary, in ID order, with the lifecycle and
+   grant locks `lockSeamWorks` takes), then the branch row.
+4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
+   and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
+   or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
+   a document key. A list's key sorts before every document key, not among them by ID.
+5. The sorted document advisory keys (`lockDocumentMutation`, in ID order).
+6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
+   `branch_tree_nodes`, `tree_node_ids`, `documents`), then the draft rows, in ID order. Derivation
+   certification takes a document key and then locks that document's `tree_nodes` row, so a path
+   that holds a document key writes its rows after it, and one that writes first never takes that
+   document's key afterwards.
+
+`submit` and `resync` take the list keys themselves when a path holds no document key, as the
+tree tools do. `resync` (and so `DraftClose.closeDrafts`, which resyncs the list that holds each
+document it closes a Work draft of) takes none: it throws when the transaction does not hold the
+key, so a close that would take one after a document key fails in its first test, not as a
+deadlock. Apply, Discard of items, a card's tree Undo and the purge all take the key, then the
+documents', then write. A path with a second list in view (Apply's `closeDrafts`, a purge's
+drafts) reaches only the list that holds the document, which it holds. A tree list's write
+(`withLists`) takes the seam's Work locks first, so the append under the key takes no lock it
+lacks; a Work's close, archive, restore and delete takes both lists' keys after its Work row and
+before its document keys (`lockProjectTreeList`), so the open Works an admission reads under that
+key are current. No path takes a Work row, a live lock or a list's key after a draft row, and
+none takes a list's key while holding a document key. No writer-ingress epoch barrier remains.
+
+A document command (a model edit, a tree tool call, `reverse_turn`, Apply, Un-Apply, Discard,
+Copy, the server's move between a project's list and the account's) runs in
 `runCommand` (`adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
 whose first write is the claim, then the list above from the Work rows on. It takes no
 `withDocument` mutex: a command that needs a live room reads its journal in the transaction
@@ -514,7 +558,10 @@ draft rows and writes nothing unless the two agree. A miss the server retries (a
 serialization failure, a moved capture or revision) rolls back past the claim and is never stored
 as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
-Postgres and can hang both sides for good. A card Undo's Work receipts are a second command
+Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
+copy is marked `pending` by the root transaction that changed it, and any other transaction
+reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's
+transaction. A card Undo's Work receipts are a second command
 after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
 document key.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,

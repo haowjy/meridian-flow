@@ -20,7 +20,6 @@ export interface UploadIdentity {
   updatedAt: string;
   /** Derived from the owning chat's current handle; chat-relative until the chat's row exists. */
   uri: string;
-  locationRevision: string;
   /** The chat that owns the upload (null for a document that is not an upload). */
   ownerChatId: string | null;
 }
@@ -71,7 +70,6 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
               chatRef ? { kind: "chat", chatRef } : { kind: "contextual" },
             )
           : "",
-        locationRevision: intake?.locationRevision ?? "",
         ownerChatId: intake?.ownerThreadId ?? null,
       }),
     );

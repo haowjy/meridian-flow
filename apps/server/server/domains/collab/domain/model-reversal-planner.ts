@@ -17,15 +17,6 @@ import {
   inspectionActions,
   inspectionContext,
 } from "./model-inverse-selection.js";
-import {
-  latestTransition,
-  type PlannedTreeInverse,
-  planTreeInverse,
-  type StoredTreeEntry,
-  settlementOf,
-  type TransitionEntry,
-  treeChangedCause,
-} from "./tree-inverse.js";
 import type {
   InverseDocument,
   StoredInversePart,
@@ -49,8 +40,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     queryDestination.kind === "draft" && queryDestination.state === "gone"
       ? document.live
       : queryDestination.view;
-  const own = entries(document, query.threadId);
-  const actions = inspectionActions(document.history, document.tree, own);
+  const own = entries(document.history, query.threadId);
+  const actions = inspectionActions(document.history, own);
   const poppableByTurn = new Map<string, Set<string>>();
   const inspections = new Map<Y.Doc, Inspection>();
   inspections.set(document.live, inspectionContext(liveIndex, actions));
@@ -173,7 +164,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     inspectAt: (destination: InverseDestination) => Inspection,
     options: {
       inverseParts?: readonly StoredInversePart[];
-      liveRemoved?: boolean;
       actionKind?: "undo" | "redo" | "revert";
     } = {},
   ) {
@@ -196,7 +186,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       };
     }
     if (destination.frozen) return { failure: "draft_archived" as const };
-    if (destination.kind === "live" && (options.liveRemoved ?? destination.removed))
+    if (destination.kind === "live" && destination.removed)
       return { failure: "document_deleted" as const };
     const actionKind =
       options.actionKind ??
@@ -227,7 +217,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     entry: Entry,
     direction: "undo" | "redo",
     turn: TurnInverseQuery,
-    liveRemoved: boolean,
     inverseParts: readonly StoredInversePart[] = [],
   ) {
     const destinationParts = direction === "redo" ? inverseParts : entry.parts;
@@ -245,7 +234,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
           closedPartCause(direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part),
         ),
       };
-    if (destination.kind === "live" && liveRemoved)
+    if (destination.kind === "live" && destination.removed)
       return every(
         document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
       );
@@ -268,53 +257,15 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const cached = poppableByTurn.get(turnKey);
     if (cached) return cached;
     for (const entry of actions.stack) {
-      const belongsToTurn =
-        entry.parts.some(
-          (part) => part.threadId === turn.threadId && part.turnId === turn.turnId,
-        ) ||
-        (entry.tree
-          ? entry.tree.threadId === turn.threadId && entry.tree.turnId === turn.turnId
-          : false);
+      const belongsToTurn = entry.parts.some(
+        (part) => part.threadId === turn.threadId && part.turnId === turn.turnId,
+      );
       const appliedText = entry.parts.some((part) => part.disposition === "applied");
-      const settledTree = entry.tree ? settlementOf(entry.tree, document.tree) : null;
-      if (!belongsToTurn || appliedText || settledTree) break;
+      if (!belongsToTurn || appliedText) break;
       poppable.add(entry.id);
     }
     poppableByTurn.set(turnKey, poppable);
     return poppable;
-  }
-  function treePlan(
-    entry: Entry & { tree: TransitionEntry },
-    direction: "undo" | "redo" | "revert",
-    tree: readonly StoredTreeEntry[],
-    states: InverseDocument["treeStates"],
-    step: () => number,
-  ): PlannedTreeInverse | { cause: TurnInverseSkipCause } {
-    const row = entry.tree;
-    const destination = row.tree.destination;
-    const resolvedDestination =
-      destination.kind === "draft"
-        ? document.destinationForBranch(destination.branchId)
-        : document.destinationOf({ kind: "live", seq: 0 });
-    if (resolvedDestination.frozen) return { cause: "draft_archived" };
-    const settled = settlementOf(row, tree);
-    if (settled === "applied") return { cause: "applied" };
-    if (settled === "discarded") return { cause: "discarded" };
-    const latest = latestTransition(row, tree);
-    const planned =
-      latest.stands === (direction !== "redo")
-        ? planTreeInverse(
-            row,
-            direction === "redo" ? "reapply" : "invert",
-            latest.row,
-            states,
-            step(),
-          )
-        : null;
-    if (planned) return planned;
-    if (latest.stands !== (direction !== "redo"))
-      return { cause: direction === "redo" ? "already_redone" : "already_undone" };
-    return { cause: treeChangedCause(states, destination) };
   }
   function revertSelection(entry: Entry, inspection = inspect()) {
     const skipped: TextOmission[] = [];
@@ -344,7 +295,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     compute,
     textPlan,
     turnTextPlan,
-    treePlan,
     turnSkipCause,
     version,
     queryDestination,

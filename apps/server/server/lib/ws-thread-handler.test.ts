@@ -188,7 +188,7 @@ it.each([
 function createRequestHarness(options: {
   liveState: (threadId: ThreadId) => Promise<ThreadLiveState>;
   projectRepo?: unknown;
-  contextCatalogWakeHub?: unknown;
+  projectWakeHub?: unknown;
 }) {
   const unsubscribed: ThreadId[] = [];
   const app = {
@@ -202,7 +202,7 @@ function createRequestHarness(options: {
       },
     },
     projectRepo: options.projectRepo,
-    contextCatalogWakeHub: options.contextCatalogWakeHub,
+    projectWakeHub: options.projectWakeHub,
     threadRuntime: {
       async requireOwnedThread() {},
       liveState: options.liveState,
@@ -301,7 +301,7 @@ it.each([
   const { session } = createRequestHarness({
     liveState: async () => LIVE_STATE,
     projectRepo: { findById: () => ownership },
-    contextCatalogWakeHub: {
+    projectWakeHub: {
       subscribe: () => {
         listeners++;
         return () => {

@@ -8,9 +8,10 @@
  * - a save rewrites only the blocks it changed, and the order array only when the order moved.
  */
 import { createDb } from "@meridian/database";
-import { documentBlockRooms, documentBlocks, documents } from "@meridian/database/schema";
+import { documentBlockRooms, documentBlocks } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   createWorkBranchFixture,
@@ -46,12 +47,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus as never);
       for (const [index, shape] of SHAPES.entries()) {
         const documentId = `00000000-0000-4000-8000-0000000008${String(index).padStart(2, "0")}`;
-        await db.insert(documents).values({
+        await treeSeeder(db).document(SOURCE_ID, shape.filetype ? `${shape.name}.ts` : shape.name, {
           id: documentId,
-          contextSourceId: SOURCE_ID,
-          name: shape.name,
-          extension: shape.filetype ? "ts" : "",
-          fileType: shape.filetype ?? "markdown",
+          ...(shape.filetype ? { filetype: shape.filetype as never } : {}),
         });
         await writeMarkdown(collab, {
           documentId: documentId as never,
@@ -80,13 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       const documentId = "00000000-0000-4000-8000-000000000900";
-      await db.insert(documents).values({
-        id: documentId,
-        contextSourceId: SOURCE_ID,
-        name: "diff",
-        extension: "",
-        fileType: "markdown",
-      });
+      await treeSeeder(db).document(SOURCE_ID, "diff", { id: documentId });
       const save = async (markdown: string) => {
         await writeMarkdown(collab, {
           documentId: documentId as never,

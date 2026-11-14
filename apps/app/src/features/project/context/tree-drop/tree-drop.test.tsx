@@ -19,7 +19,7 @@ afterEach(() => vi.useRealTimers());
 
 const folder: TreeDropTarget = {
   scheme: "manuscript",
-  catalogRootId: "root",
+  treeRootId: "root",
   folder: { entryId: "act", path: "Act 2", uri: "manuscript://Act 2/", name: "Act 2" },
 };
 const area: TreeDropTarget = { ...folder, folder: null };

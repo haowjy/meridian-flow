@@ -3,7 +3,6 @@ export interface OrganizeClaim {
   importId: string;
   projectId: string;
   token: string;
-  generation: number;
   leaseUntil: Date;
 }
 

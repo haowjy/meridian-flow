@@ -34,9 +34,11 @@ have it:
 | Work archive, Work delete | Whether a Work is available | [projects](../../apps/server/server/domains/projects/.context/state-machines.md) |
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |
+| Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
 | Draft, branch | Whether a draft or branch still accepts writes | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Draft room handshake | Whether a connection may send edits to a draft room | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
 
@@ -45,15 +47,14 @@ have it:
 | Thread socket | The shared WebSocket and its handshake | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Thread subscription, client half | One thread's subscription and replay | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Hand-back and Stop commands | One Stop press, or one request to take queued messages back | [thread-client](../../packages/thread-client/.context/state-machines.md) |
-| Server hold | Whether the server has a document or folder the browser created | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
-| Resource lifecycle | Whether a document or folder exists for the server | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
-| Namespace intent | One place, move, delete or copy on its way to the server | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |
 
 ## App
 
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Account session runtime | Whether the account's document sessions take new work: open, closing, closed | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
 | Draft room read | Whether a draft's room can be shown and acted on | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Sync pill outage phase | Whether the pill is reporting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
 | Upload store | One file being sent from the editor or composer | [core/uploads](../../apps/app/src/core/uploads/.context/state-machines.md) |
@@ -65,10 +66,9 @@ have it:
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
 | Apply click command | One Apply or Undo click on a draft change | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| Sidebar version | Whether the sidebar and its actions show live or the picked Work's tree, and sidebar Undo | [features/project](../../apps/app/src/features/project/.context/tree-version-state-machine.md) |
 | Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |
 | Live document binding | One editor pane's hold on an open document | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
-| Route selection during removal | Which document the route is trying to show | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
-| Rename and move feedback | What to show for one rename or move | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
 | Server feed | The debug overlay's event stream | [features/debug](../../apps/app/src/features/debug/.context/state-machines.md) |
 
 ## Site

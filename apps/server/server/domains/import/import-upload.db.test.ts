@@ -313,9 +313,7 @@ describe.runIf(enabled)("durable upload", () => {
       placement: {
         destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
         topLevelNames: {},
-        creationSetDigest: "fixture",
       },
-      placementGeneration: 1,
     });
     await repository.refreshCounts(input.importId);
     expect((await service().detail(input.importId, projectId)).counts).toMatchObject({
@@ -327,9 +325,7 @@ describe.runIf(enabled)("durable upload", () => {
       placement: {
         destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
         topLevelNames: {},
-        creationSetDigest: "fixture",
       },
-      placementGeneration: 1,
     });
     await sweepImportObjects(repository, objects, { importId: input.importId });
     expect((await objects.get(convertedKey)).ok).toBe(true);

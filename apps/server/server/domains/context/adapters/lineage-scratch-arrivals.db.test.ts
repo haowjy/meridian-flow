@@ -3,8 +3,6 @@
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
-  folders,
   linkAheadRefs,
   projects,
   threads,
@@ -13,17 +11,20 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { LIVE } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleProjectWorkRepository } from "../../projects/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
-import { createDrizzleContextCatalog } from "./context-catalog.js";
+import { createDrizzleChatUploads } from "../uploads/index.js";
+import { createDrizzleContextSources } from "./context-sources.js";
 import { createDrizzleDocumentArrivals } from "./document-arrivals.js";
 import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -69,9 +70,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       name: "Uploads",
       slug: "uploads",
     });
-    await db
-      .insert(documents)
-      .values({ id: upload, contextSourceId: uploadsSource, name: "pic", extension: "png" });
+    await treeSeeder(db).document(uploadsSource, "pic.png", { id: upload });
     await db.insert(uploadIntakes).values({
       projectId: p,
       intakeId: "intake",
@@ -86,7 +85,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       objectKey: "k",
       fileType: "image",
       canonicalUri: "uploads://pic.png",
-      locationRevision: crypto.randomUUID(),
       state: "finalized",
       consumedAt: new Date("2026-01-02T00:00:00Z"),
       createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -97,47 +95,42 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const db = database.current;
       const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
-      const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, arrivals);
+      const sources = createDrizzleContextSources(db);
+      const fileAccessChanges = createLocalFileAccessChanges();
+      const lifecycle = createDrizzleLineageScratchLifecycle(db, arrivals, {
+        fileAccessChanges,
+        hints: NO_PROJECT_HINTS,
+      });
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });
       const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
       const workRepo = createDrizzleProjectWorkRepository({
-        removal: createTestDocumentRemoval(db),
         db,
         lineageScratch: lifecycle,
         arrivals,
         projectionMutation: createWorkProjectionMutation({
           db,
           pendingCounts: createDrizzleWorkBranchPendingStore(db),
-          availability,
-          catalog,
+          draftOwnerHints: NO_PROJECT_HINTS,
         }),
-        fileAccessChanges: createLocalFileAccessChanges(),
+        fileAccessChanges,
       });
       const note = crypto.randomUUID(),
         deleted = crypto.randomUUID(),
-        hidden = crypto.randomUUID(),
-        folder = crypto.randomUUID();
-      await db.insert(folders).values({
-        id: folder,
-        contextSourceId: source,
-        name: "hidden",
-        deletedAt: new Date(),
-      });
-      await db.insert(documents).values([
-        { id: note, contextSourceId: source, name: "note", extension: "toml" },
-        {
-          id: deleted,
-          contextSourceId: source,
-          name: "deleted",
-          extension: "toml",
-          deletionReason: "deleted",
-          deletedAt: new Date(),
-        },
-        { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },
-      ]);
+        hidden = crypto.randomUUID();
+      const seed = treeSeeder(db);
+      const list = await treeListOfSource(db, source);
+      const trash = (...ids: string[]) =>
+        seed.store.submit({
+          lists: [list],
+          make: ([{ writer }]) => {
+            for (const id of ids) writer.delete(LIVE, "system", id);
+          },
+        });
+      const folder = await seed.folder(source, "hidden");
+      await seed.document(source, "note.toml", { id: note });
+      await seed.document(source, "deleted.toml", { id: deleted });
+      await seed.document(source, "hidden/note.toml", { id: hidden });
+      await trash(deleted, folder);
       if (door === "chat") {
         await db
           .update(works)
@@ -145,22 +138,14 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           .where(eq(works.id, work));
         await threadRepo.setTrashState(root as never, "deleted");
       } else await workRepo.softDelete(work as never);
-      const lookup = (id = note) =>
-        availability.lookup({ projectId: p as never, documentIds: [id] as never }, { userId: u });
-      // A hidden lineage is restorable authority, never a terminal document fact.
-      await expect(lookup()).resolves.toMatchObject({
-        resolutions: [{ kind: "authority-unavailable", reason: "lineage_hidden" }],
-      });
-      // A trashed chat hides its own uploads the same way, through either door.
-      await expect(lookup(upload)).resolves.toMatchObject({
-        resolutions: [{ kind: "authority-unavailable", reason: "chat_hidden" }],
-      });
-      await expect(
-        availability.lookup(
-          { projectId: p as never, documentIds: [deleted] as never },
-          { userId: u },
-        ),
-      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
+      const placed = async (id = note) =>
+        (
+          await availability.placed({ projectId: p as never, documentIds: [id] }, { userId: u })
+        ).documents.get(id);
+      // A hidden lineage or chat is restorable authority: its documents are not placed meanwhile.
+      await expect(placed()).resolves.toBeUndefined();
+      await expect(placed(upload)).resolves.toBeUndefined();
+      await expect(placed(deleted)).resolves.toBeUndefined();
       const ahead = crypto.randomUUID(),
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
@@ -171,27 +156,21 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
-      await expect(lookup()).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { entryId: note } }],
+      await expect(placed()).resolves.toMatchObject({ entry: { entryId: note } });
+      await expect(placed(upload)).resolves.toMatchObject({
+        entry: { uri: "uploads://@c1/pic.png" },
       });
-      await expect(lookup(upload)).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { uri: "uploads://@c1/pic.png" } }],
+      const [uploads] = await sources.ownedBy(p as never, { kind: "chat", chatId: root });
+      expect((await sources.liveDocuments(uploads?.id as never)).map((file) => file.id)).toContain(
+        upload,
+      );
+      await expect(createDrizzleChatUploads(db).list(p, root)).resolves.toEqual({
+        uploads: [{ documentId: upload, attachedAt: "2026-01-01T00:00:00.000Z", used: true }],
       });
-      await expect(
-        catalog.snapshot({ kind: "chat", projectId: p, chatId: root } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([
-          expect.objectContaining({
-            entryId: upload,
-            upload: expect.objectContaining({ attachedAt: "2026-01-01T00:00:00.000Z", used: true }),
-          }),
-        ]),
-      });
-      await expect(
-        catalog.snapshot({ kind: "lineage", projectId: p, rootThreadId: root } as never),
-      ).resolves.toMatchObject({
-        entries: expect.arrayContaining([expect.objectContaining({ entryId: note })]),
-      });
+      const [scratch] = await sources.ownedBy(p as never, { kind: "lineage", rootThreadId: root });
+      expect((await sources.liveDocuments(scratch?.id as never)).map((file) => file.id)).toContain(
+        note,
+      );
       const settlements = async () =>
         new Map(
           (await db.select().from(linkAheadRefs)).map((r) => [r.aheadId, r.settledDocumentId]),
@@ -199,11 +178,14 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       expect((await settlements()).get(ahead)).toBe(note);
       expect((await settlements()).get(deletedAhead)).toBeNull();
       expect((await settlements()).get(hiddenAhead)).toBeNull();
-      await db.update(documents).set({ name: "moved" }).where(eq(documents.id, note));
+      await seed.store.submit({
+        lists: [list],
+        make: ([{ writer }]) => {
+          writer.rename(LIVE, "system", note, "moved.toml");
+        },
+      });
       const replacement = crypto.randomUUID();
-      await db
-        .insert(documents)
-        .values({ id: replacement, contextSourceId: source, name: "note", extension: "toml" });
+      await seed.document(source, "note.toml", { id: replacement });
       await arrivals.settle([replacement as never]);
       expect((await settlements()).get(ahead)).toBe(note);
     });

@@ -1,12 +1,12 @@
-/** Cached client-side suggestions composed across the project's context trees. */
+/** Suggestions composed across the project's trees, read from the replay. */
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import { contextCatalogScope, useContextCatalogScope } from "@/client/query/useContextCatalog";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import {
-  catalogFileSuggestions,
   type FileSuggestion,
   type FileSuggestionKind,
   matchFileSuggestions,
+  treeFileSuggestions,
 } from "./file-suggestions";
 
 type Options = {
@@ -20,38 +20,21 @@ export function useFileSuggestions(
   projectId: string,
   query: string,
   options: Options,
-): { suggestions: FileSuggestion[]; isFetching: boolean; isError: boolean } {
-  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options.owner);
-  const userScope = contextCatalogScope(projectId, "user", options.owner);
-  const scratchScope = contextCatalogScope(projectId, "scratch", options.owner);
-  const project = useContextCatalogScope(
-    projectId,
-    manuscriptScope ?? { kind: "project", projectId },
-    manuscriptScope != null &&
-      options.schemes.some((scheme) => scheme === "manuscript" || scheme === "kb"),
-  );
-  const user = useContextCatalogScope(
-    projectId,
-    userScope ?? { kind: "user", userId: "self" },
-    userScope != null && options.schemes.includes("user"),
-  );
-  const current = useContextCatalogScope(
-    projectId,
-    scratchScope ?? { kind: "project", projectId },
-    scratchScope != null &&
-      options.schemes.some((scheme) => scheme === "scratch" || scheme === "uploads"),
-  );
+): { suggestions: FileSuggestion[] } {
+  const { workId, rootThreadId, chatThreadId } = options.owner;
+  const schemeKey = options.schemes.join(",");
+  const schemes = useMemo(() => schemeKey.split(",") as Options["schemes"], [schemeKey]);
+  const views = useProjectTreeViews(projectId, schemes, {
+    workId,
+    rootThreadId,
+    chatId: chatThreadId,
+  });
   const suggestions = useMemo(() => {
-    const entries = catalogFileSuggestions(
-      [project.data, user.data, current.data].filter((view) => view !== undefined),
-    );
-    return matchFileSuggestions(entries, query, options);
-  }, [project.data, user.data, current.data, query, options]);
-
-  const allowedResults = [project, user, current];
-  return {
-    suggestions,
-    isFetching: allowedResults.some(({ isFetching }) => isFetching),
-    isError: allowedResults.some(({ isError }) => isError),
-  };
+    const trees = schemes.flatMap((scheme) => {
+      const tree = views[scheme].tree;
+      return tree ? [{ scheme, tree }] : [];
+    });
+    return matchFileSuggestions(treeFileSuggestions(trees), query, options);
+  }, [views, schemes, query, options]);
+  return { suggestions };
 }

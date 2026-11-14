@@ -13,6 +13,7 @@ import type { DocumentCommandKind, DocumentCommandOutcome } from "@meridian/cont
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
@@ -151,7 +152,7 @@ export const documentYjsCheckpoints = pgTable(
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
     authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
@@ -176,7 +177,7 @@ export const documentYjsUpdates = pgTable(
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
     authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
@@ -235,32 +236,56 @@ export const agentEditWidCounters = pgTable(
   (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
 );
 
-export const documentYjsHeads = pgTable("document_yjs_heads", {
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .primaryKey()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  authorityId: uuid("authority_id")
-    .$type<DocumentAuthorityId>()
-    .notNull()
-    .default(sql`gen_random_uuid()`),
-  authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull().default(sql`1`),
-  nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
-    .notNull()
-    .default(sql`1`),
-  fragmentName: text("fragment_name").notNull().default("prosemirror"),
-  schemaVersion: integer("schema_version")
-    .notNull()
-    .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-  retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
-  latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
-  latestStateVector: byteaColumn("latest_state_vector"),
-  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
-    () => documentYjsCheckpoints.id,
-    { onDelete: "set null" },
-  ),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * One row per Yjs document, the identity its journal rows (`document_yjs_updates`,
+ * `document_yjs_checkpoints`) hang from, of one `kind`. A `document` head's `document_id` is a
+ * `documents.id`; it names no `documents` row of its own, so a Yjs document can exist before its
+ * `documents` row does (an import writes text first), and a `documents` delete takes its head
+ * and journal through a trigger. A `tree_list` head is a list's (a project's or an account's):
+ * its id is the project's or account's `tree_list_id`, made with it by a trigger, and `project_id`
+ * or `user_id` names the owner whose delete takes it. A list needs no living document to be
+ * written, and no document's id is ever a list's.
+ */
+export const documentYjsHeads = pgTable(
+  "document_yjs_heads",
+  {
+    documentId: uuid("document_id").$type<DocumentId>().primaryKey(),
+    kind: text("kind").$type<"document" | "tree_list">().notNull().default("document"),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id")
+      .$type<DocumentAuthorityId>()
+      .notNull()
+      .default(sql`gen_random_uuid()`),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" })
+      .notNull()
+      .default(sql`1`),
+    nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
+      .notNull()
+      .default(sql`1`),
+    fragmentName: text("fragment_name").notNull().default("prosemirror"),
+    schemaVersion: integer("schema_version")
+      .notNull()
+      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+    retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
+    latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
+    latestStateVector: byteaColumn("latest_state_vector"),
+    /** No foreign key: checkpoints reference their head, and a cycle has no delete order. */
+    latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("document_yjs_heads_kind_valid", sql`${table.kind} IN ('document', 'tree_list')`),
+    check(
+      "document_yjs_heads_list_has_one_owner",
+      sql`(${table.kind} = 'tree_list') = (num_nonnulls(${table.projectId}, ${table.userId}) = 1)`,
+    ),
+  ],
+);
 
 /**
  * One row per document: the live room's derived outputs, certified against one cut. `blockOrder`
@@ -341,9 +366,65 @@ export const documentCommands = pgTable(
     index("document_commands_thread").on(table.threadId),
     check(
       "document_commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')`,
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')`,
     ),
   ],
+);
+
+/**
+ * The tree half of an Apply: one row per list the command settled records in, with the list's
+ * state vector right after (Un-Apply is allowed only while the list still has it).
+ */
+export const applyCommandTrees = pgTable(
+  "apply_command_trees",
+  {
+    commandId: uuid("command_id")
+      .$type<DocumentCommandId>()
+      .notNull()
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** The project's list, or its owner's account list (`user://`). */
+    scope: text("scope").$type<"project" | "account">().notNull(),
+    mark: byteaColumn("mark").notNull(),
+    /**
+     * The documents the Apply created in this list, each with the highest live journal row and
+     * draft journal row it had once the command committed: text written past either since is
+     * what an Un-Apply of a created document must not cut off.
+     */
+    createdHeads: jsonb("created_heads")
+      .$type<Record<string, { live: number; draft: number }>>()
+      .notNull(),
+    /** The live restore records the Apply appended before its copies, which Un-Apply takes back. */
+    restored: jsonb("restored").$type<string[]>().notNull(),
+    /** The nodes whose live copies or restores this Apply made in this list: what Un-Apply writes. */
+    nodes: jsonb("nodes").$type<string[]>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
+);
+
+/**
+ * The text drafts a Discard command closed: what its Undo copies back onto the Work's branch,
+ * once (`restoredBy`). The drafts keep their bytes after closing, until their document's content
+ * is purged (which deletes them and this row with them).
+ */
+export const discardCommandDrafts = pgTable(
+  "discard_command_drafts",
+  {
+    commandId: uuid("command_id")
+      .$type<DocumentCommandId>()
+      .notNull()
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => documentDrafts.id, { onDelete: "cascade" }),
+    restoredBy: uuid("restored_by")
+      .$type<DocumentCommandId>()
+      .references(() => documentCommands.id, { onDelete: "set null" }),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.draftId] })],
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */
@@ -371,26 +452,6 @@ export const applyCommandEffects = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
-    uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
-  ],
-);
-
-/** Private initial states; no live document exists until Context reveals the stage. */
-export const collabStagedStates = pgTable(
-  "collab_staged_states",
-  {
-    stagingId: uuid("staging_id").notNull(),
-    documentId: uuid("document_id").$type<DocumentId>().notNull(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    generation: integer("generation").notNull(),
-    state: byteaColumn("state").notNull(),
-    stateVector: byteaColumn("state_vector").notNull(),
-    attributionManifest: jsonb("attribution_manifest").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.stagingId, table.documentId] }),
-    index("collab_staged_states_project_idx").on(table.projectId),
+    uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
   ],
 );

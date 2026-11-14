@@ -256,13 +256,9 @@ export type WsServerMessage =
       message?: string;
     }
   | { type: "ping"; ts: number }
-  | {
-      type: "context-catalog-hint";
-      scope: import("./context-catalog.js").CatalogScope;
-      headRevision: string;
-    }
   | import("./context-catalog.js").DraftOwnerHint
   | import("./context-catalog.js").ProjectChatsHint
+  | import("./context-sources.js").ContextSourcesHint
   | AskAnswerReply
   | {
       type: "error";
@@ -310,33 +306,14 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     ts: z.number(),
   }),
   z.object({
-    type: z.literal("context-catalog-hint"),
-    scope: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("project"), projectId: z.string().min(1) }),
-      z.object({ kind: z.literal("user"), userId: z.string().min(1) }),
-      z.object({
-        kind: z.literal("work"),
-        projectId: z.string().min(1),
-        workId: z.string().min(1),
-      }),
-      z.object({
-        kind: z.literal("lineage"),
-        projectId: z.string().min(1),
-        rootThreadId: z.string().min(1),
-      }),
-      z.object({
-        kind: z.literal("chat"),
-        projectId: z.string().min(1),
-        chatId: z.string().min(1),
-      }),
-    ]),
-    headRevision: wsEventSeqSchema,
-  }),
-  z.object({
     type: z.literal("project-chats-hint"),
     projectId: z.string().min(1),
     removedChatIds: z.array(z.string().min(1)).optional(),
     recheckTabs: z.literal(true).optional(),
+  }),
+  z.object({
+    type: z.literal("context-sources-hint"),
+    projectId: z.string().min(1),
   }),
   z.object({
     type: z.literal("draft-owner-hint"),

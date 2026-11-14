@@ -12,6 +12,7 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
+import type { MoveBackAcrossLists } from "../domains/collab/contracts.js";
 import {
   runWorkLifecycleCommand,
   setWorkArchived,
@@ -30,6 +31,8 @@ import {
 } from "../shared/drizzle-transaction.js";
 import type { AppServices } from "./compose.js";
 import { getDb } from "./db.js";
+import { moveBackAcrossLists } from "./model-tools/tree-across-lists.js";
+import { resolveThreadContextPort } from "./thread-context-route.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -55,8 +58,14 @@ type PlannedStep = {
 export function reverseTurnCard(
   app: Pick<
     AppServices,
-    "documentSync" | "threadRepos" | "works" | "workContextNotices" | "stopThreads"
-  >,
+    | "documentSync"
+    | "threadRepos"
+    | "works"
+    | "stopThreads"
+    | "contextPorts"
+    | "fileAccess"
+    | "workAuthorityResolver"
+  > & { workContextNotices: Pick<WorkContextNotices, "workChanged"> },
   input: {
     threadId: ThreadId;
     turnId: TurnId;
@@ -89,7 +98,39 @@ export function reverseTurnCard(
     );
     return combineWorkReversalOutcome(outcome, workReceipts, input.direction);
   };
-  return app.documentSync.reverseThreadContext({ ...input, alongside });
+  // A move between a project's files and the account's is taken back by the model's own move.
+  const moveBack: MoveBackAcrossLists = async (receipt) => {
+    const { port } = await resolveThreadContextPort(
+      {
+        contextPorts: app.contextPorts,
+        fileAccess: app.fileAccess,
+        threads: app.threadRepos.threads,
+        threadWorks: app.threadRepos.threadWorks,
+        works: app.works,
+        workAuthorityResolver: app.workAuthorityResolver,
+      },
+      input.threadId,
+      input.userId,
+      { liveWrites: true },
+    );
+    const moved = await moveBackAcrossLists(
+      port,
+      receipt as Parameters<typeof moveBackAcrossLists>[1],
+      { type: "human", userId: input.userId, threadId: input.threadId },
+    );
+    if (moved.ok) return { ok: true, records: moved.value.records };
+    return {
+      ok: false,
+      cause: ["stale_target", "stale_source", "not_found"].includes(moved.error.code)
+        ? "superseded"
+        : "refused",
+    };
+  };
+  return app.documentSync.reverseThreadContext({
+    ...input,
+    alongside,
+    moveBackAcrossLists: moveBack,
+  });
 }
 
 export function combineWorkReversalOutcome(

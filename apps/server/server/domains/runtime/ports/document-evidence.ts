@@ -18,7 +18,12 @@ export interface DocumentEvidence {
   resultStored(evidence: StoredEvidence): Promise<void>;
   /** The latest-recorded frontier for `room` among `blockIds`, or null. */
   latestFrontier(room: string, blockIds: readonly string[]): Promise<ObservationFrontier | null>;
+  /** Every row for `room` among `blockIds`, oldest recorded first: the names shown. */
+  frontiersIn(room: string, blockIds: readonly string[]): Promise<RecordedFrontier[]>;
 }
+
+/** One block's row in a room, with the order it was recorded in. */
+export type RecordedFrontier = { blockId: string; recordedSeq: number; snapshot: Uint8Array };
 
 /**
  * The lookups a tool call reads. `recording` is the run's current blocks: what

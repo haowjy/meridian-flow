@@ -4,13 +4,14 @@ import { DAY_MS, deletionPurgeAt } from "@meridian/contracts/retention";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, threads, threadWorks, works } from "@meridian/database/schema";
+import { contextSources, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TopPrimaryChatResolver } from "../../threads/ports/top-primary-chat.js";
 import type { ChatUploadsOwners } from "../chat-uploads-owners.js";
 import { createOwnerLookup, type OwnerLookup, type WorkOwner } from "../owner-lookup.js";
 import type { ScratchLineages } from "../scratch-owner.js";
+import { LIVE_TREE, visibleDocuments } from "../tree/tree-relations.js";
 
 const NAMED_WORK_CANDIDATES = 5;
 
@@ -143,17 +144,17 @@ export function createDrizzleOwnerLookup(
       return rows.flatMap((row) => toWorkOwner(row) ?? []);
     },
     async chatsWithFiles(projectId) {
+      const live = visibleDocuments(LIVE_TREE);
       const rows = await currentDrizzleDb(db)
         .selectDistinct({ chatRef: threads.ref, title: threads.title })
         .from(contextSources)
-        .innerJoin(documents, eq(documents.contextSourceId, contextSources.id))
+        .innerJoin(live, eq(live.contextSourceId, contextSources.id))
         .innerJoin(threads, eq(threads.id, contextSources.chatThreadId))
         .where(
           and(
             eq(contextSources.projectId, projectId as never),
             eq(contextSources.scope, "chat"),
             isNull(contextSources.deletedAt),
-            isNull(documents.deletedAt),
             isNull(threads.deletedAt),
           ),
         );

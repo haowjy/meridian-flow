@@ -28,8 +28,6 @@ export type UserTurnProps = {
   queuedCount?: number;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
-  /** This chat's handle, for a message that still names an upload bare. */
-  uploadsChat?: string;
 };
 
 function UserTurnComponent({
@@ -40,7 +38,6 @@ function UserTurnComponent({
   queueControls = null,
   lastQueued = false,
   queuedCount = 0,
-  uploadsChat,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -69,7 +66,6 @@ function UserTurnComponent({
       references={projected.references}
       skills={projected.skills}
       referenceResolutions={resolutions}
-      uploadsChat={uploadsChat}
       onOpenReference={(documentId) => void openDocument(documentId)}
     >
       {projected.text}

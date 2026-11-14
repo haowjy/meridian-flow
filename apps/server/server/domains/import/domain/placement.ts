@@ -1,4 +1,4 @@
-/** Durable assumptions shared by every holder in a placement generation. */
+/** The plan an import keeps from its first organize pass: where its tree goes and how its top level is named. */
 import type { ImportScheme } from "@meridian/contracts";
 
 export interface ImportPlacement {
@@ -10,6 +10,4 @@ export interface ImportPlacement {
   }[];
   /** Derived node id to allocated name; JSON representation, not an in-memory Map. */
   topLevelNames: Record<string, string>;
-  /** Digest of the final creation set after every failure-capable preparation step. */
-  creationSetDigest: string;
 }

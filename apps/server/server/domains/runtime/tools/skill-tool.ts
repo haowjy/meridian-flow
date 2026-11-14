@@ -171,7 +171,12 @@ export async function skillsRootEntries(
 /** A `write` naming a `skills://` file as its target or its `from` is refused; null otherwise. */
 export function refuseSkillWrite(parsed: WriteToolInput) {
   const from = "from" in parsed ? parsed.from : undefined;
-  if (!isSkillsUri(parsed.path) && !(from !== undefined && isSkillsUri(from.path))) return null;
+  const fromPaths = from === undefined ? [] : "paths" in from ? (from.paths ?? []) : [from.path];
+  if (
+    !isSkillsUri(parsed.path) &&
+    !fromPaths.some((path) => path !== undefined && isSkillsUri(path))
+  )
+    return null;
   return {
     isError: true as const,
     output: modelResult({

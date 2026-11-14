@@ -56,6 +56,16 @@ export type TurnTreeEntry = {
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 
+/**
+ * A folder a turn changed: it has no document, so its receipt names it by the path the model
+ * gave, in the destination (live, or an owner's branch) the change went to.
+ */
+export type TurnTreeFolder = {
+  nodeId: string;
+  ownerKey: DraftOwnerKey | null;
+  shownAt: string;
+};
+
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
   return target.scope === "draft"
@@ -66,6 +76,7 @@ export function turnEditDestination(target: TurnEditedDocumentId): FileDestinati
 export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
+  listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
@@ -73,6 +84,7 @@ export type TurnLiveLineageDocumentStore = {
 export type TurnLiveLineageReadModel = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
@@ -111,6 +123,8 @@ export function createTurnLiveLineageReadModel(deps: {
         return tree ? { ...document, tree } : document;
       });
     },
+
+    listFoldersForTurn: (threadId, turnId) => deps.store.listFolderTargetsForTurn(threadId, turnId),
 
     async getTurnReceiptChip(threadId, turnId) {
       return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;

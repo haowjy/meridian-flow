@@ -2,15 +2,16 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { OpenDocumentOwner } from "@/client/stores";
+import { dismissFailure } from "@/core/project-tree/failure-dismissals";
+import type { TreeEntry } from "@/core/project-tree/tree-view";
 import { focusWhenFree } from "@/lib/focus-follow";
+import { useAccountId } from "./account-feature-context";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { type DragEntry, dragEntry } from "./entry-drag/entry";
-import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
@@ -53,7 +54,7 @@ export function useEntryInteraction({
   importHere,
 }: {
   projectId: string;
-  node: CatalogNode;
+  node: TreeEntry;
   owner: ContextOwner;
   scheme: ProjectContextTreeScheme;
   capabilities: EntryCapabilities;
@@ -88,9 +89,9 @@ export function useEntryInteraction({
   // Set while the picker moves a selection rather than this row alone.
   const [pickedSelection, setPickedSelection] = useState<readonly DragEntry[] | null>(null);
   const entry = useMemo(() => dragEntry(node), [node]);
-  const id = node.kind === "file" ? node.documentId : node.entryId;
+  const id = node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
-  const { operationId, remember } = useRenameOperation(projectId, { kind, id });
+  const accountId = useAccountId();
   const parsed = parseContextUri(node.uri);
   let resolvedOwner: OpenDocumentOwner = { workId: owner.workId ?? undefined };
   if (owner.rootThreadId) {
@@ -102,10 +103,10 @@ export function useEntryInteraction({
     if (!rootThreadRef) throw new Error("Scratch lineage entry requires its URI authority");
     resolvedOwner = { rootThreadId: owner.rootThreadId, rootThreadRef };
   }
-  const actions: readonly EntryAction[] =
-    node.kind === "dir" && node.navigationOnly
-      ? []
-      : [...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined)];
+  const actions: readonly EntryAction[] = [
+    ...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined),
+    ...(node.failureRecord ? (["dismiss"] as const) : []),
+  ];
   useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
@@ -119,6 +120,8 @@ export function useEntryInteraction({
         node.kind === "dir" ? node.path : parentContextEntryPath(node.path),
       );
     else if (action === "delete") onRequestDelete([entry]);
+    else if (action === "dismiss" && node.failureRecord)
+      dismissFailure(accountId, node.failureRecord);
   };
   const menu = useEntryMenu(entry, actions, (action, selection) => {
     if (!selection) {
@@ -131,15 +134,13 @@ export function useEntryInteraction({
   });
   const rename: UseRenameEntryFormOptions = {
     projectId,
-    owner: resolvedOwner,
-    scheme,
     entryId: id,
     currentName: node.name,
     ...(node.kind === "file" ? { row: node } : {}),
     repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
+    repairReason: node.failureReason,
     siblings,
     kind,
-    onRenamed: remember,
     onDone: () => {
       refocus.current = true;
       setRenaming(false);
@@ -150,7 +151,6 @@ export function useEntryInteraction({
     rename,
     /** The row's main control, which takes focus back when its name field closes. */
     controlRef,
-    operationId,
     actions,
     onAction,
     entry,

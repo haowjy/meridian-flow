@@ -38,10 +38,10 @@ not own authorization.
 Runtime tool definitions and policy live in `domains/runtime`; `lib/model-tools`
 binds context, collab, file-policy, and thread services. Document writes pass
 through file grants and `@meridian/agent-edit`; URI parsing and document-row
-creation remain server-side. `write move` and `write delete` change where a whole
-document lives, so the host runs them through the live context port
-(`namespace-commands.ts`) and records their tree entry in collab's edit history
-inside the mutation's own transaction. Tool handlers return the typed agent-edit result,
+creation remain server-side. The tree commands (`tree-commands.ts`, `tree-inverse.ts`)
+run one command per call on the context port's `treeCommand`, resolve paths through
+the names the chat was shown (`shown-paths.ts`), and keep a receipt in collab's tree
+history (`tree_edit_receipts`) in the call's own transaction. Tool handlers return the typed agent-edit result,
 and model renderers never replace the persisted typed result. Context-backed
 handlers resolve one unified `ContextPort` per call.
 
@@ -85,7 +85,7 @@ it and answers `internal` with `retryable: true`; `not_found`, `bad_request` and
 auth stay non-retryable. Pending callbacks
 wait until catchup succeeds and are flushed above the delivered watermark;
 unsubscribe, replacement, close, and send failure invalidate stale work.
-Catalog subscriptions also claim a request slot before reading project ownership.
+Project hint subscriptions (`catalog.subscribe`) also claim a request slot before reading project ownership.
 Close, unsubscribe and a newer request invalidate pending acquisition; only the
 current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
@@ -157,21 +157,6 @@ id as a Scratch owner, or a chat owner on a scheme that has none is a 400 (`pars
 `destinationRootUri`), because a value that reaches the domain or the database fails as an
 untyped 500, which the queue retries forever.
 
-A create has no operation receipt: the id the device minted is its receipt. The
-create-untitled and create-folder routes read it first (`answerHeldCreate` /
-`answerHeldFolder` query `ProjectContextAvailabilityPort.held`), before the route resolves
-its Work authority or checks lifecycle on the destination, so a replay of a create the
-server took is answered from what it holds, and a final refusal means the server holds no
-such id and the device may place the same id again. That lookup is an authority-free read
-of the project's documents or folders table by id, and of `document_forwards` for a joined
-document, so it also finds a tree under a deleted Work that the route itself can no longer
-resolve. An id held where the writer can no longer edit (an archived or deleted Work, a
-hidden or deleted row, a lost grant) answers `409 {status:"conflict"}`: the id is spent, and
-the device replaces it with a new one, for a document or a folder alike
-(`packages/resource-replica` `ServerHold`). The read and the refusals that follow it run under
-`ProjectContextAvailabilityPort.serializeCreate`, one transaction holding a per-id advisory lock
-until the claim commits or rolls back: a replay queues behind a first send still in its
-transaction instead of reading "not held" and being refused for an id that send then commits.
 Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401

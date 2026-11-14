@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
     work.id,
   );
   // The Work's chats left the project list with it; which ones is not known here, so windows probe.
-  app.contextCatalogWakeHub.publish({
+  app.projectWakeHub.publish({
     type: "project-chats-hint",
     projectId: work.projectId,
     recheckTabs: true,

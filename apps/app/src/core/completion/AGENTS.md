@@ -1,7 +1,7 @@
 # core/completion — headless suggestion and reference policy
 
 The generation-fenced menu store and the hierarchical reference browser over the
-normalized catalog ([one predictive browser][at-references]). Hosts provide trigger
+sources' trees ([one predictive browser][at-references]). Hosts provide trigger
 envelopes, geometry, insertion and rendering.
 
 - Keep this package independent of `editor/`, `features/` and rendering libraries.

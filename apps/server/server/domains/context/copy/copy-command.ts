@@ -14,18 +14,19 @@
  *    lock: a source room that is not open loads through a second connection, so a transaction
  *    held across the read could starve the pool, and a lock held across them would stall every
  *    writer in the destination for the length of the tree;
- * 3. opens the operation receipt's transaction and, inside it, the command transaction that
- *    takes the destination's Work and namespace (the sources are a frozen cut and are not
- *    locked);
- * 4. rechecks the destination under that lock and asks the destination adapter to insert the
- *    plan. If a concurrent write took a root's name since the plan, the adapter inserts
- *    nothing and the command plans and binds again, now under the lock.
+ * 3. claims the operation as a `copy` command (`copy-commands.ts`) and, inside it, opens the
+ *    command transaction, which takes the destination's Work (the sources are a frozen cut and
+ *    are not locked);
+ * 4. inserts the plan as one `submit` on the destination's list, which checks under the list's
+ *    lock that every root's name is still free. If a concurrent write took one since the plan,
+ *    nothing is inserted and the command plans and binds again, now under the lock.
  *
- * A refusal is typed and recorded on the receipt, so a replay reads the same answer. An
- * infrastructure failure, or a source whose room has not yet received the client's edits,
- * records nothing and stays retryable under the same operation ID. A duplicate that arrives
- * while the first attempt is preparing waits for it in this process instead of reading every
- * source again.
+ * A refusal is typed and stored with the command, so a resend reads the same answer; another
+ * request under the id answers `command_conflict`. An infrastructure failure, or a source whose
+ * room has not yet received the client's edits, stores nothing and stays retryable under the
+ * same operation ID. A duplicate that arrives while the first attempt is preparing waits for it
+ * in this process instead of reading every source again. A resend that does reach the insert
+ * (another process) finds its copies' ids taken and answers `conflict`.
  *
  * The answer returns when the rows commit; their projections and link rows are derived after
  * commit without holding the answer. There is no Undo command: Copy's Undo is ordinary
@@ -123,7 +124,7 @@ export interface ContextCopyCommandDeps {
   release: Pick<ObjectRelease, "keys">;
 }
 
-/** The receipt owner and command transaction one authenticated caller's port already holds. */
+/** The command transaction one authenticated caller's port already holds. */
 export interface ContextCopyEnvironment {
   commands: CopyCommands;
   commandTransaction: ContextCommandTransaction;
@@ -178,8 +179,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function copy(
     input: ContextCopyInput,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    // The receipt keeps the selection as the writer made it, so a replay is matched against
-    // what was sent; the copy works from its outermost roots.
+    // The copy works from the selection's outermost roots.
     const selected = { ...input, sources: outermostRoots(input.sources) };
     const { commands, commandTransaction } = input.environment;
     // A replay has nothing to read: its answer is stored, and receipts are never deleted.

@@ -73,15 +73,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
-      async stageInitialStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async commitStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async discardStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
+      async discardUnbornDocuments() {},
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
       async seedInitialDocuments(seeds) {
         for (const { documentId, state } of seeds)
@@ -179,16 +171,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
-      prepareSeed: runtime.markdownDocuments.prepareSeed,
-      async stageInitialStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async commitStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async discardStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
+      async discardUnbornDocuments() {},
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
@@ -243,9 +226,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       workBranchDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      documentPurgeDraftDisposal: {
-        withDisposal: (_documentId, run) => run(async () => undefined),
-      },
+      documentPurgeDraftDisposal: { settle: async () => "closed" },
       // No document drafts in memory: nothing to register.
       draftLinks: { flush: async () => {} },
     },
@@ -297,7 +278,7 @@ function createInMemoryDraftPeerStub(
         const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
         return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
-    async ensureCreatedDocumentDraft() {
+    async draftCreatedDocuments() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },
   };
@@ -310,17 +291,28 @@ function createInMemoryBranchStub(): CollabBranches {
   });
   return {
     draftReview: {
-      async applyClick({ request }) {
+      async apply({ request }) {
         return { status: "closed", commandId: request.commandId };
       },
       async unapplyClick({ request }) {
         return { status: "closed", commandId: request.commandId };
       },
+      commandDocuments: {
+        async ofApply() {
+          return [];
+        },
+        async ofDiscard() {
+          return [];
+        },
+      },
+      async undoDiscard({ request }) {
+        return { status: "refused", commandId: request.commandId, reason: "not_found" };
+      },
       async list() {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], threadTitles: new Map() };
+        return { branchId: null, items: [], folders: [], threadTitles: new Map() };
       },
       async pendingDocumentCount() {
         return 0;
@@ -347,7 +339,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return { kind: "none" };
       },
       discardItem: (input) => gone(input.item),
-      discardAll: gone,
+      discardBranch: gone,
     },
   };
 }
@@ -364,6 +356,9 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
       }));
     },
     // The in-memory host has no tree history.
+    async listFolderTargetsForTurn() {
+      return [];
+    },
     async listTreeEntriesForTurn() {
       return [];
     },

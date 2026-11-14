@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
+import { EndedWorkNotice } from "./EndedWorkNotice";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
@@ -87,7 +87,7 @@ export function WorkDetail({
         </div>
         {isWorkArchived(work) ? (
           <div className="mt-1.5 min-w-0">
-            <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
+            <EndedWorkNotice projectId={projectId} work={work} showFailure={false} />
           </div>
         ) : null}
         {archiveFailure ? <WorkCommandFailureRow failure={archiveFailure} /> : null}

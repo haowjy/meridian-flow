@@ -8,7 +8,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a tree command is one model-edit command under its call's key, like a text edit
- * - a create with content is undone as one edit (the node and its text)
+ * - a create with content is undone as one edit (the node and its text), by the command it came from
  */
 import assert from "node:assert/strict";
 import {
@@ -132,7 +132,8 @@ const cases: ModelEditCase[] = [
   },
   {
     name: "the model's undo of a create with content",
-    expected: "one undo takes the new document and its text together",
+    expected:
+      "a create with content is one command, one Undo step: undo takes the node and its text, and a count of 1 is enough",
     async run({ h, start }) {
       const tag = `t${Math.random().toString(36).slice(2, 8)}`;
       const { thread, documentId } = await seedCase(h, tag, "direct");
@@ -149,7 +150,7 @@ const cases: ModelEditCase[] = [
       await send(child, h, thread, "undo it");
       await waitForAssistantTurn(h, thread, { count: 2 });
       const after = await state(h, thread, documentId);
-      assert.deepEqual(after.results, ["call-1:committed", "call-2:committed"]);
+      assert.deepEqual(after.results, ["call-1:committed", "call-2:reversed"]);
       const found = await documentsNamed(h, `${tag}-born`);
       assert.deepEqual(
         found.map((d) => d.deleted),

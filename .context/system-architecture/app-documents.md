@@ -70,7 +70,7 @@ Main and side panes, sidebar, tabs, Works and routing.
 
 The editor core.
 
-The group of the editor session, transport, resource replica, uploads and completion.
+The group of the editor session, transport, tree list, uploads and completion.
 
 - Kind: context
 - See: [core](app.md#core)

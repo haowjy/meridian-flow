@@ -1,9 +1,9 @@
 /**
  * link-resolution-epoch — a per-project counter that says server link answers may be old.
  *
- * Some answers name targets outside the catalogs a surface loads: hidden draft
- * documents and another Work's Scratch folders, for example. Catalog wake hints
- * bump this epoch so those answers are asked again. Focus and network return are
+ * Some answers name targets outside the trees a surface loads: hidden draft
+ * documents and another Work's Scratch folders, for example. The project's wake hints
+ * (a draft owner's, the sources') bump this epoch so those answers are asked again. Focus and network return are
  * the fallback when a page missed the live hint.
  */
 import { useEffect } from "react";

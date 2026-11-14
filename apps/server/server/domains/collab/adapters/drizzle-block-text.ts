@@ -8,6 +8,7 @@ import {
   documentDrafts,
   documents,
   documentYjsHeads,
+  treeNodes,
 } from "@meridian/database";
 import { and, eq, inArray, isNull, lte, ne, not, notExists, or, type SQL, sql } from "drizzle-orm";
 import { branchOwnedBy } from "../../../shared/draft-owner.js";
@@ -16,13 +17,21 @@ import type { BlockText } from "../domain/ports/block-text.js";
 import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
 
 /**
- * Both predicates need `documentBlockRooms` left-joined to `documents` and `documentYjsHeads`.
- * `cutBehind`: the room's cut differs from the document's head or location.
+ * The version text derivations compare: the live row's, and 0 for a document no live row places.
+ * Needs `treeNodes` left-joined on the document.
+ */
+export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVersion}, 0)`.mapWith(
+  BigInt,
+);
+
+/**
+ * Both predicates need `documentBlockRooms` left-joined to `documents`, `documentYjsHeads` and
+ * `treeNodes`. `cutBehind`: the room's cut differs from the document's head or location.
  */
 const cutBehind = [
   ne(documentBlockRooms.cutGeneration, documentYjsHeads.authorityGeneration),
   ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
-  ne(documentBlockRooms.cutLocationVersion, documents.locationVersion),
+  sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,
 ];
 const otherExtractor = ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION);
 
@@ -70,6 +79,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
+        .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(
           and(
             current(ids),
@@ -102,6 +112,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
+        .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(current(ids));
       return new Map(rows.map((row) => [row.id, row.words]));
     },

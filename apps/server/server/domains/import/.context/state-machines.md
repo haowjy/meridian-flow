@@ -1,8 +1,8 @@
 # Import state machines
 
 An import is a durable job (`imports.state`) over its entries, one per file
-(`import_entries.state`). The server converts each uploaded file into a staging area the
-project's tree does not show, then moves the staged tree into the project in one transaction,
+(`import_entries.state`). The server converts each uploaded file and writes its first text into the journal, where
+nothing shows it, then makes every node a record of the project's tree list in one transaction,
 the reveal. The wire
 states are in `packages/contracts/src/imports.ts`; the lifecycle rules are in
 [CONTEXT.md](CONTEXT.md). How the app shows these states:
@@ -26,7 +26,7 @@ stateDiagram-v2
 ```
 
 - **`organizing → finished` is one transaction with publication** (`organize/organizer.ts`):
-  the prepared entries become `organized` and the staged tree is revealed together. There is no
+  the prepared entries become `organized` and the tree's `create` records are admitted together. There is no
   state for "published but not finished".
 - **`failed` is not terminal.** Retry returns it to `organizing` and clears the reason, the
   lease and the no-progress count (`domain/upload-service.ts`).
@@ -37,8 +37,7 @@ stateDiagram-v2
 
 The organizer works under a lease on the import row
 (`adapters/drizzle-organize-queue.ts`): only an `organizing` import with no live lease can be
-claimed, and every organizing write rechecks the state, the lease token and the placement
-generation (the version of the planned destination tree). Without those checks an organizer that lost its lease writes over its successor.
+claimed, and every organizing write rechecks the state and the lease token. Without those checks an organizer that lost its lease writes over its successor.
 See [a job worked under a lease](../../../../../../.context/state-machines/job-under-a-lease.md).
 
 ## Import entry
@@ -50,16 +49,14 @@ stateDiagram-v2
   awaiting --> received: bytes received
   awaiting --> skipped: unreadable or not found on the device
   awaiting --> failed: too large
-  received --> prepared: converted and staged
+  received --> prepared: converted and its text written
   received --> failed: upload lost
   prepared --> organized: revealed with the import
-  prepared --> received: placement rebuilt
   organized --> [*]
   skipped --> [*]
   failed --> [*]
 ```
 
 `transitionEntries` updates only rows in the named source states, which is what stops a late
-receipt or an old organizer from overwriting newer work. A `prepared` entry is converted
-and staged for one placement generation: when the planned tree is rebuilt, every `prepared`
-entry returns to `received` first.
+receipt or an old organizer from overwriting newer work. A `prepared` entry has its first text in the journal and
+what the batch worked out on the entry; the plan is stored once, so nothing sends it back.

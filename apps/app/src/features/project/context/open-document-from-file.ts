@@ -7,33 +7,16 @@
  * chat's Scratch retains its lineage and the handle its URI spells.
  */
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  type ResourceOwner,
-  type ResourcePlacement,
-  type ResourceRecord,
-  resourceForDocumentIdentity,
-} from "@meridian/resource-replica";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
-
+import type {
+  CatalogFileEntry,
+  ContextOwner,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { OpenDocument, OpenDocumentOwner, ServerOpenDocument } from "@/client/stores";
-
-/**
- * What a tab holds of its owner: a Work row id, a lineage or a chat with the handle its URI
- * spells. Null for a chat's upload whose chat has no handle yet: no tab can name it.
- */
-export function documentOwnerOf(location: ResourceOwner): OpenDocumentOwner | null {
-  if (location.chatId !== undefined)
-    return location.chatRef ? { chatId: location.chatId, chatRef: location.chatRef } : null;
-  return location.rootThreadId !== undefined
-    ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
-    : location.workId
-      ? { workId: location.workId }
-      : {};
-}
+import type { TreeFile } from "@/core/project-tree/tree-view";
 
 /** The handle (`c15`) a chat's upload's URI spells. */
-function chatRefOf(file: CatalogFile): string {
+function chatRefOf(file: TreeFile): string {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok || parsed.value.authority.kind !== "chat")
     throw new Error("A chat's upload must have a chat authority");
@@ -41,7 +24,7 @@ function chatRefOf(file: CatalogFile): string {
 }
 
 /** The handle (`c12`) a chat's Scratch file's URI spells. */
-function lineageRefOf(file: CatalogFile): string {
+function lineageRefOf(file: TreeFile): string {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok || parsed.value.authority.kind !== "lineage")
     throw new Error("A chat's Scratch file must have a chat authority");
@@ -50,17 +33,9 @@ function lineageRefOf(file: CatalogFile): string {
 
 export function openDocumentFromFile(
   scheme: ProjectContextTreeScheme,
-  file: CatalogFile,
+  file: TreeFile,
   owner: ContextOwner = {},
-): OpenDocument {
-  if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
-    return {
-      kind: "new",
-      documentId: file.documentId,
-      name: file.name,
-      resourceHandle: file.resourceHandle,
-    };
-  }
+): ServerOpenDocument {
   if (scheme === "uploads" && !owner.chatThreadId)
     throw new Error("A chat's upload tab requires its chat");
   if (isWorkScopedScheme(scheme) && !owner.workId && !owner.rootThreadId)
@@ -89,13 +64,6 @@ export function openDocumentFromFile(
           editable: true as const,
           filetype: file.filetype,
           schemaType: file.schemaType,
-          ...(file.resourceHandle
-            ? {
-                resourceHandle: file.resourceHandle,
-                ...(file.resourceOrigin ? { origin: "local-resource" as const } : {}),
-              }
-            : {}),
-          ...(file.resourceState === "local" ? { localOnly: true as const } : {}),
         }
       : {
           kind: "viewer" as const,
@@ -106,126 +74,56 @@ export function openDocumentFromFile(
   };
 }
 
-/** The tab for a file the server holds; null for a document still local to this device. */
-export function serverDocumentFromFile(
-  scheme: ProjectContextTreeScheme,
-  file: CatalogFile,
-  owner: ContextOwner = {},
-): ServerOpenDocument | null {
-  const tab = openDocumentFromFile(scheme, file, owner);
-  return tab.kind === "new" ? null : tab;
-}
-
-/** One optimistic tab projection for a durable editable resource. */
-export function openDocumentFromResource(
-  record: ResourceRecord,
-  placement: ResourcePlacement,
-): Extract<OpenDocument, { kind: "new" | "tracked" }> | null {
-  const location = placement.resourceLocation(record);
-  const tabOwner = location ? documentOwnerOf(location) : null;
-  if (!location || !tabOwner) return null;
-  const { resource } = record;
-  if (!resource.classification.editable) return null;
-  const locallyCreated = record.resource.materialization !== undefined;
-  if (resource.lifecycle.kind === "local" && location.provisional) {
-    return {
-      kind: "new",
-      documentId: resource.identity.documentId,
-      name: location.name,
-      resourceHandle: resource.handle,
-    };
-  }
+/** The server's answer for a document the list does not show, in the shape the screens read. */
+export function treeFileFromCatalogEntry(entry: CatalogFileEntry): TreeFile {
+  const base = {
+    kind: "file" as const,
+    entryId: entry.entryId,
+    parentId: entry.parentId,
+    documentId: entry.entryId,
+    name: entry.name,
+    extension: entry.extension,
+    aliases: entry.aliases,
+    path: `/${entry.path.join("/")}`,
+    uri: entry.uri,
+    provisionalName: entry.provisionalName,
+    hasProperties: entry.hasProperties ?? false,
+  };
+  if (entry.editable)
+    return { ...base, editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
   return {
-    kind: "tracked",
-    documentId: resource.identity.documentId,
-    scheme: location.scheme,
-    path: location.path,
-    name: location.name,
-    ...tabOwner,
-    editable: true,
-    filetype: resource.classification.filetype,
-    schemaType: resource.classification.schemaType,
-    provisionalName: location.provisional,
-    ...(resource.content.kind === "exact"
-      ? {
-          resourceHandle: resource.handle,
-          ...(locallyCreated ? { origin: "local-resource" as const } : {}),
-        }
-      : {}),
-    ...(resource.lifecycle.kind === "local" ? { localOnly: true as const } : {}),
+    ...base,
+    editable: false,
+    disposition: entry.disposition,
+    fileType: entry.fileType,
+    ...(entry.disposition === "custom" ? { filetype: entry.filetype } : {}),
+    ...(entry.mimeType ? { mimeType: entry.mimeType } : {}),
   };
 }
 
-export type ResourceDocumentProjection =
+export const serverDocumentFromFile = openDocumentFromFile;
+
+/** What a tab's document is in the list now: where it sits, or that it is gone. */
+export type TabPlacement =
   | { kind: "none" }
   | { kind: "removed" }
-  | {
-      kind: "terminal";
-      documentIds: readonly string[];
-      generation: string;
-      deletionVersion: string | null;
-    }
-  | {
-      kind: "projected";
-      resourceHandle: string;
-      document: OpenDocument;
-    };
+  | { kind: "projected"; document: OpenDocument };
 
 /**
- * Reconcile any open tab by stable handle when known, otherwise by server document identity.
- * A draft-only document is one live doesn't hold, so the live replica says nothing about it: the
- * record of a document live deleted while a Work's draft survives is terminal, and
- * hiding or closing its tab on it would strand the draft. Its draft settlement owns it.
+ * A tab follows its document's node: a rename or a move shows here at once, and a node that
+ * left the view (or a list that has synced without it) removes the tab. A draft-only document
+ * is one live does not hold, so the list says nothing about it. While the list has not synced
+ * a missing node is not a removal.
  */
-export function projectResourceDocument(
-  tab: OpenDocument,
-  records: readonly ResourceRecord[],
-  placement: ResourcePlacement,
+export function placeTab(
+  found: { scheme: ProjectContextTreeScheme; file: TreeFile; owner: ContextOwner } | null,
+  listSynced: boolean,
   draftOnly: boolean,
-): ResourceDocumentProjection {
+): TabPlacement {
   if (draftOnly) return { kind: "none" };
-  const record =
-    (tab.resourceHandle
-      ? records.find(({ resource }) => resource.handle === tab.resourceHandle)
-      : undefined) ?? resourceForDocumentIdentity(records, tab.documentId);
-  if (!record) return { kind: "none" };
-  if (record.resource.lifecycle.kind === "terminal")
-    return {
-      kind: "terminal",
-      documentIds: [...new Set([tab.documentId, record.resource.identity.documentId])],
-      generation: record.resource.lifecycle.generation,
-      deletionVersion: record.resource.lifecycle.deletionVersion ?? null,
-    };
-  if (record.resource.content.kind === "unacquired") {
-    const location = placement.resourceLocation(record);
-    if (!location || tab.kind === "new") return { kind: "removed" };
-    const tabOwner = documentOwnerOf(location);
-    if (!tabOwner) return { kind: "none" };
-    const {
-      resourceHandle: _resourceHandle,
-      workId: _workId,
-      rootThreadId: _rootThreadId,
-      rootThreadRef: _rootThreadRef,
-      chatId: _chatId,
-      chatRef: _chatRef,
-      ...existing
-    } = tab;
-    const projected = {
-      ...existing,
-      documentId: record.resource.identity.documentId,
-      scheme: location.scheme,
-      path: location.path,
-      name: location.name,
-      ...tabOwner,
-      ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
-    } as Extract<OpenDocument, { kind: "tracked" | "viewer" }>;
-    return { kind: "projected", resourceHandle: record.resource.handle, document: projected };
-  }
-  // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
-  const located = placement.resourceLocation(record);
-  if (located && !documentOwnerOf(located)) return { kind: "none" };
-  const projected = openDocumentFromResource(record, placement);
-  return projected
-    ? { kind: "projected", resourceHandle: record.resource.handle, document: projected }
-    : { kind: "removed" };
+  if (!found) return listSynced ? { kind: "removed" } : { kind: "none" };
+  return {
+    kind: "projected",
+    document: openDocumentFromFile(found.scheme, found.file, found.owner),
+  };
 }

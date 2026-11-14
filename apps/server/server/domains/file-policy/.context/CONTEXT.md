@@ -19,11 +19,14 @@ until Apply moves the live identity: Scratch content stays live behind a
 proposed project path, while project content stays drafted behind a proposed
 Scratch path. The physical Scratch owner continues to cap delegation.
 
-A live `restore` target reads through the tree tombstones placement revives, so
-an undo by an old path is authorized where the document actually returns, not at
-the path it was shown at. A restore checked at a draft destination may read the
-hidden physical identity after that branch's create was undone while another
-branch kept it alive; the destination Work still supplies its lifecycle and lock.
+A `restore` target reads through Trash, so an undo by an old path is authorized where the
+document actually returns, not at the path it was shown at. A document in no view has no
+source and no facts: a restore of a discarded create is refused here, and the server's own
+Undo restores it.
+
+Facts come from the view's relations (`TreeReader.lineages`): the source and folders the view
+places the document in, and `deleted` from live's Trash or the source. `survivingDraft` is a
+document live has in Trash that the Work's tree still shows.
 
 ## Write seams
 

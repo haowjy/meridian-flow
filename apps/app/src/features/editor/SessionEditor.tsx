@@ -4,7 +4,6 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -18,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
@@ -32,7 +32,6 @@ import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountEpochSignal,
   useAccountId,
-  useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
@@ -178,20 +177,21 @@ function ActiveSessionEditorView({
   effectiveEditableRef.current = effectiveEditable;
 
   // Links belong to their holder, never to the route's or a chat's Work.
-  const { records, placement } = useAccountResourceProjection(projectId ?? "");
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  const holder = resourceForDocumentIdentity(records, documentId);
-  const location = holder && projectId ? placement.resourceLocation(holder) : null;
-  const linkRootThreadId = location?.rootThreadId ?? null;
-  const linkWorkId = !location
+  const holder = useProjectTrees(projectId ?? "").find(documentId);
+  const holderOwner = holder?.source.owner;
+  const linkRootThreadId = holderOwner?.kind === "lineage" ? holderOwner.rootThreadId : null;
+  const linkWorkId = !holderOwner
     ? identity.surface === "review"
       ? (workOfOwner(identity.ownerKey) ?? noWork?.id ?? null)
       : null
     : linkRootThreadId
       ? (noWork?.id ?? null)
-      : location.scheme === "scratch" || location.scheme === "uploads"
-        ? location.workId
-        : (noWork?.id ?? null);
+      : holderOwner.kind === "work"
+        ? holderOwner.workId
+        : holderOwner.kind === "chat"
+          ? null
+          : (noWork?.id ?? null);
   const scope = useMemo<EditorScope>(
     () => ({ projectId: projectId ?? null, workId: linkWorkId, rootThreadId: linkRootThreadId }),
     [projectId, linkWorkId, linkRootThreadId],
@@ -360,7 +360,7 @@ function ActiveSessionEditorView({
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
     if (!editor || !active || !effectiveEditable) return;
-    const made = !inReview && claimEditorFocus(focusKey);
+    const made = claimEditorFocus(focusKey);
     if (!made && !loadFocus) return;
     let release: (() => void) | null = null;
     let mounted = true;

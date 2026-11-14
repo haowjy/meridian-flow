@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinationOwner, identityDestination, type TabLocation } from "./identity-location";
+import { identityDestination, type TabLocation } from "./identity-location";
 
 const lineageNote: TabLocation = {
   scheme: "scratch",
@@ -21,9 +21,6 @@ describe("a document's placement owner", () => {
       rootThreadRef: "c12",
       workId: undefined,
     });
-    expect(
-      destinationOwner(identityDestination(lineageNote, "editor-work"), [], { id: "no-work" }),
-    ).toEqual({ workId: null, rootThreadId: "root-c12", rootThreadRef: "c12" });
   });
 
   it("drops the lineage when the note moves out of Scratch", () => {
@@ -33,6 +30,5 @@ describe("a document's placement owner", () => {
     });
     expect(moved.rootThreadId).toBeUndefined();
     expect(moved.workId).toBeUndefined();
-    expect(destinationOwner(moved, [], { id: "no-work" })).toEqual({ workId: null });
   });
 });

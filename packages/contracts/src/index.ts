@@ -24,25 +24,8 @@ export type {
   ProjectExportPreview,
 } from "./project-export.js";
 export {
-  type BranchTreeFacts,
-  type BranchTreeTransition,
-  deserializeRemovalIdentity,
-  isLiveTransition,
-  type LiveTreeState,
-  type LiveTreeTransition,
   type RemovalIdentity,
   removalIdentitySchema,
-  sameBranchFacts,
-  samePlacement,
   serializeRemovalIdentity,
-  type TreeChange,
-  type TreeChangeDestination,
-  type TreeChangeOp,
-  type TreeChangeTarget,
-  type TreePlacement,
-  type TreeRemoval,
-  type TreeSettlement,
-  type TreeTransition,
-  type TreeTransitionChange,
 } from "./tree-change.js";
 export * from "./usage";

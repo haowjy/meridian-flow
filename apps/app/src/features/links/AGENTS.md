@@ -9,7 +9,7 @@ module resolves and follows. Link meaning and per-editor cache rules belong to
   sharing an href don't share an answer.
 - An unknown Work is `pending`, never a guessed authority, and route or remembered Work
   never supplies Editor scope.
-- Registering a resolver is the sole cache invalidation, and a catalog change counts as a
+- Registering a resolver is the sole cache invalidation, and a tree change counts as a
   scope change. Add no second invalidation path.
 - Surfaces call only the follow procedure and injected `open`; they don't inspect
   resolution to decide navigation.

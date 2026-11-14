@@ -2,16 +2,15 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  contextSources,
   documentBlockRooms,
   documentBlocks,
   documentLinks,
   documents,
   documentYjsHeads,
   projects,
-  works,
+  treeNodes,
 } from "@meridian/database";
-import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -20,6 +19,7 @@ import {
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
+import { livingDocumentSql } from "../../context/tree/living-document.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
@@ -30,7 +30,7 @@ import {
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
-import { staleForSweep } from "./drizzle-block-text.js";
+import { liveLocationVersion, staleForSweep } from "./drizzle-block-text.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /** Caller owns the document mutation lock for this transaction. */
@@ -43,11 +43,12 @@ export async function captureDocumentDerivation(
     .select({
       generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
-      locationVersion: documents.locationVersion,
-      deletedAt: documents.deletedAt,
+      locationVersion: liveLocationVersion,
+      inLive: sql<boolean>`${treeNodes.trashRecord} IS NULL AND ${treeNodes.id} IS NOT NULL`,
     })
     .from(documents)
     .innerJoin(documentYjsHeads, eq(documents.id, documentYjsHeads.documentId))
+    .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(eq(documents.id, documentId))
     .limit(1);
   // An already-staged push must still settle after a soft deletion.
@@ -56,7 +57,7 @@ export async function captureDocumentDerivation(
   const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
   if (!state) return null;
   const address = await lastAddress(documentId);
-  if (!row.deletedAt && !address)
+  if (row.inLive && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
   // Under the deleted-ancestor rule a document in a deleted folder or Work holds no address.
   const holderUri = address && !address.deleted ? address.uri : null;
@@ -73,9 +74,6 @@ export async function captureDocumentDerivation(
   };
 }
 
-/** The project a document's source belongs to: its own, or its Work's. */
-const sourceProjectId = sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`;
-
 /** Rows per statement: bounded by the driver's parameter limit. */
 const WRITE_CHUNK = 1000;
 
@@ -88,15 +86,13 @@ function chunks<T>(rows: readonly T[]): T[][] {
 }
 
 async function documentProjectId(tx: DrizzleDb, documentId: DocumentId): Promise<ProjectId> {
-  const [source] = await tx
-    .select({ projectId: sourceProjectId })
+  const [row] = await tx
+    .select({ projectId: documents.projectId })
     .from(documents)
-    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .leftJoin(works, eq(works.id, contextSources.workId))
     .where(eq(documents.id, documentId))
     .limit(1);
-  if (!source?.projectId) throw new Error(`Document ${documentId} has no project`);
-  return source.projectId;
+  if (!row) throw new Error(`Document ${documentId} has no project`);
+  return row.projectId;
 }
 
 /**
@@ -122,12 +118,13 @@ export async function certifyDocumentDerivation(
     head.nextAdmissionSequence !== w.admissionSequence
   )
     return false;
+  // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
-    .select({ version: documents.locationVersion })
-    .from(documents)
-    .where(eq(documents.id, cut.documentId))
+    .select({ version: treeNodes.locationVersion })
+    .from(treeNodes)
+    .where(eq(treeNodes.id, cut.documentId))
     .for("no key update");
-  if (!location || location.version !== w.locationVersion) return false;
+  if ((location?.version ?? 0n) !== w.locationVersion) return false;
   const [room] = await tx
     .select()
     .from(documentBlockRooms)
@@ -142,11 +139,8 @@ export async function certifyDocumentDerivation(
     room.extractorVersion === w.extractorVersion
   )
     return true;
-  // The project changes only with a move, which bumps the location version.
-  const projectId =
-    room && room.cutLocationVersion === w.locationVersion
-      ? room.projectId
-      : await documentProjectId(tx, cut.documentId);
+  // A document's project is for good.
+  const projectId = room ? room.projectId : await documentProjectId(tx, cut.documentId);
 
   // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
   // `ls` shows `updatedAt` to the model and the writer.
@@ -157,7 +151,7 @@ export async function certifyDocumentDerivation(
       sizeBytes: outputs.documentBytes,
       ...(edited ? { updatedAt: at } : {}),
     })
-    .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
+    .where(eq(documents.id, cut.documentId))
     .returning({ id: documents.id });
   if (!updated) return false;
 
@@ -319,18 +313,17 @@ export function createDrizzleDocumentDerivationStore(
         .select({ id: documents.id })
         .from(documents)
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .leftJoin(works, eq(works.id, contextSources.workId))
-        .leftJoin(projects, sql`${projects.id} = ${sourceProjectId}`)
+        .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
+        .innerJoin(projects, eq(projects.id, documents.projectId))
         .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
-            isNull(documents.deletedAt),
+            livingDocumentSql(documents.id),
             staleForSweep,
             scope
               ? scope.personalOwnerId
                 ? eq(projects.userId, scope.personalOwnerId)
-                : sql`${sourceProjectId} = ${scope.projectId}`
+                : eq(documents.projectId, scope.projectId)
               : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),

@@ -1,9 +1,0 @@
-# TODO
-
-- Nothing in the database forces a visible tree row to have a rank. Every parent is ordered by
-  rank alone, so a row revealed or inserted without one sorts by id and refuses drags placed
-  relative to it (`stale-anchor`). Only the 0130 migration test and `import-resume.db.test.ts`
-  check for it. Enforce it where a new insert path cannot skip it: a CHECK
-  `(deleted_at IS NOT NULL OR hidden OR rank IS NOT NULL)` added `NOT VALID` then validated,
-  which needs every path that reveals a row (`placeLive`'s land, reveal, restore) to write the
-  rank in the same statement that clears `hidden` or `deleted_at`.

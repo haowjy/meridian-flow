@@ -10,21 +10,18 @@ not authorization for the requested document.
 - **Bare `/editor`:** explicitly empty on direct entry, reload and Back/Forward. Main shows the
   Recently opened landing, a chooser painted from the device record without waiting for the server
   list. Nothing reopens a document on its own.
-- **Recently opened door** (main's header): clears the document address and any local-document
-  history pointer and leaves the working set alone.
+- **Recently opened door** (main's header): clears the document address and leaves the working set alone.
 - **Readable URL, reload, Back/Forward:** `ProjectAddressDocument` canonicalizes the address and
-  publishes its admission issue from the authorized catalog entry. It installs nothing and invokes
-  no second live opener. While a lookup is refetching, cached metadata can't publish an admission or
-  repair the URL.
+  publishes its admission issue from the replay's file (the server's entry for a review). It installs
+  nothing and invokes no second live opener. Until the list has synced, an address publishes no
+  admission and repairs no URL.
 - **Stable document ID:** `ProjectDocumentNavigationAdapter` opens known initialized content through
   the resource owner and commits main's address. Every door opens in main, a chat's included. A
   cancelled decision publishes nothing.
 - **Uploads** have no editor address. Every door opens one in `UploadViewerDialog`, not in main
   or the side.
-- **Pending local Unfiled writing:** an exact local identity in `/editor` history state selects the
-  durable resource and session. Acknowledgement or remint preserves the resource handle and editor
-  session while the address adopts the current Document ID. See
-  [local writing ownership](../context/.context/resource-catalog-and-editor-lifecycle.md).
+- **A new document** is a node of the list at once, in Unfiled: its address is its placement, and
+  the route is bound to its id, so a rename or a move repairs the URL to the same document.
 
 ## Ordered handoff
 
@@ -80,10 +77,11 @@ local persistence readiness or server reconciliation; see the
 
 ## Review addresses
 
-Only a route with `itemKey` and a resolved Work sends its Work and per-document draft selector, both in the
-address query key. A plain manuscript address stays live-only, and no caller guesses a review selector from a
-path or a Work's draft list.
+Only a route with `itemKey` and a resolved owner reads a Work's tree. It finds the item's document by id
+in the tree of the branch the item's metadata names (`useDraftMetadata`), in any source, so a page the draft
+created, renamed or moved opens where the Work puts it; a drafted delete is absent there and reads live. A
+plain address stays live-only, and no caller guesses an item from a path or a Work's draft list.
 
-`ReadableProjectRoute` keeps `useDraftMetadata` above editor address admission, so catalog invalidation can't
+`ReadableProjectRoute` keeps `useDraftMetadata` above editor address admission, so a list change can't
 unmount the room first and strand the destination as unavailable. See the
 [review runtime](../../draft-review/.context/draft-review.md).

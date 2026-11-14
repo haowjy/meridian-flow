@@ -21,7 +21,7 @@ export type InvalidOperationReason =
   | "no_draft";
 
 export type ContextError =
-  | { code: "operation_mismatch"; uri: string }
+  | { code: "command_conflict"; uri: string }
   | { code: "invalid_name"; uri: string; message: string }
   | { code: "not_found"; uri: string }
   | { code: "destination_missing"; uri: string }
@@ -107,8 +107,6 @@ export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =
 export type ContextOperationReceipt = {
   [K in ContextOperationCommand["kind"]]: {
     operationId: string;
-    /** Server namespace watermark captured with this immutable command outcome. */
-    observationVersion: string;
     command: Extract<ContextOperationCommand, { kind: K }>;
     result: ContextOperationResult<K>;
   };

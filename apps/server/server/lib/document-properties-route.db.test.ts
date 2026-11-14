@@ -4,11 +4,13 @@
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documents, projects, users } from "@meridian/database/schema";
+import { inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDrizzleDocumentPropertiesReader } from "../domains/context/index.js";
 import { createProjectRepositoryForTest } from "../domains/projects/test-support/project-repository.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../test-support/file-grants.js";
+import { treeSeeder } from "../test-support/tree-seed.js";
 import { readDocumentPropertiesForRoute } from "./document-properties-route.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -69,19 +71,13 @@ if (!RUN) {
         )
         .returning({ id: contextSources.id });
       const properties = { format: "yaml", text: "aliases: [Gate]\ntags: [a, b]\n" };
-      await db.insert(documents).values(
-        [BOOK_DOC, USER_DOC, STRANGER_DOC].map((id, index) => ({
-          id,
-          contextSourceId: sourceIds[index]?.id as string,
-          name: `doc-${index}`,
-          extension: "",
-          fileType: "markdown" as const,
-          mimeType: "text/markdown",
-          sizeBytes: 0,
-          markdownProjection: "",
-          metadata: { properties },
-        })),
-      );
+      const seeder = treeSeeder(db);
+      for (const [index, id] of [BOOK_DOC, USER_DOC, STRANGER_DOC].entries())
+        await seeder.document(sourceIds[index]?.id as string, `doc-${index}`, { id });
+      await db
+        .update(documents)
+        .set({ metadata: { properties } })
+        .where(inArray(documents.id, [BOOK_DOC, USER_DOC, STRANGER_DOC]));
       return {
         read: (input: { userId: string; projectId: string; documentId: string }) =>
           readDocumentPropertiesForRoute(

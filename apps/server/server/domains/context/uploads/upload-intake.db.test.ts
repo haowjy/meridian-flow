@@ -9,22 +9,22 @@ import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  contextCatalogEntries,
   contextSources,
   documents,
   projects,
   threads,
+  treeNodes,
   uploadIntakes,
   users,
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import {
-  createTestDocumentRemoval,
-  createTestRemovalDeps,
-} from "../../../test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import {
@@ -39,7 +39,7 @@ import {
   incomingObjectKey,
   type ObjectStorePort,
 } from "../../storage/index.js";
-import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
+import { createDrizzleTreeListStore } from "../adapters/drizzle-tree-list-store.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./drizzle-upload-intake.js";
@@ -77,7 +77,7 @@ if (!RUN) {
         createdByUserId: USER,
         ref: "c1",
       });
-      return createDrizzleUploadIntakeRepository(db);
+      return createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS);
     }
 
     /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
@@ -98,7 +98,6 @@ if (!RUN) {
         objectStore: intakeStore,
         release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog: { refreshSources: async () => "1" },
       });
       return { removed, deleteDraft: intake.deleteDraft };
     }
@@ -124,23 +123,21 @@ if (!RUN) {
       objectStore: ObjectStorePort,
       collab = createInMemoryCollabDomain(),
     ) {
-      const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
+        treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
-        removal: createTestDocumentRemoval(db),
         documentSync: collab,
         branches: collab.branches,
-        catalogMutations: catalog,
       });
       return createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(db),
+        repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
         content: createContextUploadContentPort(contextPorts),
         objectStore,
         release: createObjectRelease({ objectStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog: { refreshSources: async () => "1" },
       });
     }
 
@@ -272,7 +269,7 @@ if (!RUN) {
       );
     });
 
-    it("deletes only the exact unused identity and preserves revision mismatches", async () => {
+    it("deletes only the chat's own unused upload", async () => {
       const repo = await seed();
       const reserved = await repo.reserve(reservation("delete", NEW_CHAT));
       if (reserved.kind === "conflict" || reserved.kind === "owner_unavailable") {
@@ -286,33 +283,17 @@ if (!RUN) {
         .from(uploadIntakes)
         .where(eq(uploadIntakes.documentId, documentId as never));
       if (!intake) throw new Error("intake missing");
-      await database.current.insert(documents).values({
-        id: documentId as never,
-        contextSourceId: intake.contextSourceId as never,
-        name: "chapter",
-        extension: "",
-        fileType: "markdown",
+      await treeSeeder(database.current).document(intake.contextSourceId as string, "chapter", {
+        id: documentId,
       });
-      const identity = await repo.finalize(PROJECT, "delete", "chapter");
-      const base = { intakeId: "delete", documentId, uri: identity.canonicalUri ?? "" };
+      await repo.finalize(PROJECT, "delete", "chapter");
+      const base = { documentId };
       const { removed, deleteDraft } = deletion(repo);
-      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER, NEW_OWNER)).toEqual({
+      expect(await deleteDraft({ documentId: crypto.randomUUID() }, USER, NEW_OWNER)).toEqual({
         kind: "identity_mismatch",
       });
-      expect(
-        await deleteDraft(
-          { ...base, expectedRevision: identity.locationRevision },
-          USER,
-          NEW_OWNER,
-        ),
-      ).toEqual({ kind: "deleted" });
-      expect(
-        await deleteDraft(
-          { ...base, expectedRevision: identity.locationRevision },
-          USER,
-          NEW_OWNER,
-        ),
-      ).toEqual({ kind: "already_deleted" });
+      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "deleted" });
+      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "already_deleted" });
       // An arrived upload leaves through the canonical soft delete, never a hard delete.
       expect(removed).toEqual([documentId]);
       expect(
@@ -333,14 +314,12 @@ if (!RUN) {
           slug: "manuscript",
           name: "Manuscript",
         });
-        const catalog = createDrizzleContextCatalog(db);
         const collab = createCollabDomain({
           ...testLinkDeps(db),
           db: db,
           ...createTestRemovalDeps(db),
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
-          catalogMutations: catalog,
         });
         collab.bindHocuspocus(
           new Hocuspocus({
@@ -350,22 +329,21 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
+          sourceHints: NO_PROJECT_HINTS,
+          treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
           pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
-          removal: createTestDocumentRemoval(db),
           documentSync: collab,
           branches: collab.branches,
-          catalogMutations: catalog,
         });
         const intakeStore = createInMemoryObjectStore();
         const service = createUploadIntake({
-          repository: createDrizzleUploadIntakeRepository(db),
+          repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
           content: createContextUploadContentPort(contextPorts),
           objectStore: intakeStore,
           release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
           eventSink: createNoopEventSink(),
-          catalog: { refreshSources: async () => "1" },
         });
         const text =
           "# Chapter One\n\nThe temperature was <10 degrees. {The crowd roared} *loudly*.";
@@ -401,9 +379,13 @@ if (!RUN) {
           if (!result.ok) throw new Error(result.error.code);
           const [document] = await db
             .select()
-            .from(documents)
-            .where(eq(documents.id, result.value.documentId as never));
-          expect(document).toMatchObject({ name, extension, fileType });
+            .from(treeNodes)
+            .where(eq(treeNodes.id, result.value.documentId as never));
+          // The tree row stores the name with its extension.
+          expect(document).toMatchObject({
+            name: extension ? `${name}.${extension}` : name,
+            extension,
+          });
           const [intake] = await db
             .select()
             .from(uploadIntakes)
@@ -425,24 +407,25 @@ if (!RUN) {
     it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {
       await seed();
       const collab = createInMemoryCollabDomain();
-      const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        sourceHints: NO_PROJECT_HINTS,
+        treeLists: createDrizzleTreeListStore({
+          db: database.current,
+          journal: createDrizzleJournal(database.current),
+        }),
         pendingBranch: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
-        removal: createTestDocumentRemoval(database.current),
         documentSync: collab,
         branches: collab.branches,
-        catalogMutations: catalog,
       });
       const unusedStore = createInMemoryObjectStore();
       const service = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(database.current),
+        repository: createDrizzleUploadIntakeRepository(database.current, NO_PROJECT_HINTS),
         content: createContextUploadContentPort(contextPorts),
         objectStore: unusedStore,
         release: createObjectRelease({ objectStore: unusedStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog,
       });
       const content = new TextEncoder().encode("# Chapter One\n\nIt began.");
       const result = await uploadBytes(service, unusedStore, {
@@ -461,18 +444,18 @@ if (!RUN) {
       });
       const [stored] = await database.current
         .select({ chatThreadId: contextSources.chatThreadId })
-        .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .where(eq(documents.id, result.value.documentId as never));
+        .from(treeNodes)
+        .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
+        .where(eq(treeNodes.id, result.value.documentId as never));
       expect(stored?.chatThreadId).toBe(NEW_CHAT);
 
-      // Consumption republishes the upload's facts, so a reader on the delta stream sees `used`.
+      // Consuming marks the upload used, and only for the chat that owns it.
       const publishedUsed = async () => {
         const [row] = await database.current
-          .select({ entry: contextCatalogEntries.entry })
-          .from(contextCatalogEntries)
-          .where(eq(contextCatalogEntries.entryId, result.value.documentId));
-        return row?.entry.kind === "file" ? row.entry.upload?.used : undefined;
+          .select({ consumedAt: uploadIntakes.consumedAt })
+          .from(uploadIntakes)
+          .where(eq(uploadIntakes.documentId, result.value.documentId as never));
+        return row?.consumedAt != null;
       };
       expect(await publishedUsed()).toBe(false);
       await service.consume([result.value.documentId], CHAT);
@@ -523,7 +506,6 @@ if (!RUN) {
           objectStore: hooked,
           release: createObjectRelease({ objectStore: store, onFailure() {} }),
           eventSink: createNoopEventSink(),
-          catalog: { refreshSources: async () => "1" },
         });
         const owner = { kind: "chat" as const, projectId: PROJECT, chatId: NEW_CHAT };
         const bytesOf = (size: number, text = "") =>
@@ -624,16 +606,11 @@ if (!RUN) {
         const first = reservedOf(await f.start("race", 8));
         await f.put(first.documentId, f.bytesOf(8));
         deleteNow = () =>
-          f.intake.deleteDraft(
-            {
-              intakeId: "race",
-              documentId: first.documentId,
-              uri: "uploads://map.pdf",
-              expectedRevision: first.locationRevision,
-            },
-            USER,
-            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
-          );
+          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
+            kind: "chat",
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
+          });
         expect(await f.finish("race")).toEqual({
           ok: false,
           error: { code: "idempotency_conflict" },
@@ -653,16 +630,11 @@ if (!RUN) {
         const first = reservedOf(await f.start("late", 8));
         await f.put(first.documentId, f.bytesOf(8));
         deleteNow = () =>
-          f.intake.deleteDraft(
-            {
-              intakeId: "late",
-              documentId: first.documentId,
-              uri: "uploads://map.pdf",
-              expectedRevision: first.locationRevision,
-            },
-            USER,
-            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
-          );
+          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
+            kind: "chat",
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
+          });
         expect(await f.finish("late")).toEqual({
           ok: false,
           error: { code: "idempotency_conflict" },

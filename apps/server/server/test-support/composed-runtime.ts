@@ -8,14 +8,15 @@ import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { modelResponses, threads } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { modelResponses, observationFrontiers, threads } from "@meridian/database/schema";
+import { and, asc, eq } from "drizzle-orm";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import { TREE_NAMES_ROOM } from "../domains/runtime/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
 
@@ -127,6 +128,24 @@ export function useComposedRuntimes(db: () => Database) {
    * tool calls through the executor.
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
+    // What the conversation was shown of the tree: the names a stored result recorded, and those
+    // a refused one carried back (a refusal stores none).
+    const refusedNames: Uint8Array[] = [];
+    const shownNames = async () => [
+      ...(
+        await db()
+          .select({ snapshot: observationFrontiers.snapshot })
+          .from(observationFrontiers)
+          .where(
+            and(
+              eq(observationFrontiers.threadId, thread.threadId),
+              eq(observationFrontiers.roomKey, TREE_NAMES_ROOM),
+            ),
+          )
+          .orderBy(asc(observationFrontiers.recordedSeq))
+      ).map((row) => new Uint8Array(row.snapshot)),
+      ...refusedNames,
+    ];
     const begin = async () => {
       await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
@@ -134,11 +153,12 @@ export function useComposedRuntimes(db: () => Database) {
         .select({ accountId: threads.createdByUserId, projectId: threads.projectId })
         .from(threads)
         .where(eq(threads.id, thread.threadId));
-      const call: ToolCall = (name, args) =>
-        runtime.app.toolExecutor.executeTool(
+      const call: ToolCall = async (name, args) => {
+        const result = await runtime.app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
+            shownNames,
             responseIdentity: { modelResponseId: responseId },
             commandOwner: owner as never,
             agentSlug: null,
@@ -149,6 +169,9 @@ export function useComposedRuntimes(db: () => Database) {
             }),
           },
         );
+        if (result.evidence?.names) refusedNames.push(result.evidence.names.snapshot);
+        return result;
+      };
       return { responseId, call };
     };
     const reply = async (steps: (call: ToolCallText) => Promise<void>) => {

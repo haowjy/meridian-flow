@@ -1,18 +1,15 @@
 import type {
   ContextSourceId,
   DocumentId,
-  FolderId,
   ProjectId,
   ProjectSettings,
   ThreadId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -27,7 +24,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { threads } from "./agent-threads";
 import { users } from "./users";
 
 export const projects = pgTable(
@@ -41,6 +37,12 @@ export const projects = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     isPersonal: boolean("is_personal").notNull().default(false),
+    /** The id of this project's tree list, its own and never a node's or document's id. */
+    treeListId: uuid("tree_list_id")
+      .$type<DocumentId>()
+      .notNull()
+      .unique()
+      .default(sql`gen_random_uuid()`),
     defaultBootstrapReady: boolean("default_bootstrap_ready").notNull().default(false),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings").$type<ProjectSettings>(),
@@ -152,14 +154,8 @@ export const contextSources = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
-    index("context_sources_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
       .where(
@@ -201,110 +197,36 @@ export const contextSources = pgTable(
   ],
 );
 
-export const folders = pgTable(
-  "folders",
-  {
-    id: idColumn<FolderId>(),
-    contextSourceId: uuid("context_source_id")
-      .$type<ContextSourceId>()
-      .notNull()
-      .references(() => contextSources.id, { onDelete: "cascade" }),
-    parentId: uuid("parent_id").$type<FolderId>(),
-    name: text("name").notNull(),
-    description: text("description"),
-    sortOrder: integer("sort_order").notNull().default(0),
-    rank: text("rank"),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-    deletedAt: softDeleteAt(),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
-    /** A branch's new folder: in no live view until placed (read only through the tree view). */
-    hidden: boolean("hidden").notNull().default(false),
-    /**
-     * The live folder that absorbed this hidden one (it is tombstoned): history and branch
-     * facts that name this folder mean that one. No FK: folders are tombstoned.
-     */
-    absorbedInto: uuid("absorbed_into").$type<FolderId>(),
-    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
-  },
-  (table) => [
-    index("folders_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    index("folders_context_parent_active")
-      .on(table.contextSourceId, table.parentId)
-      .where(sql`${table.deletedAt} IS NULL`),
-    index("folders_sibling_rank_live")
-      .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
-    // Hidden folders occupy no live path; nothing makes them unique.
-    uniqueIndex("folders_context_parent_name_live")
-      .on(table.contextSourceId, table.parentId, table.name)
-      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
-    uniqueIndex("folders_context_root_name_live")
-      .on(table.contextSourceId, table.name)
-      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
-    // Every folder a branch's view may show besides live ones, by path: a hidden one (and
-    // absorb), or a deleted one above a document a draft outlived. One predicate, so
-    // the tree view's one non-live arm and a hidden-only lookup both imply it.
-    index("folders_nonlive_location")
-      .on(table.contextSourceId, table.parentId, table.name)
-      .where(
-        sql`(${table.hidden} AND ${table.deletedAt} IS NULL) OR (NOT ${table.hidden} AND ${table.deletedAt} IS NOT NULL)`,
-      ),
-    // Image path lookups walk deleted folders too, so the active-only indexes miss them.
-    index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
-    index("folders_parent").on(table.parentId),
-  ],
-);
-
+/**
+ * What a document is apart from its name and place: its stored bytes and facts, and the project
+ * that owns it. Its name, type and place are `tree_nodes` / `branch_tree_nodes` rows, written only
+ * by the replay of the project's tree list; a document in no view has a row here and none there.
+ * Written only by the transaction that admits the document's `create`.
+ */
 export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    contextSourceId: uuid("context_source_id")
-      .$type<ContextSourceId>()
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
-      .references(() => contextSources.id, { onDelete: "cascade" }),
-    folderId: uuid("folder_id")
-      .$type<FolderId>()
-      .references(() => folders.id, {
-        onDelete: "cascade",
-      }),
-    name: text("name").notNull(),
-    extension: text("extension").notNull().default(""),
-    fileType: text("file_type").notNull().default("markdown"),
-    description: text("description"),
+      .references(() => projects.id, { onDelete: "cascade" }),
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     /** A browser-drawable preview sits beside the original object (`previewObjectKey`). */
     hasPreview: boolean("has_preview").notNull().default(false),
-    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
-    provisionalName: boolean("provisional_name").notNull().default(false),
-    rank: text("rank"),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
-    deletedAt: softDeleteAt(),
     /** Content was permanently released after the trash retention window; the row remains a tombstone. */
     contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
-    deletionReason: text("deletion_reason").$type<"deleted" | "discarded">(),
-    deletedByUserId: uuid("deleted_by_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
-    deletionCause: text("deletion_cause").$type<DocumentRemovalCause>(),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
-    /** The chat whose model deleted it; its owner stays in `deleted_by_user_id`. */
-    deletedByThreadId: uuid("deleted_by_thread_id")
-      .$type<ThreadId>()
-      .references((): AnyPgColumn => threads.id, { onDelete: "set null" }),
-    /** A branch's new document: in no live view until placed (read only through the tree view). */
-    hidden: boolean("hidden").notNull().default(false),
+    /**
+     * Null while a `tree_nodes` or `branch_tree_nodes` row shows the document; otherwise when the
+     * last row went (a discarded or refused-and-not-kept create). Written only by the row sync;
+     * retention purges it on the Trash window.
+     */
+    inNoViewSince: timestamp("in_no_view_since", { withTimezone: true, mode: "date" }),
   },
   (table) => [
     check(
@@ -312,80 +234,14 @@ export const documents = pgTable(
       sql`${table.storageUrl} IS NULL OR ${table.mimeType} IS NOT NULL`,
     ),
     check(
-      "documents_removal_presence",
-      sql`(${table.deletedAt} IS NOT NULL) = (${table.deletionReason} IS NOT NULL)`,
-    ),
-    check(
-      "documents_deletion_reason_valid",
-      sql`${table.deletionReason} IN ('deleted', 'discarded')`,
-    ),
-    check("documents_deletion_cause_valid", sql`${table.deletionCause} IN ('repair')`),
-    index("documents_purge_candidates")
-      .on(table.deletedAt, table.id)
-      .where(
-        sql`${table.contentPurgedAt} IS NULL AND ${table.deletedAt} IS NOT NULL AND ${table.deletionReason} = 'deleted' AND NOT ${table.hidden} AND ${table.deletedByWorkId} IS NULL`,
-      ),
-    index("documents_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    index("documents_deleted_by_thread_idx")
-      .on(table.deletedByThreadId)
-      .where(sql`${table.deletedByThreadId} IS NOT NULL`),
-    // Not limited to live rows: hidden-document matching by row location, the review's
-    // tree-state query, and listing by folder.
-    index("documents_context_location").on(
-      table.contextSourceId,
-      table.folderId,
-      table.name,
-      table.extension,
-    ),
-    index("documents_sibling_rank_live")
-      .on(table.contextSourceId, table.folderId, sql`${table.rank} COLLATE "C"`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
-    // Hidden documents occupy no live path; nothing makes them unique.
-    uniqueIndex("documents_context_folder_name_live")
-      .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
-    uniqueIndex("documents_context_root_name_live")
-      .on(table.contextSourceId, table.name, table.extension)
-      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
-    // Image path lookups, deleted images included.
-    index("documents_context_all_images")
-      .on(table.contextSourceId)
-      .where(sql`${table.fileType} = 'image'`),
-    index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
-    index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
-    check(
       "documents_size_bytes_nonneg",
       sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`,
     ),
-    check(
-      "documents_file_type_valid",
-      sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
-    ),
+    index("documents_project").on(table.projectId),
+    index("documents_in_no_view")
+      .on(table.inNoViewSince)
+      .where(sql`${table.inNoViewSince} IS NOT NULL AND ${table.contentPurgedAt} IS NULL`),
   ],
-);
-
-/**
- * A device's create that joined a branch's document: `fromDocumentId` is the id the device
- * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
- * source id, which names no row; deleting the target drops the forward with it.
- */
-export const documentForwards = pgTable(
-  "document_forwards",
-  {
-    fromDocumentId: uuid("from_document_id").$type<DocumentId>().primaryKey(),
-    toDocumentId: uuid("to_document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    projectId: uuid("project_id")
-      .$type<ProjectId>()
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    createdAt: createdAt(),
-  },
-  (table) => [index("document_forwards_to").on(table.toDocumentId)],
 );
 
 export const uploadIntakes = pgTable(
@@ -417,7 +273,6 @@ export const uploadIntakes = pgTable(
     fileType: text("file_type"),
     // The length the writer declared; finish refuses an object of any other.
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-    locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -439,8 +294,6 @@ export const uploadIntakes = pgTable(
       .where(sql`${table.state} IN ('reserved', 'object_stored')`),
   ],
 );
-
-// folders.parent_id self-FK added in migration SQL
 
 /** Vacated document locations point directly to identity, never another path. */
 export const documentPreviousLocations = pgTable(

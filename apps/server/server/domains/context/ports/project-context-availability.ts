@@ -1,9 +1,9 @@
-/** Ports for project-final identity reads and ambient availability ordering. */
+/** Ports for where a project holds its documents and folders now. */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
-  AvailabilityGeneration,
-  ProjectContextIdentityLookupRequest,
-  ProjectContextIdentityLookupResult,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+  ProjectContextAuthority,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
@@ -11,7 +11,6 @@ import type { TreeView } from "../tree/tree-view.js";
 
 /** Where this project holds a node, read by id and never through a Work authority. */
 export type HeldContextNodeAddress = {
-  /** The identity actually held: a forwarded document's current id, else the requested one. */
   id: string;
   scheme: ContextUriScheme;
   path: string;
@@ -24,32 +23,35 @@ export type HeldContextNode =
   | {
       kind: "held";
       address: HeldContextNodeAddress;
-      /** The requested document id was forwarded to `address.id` (a join). */
-      forwarded: boolean;
     }
-  /** The project holds a row that no live address can name: deleted, hidden, or inconsistent. */
+  /** The project holds a node that no live address can name: in Trash, or inconsistent. */
   | { kind: "unreachable" };
 
+/** What a view shows of the nodes asked about, held by the project or the writer's User area. */
+export type PlacedNodes = {
+  /** Documents the view shows, in a live source: absent from the map when in Trash or hidden. */
+  documents: Map<string, { authority: ProjectContextAuthority; entry: CatalogFileEntry }>;
+  folders: Map<string, { entry: CatalogFolderEntry }>;
+  /** Documents whose source identity is inconsistent: shown by the view, yet not placeable. */
+  inconsistent: Set<string>;
+};
+
 export interface ProjectContextAvailabilityPort {
-  lookup(
-    input: ProjectContextIdentityLookupRequest & {
+  /** Throws when the project is not the actor's. */
+  placed(
+    input: {
+      projectId: ProjectId;
+      documentIds?: readonly string[];
+      folderIds?: readonly string[];
       view?: TreeView;
-      /**
-       * In a branch view, the identities were addressed through their drafts (a review
-       * address): a document deleted live whose draft in this branch outlived the delete is
-       * available even when the branch has nothing pending to list it (a no-effect draft left
-       * open). Paths and links still follow the listing.
-       */
-      admitDrafts?: true;
     },
     actor: { userId: string },
-  ): Promise<ProjectContextIdentityLookupResult>;
+  ): Promise<PlacedNodes>;
   /**
-   * The address this project holds a node under, whatever the node's visibility, read from the
-   * row and its source rather than through a Work authority: a create's replay must answer for a
-   * tree whose Work the route can no longer resolve. Null when the project holds no such row;
-   * `unreachable` when it holds one no live address can name (deleted, hidden, or an inconsistent
-   * identity), which a create answers as a conflict.
+   * The address this project holds a node under in live, Trash included, read from the node and
+   * its source rather than through a Work authority. Null when the project holds no such node (a
+   * node in no live view is held by no one); `unreachable` when it holds one no live address can
+   * name (in Trash, or an inconsistent identity).
    */
   held(
     input: {
@@ -66,19 +68,4 @@ export interface ProjectContextAvailabilityPort {
    * id the first send then commits.
    */
   serializeCreate<T>(entryId: string, create: () => Promise<T>): Promise<T>;
-}
-
-export interface ProjectContextAvailabilityMutationPort {
-  /** Advance these authorities' availability generation. Publishes no namespace version:
-   * authority-only changes (a Work's state or pending count) are not namespace changes. */
-  advance(input: {
-    projectIds: readonly string[];
-    userIds: readonly string[];
-  }): Promise<AvailabilityGeneration>;
-  /** Allocate a fresh namespace observation version for these authorities in the ambient
-   * transaction. Only a change to a live file, folder or source earns one. */
-  publishNamespace(input: {
-    projectIds: readonly string[];
-    userIds: readonly string[];
-  }): Promise<string>;
 }

@@ -4,13 +4,14 @@
  * first with every folder's children in the project's sibling order (`compareCatalogSiblings`).
  */
 import type { ProjectId } from "@meridian/contracts";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, folders, threads, works } from "@meridian/database/schema";
-import { compareCatalogSiblings } from "@meridian/resource-replica";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { contextSources, documents, threads, works } from "@meridian/database/schema";
+import { compareCatalogSiblings } from "@meridian/project-tree";
+import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { renderFilename } from "../context/paths.js";
 import { loadDocumentAddresses } from "./tree-addresses.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "./tree-relations.js";
 
 type Sibling<Document> = {
   kind: "folder" | "file";
@@ -23,34 +24,30 @@ type Sibling<Document> = {
 
 export async function loadLiveProjectExportDocuments(db: Database, projectId: string) {
   const tx = currentDrizzleDb(db);
+  const vd = visibleDocuments(LIVE_TREE);
   const rows = await tx
     .select({
-      id: documents.id,
-      name: documents.name,
-      extension: documents.extension,
-      fileType: documents.fileType,
-      storageUrl: documents.storageUrl,
-      sizeBytes: documents.sizeBytes,
-      metadata: documents.metadata,
-      sourceId: documents.contextSourceId,
-      folderId: documents.folderId,
-      rank: documents.rank,
+      id: vd.id,
+      name: vd.name,
+      fileType: vd.fileType,
+      storageUrl: vd.storageUrl,
+      sizeBytes: vd.sizeBytes,
+      metadata: vd.metadata,
+      sourceId: vd.contextSourceId,
+      folderId: vd.folderId,
+      rank: vd.rank,
       workName: works.name,
       chatTitle: threads.title,
     })
-    .from(documents)
-    .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+    .from(vd)
+    .innerJoin(documents, eq(documents.id, vd.id))
+    .innerJoin(contextSources, eq(vd.contextSourceId, contextSources.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
     .leftJoin(threads, eq(contextSources.rootThreadId, threads.id))
-    .where(
-      or(
-        eq(contextSources.projectId, projectId as ProjectId),
-        eq(works.projectId, projectId as ProjectId),
-      ),
-    );
+    .where(eq(documents.projectId, projectId as ProjectId));
   const addresses = new Map(
     (await loadDocumentAddresses(db, { ids: rows.map((row) => row.id) }))
-      .filter((row) => !row.deleted && !row.hidden && row.projectId === projectId)
+      .filter((row) => !row.deleted && row.projectId === projectId)
       .map((row) => [row.documentId, row]),
   );
   const live = rows.flatMap((row) => {
@@ -59,17 +56,18 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
   });
 
   const sourceIds = [...new Set(live.map((row) => row.sourceId))];
+  const vf = visibleFolders(LIVE_TREE);
   const folderRows = sourceIds.length
     ? await tx
         .select({
-          id: folders.id,
-          sourceId: folders.contextSourceId,
-          parentId: folders.parentId,
-          name: folders.name,
-          rank: folders.rank,
+          id: vf.id,
+          sourceId: vf.contextSourceId,
+          parentId: vf.parentId,
+          name: vf.name,
+          rank: vf.rank,
         })
-        .from(folders)
-        .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)))
+        .from(vf)
+        .where(inArray(vf.contextSourceId, sourceIds))
     : [];
 
   // A parent is a source's top level (null folder) or a folder.
@@ -83,7 +81,7 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
   for (const row of live) {
     adopt(parentKey(row.sourceId, row.folderId), {
       kind: "file",
-      name: renderFilename(row.name, row.extension),
+      name: row.name,
       rank: row.rank,
       entryId: row.id,
       document: row,
@@ -113,5 +111,13 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     left < right ? -1 : left > right ? 1 : 0,
   );
   for (const [sourceId] of bySourceUri) walk(sourceId, null);
-  return ordered;
+  // The export spells a file as stem plus extension, which the filename codec splits.
+  return ordered.map((row) => {
+    const parsed = parseDocumentFilename(row.name);
+    return {
+      ...row,
+      name: parsed.ok ? parsed.value.name : row.name,
+      extension: parsed.ok ? parsed.value.extension : "",
+    };
+  });
 }

@@ -9,9 +9,9 @@ import {
   DRAFT_SERVER_CLIENT_ID,
   findLostEdits,
   type LateTyping,
+  type LostEdit,
   NO_LATE_TYPING,
   recoverLatePeerEdits,
-  retainLateTypingDeletions,
 } from "@meridian/agent-edit/diff";
 import {
   captureEditParts,
@@ -39,6 +39,12 @@ import {
 import { DraftSaveCut } from "./immutable-draft-state.js";
 import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
 
+/** Marks a recovery row in the journal: the text it inserts stays a writer's own (`DraftStore.writerText`). */
+export const LATE_TYPING_META = { lateTyping: true } as const;
+const isWriterRow = (row: AppendDraftJournalInput) =>
+  row.source === "writer" ||
+  (row.updateMeta as { lateTyping?: boolean } | null | undefined)?.lateTyping === true;
+
 // LateTyping retains PM nodes between frames; their schema identity must remain stable.
 const recoverySchema = buildDocumentSchema();
 
@@ -55,7 +61,8 @@ export type FinalizeAppendInput = {
   authorServerRows?: AuthorServerRows;
   recovery?: {
     memory(): LateTyping;
-    serverDeletedBlocks(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
+    /** Which of these ids a writer or an earlier recovery inserted, among the committed rows. */
+    writerText(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
   };
   /**
    * A private clone of the caller's base replica, made off the lock. When the checkpoint held
@@ -148,63 +155,81 @@ export async function finalizeAppend(
         held,
       });
     }
+    /** Typing a frame's deletion removed unseen counts only when a writer or an earlier recovery wrote it. */
+    async function writerTyped(edits: LostEdit[]): Promise<LostEdit[]> {
+      const removed = edits.filter((edit) => edit.removed);
+      if (!removed.length || !input.recovery) return edits;
+      const ids: Y.ID[] = removed.flatMap((edit) =>
+        Array.from({ length: edit.text.length }, (_, i) =>
+          Y.createID(edit.id.client, edit.id.clock + i),
+        ),
+      );
+      const own = new Set<string>();
+      // This append's own rows are not journaled yet.
+      for (const { row } of kept)
+        if (isWriterRow(row))
+          for (const struct of Y.decodeUpdate(row.updateData).structs)
+            for (const id of ids)
+              if (
+                id.client === struct.id.client &&
+                id.clock >= struct.id.clock &&
+                id.clock < struct.id.clock + struct.length
+              )
+                own.add(`${id.client}:${id.clock}`);
+      const rest = ids.filter((id) => !own.has(`${id.client}:${id.clock}`));
+      if (rest.length) for (const key of await input.recovery.writerText(rest)) own.add(key);
+      const out = edits.filter((edit) => !edit.removed);
+      for (const edit of removed) {
+        let run: LostEdit | null = null;
+        for (let i = 0; i < edit.text.length; i++) {
+          if (!own.has(`${edit.id.client}:${edit.id.clock + i}`)) {
+            run = null;
+            continue;
+          }
+          if (!run) {
+            run = { id: Y.createID(edit.id.client, edit.id.clock + i), text: "", removed: true };
+            out.push(run);
+          }
+          run.text += edit.text[i];
+        }
+      }
+      return out;
+    }
     for (const row of input.rows) {
-      const lost =
+      const found =
         row.source === "server" || !input.recovery
-          ? { typed: [], deleted: [] }
-          : findLostEdits(doc, row.updateData);
+          ? { typed: [], deleted: [], invisible: new Set<string>() }
+          : findLostEdits(doc, row.updateData, row.source === "writer");
       const refused = admit(row);
       if (refused) return done(refused);
+      const lost = { ...found, typed: await writerTyped(found.typed) };
       if (input.recovery && (lost.typed.length || lost.deleted.length)) {
-        const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const blocks = new Map<string, Y.ID>();
-        const blockOf = (id: Y.ID): Y.ID | null => {
-          let item: Y.Item | Y.GC | null = Y.getItem(doc.store, id);
-          while (item instanceof Y.Item) {
-            const parent = item.parent as Y.AbstractType<unknown>;
-            if (parent === fragment) return item.id;
-            item = parent._item;
-          }
-          return null;
-        };
-        for (const edit of lost.typed) {
-          const id = blockOf(edit.id);
-          if (id) blocks.set(`${id.client}:${id.clock}`, id);
-        }
-        const deleted = blocks.size
-          ? await input.recovery.serverDeletedBlocks([...blocks.values()])
-          : new Set<string>();
-        const typed = lost.typed.filter((edit) => {
-          const block = blockOf(edit.id);
-          return block && deleted.has(`${block.client}:${block.clock}`);
-        });
-        {
-          // Without typing the helper only advances deletion memory; no clone or server row.
-          const authoring = typed.length ? createCollabYDoc({ gc: false }) : doc;
-          try {
-            if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
-            const recovery = recoverLatePeerEdits({
-              doc: authoring,
-              update: row.updateData,
-              lost: { ...lost, typed },
-              memory: retainLateTypingDeletions(lateTyping, input.recovery.memory()),
-              schema: recoverySchema,
-              fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-              clientId: DRAFT_SERVER_CLIENT_ID,
+        // Without typing the helper only advances deletion memory; no clone or server row.
+        const authoring = lost.typed.length ? createCollabYDoc({ gc: false }) : doc;
+        try {
+          if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
+          const recovery = recoverLatePeerEdits({
+            doc: authoring,
+            update: row.updateData,
+            lost,
+            memory: lateTyping,
+            schema: recoverySchema,
+            fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+            clientId: DRAFT_SERVER_CLIENT_ID,
+          });
+          lateTyping = recovery.memory;
+          recovered.push(...recovery.written);
+          if (recovery.update) {
+            const refused = admit({
+              draftId: row.draftId,
+              source: "server",
+              updateData: recovery.update,
+              updateMeta: LATE_TYPING_META,
             });
-            lateTyping = recovery.memory;
-            recovered.push(...recovery.written);
-            if (recovery.update) {
-              const refused = admit({
-                draftId: row.draftId,
-                source: "server",
-                updateData: recovery.update,
-              });
-              if (refused) return done(refused);
-            }
-          } finally {
-            if (authoring !== doc) authoring.destroy();
+            if (refused) return done(refused);
           }
+        } finally {
+          if (authoring !== doc) authoring.destroy();
         }
       }
     }

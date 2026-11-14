@@ -10,15 +10,6 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name the owner (`work:<id>` or `lineage:<root>`) and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
-export type DocumentAddressReviewSelector = {
-  owner: string;
-  itemKey: string;
-};
-export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
-  review?: DocumentAddressReviewSelector;
-};
-
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
   query: URLSearchParams,
@@ -47,6 +38,8 @@ export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
 export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
+/** The account's own sources (`user://`). */
+export const API_ACCOUNT_CONTEXT_SOURCES_PATH = "/api/account/context-sources";
 export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents";
 export const API_AUTH_ME_PATH = "/api/auth/me";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
@@ -64,14 +57,10 @@ export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: DocumentAddressRequestOptions,
+  opts?: ProjectContextRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
-  if (opts?.review) {
-    query.set("reviewOwner", opts.review.owner);
-    query.set("itemKey", opts.review.itemKey);
-  }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 
@@ -157,12 +146,16 @@ export function apiProjectBranchDocumentDraftApplyPath(
   return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/apply`;
 }
 
-export function apiProjectBranchDocumentDraftUnapplyPath(
-  projectId: string,
-  branchId: string,
-  documentId: string,
-): string {
-  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/unapply`;
+export function apiProjectBranchApplyPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/apply`;
+}
+
+export function apiProjectBranchUnapplyPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/unapply`;
+}
+
+export function apiProjectBranchUndoDiscardPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/undo-discard`;
 }
 
 export function apiProjectBranchDocumentDraftDiscardPath(
@@ -178,6 +171,16 @@ export function apiProjectBranchDocumentDraftDiscardPath(
 /** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
 export function apiProjectContextLineagePath(projectId: string, rootThreadId: string): string {
   return `${apiProjectPath(projectId)}/context/lineages/${encodeURIComponent(rootThreadId)}`;
+}
+
+/** The sources the account can read in one project. */
+export function apiProjectContextSourcesPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/sources`;
+}
+
+/** A chat's uploads with when each was attached and whether it was used: `ChatUploadsResult`. */
+export function apiProjectContextChatUploadsPath(projectId: string, chatId: string): string {
+  return `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`;
 }
 
 export function apiProjectContextCatalogPath(
@@ -215,18 +218,14 @@ export function apiProjectDocumentReadPath(projectId: string, documentId: string
   return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
-/** Move or rename one entry (file or folder) by id. */
-export function apiProjectContextEntryMovePath(projectId: string, entryId: string): string {
-  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/move`;
+/** Move one document between the project's files and the account's (`user://`). */
+export function apiProjectContextMovePath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/move`;
 }
 
 /** One Copy command: many sources, one destination, one receipt. */
 export function apiProjectContextCopyPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/copy`;
-}
-
-export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
-  return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
 
 /** Delete one entry (file or folder) by id. */

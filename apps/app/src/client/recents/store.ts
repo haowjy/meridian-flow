@@ -13,14 +13,12 @@ const EDITOR_SCHEMES = new Set<string>(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
 export type RecentsStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export type RecentAddress =
-  | { kind: "local"; resourceHandle: string }
-  | {
-      kind: "document";
-      scheme: ProjectContextTreeScheme;
-      /** Leading-slash locator. Empty paths are not a document address. */
-      path: string;
-    };
+export type RecentAddress = {
+  kind: "document";
+  scheme: ProjectContextTreeScheme;
+  /** Leading-slash locator. Empty paths are not a document address. */
+  path: string;
+};
 
 export type AccountRecentItem = {
   documentId: string;
@@ -87,14 +85,6 @@ function documentAddress(scheme: string, path: string): RecentAddress | null {
 }
 
 function sameAddress(left: RecentAddress, right: RecentAddress): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "local" || right.kind === "local") {
-    return (
-      left.kind === "local" &&
-      right.kind === "local" &&
-      left.resourceHandle === right.resourceHandle
-    );
-  }
   return left.scheme === right.scheme && left.path === right.path;
 }
 
@@ -129,19 +119,8 @@ function parseItem(value: unknown): AccountRecentItem | null {
     return null;
   }
   const address = item.address as Partial<RecentAddress>;
-  if (
-    address.kind === "local" &&
-    typeof address.resourceHandle === "string" &&
-    address.resourceHandle
-  ) {
-    return {
-      documentId: item.documentId,
-      projectId: item.projectId,
-      name: item.name,
-      openedAt: item.openedAt,
-      address: { kind: "local", resourceHandle: address.resourceHandle },
-    };
-  }
+  // An item stored with a `local` address (a document known only by device handle) is dropped:
+  // a document's id is its address now, and the server's list brings it back.
   if (
     address.kind === "document" &&
     typeof address.scheme === "string" &&

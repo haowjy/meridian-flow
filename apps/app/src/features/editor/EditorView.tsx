@@ -60,6 +60,9 @@ export function EditorView(props: EditorViewProps) {
   // pending.
   const treeOnlyReview =
     review?.itemKey !== undefined && !!reviewFile && reviewHasNoRoom(reviewFile.draft);
+  // A move with no text is the live text in its drafted place: it takes typing, as a page the
+  // draft doesn't touch does. A drafted delete is read until it is applied or discarded.
+  const liveTakesTyping = !reviewRequested || (treeOnlyReview && !reviewFile?.draft.tree?.deleted);
   const reviewHolderUri = reviewLocation
     ? canonicalContextUri(reviewLocation.scheme, reviewLocation.path)
     : null;
@@ -185,8 +188,8 @@ export function EditorView(props: EditorViewProps) {
               identity={liveIdentity}
               surfaceOptions={{
                 ...surfaceOptions,
-                editable: reviewRequested ? false : props.editable,
-                held: !liveVisible || reviewRequested,
+                editable: liveTakesTyping ? props.editable : false,
+                held: !liveVisible || !liveTakesTyping,
               }}
               session={liveSession}
               focusKey={props.focusKey}
@@ -206,6 +209,7 @@ export function EditorView(props: EditorViewProps) {
               identity={identity}
               session={reviewSession}
               holderUri={reviewHolderUri}
+              focusKey={props.focusKey}
               onReopen={roomOwner.reopen}
               surfaceOptions={{
                 ...surfaceOptions,

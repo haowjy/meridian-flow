@@ -63,6 +63,7 @@ function versionGateServices(
     fileAccessChanges: createLocalFileAccessChanges(),
     documentSync,
     eventSink: createInMemoryEventSink(),
+    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
   };
 }
 

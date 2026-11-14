@@ -7,6 +7,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
 if (!RUN) {
@@ -95,14 +96,13 @@ if (!RUN) {
 
     async function seedUpload(documentId: string, suffix: string) {
       const uri = `uploads://@c1/map-${suffix}.png`;
-      await firstDb.insert(schema.documents).values({
-        id: documentId as never,
-        contextSourceId: SOURCE,
-        name: `map-${suffix}`,
-        extension: "png",
-        fileType: "png",
-        mimeType: "image/png",
-      });
+      const { treeSeeder } = await import("../../../test-support/tree-seed.js");
+      await treeSeeder(firstDb).file(
+        SOURCE,
+        `map-${suffix}.png`,
+        { storageKey: `uploads/${PROJECT}/${documentId}`, mime: "image/png", size: 1 },
+        { id: documentId },
+      );
       await firstDb.insert(schema.uploadIntakes).values({
         projectId: PROJECT,
         intakeId: `intake-${suffix}`,
@@ -116,7 +116,6 @@ if (!RUN) {
         finalPath: `map-${suffix}.png`,
         objectKey: `uploads/${PROJECT}/${documentId}`,
         fileType: "png",
-        locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
       return uri;
@@ -135,53 +134,52 @@ if (!RUN) {
         journalReader: eventReader,
         eventSink: createNoopEventSink(),
       });
-      const uploadIntake = createDrizzleUploadIntakeRepository(firstDb);
+      const uploadIntake = createDrizzleUploadIntakeRepository(firstDb, NO_PROJECT_HINTS);
       const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
         runClaim: createInMemoryRunClaim(),
         records,
         availability: {
-          async lookup() {
+          async placed() {
             await input.prepareLookup?.();
             return {
-              projectId: PROJECT,
-              resolutionId: "resolution",
-              resolutions: [
-                {
-                  kind: "available",
-                  documentId: input.documentId,
-                  generation: "1",
-                  authority: {
-                    kind: "work",
-                    projectId: PROJECT,
-                    workId: "00000000-0000-4000-8000-000000000f70",
-                    workHandle: null,
-                  },
-                  entry: {
-                    observationVersion: "1",
-                    kind: "file",
-                    entryId: input.documentId,
-                    uri: input.uri,
-                    editable: false,
-                    disposition: "binary",
-                    fileType: "image",
-                    mimeType: "image/png",
-                    scope: {
+              folders: new Map(),
+              inconsistent: new Set(),
+              documents: new Map([
+                [
+                  input.documentId,
+                  {
+                    authority: {
                       kind: "work",
                       projectId: PROJECT,
                       workId: "00000000-0000-4000-8000-000000000f70",
+                      workHandle: null,
                     },
-                    sourceId: SOURCE,
-                    parentId: SOURCE,
-                    name: "map.png",
-                    aliases: [],
+                    entry: {
+                      kind: "file",
+                      entryId: input.documentId,
+                      uri: input.uri,
+                      editable: false,
+                      disposition: "binary",
+                      fileType: "image",
+                      mimeType: "image/png",
+                      scope: {
+                        kind: "work",
+                        projectId: PROJECT,
+                        workId: "00000000-0000-4000-8000-000000000f70",
+                      },
+                      sourceId: SOURCE,
+                      parentId: SOURCE,
+                      name: "map.png",
+                      aliases: [],
 
-                    hasProperties: false,
-                    path: ["map.png"],
-                    provisionalName: false,
+                      hasProperties: false,
+                      path: ["map.png"],
+                      provisionalName: false,
+                    },
                   },
-                },
-              ],
+                ],
+              ]),
             };
           },
         } as never,
@@ -515,7 +513,7 @@ if (!RUN) {
         records,
         runClaim: createDrizzleRunClaim(firstDb),
         availability: {
-          async lookup() {
+          async placed() {
             throw new Error("Recovery entered reference effects");
           },
           async held() {

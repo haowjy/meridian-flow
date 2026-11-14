@@ -3,19 +3,24 @@
  * rooms admitted at the old level reconnect at the new one (file-access §7).
  */
 import { draftOwnerKey } from "@meridian/contracts/branches";
+import { treeRoomName } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 
 /**
  * Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). Or a
  * lineage gaining or losing its last live chat: its drafts freeze and thaw.
  */
-export type FileAccessChange = { workId: WorkId } | { rootThreadId: string };
+export type FileAccessChange =
+  | { workId: WorkId }
+  | { rootThreadId: string }
+  /** A project deleted: its tree list's connections end (a tree list's key is its room name). */
+  | { projectId: string };
 
 /** The key a room registers under for this change: the owner's `draftOwnerKey`. */
 export function fileAccessChangeKey(change: FileAccessChange): string {
-  return "workId" in change
-    ? draftOwnerKey({ kind: "work", workId: change.workId })
-    : draftOwnerKey({ kind: "lineage", rootThreadId: change.rootThreadId });
+  if ("workId" in change) return draftOwnerKey({ kind: "work", workId: change.workId });
+  if ("projectId" in change) return treeRoomName({ kind: "project", projectId: change.projectId });
+  return draftOwnerKey({ kind: "lineage", rootThreadId: change.rootThreadId });
 }
 
 export interface FileAccessChanges {

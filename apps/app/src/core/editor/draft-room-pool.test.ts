@@ -19,6 +19,7 @@ describe("DraftRoomPool.release", () => {
     const pool = new DraftRoomPool({
       teardownGraceMs: 1,
       teardownOwner: new DocumentSessionTeardownOwner(() => new Error("unavailable")),
+      hold: async () => ({ release: () => undefined }),
       openSession: () => {
         opened += 1;
         const first = opened === 1;
@@ -37,8 +38,8 @@ describe("DraftRoomPool.release", () => {
         } as never;
       },
     });
-    pool.retain("editor", [room]);
-    pool.retain("refresh", [room]);
+    pool.retain("editor", [{ roomKey: room, documentId: "doc" }]);
+    pool.retain("refresh", [{ roomKey: room, documentId: "doc" }]);
     pool.get(room);
     resetListener({
       connectionState: { kind: "reset", reason: "discarded", disposition: "removed" },

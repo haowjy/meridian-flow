@@ -18,9 +18,9 @@
   in-flight bytes are not draft state. A submission snapshot carries the draft's
   revision and exact selection, so an older response clears or restores only the
   draft it accepted.
-- Apply an initial draft snapshot once. A successful catalog acquisition removes
-  restored document atoms whose resources are gone; offline or unavailable
-  catalogs don't, and folder atoms stay so a deleted folder shows on its chip's
+- Apply an initial draft snapshot once. A project list that has synced removes
+  restored document atoms whose documents it no longer shows; one that has not
+  synced doesn't, and folder atoms stay so a deleted folder shows on its chip's
   menu. Confirmed uploads retain ownership; in-memory bytes don't persist.
 - An upload chip isn't part of the message, so Send (button and Enter) waits while one
   sends and refuses while one has failed or stopped; the chip says to retry or remove it.
@@ -40,7 +40,7 @@
   writer's keys keep landing in the draft natively; nothing sends meanwhile, and
   the takeover takes the focus after a one-second pause. Forwarding keys into the
   draft was tried and lost every key that wasn't a plain character.
-- A context row drop resolves through the same live catalog as `@` and
+- A context row drop resolves through the same live trees as `@` and
   inserts the same `composerReference` atom. The shared editor drop extension
   owns word snapping, spacing, one-step Undo, and the drop caret.
 - A desktop file dropped on the composer or the chat's transcript attaches through

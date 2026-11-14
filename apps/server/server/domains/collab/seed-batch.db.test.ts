@@ -19,8 +19,8 @@ import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleContextCatalog } from "../context/index.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -64,7 +64,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       ...createTestRemovalDeps(db),
       fileAccess: createAllowAllFileAccess(),
       workProjectionMutation: createTestWorkProjectionMutation(db),
-      catalogMutations: createDrizzleContextCatalog(db),
     });
     domains.push(collab);
     const persistence = createDrizzleCollabPersistence(db);
@@ -79,33 +78,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
     collab.bindHocuspocus(hocuspocus);
     const single = randomUUID() as DocumentId;
     const batch = [randomUUID(), randomUUID()] as DocumentId[];
-    await db.insert(documents).values(
-      [single, ...batch].map((id, index) => ({
-        id,
-        contextSourceId: sourceId,
-        name: `doc-${index}`,
-        fileType: "markdown",
-      })),
-    );
+    const seed = treeSeeder(db);
+    for (const [index, id] of [single, ...batch].entries())
+      await seed.document(sourceId, `doc-${index}`, { id });
     const origin = { type: "system" } as const;
     const text = "# Chapter\n\nOnce upon a time.\n";
     const store = collab;
     await store.seedFromMarkdown(single, store.bindStatic(text), origin);
-    const seeds = await Promise.all(
-      batch.map((documentId) =>
-        store.prepareSeed({
-          documentId,
-          projectId,
-          content: { ...store.bindStatic(text), holder: { kind: "document", documentId } },
-          origin,
-        }),
-      ),
-    );
-    const stagingId = randomUUID();
+    const state = store.encodeSeed(store.bindStatic(text), origin);
     await runInDrizzleTransaction(db, () =>
-      store.stageInitialStates(stagingId, projectId, 1, seeds),
+      store.installSeeds(batch.map((documentId) => ({ documentId, state }))),
     );
-    await runInDrizzleTransaction(db, () => store.commitStagedStates(stagingId));
 
     const ids = [single, ...batch];
     const heads = await db

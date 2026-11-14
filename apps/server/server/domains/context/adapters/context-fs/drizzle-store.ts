@@ -1,14 +1,13 @@
 /**
- * Drizzle ContextDocumentStore for one Meridian context source. Reads go through one tree
- * view (live, or one branch's); live creates reveal a hidden document at their path rather
- * than inserting a twin, and a branch's creates make hidden rows through the tree owner.
+ * Drizzle ContextDocumentStore for one Meridian context source: reads through one tree view
+ * (live, or one Work's). Nothing here writes the tree; the list does (`tree-writes.ts`).
  */
 
-import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import type {
-  ContextSiblingPosition,
-  DocumentFileType,
-  Filetype,
+import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import {
+  classifyFiletype,
+  type DocumentFileType,
+  type Filetype,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
@@ -16,47 +15,21 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
-
-import { renderFilename } from "../../context/paths.js";
-import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
-import {
-  type ContextDocument,
-  type ContextDocumentStore,
-  ContextEntryConflictError,
-  type ContextFolder,
-  type CreateBinaryDocumentInput,
-  type CreateDocumentInput,
-  LiveCreateCandidateChangedError,
-  type LiveDocumentCreation,
-  type LocatedContextDocument,
+import type {
+  ContextDocument,
+  ContextDocumentStore,
+  ContextFolder,
+  LocatedContextDocument,
 } from "../../ports/context-document-store.js";
-import type { DocumentArrivals } from "../../ports/document-arrivals.js";
-import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
-import { branchRankOverrides, siblingParent } from "../../tree/effective-order.js";
-import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
-import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
-import type { LiveClaim } from "../../tree/hidden-node-types.js";
-import { insertNewTree, type NewTreeNode } from "../../tree/new-tree.js";
-import { insertDocumentRow } from "../../tree/node-rows.js";
-import { createLiveFolder, ensureLiveFolderPath } from "../../tree/placement.js";
-import { placeLiveSibling } from "../../tree/sibling-order.js";
-import { loadFolderChains } from "../../tree/tree-addresses.js";
 import {
   createTreeReader,
-  LIVE_TREE,
   type PathResolution,
   type TreeView,
   type VisibleDocument,
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import {
-  loadDocumentIdentityRows,
-  loadFolderIdentityRows,
-  loadHiddenFilenames,
-} from "../../tree/tree-view-sql.js";
-import { isStorageBackedDocument } from "../catalog-file-mapper.js";
-import { lockContextSources } from "./document-locations.js";
+import { isStorageBackedDocument } from "../context-file-entry.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -70,26 +43,37 @@ type DocumentRow = Pick<
   | "sizeBytes"
   | "hasPreview"
   | "updatedAt"
-  | "provisionalName"
   | "metadata"
   | "rank"
 >;
+
+/** A node's name is its full filename; the document shape keeps the stem apart from the extension. */
+function stemOf(row: Pick<DocumentRow, "name" | "extension">): string {
+  return row.extension !== "" && row.name.toLowerCase().endsWith(`.${row.extension}`)
+    ? row.name.slice(0, -(row.extension.length + 1))
+    : row.name;
+}
+
+function binaryKind(fileType: string | null): DocumentFileType {
+  const classified = classifyFiletype(fileType);
+  return classified.kind === "binary" ? classified.fileType : "binary";
+}
 
 export function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
   return {
     id: row.id,
     folderId: row.folderId,
-    name: row.name,
+    name: stemOf(row),
     extension: row.extension,
-    fileType: isBinary ? (row.fileType as DocumentFileType) : null,
+    // The row keeps a stored file's own type (`png`); readers want its kind (`image`).
+    fileType: isBinary ? binaryKind(row.fileType) : null,
     filetype: isBinary ? null : (row.fileType as Filetype),
     storageUrl: row.storageUrl,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
     hasPreview: row.hasPreview,
     updatedAt: row.updatedAt.toISOString(),
-    provisionalName: row.provisionalName,
     metadata: row.metadata,
     rank: row.rank,
   };
@@ -113,10 +97,6 @@ export async function locateDocumentById(
 export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
-  catalogMutations?: ContextCatalogMutationPort;
-  arrivals?: DocumentArrivals;
-  /** Repair on touch: a create's candidate picker reports what it repaired (§12.4). */
-  repair?: HiddenNodeRepair;
 }
 
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
@@ -147,11 +127,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       contextSourceId: this.sourceId,
       path,
     });
-    if (found.kind === "ambiguous") {
-      const documents = found.nodes.flatMap((node) => (node.kind === "document" ? [node.id] : []));
-      const rows = await loadDocumentIdentityRows(currentDrizzleDb(this.deps.db), documents);
-      return rows.some((row) => row.deleted) ? { ...found, outlived: true } : found;
-    }
+    if (found.kind === "ambiguous") return found;
     return found.kind === "found" && found.node.kind === "document"
       ? { kind: "found", node: mapDocument(found.node.document) }
       : { kind: "not_found" };
@@ -172,268 +148,8 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       : { kind: "not_found" };
   }
 
-  async findDocument(folderId: string | null, name: string, extension: string) {
-    const vd = visibleDocuments(LIVE_TREE);
-    const [row] = await this.db
-      .select()
-      .from(vd)
-      .where(
-        and(
-          eq(vd.contextSourceId, this.sourceId),
-          folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
-          eq(vd.name, name),
-          eq(vd.extension, extension),
-        ),
-      )
-      .orderBy(vd.id)
-      .limit(1);
-    return row ? mapDocument(row) : null;
-  }
-
   async findDocumentById(view: TreeView, documentId: string) {
     return locateDocumentById(this.deps.db, view, documentId);
-  }
-
-  async findForward(fromId: string, projectId: ProjectId) {
-    return findForward(this.deps.db, fromId, projectId);
-  }
-
-  async listHiddenNames(folderId: string | null) {
-    return loadHiddenFilenames(this.deps.db, this.sourceId, folderId as FolderId | null);
-  }
-
-  async findDocumentLastLocation(documentId: string) {
-    const located = await lastLocationOf(this.deps.db, documentId as DocumentId);
-    if (!located || located.contextSourceId !== this.sourceId) return null;
-    const name = located.path.split("/").at(-1) ?? "";
-    return { path: located.path, name, deleted: located.deleted };
-  }
-
-  async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
-    if (dir.length === 0) return null;
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      const ensured = await ensureLiveFolderPath(this.deps.db, {
-        contextSourceId: this.sourceId,
-        dir,
-      });
-      if (!ensured.ok) throw new ContextEntryConflictError("file");
-      const { folderId, placed } = ensured.value;
-      if (placed.length > 0) {
-        await this.deps.catalogMutations?.refreshSources([this.sourceId], placed);
-      }
-      return folderId;
-    });
-  }
-
-  private async folderPath(folderId: FolderId): Promise<string[]> {
-    return [...((await loadFolderChains(this.db, [folderId])).get(folderId) ?? [])]
-      .reverse()
-      .map((link) => link.name);
-  }
-
-  async createFolderIfAbsent(input: {
-    parentId: string | null;
-    name: string;
-    id: string;
-    position?: ContextSiblingPosition;
-  }) {
-    const folderId = input.id as FolderId;
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      // The catalog's entry-id space is global: a live id in this source is a replay, while any
-      // other holder (another source, deleted, hidden, a document) can never become this folder.
-      const [held] = await loadFolderIdentityRows(this.db, [folderId]);
-      if (held) {
-        if (held.contextSourceId !== this.sourceId || held.deleted || held.hidden)
-          throw new ContextEntryConflictError("folder");
-        return {
-          status: "already-exists" as const,
-          folderId,
-          path: await this.folderPath(folderId),
-        };
-      }
-      const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
-      if (document) throw new ContextEntryConflictError("folder");
-      await createLiveFolder(this.deps.db, {
-        contextSourceId: this.sourceId,
-        parentId: input.parentId as FolderId | null,
-        name: input.name,
-        id: folderId,
-      });
-      if (input.position) {
-        const placed = await placeLiveSibling(this.deps.db, {
-          node: { kind: "folder", id: folderId },
-          sourceId: this.sourceId,
-          parentId: input.parentId as FolderId | null,
-          position: input.position,
-          arrived: true,
-        });
-        if (placed === "stale-anchor")
-          await placeLiveSibling(this.deps.db, {
-            node: { kind: "folder", id: folderId },
-            sourceId: this.sourceId,
-            parentId: input.parentId as FolderId | null,
-            arrived: true,
-          });
-      }
-      await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
-      return { status: "created" as const, folderId, path: await this.folderPath(folderId) };
-    });
-  }
-
-  async insertNewTree(input: {
-    parentId: string | null;
-    roots: readonly NewTreeNode[];
-    position?: ContextSiblingPosition;
-  }): Promise<"inserted" | "stale-anchor"> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      const inserted = await insertNewTree(this.deps.db, {
-        sourceId: this.sourceId,
-        parentId: input.parentId as FolderId | null,
-        roots: input.roots,
-        ...(input.position ? { position: input.position } : {}),
-      });
-      if (inserted === "stale-anchor") return inserted;
-      // The catalog reconciles the project's whole scope, so one refresh covers the tree.
-      await this.deps.catalogMutations?.refreshSources([this.sourceId], inserted.folderIds);
-      // An upload's arrival publishes with its live identity; a tracked document's waits for
-      // its content, in the creation aggregate that called this.
-      await this.deps.arrivals?.settle(inserted.binaryIds);
-      return "inserted";
-    });
-  }
-
-  async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
-    return findLiveCreateCandidate(this.deps.db, {
-      contextSourceId: this.sourceId,
-      dir,
-      name,
-      extension,
-    });
-  }
-
-  async createDocumentRecordIfAbsent(
-    input: CreateDocumentInput,
-    claim: LiveClaim = { kind: "any" },
-  ): Promise<LiveDocumentCreation | null> {
-    return this.claimLive(input, claim);
-  }
-
-  /** Reveal the hidden document at the path, or insert the live row, under `claim`. Null when taken. */
-  private async claimLive(
-    input: CreateDocumentInput,
-    claim: LiveClaim,
-  ): Promise<LiveDocumentCreation | null> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      // The catalog's entry-id space is global: a folder anywhere already holds this id, so the
-      // document create can never take it (the folder create enforces the same invariant).
-      if (input.id) {
-        const [folder] = await loadFolderIdentityRows(this.db, [input.id as FolderId]);
-        if (folder) throw new ContextEntryConflictError("folder");
-      }
-      const occupant = await liveFileOccupant(this.deps.db, this.sourceId, input);
-      if (occupant === "folder") throw new ContextEntryConflictError("folder");
-      if (occupant) return null;
-      const created = await createLive(this.deps.db, {
-        slot: this.slotOf(input),
-        claim,
-        insert: {
-          node: {
-            kind: "tracked",
-            filetype: input.filetype,
-            ...(input.metadata ? { metadata: input.metadata } : {}),
-          },
-          ...(input.id ? { id: input.id as DocumentId } : {}),
-          ...(input.provisionalName ? { provisionalName: true } : {}),
-        },
-        ...(this.deps.repair ? { repair: this.deps.repair } : {}),
-      });
-      if (!created.ok) {
-        if (created.error.code === "candidate_changed") throw new LiveCreateCandidateChangedError();
-        if (created.error.code === "row_exists") throw new ContextEntryConflictError();
-        return null;
-      }
-      const outcome = created.value;
-      if (outcome.kind === "revealed" && input.joinFrom) {
-        await recordForward(this.deps.db, {
-          fromId: input.joinFrom.fromId as DocumentId,
-          toId: outcome.documentId,
-          projectId: input.joinFrom.projectId,
-        });
-      }
-      if (outcome.kind === "inserted" && input.position) {
-        // The insert took the parent's arrival rule; the writer's position replaces it. A
-        // sibling that is gone leaves the arrival placement, never fails the create.
-        const placed = await placeLiveSibling(this.deps.db, {
-          node: { kind: "document", id: outcome.documentId },
-          sourceId: this.sourceId,
-          parentId: input.folderId as FolderId | null,
-          position: input.position,
-          arrived: true,
-        });
-        if (placed === "stale-anchor")
-          await placeLiveSibling(this.deps.db, {
-            node: { kind: "document", id: outcome.documentId },
-            sourceId: this.sourceId,
-            parentId: input.folderId as FolderId | null,
-            arrived: true,
-          });
-      }
-      if (outcome.kind === "inserted") {
-        await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      } else {
-        await this.deps.catalogMutations?.refreshSources(
-          outcome.placed.sourceIds,
-          outcome.placed.placed.map((node) => node.id),
-        );
-      }
-      const document = await this.findDocument(input.folderId, input.name, input.extension);
-      if (!document) throw new Error(`Created document ${created.value.documentId} is not live`);
-      return { document, revealed: created.value.kind === "revealed" };
-    });
-  }
-
-  private slotOf(input: { folderId: string | null; name: string; extension: string }) {
-    return {
-      contextSourceId: this.sourceId,
-      folderId: input.folderId as FolderId | null,
-      name: input.name,
-      extension: input.extension,
-    };
-  }
-
-  async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      const occupant = await liveFileOccupant(this.deps.db, this.sourceId, input);
-      if (occupant) throw new ContextEntryConflictError(occupant);
-      // A live upload at a hidden image's path is a different document (12b-Q2).
-      const documentId = await insertDocumentRow(
-        this.deps.db,
-        this.slotOf(input),
-        {
-          kind: "binary",
-          fileType: input.fileType,
-          storageUrl: input.storageUrl,
-          mimeType: input.mimeType,
-          sizeBytes: input.sizeBytes,
-          ...(input.hasPreview ? { hasPreview: true } : {}),
-          ...(input.metadata ? { metadata: input.metadata } : {}),
-        },
-        { hidden: false, ...(input.id ? { id: input.id as DocumentId } : {}) },
-      );
-      if (!documentId) throw new Error("Failed to create binary document");
-      await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      // The upload is an arrival (contract §9.3): its live identity and the settlement of a ref
-      // waiting at this address publish together, under the namespace key this command holds.
-      await this.deps.arrivals?.settle([documentId]);
-      const document = await this.findDocument(input.folderId, input.name, input.extension);
-      if (!document) throw new Error(`Created binary document ${documentId} is not live`);
-      return document;
-    });
   }
 
   async listTree(
@@ -453,26 +169,31 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         .where(eq(vf.contextSourceId, this.sourceId)),
       this.db.select().from(vd).where(eq(vd.contextSourceId, this.sourceId)),
     ]);
-    // Base ranks: the one caller (grep) sorts by path.
     return { folders, documents: docs.map(mapDocument) };
   }
 
-  namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
-    return createTreeReader(this.deps.db).namesAt(view, {
-      contextSourceId: this.sourceId,
-      parentId: parentId as FolderId | null,
-    });
+  async namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
+    const vd = visibleDocuments(view);
+    const vf = visibleFolders(view);
+    const here = (parent: typeof vd.folderId | typeof vf.parentId) =>
+      parentId === null ? isNull(parent) : eq(parent, parentId as FolderId);
+    const [documents, folders] = await Promise.all([
+      this.db
+        .select({ name: vd.name })
+        .from(vd)
+        .where(and(eq(vd.contextSourceId, this.sourceId), here(vd.folderId))),
+      this.db
+        .select({ name: vf.name })
+        .from(vf)
+        .where(and(eq(vf.contextSourceId, this.sourceId), here(vf.parentId))),
+    ]);
+    return new Set([...documents, ...folders].map((row) => row.name));
   }
 
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
-    const rows = await this.db
-      .select({
-        id: vf.id,
-        parentId: vf.parentId,
-        name: vf.name,
-        rank: vf.rank,
-      })
+    return this.db
+      .select({ id: vf.id, parentId: vf.parentId, name: vf.name, rank: vf.rank })
       .from(vf)
       .where(
         and(
@@ -480,15 +201,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
         ),
       );
-    const ranks =
-      view.kind === "branch" && rows.length
-        ? await branchRankOverrides(
-            this.db,
-            view.branchId,
-            siblingParent(this.sourceId, parentId as FolderId | null),
-          )
-        : null;
-    return rows.map((row) => ({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
   }
 
   async listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
@@ -502,33 +214,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           folderId === null ? isNull(vd.folderId) : eq(vd.folderId, folderId as FolderId),
         ),
       );
-    const ranks =
-      view.kind === "branch" && rows.length
-        ? await branchRankOverrides(
-            this.db,
-            view.branchId,
-            siblingParent(this.sourceId, folderId as FolderId | null),
-          )
-        : null;
-    return rows.map((row) => mapDocument({ ...row, rank: ranks?.get(row.id) ?? row.rank }));
+    return rows.map(mapDocument);
   }
-}
-
-/**
- * What live entry already holds this file's rendered filename, by any split of it: a document,
- * or a folder of that name. Null when free.
- */
-async function liveFileOccupant(
-  db: Database,
-  sourceId: string,
-  input: { folderId: string | null; name: string; extension: string },
-): Promise<"file" | "folder" | null> {
-  const occupant = await createTreeReader(db).childAt(LIVE_TREE, {
-    contextSourceId: sourceId as ContextSourceId,
-    parentId: input.folderId as FolderId | null,
-    filename: renderFilename(input.name, input.extension),
-  });
-  if (occupant.kind === "not_found") return null;
-  const first = occupant.kind === "found" ? occupant.node : occupant.nodes[0];
-  return first.kind === "folder" ? "folder" : "file";
 }

@@ -6,7 +6,6 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
@@ -21,29 +20,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("slug routing (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
-    const { eq } = await import("drizzle-orm");
     const { createDrizzleWorkRepository } = await import("./adapters/work-repository/drizzle.js");
     const { createWorkProjectionMutation } = await import("./adapters/work-projection-mutation.js");
-    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
-    const { createDrizzleProjectContextAvailability } = await import(
-      "../context/adapters/project-context-availability.js"
-    );
+    const { createDrizzleContextSources } = await import("../context/adapters/context-sources.js");
+    const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
-    const availability = createDrizzleProjectContextAvailability(db);
     const projectionMutation = createWorkProjectionMutation({
       db,
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
-      availability,
-      catalog: createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      }),
+      draftOwnerHints: NO_PROJECT_HINTS,
     });
     const workRepository = () =>
       createDrizzleWorkRepository({
-        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
@@ -55,71 +46,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     afterAll(async () => db.$client.end());
 
-    it("creates the project manifest source before publishing its catalog identity", async () => {
+    it("creates the project manifest source before the project's sources are read", async () => {
       const userId = "93b1f764-1234-f678-0712-123456789ad2";
       await db.insert(schema.users).values({
         id: userId,
         externalId: "manifest-owner",
         email: "manifest-owner@example.com",
       });
-      const catalog = createDrizzleContextCatalog(db);
       const projectRepository = createDrizzleProjectRepository({
         db,
-        catalogLifecycle: catalog,
         ensureNoWork: async (projectId) => workRepository().ensureNoWork(projectId),
       });
 
       const project = await projectRepository.create({ userId, title: "Manifest serial" });
-      const snapshot = await catalog.snapshot({ kind: "project", projectId: project.id });
+      const sources = await createDrizzleContextSources(db).inProject(project.id);
 
-      expect(snapshot.entries).toEqual(
+      expect(sources).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ kind: "source", scheme: "manuscript", name: "Manuscript" }),
+          expect.objectContaining({ scheme: "manuscript", name: "Manuscript" }),
         ]),
       );
       expect(await workRepository().findNoWork(project.id)).toMatchObject({
         projectId: project.id,
         isNoWork: true,
       });
-    });
-
-    it("rolls back project identity and No Work when catalog initialization fails", async () => {
-      const userId = "93b1f764-1234-f678-0712-123456789ad3";
-      await db.insert(schema.users).values({
-        id: userId,
-        externalId: "failed-manifest-owner",
-        email: "failed-manifest-owner@example.com",
-      });
-      let projectId: string | undefined;
-      const projectRepository = createDrizzleProjectRepository({
-        db,
-        ensureNoWork: async (id) => workRepository().ensureNoWork(id),
-        catalogLifecycle: {
-          publishDraftOwnerHints() {},
-          async refreshProject(id) {
-            projectId = id;
-            throw new Error("catalog initialization failed");
-          },
-          async upsertWorkAuthorities() {},
-        },
-      });
-
-      await expect(
-        projectRepository.create({ userId, title: "Unpublished serial" }),
-      ).rejects.toThrow("catalog initialization failed");
-      if (!projectId) throw new Error("Catalog initialization did not observe the project");
-      expect(
-        await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)),
-      ).toEqual([]);
-      expect(
-        await db
-          .select()
-          .from(schema.contextSources)
-          .where(eq(schema.contextSources.projectId, projectId)),
-      ).toEqual([]);
-      expect(
-        await db.select().from(schema.works).where(eq(schema.works.projectId, projectId)),
-      ).toEqual([]);
     });
 
     it("allocates concurrent owner-scoped handles and reserves deleted addresses", async () => {

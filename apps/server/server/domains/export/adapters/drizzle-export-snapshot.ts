@@ -7,7 +7,7 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { catalogSourceAuthority } from "../../context/adapters/catalog-file-mapper.js";
+import { sourceAuthority } from "../../context/adapters/context-file-entry.js";
 import { loadLiveProjectExportDocuments } from "../../context/tree/export-inventory.js";
 import type { ExportSnapshotStore, ExportSourceRoot } from "../ports/export-snapshot.js";
 
@@ -45,7 +45,7 @@ export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotSt
             const uri = canonicalContextUri(
               row.scheme,
               "",
-              catalogSourceAuthority(
+              sourceAuthority(
                 row.scheme,
                 row.workId,
                 row.noWork ? null : row.workHandle,

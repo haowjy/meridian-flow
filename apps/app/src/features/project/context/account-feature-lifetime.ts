@@ -1,30 +1,37 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
-import type { DocumentAddressResult } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import type { AccountId } from "@meridian/contracts/protocol";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
-import type { DocumentSession } from "@/core/editor/document-session";
-import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
-import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import {
+  clearAccountCopies,
+  clearCopiesOfOtherAccounts,
+} from "@/core/editor/local-document-copies";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
+import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { notifyUnsentTyping } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
-import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
-import { reconcileRecentAvailability } from "./recent-availability";
-import { observeRefusedDeletes } from "./refused-delete-observer";
+import { ProjectStandings } from "./project-standings";
 import { RemovedNoticeStore } from "./removed-notice-store";
-import { renameOperationLifecycle } from "./rename-operation-lifecycle";
+
+/** Why a sign-out stopped: edits the server did not acknowledge, or a copy another tab still held open. */
+export class SignOutIncomplete extends Error {
+  constructor(readonly left: "unsent" | "copies") {
+    super(`Sign-out left ${left} behind`);
+  }
+}
+
+const UNSENT_EDITS_WAIT_MS = 8_000;
+/** One account's tabs hear that another is signing out. */
+const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
 export class AccountFeatureLifetime {
   readonly runtime;
@@ -37,73 +44,49 @@ export class AccountFeatureLifetime {
     this.removal.reconcileInstalledTab(projectId, tab),
   );
   readonly removal;
-  readonly availability;
+  /** Where each document stands in its project's list: the one answer to "is it still there". */
+  readonly standings;
   readonly notices;
-  readonly resources;
+  /** The project tree's lists this account has open; step 6's tree screens read them. */
+  readonly treeLists: TreeListRegistry;
+  private readonly stopTreeListDebugHook: () => void;
   readonly opener;
-  readonly renameOperations;
-  private readonly continuity: IdentityContinuity | null;
-  private readonly stopRefusedDeletes: (() => void) | null;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
-  /** Each removed live room's follow of its removal answer; stopped on close. */
-  private readonly removedRooms = new Set<() => void>();
+  private readonly signOutChannel: BroadcastChannel | null;
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
 
   constructor(
     readonly accountId: string,
-    queryClient: QueryClient,
-    onInvalidated: (error: Error) => void = () => undefined,
+    _onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
+    this.treeLists = new TreeListRegistry(accountId);
+    this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
+    this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner(this.registry, {
+      // A draft's room closed: where the document stands says whether it went to live or was removed.
       resolveGone: async (ref) => {
-        const answer = await this.availability.resolveForOpen(ref.projectId, ref.documentId);
-        return answer.kind === "available"
-          ? { disposition: "closed", liveUri: answer.entry.uri }
-          : answer.kind === "deleted"
-            ? { disposition: "removed" }
-            : null;
-      },
-      removed: (ref) => {
-        this.availability.roomRemoved(ref.projectId, ref.documentId);
-        const record = this.availability.removalRecord(ref.projectId, ref.documentId);
-        let stop = () => {};
-        stop = record.subscribe(() => {
-          const answer = record.get();
-          if (answer && answer.kind !== "unresolved") {
-            stop();
-            this.removedRooms.delete(stop);
-          }
-        });
-        this.removedRooms.add(stop);
+        const standing = this.standings.standing(ref.projectId, ref.documentId);
+        return standing.kind === "in-tree"
+          ? { disposition: "closed" }
+          : standing.kind === "waiting"
+            ? null
+            : { disposition: "removed" };
       },
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
-      markOwnRemoval: (ref) => {
-        const settle = this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]);
-        return (removed) => settle(removed ? [] : [ref.documentId]);
-      },
     });
-    this.availability = new ProjectContextAvailabilityCoordinator({
-      lookup: lookupProjectContextAvailability,
-      apply: async (commands) => {
-        reconcileRecentAvailability(this.accountId, commands);
-        await this.removal.reconcileDocumentAvailability(commands).localSettlement;
-      },
-      repairProjectCatalog: (projectId) =>
-        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "context-catalog"] }),
-    });
-    this.notices = new RemovedNoticeStore(this.availability, this.presented);
-    this.removal = new ContextRemovalCoordinator(accountId, {
+    this.notices = new RemovedNoticeStore(this.standings);
+    this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
-      sessions: this.registry,
+      copies: this.registry,
       notices: this.notices,
       drafts: {
         // A Discarded draft's review can still hold its room, and a view can leave a draft for
@@ -119,103 +102,34 @@ export class AccountFeatureLifetime {
       tabs: {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
-      addresses: {
-        removed: (projectId, documentIds) => {
-          const queryKey = projectQueryKeys.documentAddresses(projectId);
-          const rewrite = () =>
-            queryClient.setQueriesData<DocumentAddressResult>({ queryKey }, (answer) =>
-              answer?.kind !== "unavailable" &&
-              answer &&
-              documentIds.includes(answer.document.documentId)
-                ? { kind: "unavailable" }
-                : answer,
-            );
-          rewrite();
-          // A lookup in flight was asked before the removal: its answer would land over the
-          // rewrite. Cancelling reverts it to its last answer, so rewrite again and ask afresh.
-          const inFlight = queryClient
-            .getQueryCache()
-            .findAll({ queryKey, fetchStatus: "fetching" });
-          if (inFlight.length === 0) return;
-          void queryClient.cancelQueries({ queryKey, fetchStatus: "fetching" }).then(() => {
-            rewrite();
-            for (const query of inFlight)
-              void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
-          });
-        },
-        available: (projectId) =>
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.documentAddresses(projectId),
-          }),
-      },
     });
-    this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     this.registry.observeUnsentTyping(notifyUnsentTyping);
     dropRetiredTabSession(accountId);
-    this.resources =
-      typeof window === "undefined"
-        ? null
-        : new AccountResourceReplica(
-            accountId,
-            this.runtime,
-            (error) => {
-              this.beginClose();
-              onInvalidated(error);
-            },
-            connectivityHints,
-          );
-    this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
-    this.continuity = this.resources ? new IdentityContinuity(accountId, this.resources) : null;
-    this.stopRefusedDeletes = this.resources
-      ? observeRefusedDeletes(this.resources, this.notices)
-      : null;
-    if (this.resources) this.runtime.connectLocalResources(this.resources);
+    // The browser last held someone else's documents: nothing of theirs stays for this account.
+    if (typeof window !== "undefined")
+      void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
+        reportError(error),
+      );
     this.opener = new ProjectDocumentLiveOpener({
-      availability: this.availability,
+      standings: this.standings,
       registry: this.registry,
       epochSignal: this.runtime.epochSignal,
     });
     this.featureLease = this.removal.createLifetimeLease();
+    this.signOutChannel =
+      typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SIGN_OUT_CHANNEL);
+    if (this.signOutChannel)
+      this.signOutChannel.onmessage = ({ data }) => {
+        if ((data as { accountId?: string } | null)?.accountId === this.accountId)
+          void this.signedOutElsewhere();
+      };
   }
 
-  /**
-   * The one reaction to a live room's 4208, held by an editor or not: the
-   * record cache asks again. `removed` closes its tabs (an editor still holding
-   * the room reads the same answer); `available` means a restore won the race,
-   * so the room reconnects in place. Each close costs one lookup and at most one
-   * restart, on an answer learned after it; nothing caps restarts across closes,
-   * which is safe while the server's 4208 and availability read the same record.
-   * The follow ends on `removed`,
-   * `lost`, a restart or the session's end.
-   */
-  private followRemovedRoom(session: DocumentSession, room: RetainedLiveDocumentReference): void {
-    if (this.state !== "open") return;
-    this.availability.roomRemoved(room.projectId, room.documentId);
-    const record = this.availability.removalRecord(room.projectId, room.documentId);
-    let stopped = false;
-    let unsubscribeRecord: () => void = () => undefined;
-    let unsubscribeSession: () => void = () => undefined;
-    const stop = () => {
-      if (stopped) return;
-      stopped = true;
-      unsubscribeRecord();
-      unsubscribeSession();
-      this.removedRooms.delete(stop);
-    };
-    this.removedRooms.add(stop);
-    const answered = () => {
-      const answer = record.get();
-      if (stopped || !answer || answer.kind === "unresolved") return;
-      stop();
-      if (answer.kind === "available")
-        void this.registry.restartRemovedRoom(session).catch(() => undefined);
-    };
-    unsubscribeRecord = record.subscribe(answered);
-    unsubscribeSession = session.subscribe((snapshot) => {
-      if (snapshot.status === "destroyed" || session.resetDisposition !== "removed") stop();
-    });
-    if (stopped) unsubscribeSession();
-    answered();
+  /** Another tab is signing this account out: send what can be sent, let go of every copy, and leave. */
+  private async signedOutElsewhere(): Promise<void> {
+    if (this.state === "open") await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
+    await this.finishClose();
+    window.location.assign("/logout");
   }
 
   resumeFeatureLease(): void {
@@ -229,14 +143,28 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    for (const stop of [...this.removedRooms]) stop();
-    this.renameOperations?.dispose();
-    this.continuity?.dispose();
-    this.stopRefusedDeletes?.();
-    this.resources?.beginClose();
+    this.stopTreeListDebugHook();
+    this.treeLists.close();
     this.draftCommands.close();
     this.runtime.beginClose();
     this.featureLease.suspend();
+  }
+
+  /**
+   * Sign-out: the edits the server can still acknowledge are sent, the account's other tabs let
+   * go of their copies, and every copy this account has on this browser is deleted. Throws
+   * `SignOutIncomplete` when edits could not be sent or a copy could not be deleted: the writer
+   * is not signed out with the account's text left behind.
+   */
+  async clearForSignOut(): Promise<void> {
+    if (this.state === "open") {
+      if (!(await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS)))
+        throw new SignOutIncomplete("unsent");
+      this.signOutChannel?.postMessage({ accountId: this.accountId });
+    }
+    await this.finishClose();
+    if (!(await clearAccountCopies(this.accountId as AccountId)))
+      throw new SignOutIncomplete("copies");
   }
 
   finishClose(): Promise<void> {
@@ -250,6 +178,7 @@ export class AccountFeatureLifetime {
       }
       await this.runtime.finishClose();
       this.state = "closed";
+      this.signOutChannel?.close();
     })();
     this.closeAttempt = attempt;
     void attempt

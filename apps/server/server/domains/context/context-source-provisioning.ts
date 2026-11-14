@@ -2,9 +2,9 @@
  * Provision and resolve Drizzle-backed context_sources rows, producing
  * lazily-cached ContextDocumentStore instances for unified ContextFS schemes.
  *
- * Key decision: insert-or-get-with-race-fallback provisioning and the
- * promise-cached SourceResolvedContextDocumentStore are one cohesive concern —
- * they own the DB-level context-source lifecycle, separate from adapter assembly.
+ * A project's, account's and Work's sources are made in the transaction that makes the project,
+ * account or Work, so every tree has its source from the first moment a client can write to it.
+ * Only a chat's uploads and a lineage's notes are still made on first write.
  */
 
 import type { ProjectId, ThreadId } from "@meridian/contracts";
@@ -19,24 +19,14 @@ import {
   setDrizzleTransactionLocal,
 } from "../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
-import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
-import { lockContextSources } from "./adapters/context-fs/document-locations.js";
 import {
   DrizzleContextDocumentStore,
   locateDocumentById,
 } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
-import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
-import type {
-  ContextDocumentStore,
-  CreateBinaryDocumentInput,
-  CreateDocumentInput,
-} from "./ports/context-document-store.js";
+import type { ContextDocumentStore } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
-import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import { findForward } from "./tree/forwards.js";
-import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
-import type { LiveClaim } from "./tree/hidden-node-types.js";
+import type { ProjectHintPort } from "./ports/project-hints.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<
@@ -50,35 +40,6 @@ const CONTEXT_SOURCE_NAMES: Record<
   scratch: "Scratch",
   uploads: "Uploads",
 };
-
-async function ensureUserContextProject(db: Database, userId: string): Promise<string> {
-  await currentDrizzleDb(db).execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`,
-  );
-  const existing = await findUserContextProject(db, userId);
-  if (existing) return existing;
-
-  const reserved = await currentDrizzleDb(db)
-    .select({ slug: projects.slug })
-    .from(projects)
-    .where(eq(projects.userId, userId));
-  const id = crypto.randomUUID();
-  const [created] = await currentDrizzleDb(db)
-    .insert(projects)
-    .values({
-      id,
-      userId,
-      name: "User Files",
-      slug: nextProjectSlug(
-        "User Files",
-        reserved.map((row) => row.slug),
-      ),
-      isPersonal: true,
-    })
-    .returning({ id: projects.id });
-  if (!created) throw new Error(`Failed to provision user context project for ${userId}`);
-  return created.id;
-}
 
 async function findUserContextProject(db: Database, userId: string): Promise<string | null> {
   const [existing] = await currentDrizzleDb(db)
@@ -109,6 +70,63 @@ function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
   return scheme === "user";
 }
 
+type SourceHints = Pick<ProjectHintPort, "publishSourcesHint">;
+
+const PROJECT_SOURCE_SCHEMES = ["manuscript", "kb", "unfiled"] as const;
+
+/**
+ * Makes a new project's sources inside its creating transaction. The account's personal project
+ * also holds `user://`, the account's own list. Returns the Manuscript source's id.
+ */
+export async function provisionProjectSources(
+  db: Database,
+  projectId: string,
+  options: { personal: boolean },
+): Promise<string> {
+  const schemes: ProjectContextFsScheme[] = [
+    ...PROJECT_SOURCE_SCHEMES,
+    ...(options.personal ? (["user"] as const) : []),
+  ];
+  const tx = currentDrizzleDb(db);
+  // The default bootstrap runs again on a project it already made.
+  await tx
+    .insert(contextSources)
+    .values(
+      schemes.map((scheme) => ({
+        projectId,
+        name: CONTEXT_SOURCE_NAMES[scheme],
+        slug: scheme,
+        scope: "project" as const,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [contextSources.projectId, contextSources.slug],
+      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.chatThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
+    });
+  const manuscript = await findProjectContextSource(db, projectId, "manuscript", "");
+  if (!manuscript) throw new Error(`Failed to provision sources for project ${projectId}`);
+  return manuscript;
+}
+
+/** Makes a new Work's Scratch source inside its creating transaction. */
+export async function provisionWorkScratch(db: Database, workId: string): Promise<void> {
+  await currentDrizzleDb(db).insert(contextSources).values({
+    workId,
+    name: CONTEXT_SOURCE_NAMES.scratch,
+    slug: "scratch",
+    scope: "work",
+  });
+}
+
+/** The reader of a source that provisioning guarantees: its absence is a bug, not a lazy write. */
+function required(find: () => Promise<string | null>, what: string): () => Promise<string> {
+  return async () => {
+    const id = await find();
+    if (!id) throw new Error(`The ${what} context source does not exist`);
+    return id;
+  };
+}
+
 async function findProjectContextSource(
   db: Database,
   projectId: string,
@@ -135,38 +153,6 @@ async function findProjectContextSource(
   return row?.id ?? null;
 }
 
-async function ensureProjectContextSource(
-  db: Database,
-  projectId: string,
-  scheme: ProjectContextFsScheme,
-  userId: string,
-): Promise<string> {
-  const sourceProjectId = storedInPersonalProject(scheme)
-    ? await ensureUserContextProject(db, userId)
-    : projectId;
-  const existing = await findProjectContextSource(db, projectId, scheme, userId);
-  if (existing) return existing;
-
-  const [created] = await currentDrizzleDb(db)
-    .insert(contextSources)
-    .values({
-      projectId: sourceProjectId,
-      name: CONTEXT_SOURCE_NAMES[scheme],
-      slug: scheme,
-      scope: "project",
-    })
-    .onConflictDoNothing({
-      target: [contextSources.projectId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.chatThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
-    })
-    .returning({ id: contextSources.id });
-  if (created) return created.id;
-
-  const raced = await findProjectContextSource(db, projectId, scheme, userId);
-  if (!raced) throw new Error(`Failed to provision ${scheme} context source for ${projectId}`);
-  return raced;
-}
-
 async function findWorkContextSource(
   db: Database,
   workId: string,
@@ -186,45 +172,6 @@ async function findWorkContextSource(
   return row?.id ?? null;
 }
 
-export async function ensureWorkContextSource(
-  db: Database,
-  workId: string,
-  scheme: WorkScopedContextFsScheme,
-): Promise<string> {
-  return runInDrizzleTransaction(db, async () => {
-    await requireLockedActiveWorks(db, [workId]);
-    const activeDb = currentDrizzleDb(db) as Database;
-    if (scheme === "scratch") {
-      const [work] = await activeDb
-        .select({ isNoWork: works.isNoWork })
-        .from(works)
-        .where(eq(works.id, workId));
-      if (work?.isNoWork) throw new Error("No Work does not own Scratch");
-    }
-    const existing = await findWorkContextSource(activeDb, workId, scheme);
-    if (existing) return existing;
-
-    const [created] = await activeDb
-      .insert(contextSources)
-      .values({
-        workId,
-        name: CONTEXT_SOURCE_NAMES[scheme],
-        slug: scheme,
-        scope: "work",
-      })
-      .onConflictDoNothing({
-        target: [contextSources.workId, contextSources.slug],
-        where: sql`${contextSources.workId} IS NOT NULL AND ${contextSources.deletedAt} IS NULL`,
-      })
-      .returning({ id: contextSources.id });
-    if (created) return created.id;
-
-    const raced = await findWorkContextSource(activeDb, workId, scheme);
-    if (!raced) throw new Error(`Failed to provision ${scheme} context source for Work ${workId}`);
-    return raced;
-  });
-}
-
 class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   private sourceId: Promise<string> | null = null;
   private readonly transactionSourceIdKey = {};
@@ -235,23 +182,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly ensureSourceId: () => Promise<string>,
     private readonly findSourceId: () => Promise<string | null>,
     private readonly workId?: string | (() => Promise<string>),
-    private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly beforeWrite?: () => Promise<void>,
-    private readonly arrivals?: DocumentArrivals,
-    private readonly repair?: HiddenNodeRepair,
   ) {}
 
   private async resolvedWorkId(): Promise<string | undefined> {
     return typeof this.workId === "function" ? this.workId() : this.workId;
-  }
-
-  private async mutate<T>(operation: (store: DrizzleContextDocumentStore) => Promise<T>) {
-    return runInDrizzleTransaction(this.db, async () => {
-      const workId = await this.resolvedWorkId();
-      if (workId) await requireLockedActiveWorks(this.db, [workId]);
-      await this.beforeWrite?.();
-      return operation(await this.sourceStore());
-    });
   }
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
@@ -260,10 +195,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       let pending = getDrizzleTransactionLocal<Promise<string>>(this.transactionSourceIdKey);
       if (!pending) {
         pending = (async () => {
-          const resolved = await this.ensureSourceId();
-          await lockContextSources(this.db, [resolved]);
-          await this.catalogMutations?.refreshSources([resolved]);
-          return resolved;
+          return this.ensureSourceId();
         })();
         setDrizzleTransactionLocal(this.transactionSourceIdKey, pending);
         runAfterDrizzleCommit(() => {
@@ -279,9 +211,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: sourceId,
-      catalogMutations: this.catalogMutations,
-      arrivals: this.arrivals,
-      ...(this.repair ? { repair: this.repair } : {}),
     });
   }
 
@@ -307,65 +236,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       : { kind: "not_found" as const };
   }
 
-  async findDocument(folderId: string | null, name: string, extension: string) {
-    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
-  }
-
   /** A document by id is the project's, not this source's: it never waits on the source. */
   findDocumentById(view: TreeView, documentId: string) {
     return locateDocumentById(this.db, view, documentId);
   }
 
-  /** A forward is the project's, not this source's: it never waits on the source. */
-  findForward(fromId: string, projectId: ProjectId) {
-    return findForward(this.db, fromId, projectId);
-  }
-
-  async listHiddenNames(folderId: string | null) {
-    return (await this.readableSourceStore())?.listHiddenNames(folderId) ?? [];
-  }
-
-  async findDocumentLastLocation(documentId: string) {
-    return (await this.readableSourceStore())?.findDocumentLastLocation(documentId) ?? null;
-  }
-
   async listTree(view: TreeView) {
     return (await this.readableSourceStore())?.listTree(view) ?? { folders: [], documents: [] };
-  }
-
-  async ensureFolderPath(dir: readonly string[]) {
-    // The source root always exists.
-    if (dir.length === 0) return null;
-    return this.mutate((store) => store.ensureFolderPath(dir));
-  }
-
-  async createFolderIfAbsent(input: {
-    parentId: string | null;
-    name: string;
-    id: string;
-    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
-  }) {
-    return this.mutate((store) => store.createFolderIfAbsent(input));
-  }
-
-  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
-    return this.mutate((store) => store.insertNewTree(input));
-  }
-
-  async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
-    return (
-      (await this.readableSourceStore())?.findLiveCreateCandidate(dir, name, extension) ?? {
-        kind: "none" as const,
-      }
-    );
-  }
-
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput, claim?: LiveClaim) {
-    return this.mutate((store) => store.createDocumentRecordIfAbsent(input, claim));
-  }
-
-  async createBinaryDocument(input: CreateBinaryDocumentInput) {
-    return this.mutate((store) => store.createBinaryDocument(input));
   }
 
   async contextSourceId() {
@@ -422,40 +299,18 @@ export function createProjectContextDocumentStore(
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
-  return new SourceResolvedContextDocumentStore(
-    db,
-    () => ensureProjectContextSource(db, projectId, scheme, userId),
-    () => findProjectContextSource(db, projectId, scheme, userId),
-    undefined,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
-  );
+  const find = () => findProjectContextSource(db, projectId, scheme, userId);
+  return new SourceResolvedContextDocumentStore(db, required(find, `${scheme}://`), find);
 }
 
 export function createWorkContextDocumentStore(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
-  return new SourceResolvedContextDocumentStore(
-    db,
-    () => ensureWorkContextSource(db, workId, scheme),
-    () => findWorkContextSource(db, workId, scheme),
-    workId,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
-  );
+  const find = () => findWorkContextSource(db, workId, scheme);
+  return new SourceResolvedContextDocumentStore(db, required(find, `${scheme}://`), find, workId);
 }
 
 /** Reads never provision lineage notes; the first AI write does. */
@@ -463,11 +318,9 @@ export function createLineageContextDocumentStore(
   db: Database,
   projectId: string,
   rootThreadId: string,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
+  hints: SourceHints,
 ): ContextDocumentStore {
-  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations, arrivals);
+  const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, undefined, hints);
   const find = async () => {
     const [row] = await currentDrizzleDb(db)
       .select({ id: contextSources.id })
@@ -488,10 +341,7 @@ export function createLineageContextDocumentStore(
     () => lifecycle.ensureSource(projectId, rootThreadId),
     find,
     undefined,
-    catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),
-    arrivals,
-    repair,
   );
 }
 
@@ -521,6 +371,7 @@ async function ensureChatContextSource(
   projectId: string,
   chatId: string,
   scheme: "uploads",
+  hints: SourceHints,
 ): Promise<string> {
   const existing = await findChatContextSource(db, projectId, chatId, scheme);
   if (existing) return existing;
@@ -538,7 +389,10 @@ async function ensureChatContextSource(
       where: sql`${contextSources.chatThreadId} IS NOT NULL`,
     })
     .returning({ id: contextSources.id });
-  if (created) return created.id;
+  if (created) {
+    hints.publishSourcesHint(projectId);
+    return created.id;
+  }
   const raced = await findChatContextSource(db, projectId, chatId, scheme);
   if (!raced) throw new Error(`Failed to provision ${scheme} context source for chat ${chatId}`);
   return raced;
@@ -554,18 +408,11 @@ export function createChatContextDocumentStore(
   projectId: string,
   chatId: string,
   scheme: "uploads",
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
+  hints: SourceHints,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
-    () => ensureChatContextSource(db, projectId, chatId, scheme),
+    () => ensureChatContextSource(db, projectId, chatId, scheme, hints),
     () => findChatContextSource(db, projectId, chatId, scheme),
-    undefined,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
   );
 }

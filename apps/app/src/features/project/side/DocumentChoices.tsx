@@ -3,7 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type Ref, useState } from "react";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
-import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
@@ -42,15 +42,13 @@ export function DocumentChoices({
   const { lanes } = useLiveTabs();
   const openTabs = lanes.document.tabs;
   const recent = useRecentDocuments(projectId);
-  const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, {});
+  const trees = useProjectTreeViews(projectId, FIND_SCHEMES, {});
   const files = FIND_SCHEMES.flatMap((scheme) =>
-    (catalogs[scheme].catalog?.files() ?? []).map((file) => ({ scheme, file })),
+    (trees[scheme].tree?.files() ?? []).map((file) => ({ scheme, file })),
   );
-  const catalogState = FIND_SCHEMES.some(
-    (scheme) => catalogs[scheme].isError && !catalogs[scheme].catalog,
-  )
+  const listState = FIND_SCHEMES.some((scheme) => trees[scheme].isError && !trees[scheme].tree)
     ? "failed"
-    : FIND_SCHEMES.some((scheme) => !catalogs[scheme].catalog)
+    : FIND_SCHEMES.some((scheme) => !trees[scheme].tree)
       ? "loading"
       : "ready";
   const [query, setQuery] = useState("");
@@ -99,10 +97,10 @@ export function DocumentChoices({
             label={t`Results`}
             state={
               found.length === 0 ? (
-                <ListLine density="menu" iconSlot status={catalogState === "loading"}>
-                  {catalogState === "loading" ? (
+                <ListLine density="menu" iconSlot status={listState === "loading"}>
+                  {listState === "loading" ? (
                     <Trans>Loading…</Trans>
-                  ) : catalogState === "failed" ? (
+                  ) : listState === "failed" ? (
                     <Trans>Couldn't load documents.</Trans>
                   ) : (
                     <Trans>No documents match “{search}”.</Trans>

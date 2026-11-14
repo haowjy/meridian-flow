@@ -5,17 +5,17 @@
  * - one captured link scope per search operation
  */
 import { createDb } from "@meridian/database";
-import { branchTreeChanges, documents, folders, modelResponses } from "@meridian/database/schema";
+import { modelResponses } from "@meridian/database/schema";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { grepQuery } from "../../test-support/grep-query.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
-import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
+import { createSourceTree } from "../context/adapters/context-fs/tree-writes.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { modelWrite } from "./test-support/model-write.js";
@@ -50,22 +50,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => {
       await db.$client.end();
     });
+    const seeder = treeSeeder(db);
+    const png = { storageKey: "test/map.png", mime: "image/png", size: 1 };
+    const writes = createSourceTree({
+      store: seeder.store,
+      db,
+      sourceId: async () => SOURCE_ID,
+    });
+    /** A live edit of the tree (rename, delete), as a person's would be. */
+    async function liveEdit(edit: (writer: TreeWriter) => unknown) {
+      await seeder.store.submit({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => edit(writer),
+      });
+    }
     /** A chapter showing `assets/map.png`, and the model's grant in this project. */
     async function seedChapterWithMap(collab: ReturnType<typeof createTestCollab>) {
-      const ASSETS_ID = "00000000-0000-4000-8000-000000000711";
-      await db.insert(folders).values({
-        id: ASSETS_ID,
-        contextSourceId: SOURCE_ID,
-        name: "assets",
-      });
-      await db.insert(documents).values({
+      await seeder.file(SOURCE_ID, "assets/map.png", png, {
         id: "00000000-0000-4000-8000-000000000712",
-        contextSourceId: SOURCE_ID,
-        folderId: ASSETS_ID,
-        name: "map",
-        extension: "png",
-        fileType: "image",
-        mimeType: "image/png",
       });
       await writeMarkdown(collab, {
         documentId: DOC_ID as never,
@@ -103,38 +105,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
       const secondDocumentId = "00000000-0000-4000-8000-000000000713";
-      await db.insert(documents).values({
-        id: secondDocumentId,
-        contextSourceId: SOURCE_ID,
-        name: "chapter-two",
-        extension: "",
-        fileType: "markdown",
-      });
+      await seeder.document(SOURCE_ID, "chapter-two", { id: secondDocumentId });
       // Two uploads no path spells: a deleted cover whose path a new cover took,
       // and an id with no document behind it.
       const OLD_COVER = "00000000-0000-4000-8000-000000000718";
       const LOST = "00000000-0000-4000-8000-000000000719";
-      const cover = { contextSourceId: SOURCE_ID, name: "cover", extension: "png" };
-      await db.insert(documents).values([
-        {
-          ...cover,
-          id: OLD_COVER,
-          fileType: "image",
-          deletionReason: "deleted",
-          deletedAt: new Date(),
-        },
-        { ...cover, id: "00000000-0000-4000-8000-00000000071a", fileType: "image" },
-      ]);
+      await seeder.file(SOURCE_ID, "cover.png", png, { id: OLD_COVER });
+      await liveEdit((writer) => writer.delete(LIVE, "system", OLD_COVER));
+      await seeder.file(SOURCE_ID, "cover.png", png, {
+        id: "00000000-0000-4000-8000-00000000071a",
+      });
       await writeMarkdown(collab, {
         documentId: secondDocumentId as never,
         markdown: `See ![Map](assets/map.png), ![Old cover](asset:${OLD_COVER}) and ![Lost map](asset:${LOST}).`,
         origin: { type: "user", actorUserId: USER_ID as never },
       });
+      const assetsFolder = await seeder.folder(SOURCE_ID, "assets");
       let moveAfterRead = true;
       async function moveImage() {
         if (!moveAfterRead) return;
         moveAfterRead = false;
-        await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
+        await liveEdit((writer) => writer.rename(LIVE, "system", assetsFolder, "art"));
       }
       const context = new ContextFS({
         placement: { kind: "live" },
@@ -142,9 +133,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db, {
-          removal: createTestDocumentRemoval(db),
-        }),
+        writes,
+        actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
@@ -221,26 +211,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
-      // The Work's branch created this chapter: a hidden row and the branch's created row,
-      // as ContextFS leaves a model's create in a draft-mode Work.
+      // The Work's branch created this chapter: a create in its draft view, as ContextFS
+      // leaves a model's create in a draft-mode Work.
       const branch = await collab.branches.ensureActiveForWrite({
         owner: { kind: "work", workId: WORK_ID as never },
         projectId: PROJECT_ID as never,
         threadId: THREAD_ID as never,
         userId: USER_ID as never,
       });
-      await db.insert(documents).values({
+      await seeder.document(SOURCE_ID, "created", {
         id: CREATED_ID,
-        contextSourceId: SOURCE_ID,
-        name: "created",
-        extension: "",
-        hidden: true,
-      });
-      await db.insert(branchTreeChanges).values({
-        branchId: branch.id,
-        nodeKind: "document",
-        nodeId: CREATED_ID,
-        created: true,
+        view: { draft: branch.id },
+        actor: `agent:${THREAD_ID}/${TURN_ID}`,
       });
       await db.insert(modelResponses).values({
         id: RESPONSE_ID as never,
@@ -327,9 +309,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db, {
-          removal: createTestDocumentRemoval(db),
-        }),
+        writes,
+        actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
@@ -389,16 +370,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live. A create is a row, not a reply's in-memory set: a live
-      // create is visible in every view at once, and the branch's hidden create is "in a
+      // create is visible in every view at once, and the branch's drafted create is "in a
       // draft" in both views, spelled at its path only where its branch can read it.
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
-      await db.insert(documents).values({
-        id: LIVE_CREATED_ID,
-        contextSourceId: SOURCE_ID,
-        name: "live-created",
-        extension: "",
-      });
+      await seeder.document(SOURCE_ID, "live-created", { id: LIVE_CREATED_ID });
       // The host's create materializes the document before the model's command runs.
       await collab.ensureDocumentAuthority(LIVE_CREATED_ID as never);
       await db.insert(modelResponses).values({
@@ -455,7 +431,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .toMatchObject({ kind: "document", inBranch: false });
           expect
             .soft(inLive?.resolve(branchCreate), "draft create, live")
-            .toMatchObject({ kind: "document", inBranch: true });
+            .toMatchObject({ kind: "gone" });
           expect
             .soft(inBranch?.resolve(branchCreate), "drafted create, its branch")
             .toMatchObject({ kind: "document", inBranch: true });

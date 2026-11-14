@@ -1,15 +1,12 @@
 /** Upload and organizer composition for the durable two-phase import. */
 import { IMPORT_SCHEMES } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { CollabDomain } from "../collab/index.js";
 import {
-  type ContextCatalogMutationPort,
+  type ContextImportReveal,
   createDrizzleContextImportDestinationLookup,
   createDrizzleContextImportRead,
-  createDrizzleContextStagedCreation,
-  type DocumentArrivals,
-  discardDrizzleContextStage,
-  type LinkAheadRegistry,
 } from "../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ObjectStorePort } from "../storage/index.js";
@@ -48,9 +45,7 @@ export function createProductionImportOrganizer(deps: {
   objects: ObjectStorePort;
   eventSink: EventSink;
   documents: CollabDomain;
-  ahead: LinkAheadRegistry;
-  arrivals: DocumentArrivals;
-  catalog: ContextCatalogMutationPort;
+  reveal: ContextImportReveal;
 }): ImportOrganizer {
   return createImportOrganizer({
     repository: createDrizzleImportRepository(deps.db),
@@ -59,21 +54,11 @@ export function createProductionImportOrganizer(deps: {
     converter: createMammothDocumentConverter(),
     binder: deps.documents.importBinder,
     documents: deps.documents,
-    context: (record) => {
+    read: (record) => {
       if (!record.projectId) throw new Error("Import project is unavailable");
-      return {
-        read: createDrizzleContextImportRead(deps.db, record.projectId),
-        staged: createDrizzleContextStagedCreation({
-          db: deps.db,
-          projectId: record.projectId,
-          userId: record.userId,
-          documents: deps.documents,
-          ahead: deps.ahead,
-          arrivals: deps.arrivals,
-          catalog: deps.catalog,
-        }),
-      };
+      return createDrizzleContextImportRead(deps.db, record.projectId);
     },
+    reveal: deps.reveal,
     previewFailed: (reason) =>
       emitEvent(deps.eventSink, {
         level: "warn",
@@ -133,15 +118,15 @@ export function createImportObjectSweeper(
   const repository = createDrizzleImportRepository(db);
   return async () => {
     const result = await sweepImportObjects(repository, objects, {
-      staged: {
-        discardStaged: (stagingId, limit) =>
-          discardDrizzleContextStage(db, documents, stagingId, limit),
+      journals: {
+        discardUnborn: (documentIds) =>
+          documents.discardUnbornDocuments(documentIds as DocumentId[]),
       },
     });
     if (result.failed.length)
       throw new AggregateError(
         result.failed.map((f) => f.cause),
-        "Import staging sweep failed",
+        "Import sweep failed",
       );
     return result.swept;
   };

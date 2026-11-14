@@ -64,7 +64,10 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
     }
     for (const name of wanted) {
       if (leases.current.has(name)) continue;
-      const read = readDraftRoom(registry, name);
+      const read = readDraftRoom(registry, {
+        roomKey: name,
+        documentId: drafts[names.indexOf(name)].documentId,
+      });
       let session: DocumentSession | null = null;
       let runtime: ReviewRuntime | null = null;
       let release = () => {};

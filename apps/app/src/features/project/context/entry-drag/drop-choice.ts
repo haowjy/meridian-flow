@@ -4,7 +4,7 @@
  * names a document without being a row to reposition, so the list holds the
  * drop as a `PendingChoice` and asks at the drop point: Move, Copy or Cancel. The hover
  * hint, the decision to ask and the menu all come from `dropChoices`, derived
- * from `resolveDrop` against the replica as it is when each asks, so a
+ * from `resolveDrop` against the trees as they are when each asks, so a
  * destination renamed or removed while the menu was open is judged by
  * identity, not by what the drop saw. A new action is a new item here and a
  * branch in the list's `choose`; the menu's mechanics don't change.
@@ -16,7 +16,6 @@ import type { EntryDrag } from "./entry";
 import {
   type CopyPlan,
   type MovePlan,
-  type MoveView,
   planCopy,
   planMove,
   type ReadyCopy,
@@ -77,21 +76,23 @@ function reason(
   if (!resolved) return t`That place is no longer available`;
   if (resolved.unavailable.length > 0) return noLongerThere();
   if (plan.kind === "inside-itself") return insideItself();
-  if (action === "move") return resolved.canMove ? t`Already there` : t`Can't move these from here`;
+  if (action === "move") {
+    if (resolved.crossesLists) return t`Copy these between your files and a project`;
+    return resolved.canMove ? t`Already there` : t`Can't move these from here`;
+  }
   return t`Can't copy these`;
 }
 
 /**
  * The menu for a pending drop and what each enabled item would do, both read
- * from the replica now.
+ * from the trees now.
  */
 export function dropChoices(
-  view: MoveView,
   resolved: ResolvedDrop | null,
   target: TreeDropTarget,
 ): { items: readonly DropChoiceItem[]; plans: { move?: ReadyMove; copy?: ReadyCopy } } {
-  const move = planMove(view, resolved);
-  const copy = planCopy(view, resolved);
+  const move = planMove(resolved);
+  const copy = planCopy(resolved);
   const destinationName =
     resolved?.destinationName ?? target.folder?.name ?? schemeLabel(target.scheme);
   const moveItem: DropChoiceItem =

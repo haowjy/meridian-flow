@@ -7,6 +7,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { lockProjectLifecycleShared } from "../../../shared/project-lifecycle-lock.js";
 import type { FileReceipt } from "../domain/receipt.js";
 import type {
+  EntryAhead,
   ImportEntry,
   ImportEntrySelection,
   ImportRecord,
@@ -106,8 +107,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         if (
           record?.state !== "organizing" ||
           record.leaseToken !== fence.token ||
-          record.leaseUntil === null ||
-          (fence.generation !== undefined && record.placementGeneration !== fence.generation)
+          record.leaseUntil === null
         )
           return { kind: "stale_owner" as const };
         const [lease] = await database
@@ -254,6 +254,24 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
             ids === undefined ? undefined : inArray(importEntries.id, ids),
           ),
         );
+    },
+    async writeAhead(importId, rows) {
+      for (let offset = 0; offset < rows.length; offset += 500) {
+        const values = rows
+          .slice(offset, offset + 500)
+          .map(({ id, ahead }) => sql`(${id}::uuid, ${JSON.stringify(ahead)}::jsonb)`);
+        await tx().execute(sql`
+          UPDATE import_entries AS e SET ahead = v.ahead
+          FROM (VALUES ${sql.join(values, sql`, `)}) AS v(id, ahead)
+          WHERE e.import_id = ${importId}::uuid AND e.id = v.id`);
+      }
+    },
+    async readAhead(importId) {
+      const rows = await tx()
+        .select({ id: importEntries.id, ahead: importEntries.ahead })
+        .from(importEntries)
+        .where(and(eq(importEntries.importId, importId), isNotNull(importEntries.ahead)));
+      return new Map(rows.map((row) => [row.id, row.ahead as EntryAhead]));
     },
     async refreshCounts(id) {
       const [counts] = await tx()

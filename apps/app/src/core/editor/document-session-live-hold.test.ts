@@ -7,18 +7,14 @@
  */
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
-import type { CrossContextLockManager } from "../cross-context-locks";
 import type {
   DocumentSessionAccess,
   DocumentSessionConnectionState,
   DocumentSessionTransportProvider,
 } from "./document-session";
-import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 import { DocumentSessionRegistry } from "./document-session-registry-implementation";
 
 const GRACE_MS = 10;
-
-const locks: CrossContextLockManager = { request: async (_n, _o, callback) => callback({}) };
 
 function scriptedTransport() {
   let outbox: Uint8Array | null = new Uint8Array([1]);
@@ -66,27 +62,8 @@ function scriptedTransport() {
 
 async function admittedSessionWithUnsentEdits(accountId: string) {
   const { script, provider } = scriptedTransport();
-  const registry = new DocumentSessionRegistry(
-    (id, local) =>
-      createDocumentSessionCrossContextCoordination({
-        accountId: id,
-        local,
-        locks,
-        secureContext: true,
-        createWakeChannel: null,
-        reconcileIntervalMs: 60_000,
-      }),
-    GRACE_MS,
-    accountId,
-    () => provider,
-  );
-  registry.connectLocalResources({
-    terminal: { continueTerminal: async () => "completed" },
-    lineageHandleFor: async () => "catalog:document-1",
-    beginClose: () => undefined,
-    finishClose: async () => undefined,
-  });
-  const lease = await registry.admit("project-1", "document-1", "1");
+  const registry = new DocumentSessionRegistry(accountId, () => provider, GRACE_MS);
+  const lease = registry.admit("project-1", "document-1");
   registry.retain("host", [lease]);
   await vi.waitFor(() => expect(registry.get(lease).getSnapshot().status).toBe("synced"));
   return { registry, script };

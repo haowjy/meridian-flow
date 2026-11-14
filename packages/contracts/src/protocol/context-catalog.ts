@@ -3,6 +3,7 @@ import type { DraftOwnerKey } from "../branches/owner.js";
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
+import type { ContextSourcesHint } from "./context-sources.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
 
@@ -13,29 +14,8 @@ export type CatalogScope =
   | { kind: "lineage"; projectId: ProjectId; rootThreadId: string }
   | { kind: "chat"; projectId: ProjectId; chatId: string };
 
-export type CatalogAuthorityEntry = {
-  kind: "authority";
-  entryId: WorkId;
-  scope: { kind: "project"; projectId: ProjectId };
-  authority: WorkAuthorityDto;
-  name: string;
-  available: boolean;
-  entityRevision: string;
-};
-
-export type CatalogSourceEntry = {
-  kind: "source";
-  entryId: ContextSourceId;
-  scope: CatalogScope;
-  scheme: ContextUriScheme;
-  name: string;
-  uri: CanonicalContextUri;
-};
-
 export type CatalogFolderEntry = {
   kind: "folder";
-  /** Globally ordered namespace observation, independent of catalog replay cursors. */
-  observationVersion: string;
   /** Per-entry namespace mutation revision. */
   locationVersion?: string;
   entryId: FolderId;
@@ -53,7 +33,6 @@ export type CatalogFolderEntry = {
 
 type CatalogFileEntryBase = {
   kind: "file";
-  observationVersion: string;
   /** Per-entry namespace mutation revision. */
   locationVersion?: string;
   entryId: DocumentId;
@@ -113,78 +92,13 @@ export type CatalogFileClassification = { extension: string } & (
 
 export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 
-export type CatalogEntry =
-  | CatalogAuthorityEntry
-  | CatalogSourceEntry
-  | CatalogFolderEntry
-  | CatalogFileEntry;
-
-export type CatalogChange =
-  | { operation: "upsert"; ordinal: number; entry: CatalogEntry }
-  | { operation: "delete"; ordinal: number; entryId: string }
-  // Atomic replacement: clear root and descendants, then restore survivors via
-  // subsequent upserts in the same commit. Never a durable partial/hidden state.
-  | { operation: "invalidate-subtree"; ordinal: number; rootEntryId: string };
-
-export type CatalogCommit = {
-  eventId: string;
-  commitId: string;
-  firstRevision: string;
-  lastRevision: string;
-  changes: readonly CatalogChange[];
-};
-
-export type CatalogCursor = string;
-
-export type CatalogSnapshot = {
-  scope: CatalogScope;
-  generation: string;
-  headRevision: string;
-  cursor: CatalogCursor;
-  entries: readonly CatalogEntry[];
-};
-
-export type CatalogChanges =
-  | {
-      kind: "delta";
-      scope: CatalogScope;
-      commits: readonly CatalogCommit[];
-      nextCursor: CatalogCursor;
-      headRevision: string;
-      hasMore: boolean;
-    }
-  | {
-      kind: "reset-required";
-      scope: CatalogScope;
-      reason: "expired" | "gap" | "scope_changed";
-    };
-
-export type CatalogChildrenRequest = {
-  scope: CatalogScope;
-  parentId: ContextSourceId | FolderId;
-};
-export type CatalogChildrenResult = {
-  scope: CatalogScope;
-  parentId: string;
-  entries: readonly CatalogEntry[];
-  headRevision: string;
-};
-
-export type CatalogLookupRequest =
-  | { scope: CatalogScope; entryId: string; uri?: never }
-  | { scope: CatalogScope; uri: CanonicalContextUri; entryId?: never };
-export type CatalogLookupResult = { entry: CatalogEntry | null; headRevision: string };
-
-export type CatalogWakeHint = {
-  type: "context-catalog-hint";
-  scope: CatalogScope;
-  headRevision: string;
-};
+export type CatalogEntry = CatalogFolderEntry | CatalogFileEntry;
 
 /**
- * A lineage's draft list is stale: its pending draft count moved, or it lost or regained its
- * last live chat (trash, restore). Truth-free, like the catalog hint; it rides the same
- * per-project subscription. Work branches keep the Work authority entry instead.
+ * A draft owner's list is stale: its pending draft count moved, or the owner's lifecycle changed
+ * (a Work archived, unarchived, deleted, restored or purged; a lineage that lost or regained its
+ * last live chat). For a Work, its row in the Works list is stale with it. Truth-free, like the
+ * catalog hint; it rides the same per-project subscription.
  */
 export type DraftOwnerHint = {
   type: "draft-owner-hint";
@@ -206,20 +120,5 @@ export type ProjectChatsHint = {
   recheckTabs?: true;
 };
 
-/** What a project's catalog subscription receives. */
-export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint | ProjectChatsHint;
-
-export function catalogScopeKey(scope: CatalogScope): string {
-  switch (scope.kind) {
-    case "project":
-      return `project:${scope.projectId}`;
-    case "user":
-      return `user:${scope.userId}`;
-    case "lineage":
-      return `lineage:${scope.projectId}:${scope.rootThreadId}`;
-    case "chat":
-      return `chat:${scope.projectId}:${scope.chatId}`;
-    case "work":
-      return `work:${scope.projectId}:${scope.workId}`;
-  }
-}
+/** What a project's subscription receives. */
+export type CatalogChannelMessage = DraftOwnerHint | ProjectChatsHint | ContextSourcesHint;

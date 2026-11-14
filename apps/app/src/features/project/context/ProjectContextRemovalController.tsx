@@ -1,46 +1,39 @@
 /** Live project removal host; mounted only after Work/bootstrap readiness. */
 
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { t } from "@lingui/core/macro";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useContextSourceFacts } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
-import { contextRouteRequest } from "../routing/project-route";
-import { useContextRemovalCoordinator } from "./account-feature-context";
+import {
+  useContextRemovalCoordinator,
+  useLiveDocumentSessionRegistry,
+  useProjectStandings,
+} from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
-import { selectionAtRoute } from "./context-removal-protocol";
+import { type ListRemovalObserver, observeListRemovals } from "./list-removal-observer";
 import { useOpenProjectDocument } from "./open-project-document";
 import { openRecent } from "./RecentDocumentsLanding";
-import { useContextRemovalProject } from "./use-context-removal-project";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
-  activeContextScheme: ProjectContextTreeScheme | null;
-  activeContextPath: string | null;
-  /** A chat's Scratch route names its lineage here. */
-  activeContextChat?: string | null;
   /** The Work scope: the project's active Work. */
   editorWorkId: string;
-  /** A Work's Scratch route names its owning Work here. */
-  activeContextWork?: string | null;
-  localDocumentId?: string;
-  /** A review address names its document by item: that id is proof, so the route starts bound. */
-  reviewDocumentId?: string;
   route: Omit<ContextRemovalRoutePort, "goBack">;
 };
 
 export function ProjectContextRemovalController({
   projectId,
-  activeContextScheme,
-  activeContextPath,
-  activeContextChat,
   editorWorkId,
-  activeContextWork,
-  localDocumentId,
-  reviewDocumentId,
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
+  const standings = useProjectStandings();
+  const registry = useLiveDocumentSessionRegistry();
   const recent = useRecentDocuments(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
@@ -50,9 +43,6 @@ export function ProjectContextRemovalController({
     () => ({
       transition: (projectId, target, prepared) =>
         latest.current.route.transition(projectId, target, prepared),
-      readSearch: (registeredProjectId) => latest.current.route.readSearch(registeredProjectId),
-      updateSearch: (registeredProjectId, update, relocated) =>
-        latest.current.route.updateSearch(registeredProjectId, update, relocated),
       goBack: (projectId, documentId, removing, isCurrent) => {
         const { recent, ...ports } = latest.current;
         const toRecents = () =>
@@ -80,59 +70,40 @@ export function ProjectContextRemovalController({
     [],
   );
 
+  const queryClient = useQueryClient();
+  const sources = useContextSourceFacts(projectId);
+  const [observer, setObserver] = useState<ListRemovalObserver | null>(null);
+  useEffect(() => {
+    const created = observeListRemovals({
+      projectId,
+      standings,
+      removal: coordinator,
+      registry,
+      refreshSources: () => {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.contextSources(projectId),
+        });
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
+      },
+      signInRequired: () =>
+        notifyFailure({
+          key: "sign-in-expired",
+          title: t`Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost.`,
+          onRetry: () => window.location.reload(),
+        }),
+    });
+    setObserver(created);
+    return () => {
+      created.stop();
+      setObserver(null);
+    };
+  }, [coordinator, projectId, queryClient, registry, standings]);
+  useEffect(() => observer?.setSources(sources), [observer, sources]);
+
   useLayoutEffect(() => {
-    const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);
+    const registration = coordinator.registerRoutePort(projectId, stableRoute);
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
-
-  // A scope pick moves no route: a document's owner is its own, never the scope.
-  useLayoutEffect(() => {
-    coordinator.setActiveWork(projectId, editorWorkId);
-  }, [coordinator, projectId, editorWorkId]);
-
-  // A navigation's binding can land after the address was already repaired elsewhere: a selection
-  // about another route than the URL begins again here.
-  const { selection } = useContextRemovalProject(projectId);
-  const selectionStale =
-    selection.status !== "none" &&
-    (activeContextScheme === null ||
-      activeContextPath === null ||
-      !selectionAtRoute(selection, {
-        scheme: activeContextScheme,
-        path: activeContextPath,
-        workId: activeContextWork ?? undefined,
-        rootThreadId: activeContextChat ?? undefined,
-      }));
-  const previousLocalDocument = useRef(localDocumentId);
-  useLayoutEffect(() => {
-    const locator =
-      activeContextScheme !== null && activeContextPath !== null
-        ? contextRouteRequest({
-            scheme: activeContextScheme,
-            path: activeContextPath,
-            workId: activeContextWork,
-            rootThreadId: activeContextChat,
-          })
-        : null;
-    if (previousLocalDocument.current !== localDocumentId) {
-      previousLocalDocument.current = localDocumentId;
-      coordinator.clearRouteSelection(projectId);
-    }
-    if (locator && reviewDocumentId)
-      coordinator.enterRoute(projectId, locator, reviewDocumentId, "review");
-    else if (locator) coordinator.beginRouteSelection(projectId, locator);
-    else coordinator.clearRouteSelection(projectId);
-  }, [
-    activeContextChat,
-    activeContextPath,
-    activeContextScheme,
-    coordinator,
-    activeContextWork,
-    projectId,
-    localDocumentId,
-    reviewDocumentId,
-    selectionStale,
-  ]);
 
   return null;
 }

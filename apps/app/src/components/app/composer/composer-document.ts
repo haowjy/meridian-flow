@@ -44,7 +44,6 @@ export type ComposerOwnedUpload = Readonly<{
   intakeId: string;
   documentId: string;
   uri: UploadIntakeResult["uri"];
-  locationRevision: string;
 }>;
 export type ComposerDraftSnapshot = Readonly<{
   revision: ComposerDraftRevision;
@@ -175,31 +174,16 @@ function parseAuthority(raw: unknown): StableReferenceAuthority | null {
   }
 }
 
-/**
- * The chip a writer's pick inserts. A file of the chat still being created has no handle yet
- * (`chatRef` null), and its scope is this draft's own chat, so the chip keeps the intake identity
- * admission verifies, as an attached one does. Any other pick is an ordinary reference, which the
- * server admits by its catalog address.
- */
+/** The chip a writer's pick inserts: an ordinary reference, which the server admits by its address. */
 export function pickedReferenceAttrs(
   reference: AuthoritativeReference,
   fileKind: "document" | "asset" | null,
 ): ComposerReferenceAttrs {
   if (reference.kind === "folder") return reference;
-  const { intake, ...document } = reference;
-  const ownDraftUpload =
-    intake && document.authority.kind === "chat" && document.authority.chatRef === null;
   return {
-    ...document,
-    imageCapable: fileKind === "asset" && imageCapable(document.fileType),
-    upload: ownDraftUpload
-      ? {
-          intakeId: intake.intakeId,
-          documentId: document.documentId,
-          uri: document.uri,
-          locationRevision: intake.locationRevision,
-        }
-      : null,
+    ...reference,
+    imageCapable: fileKind === "asset" && imageCapable(reference.fileType),
+    upload: null,
   };
 }
 
@@ -507,11 +491,18 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
           upload &&
           (typeof upload.intakeId !== "string" ||
             upload.documentId !== reference.documentId ||
-            upload.uri !== reference.uri ||
-            typeof upload.locationRevision !== "string")
+            upload.uri !== reference.uri)
         )
           throw new Error("Invalid upload");
-        return composerReferenceContent({ ...reference, upload });
+        // A draft saved before an upload's identity was its document id also holds a revision.
+        return composerReferenceContent({
+          ...reference,
+          upload: upload && {
+            intakeId: upload.intakeId,
+            documentId: upload.documentId,
+            uri: upload.uri,
+          },
+        });
       }
       if (node.type === "composerSkill" && !parseClipboardSkill(JSON.stringify(node.attrs)))
         throw new Error("Invalid skill");

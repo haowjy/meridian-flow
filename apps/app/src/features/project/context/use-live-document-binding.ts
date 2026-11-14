@@ -1,17 +1,13 @@
 /** One concrete desktop/mobile host's ordinary live-document binding, with retry. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
-import type {
-  AvailableOpenResolution,
-  LiveDocumentBinding,
-  ProjectDocumentLiveOpenResult,
-} from "./open-project-document";
+import type { LiveDocumentBinding, ProjectDocumentLiveOpenResult } from "./open-project-document";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export type LiveDocumentBindingState =
   | { kind: "absent" }
   | { kind: "opening"; documentId: string }
-  | { kind: "opened"; documentId: string; generation: string; session: DocumentSession }
+  | { kind: "opened"; documentId: string; session: DocumentSession }
   | {
       kind: "failed";
       documentId: string;
@@ -29,18 +25,17 @@ export function useLiveDocumentBinding({
   projectId,
   documentId,
   owner,
+  trashed,
 }: {
   projectId: string;
   documentId: string | null;
-  owner: "desktop-document-host" | "mobile-project-document-host";
+  owner: "desktop-document-host" | "mobile-project-document-host" | "trash-view";
+  /** The document is in Trash and is shown read-only. */
+  trashed?: true;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
   const attemptRef = useRef(0);
-  const firstResolution = useRef<{
-    key: string;
-    value: AvailableOpenResolution | null;
-  } | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const [state, setState] = useState<LiveDocumentBindingState>(
     documentId ? { kind: "opening", documentId } : { kind: "absent" },
@@ -55,20 +50,10 @@ export function useLiveDocumentBinding({
     const abort = new AbortController();
     let binding: LiveDocumentBinding | null = null;
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
-    if (firstResolution.current?.key !== documentId)
-      firstResolution.current = { key: documentId, value: opener.takeTransfer(documentId) };
-    const initialResolution = firstResolution.current.value;
     setState({ kind: "opening", documentId });
     void (async () => {
       try {
-        const opened = await opener.open({
-          source: "server",
-          projectId,
-          documentId,
-          signal: abort.signal,
-          attempt: retryGeneration === 0 ? "first" : "retry",
-          resolution: retryGeneration === 0 ? (initialResolution ?? undefined) : undefined,
-        });
+        const opened = await opener.open({ projectId, documentId, trashed, signal: abort.signal });
         // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
         if (opened.kind === "cancelled") return;
         if (opened.kind !== "opened") {
@@ -89,7 +74,6 @@ export function useLiveDocumentBinding({
         setState({
           kind: "opened",
           documentId,
-          generation: candidate.generation,
           session: candidate.session,
         });
       } catch (error) {
@@ -102,7 +86,7 @@ export function useLiveDocumentBinding({
       abort.abort();
       binding?.release();
     };
-  }, [documentId, opener, projectId, retryGeneration]);
+  }, [documentId, opener, projectId, retryGeneration, trashed]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   return useMemo(() => ({ state, retry }), [retry, state]);

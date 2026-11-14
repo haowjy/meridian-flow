@@ -1,38 +1,26 @@
-/** `doc rm`: delete a document; `deleteDocument` is shared with put --overwrite. */
-import { randomUUID } from "node:crypto";
-import {
-  apiProjectContextEntryDeletePath,
-  type DeleteContextEntryRequest,
-  deleteContextEntryResultSchema,
-} from "@meridian/contracts/protocol";
+/** `doc rm`: delete a document; `deleteAt` is shared with put --overwrite. */
+import { LIVE } from "@meridian/project-tree";
+import { CliError, usageError } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
-import type { Session } from "../../core/session";
-import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
-import { PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
+import { lookupPath, type OpenedTree, Trees } from "./tree-address";
+import { PROJECT_OPTION, type ResolvedUri, resolveUri } from "./uri";
 
-export async function deleteDocument(session: Session, projectId: string, target: ResolvedUri) {
-  const documentId = await resolveDocumentId(session, projectId, target);
-  const body: DeleteContextEntryRequest = {
-    operationId: randomUUID(),
-    kind: "file",
-  };
-  await session.request("POST", apiProjectContextEntryDeletePath(projectId, documentId), body, {
-    decode: jsonResponse(
-      deleteContextEntryResultSchema.refine(
-        (response) => response.removed.some((removed) => removed.documentId === documentId),
-        "Deletion did not cover the requested document",
-      ),
-    ),
-  });
-  return documentId;
+/** Appends the delete of the document at `target` and waits for the server to admit it; returns its id. */
+export async function deleteAt(opened: OpenedTree, target: ResolvedUri): Promise<string> {
+  const { node } = lookupPath(opened.list.replay(), opened.source, target.path);
+  if (!node) throw new CliError("not_found", `No live document at ${target.uri}`);
+  if (node.kind === "folder")
+    throw usageError(`${target.uri} is a folder; \`doc rm\` deletes documents`);
+  await opened.list.append((writer) => writer.deleteAll(LIVE, opened.actor, [node.id]));
+  return node.id;
 }
 
 export const docRmCommand: CommandSpec = {
   path: ["doc", "rm"],
   summary: "Delete a document",
   args: "<uri>",
-  route: "POST /api/projects/:projectId/context/entries/:entryId/delete",
+  route: "WS /ws/yjs tree:project:<projectId> delete record",
   options: PROJECT_OPTION,
   examples: ['./mf doc rm "manuscript://Chapter 1"'],
   async run(ctx) {
@@ -45,11 +33,16 @@ export const docRmCommand: CommandSpec = {
       stringOption(ctx, "work"),
       stringOption(ctx, "chat"),
     );
-    const documentId = await deleteDocument(session, projectId, target);
-    ctx.out.result(
-      { uri: target.uri, documentId, status: "deleted" },
-      (value) => `deleted ${value.uri}`,
-    );
+    const trees = new Trees(session, projectId);
+    try {
+      const documentId = await deleteAt(await trees.at(target), target);
+      ctx.out.result(
+        { uri: target.uri, documentId, status: "deleted" },
+        (value) => `deleted ${value.uri}`,
+      );
+    } finally {
+      await trees.close();
+    }
     return undefined;
   },
 };

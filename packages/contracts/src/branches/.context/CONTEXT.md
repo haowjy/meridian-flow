@@ -8,7 +8,7 @@ Five names; never let one stand in for another.
 | **item** | One document's reviewable change inside the branch, with or without a text draft (an empty create and a created image have none). | `itemKey` (`${branchId}:${documentId}`) |
 | **draft** | The server's per-document text draft in a branch. Stable for one room lifetime. | addressed `draftId`, `hasDraft` and opaque `reviewRoomName` |
 | **command** | One writer action (Apply, Un-Apply, Discard, a chat card's Undo or Redo, or a Copy), one `document_commands` row. | a client-made `commandId` |
-| **presented address** | What the writer is looking at: `{ ownerKey, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewOwner` + `itemKey` |
+| **presented address** | What the writer is looking at: `{ ownerKey, itemKey, changeId? }`. | `item=` and `change=` in the URL |
 
 The client never reads `branchId` as a document draft id; the server alone maps an `itemKey`
 to a draft (collab `domain/branch-review-identity.ts`). Text Apply instead binds the captured
@@ -42,5 +42,7 @@ contract](../../../../../apps/server/server/domains/collab/.context/apply.md). P
 ProseMirror node JSON; the server constructs and validates the nodes.
 
 The authenticated scope and whole body are part of the request digest. Server item Discard takes
-`{ branchId, itemKey, commandId }` only to end a still-hidden creation's use; Discard all takes
-`{ branchId, commandId }` and closes drafts.
+`{ branchId, itemKey, commandId }` only to end a still-hidden creation's use. The branch's Discard
+(`BranchDiscardRequest`) takes `{ commandId, all: true }` for Discard all, which closes the
+branch, or `{ commandId, items }` for a selection of documents and folders; a selection never
+widens to the branch.

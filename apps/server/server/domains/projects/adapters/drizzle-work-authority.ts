@@ -1,4 +1,4 @@
-/** Drizzle adapter for exact, non-deleted, same-project Work authority resolution. */
+/** Drizzle adapter for exact, same-project Work authority resolution. */
 
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
@@ -15,11 +15,18 @@ import {
 export function createDrizzleProjectWorkAuthorityResolver(
   db: Database,
 ): ProjectWorkAuthorityResolver {
-  function selectWhere(projectId: ProjectId, predicate: ReturnType<typeof eq>) {
+  /** `restorable`: a deleted Work counts until its purge removes the row. */
+  function selectWhere(projectId: ProjectId, predicate: ReturnType<typeof eq>, restorable = true) {
     return currentDrizzleDb(db)
       .select({ workId: works.id, workHandle: works.handle, isNoWork: works.isNoWork })
       .from(works)
-      .where(and(eq(works.projectId, projectId), predicate, isNull(works.deletedAt)));
+      .where(
+        and(
+          eq(works.projectId, projectId),
+          predicate,
+          restorable ? undefined : isNull(works.deletedAt),
+        ),
+      );
   }
 
   function authorityOf(row: {
@@ -36,8 +43,9 @@ export function createDrizzleProjectWorkAuthorityResolver(
   async function selectBy(
     projectId: ProjectId,
     predicate: ReturnType<typeof eq>,
+    restorable = true,
   ): Promise<ResolvedWorkAuthority | null> {
-    const [row] = await selectWhere(projectId, predicate).limit(1);
+    const [row] = await selectWhere(projectId, predicate, restorable).limit(1);
     return row ? authorityOf(row) : null;
   }
 
@@ -50,7 +58,7 @@ export function createDrizzleProjectWorkAuthorityResolver(
     },
     async lockById(projectId, workId) {
       await lockWorkLifecycle(db, workId);
-      return selectBy(projectId, eq(works.id, workId));
+      return selectBy(projectId, eq(works.id, workId), false);
     },
   };
 }

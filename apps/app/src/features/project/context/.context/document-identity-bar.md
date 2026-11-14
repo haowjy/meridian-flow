@@ -49,24 +49,23 @@ Contracts:
 - **Homed documents have no chip.** The field never opens for a homed document,
   including refusals; rename and move start and retry in the lists.
 - **Commit seam**: the field submits one final `{ destination, name }` to
-  `use-identity-commit.ts`. The hook resolves the stable resource handle and
-  writes one durable location intent. The optimistic resource projection updates
-  the host's descriptor and route immediately; the namespace runner later settles the exact
-  server receipt or a typed final HTTP refusal tied to the submitted operation. A same-name explicit Save clears provisional presentation.
-  Navigation additionally requires that the committed document is still active.
-  The field does not blur-dismiss while a save is pending.
-- **Repair receipts**: a failed placement remains `needs-repair` in the journal.
-  Only a provisional draft's placement refusal reopens the identity field with
-  the writer's name and recovery note, automatically or through its failure mark.
-  A refused create counts: the document stays local in Unfiled and the labelled mark reads
-  "Couldn't create this document. Try another place.", the same sentence as the field's note.
-  The mark sits on a line of its own under the path, wrapping, so a phone-width bar never cuts
-  it. Committing a home files it with a new create under the same id. A read-only bar shows
-  the mark as an icon whose tooltip is that same sentence.
-  Homed documents show a passive failure mark whose tooltip names the failed
-  move destination (or rename) and directs retry to Move… (or Rename) in the
-  file list. The mark never opens a field. Retry settles the failed attempt and
-  appends a new immutable intention. Failures are never inferred from catalog absence.
+  `use-identity-commit.ts`. The hook finds the document's node and the destination folder (or
+  the source's top) in the replay, then appends a `move` and a `rename` record to the browser's
+  copy of the list through `useTreeActions`. The replay updates the host's descriptor and route
+  at once, and the commit reports the name the writer's copy gave it (a clash is numbered there).
+  A same-name explicit Save clears provisional presentation. Navigation additionally requires
+  that the committed document is still active. The field does not blur-dismiss while a save is
+  pending. A move between a project and the account's files is a server route, not offered here.
+- **Repair**: a server refusal of the writer's record comes back as a `refused` settlement,
+  which the replay's reader (`useProjectTreeViews`) puts on the node (`namespaceFailure`,
+  `namespaceRepairName`, `namespaceRepairMove`). Only a provisional document's refusal reopens
+  the identity field with the writer's name and recovery note, automatically or through its
+  failure mark. A refused create counts: the document stays in Unfiled and the labelled mark
+  reads "Couldn't create this document. Try another place.", the same sentence as the field's
+  note. The mark sits on a line of its own under the path, wrapping, so a phone-width bar never
+  cuts it. Homed documents show a passive failure mark whose tooltip names the failed move
+  destination (or rename) and directs retry to Move… (or Rename) in the file list. The mark
+  never opens a field.
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.
@@ -74,9 +73,9 @@ Contracts:
   document is provisional and opens empty placement; it disappears once the
   draft has a home. Uploads viewers carry no chip (no dead buttons). The device-only status (warning tokens,
   `TriangleAlert`) appears *beside* the action — quiet on its left, never in
-  its place: placement commits queue durably offline, so device-only is
+  its place: placement records queue durably offline, so device-only is
   exactly when the writer may want to file the document. It claims its spot
-  only when local content is usable without current server authority. While the
+  once the project's list has been offline for two seconds. While the
   field is open only the
   action chip yields (the field is the action); the status stays.
 - **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list

@@ -32,12 +32,13 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
-import { useContextRemovalProject } from "./context/use-context-removal-project";
+import { useShellTreeVersion } from "./tree-version";
 import {
   type ReviewAddressAdmission,
   type ReviewAdmissionPort,
   useReviewAdmission,
 } from "./use-review-admission";
+import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
 
 /** The review main's address names, and the route's verdict on it. Null off a document address. */
@@ -66,7 +67,7 @@ export function useDocumentReview(
   const accountId = useAccountId();
   const paint = useDocumentPaint(projectId, tab);
   const documentId = tab?.documentId ?? null;
-  const { activeWorkId } = useContextRemovalProject(projectId);
+  const { workId: activeWorkId } = useWorkScopeState(projectId);
   const { works, noWork } = useWorks(projectId);
   const ownerKey = paint.draft?.ownerKey ?? paint.view.pin?.ownerKey ?? paint.scopeOwnerKey ?? "";
   // A lineage's drafts carry no Work: its review reads the scope's Work for archive state.
@@ -85,9 +86,13 @@ export function useDocumentReview(
     }),
     [accountId, projectId, documentId, showChanges],
   );
+  // Live for the scope's draft is the toggle's Live (`shownDraft`); another owner's pin just goes.
+  const shell = useShellTreeVersion();
+  const scopeShown = paint.draft !== null && !paint.outOfScope;
   const showLive = useCallback(() => {
     if (documentId) setDocumentView(accountId, projectId, documentId, { version: "live" });
-  }, [accountId, projectId, documentId]);
+    if (scopeShown) shell?.show("live");
+  }, [accountId, projectId, documentId, scopeShown, shell]);
   const value = useDraftReviewScopeValue({
     projectId,
     work: reviewWork,

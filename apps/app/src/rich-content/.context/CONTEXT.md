@@ -20,8 +20,8 @@ displayed text offsets, and the app doesn't decode Markdown to reconstruct them.
 Invalid, rewritten, cross-run or mismatched ranges stay ordinary Markdown. No source map
 enters the worker streaming path.
 
-An occurrence is keyed `kind:id` (`referenceKey`) in the chat's `ReferenceAvailability`
-store. A document chip follows only while its current URI equals the authored one; a
+An occurrence is keyed `kind:id` (`referenceKey`) in the answers
+`useReferenceAvailability` reads from the replay. A document chip follows only while its current URI equals the authored one; a
 folder chip has no such gate, because it follows the folder by ID.
 
 ## Shared Editor pieces

@@ -6,19 +6,17 @@
  * owner can still be edited; the AI makes the notes, so there is no New note.
  *
  * A chat's Files menu shows it (`MenuScratchSection`), headed "Scratch for this chat" /
- * "Scratch for <Work>". The sidebar's Scratch is another thing: the picked Work's catalog as one
+ * "Scratch for <Work>". The sidebar's Scratch is another thing: the picked Work's tree as one
  * of its tree sources (`SourcesBody`).
  */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
-import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import type { TreeView } from "@/core/project-tree/tree-view";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
@@ -27,8 +25,9 @@ import { serverDocumentFromFile } from "../context/open-document-from-file";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
-import { useScratchCatalogs } from "../context/use-scratch-catalogs";
+import { useScratchTrees } from "../context/use-scratch-trees";
 import { useTreeExpansion } from "../context/use-tree-expansion";
+import { useWorkSourceWritable } from "../context/use-work-source-writable";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
@@ -39,47 +38,41 @@ function useOpenDocumentId(): string | undefined {
   return item?.kind === "document" ? item.documentId : undefined;
 }
 
-/** A chat's Scratch: its catalogs, the list areas they make, and the load state. */
+/** A chat's Scratch: its trees, the list areas they make, and the load state. */
 function useChatScratch(projectId: string, threadId: string | null) {
   const source = useChatScratchSource(projectId, threadId);
-  const { primary, earlier } = useScratchCatalogs(projectId, source);
-  const { works, noWork } = useWorks(projectId);
-  const work =
-    source?.owner.workId === noWork?.id
-      ? noWork
-      : works?.find((work) => work.id === source?.owner.workId);
-  // An archived Work's Scratch can be copied from, not changed.
-  const editable = !source?.owner.workId || Boolean(work && !isWorkArchived(work));
+  const { primary, earlier } = useScratchTrees(projectId, source);
+  // An ended Work's Scratch can be copied from, not changed.
+  const editable = useWorkSourceWritable(projectId, source?.owner.workId);
   const areas = useMemo<MoveArea[]>(
     () => [
-      ...(primary.catalog && source
+      ...(primary.tree && source
         ? [
             {
               scheme: "scratch" as const,
               owner: source.owner,
-              catalog: primary.catalog,
-              accepts: editable,
+              tree: primary.tree,
+              writable: editable,
             },
           ]
         : []),
-      ...(earlier.catalog && source?.earlierRootThreadId
+      ...(earlier.tree && source?.earlierRootThreadId
         ? [
             {
               scheme: "scratch" as const,
               owner: { rootThreadId: source.earlierRootThreadId },
-              catalog: earlier.catalog,
-              accepts: true,
+              tree: earlier.tree,
+              writable: true,
             },
           ]
         : []),
     ],
-    [primary.catalog, earlier.catalog, source, editable],
+    [primary.tree, earlier.tree, source, editable],
   );
   const earlierId = source?.earlierRootThreadId;
-  const hasEarlier = Boolean(earlierId && earlier.catalog?.files().length);
+  const hasEarlier = Boolean(earlierId && earlier.tree?.files().length);
   const ready = primary.isComplete && (!earlierId || earlier.isComplete);
-  const hasRows =
-    Boolean(primary.catalog?.children(primary.catalog.root.entryId).length) || hasEarlier;
+  const hasRows = Boolean(primary.tree?.children(primary.tree.root.entryId).length) || hasEarlier;
   return {
     source,
     primary,
@@ -90,10 +83,6 @@ function useChatScratch(projectId: string, threadId: string | null) {
     hasRows,
     ready,
     isError: primary.isError || (Boolean(earlierId) && earlier.isError),
-    retry: () => {
-      void primary.refetch();
-      if (earlierId) void earlier.refetch();
-    },
   };
 }
 
@@ -136,8 +125,7 @@ export function MenuScratchSection({
 }
 
 function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
-  if (scratch.isError)
-    return <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />;
+  if (scratch.isError) return <InlineErrorRow message={t`Scratch couldn’t load`} />;
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
   return (
@@ -164,20 +152,20 @@ function ChatScratchTree({
   const deleteEntries = useDeleteContextEntries(projectId);
   const folderIds = useMemo(() => {
     if (!ready) return null;
-    const folders = (catalog: CatalogContextView | null) =>
-      catalog
+    const folders = (tree: TreeView | null) =>
+      tree
         ? treeFolderIds((parent) =>
-            catalog
-              .children(parent ?? catalog.root.entryId)
+            tree
+              .children(parent ?? tree.root.entryId)
               .filter((node) => node.kind === "dir")
               .map((node) => node.entryId),
           )
         : [];
     return [
-      ...folders(primary.catalog),
-      ...(hasEarlier ? [EARLIER_NOTES_ID, ...folders(earlier.catalog)] : []),
+      ...folders(primary.tree),
+      ...(hasEarlier ? [EARLIER_NOTES_ID, ...folders(earlier.tree)] : []),
     ];
-  }, [ready, primary.catalog, earlier.catalog, hasEarlier]);
+  }, [ready, primary.tree, earlier.tree, hasEarlier]);
   const expansion = useTreeExpansion(
     projectId,
     `chat-scratch:${source ? JSON.stringify([source.owner, source.earlierRootThreadId]) : "none"}`,
@@ -187,7 +175,7 @@ function ChatScratchTree({
   const earlierOpen = expansion.isExpanded(EARLIER_NOTES_ID);
   return (
     <>
-      {hasEarlier && earlier.catalog && source.earlierRootThreadId ? (
+      {hasEarlier && earlier.tree && source.earlierRootThreadId ? (
         <div>
           <ListRow
             icon={earlierOpen ? FolderOpen : Folder}
@@ -198,9 +186,9 @@ function ChatScratchTree({
           />
           {earlierOpen ? (
             <TreeGroup depth={depth + 1}>
-              <ScratchCatalog
+              <ScratchTree
                 projectId={projectId}
-                catalog={earlier.catalog}
+                tree={earlier.tree}
                 owner={{ rootThreadId: source.earlierRootThreadId }}
                 editable
                 depth={depth + 1}
@@ -213,10 +201,10 @@ function ChatScratchTree({
           ) : null}
         </div>
       ) : null}
-      {primary.catalog ? (
-        <ScratchCatalog
+      {primary.tree ? (
+        <ScratchTree
           projectId={projectId}
-          catalog={primary.catalog}
+          tree={primary.tree}
           owner={source.owner}
           editable={editable}
           depth={depth}
@@ -234,10 +222,10 @@ const EARLIER_NOTES_ID = "earlier:scratch";
 const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "copy", "delete"];
 const READ_ONLY: EntryCapabilities = ["copy"];
 
-/** One real owner per tree; the Earlier notes disclosure is outside both catalogs. */
-function ScratchCatalog({
+/** One real owner per tree; the Earlier notes disclosure is outside both trees. */
+function ScratchTree({
   projectId,
-  catalog,
+  tree,
   owner,
   editable,
   depth,
@@ -247,7 +235,7 @@ function ScratchCatalog({
   onRequestDelete,
 }: {
   projectId: string;
-  catalog: CatalogContextView;
+  tree: TreeView;
   owner: ContextOwner;
   editable: boolean;
   depth: number;
@@ -264,9 +252,8 @@ function ScratchCatalog({
       scheme: "scratch" as const,
       owner,
       capabilities: editable ? SCRATCH_ACTIONS : READ_ONLY,
-      catalog,
-      activeScheme: "scratch" as const,
-      activePath: catalog.findDocument(openId ?? "")?.path ?? null,
+      tree: tree,
+      activeDocumentId: openId ?? null,
       onSelectFile: (_scheme: string, file: Parameters<typeof serverDocumentFromFile>[1]) => {
         const tab = serverDocumentFromFile("scratch", file, owner);
         if (!tab) return;
@@ -281,7 +268,7 @@ function ScratchCatalog({
       projectId,
       owner,
       editable,
-      catalog,
+      tree,
       openId,
       openNote,
       onPicked,
@@ -292,7 +279,7 @@ function ScratchCatalog({
   );
   return (
     <TreeEnvProvider value={env}>
-      <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={depth} />
+      <TreeChildren parentId={tree.root.entryId} parentPath="" depth={depth} />
     </TreeEnvProvider>
   );
 }

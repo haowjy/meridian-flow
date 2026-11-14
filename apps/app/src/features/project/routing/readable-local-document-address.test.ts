@@ -1,247 +1,90 @@
-/** Warm exact content resolves readable routes independently from network address lookup. */
+/** A plain address resolves against the replay: a document, "not there", or "waiting for the list". */
 
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
-import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
-import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import type { TreeViewResult } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import {
-  gateLiveView,
-  reconcileDocumentAddress,
-  resolveLocalDocumentAddress,
-} from "./local-document-address";
+import type { TreeFile } from "@/core/project-tree/tree-view";
+import { draftOnlyTarget, resolveReplayAddress } from "./local-document-address";
 
-function catalog(localContent: boolean): CatalogContextView {
-  const scope = { kind: "project" as const, projectId: "project-id" };
-  const normalized = catalogViewFromSnapshot({
-    scope,
-    generation: "cached",
-    headRevision: "1",
-    cursor: "cursor",
-    entries: [
-      {
-        kind: "source",
-        entryId: "kb-source",
-        scope,
-        scheme: "kb",
-        name: "Knowledge Base",
-        uri: "kb://",
-      },
-      {
-        kind: "file",
-        observationVersion: "1",
-        entryId: "document-id",
-        scope,
-        sourceId: "kb-source",
-        parentId: "kb-source",
-        name: "Cached.md",
-        aliases: [],
-        hasProperties: false,
-        path: ["Cached.md"],
-        uri: "kb://Cached.md",
-        provisionalName: false,
-        extension: "md",
-        editable: true,
-        filetype: "markdown",
-        schemaType: "document",
-      },
-    ],
-  });
-  const file: CatalogFile = {
-    kind: "file",
-    entryId: "document-id",
-    parentId: "kb-source",
-    documentId: "document-id",
-    name: "Cached.md",
-    extension: "",
-    aliases: [],
-    path: "/Cached.md",
-    uri: "kb://Cached.md",
-    provisionalName: false,
-    hasProperties: false,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    resourceHandle: "resource-id",
-    resourceState: "acknowledged",
-    ...(localContent ? { localContent: true as const } : {}),
-  };
+const file: TreeFile = {
+  kind: "file",
+  entryId: "document-id",
+  parentId: "kb-source",
+  documentId: "document-id",
+  name: "Cached.md",
+  extension: "",
+  path: "/Cached.md",
+  uri: "kb://Cached.md",
+  provisionalName: false,
+  hasProperties: false,
+  editable: true,
+  filetype: "markdown",
+  schemaType: "document",
+};
+
+function tree(isComplete: boolean, ...files: TreeFile[]): TreeViewResult {
   return {
-    normalized,
-    root: {
-      kind: "dir",
-      entryId: "kb-source",
-      parentId: null,
-      name: "Knowledge Base",
-      path: "/",
-      uri: "kb://",
-    },
-    children: () => [file],
-    files: () => [file],
-    findPath: (path) => (path === file.path ? file : null),
-    findDocument: (documentId) => (documentId === file.documentId ? file : null),
+    isComplete,
+    isError: false,
+    tree: {
+      root: { entryId: "kb-source" },
+      findPath: (path: string) => files.find((candidate) => candidate.path === path) ?? null,
+      findDocument: (id: string) => files.find((candidate) => candidate.documentId === id) ?? null,
+    } as never,
   };
 }
 
-it("never answers a bound document the catalog does not list with the path's occupant", () => {
-  // Document A is bound to the route but is not in the live catalog (a pending new-document
-  // draft); B, which has local content, now holds the path the URL names.
-  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Cached.md" };
-  expect(
-    resolveLocalDocumentAddress("project-id", destination, null, catalog(true), "document-a"),
-  ).toBeUndefined();
-  // With no bound identity, the occupant is the route's document.
-  expect(
-    resolveLocalDocumentAddress("project-id", destination, null, catalog(true), null),
-  ).toMatchObject({ file: { documentId: "document-id" } });
-});
-
-it("does not turn metadata-only catalog discovery into blank local content", () => {
-  expect(
-    resolveLocalDocumentAddress(
-      "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md" },
-      null,
-      catalog(false),
-    ),
-  ).toBeUndefined();
-});
-
-it("uses local content through lookup failure, then yields to a successful canonical result", () => {
-  const local = resolveLocalDocumentAddress(
-    "project-id",
-    { kind: "document", scheme: "kb", path: "Cached.md" },
-    null,
-    catalog(true),
-  );
-  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
-  expect(reconcileDocumentAddress(local, { kind: "unavailable" })).toMatchObject({
-    result: { kind: "current", document: { documentId: "document-id" } },
-    localFile: { documentId: "document-id" },
+const destination = { kind: "document" as const, scheme: "kb" as const, path: "Cached.md" };
+const resolve = (result: TreeViewResult, boundDocumentId: string | null = null) =>
+  resolveReplayAddress({
+    projectId: "project-id",
+    accountId: "account-id",
+    destination,
+    workId: null,
+    rootThreadId: null,
+    tree: result,
+    boundDocumentId,
   });
 
-  const canonical = {
-    kind: "alias" as const,
-    document: {
-      ...local.result.document,
-      documentId: "canonical-id",
-      entry: {
-        ...local.result.document.entry,
-        entryId: "canonical-id",
-        name: "Canonical.md",
-        path: ["Canonical.md"],
-        uri: "kb://Canonical.md",
-      },
-    },
-  };
-  expect(reconcileDocumentAddress(local, canonical, "live")).toEqual({
-    result: canonical,
-    localFile: undefined,
-    view: "live",
+describe("resolveReplayAddress", () => {
+  it("finds the path's occupant when the route is bound to no document", () => {
+    expect(resolve(tree(true, file))).toMatchObject({
+      kind: "found",
+      file: { documentId: "document-id" },
+      result: { kind: "current", document: { authority: { kind: "project" } } },
+    });
+  });
+
+  it("is not there only once the list has synced", () => {
+    expect(resolve(tree(false))).toEqual({ kind: "waiting" });
+    expect(resolve({ tree: null, isComplete: false, isError: false })).toEqual({ kind: "waiting" });
+    expect(resolve(tree(true))).toEqual({ kind: "absent" });
+  });
+
+  it("finds a bound document by identity and never answers it with the path's occupant", () => {
+    const moved = { ...file, documentId: "document-a", path: "/Moved.md" };
+    expect(resolve(tree(true, file, moved), "document-a")).toMatchObject({
+      kind: "found",
+      file: { documentId: "document-a" },
+    });
+    expect(resolve(tree(true, file), "document-a")).toEqual({ kind: "held" });
   });
 });
 
-it("keeps the path of the writer's unconfirmed move over a server alias for the same document", () => {
-  const local = resolveLocalDocumentAddress(
-    "project-id",
-    { kind: "document", scheme: "kb", path: "Cached.md" },
-    null,
-    catalog(true),
-  );
-  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
-  // A rename back to a name the server still redirects answers with an alias of this document.
-  const alias = { kind: "alias" as const, document: local.result.document };
-  const pending = { ...local, file: { ...local.file, placementPending: true as const } };
-
-  expect(reconcileDocumentAddress(pending, alias)).toEqual({
-    result: local.result,
-    localFile: pending.file,
-    view: "local",
-  });
-  expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
-});
-
-describe("gateLiveView", () => {
+describe("draftOnlyTarget", () => {
   const resolved = {
     kind: "current",
     document: { kind: "available", documentId: "document-id" },
   } as DocumentAddressResult;
-  const manifest = (ids: string[], state: { isFetching?: boolean; isError?: boolean } = {}) =>
-    ({
-      catalog: { normalized: { entries: new Map(ids.map((id) => [id, {}])) } },
-      isComplete: true,
-      isFetching: false,
-      isError: false,
-      ...state,
-    }) as unknown as Parameters<typeof gateLiveView>[1];
-  const group = (isNew: boolean) =>
-    ({
-      documentId: "document-id",
-      draftOnly: isNew,
-      draft: { itemKey: "draft-id", status: "active", isNew },
-    }) as unknown as ReviewFileTarget;
-  const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
-  const noTab = () => false;
+  const group = (draftOnly: boolean) =>
+    ({ documentId: "document-id", draftOnly, draft: { itemKey: "draft-id" } }) as ReviewFileTarget;
 
-  it("opens a document missing from the live manifest as its pending new-document draft, never live", () => {
-    expect(gateLiveView(resolved, manifest(["document-id"]), ready(), noTab)).toEqual({
-      outcome: "ready",
-      result: resolved,
-    });
-    expect(gateLiveView(resolved, manifest([]), ready(group(true)), noTab)).toMatchObject({
-      outcome: "ready",
-      result: resolved,
-      draftOnly: { draft: { itemKey: "draft-id" } },
-    });
-    // Discarded, or a draft of an existing document: no live view and no review.
-    expect(gateLiveView(resolved, manifest([]), ready(), noTab).result).toEqual({
-      kind: "unavailable",
-    });
-    expect(gateLiveView(resolved, manifest([]), ready(group(false)), noTab).result).toEqual({
-      kind: "unavailable",
-    });
-  });
-
-  it("calls absence unavailable only on an authoritative read, and keeps a promoted tab live", () => {
-    // A stored checkpoint stays complete while its refresh is in flight: still pending.
-    expect(gateLiveView(resolved, manifest([], { isFetching: true }), ready(), noTab)).toEqual({
-      outcome: "pending",
-      result: undefined,
-    });
-    expect(gateLiveView(resolved, manifest([]), { status: "loading", files: null }, noTab)).toEqual(
-      { outcome: "pending", result: undefined },
+  it("opens a review answer for a page a draft created as that draft, never live", () => {
+    expect(draftOnlyTarget(resolved, "review", { files: [group(true)] })?.draft.itemKey).toBe(
+      "draft-id",
     );
-    // Apply promoted the tab; the lagging catalog does not get to veto it.
-    expect(
-      gateLiveView(resolved, manifest([], { isFetching: true }), ready(), () => true).result,
-    ).toBe(resolved);
+    expect(draftOnlyTarget(resolved, "review", { files: [group(false)] })).toBeUndefined();
+    expect(draftOnlyTarget(resolved, "live", { files: [group(true)] })).toBeUndefined();
   });
-
-  it("reports a failed prerequisite as failed, distinct from one still loading", () => {
-    // A failed read is not evidence of no draft, and it must not wait forever.
-    expect(gateLiveView(resolved, manifest([], { isError: true }), ready(), noTab)).toEqual({
-      outcome: "failed",
-      result: undefined,
-    });
-    expect(gateLiveView(resolved, manifest([]), { status: "error", files: [] }, noTab)).toEqual({
-      outcome: "failed",
-      result: undefined,
-    });
-  });
-});
-
-it.each([
-  "loading",
-  "error",
-])("an admitted review survives a %s or incomplete list without proving Live", (status) => {
-  const result = { kind: "current", document: { documentId: "hidden" } } as DocumentAddressResult;
-  const gated = gateLiveView(
-    result,
-    { catalog: null, isComplete: false, isFetching: true, isError: true },
-    { status, files: null },
-    () => false,
-    "review",
-  );
-  expect(gated).toEqual({ outcome: "ready", result });
-  expect(gated).not.toHaveProperty("draftOnly");
 });

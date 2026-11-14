@@ -1,20 +1,15 @@
-export * from "./context-staging";
-
-import * as contextStaging from "./context-staging";
-
 export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
 export * from "./branches";
 export * from "./content";
-export * from "./context-catalog";
-export * from "./context-operation-receipts";
 export * from "./imports";
 export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
+export * from "./tree-nodes";
 export * from "./user";
 export * from "./users";
 export * from "./waitlist";
@@ -27,14 +22,13 @@ import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
 import * as branches from "./branches";
 import * as content from "./content";
-import * as contextCatalog from "./context-catalog";
-import * as contextOperations from "./context-operation-receipts";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
 import * as modelEvidence from "./model-evidence";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as threadAsks from "./thread-asks";
+import * as treeNodes from "./tree-nodes";
 import * as user from "./user";
 import { users } from "./users";
 import * as waitlist from "./waitlist";
@@ -43,17 +37,15 @@ import * as yjs from "./yjs";
 
 /** Runtime Drizzle client schema (public tables + views). */
 export const schema = {
-  ...contextStaging,
   users,
   ...accountSkillInstalls,
   ...billing,
   ...content,
   ...imports,
-  ...contextCatalog,
-  ...contextOperations,
   ...branches,
   ...agentThreads,
   ...threadAsks,
+  ...treeNodes,
   ...agentDefinitionRevisions,
   ...recentDocuments,
   ...results,

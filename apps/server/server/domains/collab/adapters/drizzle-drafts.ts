@@ -181,72 +181,80 @@ export function createDrizzleDraftStore(
     }
   }
 
-  async function ensureDocumentDraft(input: {
+  type DraftSeed = {
     documentId: DocumentId;
     branchId: BranchId;
     liveDoc: Y.Doc;
     liveRoom: string | null;
     livePosition?: number;
-  }): Promise<DraftSnapshot> {
+  };
+
+  async function ensureDocumentDraft(input: DraftSeed): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seeded = seedDraftState(input.liveDoc, input.liveRoom, input.livePosition ?? 0);
-    const { seed, ...checkpoint } = seeded;
     // Creating a draft is a write the Work's lifecycle orders: the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
-    // Both fragments start equal at revision 0; live shares content, never Yjs items.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed branch gains no draft.
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
-      // An active Work draft is returned whatever became of the live document: it outlives a
-      // live delete. Only a new draft needs a living document.
-      const existing = await activeDocumentDraft(input.documentId, input.branchId);
-      if (existing) return existing;
-      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
-      await testHook("draft.ensure.afterDocumentLock");
-      await assertDraftableInBranch(input.documentId, input.branchId);
-      // Racing ensures of one document's draft get one draft.
-      const [inserted] = await currentDrizzleDb(db)
-        .insert(documentDrafts)
-        .values({
-          id: `draft_${randomUUID()}`,
-          documentId: input.documentId,
-          kind: "work_draft",
-          branchId: input.branchId,
-          status: "active",
-          ...checkpoint,
-          ...(seed
-            ? {
-                seedOrigins: seed.origins,
-                seedLiveRoom: seed.liveRoom,
-                seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
-                seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
-                seedLiveState: seed.liveAttribution
-                  ? Buffer.from(seed.liveAttribution.state)
-                  : null,
-                seedLivePosition: seed.liveAttribution?.position,
-              }
-            : {}),
-          hasEffect: false,
-          hasEffectRevision: 0,
-          schemaVersion: packCollabSchemaVersion(
-            (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
-              COLLAB_SCHEMA_VERSION,
-          ),
-        })
-        .onConflictDoNothing()
-        .returning({ id: documentDrafts.id });
-      const documentDraft = await activeDocumentDraft(input.documentId, input.branchId);
-      if (!documentDraft) {
-        throw new Error(
-          `Work draft for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
-        );
-      }
-      return documentDraft;
+      return insertDocumentDraft(input);
     });
+  }
+
+  /** The draft's insert under the document's key, for a caller that has fenced the branch's end. */
+  async function insertDocumentDraft(input: DraftSeed): Promise<DraftSnapshot> {
+    const { seed, ...checkpoint } = seedDraftState(
+      input.liveDoc,
+      input.liveRoom,
+      input.livePosition ?? 0,
+    );
+    // Both fragments start equal at revision 0; live shares content, never Yjs items.
+    await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+    // An active Work draft is returned whatever became of the live document: it outlives a
+    // live delete. Only a new draft needs a living document.
+    const existing = await activeDocumentDraft(input.documentId, input.branchId);
+    if (existing) return existing;
+    await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+    await testHook("draft.ensure.afterDocumentLock");
+    await assertDraftableInBranch(input.documentId, input.branchId);
+    // Racing ensures of one document's draft get one draft.
+    const [inserted] = await currentDrizzleDb(db)
+      .insert(documentDrafts)
+      .values({
+        id: `draft_${randomUUID()}`,
+        documentId: input.documentId,
+        kind: "work_draft",
+        branchId: input.branchId,
+        status: "active",
+        ...checkpoint,
+        ...(seed
+          ? {
+              seedOrigins: seed.origins,
+              seedLiveRoom: seed.liveRoom,
+              seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
+              seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
+              seedLiveState: seed.liveAttribution ? Buffer.from(seed.liveAttribution.state) : null,
+              seedLivePosition: seed.liveAttribution?.position,
+            }
+          : {}),
+        hasEffect: false,
+        hasEffectRevision: 0,
+        schemaVersion: packCollabSchemaVersion(
+          (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
+            COLLAB_SCHEMA_VERSION,
+        ),
+      })
+      .onConflictDoNothing()
+      .returning({ id: documentDrafts.id });
+    const documentDraft = await activeDocumentDraft(input.documentId, input.branchId);
+    if (!documentDraft) {
+      throw new Error(
+        `Work draft for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
+      );
+    }
+    return documentDraft;
   }
 
   /** The document's live state as its journal holds it, read in this transaction. */
@@ -266,13 +274,18 @@ export function createDrizzleDraftStore(
     }
   }
 
-  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
+  /**
+   * §6.2 step 5: seeded from the document's durable live state, read in this transaction. The
+   * caller is the admission of the create and holds the branch's tree list key, which a Work's
+   * archive or delete and a branch's end take before they change it: the branch stays open to
+   * the commit. The Work's lock comes before the list key, so it is not taken here.
+   */
   function ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<DraftSnapshot> {
     return withJournalDocument(input.documentId, (liveDoc, snapshot) =>
-      ensureDocumentDraft({
+      insertDocumentDraft({
         ...input,
         liveDoc,
         liveRoom: null,
@@ -536,8 +549,14 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    async serverDeletedBlocks(draftId, ids) {
+    async writerText(draftId, ids) {
       if (!ids.length) return new Set<string>();
+      const runs: { client: number; lo: number; hi: number }[] = [];
+      for (const id of [...ids].sort((a, b) => a.client - b.client || a.clock - b.clock)) {
+        const last = runs[runs.length - 1];
+        if (last && last.client === id.client && id.clock <= last.hi + 1) last.hi = id.clock;
+        else runs.push({ client: id.client, lo: id.clock, hi: id.clock });
+      }
       const rows = await currentDrizzleDb(db)
         .select({ effect: documentEditParts.effect })
         .from(documentEditParts)
@@ -549,12 +568,12 @@ export function createDrizzleDraftStore(
           and(
             sql`${documentEditParts.origin}->>'kind' = 'pending'`,
             sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
-            eq(draftWriteJournal.source, "server"),
-            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
+            sql`(${draftWriteJournal.source} = 'writer' or ${draftWriteJournal.updateMeta}->>'lateTyping' = 'true')`,
+            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'inserted') r
             where ${sql.join(
-              ids.map(
-                (id) =>
-                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
+              runs.map(
+                (run) =>
+                  sql`((r->>'client')::bigint = ${run.client} and (r->>'clock')::bigint <= ${run.hi} and (r->>'clock')::bigint + (r->>'len')::bigint > ${run.lo})`,
               ),
               sql` or `,
             )})`,
@@ -564,7 +583,7 @@ export function createDrizzleDraftStore(
         ids
           .filter((id) =>
             rows.some((row) =>
-              row.effect.deleted.some(
+              row.effect.inserted.some(
                 (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
               ),
             ),

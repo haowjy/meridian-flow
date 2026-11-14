@@ -1,4 +1,4 @@
-/** Object verification and durable DOCX conversion before an import generation is built. */
+/** Object verification and durable DOCX conversion before the import is planned. */
 
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION, importNodeId } from "@meridian/contracts";

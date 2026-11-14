@@ -74,8 +74,13 @@ export function createLocalFileAccessChanges(): FileAccessChanges {
 }
 
 function parseChange(payload: string): FileAccessChange {
-  const value = JSON.parse(payload) as { workId?: unknown; rootThreadId?: unknown };
+  const value = JSON.parse(payload) as {
+    workId?: unknown;
+    rootThreadId?: unknown;
+    projectId?: unknown;
+  };
   if (typeof value.workId === "string") return { workId: value.workId as WorkId };
   if (typeof value.rootThreadId === "string") return { rootThreadId: value.rootThreadId };
+  if (typeof value.projectId === "string") return { projectId: value.projectId };
   throw new Error("Malformed file access change");
 }

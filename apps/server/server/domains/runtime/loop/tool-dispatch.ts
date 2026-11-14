@@ -43,6 +43,7 @@ import {
   type FrontierRecordingDeps,
   frontierLookup,
   recordStoredResult,
+  shownNamesLookup,
 } from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
@@ -379,6 +380,7 @@ export async function dispatchToolCall(
         credited: () => ctx.credited.ids(),
         reply: ctx.replyMutations,
       },
+      shownNames: shownNamesLookup(deps, () => ctx.credited.ids(), correlation),
     },
   );
   outputJournal.seal();

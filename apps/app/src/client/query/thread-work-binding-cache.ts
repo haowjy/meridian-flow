@@ -10,12 +10,7 @@ import type {
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { invalidateProjectChatFeed } from "./project-invalidation";
-import {
-  isProjectContextCatalogKey,
-  isProjectWorkDerivedKey,
-  isWorkScopedProjectContextCatalogKey,
-  projectQueryKeys,
-} from "./project-query-keys";
+import { isProjectWorkDerivedKey, projectQueryKeys } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
 import { projectThreadsQueryOptions } from "./useProjectThreads";
@@ -45,7 +40,6 @@ export type ThreadProjectionInvalidation = {
   projectId: string;
   refreshLists: boolean;
   workIds: ReadonlySet<string> | "all";
-  contextTrees: "work-scoped" | "all";
   /** The thread's own snapshot is refreshed by whoever asked, so this leaves it alone. */
   skipSnapshot?: boolean;
 };
@@ -88,12 +82,6 @@ export function invalidateThreadProjectionDependencies(
   void client.invalidateQueries({
     predicate: ({ queryKey }) => isProjectWorkDerivedKey(queryKey, input.projectId, ids),
   });
-  void client.invalidateQueries({
-    predicate: ({ queryKey }) =>
-      input.contextTrees === "all"
-        ? isProjectContextCatalogKey(queryKey, input.projectId)
-        : isWorkScopedProjectContextCatalogKey(queryKey, input.projectId, ids),
-  });
 }
 
 function patchSnapshot(client: QueryClient, threadId: string, workId: string | null): void {
@@ -133,7 +121,6 @@ export function convergeThreadWorkBinding(
         projectId: signal.projectId,
         refreshLists: false,
         workIds: "all",
-        contextTrees: "work-scoped",
       });
       convergeWorkProjection(client, { kind: "binding", projectId: signal.projectId });
     });
@@ -163,7 +150,6 @@ export function convergeThreadWorkBinding(
         projectId,
         refreshLists: false,
         workIds: new Set([beforeWorkId, afterWorkId].filter(Boolean) as string[]),
-        contextTrees: "work-scoped",
       });
       convergeWorkProjection(client, { kind: "binding", projectId });
       return;
@@ -190,7 +176,6 @@ export function convergeThreadWorkBinding(
       projectId,
       refreshLists: false,
       workIds: ids.size ? ids : "all",
-      contextTrees: "work-scoped",
       // The snapshot already carries the Work (`patchSnapshot`), and its reads belong to the
       // thread sync alone.
       skipSnapshot: true,

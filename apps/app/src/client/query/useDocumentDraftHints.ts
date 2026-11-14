@@ -1,7 +1,7 @@
 /**
  * useDocumentDraftHints — the active branches with changes to one open document, from any
  * view. One read per document open: it re-reads on the same signals as the Work draft lists
- * (the writer's own draft commands, catalog wakes and identity changes invalidate its key),
+ * (the writer's own draft commands, wake hints invalidate its key),
  * and on window focus and reconnect through the query client's defaults. No polling.
  */
 import type { DocumentDraftHint } from "@meridian/contracts/branches";

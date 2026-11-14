@@ -1,4 +1,4 @@
-/** Transport adapter for identity-bound draft upload deletion. */
+/** Deletes a chat's unused upload by its document id (the node id the list holds). */
 import type { DeleteDraftUploadInput, DeleteDraftUploadResult } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, readBody } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
@@ -10,20 +10,14 @@ export default defineEventHandler(async (event): Promise<DeleteDraftUploadResult
     throw createError({ statusCode: 400, message: "Draft upload deletion requires uploads" });
   }
   const body = (await readBody<Partial<DeleteDraftUploadInput>>(event)) ?? {};
-  if (
-    typeof body.intakeId !== "string" ||
-    typeof body.documentId !== "string" ||
-    typeof body.uri !== "string" ||
-    typeof body.expectedRevision !== "string"
-  ) {
-    throw createError({ statusCode: 400, message: "Complete upload identity is required" });
+  if (typeof body.documentId !== "string") {
+    throw createError({ statusCode: 400, message: "documentId is required" });
   }
-  const { intakeId, documentId, uri, expectedRevision } = body;
   // The chat's uploads container, not the document: an upload the writer deletes before it
   // finishes has no document yet.
   const subject = uploadSubject(projectId, getQuery(event).chatId);
   return edit([subject.container], () =>
-    app.uploadIntake.deleteDraft({ intakeId, documentId, uri, expectedRevision }, userId, {
+    app.uploadIntake.deleteDraft({ documentId: body.documentId as string }, userId, {
       kind: "chat",
       projectId,
       chatId: subject.chatId,

@@ -281,6 +281,7 @@ function openServer(harness: Harness, workId: string) {
       flushDraftLivePull: async () => {},
     },
     eventSink: { emit() {} },
+    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
   } as never);
   const sockets = new Set<PipeSocket>();
   return {

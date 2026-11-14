@@ -210,14 +210,16 @@ its one id.
 
 ## Late peers
 
+Detection finds typing under a deleted item and typing a delete removes without listing it; whose text it is comes from the journal (collab `writerText`), not from the memory.
+
 The rules are in the [late-peer recovery rule][late-peer]. Detection indexes the incoming
 structs once by client and clock in the shared pinned Yjs adapter; parent and origin lookups
 must not scan the whole update per item, because a whole-draft Discard or Undo can carry tens
 of thousands of structs. Noncanonical updates with repeated, out-of-order client blocks keep
 first-match lookup rather than changing admission.
 
-`retainLateTypingDeletions` preserves separator-deletion observations when a host's append
-awaited receipt I/O: it keeps the append's new spans and drops stale backspaces against
+`retainLateTypingDeletions` preserves separator-deletion observations when a deferred observer
+runs after another append: it keeps the append's new spans and drops stale backspaces against
 remembered typing.
 
 [review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows

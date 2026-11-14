@@ -13,7 +13,7 @@ import {
   createBillingUsagePolicy,
   createInMemoryCreditLedger,
 } from "../../../billing/index.js";
-import { createContextCatalogWakeHub } from "../../../context/context-catalog-wake-hub.js";
+import { createProjectWakeHub } from "../../../context/project-wake-hub.js";
 import type { NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
@@ -442,7 +442,7 @@ export async function runtimeScenario(
         eventSink,
         threadEventHub: hub,
         projectRepo: projects,
-        contextCatalogWakeHub: createContextCatalogWakeHub(),
+        projectWakeHub: createProjectWakeHub(),
         threadRuntime: {
           async requireOwnedThread(id: string, owner: string) {
             const row = await repos.threads.findById(id);

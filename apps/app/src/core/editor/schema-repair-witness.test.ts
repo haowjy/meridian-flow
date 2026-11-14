@@ -44,6 +44,8 @@ function appendElement(
   origin: unknown = "seed",
 ): Y.XmlElement {
   const element = new Y.XmlElement(nodeName);
+  if (nodeName === "paragraph")
+    element.setAttribute("id", `p${doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).length}`);
   const yText = new Y.XmlText();
   doc.transact(() => {
     doc

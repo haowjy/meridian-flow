@@ -1,10 +1,11 @@
 /** Drizzle-backed lookup functions used by collab service composition. */
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, threads, turns } from "@meridian/database/schema";
+import { threads, turns } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { loadDocumentPlacement } from "../../context/tree/tree-addresses.js";
 
 export function createDrizzleCollabLookups(db: Database) {
   return {
@@ -17,12 +18,10 @@ export function createDrizzleCollabLookups(db: Database) {
       return new Map(rows.map((row) => [row.id, row.title]));
     },
     async resolveDocumentFiletype(documentId: string): Promise<string | null> {
-      const [row] = await currentDrizzleDb(db)
-        .select({ filetype: documents.fileType })
-        .from(documents)
-        .where(eq(documents.id, documentId as never))
-        .limit(1);
-      return row?.filetype ?? null;
+      return (
+        (await loadDocumentPlacement(currentDrizzleDb(db), documentId as DocumentId))?.fileType ??
+        null
+      );
     },
     async resolveTurnThreadId(turnId: TurnId): Promise<ThreadId | null> {
       const [row] = await db

@@ -25,12 +25,12 @@ import { NO_WORK_NAME } from "./shared.js";
 /** In-memory {@link WorkRepository} for tests. */
 export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
   const rows = new Map<string, Work>();
-  const projects = new Map<string, { catalogGeneration: string; revision: bigint }>();
+  const projects = new Map<string, { revision: bigint }>();
 
   function projectState(projectId: string) {
     let state = projects.get(projectId);
     if (!state) {
-      state = { catalogGeneration: crypto.randomUUID(), revision: 0n };
+      state = { revision: 0n };
       projects.set(projectId, state);
     }
     return state;
@@ -194,7 +194,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async snapshotIdentity(projectId: ProjectId) {
       const state = projectState(projectId);
       return {
-        catalogGeneration: state.catalogGeneration,
         authorityRevision: String(state.revision),
       };
     },
@@ -274,7 +273,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
           return { before: existing, after: existing, changed: false };
         }
         if (nameIsTaken(row.projectId, row.name, row.id)) {
-          throw new WorkRestoreConflictError("name");
+          throw new WorkRestoreConflictError();
         }
         const before = { ...row };
         const restoredAt = currentTime();

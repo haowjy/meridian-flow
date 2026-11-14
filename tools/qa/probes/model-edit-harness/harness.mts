@@ -192,6 +192,7 @@ export async function seedWorkWithChats(
   chats = 1,
 ) {
   const seeded = await h.seedWork(label);
+  await h.raw`insert into context_sources(work_id,name,slug,scope) values (${seeded.workId},'Scratch','scratch','work')`;
   // seedWork's own chat already has a finished turn; drop it so the chat starts empty.
   await h.raw`delete from thread_works where thread_id=${seeded.threadId}`;
   await h.raw`delete from turns where thread_id=${seeded.threadId}`;
@@ -261,13 +262,14 @@ function resultLabel(content: { result?: Record<string, unknown>; content?: unkn
 
 /**
  * What the model was shown, from collab's evidence rows: the source block id of each of the
- * chat's observation frontiers, oldest first. This one function reads them, so a change to
+ * chat's document observation frontiers (the `tree` room holds the names a result showed, not a
+ * document), oldest first. This one function reads them, so a change to
  * where the evidence lives changes it alone; `model-edit-evidence` asserts on it.
  */
 export async function frontierSources(h: Harness, threadId: string) {
   const found = await h.raw<{ source: string }[]>`
     select source_block_id as source from observation_frontiers
-    where thread_id=${threadId} order by recorded_seq`;
+    where thread_id=${threadId} and room_key <> 'tree' order by recorded_seq`;
   return found.map((row) => row.source);
 }
 
@@ -349,11 +351,12 @@ export async function drafts(h: Harness, documentId: string) {
   );
 }
 
-/** The probe's source's documents whose name starts with `prefix`: by name, and whether each is deleted. */
+/** The probe's source's documents whose name starts with `prefix`: by name, and whether each is in Trash. */
 export async function documentsNamed(h: Harness, prefix: string) {
   return h.raw<{ id: string; name: string; deleted: boolean }[]>`
-    select id, name, deleted_at is not null as deleted from documents
-    where context_source_id=${h.ids.source} and name like ${`${prefix}%`} order by name`;
+    select id, name, trashed_at is not null as deleted from tree_nodes
+    where context_source_id=${h.ids.source} and kind='document' and name like ${`${prefix}%`}
+    order by name`;
 }
 
 /**
@@ -445,11 +448,11 @@ export async function runCases(probe: string, cases: readonly ModelEditCase[]): 
   process.exit(failed);
 }
 
-/** Names the document the way the app does, without the harness's `.md`; returns its `manuscript://` path. */
+/** The document's `manuscript://` path: its name without the extension, as the model is shown it. */
 export async function namePath(h: Harness, documentId: string) {
-  const [{ name }] = await h.raw<{ name: string }[]>`
-    update documents set name=regexp_replace(name,'\\.md$','') where id=${documentId} returning name`;
-  return `manuscript://${name}`;
+  const [{ stem }] = await h.raw<{ stem: string }[]>`
+    select stem from tree_nodes where id=${documentId}`;
+  return `manuscript://${stem}`;
 }
 
 /** A Work with one chat and a live document holding `text`, for one case. */

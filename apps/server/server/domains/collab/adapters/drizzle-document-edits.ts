@@ -6,7 +6,7 @@ import {
   type EditTarget,
   heldDeletes,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TreeChange, TurnId, UserId } from "@meridian/contracts";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
   documentEditParts,
@@ -21,7 +21,6 @@ import {
   getDrizzleTransactionLocal,
   setDrizzleTransactionLocal,
 } from "../../../shared/drizzle-transaction.js";
-import { treeChangeFault } from "../domain/tree-inverse.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -39,8 +38,6 @@ export interface ReceiptWrite {
   actionId?: string;
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
-  /** A tree entry: a move, delete, restore or settlement, recorded with no parts. */
-  treeChange?: TreeChange;
 }
 
 const modelEditCommand = { name: "model-edit-command" };
@@ -54,12 +51,15 @@ export function bindEditsToCommand(commandId: string): void {
   setDrizzleTransactionLocal(modelEditCommand, commandId);
 }
 
+/** The command the ambient transaction runs, for a receipt that is not an edit's (a tree receipt). */
+export function boundCommandId(): string | undefined {
+  return getDrizzleTransactionLocal<string>(modelEditCommand);
+}
+
 /** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
-  const fault = input.treeChange && treeChangeFault(input.treeChange);
-  if (fault) throw new Error(fault);
   const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
@@ -68,7 +68,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       threadId: input.threadId,
       turnId: input.turnId,
       responseId: input.responseId,
-      commandId: input.commandId ?? getDrizzleTransactionLocal<string>(modelEditCommand),
+      commandId: input.commandId ?? boundCommandId(),
       toolCallId: input.toolCallId,
       actor: input.actor,
       actorUserId: input.actorUserId,
@@ -76,14 +76,10 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       wId,
       actionId: input.actionId,
       consumes: input.consumes,
-      treeChange: input.treeChange,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
-  if (!input.receipts.length) {
-    if (!input.treeChange) throw new Error("An edit with no parts must be a tree entry");
-    return edit.id;
-  }
+  if (!input.receipts.length) return edit.id;
   await db.insert(documentEditParts).values(
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,

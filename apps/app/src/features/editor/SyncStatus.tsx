@@ -12,8 +12,7 @@
  *     asked, the removal's sentence once it proves one, and "Access lost"
  *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     It begins when the status is `offline` or when `adoptionStalled` (a cached
- *     session that is `detached` because adopting it failed), and ends at once
+ *     It begins when the status is `offline`, and ends at once
  *     when the session says its unsent edits can't be delivered
  *     (`canDeliverUnsentEdits()`: the room ended, or it was admitted read-only,
  *     as for an archived Work, whose notice says so beside it). It stays through
@@ -40,8 +39,8 @@ import {
   type DocumentSessionSnapshot,
   updatesRefused,
 } from "@/core/editor/document-session";
-import type { RemovalAnswer } from "@/features/project/context/project-context-availability-coordinator";
 import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
+import type { RemovalAnswer } from "@/features/project/context/removal-answer";
 
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
@@ -51,7 +50,7 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
 /**
  * Advance on every snapshot, so the offline→confirmation swap is one state
  * change and no render exists between the two labels. A session whose unsent
- * edits can't be delivered resets to idle: nothing is waiting to upload. An outage (offline, or a stalled adoption) always means awaiting. A
+ * edits can't be delivered resets to idle: nothing is waiting to upload. An outage (offline) always means awaiting. A
  * drop while confirmed (any non-synced status) returns to awaiting. A local
  * edit while confirmed (the server no longer has everything) ends the
  * confirmation and hides the pill: the connection is healthy, so it is not
@@ -64,7 +63,7 @@ function nextPhase(
   deliverable: boolean,
 ): OutagePhase {
   if (!deliverable) return "idle";
-  if (snapshot.status === "offline" || snapshot.adoptionStalled) return "awaiting";
+  if (snapshot.status === "offline") return "awaiting";
   if (phase === "idle") return phase;
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
   if (snapshot.status !== "synced") return "awaiting";

@@ -1,8 +1,10 @@
 /**
- * Late-peer recovery (spec-content-rebase "Late peers"). A peer update authored before the peer
- * got a rebase can type into top-level blocks the rebase deleted or retyped; Yjs merges that into dead
- * state (`late-peer.ts` detects it). A stale frame is not current intent, so on text a rebase changed it
- * contributes only its net surviving typing, and nothing else:
+ * Late-peer recovery (spec-content-rebase "Late peers"). A writer types into a top-level block that a
+ * rebase, a peer or the model deletes or retypes before the writer has seen it; Yjs merges that into dead
+ * state (`late-peer.ts` detects it), whichever arrives first, the typing or the deletion. A stale
+ * typist is not current intent, so on text another change removed it contributes only its net surviving
+ * typing, and nothing else. What the typist sees is its own frame's delete set when the typing arrives
+ * second, and the document before the deletion when the deletion does:
  *
  * - The typing the peer still shows is written into the draft beside its block's last known neighbour,
  *   one paragraph per typed span: characters the peer typed with nothing it still sees between them,
@@ -17,7 +19,7 @@
  *
  * A browser reconnect can resend its offline typing one keystroke per frame. `LateTyping` carries the
  * spans already written from earlier frames, so the next keystroke extends its span's paragraph instead
- * of starting another. A remembered paragraph the draft no longer shows exactly as written (the writer
+ * of starting another, edited in place so the characters a peer saw keep their ids. A remembered paragraph the draft no longer shows exactly as written (the writer
  * edited, formatted or removed it: text, marks and attributes all count) is settled: it is never touched
  * again, and new typing beside it starts its own.
  *
@@ -28,7 +30,7 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
-import type { LostEdit } from "./late-peer.js";
+import type { LostEdits } from "./late-peer.js";
 import { writeBlocks } from "./writer.js";
 
 /** A typed span already written into the draft from an earlier frame. */
@@ -119,8 +121,9 @@ function typedSpans(
       const str = item.content instanceof Y.ContentString ? item.content.str : null;
       for (let i = 0; i < item.length; i++) {
         const id = Y.createID(item.id.client, item.id.clock + i);
-        if (peerDeleted(id)) continue;
         const key = keyOf(id);
+        // Typing the detector accepted stays typing: its delete-set entry was explained by its block,
+        // and judging it again from the same set would drop it.
         if (str && typed(key)) {
           if (!open) {
             open = { ids: [], text: "" };
@@ -128,7 +131,7 @@ function typedSpans(
           }
           open.ids.push(key);
           open.text += str[i];
-        } else open = null;
+        } else if (!peerDeleted(id)) open = null;
       }
     }
   };
@@ -144,7 +147,7 @@ function typedSpans(
 export function recoverLatePeerEdits(input: {
   doc: Y.Doc;
   update: Uint8Array;
-  lost: { typed: readonly LostEdit[]; deleted: readonly LostEdit[] };
+  lost: LostEdits;
   memory?: LateTyping;
   schema: Schema;
   fragmentName: string;
@@ -176,8 +179,13 @@ export function recoverLatePeerEdits(input: {
   // and nothing is remembered, since no paragraph can be found again.
   const aligned = current.length === elements.length;
   const { ds } = Y.decodeUpdate(input.update);
+  // What the typist sees deleted: its frame's delete set, or when a delete arrives after the typing
+  // (`removed`), the document before that frame, since the frame's delete set is the deleter's.
   const peerDeleted = (id: Y.ID) =>
     !remembered.has(keyOf(id)) && (Y.isDeleted(ds, id) || deleted.has(keyOf(id)));
+  const documentDeleted = (id: Y.ID) =>
+    !remembered.has(keyOf(id)) && input.lost.invisible.has(keyOf(id));
+  const afterDelete = new Set<string>();
 
   /** Beside its last known neighbour: after the block itself if it stands, else after the nearest survivor before it. */
   const anchorOf = (item: Y.Item) => {
@@ -203,6 +211,7 @@ export function recoverLatePeerEdits(input: {
   }
   const insertAfter = new Map<number, Pending[]>(); // anchor index (-1 = the start) -> paragraphs
   const rewrite = new Map<number, Pending>(); // index -> new text ("" removes the paragraph)
+  const extend = new Map<number, { span: Span; oldIds: readonly string[] }>(); // index -> a shown paragraph edited in place
   const kept: WrittenSpan[] = [];
   const add = (anchor: number, pending: Pending) => {
     if (pending.text) out.written.push(pending.text);
@@ -212,8 +221,10 @@ export function recoverLatePeerEdits(input: {
   const blocks = new Map<string, Y.Item>();
   for (const id of touched) {
     const item = topLevelBlock(doc, fragment, id);
-    if (item) blocks.set(keyOf(item.id), item);
-    else {
+    if (item) {
+      blocks.set(keyOf(item.id), item);
+      if (input.lost.typed.find((e) => e.id === id)?.removed) afterDelete.add(keyOf(item.id));
+    } else {
       const text = input.lost.typed.find((e) => e.id === id)?.text.trim();
       if (text) add(-1, { text, span: null });
     }
@@ -230,25 +241,57 @@ export function recoverLatePeerEdits(input: {
     for (const span of typedSpans(
       elementOf(item),
       (key) => frameTyped.has(key) || liveIds.has(key),
-      peerDeleted,
+      afterDelete.has(block) ? documentDeleted : peerDeleted,
     )) {
-      const text = span.text.trim();
       const ids = new Set(span.ids);
       const matches = live.filter((s) => !claimed.has(s) && s.ids.some((id) => ids.has(id)));
       for (const s of matches) claimed.add(s);
-      const next = aligned ? { block, ids: span.ids, written: text ? para(text) : null } : null;
       // Remembered typing is never deleted, so a span holding a written paragraph's typing still has text.
-      const home = matches.find((s) => s.paragraph);
-      if (home) {
-        if (text !== home.written?.textContent) {
-          out.written.push(text);
-          rewrite.set(shownAt(home) as number, { text, span: next });
-        } else if (next) kept.push({ ...home, ids: next.ids });
-      } else if (text) add(anchorOf(item), { text, span: next });
-      else if (next) kept.push({ ...next, paragraph: null });
-      // Other written paragraphs this span now joins (the peer deleted what stood between) fold into it.
-      for (const s of matches)
-        if (s !== home && s.paragraph) rewrite.set(shownAt(s) as number, { text: "", span: null });
+      const published = matches.filter((s) => s.paragraph);
+      /** One run of typing as one paragraph: `home` is the published paragraph it extends, if any. */
+      const place = (run: Span, home: WrittenSpan | undefined) => {
+        const runText = run.text.trim();
+        const next = aligned
+          ? {
+              block,
+              ids: run.ids,
+              written: runText ? para(runText, home?.written?.attrs.id) : null,
+            }
+          : null;
+        if (home) {
+          if (runText !== home.written?.textContent) {
+            out.written.push(runText);
+            rewrite.set(shownAt(home) as number, { text: runText, span: next });
+            extend.set(shownAt(home) as number, { span: run, oldIds: home.ids });
+          } else if (next) kept.push({ ...home, ids: next.ids });
+        } else if (runText) add(anchorOf(item), { text: runText, span: next });
+        else if (next) kept.push({ ...next, paragraph: null });
+      };
+      if (published.length <= 1) {
+        place(span, published[0]);
+        continue;
+      }
+      // The peer removed what stood between paragraphs already shown. Each stays its own paragraph, since
+      // copying one into another would give its words new ids and a peer that saw them would not list
+      // them. New characters join the paragraph before them, or the one after, in place.
+      const owner = new Map<string, WrittenSpan>();
+      for (const s of published) for (const id of s.ids) owner.set(id, s);
+      const segments: Array<{ owner: WrittenSpan | undefined; from: number; to: number }> = [];
+      for (let at = 0; at < span.ids.length; at++) {
+        const who = owner.get(span.ids[at]);
+        const last = segments[segments.length - 1];
+        if (last && last.owner === who) last.to = at + 1;
+        else segments.push({ owner: who, from: at, to: at + 1 });
+      }
+      const claims = new Map<WrittenSpan | undefined, Span>();
+      segments.forEach((seg, i) => {
+        const to = seg.owner ?? segments[i - 1]?.owner ?? segments[i + 1]?.owner;
+        const into = claims.get(to) ?? { ids: [], text: "" };
+        into.ids.push(...span.ids.slice(seg.from, seg.to));
+        into.text += span.text.slice(seg.from, seg.to);
+        claims.set(to, into);
+      });
+      for (const [home, run] of claims) place(run, home);
     }
   }
 
@@ -269,7 +312,11 @@ export function recoverLatePeerEdits(input: {
   current.forEach((block, i) => {
     const change = rewrite.get(i);
     if (!change) target.push(block);
-    else if (change.text) push(change, block.attrs.id);
+    else if (change.text) {
+      // The paragraph stays as it is here and is edited below, so the characters a peer saw keep their ids.
+      if (change.span) placed.push([target.length, change.span]);
+      target.push(block);
+    }
     if (aligned) for (const pending of insertAfter.get(i) ?? []) push(pending);
   });
   if (!aligned)
@@ -283,7 +330,11 @@ export function recoverLatePeerEdits(input: {
   };
   doc.on("update", onUpdate);
   try {
-    doc.transact(() => writeBlocks(fragment, schema, target), LATE_PEER_ORIGIN);
+    doc.transact(() => {
+      writeBlocks(fragment, schema, target);
+      for (const [i, { span, oldIds }] of extend)
+        extendParagraph(elements[i] as Y.XmlElement, oldIds, span);
+    }, LATE_PEER_ORIGIN);
   } finally {
     doc.off("update", onUpdate);
   }
@@ -294,6 +345,40 @@ export function recoverLatePeerEdits(input: {
       if (id) kept.push({ ...span, paragraph: id });
     }
   return finish(out, kept, deleted);
+}
+
+/**
+ * Edits a recovered paragraph into the typist's span by inserting only the characters it does not hold,
+ * each where the typist placed it among the ones it does (their ids give the order). A text diff would
+ * choose its own alignment and replace words, and a peer that saw the old characters and deletes the
+ * paragraph would then not list the new ones.
+ */
+function extendParagraph(paragraph: Y.XmlElement, oldIds: readonly string[], span: Span) {
+  const text = paragraph.firstChild;
+  if (!(text instanceof Y.XmlText)) return;
+  const charOf = new Map(span.ids.map((key, i) => [key, span.text[i]]));
+  const trimmed = (ids: readonly string[]) => {
+    let lo = 0;
+    let hi = ids.length;
+    while (lo < hi && /\s/.test(charOf.get(ids[lo]) ?? "x")) lo++;
+    while (hi > lo && /\s/.test(charOf.get(ids[hi - 1]) ?? "x")) hi--;
+    return ids.slice(lo, hi);
+  };
+  const held = trimmed(oldIds);
+  const heldAt = new Map(held.map((key, i) => [key, i]));
+  let pos = 0;
+  let passed = 0;
+  for (const key of trimmed(span.ids)) {
+    const at = heldAt.get(key);
+    if (at === undefined || at < passed) {
+      text.insert(pos, charOf.get(key) as string);
+    } else {
+      if (at > passed) text.delete(pos, at - passed);
+      passed = at + 1;
+    }
+    pos++;
+  }
+  if (passed < held.length) text.delete(pos, held.length - passed);
 }
 
 function finish(out: LateRecovery, spans: WrittenSpan[], deleted: Set<string>): LateRecovery {

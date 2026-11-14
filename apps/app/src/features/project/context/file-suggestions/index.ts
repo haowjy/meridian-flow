@@ -5,9 +5,9 @@ export {
 } from "./FileSuggestionList";
 export type { FileSuggestion, FileSuggestionKind } from "./file-suggestions";
 export {
-  catalogFileSuggestions,
   folderChildren,
   matchFileSuggestions,
   parentPath,
+  treeFileSuggestions,
 } from "./file-suggestions";
 export { useFileSuggestions } from "./use-file-suggestions";

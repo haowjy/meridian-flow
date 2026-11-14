@@ -7,10 +7,9 @@ import {
   readDocumentAuthorityHead,
   replaceGeneration,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-authority-head.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDraftRetirement } from "../../../../apps/server/server/domains/collab/domain/draft-retirement.ts";
 import { closeDraftRooms } from "../../../../apps/server/server/domains/collab/hocuspocus-rooms.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendToFirstParagraph,
   createScratchDatabase,
@@ -108,7 +107,7 @@ try {
     socketId: "other-tab",
   };
   room.addConnection(connection as never);
-  const close = createDraftClose();
+  const close = createTestRemovalDeps(h.db).draftClose;
   close.bindRetirement(
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),
@@ -119,12 +118,10 @@ try {
     },
   );
   const discard = createDrizzleBranchDiscard(h.db, {
-    releaseObjects: async () => {},
     close,
     branches: h.branches,
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: { refreshSources: async () => "0" },
+    treeLists: createTestRemovalDeps(h.db).treeLists,
   });
   const command = h.discardCommand(work.branchId);
   await discard.discardLocked({

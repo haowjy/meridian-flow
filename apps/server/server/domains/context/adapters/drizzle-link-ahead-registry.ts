@@ -186,7 +186,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       await loadDocumentAddresses(currentDrizzleDb(this.db), {
         ids: [...new Set(documentIds)],
       })
-    ).filter((address) => !address.deleted && !address.hidden);
+    ).filter((address) => !address.deleted);
     if (addresses.length === 0) return 0;
     const arrivals = addresses.map((address) => ({
       document_id: address.documentId,

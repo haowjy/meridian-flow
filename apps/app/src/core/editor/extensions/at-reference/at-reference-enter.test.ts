@@ -7,29 +7,11 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - reference-menu Enter key ownership
  */
-import type { CatalogScope } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "@meridian/resource-replica";
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
 import { editorReferenceNode, getAtReferenceMenu } from "./AtReferenceExtension";
-
-const PROJECT = "01900000-0000-7000-8000-000000000002";
-const scope = { kind: "project", projectId: PROJECT } as CatalogScope;
-
-function view(): CatalogCacheView {
-  return {
-    scope,
-    generation: "1",
-    appliedRevision: "1",
-    observedHeadRevision: "1",
-    cursor: "",
-    entries: new Map(),
-    childIdsByParentId: new Map(),
-    sourceIdsByScheme: new Map(),
-  };
-}
 
 const live: Editor[] = [];
 afterEach(() => {
@@ -37,7 +19,6 @@ afterEach(() => {
 });
 
 function mount(): Editor {
-  const catalog = view();
   const element = document.createElement("div");
   document.body.append(element);
   const editor = new Editor({
@@ -49,12 +30,11 @@ function mount(): Editor {
           port: {
             subscribe: () => () => {},
             status: () => "ready",
-            read: () => catalog,
-            acquire: async () => catalog,
+            read: () => null,
           },
           resolveReference: () => null,
           referenceNode: editorReferenceNode,
-          openContext: () => ({ warmScopes: [scope] }),
+          openContext: () => ({ warmSources: [], works: [] }),
           label: "Reference a file",
           holderUri: "manuscript://volume-1/chapter-2.md",
           linkAhead: (name) => ({ uri: `manuscript://volume-1/${name}.md` }),

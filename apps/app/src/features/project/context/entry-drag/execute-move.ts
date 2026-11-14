@@ -1,173 +1,74 @@
 /**
- * Doing a planned move through the replica's one placement path. Placement is
- * optimistic: a move resolves once the replica admits it, and a later server
- * refusal lands on the row as its failure mark with Move… to repair. Each
- * placement's operation is remembered so the row's link-update note follows
- * its receipt. Arrival names are predicted from the replica's placement, so a
- * move needs no list on screen. Results are data; selection belongs to the caller.
+ * Doing a planned move: one `move` record per row, appended to the browser's copy of the list the
+ * row's tree belongs to. The row shows in its new place at once; a server refusal comes back as a
+ * `refused` settlement and lands on the row as its failure mark with Move… to repair. A name that
+ * clashes is numbered by the writer and recorded with the move; `renamesOnArrival` predicts it,
+ * for the warning shown before the drop. Results are data; selection belongs to the caller.
  */
 
-import {
-  type ParentRef,
-  placementParentKey,
-  type ResourceDestination,
-  type ResourcePlacement,
-  type ResourceRecord,
-  resourcePlacementForSnapshot,
-} from "@meridian/resource-replica";
-import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { allocateContextEntryArrivalName } from "../context-entry-name";
-import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveRow, recordFor, sameParent } from "./move-plan";
-
-/** The replica and project a Move and a Copy act through. */
-export type ReplicaContext = {
-  resources: AccountResourceReplica;
-  projectId: string;
-};
-
-/** The replica's placement, which names what every parent holds; no list needs to be on screen. */
-export type NamingView = {
-  records: readonly ResourceRecord[];
-  folders?: Awaited<ReturnType<AccountResourceReplica["readProjection"]>>["folders"];
-  placement: Pick<ResourcePlacement, "childrenAt" | "namedRow">;
-};
+import type { EntryActions } from "./entry-actions";
+import { isAccountArea, type MoveRow } from "./move-plan";
 
 export type MoveResult = {
-  /** Rows the replica admitted. */
+  /** Rows the list took. */
   moved: readonly EntryRef[];
-  /** Rows the replica would not admit. */
+  /** Rows no list could take (read-only, or the list is not open). */
   failed: readonly { entry: EntryRef; name: string }[];
 };
 
-export type Arrival = {
-  entry: EntryRef;
-  name: string;
-  /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
-  typed?: string;
-  before?: ParentRef;
-  after: ParentRef;
-};
-
-/** Places one row under the name predicted by this module. */
-async function placeEntry(
-  resources: AccountResourceReplica,
-  projectId: string,
-  subject: EntryRef,
-  location: ResourceDestination,
-  typed: string,
-): Promise<string | null> {
-  if (subject.kind === "folder") {
-    const result = await resources.setFolderLocation(projectId, subject.id, location, typed);
-    return result.operationId ?? null;
-  }
-  const key = await resources.keyForDocument(projectId, subject.id);
-  if (!key) throw new Error("Document is not in the replica");
-  const result = await resources.setLocation(projectId, key, location, typed);
-  return result.operationId ?? null;
-}
-
-/** The file's naming facts as the replica shows them now; a folder, or a row that is gone, has none. */
-function namedRow(view: NamingView, entry: EntryRef) {
-  const record = entry.kind === "file" ? recordFor(view.records, entry.id) : undefined;
-  return record ? view.placement.namedRow(record) : undefined;
-}
-
 /**
- * Free names for the rows of one move. Each destination's names are indexed
- * once; a row's name is reserved once it arrives, so the next row sees it
- * though the replica has not caught up (two `Notes` folders become
- * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
+ * The rows a move would rename on arrival, for the warning shown before it happens. Each
+ * destination's names are indexed once; a row's name is reserved once it arrives, so the next
+ * row sees it (two `Notes` folders become `Notes (2)` and `Notes (3)`).
  */
-export function arrivals(view: NamingView, rows: readonly Arrival[]) {
-  const byParent = new Map<string, Set<string>>();
-  const staying = new Map<string, Set<string>>();
-  for (const row of rows) {
-    if (!row.before || !sameParent(row.before, row.after)) continue;
-    const key = placementParentKey(row.after);
-    const entries = staying.get(key) ?? new Set<string>();
-    entries.add(row.entry.id);
-    staying.set(key, entries);
-  }
-  const occupancy = (parent: ParentRef) => {
-    const key = placementParentKey(parent);
-    let occupied = byParent.get(key);
-    if (!occupied) {
-      occupied = new Set(
-        view.placement
-          .childrenAt(parent, view.records)
-          .filter((row) => !staying.get(key)?.has(row.entryId))
-          .map((row) => row.name),
+export function renamesOnArrival(rows: readonly MoveRow[]): { name: string; as: string }[] {
+  const occupied = new Map<string, Set<string>>();
+  const staying = new Set(
+    rows.filter((row) => row.from === row.to.parentId).map((row) => row.entry.id),
+  );
+  const occupancy = (row: MoveRow) => {
+    let names = occupied.get(row.to.parentId);
+    if (!names) {
+      names = new Set(
+        row.area.tree
+          .children(row.to.parentId)
+          .filter((entry) => !staying.has(entry.entryId))
+          .map((entry) => entry.name),
       );
-      byParent.set(key, occupied);
+      occupied.set(row.to.parentId, names);
     }
-    return occupied;
+    return names;
   };
-  return {
-    name: (row: Arrival) =>
-      allocateContextEntryArrivalName(
-        row.typed ?? row.name,
-        occupancy(row.after),
-        row.entry.kind,
-        namedRow(view, row.entry),
-      ),
-    reserve: (row: Arrival, name: string) => occupancy(row.after).add(name),
-  };
-}
-
-/**
- * The rows a move would rename on arrival, for the warning shown before it
- * happens. It predicts exactly as `moveRows` places, as if every row arrives.
- */
-export function renamesOnArrival(
-  rows: readonly Arrival[],
-  view: NamingView,
-): { name: string; as: string }[] {
-  const names = arrivals(view, rows);
   return rows.flatMap((row) => {
-    const as = names.name(row);
-    names.reserve(row, as);
-    return as !== (row.typed ?? row.name) ? [{ name: row.name, as }] : [];
+    const names = occupancy(row);
+    const as = allocateContextEntryArrivalName(
+      row.name,
+      names,
+      row.entry.kind === "folder" ? "folder" : "file",
+      row.named,
+    );
+    names.add(as);
+    return as !== row.name ? [{ name: row.name, as }] : [];
   });
 }
 
-export async function currentView(context: ReplicaContext) {
-  const snapshot = await context.resources.readProjection(context.projectId);
-  return {
-    records: snapshot.records,
-    folders: snapshot.folders,
-    placement: resourcePlacementForSnapshot(context.projectId, snapshot),
-  };
-}
-
-/** Move… and a drop both move rows here, each under its predicted free name. */
-export async function moveRows(
-  rows: readonly MoveRow[],
-  context: ReplicaContext,
-  view?: NamingView,
-): Promise<MoveResult> {
-  const { resources, projectId } = context;
-  const current = view ?? (await currentView(context));
-  const names = arrivals(current, rows);
+/** Move… and a drop both move rows here: one gesture per list, so each row is placed among the siblings the rows before it left. */
+export function moveRows(rows: readonly MoveRow[], actions: EntryActions): MoveResult {
   const moved: EntryRef[] = [];
   const failed: { entry: EntryRef; name: string }[] = [];
-  for (const row of rows) {
-    const name = names.name(row);
-    try {
-      const operationId = await placeEntry(
-        resources,
-        projectId,
-        row.entry,
-        { parent: row.after, name, ...(row.position ? { position: row.position } : {}) },
-        row.typed ?? row.name,
-      );
-      names.reserve(row, name);
-      if (operationId)
-        void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
-      moved.push(row.entry);
-    } catch {
-      failed.push({ entry: row.entry, name: row.name });
+  for (const list of [actions.account, actions.project]) {
+    const mine = rows.filter(
+      (row) => (isAccountArea(row.area) ? actions.account : actions.project) === list,
+    );
+    if (mine.length === 0) continue;
+    const result = list.moveAll(
+      mine.map((row) => ({ node: row.entry.id, parentId: row.to.parentId, index: row.to.index })),
+    );
+    for (const row of mine) {
+      if (result.ok) moved.push(row.entry);
+      else failed.push({ entry: row.entry, name: row.name });
     }
   }
   return { moved, failed };

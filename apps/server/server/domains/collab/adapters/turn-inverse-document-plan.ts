@@ -2,7 +2,7 @@
 import { appendRestorationLinks } from "@meridian/agent-edit/diff";
 import type { ComputedInverseEdit } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { type BranchId, isLiveTransition, type LiveTreeState } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { EditOrigin } from "@meridian/database";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -18,10 +18,7 @@ export type PlannedInverse = {
   drafts: Map<InverseDestination, PlannedDraft>;
   live: boolean;
   source: "agent" | "writer";
-  made: Map<number, LiveTreeState>;
-  living: boolean;
   committed: ComputedInverseEdit[];
-  stopped: boolean;
   reversed: Map<BranchId | null, number>;
   outcomes: { documentId: string; branchId: BranchId | null; draftId: string | null }[];
 };
@@ -44,7 +41,6 @@ export function planInverseDocument(
   const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
   const drafts = new Map<InverseDestination, PlannedDraft>();
   for (const step of plan.steps) {
-    if (step.kind !== "text") continue;
     let view = document.live;
     if (step.destination.kind === "draft") {
       if (step.destination.state === "gone")
@@ -88,21 +84,15 @@ export function planInverseDocument(
       }),
     );
   }
-  const text = plan.steps.filter((step) => step.kind === "text");
   return {
     plan,
     documentId: document.documentId,
     edits,
     updates: [],
     drafts,
-    live:
-      text.some((step) => step.destination.kind === "live") ||
-      plan.steps.some((step) => step.kind === "tree" && isLiveTransition(step.planned)),
+    live: plan.steps.some((step) => step.destination.kind === "live"),
     source: query.model ? "agent" : "writer",
-    made: new Map(),
-    living: document.treeStates.live?.living ?? document.removal === null,
     committed: [],
-    stopped: false,
     reversed: new Map(),
     outcomes: [],
   };

@@ -1,9 +1,7 @@
-/** `doc copy`: one Copy command through the project's own route. */
+/** `doc copy`: one Copy command through the project's own route, its sources named by the tree list. */
 import { randomUUID } from "node:crypto";
 import {
-  apiProjectContextCatalogPath,
   apiProjectContextCopyPath,
-  type CatalogLookupResult,
   type ContextSiblingPosition,
   type CopyContextEntrySource,
   type CopyContextEntryView,
@@ -11,9 +9,9 @@ import {
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import { type CommandSpec, stringOption } from "../../core/command";
-import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId, resolveWork } from "../project/resolve";
+import { lookupPath, Trees } from "./tree-address";
 import { PROJECT_OPTION, type ResolvedUri, resolveUri } from "./uri";
 
 export const docCopyCommand: CommandSpec = {
@@ -60,17 +58,22 @@ export const docCopyCommand: CommandSpec = {
 
     if (ctx.positionals.length === 0) throw usageError("Name at least one source URI");
     const sources: CopyContextEntrySource[] = [];
-    for (const raw of ctx.positionals) {
-      const target = await resolveUri(session, projectId, raw);
-      sources.push({
-        scheme: target.scheme,
-        path: target.path,
-        expected: await sourceIdentity(session, projectId, target),
-        ...(target.workId ? { workId: target.workId } : {}),
-        ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
-        ...(target.chatRef ? { chatRef: target.chatRef } : {}),
-        ...(view ? { view } : {}),
-      });
+    const trees = new Trees(session, projectId);
+    try {
+      for (const raw of ctx.positionals) {
+        const target = await resolveUri(session, projectId, raw);
+        sources.push({
+          scheme: target.scheme,
+          path: target.path,
+          expected: await sourceIdentity(trees, target),
+          ...(target.workId ? { workId: target.workId } : {}),
+          ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
+          ...(target.chatRef ? { chatRef: target.chatRef } : {}),
+          ...(view ? { view } : {}),
+        });
+      }
+    } finally {
+      await trees.close();
     }
 
     const destination = await resolveUri(
@@ -108,50 +111,19 @@ export const docCopyCommand: CommandSpec = {
   },
 };
 
-/** The identity a source root presents, as the copy's expected source. */
+/** The identity a source root presents, as the copy's expected source: the node the list holds there. */
 async function sourceIdentity(
-  session: Session,
-  projectId: string,
+  trees: Trees,
   target: ResolvedUri,
 ): Promise<{ kind: "file" | "folder"; nodeId: string }> {
-  const search = new URLSearchParams({ uri: target.uri, ...scopeQuery(target) });
-  const found = await session.request(
-    "GET",
-    `${apiProjectContextCatalogPath(projectId, "lookup")}?${search.toString()}`,
-    undefined,
-    { decode: jsonResponse(catalogLookupResponse) },
-  );
-  const entry = found.entry;
-  if (entry?.kind === "file") return { kind: "file", nodeId: entry.entryId };
-  if (entry?.kind === "folder") return { kind: "folder", nodeId: entry.entryId };
-  throw new CliError("not_found", `Nothing at ${target.uri} to copy`, {
-    hint: "A source is a document or a folder. Check it with `./mf doc read`.",
-  });
+  const { list, source } = await trees.at(target);
+  const { node } = lookupPath(list.replay(), source, target.path);
+  if (!node)
+    throw new CliError("not_found", `Nothing at ${target.uri} to copy`, {
+      hint: "A source is a document or a folder. Check it with `./mf doc read`.",
+    });
+  return { kind: node.kind === "folder" ? "folder" : "file", nodeId: node.id };
 }
-
-/** The catalog lookup route's scope, from the URI's owner. */
-function scopeQuery(target: ResolvedUri): Record<string, string> {
-  if (target.chatId) return { scope: "chat", chatId: target.chatId };
-  if (target.rootThreadId) return { scope: "lineage", rootThreadId: target.rootThreadId };
-  if (target.workId) return { scope: "work", workId: target.workId };
-  if (target.scheme === "user") return { scope: "user" };
-  return { scope: "project" };
-}
-
-/** The lookup route answers only what `./mf` needs: is there a folder at this address? */
-const catalogLookupResponse = {
-  safeParse(
-    value: unknown,
-  ):
-    | { success: true; data: Pick<CatalogLookupResult, "entry"> }
-    | { success: false; error: unknown } {
-    const entries = (value as { entries?: unknown; entry?: unknown } | null) ?? {};
-    if (entries.entry && typeof entries.entry === "object") {
-      return { success: true, data: entries as Pick<CatalogLookupResult, "entry"> };
-    }
-    return { success: true, data: null as unknown as Pick<CatalogLookupResult, "entry"> };
-  },
-};
 
 function parsePosition(raw: string): ContextSiblingPosition {
   if (raw === "start" || raw === "end") return { kind: raw };

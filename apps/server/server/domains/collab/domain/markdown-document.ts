@@ -47,11 +47,7 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type {
-  InitialDocumentSeeds,
-  PreparedSeed,
-  SeedAnnouncement,
-} from "./ports/initial-document-seeds.js";
+import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { storedDocument } from "./stored-document.js";
 
@@ -169,13 +165,6 @@ export type MarkdownDocumentEngine = {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  prepareSeed(input: {
-    documentId: DocumentId;
-    projectId: string;
-    content: BoundWrite;
-    origin: DocumentSeedOrigin;
-  }): Promise<PreparedSeed>;
-  announceSeeds(seeds: readonly SeedAnnouncement[]): Promise<void>;
   /**
    * The first state of fresh bound content, built in memory with no database or document in
    * reach: a bulk create encodes it before its transaction and installs it inside.
@@ -626,34 +615,6 @@ export function createMarkdownDocumentEngine(
         await deps.afterWrite?.({ documentId: typedDocumentId });
       }
       return Ok(null);
-    },
-
-    async prepareSeed({ documentId, content, origin }) {
-      assertHolder(documentId, content, "seed");
-      if (!content.fresh) {
-        throw new Error("A seed takes a fresh write; this one was bound against a document");
-      }
-      const seededDoc = seedDocOf(content, origin);
-      try {
-        return {
-          documentId,
-          state: Y.encodeStateAsUpdate(seededDoc),
-          stateVector: Y.encodeStateVector(seededDoc),
-          attributionManifest: { version: 1, floor: null, attributions: [] },
-        };
-      } finally {
-        seededDoc.destroy();
-      }
-    },
-
-    async announceSeeds(seeds) {
-      for (let offset = 0; offset < seeds.length; offset += 8) {
-        await Promise.all(
-          seeds
-            .slice(offset, offset + 8)
-            .map(({ documentId }) => deps.afterWrite?.({ documentId })),
-        );
-      }
     },
 
     encodeSeed(content, origin) {

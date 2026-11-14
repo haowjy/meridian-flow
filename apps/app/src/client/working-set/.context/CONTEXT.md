@@ -33,10 +33,9 @@ historical path. An empty Editor stays empty through entry and reload.
 The server answers a snapshot naming a document it does not hold with a 400. The sweep treats
 any 4xx but 401, 408 and 429 as an answer about the snapshot: no suspect baseline, no timed
 retry, and the pending record stays, so the next report, flush or hydration sends again. A
-snapshot names only documents the replica knows the server holds: a document whose record is still
-`local` carries `localOnly` and contributes no route, so a pending or refused create costs no
-400 and the device's other routes keep syncing. When the create lands the projection clears the
-flag and the next report adds the route.
+snapshot names only documents the server holds: a tab marked `localOnly` contributes no route,
+so a pending or refused create costs no 400 and the device's other routes keep syncing. When the
+create lands the flag clears and the next report adds the route.
 
 ## Suspect baseline (recovery sweep errata)
 

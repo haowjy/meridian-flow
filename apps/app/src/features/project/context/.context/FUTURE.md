@@ -33,12 +33,9 @@ here is a known defect.
   and a list that still has that id can import it. Revisit only if a writer
   sees a long-closed row return after many later removals on this device. Do
   not grow an unbounded log, and do not let lists delete to cover the miss.
-- A closed row's rename or delete waits on window focus, coming online, or the
-  60s poll in `account-feature-context.tsx`, which calls
-  `availability.recheckWatchedProjects`. `recent-availability.ts` then folds
-  that batch into the device record. An unfocused tab can keep a deleted or
-  renamed row on the landing until one of those fires. Do not recheck the set
-  on catalog cache writes to close that lag.
+- A closed row's delete reaches the Recents through the list observer (`list-removal-observer.ts`),
+  which runs when the project's list changes; a project the browser does not have open is read
+  next time it is.
 # Context tree follow-ups
 
 - `use-create-entry-form.ts` and `ContextTreeRows.tsx`: offer **Open existing**

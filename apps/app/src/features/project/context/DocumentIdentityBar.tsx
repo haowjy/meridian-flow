@@ -7,9 +7,8 @@
 import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
+import { useProjectTreeView, useTreeList } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
@@ -21,12 +20,11 @@ import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/Manus
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
-import { useAccountResourceProjection } from "./account-feature-context";
+import { useAccountId } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { tabLocation } from "./identity-location";
-import { useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
@@ -70,53 +68,50 @@ export function DocumentIdentityBar({
   const location = tabLocation(document);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const { remember } = useRenameOperation(projectId, {
-    kind: "file",
-    id: document.documentId,
-  });
-  const commitIdentity = useIdentityCommit({
+  const commit = useIdentityCommit({
     projectId,
     document,
     editorWorkId: editorWorkId,
     onCommitted,
   });
-  // The note follows the resource handle, so list moves and identity remints show here too.
-  // A placement made here re-resolves the tab and remounts this bar, so the
-  // operation is remembered outside it.
-  const commit: typeof commitIdentity = async (target) => {
-    const outcome = await commitIdentity(target);
-    if (outcome.status === "committed" && outcome.operationId) remember(outcome.operationId);
-    return outcome;
-  };
 
   // Only provisional placement can be repaired here; homed refusals stay in lists.
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const resource = records.find(({ resource }) =>
-    document.resourceHandle
-      ? resource.handle === document.resourceHandle
-      : resource.identity.documentId === document.documentId,
-  );
-  const failed = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  const { tree } = useProjectTreeView(projectId, location.scheme, {
+    workId: location.workId ?? editorWorkId,
+    rootThreadId: location.rootThreadId,
+    chatId: location.chatId,
+  });
+  const file = tree?.findDocument(document.documentId) ?? null;
   // A refused delete has no placement to repair here; a refused create and a refused move do.
-  const repair = failed?.kind === "delete" ? null : failed;
-  const identityFailure =
-    location.provisional && repair && repair.intentId !== dismissedRepairId
-      ? ({ kind: "error", name: repair.name, created: repair.kind === "create" } as const)
+  const failure = file?.namespaceFailure;
+  const repair =
+    file && failure && failure !== "delete" && file.failureRecord
+      ? {
+          kind: failure,
+          record: file.failureRecord,
+          name: file.namespaceRepairName ?? file.name,
+          move: file.namespaceRepairMove,
+          failedAt: file.namespaceFailureAt,
+        }
       : null;
-  const repairMove = resource?.resource.canonical
-    ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
-    : undefined;
+  const identityFailure =
+    location.provisional && repair && repair.record !== dismissedRepairId
+      ? ({
+          kind: "error",
+          name: repair.name,
+          created: repair.kind === "create",
+        } as const)
+      : null;
+  const repairMove = repair?.move;
   const failedFolder = repairMove
-    ? repairMove.parent.kind === "root"
-      ? schemeLabel(repairMove.parent.scheme)
-      : t`that folder`
+    ? repairMove.parentId === tree?.root.entryId
+      ? schemeLabel(location.scheme)
+      : (tree?.entry(repairMove.parentId)?.name ?? t`that folder`)
     : null;
   const passiveFailure = failedFolder
     ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
     : t`Couldn't rename. Use Rename in the file list to try again.`;
-  const failureAt = repair
-    ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
-    : undefined;
+  const failureAt = repair?.failedAt;
   useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
     setFieldOpen(true),
   );
@@ -180,7 +175,7 @@ export function DocumentIdentityBar({
               commit={commit}
               onExit={(reason) => {
                 setFieldOpen(false);
-                if (repair) setDismissedRepairId(repair.intentId);
+                if (repair) setDismissedRepairId(repair.record);
                 if (reason === "escape") focusEditorProse(document.documentId);
               }}
               onOpenExisting={onOpenExisting}
@@ -264,32 +259,27 @@ function IdentityChipSlot({
 
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
-/** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
+/**
+ * Device-only once the project's list has been unreachable for 2 seconds: what the writer typed
+ * is on this device and the list's records wait to be sent. A short drop never flashes the warning.
+ */
 function useDeviceOnly(projectId: string, tab: OpenDocument): boolean {
-  const { records } = useAccountResourceProjection(projectId);
-  const resource = records.find(({ resource }) =>
-    tab.kind === "new"
-      ? resource.handle === tab.resourceHandle
-      : resource.identity.documentId === tab.documentId,
-  )?.resource;
-  const since = resource?.obligations.createEligibility?.eligibleAt ?? null;
-  const pending =
-    resource?.lifecycle.kind === "local" || Boolean(resource?.obligations.sessionAdoption);
+  const accountId = useAccountId();
+  const list = useTreeList(
+    tab.kind !== "new" && tab.scheme === "user"
+      ? { kind: "account", userId: accountId }
+      : { kind: "project", projectId },
+  );
+  const offline = list.snapshot?.status === "offline";
   const [sustained, setSustained] = useState(false);
   useEffect(() => {
-    if (!pending || since === null) {
+    if (!offline) {
       setSustained(false);
       return;
     }
-    const remaining = DEVICE_ONLY_GRACE_MS - (Date.now() - since);
-    if (remaining <= 0) {
-      setSustained(true);
-      return;
-    }
-    setSustained(false);
-    const timer = window.setTimeout(() => setSustained(true), remaining);
+    const timer = window.setTimeout(() => setSustained(true), DEVICE_ONLY_GRACE_MS);
     return () => window.clearTimeout(timer);
-  }, [pending, since, tab.documentId]);
+  }, [offline]);
   return sustained;
 }
 

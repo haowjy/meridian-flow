@@ -21,6 +21,7 @@ const sameClicks = <T>(before: readonly T[], now: readonly T[]) =>
   before.length === now.length && before.every((click, index) => now[index] === click);
 
 type Entry = {
+  ref: { documentId: string };
   binding: {
     session: DocumentSession;
     runtime: ReviewRuntime;
@@ -156,7 +157,10 @@ export function startDraftDiscardSession(input: {
     history.off("stack-item-popped", onPopped);
     stopAccess();
   };
-  const lease = readDraftRoom(input.registry, binding.session.roomKey);
+  const lease = readDraftRoom(input.registry, {
+    roomKey: binding.session.roomKey,
+    documentId: entry.ref.documentId,
+  });
   entry.users++;
   let active = true;
   let pending = !editor;

@@ -84,7 +84,7 @@ The group of `editor`, `draft-review` and `links`.
 
 The editor core.
 
-The group of the editor session, transport, resource replica, uploads and completion.
+The group of the editor session, transport, tree list, uploads and completion.
 
 - Kind: context
 - See: [core](app.md#core)

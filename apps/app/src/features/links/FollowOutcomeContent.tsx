@@ -27,6 +27,7 @@ import {
   schemeIcon,
   schemeLabel,
 } from "@/features/project/context/context-schemes";
+import { useOpenCreatedDocument } from "@/features/project/review-launch";
 import type { LinkDocumentRef } from "./follow-link";
 import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
 
@@ -132,7 +133,8 @@ export function FollowOutcomeContent({
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
-  const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId);
+  const { create, failed: failedToCreate } = useCreateLinkedDocument(projectId);
+  const openCreated = useOpenCreatedDocument(projectId ?? "");
   const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
   const name = outcome.state === "missing" ? targetName(outcome) : "";
 
@@ -177,15 +179,13 @@ export function FollowOutcomeContent({
           <Button
             type="button"
             size="sm"
-            disabled={creating}
             onClick={async () => {
-              if (creating) return;
-              // Existing homes commit locally. Missing address parents must be
-              // explicitly created before their identities can be captured.
-              const documentId = await create(creation);
+              const documentId = create(creation);
               if (!documentId) return;
               onClose();
-              await onOpen({ documentId, focus: true });
+              await openCreated(documentId, async () => {
+                await onOpen({ documentId, focus: true });
+              });
             }}
           >
             {t`Create “${name}”`}

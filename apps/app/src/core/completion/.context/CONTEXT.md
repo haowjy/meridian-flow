@@ -2,10 +2,11 @@
 
 ## Browser projection
 
-Other Works remain authority rows until explicitly activated. The browser
-delegates cold Work acquisition to the catalog owner and doesn't fetch
-recursively, retain catalog entries, or turn availability requests or wake
-notifications into browse rows. URI segments are completed by the host's canonical
+Other Works remain authority rows until explicitly opened; opening one lists its
+Scratch source, which the port already holds (every source's tree is a cut of the
+project's list). The browser reads trees through the port and doesn't retain them.
+A source whose list has not synced reports `loading`, and its containers all stay
+reachable until it has. URI segments are completed by the host's canonical
 callback, not reconstructed from display labels.
 
 ## Menu lifecycle

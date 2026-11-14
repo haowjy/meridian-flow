@@ -48,6 +48,7 @@ export * from "./context-availability.js";
 export * from "./context-catalog.js";
 export * from "./context-operation.js";
 export * from "./context-owner.js";
+export * from "./context-sources.js";
 export * from "./document-filename.js";
 export * from "./document-links.js";
 export type {

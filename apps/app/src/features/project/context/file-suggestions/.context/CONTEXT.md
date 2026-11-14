@@ -1,6 +1,6 @@
 # file suggestions — contracts
 
-`useFileSuggestions` declares its scope queries in stable hook order, disabling scopes the host excludes.
+`useFileSuggestions` reads one replayed tree per scheme the host asks for.
 Tree expansion doesn't affect picker completeness.
 
 ## Keyboard model

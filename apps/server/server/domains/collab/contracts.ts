@@ -15,7 +15,7 @@ import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardItem } from "./domain/branch-discard.js";
+import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -31,7 +31,11 @@ import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
 import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
-import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
+import type {
+  LiveLineageDocument,
+  TurnEditedDocument,
+  TurnTreeFolder,
+} from "./domain/turn-live-lineage.js";
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -164,54 +168,113 @@ export type AgentEditAccess = {
   treeHistory(): AgentTreeHistory;
 };
 
-type AgentTreeChange = {
-  documentId: DocumentId;
-  change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
-    | {
-        destination: "live";
-        before: import("@meridian/contracts").LiveTreeState | null;
-      }
-    /** Drafted: the branch row's facts on either side, as the branch write returned them. */
-    | ({ destination: "draft" } & Omit<
-        import("@meridian/contracts").BranchTreeTransition,
-        "destination"
-      > & { branchId: import("@meridian/contracts").BranchId });
-} & (
-  | { op: "create" | "delete"; landedAt?: never }
-  | {
-      op: "move";
-      /** The canonical destination committed by the tree write, never the requested path. */
-      landedAt: string;
-    }
-) &
-  (
-    | {
-        threadId: ThreadId;
-        turnId?: TurnId;
-        responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
-        toolCallId?: string;
-        /** Where the model saw the document: the path it moved or deleted it from. */
-        shownAt: string;
-        materializes?: never;
-      }
-    | {
-        /** Exact drafted tree entry that Apply materialized into live. */
-        materializes: string;
-      }
-  );
+/** A node a tree call changed, with its address before and after (null: created, or deleted). */
+export type TreeReceiptNode = {
+  nodeId: string;
+  beforeAt: string | null;
+  afterAt: string | null;
+};
+
+/** One record a model's tree call admitted, as its receipt keeps it. */
+export type TreeReceiptInput = {
+  /** The node the handle hangs on: the one acted on, or the folder several were moved into. */
+  subject: string;
+  /** Every node the call changed, the subject included: each takes a write ordinal of its own. */
+  nodes: readonly TreeReceiptNode[];
+  /** The records the call admitted, in order. */
+  records: Array<{ record: string; node: string }>;
+  op: "create" | "move" | "delete" | "restore";
+  threadId: ThreadId;
+  turnId?: TurnId;
+  responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
+  toolCallId?: string;
+  /** The Work's branch the record was drafted in; absent when it is live. */
+  draftBranchId?: import("@meridian/contracts").BranchId;
+  /** The path the model gave. */
+  shownAt: string;
+  /** The change moved a document between two lists (a project's and the account's). */
+  acrossLists?: true;
+  /** An undo or redo names the receipt it reverses. */
+  reverses?: { kind: "undo" | "redo"; receipt: string };
+};
+
+/**
+ * The server's move back for a receipt of a move between a project's files and the account's:
+ * the context port's own `moveAcrossLists`, which the caller builds from the thread's context.
+ * `superseded`: the node was moved or changed since, or is gone; else the move was refused.
+ */
+export type MoveBackAcrossLists = (
+  receipt: TreeReceipt,
+) => Promise<
+  | { ok: true; records: { left: string; entered: string } }
+  | { ok: false; cause: "superseded" | "refused" }
+>;
+
+export type TreeReceipt = {
+  id: string;
+  subject: string;
+  records: TreeReceiptInput["records"];
+  op: TreeReceiptInput["op"];
+  kind: "write" | "undo" | "redo";
+  reverses: string | null;
+  draftBranchId: string | null;
+  turnId: string | null;
+  /** The path the model gave for it. */
+  shownAt: string | null;
+  /** The command that made it: a create with content is one command, so one Undo step. */
+  commandId: string | null;
+  /** The write ordinal of the node this receipt was found by. */
+  wId: number;
+  /** The write ordinal on the subject's counter: the handle the model was given. */
+  handle: number;
+  /** Every node the call changed. */
+  nodes: string[];
+  /** For a move between two lists: the subject's address before and after. */
+  across?: { from: string; to: string };
+};
+
+/**
+ * One chat's history of a node, the one order Undo, Redo and `revert` choose from: the tree
+ * receipts that changed it, and the write ordinals of its text edits. Both take their ordinal
+ * from the node's counter, so a larger one is later.
+ */
+export type NodeHistory = {
+  /** Receipts that take a step back (a write or a redo) and were not themselves reversed, newest first. */
+  undo: TreeReceipt[];
+  /** Receipts that took a step back (an undo) and were not redone, newest first. */
+  redo: TreeReceipt[];
+  /** Every receipt of the node by its handle on that node. */
+  all: TreeReceipt[];
+  /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
+  text: {
+    undo: number[];
+    redo: number | null;
+    /** The command of each text edit by ordinal, where it has one: what makes a step of a tree receipt's command. */
+    commands: Record<number, string>;
+  };
+};
 
 export type AgentTreeHistory = {
   /**
-   * Records a model's create, move or delete as a tree entry, in the tree mutation's own transaction,
-   * and returns its handle on the document's counter for this chat.
+   * Keeps a model's tree record as a receipt, in the tool call's own transaction, and returns its
+   * handle on the subject's counter for this chat.
    */
-  recordAgentTreeChange(input: AgentTreeChange): Promise<{ handle: string }>;
-  /** The document's live state now, as a tree entry records it; null while it is hidden. */
-  liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
+  recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
+  /** Whether the turn (one reply) already made a drafted tree change. */
+  draftedInReply(turnId: TurnId): Promise<boolean>;
+  /**
+   * What a card Undo or Redo of a reply takes: the reply's receipts that were not reversed (Undo,
+   * newest first), or the ones a reversal took back and nothing redid (Redo, oldest first), each
+   * with the nodes it changed. The same receipts, reversed by the same `reverses` links, as
+   * the model's `undo` chooses from.
+   */
+  turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
+  /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
+  receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
+  /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
+  historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
-  /** The document this chat's latest move or delete took away from `path`, if any. */
-  movedAwayFrom(threadId: ThreadId, path: string): Promise<DocumentId | null>;
 };
 
 export type ReverseThreadContextInput = {
@@ -227,6 +290,8 @@ export type ReverseThreadContextInput = {
    * stored outcome is the click's answer.
    */
   alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
+  /** How a move between lists is taken back; without it, such a step is refused. */
+  moveBackAcrossLists?: MoveBackAcrossLists;
 };
 
 export type TurnReversalAccess = {
@@ -236,6 +301,7 @@ export type TurnReversalAccess = {
     direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
+    moveBackAcrossLists?: MoveBackAcrossLists;
   }): Promise<ReversalOutcome>;
   reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
@@ -293,10 +359,8 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  prepareSeed: import("./domain/markdown-document.js").MarkdownDocumentEngine["prepareSeed"];
-  stageInitialStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["stageInitialStates"];
-  commitStagedStates(stagingId: string): Promise<void>;
-  discardStagedStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardStagedStates"];
+  /** Deletes the journals of documents that never got a row (an import that ended early). */
+  discardUnbornDocuments: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardUnbornDocuments"];
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
@@ -361,23 +425,49 @@ export type ModelDraftRow = {
 };
 
 export type DraftReviewApi = {
-  applyClick(input: {
+  /**
+   * Apply any selection of nodes, documents and folders, tree and text, as one command; a
+   * per-document click is its one-item case.
+   */
+  apply(input: {
     branchId: BranchId;
-    documentId: DocumentId;
-    request: import("@meridian/contracts/branches").ApplyClick;
+    request: import("@meridian/contracts/branches").ApplyItemsClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
-    documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
+  /** The documents a command touched, from its own record: what its routes authorize. */
+  commandDocuments: {
+    ofApply(input: {
+      applyCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+    ofDiscard(input: {
+      discardCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+  };
+  /** Fresh pending copies of what a Discard settled and closed, on the Work's current branch. */
+  undoDiscard(input: {
+    /** The branch the Discard ran on; it may have closed with it. */
+    branchId: BranchId;
+    userId: UserId;
+    request: import("@meridian/contracts/branches").UndoDiscardClick;
+    envelope: DocumentCommandEnvelope;
+  }): Promise<import("@meridian/contracts/branches").UndoDiscardAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
+    /** The folders the branch has a row on, with the revision an Apply of one freezes. */
+    folders: { id: string; revision: string }[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
   /** Pending documents summed over the project's active branches. */
@@ -414,8 +504,10 @@ export type DraftReviewApi = {
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
-  discardAll(input: {
+  /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
+  discardBranch(input: {
     branchId: BranchId;
+    selection: DiscardSelection;
     userId: UserId;
     envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
@@ -439,6 +531,8 @@ export type CollabBranchResolver = {
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  /** The folders the turn changed: its card lists them with the documents. */
+  listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
@@ -517,14 +611,14 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The branch's draft for a document it just created or joined, seeded from its live
-   * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
-   * idempotent against a racing peer ensure (contract §6.2 step 5).
+   * Each text document a branch's admitted create just made gets its Yjs authority and its
+   * Work text draft (empty: a draft create never seeds live Yjs), in the admitting
+   * transaction under the list's key: the tree list store calls it for every create in a
+   * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
    */
-  ensureCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
+  draftCreatedDocuments(
+    created: readonly { documentId: DocumentId; branchId: BranchId }[],
+  ): Promise<void>;
 };
 
 export type DraftAttributionAccess = {

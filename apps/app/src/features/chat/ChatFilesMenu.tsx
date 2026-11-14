@@ -101,8 +101,7 @@ function FilesDropdown({
   };
 
   const remove = (upload: ChatUpload) => {
-    const { deletion } = upload;
-    if (!deletion) return;
+    if (!upload.deletable) return;
     setDeleted((current) => new Set(current).add(upload.documentId));
     setFailed((current) => without(current, upload.documentId));
     const bringBack = (reason: "used" | "failed") => {
@@ -110,15 +109,7 @@ function FilesDropdown({
       const mark = reason === "used" ? setUsed : setFailed;
       mark((current) => new Set(current).add(upload.documentId));
     };
-    void deleteChatUpload(
-      { projectId, chatId },
-      {
-        intakeId: deletion.intakeId,
-        documentId: upload.documentId,
-        uri: upload.uri,
-        expectedRevision: deletion.locationRevision,
-      },
-    ).then(
+    void deleteChatUpload({ projectId, chatId }, { documentId: upload.documentId }).then(
       (result) => {
         if (result.kind === "deleted" || result.kind === "already_deleted") {
           // A gone file must not ride along on the message being written.
@@ -195,7 +186,7 @@ function FilesDropdown({
                   key={upload.documentId}
                   upload={upload}
                   now={now}
-                  canDelete={upload.deletion !== null && !used.has(upload.documentId)}
+                  canDelete={upload.deletable && !used.has(upload.documentId)}
                   failed={failed.has(upload.documentId)}
                   onInsert={() => insert(upload)}
                   onDelete={() => remove(upload)}
@@ -277,7 +268,7 @@ const refuseUploadsDrops: EntriesRoute = {
   drop: () => {},
 };
 
-const UPLOADS_TARGET = { scheme: "uploads", catalogRootId: "uploads", folder: null } as const;
+const UPLOADS_TARGET = { scheme: "uploads", treeRootId: "uploads", folder: null } as const;
 
 function UploadsRefuseDrops({ children }: { children: ReactNode }) {
   const routes = useMemo(() => ({ entries: refuseUploadsDrops }), []);

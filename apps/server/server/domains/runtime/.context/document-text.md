@@ -35,15 +35,21 @@ when the thread is deleted (`forgetThreads`).
 
 ## Observation frontiers
 
+Room `tree` of the same table is not text: it holds the names the model was shown per chat
+(`TREE_NAMES_ROOM`, `shownNames` on the tool context), which tree commands resolve paths
+through (`domains/context/tree/names-shown.ts`). Its key is the block and the room, so a
+result holds a row for the document it showed and one for the names.
+
 [The Model's View][kb-model-view] is the current implementation. A handler returns
 host-only evidence beside the result and the executor strips it from serialized output.
-Collab keeps the rows, keyed by the result block's id with no foreign key to the block, so
-a row a crash left behind is never read: every lookup names the block ids it asks about
-(`loop/frontier-recording.ts` names the blocks the request carries).
+Collab keeps the rows, keyed by the result block's id and the room with no foreign key to the
+block, so a row a crash left behind is never read: every lookup names the block ids it asks
+about (`loop/frontier-recording.ts` names the blocks the request carries).
 
-- **An edit** records its frontier and shown links in its command transaction, under the
-  result block's id (`modelEditIds(key).blockId`); a refused edit records none, and what its
-  refusal showed is handed over like a read's. A crash after the commit loses nothing.
+- **An edit** records its frontier, the names it showed and its shown links in its command
+  transaction, under the result block's id (`modelEditIds(key).blockId`); a refused edit
+  records none, and what its refusal showed is handed over like a read's. A crash after the
+  commit loses nothing.
 - **A read** returns its evidence beside its result; once the block is stored,
   `recordStoredResult` calls `resultStored`. Only a returned value is handed on, so a handler
   that outlived its timeout attaches nothing. A failed hand-over logs

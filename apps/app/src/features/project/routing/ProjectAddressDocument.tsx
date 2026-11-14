@@ -1,15 +1,13 @@
 /** An authorized address, made canonical; the document host owns live-session binding. */
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
-import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
-import { openDocumentFromFile } from "../context/open-document-from-file";
+import { openDocumentFromFile, treeFileFromCatalogEntry } from "../context/open-document-from-file";
 import type { AddressedDocument } from "../context/route-document-owner";
 import { canonicalDocumentAddress } from "./document-address-canonical";
 import { addressReviewOwner } from "./document-address-review";
-import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
@@ -29,7 +27,8 @@ export type AddressAdmission = {
 export function addressedDocument(
   address: ProjectAddress,
   result: DocumentAddressResult | undefined,
-  localFile: CatalogFile | undefined,
+  /** The replay's file for the address, when it resolved there. */
+  localFile: TreeFile | undefined,
   draftOnly: ReviewFileTarget | undefined,
 ): AddressedDocument | null {
   if (!result || result.kind === "unavailable") return null;
@@ -47,7 +46,7 @@ export function addressedDocument(
   const scope = document.scope;
   const tab = openDocumentFromFile(
     canonical.destination.scheme,
-    mergeLocalResourceState(projectCatalogFile(document), localFile),
+    localFile ?? treeFileFromCatalogEntry(document),
     contextOwner(
       scope.kind === "work" ? scope.workId : undefined,
       scope.kind === "lineage" ? scope.rootThreadId : undefined,

@@ -9,13 +9,13 @@ export function isImportScheme(scheme: ProjectContextTreeScheme): scheme is Impo
 
 export type ImportDestination = {
   scheme: ImportScheme;
-  /** The folder's catalog path ("/Lore/Sects"); "/" at the area root. */
+  /** The folder's path ("/Lore/Sects"); "/" at the area root. */
   path: string;
   /** The folder's canonical URI, as the manifest names it ("kb://Lore/Sects/"). */
   uri: string;
   /** The folder's name, or the area's name at the root. */
   name: string;
-  /** The folder's catalog id; null at the area root. */
+  /** The folder's node id; null at the area root. */
   folderId: string | null;
 };
 

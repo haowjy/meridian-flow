@@ -5,7 +5,6 @@ import { useBlocker, useRouterState } from "@tanstack/react-router";
 import { Maximize2, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
-import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -19,6 +18,7 @@ import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import { TrashedDocument } from "../context/TrashedDocument";
+import { useDocumentStanding } from "../context/use-document-standing";
 import { useNewDocument } from "../context/use-new-document";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { PanePlaceContext } from "../pane-place";
@@ -70,15 +70,12 @@ export function MobileProject(props: MobileProjectProps) {
     setSheetOpen(true);
   }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const main = useMainItem();
   const trashedId = useTrashNavigation().shown;
-  const trashedName = useTrashedDocument(props.projectId, trashedId ?? null).data?.name;
+  const trashed = useDocumentStanding(props.projectId, trashedId ?? null);
+  const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
-    : contextBreadcrumbSegments(
-        props,
-        main.document.local ? main.document.document?.name : undefined,
-      );
+    : contextBreadcrumbSegments(props);
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
   // The sheet shows the side's item: a document or a chat, with the desktop's picker.
   const side = useSideItem();
@@ -231,7 +228,6 @@ export function MobileProject(props: MobileProjectProps) {
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
-        activeContextPath={props.activeContextPath}
         activeContextWork={props.activeContextWork}
         chatThreadId={chatOnScreen}
       />
@@ -291,7 +287,7 @@ function PhoneMain(props: MobileProjectProps) {
       />
     );
   const tab = main.document.document;
-  if (!tab) return <MainDocumentStatus projectId={props.projectId} main={main.document} />;
+  if (!tab) return <MainDocumentStatus main={main.document} />;
   return (
     <DocumentHost
       key={tab.documentId}
@@ -306,11 +302,7 @@ function PhoneMain(props: MobileProjectProps) {
   );
 }
 
-function contextBreadcrumbSegments(
-  props: ReviewScopedProjectProps,
-  localName?: string,
-): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.chatDisplay) return [];
-  if (props.activeLocalDocumentId) return [{ label: localName ?? t`Untitled` }];
   return props.activeContextPath ? [{ label: pathLeafName(props.activeContextPath) }] : [];
 }

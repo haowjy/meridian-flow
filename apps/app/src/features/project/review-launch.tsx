@@ -5,11 +5,17 @@
  * `place` picks. In main, the route command opens it and writes the address; beside, `place` shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
 
+import { type BranchId, type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { EventRecord } from "@meridian/contracts/observability";
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import {
+  cachedOwnerDrafts,
+  relistedOwnerDraft,
+  useOwnerDrafts,
+} from "@/client/query/useOwnerDrafts";
+import { projectWorkBranchFiles, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
@@ -17,14 +23,14 @@ import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
+import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
 import {
-  type OpenDocumentOutcome,
-  useIsChatUpload,
-  useOpenProjectDocument,
-} from "./context/open-project-document";
-import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+  type OpenContextRoute,
+  useCaptureProjectNavigation,
+} from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
+import { useShellTreeVersion } from "./tree-version";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -36,6 +42,8 @@ export type AiDraftLaunchTarget = {
   draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
+  /** The writer just made the document: its text takes the caret, as one made on Live does. */
+  made?: true;
 };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
@@ -105,6 +113,7 @@ export function ReviewLaunchProvider({
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
             changeId: target.focus?.id,
+            ...(target.made ? { focus: true as const } : {}),
             canCommit: () => sequence.current === launch,
             afterCommit: pin,
           },
@@ -161,9 +170,16 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
 
 export function useAiDraftLauncher() {
   const openDraft = useOpenDraft();
+  const shell = useShellTreeVersion();
+  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
+  const showsWork = shell?.show;
+  const workOwner = shell?.ownerKey;
   const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => void openDraft(target),
-    [openDraft],
+    (target: AiDraftLaunchTarget) => {
+      if (showsWork && target.ownerKey === workOwner) showsWork("draft");
+      void openDraft(target);
+    },
+    [openDraft, showsWork, workOwner],
   );
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
@@ -183,6 +199,50 @@ export function useAiDraftLauncher() {
   );
 
   return { openAiDraft, openReviewFile };
+}
+
+/**
+ * Opens a document the writer just made, in the version they made it in. On Live that is `live`,
+ * at once. On Draft the create's admission makes the Work's text draft of the document, which only
+ * the server can answer for, so the page opens on that draft once the Work's list has it, as a
+ * Changes row does: until then the new row shows in the tree and the page stays where it was. A
+ * newer navigation, or no answer in time, leaves the row to be opened by hand. `opened` runs once
+ * the draft opens (the phone's drawer closes then, as a row's click closes it).
+ */
+export function useOpenCreatedDocument(
+  projectId: string,
+): (documentId: string, live: () => Promise<void>, opened?: () => void) => Promise<void> {
+  const shell = useShellTreeVersion();
+  const { openAiDraft } = useAiDraftLauncher();
+  const captureNavigation = useCaptureProjectNavigation();
+  const queryClient = useQueryClient();
+  const branchId = shell?.version.view.draft ?? null;
+  const ownerKey = shell?.ownerKey ?? null;
+  return useCallback(
+    async (documentId, live, opened) => {
+      if (!branchId || !ownerKey) return live();
+      const isCurrent = captureNavigation?.() ?? (() => true);
+      const itemKey = draftItemKey(branchId as BranchId, documentId as DocumentId);
+      if (!(await relistedOwnerDraft(queryClient, projectId, ownerKey, itemKey)) || !isCurrent())
+        return;
+      const row = cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
+        (item) => item.itemKey === itemKey,
+      );
+      const [file] = row ? projectWorkBranchFiles([row], null) : [];
+      if (!file?.contextLocation) return;
+      openAiDraft({
+        ownerKey,
+        documentId: file.documentId,
+        itemKey: file.draft.itemKey,
+        contextLocation: file.contextLocation,
+        documentName: file.documentName ?? undefined,
+        draftOnly: file.draftOnly,
+        made: true,
+      });
+      opened?.();
+    },
+    [branchId, ownerKey, projectId, captureNavigation, queryClient, openAiDraft],
+  );
 }
 
 /**
@@ -246,14 +306,10 @@ export function useOpenPlacedDocument(
   projectId: string | undefined,
 ): (documentId: string) => Promise<OpenDocumentOutcome> {
   const openDocument = useOpenProjectDocument(projectId);
-  const isUpload = useIsChatUpload(projectId);
   const place = useLinkPlacement(projectId ?? null, null);
   return useCallback(
     (documentId) =>
-      // An upload opens in a dialog whichever pane the click came from, so no pane is chosen.
-      isUpload(documentId)
-        ? openDocument({ documentId })
-        : place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
-    [isUpload, place, openDocument],
+      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+    [place, openDocument],
   );
 }

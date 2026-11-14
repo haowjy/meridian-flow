@@ -8,6 +8,7 @@ import type { Database } from "@meridian/database";
 import { documentCommands } from "@meridian/database/schema";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
+import { evidenceFrontiers } from "../../../shared/model-evidence.js";
 import { DocumentCommandExistsError } from "../domain/document-commands.js";
 import { ModelEditRefusal, type ModelEdits } from "../domain/model-edit.js";
 import type { ModelEvidence } from "../domain/model-evidence.js";
@@ -57,9 +58,7 @@ export function createDrizzleModelEdits(
                 projectId: key.projectId,
                 ...owner,
                 shown: done.evidence.shown,
-                frontiers: done.evidence.frontier
-                  ? [{ blockId: ids.blockId, frontier: done.evidence.frontier }]
-                  : [],
+                frontiers: evidenceFrontiers(ids.blockId, done.evidence),
               });
             return { status: "edited" as const, toolResult: done.toolResult };
           },

@@ -23,24 +23,23 @@ rooms; late load and connection completion revalidate before use.
 `adapters/drizzle-document-authority-head.ts` is the one writer of
 `document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
 (with `checkpointId` when a checkpoint insert moves it), `retireThrough` and
-`replaceGeneration`. Each write that moves a head joins the living `documents`
-row in its own statement (`livingDocumentSql`, exported by context's
-`tree/living-document.ts`), so a removal that won the document mutation lock
-refuses it at no extra query. Purge in context's `node-rows.ts` deletes the
-heads of documents already removed.
+`replaceGeneration`. Each write that moves a head proves in its own statement that some tree view
+shows the document (`livingDocumentSql`, exported by context's `tree/living-document.ts`: a
+live row not in Trash, or a Work's row that is not deleted), so a removal that won the
+document mutation lock refuses it at no extra query; a tree list's head is exempt. The
+retention job's purge deletes the heads of documents whose content it released.
 
 A head and its first checkpoint are written by one initialize-only primitive,
 `InitialDocumentSeeds.seedInitialDocument`: under the document mutation lock it
 proves the document is living (`requireLivingDocument`), writes nothing when any
 checkpoint or update exists, and otherwise calls `initializeHead` and installs
 the first checkpoint. Two kinds of caller reach it: the create's own
-transaction (live create, a branch's new hidden row, bootstrap and seeds
+transaction (live create, a Work's drafted create, bootstrap and seeds
 through `seedFromMarkdown`, or `ensureDocumentAuthority` for an empty create),
 and explicit repair of a living document whose authority is absent (the same
 `ensureDocumentAuthority`, seeded as an empty document: it reads first and
 writes only when the document has no state).
-Repair runs only on an explicit touch: the occupant `create-placement` returns,
-a joined hidden candidate before its draft seeds, live overwrite and the held
+Repair runs only on an explicit touch: live overwrite and the held
 live lease, and Hocuspocus room admission before its first generation read.
 Everything else requires an existing head and creates nothing. Draft creation
 (a Work draft) passes `requireLivingDocument` under the same
@@ -94,7 +93,7 @@ string. The link binder parses, prepares the holder's link scope, assigns or
 preserves refs, registers ahead refs, and certifies the target before the
 caller opens a transaction. A fresh bind is initialize-only: admission refuses
 a non-empty target with `stale_generation`. Context checks the canonical path
-under namespace lock and returns `stale_target` when its occupant changed.
+under the project's list key and returns `stale_target` when its occupant changed.
 
 `agent-edit-runtime.ts` builds the codec once. Every serialization door gets a
 holder-bound `DocumentLinkScopes` snapshot and prepares the refs it will spell

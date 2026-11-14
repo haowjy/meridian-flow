@@ -110,9 +110,10 @@ export type FileOwnerRef =
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
  * or draft; `draft` is for the writer's draft preview, Apply and Discard;
- * `restore` is a deleted document where an inverse would bring it back. Restore
- * admission reads through document and folder tombstones because placement revives
- * that chain; source, project, owner-Work, and ownership lifecycle still apply.
+ * `restore` is a document that may be in Trash: where an inverse would bring it back, and
+ * the text room, which takes text until the node is purged. Restore admission reads through
+ * document and folder tombstones because placement revives that chain; source, project,
+ * owner-Work, and ownership lifecycle still apply.
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
@@ -146,6 +147,8 @@ export interface FileBranchOwnerFacts {
   isNoWork: boolean;
   archived: boolean;
   deleted: boolean;
+  /** The owner's row is gone: a Work purged for good, or a lineage whose root is. */
+  purged: boolean;
   frozen: boolean;
 }
 

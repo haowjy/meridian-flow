@@ -137,8 +137,9 @@ export function reviewDriver(
       const { branchId } = await review.items({ owner });
       if (!branchId) throw new Error("No active branch");
       return body(
-        await review.discardAll({
+        await review.discardBranch({
           branchId,
+          selection: { kind: "whole" },
           userId,
           envelope: testEnvelope({ kind: "discard", branchId, userId }),
         }),

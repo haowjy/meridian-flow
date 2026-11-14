@@ -11,7 +11,7 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
-import type { ScratchSource } from "../context/use-scratch-catalogs";
+import type { ScratchSource } from "../context/use-scratch-trees";
 import { useOptionalChatOnScreen } from "../side/SideView";
 
 export function useChatScratchSource(

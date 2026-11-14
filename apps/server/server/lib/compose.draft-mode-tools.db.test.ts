@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 /**
  * Production-composed model tools in a Work: scratch stays live while drafted writes name the draft, read, search and ls follow the version the writes change, copies of text and binary files, and a chat's write-mode switch against real repositories.
  *
@@ -14,6 +13,7 @@ import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
 import type { ToolCall } from "../test-support/composed-runtime.js";
 import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
+import { treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -71,13 +71,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(schema.documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "",
-        fileType: "markdown",
-      });
+      await db.insert(schema.contextSources).values([
+        { projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb", scope: "project" },
+        { workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
+      ]);
+      await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD.threadId,
         id: THREAD.threadId,
@@ -175,61 +173,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listedLive = await call("ls", { path: "kb://", version: "live" });
       expect(text(listedLive)).toMatch(/^kb:\/\//);
       expect(text(listedLive)).not.toContain("lore");
-    });
-
-    it("the turn card hides a drafted creation and redo reveals its retained text", async () => {
-      const script = await startWithChapter("Writer live content.");
-      const reply = await script.begin();
-      const created = await reply.call("write", {
-        command: "create",
-        path: "manuscript://new-chapter",
-        content: "The new chapter.",
-      });
-      expect(created.isError, text(created)).toBeFalsy();
-      const documentId = (
-        created.metadata as { documentRevisions?: { documentId?: unknown }[] } | undefined
-      )?.documentRevisions?.[0]?.documentId;
-      if (typeof documentId !== "string") throw new Error("Create returned no document identity");
-
-      const receipt = await script.runtime.ports.documentSync.listEditedDocumentsForTurn(
-        THREAD.threadId as never,
-        THREAD.turnId as never,
-      );
-      expect(receipt.map((document) => document.documentId)).toContain(documentId);
-
-      const reverse = (direction: "undo" | "redo") =>
-        script.runtime.ports.documentSync.reverseThreadContext({
-          commandId: randomUUID(),
-          threadId: THREAD.threadId as never,
-          userId: USER_ID as never,
-          direction,
-          turnId: THREAD.turnId as never,
-        });
-      expect(await reverse("undo")).toMatchObject({ status: "reversed" });
-      const [removed] = await db
-        .select({ deletedAt: schema.documents.deletedAt })
-        .from(schema.documents)
-        .where(eq(schema.documents.id, documentId));
-      expect(removed?.deletedAt).toBeNull();
-      expect(
-        (await db.select().from(schema.branchTreeChanges)).filter(
-          (row) => row.nodeId === documentId,
-        ),
-      ).toEqual([expect.objectContaining({ created: true, deleted: true })]);
-      expect(
-        (await db.select().from(schema.documentDrafts)).filter(
-          (row) => row.documentId === documentId && row.status === "active",
-        ),
-      ).not.toEqual([]);
-
-      const redone = await reverse("redo");
-      expect(redone).toMatchObject({ status: "reversed" });
-      expect(
-        (await db.select().from(schema.branchTreeChanges)).filter(
-          (row) => row.nodeId === documentId,
-        ),
-      ).toEqual([expect.objectContaining({ created: true, deleted: false })]);
-      expect(await script.text("new-chapter")).toContain("The new chapter.");
     });
 
     // auto-apply writes live, but an explicit `draft` still reads what the Work kept.
@@ -526,9 +469,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(copied.isError).toBeFalsy();
       const [copy] = await db
-        .select()
-        .from(schema.documents)
-        .where(eq(schema.documents.name, "gate-copy"));
+        .select({ metadata: schema.documents.metadata })
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -560,7 +504,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     // a binary copy duplicates the stored object; in a draft-mode Work it
     // is the branch's own hidden row, never shared and not live.
-    it("copies a binary file into the branch as its own hidden row and stored object", async () => {
+    it("copies a binary file into the branch as its own stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -591,17 +535,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destination: "draft",
         draftWork: "w1",
       });
+      // A drafted copy is a record of the Work's branch with its own stored object.
       const [copy] = await db
-        .select()
-        .from(schema.documents)
-        .where(eq(schema.documents.name, "scan-copy"));
-      expect(copy?.hidden).toBe(true);
+        .select({ storageUrl: schema.documents.storageUrl })
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
-      const created = await db
-        .select({ branchId: schema.branchTreeChanges.branchId })
-        .from(schema.branchTreeChanges)
-        .where(eq(schema.branchTreeChanges.nodeId, copy?.id ?? ""));
-      expect(created).toHaveLength(1);
       await expect(
         runtime.ports.contextPorts
           .forProject(PROJECT_ID, USER_ID, new Map())

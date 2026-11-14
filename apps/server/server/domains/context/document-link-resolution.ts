@@ -1,15 +1,18 @@
-/** Scoped internal-link lookup over the authoritative Context catalog and Work authority. */
+/** Scoped internal-link lookup over a source's live tree and Work authority. */
+
+import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
+  canonicalContextUri,
   documentTitleFromUri,
   isProjectScopedScheme,
   matchDocumentPath,
   parseContextUri,
 } from "@meridian/contracts";
-import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
+import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
-import type { ContextCatalog } from "./ports/context-catalog.js";
+import type { ContextSources } from "./ports/context-sources.js";
 import type {
   DocumentLinkHistory,
   DocumentLinkResolver,
@@ -17,47 +20,42 @@ import type {
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
 
-type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
+/** Whose source an address is in; `user` is the reader's own list. */
+type Owner = ContextSourceOwner | { kind: "user" };
+type Location = { owner: Owner; scheme: ContextUriScheme; path: string };
 
 export function createDocumentLinkResolver({
-  catalog,
+  sources,
   workAuthorityResolver,
   history,
   lineages,
   chats,
 }: {
-  catalog: ContextCatalog;
+  sources: ContextSources;
   lineages?: import("./scratch-owner.js").ScratchLineages;
   chats?: ChatUploadsOwners;
   history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
-  async function noWorkScope(projectId: ResolveDocumentLinkInput["projectId"]) {
-    const work = await workAuthorityResolver.noWork(projectId);
-    return work ? { kind: "work" as const, projectId, workId: work.workId } : null;
-  }
-  async function currentScope(input: ResolveDocumentLinkInput): Promise<CatalogScope | null> {
-    if (!input.workId) return noWorkScope(input.projectId);
-    const work = await workAuthorityResolver.byId(input.projectId, input.workId);
-    return work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
+  async function currentOwner(input: ResolveDocumentLinkInput): Promise<Owner | null> {
+    const work = input.workId
+      ? await workAuthorityResolver.byId(input.projectId, input.workId)
+      : await workAuthorityResolver.noWork(input.projectId);
+    return work ? { kind: "work", workId: work.workId } : null;
   }
   async function location(input: ResolveDocumentLinkInput, uri: string): Promise<Location | null> {
     const parsed = parseContextUri(uri);
     if (!parsed.ok || !parsed.value.path) return null;
     const { scheme, path, authority } = parsed.value;
-    let scope: CatalogScope | null;
-    if (scheme === "user") scope = { kind: "user", userId: input.userId };
-    else if (isProjectScopedScheme(scheme)) scope = { kind: "project", projectId: input.projectId };
+    let scope: Owner | null;
+    if (scheme === "user") scope = { kind: "user" };
+    else if (isProjectScopedScheme(scheme)) scope = { kind: "project" };
     else if (scheme === "scratch" && authority.kind === "lineage") {
       const lineage = await lineages?.byRef(input.projectId, authority.rootThreadRef);
-      scope = lineage
-        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
-        : null;
+      scope = lineage ? { kind: "lineage", rootThreadId: lineage.rootThreadId } : null;
     } else if (scheme === "scratch" && authority.kind === "contextual" && input.rootThreadId) {
       const lineage = await lineages?.byId(input.projectId, input.rootThreadId);
-      scope = lineage
-        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
-        : null;
+      scope = lineage ? { kind: "lineage", rootThreadId: lineage.rootThreadId } : null;
     } else if (scheme === "uploads") {
       // Uploads belong to a chat; a Work owns none, so `uploads://@w3/` names nothing.
       const chatId =
@@ -68,12 +66,12 @@ export function createDocumentLinkResolver({
               // write path qualifies model-written embeds, so a stored bare one stays unresolved.
               input.chatId
             : null;
-      scope = chatId ? { kind: "chat", projectId: input.projectId, chatId } : null;
+      scope = chatId ? { kind: "chat", chatId } : null;
     } else if (authority.kind === "work") {
       const work = await workAuthorityResolver.byHandle(input.projectId, authority.workHandle);
-      scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
-    } else scope = await currentScope(input);
-    return scope ? { scope, scheme, path } : null;
+      scope = work ? { kind: "work", workId: work.workId } : null;
+    } else scope = await currentOwner(input);
+    return scope ? { owner: scope, scheme, path } : null;
   }
   async function atUri(
     input: ResolveDocumentLinkInput,
@@ -82,16 +80,18 @@ export function createDocumentLinkResolver({
   ): Promise<ResolvedDocumentLink | null> {
     const address = await location(input, uri);
     if (!address) return null;
-    const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
-      if (entry.kind !== "file") return [];
-      const parsed = parseContextUri(entry.uri);
-      return parsed.ok && parsed.value.scheme === address.scheme
-        ? [{ entry, path: parsed.value.path }]
-        : [];
-    });
+    const candidates =
+      address.owner.kind === "user"
+        ? await sources.ofUser(input.userId)
+        : await sources.ownedBy(input.projectId, address.owner);
+    const source = candidates.find((candidate) => candidate.scheme === address.scheme);
+    if (!source) return null;
+    const files = await sources.liveDocuments(source.id);
     const match = matchDocumentPath(files, address.path, (file) => file.path);
-    if (match) return resolvedLink(match.entry);
-    const previous = allowHistory ? await history?.previous(input, address) : null;
+    if (match) return resolvedLink(source, match);
+    const previous = allowHistory
+      ? await history?.previous(input, { sourceId: source.id, path: address.path })
+      : null;
     return previous ? atUri(input, previous, false) : null;
   }
   return {
@@ -101,17 +101,19 @@ export function createDocumentLinkResolver({
   };
 }
 
-function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
-  const parsed = parseContextUri(file.uri);
-  if (!parsed.ok) return null;
+function resolvedLink(
+  source: ContextSource,
+  file: { id: DocumentId; path: string },
+): ResolvedDocumentLink {
+  const uri = canonicalContextUri(source.scheme, file.path, source.authority);
   return {
-    documentId: file.entryId,
-    title: documentTitleFromUri(file.uri) ?? file.name,
-    scheme: parsed.value.scheme,
-    path: parsed.value.path,
-    uri: file.uri,
-    ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
-    ...(file.scope.kind === "chat" ? { chatThreadId: file.scope.chatId } : {}),
-    workId: file.scope.kind === "work" ? file.scope.workId : null,
+    documentId: file.id,
+    title: documentTitleFromUri(uri) ?? file.path.slice(file.path.lastIndexOf("/") + 1),
+    scheme: source.scheme,
+    path: file.path,
+    uri,
+    ...(source.owner.kind === "lineage" ? { rootThreadId: source.owner.rootThreadId } : {}),
+    ...(source.owner.kind === "chat" ? { chatThreadId: source.owner.chatId } : {}),
+    workId: source.owner.kind === "work" ? source.owner.workId : null,
   };
 }

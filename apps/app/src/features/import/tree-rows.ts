@@ -1,16 +1,12 @@
 /**
- * The tree's rows: real catalog nodes and one temporary folder root per import. A pending row is not a catalog document: it has no URI, editor
- * classification or document capabilities, so navigation and namespace actions
- * need the catalog variant. Document lookup stays on the canonical catalog.
+ * The tree's rows: real nodes and one temporary folder root per import. A pending row is not a
+ * document: it has no URI, editor classification or document capabilities, so navigation and
+ * namespace actions need the tree variant. Document lookup stays on the source's tree.
  */
-import type {
-  CatalogContextView,
-  CatalogDirectory,
-  CatalogNode,
-} from "@/client/query/context-catalog-projection";
+import type { TreeDirectory, TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 
-/** A real catalog node with its ordinary capabilities. */
-export type CatalogRow = { origin: "catalog"; node: CatalogNode };
+/** A real node with its ordinary capabilities. */
+export type TreeNodeRow = { origin: "tree"; node: TreeEntry };
 
 /** A temporary root while the server builds out of sight. */
 export type PendingRow = {
@@ -22,11 +18,11 @@ export type PendingRow = {
   importId: string;
 };
 
-export type TreeRow = CatalogRow | PendingRow;
+export type TreeRow = TreeNodeRow | PendingRow;
 
-/** Catalog rows and pending roots grouped by parent. */
+/** The tree's rows and the pending roots grouped by parent. */
 export type ImportedTree = {
-  root: CatalogDirectory;
+  root: TreeDirectory;
   rows(parentId: string): readonly TreeRow[];
 };
 
@@ -39,21 +35,21 @@ export const rowKind = (row: TreeRow): "dir" | "file" =>
 export const rowName = (row: TreeRow): string =>
   row.origin === "import" ? row.name : row.node.name;
 
-/** Pending roots reserve no names; only catalog siblings constrain namespace edits. */
+/** Pending roots reserve no names; only real siblings constrain namespace edits. */
 export const siblingsOf = (rows: readonly TreeRow[]) =>
   rows
-    .filter((row) => row.origin === "catalog")
+    .filter((row) => row.origin === "tree")
     .map((row) => ({ entryId: rowId(row), name: rowName(row), kind: rowKind(row) }));
 
-/** The tree of a catalog no import touches. */
-export function plainTree(catalog: CatalogContextView): ImportedTree {
+/** The rows of a tree no import touches. */
+export function plainTree(tree: TreeView): ImportedTree {
   const cache = new Map<string, readonly TreeRow[]>();
   return {
-    root: catalog.root,
+    root: tree.root,
     rows(parentId) {
       let rows = cache.get(parentId);
       if (!rows) {
-        rows = catalog.children(parentId).map((node) => ({ origin: "catalog", node }));
+        rows = tree.children(parentId).map((node) => ({ origin: "tree", node }));
         cache.set(parentId, rows);
       }
       return rows;

@@ -5,27 +5,13 @@
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 
-/** Encoded outside transactions; staging and reveal never decode a Y.Doc. */
-export interface PreparedSeed {
-  documentId: DocumentId;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  attributionManifest: unknown;
-}
-
-export type SeedAnnouncement = Pick<PreparedSeed, "documentId">;
-
 export interface InitialDocumentSeeds {
-  /** Caller holds the staging owner's lock and checks its generation. No live rows. */
-  stageInitialStates(
-    stagingId: string,
-    projectId: string,
-    generation: number,
-    seeds: readonly PreparedSeed[],
-  ): Promise<void>;
-  /** Caller has just inserted the documents in this transaction. Existing heads are an error. */
-  commitStagedStates(stagingId: string): Promise<SeedAnnouncement[]>;
-  discardStagedStates(stagingId: string, limit?: number): Promise<{ remaining: boolean }>;
+  /**
+   * Deletes the journals of documents that never got a `documents` row (an import that was
+   * stopped or abandoned wrote their first states ahead of their creates). A document that has
+   * a row is left alone: its row's delete takes its journal.
+   */
+  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   /**
    * Under the document's mutation lock, after proving its row is living, installs the head
    * and the seed checkpoint. Returns true only when this call installed the first state;
@@ -34,8 +20,9 @@ export interface InitialDocumentSeeds {
    */
   seedInitialDocument(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
   /**
-   * The first state of documents the caller's transaction just created, installed in a fixed
-   * number of statements: a bulk create's seeds. Takes no lock and proves no liveness, so it
+   * The first state of documents the caller's transaction just created, or will create (an
+   * import writes text before the creates that name it), installed in a fixed number of
+   * statements: a bulk create's seeds. Takes no lock and proves no liveness, so it
    * takes only documents nothing else can yet reach, and refuses (a unique key) one that
    * already has a head or a seed checkpoint.
    */

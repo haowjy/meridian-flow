@@ -35,6 +35,7 @@ const ownerFacts = (facts: FileWorkFacts): FileBranchOwnerFacts => ({
   isNoWork: facts.isNoWork,
   archived: facts.archived,
   deleted: facts.deleted,
+  purged: false,
   frozen: false,
 });
 
@@ -90,7 +91,7 @@ describe("file policy", () => {
     ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "edit", null],
     ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, branchOwner: ownerFacts(A) }), "none", "not_found"],
     ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "none", "not_found"],
-    ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "not_found"],
+    ["a deleted Work's scratch reads until its purge", person, file("scratch", work("d", { deleted: true })), "read", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
     ["archive outranks a read agent's limit", agent(link("read", "a")), file("scratch", archived), "read", "work_archived"],

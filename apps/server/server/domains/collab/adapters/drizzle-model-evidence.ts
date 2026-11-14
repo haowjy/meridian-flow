@@ -118,6 +118,26 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
         : null;
     },
 
+    async frontiersIn(room, blockIds) {
+      if (blockIds.length === 0) return [];
+      const rows = await runIsolatedFromAmbientTransaction(db, () =>
+        db_()
+          .select({
+            blockId: frontiers.sourceBlockId,
+            recordedSeq: frontiers.recordedSeq,
+            snapshot: frontiers.snapshot,
+          })
+          .from(frontiers)
+          .where(and(eq(frontiers.roomKey, room), amongBlocks(blockIds)))
+          .orderBy(frontiers.recordedSeq),
+      );
+      return rows.map((row) => ({
+        blockId: row.blockId,
+        recordedSeq: Number(row.recordedSeq),
+        snapshot: new Uint8Array(row.snapshot),
+      }));
+    },
+
     async latestRoom(rooms, blockIds) {
       if (rooms.length === 0 || blockIds.length === 0) return null;
       const [row] = await runIsolatedFromAmbientTransaction(db, () =>

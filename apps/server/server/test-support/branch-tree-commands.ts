@@ -15,7 +15,6 @@ import {
   type WorkId,
 } from "@meridian/contracts";
 import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
-import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -27,23 +26,18 @@ import {
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import type { ContextPort, GrepQuery } from "../domains/context/ports/context-port.js";
-import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
-  handleDiscardAllWorkBranchRequest,
+  handleDiscardBranchRequest,
   handleDiscardWorkDraftRequest,
   handleOwnerDraftListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
-import {
-  createContextEntry,
-  parseCreateContextEntryBody,
-} from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
-import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import type { useComposedRuntimes } from "./composed-runtime.js";
 import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
+import { treeSeeder } from "./tree-seed.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -76,25 +70,13 @@ export interface ScenarioWriter {
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
-  /**
-   * The sidebar's New file: the create-untitled route's core with the typed destination,
-   * under the id the device minted. `path` is Manuscript-relative.
-   */
-  createInstant(path: string, documentId: DocumentId): Promise<CreateUntitledContextDocumentAnswer>;
-  /** The editor's New document: a nameless create into the Manuscript root. */
-  createNameless(documentId: DocumentId): Promise<CreateUntitledContextDocumentAnswer>;
   /** `create` with content that must succeed; the document's id. */
   createDocument(path: string, content: string): Promise<DocumentId>;
   mkdir(path: string): Promise<void>;
   /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
-  move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
-  /**
-   * The sidebar's delete of the file or folder at `path` (recursive for a folder). With an
-   * `operationId`, its receipt is durable for `operation`.
-   */
-  delete(path: string, operationId?: string): ReturnType<ContextPort["delete"]>;
-  /** The durable receipt of one namespace operation, as the replica's transport reads it. */
-  operation(operationId: string): ReturnType<ContextPort["lookupOperation"]>;
+  move(from: string, to: string): ReturnType<ContextPort["treeCommand"]>;
+  /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
+  delete(path: string): ReturnType<ContextPort["delete"]>;
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
@@ -299,65 +281,24 @@ export function branchTreeCommands(
 
   const writer: ScenarioWriter = {
     async create(path, createOptions = {}) {
-      const { scheme, rel } = createOptions.inScratchOf
-        ? { scheme: "scratch" as const, rel: path }
-        : sourceOf(path);
       const authority = createOptions.inScratchOf
         ? await ports().workAuthorityResolver.byId(projectId, createOptions.inScratchOf.id)
         : null;
-      const result = await createContextEntry({
-        port: authority
-          ? ports().contextPorts.forWork(
-              authority,
-              projectId,
-              userId,
-              authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
-            )
-          : await livePort(),
-        userId,
-        scheme,
-        ...(authority ? { authority } : {}),
-        body: parseCreateContextEntryBody({
-          type: "file",
-          path: `/${rel}`,
-          ...(createOptions.content !== undefined ? { content: createOptions.content } : {}),
-        }),
+      const port = authority
+        ? ports().contextPorts.forWork(
+            authority,
+            projectId,
+            userId,
+            authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
+          )
+        : await livePort();
+      const target = createOptions.inScratchOf ? `scratch://${path}` : uri(path);
+      const created = await port.createTrackedDocument(target, createOptions.content ?? "", {
+        origin: human(),
       });
-      return result.status === "created"
-        ? { status: "created", ...(result.documentId ? { documentId: result.documentId } : {}) }
-        : { status: "conflict" };
-    },
-    async createInstant(path, documentId) {
-      const segments = path.split("/").filter(Boolean);
-      const name = segments.pop() ?? "";
-      return createUntitledContextDocument({
-        port: await livePort(),
-        userId,
-        scheme: "manuscript",
-        workId: null,
-        body: {
-          documentId,
-          destination: {
-            parent: {
-              kind: "root",
-              scheme: "manuscript",
-              owner: { workId: null },
-              ...(segments.length ? { createFolders: segments } : {}),
-            },
-            name,
-          },
-        },
-        destinationRootUri: "manuscript://",
-      });
-    },
-    async createNameless(documentId) {
-      return createUntitledContextDocument({
-        port: await livePort(),
-        userId,
-        scheme: "manuscript",
-        workId: null,
-        body: { documentId },
-      });
+      if (created.ok) return { status: "created", documentId: created.value.documentId };
+      if (created.error.code === "conflict") return { status: "conflict" };
+      throw new Error(`${target}: ${JSON.stringify(created.error)}`);
     },
     async createDocument(path, content) {
       const created = await writer.create(path, { content });
@@ -368,12 +309,7 @@ export function branchTreeCommands(
     },
     async mkdir(path) {
       const { scheme, rel } = sourceOf(path);
-      await createContextEntry({
-        port: await livePort(),
-        userId,
-        scheme,
-        body: parseCreateContextEntryBody({ type: "folder", path: `/${rel}` }),
-      });
+      await treeSeeder(world.db).folder(world.project.sources[scheme], rel);
     },
     async move(from, to) {
       const port = await livePort();
@@ -382,34 +318,12 @@ export function branchTreeCommands(
         expected: await entryAt(port, uri(from)),
       });
     },
-    async delete(path, operationId) {
+    async delete(path) {
       const port = await livePort();
-      // stat answers files only; anything else at the path is the folder being deleted.
-      const stat = await port.stat(uri(path));
-      if (stat.ok) {
-        return deleteAt(port, uri(path), {
-          origin: human(),
-          ...(operationId ? { operationId } : {}),
-          expected: { kind: "file", nodeId: stat.value.documentId ?? "" },
-        });
-      }
-      const { scheme, rel } = sourceOf(path);
-      const folder = await createTreeReader(world.db).resolvePath(LIVE_TREE, {
-        contextSourceId: world.project.sources[scheme],
-        path: rel,
-      });
       return deleteAt(port, uri(path), {
         origin: human(),
-        ...(operationId ? { operationId } : {}),
-        expected: {
-          kind: "folder",
-          nodeId:
-            folder.kind === "found" && folder.node.kind === "folder" ? folder.node.folder.id : "",
-        },
+        expected: await entryAt(port, uri(path)),
       });
-    },
-    async operation(operationId) {
-      return (await livePort()).lookupOperation(operationId);
     },
     async write(path, markdown) {
       const written = await (await livePort()).write(uri(path), markdown, {
@@ -532,11 +446,11 @@ export function branchTreeCommands(
         (await ports().documentSync.branches.activeForOwner({ kind: "work", workId: work.id }))?.id;
       if (!branchId) throw new Error(`${work.handle} has no branch to discard`);
       return (
-        await handleDiscardAllWorkBranchRequest(routes(), {
+        await handleDiscardBranchRequest(routes(), {
           projectId,
           branchId: branchId as BranchId,
           userId,
-          request: { branchId, commandId: randomUUID() },
+          request: { all: true, commandId: randomUUID() },
         })
       ).body;
     }

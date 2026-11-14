@@ -2,13 +2,7 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
-import type {
-  AccountId,
-  AvailabilityCommandId,
-  AvailabilityGeneration,
-  LiveDocumentSessionAuthority,
-  LiveDocumentSessionLease,
-} from "@meridian/contracts/protocol";
+import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
@@ -18,40 +12,26 @@ import {
   type DocumentSessionSnapshot,
   type ResetDisposition,
 } from "./document-session";
-import {
-  compareAvailabilityGeneration,
-  documentSessionPersistenceKey,
-} from "./document-session-authority-store";
-import {
-  DocumentSessionAuthorityError,
-  DocumentSessionCoordinationError,
-  type DocumentSessionCrossContextCoordination,
-  type LocalResourceLifetimePort,
-  type LocalSessionAuthority,
-} from "./document-session-coordination-contract";
-import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
-
-export {
-  DocumentSessionAuthorityError,
-  type LocalResourceLifetimePort,
-} from "./document-session-coordination-contract";
-
 import type {
-  LiveSessionIncarnationPort,
-  LocalDocumentSessionFactory,
+  LiveDocumentSessionLease,
   RetainedLiveDocumentReference,
   UnsentTyping,
   UnsentTypingCause,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool } from "./draft-room-pool";
-import { LocalDocumentSessionTransfers } from "./local-document-session-transfers";
+import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import {
+  type CopyHold,
+  documentSessionPersistenceKey,
+  draftRoomPersistenceKey,
+  LocalDocumentCopies,
+} from "./local-document-copies";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 
-/** The resets whose teardown clears the room's local copy (`DocumentSession.destroy`). */
+/** The resets whose teardown ends the room for good, so its unsent typing is handed back first. */
 const UNSENT_CAUSE_OF_RESET: Readonly<
   Record<ResetDisposition | "none", UnsentTypingCause | undefined>
 > = {
@@ -63,9 +43,9 @@ const UNSENT_CAUSE_OF_RESET: Readonly<
 
 type LiveRoomState = {
   session: DocumentSession | null;
-  persistenceGeneration: AvailabilityGeneration | null;
-  exactDatabaseName: string | null;
-  leases: Map<ProjectId, LiveDocumentSessionLease>;
+  lease: LiveDocumentSessionLease;
+  /** The shared hold on the session's local copy, taken with the session and released with it. */
+  hold: Promise<CopyHold> | null;
 };
 
 /**
@@ -78,24 +58,12 @@ const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 /** `detached`: this owner does not want the socket open. The registry attaches when any owner does. */
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
-export class DocumentSessionRegistry
-  implements
-    LiveDocumentSessionAuthority,
-    LocalSessionAuthority,
-    LocalDocumentSessionFactory,
-    LiveSessionIncarnationPort
-{
-  private accountId: AccountId | null = null;
-  private coordination: DocumentSessionCrossContextCoordination | null = null;
-  private authorityFailure: unknown = null;
+export class DocumentSessionRegistry {
   private accountRuntimeState: "open" | "closing" | "closed" = "open";
   private accountCloseAttempt: Promise<void> | null = null;
+  private readonly copies: LocalDocumentCopies;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
-    (key) =>
-      new DocumentSessionAuthorityError(
-        "authority-unavailable",
-        `${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`,
-      ),
+    (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
   private readonly draftRooms: DraftRoomPool;
@@ -103,19 +71,6 @@ export class DocumentSessionRegistry
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
-  private readonly admissionReservations = new Map<DocumentId, number>();
-  /** The private local-transfer facet: the account runtime's reservation and adoption ports. */
-  readonly localTransfers = new LocalDocumentSessionTransfers({
-    requireOpen: () => this.requireAccountRuntimeOpen(),
-    coordination: () => this.configuredCoordination(),
-    translate: (operation) => this.translateCoordination(operation),
-    isAdmitting: (documentId) => (this.admissionReservations.get(documentId) ?? 0) > 0,
-    liveRoom: (documentId) => this.liveRooms.get(documentId),
-    retain: (ownerId, leases, options) => this.retain(ownerId, leases, options),
-    setHosted: (ownerId, hosted) => this.setHosted(ownerId, hosted),
-    release: (ownerId) => this.release(ownerId),
-    attachTransport: (session) => this.attachSessionTransport(session),
-  });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
@@ -124,115 +79,98 @@ export class DocumentSessionRegistry
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  private localResources: LocalResourceLifetimePort | null = null;
-  private readonly removedRoomObservers = new Set<
-    (session: DocumentSession, room: RetainedLiveDocumentReference) => void
-  >();
-  /** Live rooms whose current 4208 was reported; a restart that leaves `removed` clears it. */
-  private readonly reportedRemovedRooms = new WeakSet<DocumentSession>();
   private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
   private readonly handedBack = new WeakSet<DocumentSession>();
 
   constructor(
-    private readonly createCoordination: (
-      accountId: AccountId,
-      local: LocalSessionAuthority,
-    ) => DocumentSessionCrossContextCoordination = (accountId, local) =>
-      createDocumentSessionCrossContextCoordination({ accountId, local }),
-    private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
-    accountId?: AccountId,
+    private readonly accountId: AccountId,
     private readonly transportFactory: DocumentSessionTransportFactory = ({
       roomKey,
       document,
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
+    copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
   ) {
+    this.copies = copies;
     this.draftRooms = new DraftRoomPool({
-      openSession: (roomKey) => {
-        const session = this.createSession(roomKey, { kind: "indexeddb", key: roomKey });
+      hold: (documentId) => this.copies.hold(documentId as DocumentId),
+      openSession: (roomKey, documentId) => {
+        const session = this.createSession(roomKey, {
+          kind: "indexeddb",
+          key: draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
+        });
         this.attachSessionTransport(session);
         return session;
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
     });
-    if (!accountId) return;
-    this.accountId = accountId;
-    try {
-      this.coordination = this.createCoordination(accountId, this);
-    } catch (error) {
-      this.authorityFailure = error;
-    }
   }
 
-  async admit(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-  ): Promise<LiveDocumentSessionLease> {
+  admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease {
     this.requireAccountRuntimeOpen();
-    compareAvailabilityGeneration(generation, generation);
-    this.reserveAdmission(documentId);
-    try {
-      await this.localTransfers.settled(documentId);
-      this.requireAccountRuntimeOpen();
-      const coordination = await this.configuredCoordination();
-      const originLineageHandle =
-        (await this.localResources?.lineageHandleFor(projectId, documentId)) ?? undefined;
-      const admitted = await this.translateCoordination(() =>
-        coordination.admit(projectId, documentId, generation, { originLineageHandle }),
-      );
-      return {
-        accountId: admitted.accountId,
-        projectId: admitted.projectId,
-        documentId: admitted.documentId,
-        generation: admitted.generation,
-      };
-    } finally {
-      this.releaseAdmissionReservation(documentId);
+    this.teardownOwner.assertAvailable({ kind: "live", roomKey: documentId });
+    const lease = Object.freeze({ accountId: this.accountId, projectId, documentId });
+    const state = this.liveRooms.get(documentId);
+    if (state) state.lease = lease;
+    else this.liveRooms.set(documentId, { session: null, lease, hold: null });
+    return lease;
+  }
+
+  /** The session closes without waiting for unsent edits: nothing can deliver them to this account. */
+  async clearLocalCopy(documentId: DocumentId): Promise<void> {
+    this.cancelPendingTeardown(documentId);
+    let retainedChanged = false;
+    for (const retained of this.retainedByOwner.values()) {
+      retainedChanged = retained.delete(documentId) || retainedChanged;
     }
+    if (retainedChanged) this.publishRetainedLiveDocuments();
+    const state = this.liveRooms.get(documentId);
+    this.liveRooms.delete(documentId);
+    if (state?.session) {
+      this.handBackUnsent(state.session, "removed");
+      await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
+    }
+    await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
+    (await state?.hold)?.release();
+    await this.copies.clear(documentId);
   }
 
-  async revokeDocument(
-    _projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    commandId: AvailabilityCommandId,
-    deletionVersion: string | null,
-  ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }> {
-    compareAvailabilityGeneration(generation, generation);
-    const coordination = await this.configuredCoordination();
-    return this.translateCoordination(() =>
-      coordination.revokeDocument(_projectId, documentId, generation, commandId, deletionVersion),
+  /**
+   * Resolves true once no open session has unsent edits the server could still acknowledge, false
+   * if some are still unsent at the deadline. What a session cannot deliver (offline, refused) is
+   * not waited for.
+   */
+  async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
+    const sessions = [
+      ...[...this.liveRooms.values()].flatMap(({ session }) => (session ? [session] : [])),
+      ...this.draftRooms.sessions(),
+    ];
+    const pending = (session: DocumentSession) =>
+      session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+    const settled = sessions.map(
+      (session) =>
+        new Promise<boolean>((resolve) => {
+          if (!pending(session)) return resolve(true);
+          const timer = setTimeout(() => {
+            stop();
+            resolve(false);
+          }, timeoutMs);
+          const stop = session.subscribe(() => {
+            if (pending(session)) return;
+            clearTimeout(timer);
+            stop();
+            resolve(true);
+          });
+        }),
     );
+    return (await Promise.all(settled)).every(Boolean);
   }
 
-  connectLocalResources(port: LocalResourceLifetimePort): void {
-    this.requireAccountRuntimeOpen();
-    if (this.localResources && this.localResources !== port)
-      throw new Error("Local resource owner is already connected");
-    this.localResources = port;
-    void this.configuredCoordination()
-      .then((coordination) => coordination.connectLocalLineageTerminal(port.terminal))
-      .catch((error) => {
-        this.authorityFailure = error;
-      });
-  }
-
-  async revokeAccess(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    commandId: AvailabilityCommandId,
-  ): Promise<{
-    revokedThrough: AvailabilityGeneration;
-    persistence: "cleared" | "retained-by-other-lease";
-  }> {
-    compareAvailabilityGeneration(generation, generation);
-    const coordination = await this.configuredCoordination();
-    return this.translateCoordination(() =>
-      coordination.revokeAccess(projectId, documentId, generation, commandId),
-    );
+  /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */
+  observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
+    return this.copies.observe(observer);
   }
 
   get(lease: LiveDocumentSessionLease): DocumentSession {
@@ -246,13 +184,10 @@ export class DocumentSessionRegistry
     if (!session) return false;
     const snapshot = session.getSnapshot();
     if (snapshot.schemaFence || snapshot.status === "detached") return false;
-    // A removed room (4208) restarts here only because an exact open has just
-    // proved its document present: the removal was undone, or never applied.
     if (
       snapshot.status !== "access-lost" &&
       snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "terminal" &&
-      session.resetDisposition !== "removed"
+      snapshot.connectionState?.kind !== "terminal"
     ) {
       return false;
     }
@@ -302,27 +237,7 @@ export class DocumentSessionRegistry
     return () => this.retainedObservers.delete(observer);
   }
 
-  async restartRemovedRoom(session: DocumentSession): Promise<boolean> {
-    if (session.resetDisposition !== "removed") return false;
-    const state = this.liveRooms.get(session.documentId as DocumentId);
-    if (state?.session !== session) return false;
-    this.cancelPendingTeardown(session.documentId as DocumentId);
-    try {
-      await session.restartTransport(this.transportFactory);
-    } finally {
-      this.scheduleTeardownIfUnretained(session.documentId as DocumentId);
-    }
-    return true;
-  }
-
-  observeRemovedRooms(
-    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
-  ): () => void {
-    this.removedRoomObservers.add(observer);
-    return () => this.removedRoomObservers.delete(observer);
-  }
-
-  retainDraftRooms(ownerId: string, refs: readonly string[]): void {
+  retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
     this.draftRooms.retain(ownerId, refs);
   }
 
@@ -344,50 +259,15 @@ export class DocumentSessionRegistry
     return this.draftRooms.get(roomKey);
   }
 
-  async whenAuthorityReady(): Promise<void> {
-    this.requireAccountRuntimeOpen();
-    const coordination = await this.configuredCoordination();
-    await this.translateCoordination(() => coordination.requireReady());
-    this.requireAccountRuntimeOpen();
-  }
-
-  createDetached(input: {
-    accountId: AccountId;
-    projectId: ProjectId;
-    documentId: DocumentId;
-    persistenceKey: string;
-    fresh?: boolean;
-  }): DocumentSession {
-    this.requireAccountRuntimeOpen();
-    if (input.accountId !== this.accountId) {
-      throw new DocumentSessionAuthorityError(
-        "account-mismatch",
-        "Local document construction belongs to a different account epoch",
-      );
-    }
-    return this.constructSession(input.documentId, {
-      kind: "indexeddb",
-      key: input.persistenceKey,
-      fresh: input.fresh,
-    });
-  }
-
   beginCloseAccountRuntime(): void {
-    if (this.accountRuntimeState !== "open") return;
-    this.accountRuntimeState = "closing";
-    this.localResources?.beginClose();
-    this.coordination?.beginClose();
+    if (this.accountRuntimeState === "open") this.accountRuntimeState = "closing";
   }
 
   closeAccountRuntime(): Promise<void> {
     this.beginCloseAccountRuntime();
     if (this.accountRuntimeState === "closed") return Promise.resolve();
     if (this.accountCloseAttempt) return this.accountCloseAttempt;
-    const attempt = Promise.resolve().then(async () => {
-      const coordination = this.coordination;
-      await (coordination?.close() ?? this.invalidateAll());
-      if (this.coordination === coordination) this.coordination = null;
-      this.localTransfers.settleAll();
+    const attempt = this.invalidateAll().then(() => {
       this.accountRuntimeState = "closed";
     });
     this.accountCloseAttempt = attempt;
@@ -415,18 +295,15 @@ export class DocumentSessionRegistry
     this.pendingTeardownTimers.clear();
     for (const stop of this.holdCapStops.values()) stop();
     this.holdCapStops.clear();
-    const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session }]) =>
-      session ? [{ documentId, session }] : [],
+    const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session, hold }]) =>
+      session ? [{ documentId, session, hold }] : [],
     );
     this.liveRooms.clear();
-    for (const { documentId, session } of liveSessions) {
-      void this.teardownOwner
-        .retire({ kind: "live", roomKey: documentId }, session)
-        .catch(() => undefined);
-    }
-    return Promise.all([this.teardownOwner.drain(), this.localResources?.finishClose()]).then(
-      () => undefined,
-    );
+    const retired = liveSessions.map(async ({ documentId, session, hold }) => {
+      await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, session);
+      (await hold)?.release();
+    });
+    return Promise.all([...retired, this.teardownOwner.drain()]).then(() => undefined);
   }
 
   private clearRetainedLiveDocuments(): void {
@@ -437,170 +314,10 @@ export class DocumentSessionRegistry
     if (hadRetainedReferences) this.publishRetainedLiveDocuments();
   }
 
-  private async configuredCoordination(): Promise<DocumentSessionCrossContextCoordination> {
-    if (!this.accountId) {
-      throw new DocumentSessionAuthorityError(
-        "account-unconfigured",
-        "Session account is not configured",
-      );
-    }
-    if (!this.coordination) {
-      const error = this.authorityFailure;
-      if (error instanceof DocumentSessionCoordinationError) {
-        throw new DocumentSessionAuthorityError(error.kind, error.message);
-      }
-      throw new DocumentSessionAuthorityError(
-        "authority-unavailable",
-        "Live document authority is unavailable",
-      );
-    }
-    return this.coordination;
-  }
-
-  private async translateCoordination<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      if (error instanceof DocumentSessionCoordinationError) {
-        throw new DocumentSessionAuthorityError(error.kind, error.message);
-      }
-      throw error;
-    }
-  }
-
-  validateAdmission(input: {
-    documentId: DocumentId;
-    projectId: ProjectId;
-    generation: AvailabilityGeneration;
-  }): void {
-    this.teardownOwner.assertAvailable({ kind: "live", roomKey: input.documentId });
-    const existing = this.liveRooms.get(input.documentId)?.leases.get(input.projectId);
-    if (existing && compareAvailabilityGeneration(input.generation, existing.generation) < 0) {
-      throw new DocumentSessionAuthorityError(
-        "stale-lease",
-        `A newer lease already exists for ${input.documentId}`,
-      );
-    }
-  }
-
-  installSynchronously(input: {
-    documentId: DocumentId;
-    projectId: ProjectId;
-    generation: AvailabilityGeneration;
-    persistenceGeneration: AvailabilityGeneration;
-    exactDatabaseName: string;
-  }): void {
-    this.requireAccountRuntimeOpen();
-    this.teardownOwner.assertAvailable({ kind: "live", roomKey: input.documentId });
-    if (!this.accountId) return;
-    const lease = {
-      accountId: this.accountId,
-      projectId: input.projectId,
-      documentId: input.documentId,
-      generation: input.generation,
-    };
-    const state = this.liveRooms.get(input.documentId) ?? {
-      session: null,
-      persistenceGeneration: input.persistenceGeneration,
-      exactDatabaseName: input.exactDatabaseName,
-      leases: new Map(),
-    };
-    state.persistenceGeneration = input.persistenceGeneration;
-    state.exactDatabaseName = input.exactDatabaseName;
-    state.leases.set(input.projectId, lease);
-    this.liveRooms.set(input.documentId, state);
-  }
-
-  async drainDocument(input: {
-    documentId: DocumentId;
-    generation: AvailabilityGeneration;
-    incarnation: AvailabilityGeneration | null;
-    exactDatabaseName?: string | null;
-  }): Promise<void> {
-    const state = this.liveRooms.get(input.documentId);
-    if (!state) {
-      await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
-      return;
-    }
-    if (
-      state.persistenceGeneration !== input.incarnation ||
-      (input.exactDatabaseName !== undefined && state.exactDatabaseName !== input.exactDatabaseName)
-    )
-      return;
-    this.cancelPendingTeardown(input.documentId);
-    let retainedChanged = false;
-    for (const retained of this.retainedByOwner.values()) {
-      retainedChanged = retained.delete(input.documentId) || retainedChanged;
-    }
-    if (retainedChanged) this.publishRetainedLiveDocuments();
-    this.liveRooms.delete(input.documentId);
-    if (state.session) {
-      this.handBackUnsent(state.session, "removed");
-      await this.teardownOwner.retire({ kind: "live", roomKey: input.documentId }, state.session);
-    }
-    await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
-  }
-
-  async drainAccess(input: {
-    documentId: DocumentId;
-    projectId: ProjectId;
-    generation: AvailabilityGeneration;
-    incarnation: AvailabilityGeneration | null;
-    exactDatabaseName?: string | null;
-  }): Promise<"other-local-project-remains" | "locally-empty"> {
-    const state = this.liveRooms.get(input.documentId);
-    if (!state) {
-      await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
-      return "locally-empty";
-    }
-    if (
-      state.persistenceGeneration !== input.incarnation ||
-      (input.exactDatabaseName !== undefined && state.exactDatabaseName !== input.exactDatabaseName)
-    )
-      return "locally-empty";
-    state.leases.delete(input.projectId);
-    if (this.removeRetainedProjectLease(input.projectId, input.documentId)) {
-      this.publishRetainedLiveDocuments();
-    }
-    if (state.leases.size > 0) return "other-local-project-remains";
-    this.cancelPendingTeardown(input.documentId);
-    this.liveRooms.delete(input.documentId);
-    if (state.session) {
-      this.handBackUnsent(state.session, "access-changed");
-      await this.teardownOwner.retire({ kind: "live", roomKey: input.documentId }, state.session);
-    }
-    await this.teardownOwner.drainRoom({ kind: "live", roomKey: input.documentId });
-    return "locally-empty";
-  }
-
-  private reserveAdmission(documentId: DocumentId): void {
-    this.admissionReservations.set(
-      documentId,
-      (this.admissionReservations.get(documentId) ?? 0) + 1,
-    );
-  }
-
-  private releaseAdmissionReservation(documentId: DocumentId): void {
-    const count = this.admissionReservations.get(documentId) ?? 0;
-    if (count <= 1) this.admissionReservations.delete(documentId);
-    else this.admissionReservations.set(documentId, count - 1);
-  }
-
   private requireLease(lease: LiveDocumentSessionLease): LiveRoomState {
-    if (lease.accountId !== this.accountId) {
-      throw new DocumentSessionAuthorityError(
-        "account-mismatch",
-        "Lease belongs to another account",
-      );
-    }
+    if (lease.accountId !== this.accountId) throw new Error("Lease belongs to another account");
     const state = this.liveRooms.get(lease.documentId);
-    const current = state?.leases.get(lease.projectId);
-    if (!state || !current || current.generation !== lease.generation) {
-      throw new DocumentSessionAuthorityError(
-        "stale-lease",
-        `Lease is stale for ${lease.documentId}`,
-      );
-    }
+    if (!state) throw new Error(`Lease is stale for ${lease.documentId}`);
     return state;
   }
 
@@ -617,15 +334,10 @@ export class DocumentSessionRegistry
       }
       return state.session;
     }
-    state.persistenceGeneration ??= lease.generation;
-    state.exactDatabaseName ??= documentSessionPersistenceKey(
-      lease.accountId,
-      lease.documentId,
-      state.persistenceGeneration,
-    );
+    state.hold = this.copies.hold(lease.documentId);
     const session = this.createSession(lease.documentId, {
       kind: "indexeddb",
-      key: state.exactDatabaseName,
+      key: documentSessionPersistenceKey(lease.accountId, lease.documentId),
     });
     state.session = session;
     if (attach) this.attachSessionTransport(session);
@@ -663,7 +375,6 @@ export class DocumentSessionRegistry
     });
     if (session.room.kind === "live")
       session.subscribe(() => {
-        this.reportRemovedRoom(session);
         this.retireDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
@@ -681,11 +392,6 @@ export class DocumentSessionRegistry
     session.attachTransport(this.transportFactory);
   }
 
-  incarnationOf(session: DocumentSession): AvailabilityGeneration | null {
-    const state = this.liveRooms.get(session.documentId as DocumentId);
-    return state?.session === session ? state.persistenceGeneration : null;
-  }
-
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void {
     this.unsentTypingObservers.add(observer);
     return () => {
@@ -700,37 +406,6 @@ export class DocumentSessionRegistry
     this.handedBack.add(session);
     const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
     for (const observer of this.unsentTypingObservers) observer(typing);
-  }
-
-  private reportRemovedRoom(session: DocumentSession): void {
-    if (session.resetDisposition !== "removed") {
-      this.reportedRemovedRooms.delete(session);
-      return;
-    }
-    if (this.reportedRemovedRooms.has(session)) return;
-    const state = this.liveRooms.get(session.documentId as DocumentId);
-    const lease = state?.session === session ? state.leases.values().next().value : undefined;
-    if (!lease) return;
-    this.reportedRemovedRooms.add(session);
-    const room = Object.freeze({ projectId: lease.projectId, documentId: lease.documentId });
-    for (const observer of this.removedRoomObservers) {
-      try {
-        observer(session, room);
-      } catch {
-        // An observer cannot interrupt the session's own status delivery.
-      }
-    }
-  }
-
-  private removeRetainedProjectLease(projectId: ProjectId, documentId: DocumentId): boolean {
-    let changed = false;
-    for (const retained of this.retainedByOwner.values()) {
-      if (retained.get(documentId)?.lease.projectId === projectId) {
-        retained.delete(documentId);
-        changed = true;
-      }
-    }
-    return changed;
   }
 
   private retainedSnapshot(): readonly RetainedLiveDocumentReference[] {
@@ -825,7 +500,7 @@ export class DocumentSessionRegistry
       // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
       // stays connected without acknowledging ends it at the cap. Offline time never counts.
       // The other exits (removed document, revoked access, account close) go
-      // through `drainDocument`, `drainAccess` and `invalidateAll`.
+      // through `clearLocalCopy` and `invalidateAll`.
       if (this.mustKeepForUnsentEdits(state.session)) {
         this.holdUntilAcknowledged(roomKey, state, state.session);
         return;
@@ -864,9 +539,14 @@ export class DocumentSessionRegistry
   private retireLiveSession(roomKey: string, state: LiveRoomState): void {
     const session = state.session;
     if (!session) return;
+    const hold = state.hold;
     state.session = null;
+    state.hold = null;
     this.cancelPendingTeardown(roomKey);
-    void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
+    void this.teardownOwner
+      .retire({ kind: "live", roomKey }, session)
+      .then(async () => (await hold)?.release())
+      .catch(() => undefined);
   }
 
   private retireDrainedRoom(session: DocumentSession): void {

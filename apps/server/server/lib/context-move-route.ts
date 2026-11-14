@@ -1,185 +1,120 @@
 /**
- * The move behind POST /api/projects/:projectId/context/entries/:entryId/move: one file or folder,
- * found by its id and moved or renamed. The request names no path and no owner; the row says where
- * it stands. Anything the request omits keeps the row's current value (see `MoveContextEntryRequest`).
- *
- * Access, in order: the project is the user's; a recorded outcome for this operation answers
- * first, so a resend of a committed move is not refused for the row having moved on; the project
- * holds the row (`locateEntry`); edit on the document, or on the area a folder is in; edit on the
- * destination area, except under a destination folder, which is rechecked inside the locks.
+ * HTTP orchestration for a move of one document between lists (a project's files and the
+ * account's `user://` files): the writer names the document by identity and the source it was
+ * last in, and the folder it goes into. File policy grants edit on both ends; the records of
+ * both lists are made by the port in one transaction. A move inside one list is not here: the
+ * browser writes those records itself in the tree's room.
  */
 
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
+import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import {
-  moveCommand,
-  type ProjectContextFsScheme,
-  type WorkScopedContextFsScheme,
+  type ContextMovedAcrossLists,
+  contextPortForProjectAuthorities,
+  type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
-import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
-import { parseDestinationParent, parseSiblingPosition } from "./context-destination.js";
-import { type EntryRouteDeps, locateEntry, runEntryCommand } from "./context-entry-route.js";
-import { contextErrorToHttp } from "./context-error-http.js";
+import type { FileAccess } from "../domains/file-policy/index.js";
 import {
-  type ContextLocator,
-  canEditContextUri,
+  type ProjectRepository,
+  type ProjectWorkAuthorityResolver,
+  requireProjectOwner,
+} from "../domains/projects/index.js";
+import { parseSiblingPosition } from "./context-destination.js";
+import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
+import {
   containerOf,
-  locatorUri,
   type ResolvedContextLocator,
-  resolveLocator,
+  resolveLocatorUri,
+  throwLocatorRefusal,
 } from "./context-locator.js";
 import { parseContextMutationName } from "./context-mutation-validation.js";
-import { documentTarget } from "./file-access-http.js";
-import { requireRequestId } from "./request-id.js";
+import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 
-export type ContextMoveRouteDeps = EntryRouteDeps & { projectRepo: ProjectRepository };
+export interface ContextMoveRouteDeps {
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  projectRepo: ProjectRepository;
+  contextPorts: UnifiedContextPortFactory;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
+}
 
-export interface ParsedContextMove {
-  operationId: string;
-  kind: MoveContextEntryRequest["kind"];
-  destinationParent?: MoveContextEntryRequest["destinationParent"];
-  position?: MoveContextEntryRequest["position"];
+interface ParsedMove {
+  nodeId: string;
+  /** The root URI of the source the document was last seen in. */
+  from: string;
+  /** The folder it goes into, as a URI. */
+  to: string;
   name?: string;
+  position?: ContextSiblingPosition;
 }
 
-const UPLOADS_NOT_MOVABLE = "Uploads belong to the chat that received them and can't be moved";
-
-function uploadsNotMovable() {
-  return createError({ statusCode: 400, message: UPLOADS_NOT_MOVABLE });
-}
-
-/** The area a destination root names: a scheme and its owner, with the folders created beneath it. */
-function parseRootLocator(
-  parent: Extract<NonNullable<MoveContextEntryRequest["destinationParent"]>, { kind: "root" }>,
-): ContextLocator {
-  const path = "";
-  const { scheme } = parent;
-  if (scheme === "uploads") throw uploadsNotMovable();
-  const { workId, rootThreadId } = parent.owner;
-  if (rootThreadId != null) {
-    if (scheme !== "scratch" || workId)
-      throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
-    return { scope: "lineage", scheme: "scratch", path, rootThreadId };
-  }
-  if (isWorkScopedScheme(scheme)) {
-    return workId
-      ? { scope: "work", scheme: scheme as WorkScopedContextFsScheme, workId, path }
-      : { scope: "none", scheme, path };
-  }
-  if (workId)
-    throw createError({
-      statusCode: 400,
-      message: `\`destinationParent.owner.workId\` is not valid for ${scheme}`,
-    });
-  return { scope: "project", scheme: scheme as ProjectContextFsScheme, path };
-}
-
-export function parseContextMove(body: unknown): ParsedContextMove {
-  if (!body || typeof body !== "object") {
+function parseMove(body: unknown): ParsedMove {
+  if (!body || typeof body !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
-  }
-  const fields = body as Record<string, unknown>;
-  if (fields.kind !== "file" && fields.kind !== "folder") {
-    throw createError({ statusCode: 400, message: "Entry kind is required" });
-  }
-  const destinationParent =
-    fields.destinationParent === undefined
-      ? undefined
-      : parseDestinationParent(fields.destinationParent);
+  const raw = body as Record<string, unknown>;
+  const expected = raw.expected as Record<string, unknown> | undefined;
+  if (expected?.kind !== "file" || typeof expected.nodeId !== "string" || !expected.nodeId.trim())
+    throw createError({ statusCode: 400, message: "`expected` names the document to move" });
+  for (const field of ["from", "to"] as const)
+    if (typeof raw[field] !== "string" || !(raw[field] as string).includes("://"))
+      throw createError({ statusCode: 400, message: `\`${field}\` must be a context URI` });
   return {
-    operationId: requireRequestId(fields.operationId, "operationId"),
-    kind: fields.kind,
-    ...(destinationParent ? { destinationParent } : {}),
-    ...(fields.position === undefined ? {} : { position: parseSiblingPosition(fields.position) }),
-    ...(fields.name === undefined ? {} : { name: parseContextMutationName(fields.name, "name") }),
+    nodeId: expected.nodeId,
+    from: raw.from as string,
+    to: raw.to as string,
+    ...(raw.name === undefined ? {} : { name: parseContextMutationName(raw.name, "name") }),
+    ...(raw.position === undefined ? {} : { position: parseSiblingPosition(raw.position) }),
   };
 }
 
-const MOVED: MoveContextEntryResult = { status: "moved" };
-
+/** One document moved into a folder of the other list; the answer is where it stands now. */
 export async function handleContextMoveRequest(
   deps: ContextMoveRouteDeps,
-  input: { projectId: string; userId: string; entryId: string; body: unknown },
-): Promise<MoveContextEntryResult> {
+  input: { projectId: string; userId: string; body: unknown },
+): Promise<{ uri: string; moved: Pick<ContextMovedAcrossLists, "node"> }> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  const move = parseContextMove(input.body);
-  const parent = move.destinationParent;
-  const command = moveCommand({ ...move, expected: { kind: move.kind, nodeId: input.entryId } });
-  await runEntryCommand(deps, input, {
-    kind: move.kind,
-    operationId: move.operationId,
-    command,
-    uploads: UPLOADS_NOT_MOVABLE,
-    plan: async ({ address, source }) => {
-      // The parent the writer chose; without one the mover keeps the folder the row is in,
-      // under the locks, so the area is all this lookup supplies. A folder destination is
-      // authorized inside the locks, once the mover has read it again.
-      const destination = await destinationLocator(deps, input, source, parent);
-      const canEdit = canEditContextUri(deps, input);
-      return {
-        destination,
-        // Move and rename need edit on what moves and on the folder it lands in (file-access
-        // §2). The grant is on the row `held` names, never on the id the request carried: a
-        // join's forward would otherwise authorize one row and move another.
-        grants: [
-          move.kind === "file" ? documentTarget(address.id) : containerOf(source, input.projectId),
-          ...(parent?.kind === "folder" ? [] : [containerOf(destination, input.projectId)]),
-        ],
-        commit: (port) =>
-          port.commitWriterLocation(
-            { kind: move.kind, nodeId: address.id },
-            locatorUri(source, ""),
-            {
-              origin: { type: "human", userId: input.userId },
-              destination: !parent
-                ? { kind: "keep" }
-                : parent.kind === "folder"
-                  ? {
-                      kind: "folder",
-                      folderId: parent.folderId,
-                      createFolders: parent.createFolders,
-                      authorize: canEdit,
-                    }
-                  : {
-                      kind: "at",
-                      folderUri: locatorUri(destination, ""),
-                      createFolders: parent.createFolders,
-                    },
-              position: move.position,
-              ...(move.name ? { name: move.name } : {}),
-              operation: { id: move.operationId, command },
-            },
-          ),
-      };
-    },
-  });
-  return MOVED;
-}
+  const move = parseMove(input.body);
 
-/** The area the destination parent is in, resolved against this project. */
-async function destinationLocator(
-  deps: ContextMoveRouteDeps,
-  input: { projectId: string; userId: string },
-  source: ResolvedContextLocator,
-  parent: ParsedContextMove["destinationParent"],
-): Promise<ResolvedContextLocator> {
-  if (!parent) return source;
-  if (parent.kind === "folder") {
-    const folder = await locateEntry(deps, {
-      ...input,
-      entryId: parent.folderId,
-      kind: "folder",
-      missing: "destination_missing",
-    });
-    if (folder.locator.scope === "chat") throw uploadsNotMovable();
-    return folder.locator;
-  }
-  const root = parseRootLocator(parent);
-  const resolved = await resolveLocator(deps, input.projectId, root);
-  // The destination's Work may have retired since the request was prepared: that is move
-  // repair, not a missing source.
-  if (!resolved.ok)
-    return contextErrorToHttp({ code: "destination_missing", uri: `${root.scheme}://` });
-  return resolved.value;
+  const locate = async (uri: string): Promise<ResolvedContextLocator> => {
+    const resolved = await resolveLocatorUri(deps, input.projectId, uri);
+    if (!resolved.ok) return throwLocatorRefusal(resolved.error);
+    if (resolved.value.scope === "chat")
+      throw createError({ statusCode: 400, message: "Uploads can't be moved into or out of" });
+    return resolved.value;
+  };
+  const source = await locate(move.from);
+  const destination = await locate(move.to);
+
+  const workIds = new Set(
+    [source, destination].flatMap((end) =>
+      end.scope === "work" ? [end.authority.workId as string] : [],
+    ),
+  );
+  const port = await contextPortForProjectAuthorities({
+    deps: { contextPorts: deps.contextPorts, workAuthorityResolver: deps.workAuthorityResolver },
+    projectId: input.projectId,
+    userId: input.userId,
+    workIds,
+    primaryWorkId: [...workIds][0] ?? null,
+  });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
+
+  const grants = [
+    await requireFileGrant(deps.fileAccess, input.userId, documentTarget(move.nodeId), "edit"),
+    await requireFileGrant(
+      deps.fileAccess,
+      input.userId,
+      containerOf(destination, input.projectId),
+      "edit",
+    ),
+  ];
+  const moved = await withEditGrants(deps.fileAccess, grants, () =>
+    port.moveAcrossLists({ kind: "file", nodeId: move.nodeId }, move.from, {
+      folderUri: move.to,
+      ...(move.name === undefined ? {} : { name: move.name }),
+      ...(move.position ? { position: move.position } : {}),
+      origin: { type: "human", userId: input.userId },
+    }),
+  );
+  if (!moved.ok) contextErrorToHttp(moved.error);
+  return { uri: moved.value.destinationUri, moved: { node: moved.value.node } };
 }

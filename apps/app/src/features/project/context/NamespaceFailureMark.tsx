@@ -1,33 +1,32 @@
 /**
- * The mark a document or folder row carries when the server refused its delete,
- * rename/move or first creation and reconciliation put the row back. The Editor tree shows it as an
- * icon with a tooltip; the identity bar says it in words.
+ * The mark a document or folder row carries when the server refused its delete, rename, move or
+ * first creation and the row went back. The Editor tree shows it as an icon with a tooltip; the
+ * identity bar says it in words. The server's reason follows the sentence, in its own words.
  */
 import { t } from "@lingui/core/macro";
 import { TriangleAlert } from "lucide-react";
-import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
-
-export type NamespaceFailure = NonNullable<
-  CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
->;
+import type { NamespaceFailure } from "@/core/project-tree/tree-view";
 
 function namespaceFailureMessage(
   failure: NamespaceFailure,
   folder: boolean,
   move: boolean,
+  reason: string | undefined,
 ): string {
-  if (failure === "create")
-    return folder
-      ? t`Couldn't create this folder. Try another place.`
-      : t`Couldn't create this document. Try another place.`;
-  if (failure === "delete")
-    return folder
-      ? t`Couldn't delete this folder. Try again.`
-      : t`Couldn't delete this document. Try again.`;
-  if (move) return t`Couldn't move this entry. Try again.`;
-  return folder
-    ? t`Couldn't rename this folder. Try again.`
-    : t`Couldn't rename this document. Try again.`;
+  const again = reason ?? t`Try again.`;
+  if (failure === "create") {
+    const said = folder
+      ? t`This folder couldn't be created where you put it.`
+      : t`This document couldn't be created where you put it.`;
+    return `${said} ${reason ?? t`Try another place.`}`;
+  }
+  if (failure === "delete") {
+    const said = folder ? t`Couldn't delete this folder.` : t`Couldn't delete this document.`;
+    return `${said} ${again}`;
+  }
+  if (move) return `${t`Couldn't move this entry.`} ${again}`;
+  const said = folder ? t`Couldn't rename this folder.` : t`Couldn't rename this document.`;
+  return `${said} ${again}`;
 }
 
 export function NamespaceFailureMark({
@@ -36,6 +35,7 @@ export function NamespaceFailureMark({
   move = false,
   labelled,
   message: customMessage,
+  reason,
 }: {
   failure: NamespaceFailure;
   /** The failed row is a folder, not a document. */
@@ -46,8 +46,10 @@ export function NamespaceFailureMark({
   labelled?: boolean;
   /** A surface may explain where its passive status can be retried. */
   message?: string;
+  /** The server's reason for the refusal. */
+  reason?: string;
 }) {
-  const message = customMessage ?? namespaceFailureMessage(failure, folder, move);
+  const message = customMessage ?? namespaceFailureMessage(failure, folder, move, reason);
   return <FailureMark message={message} labelled={labelled} />;
 }
 

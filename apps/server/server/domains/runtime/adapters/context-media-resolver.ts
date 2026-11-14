@@ -59,14 +59,13 @@ export function createContextMediaResolver(deps: {
     },
     async resolve(context, reference, window) {
       try {
-        const resolution = await deps.availability.lookup(
-          { projectId: context.projectId as never, documentIds: [reference.documentId as never] },
+        const placed = await deps.availability.placed(
+          { projectId: context.projectId as never, documentIds: [reference.documentId] },
           { userId: context.actorUserId },
         );
-        const available = resolution.resolutions[0];
-        if (available?.kind === "indeterminate")
+        if (placed.inconsistent.has(reference.documentId))
           throw new MediaResolutionError(`Media resolution is indeterminate: ${reference.uri}`);
-        if (available?.kind !== "available") return null;
+        if (!placed.documents.has(reference.documentId)) return null;
         // The path is not checked: a moved or renamed file is the same document, and the read
         // grant below decides.
         const grant = await deps.fileAccess.authorize(
