@@ -18,11 +18,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { discardBranchTreeFacts } from "../../context/tree/branch-tree-changes.js";
@@ -46,7 +42,7 @@ import {
 import type { Branches } from "../domain/branches.js";
 import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
-import { runCommandWithinTx } from "./drizzle-document-commands.js";
+import { runCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
@@ -158,6 +154,8 @@ export function createDrizzleBranchDiscard(
   deps: KernelDeps & {
     branches: Pick<Branches, "lockActive" | "close">;
     workProjection: Pick<WorkProjectionMutation, "mutate">;
+    /** After commit: delete tombstoned binaries' objects, best effort. */
+    releaseObjects(storageUrls: readonly string[]): Promise<void>;
   },
 ): DrizzleBranchDiscard {
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
@@ -221,50 +219,46 @@ export function createDrizzleBranchDiscard(
 
   return {
     kernel,
-    deferUntilCommit: deferUntilDrizzleCommit,
     async discardLocked({ kernel: input, command }) {
-      return runInDrizzleTransaction(db, async () => {
-        // The branch's owner enters the Work boundary before the branch row and the scope
-        // locks.
-        return deps.workProjection.mutate(
-          { branches: [input.branchId] },
-          async () => {
-            // Claims follow the Work boundary for every command, including conflicting deliveries.
-            const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = {
-              ended: null,
-            };
-            await runCommandWithinTx(
-              db,
-              command.envelope,
-              async () => {
-                if (await deps.branches.lockActive(input.branchId)) {
-                  const items = input.selection.kind === "items" ? input.selection.items : null;
-                  const itemIds = items?.map((item) => item.documentId);
-                  await acquireScope(db, input.branchId, {
-                    branches: [
-                      {
-                        branchId: input.branchId,
-                        ...(itemIds ? { documentIds: itemIds } : {}),
-                      },
-                    ],
-                    documentIds: itemIds ?? [],
-                  });
-                  settled.ended = await kernel(input);
-                }
-                return command.result(settled.ended);
-              },
-              (cause) => {
-                const refused = discardRefusal(cause);
-                if (!refused) return undefined;
-                settled.ended = refused;
-                return command.result(refused);
-              },
-            );
-            return settled.ended;
-          },
-          { seam: true, requireActive: true, allowFrozenLineage: true },
-        );
-      });
+      const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = { ended: null };
+      await runCommand(
+        db,
+        command.envelope,
+        // The branch's owner enters the Work boundary after the claim, before the branch row
+        // and the scope locks.
+        () =>
+          deps.workProjection.mutate(
+            { branches: [input.branchId] },
+            async () => {
+              settled.ended = null;
+              if (await deps.branches.lockActive(input.branchId)) {
+                const items = input.selection.kind === "items" ? input.selection.items : null;
+                const itemIds = items?.map((item) => item.documentId);
+                await acquireScope(db, input.branchId, {
+                  branches: [
+                    {
+                      branchId: input.branchId,
+                      ...(itemIds ? { documentIds: itemIds } : {}),
+                    },
+                  ],
+                  documentIds: itemIds ?? [],
+                });
+                const ended = await kernel(input);
+                deferUntilDrizzleCommit(() => deps.releaseObjects(ended.releasedObjects));
+                settled.ended = ended;
+              }
+              return command.result(settled.ended);
+            },
+            { seam: true, requireActive: true, allowFrozenLineage: true },
+          ),
+        (cause) => {
+          const refused = discardRefusal(cause);
+          if (!refused) return undefined;
+          settled.ended = refused;
+          return command.result(refused);
+        },
+      );
+      return settled.ended;
     },
   };
 }

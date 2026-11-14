@@ -76,7 +76,10 @@ function newTransactionContext(db: DrizzleDb): DrizzleTransactionContext {
 }
 
 export function currentDrizzleDb(db: DrizzleDb): DrizzleDb {
-  return activeTransaction()?.db ?? db;
+  const active = activeTransaction();
+  if (active) return active.db;
+  assertOutsideCommandTransaction("A second connection");
+  return db;
 }
 
 export async function runInDrizzleTransaction<T>(
@@ -84,6 +87,7 @@ export async function runInDrizzleTransaction<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   if (activeTransaction()) return operation();
+  assertOutsideCommandTransaction("A second connection");
   const context = newTransactionContext(db);
   let result: T;
   try {
@@ -106,13 +110,37 @@ export async function runInDrizzleTransaction<T>(
 const joinsRoots = { name: "joins-roots" };
 
 /**
- * Marks the ambient transaction as the only connection its work may hold: a root transaction or
- * read snapshot opened under it runs inside it instead. A model edit holds its document's lock
- * while it plans; a second connection waiting on a lock the first holds would never return.
+ * The command transaction work runs under, kept apart from `transactionStorage` so stepping out
+ * of the transaction (`runOutsideDrizzleTransaction`) still knows a command is open.
  */
-export function joinRootTransactionsInAmbient(): void {
-  if (!setDrizzleTransactionLocal(joinsRoots, true))
-    throw new Error("joinRootTransactionsInAmbient requires an ambient transaction");
+const commandStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
+
+const COMMAND_CHECKS = process.env.NODE_ENV !== "production";
+
+/**
+ * Runs a document command's transaction: the only connection its work may hold. A root
+ * transaction or read snapshot opened under it runs inside it. In dev and test, a process mutex
+ * or a second connection taken while it is open throws: the command holds row and advisory
+ * locks, so a wait on either would never be seen by Postgres and could wait forever.
+ */
+export async function runInCommandTransaction<T>(
+  db: DrizzleDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (activeTransaction())
+    throw new Error("A command opens its own transaction; it cannot join one");
+  return runInDrizzleTransaction(db, () => {
+    const context = activeTransaction() as DrizzleTransactionContext;
+    context.locals.set(joinsRoots, true);
+    return commandStorage.run(context, operation);
+  });
+}
+
+/** In dev and test, throws when `what` would run while a command transaction is open. */
+export function assertOutsideCommandTransaction(what: string): void {
+  if (!COMMAND_CHECKS) return;
+  const command = commandStorage.getStore();
+  if (command && !command.closed) throw new Error(`${what} inside a command transaction`);
 }
 
 export async function runInRootDrizzleTransaction<T>(
@@ -121,6 +149,7 @@ export async function runInRootDrizzleTransaction<T>(
   options?: { isolationLevel?: "repeatable read"; accessMode?: "read only" },
 ): Promise<T> {
   if (getDrizzleTransactionLocal<boolean>(joinsRoots)) return operation();
+  assertOutsideCommandTransaction("A second connection");
   return transactionStorage.exit(async () => {
     const context = newTransactionContext(db);
     let result: T;
@@ -279,6 +308,18 @@ export function deferUntilDrizzleRollback(callback: () => void | Promise<void>):
   if (!active) return false;
   active.afterRollback.push(callback);
   return true;
+}
+
+/**
+ * A deadlock or serialization failure: Postgres aborted the statement for its ordering, not
+ * its content, so the same work may succeed when run again. Drizzle wraps the driver's error.
+ */
+export function isRetryableTransactionError(error: unknown): boolean {
+  for (let cause = error; cause instanceof Error; cause = cause.cause) {
+    const code = (cause as { code?: unknown }).code;
+    if (code === "40P01" || code === "40001") return true;
+  }
+  return false;
 }
 
 export function isInDrizzleTransaction(): boolean {

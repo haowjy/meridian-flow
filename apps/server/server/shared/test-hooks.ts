@@ -41,6 +41,8 @@ const TEST_HOOK_POINTS = [
   "retract.beforeLocks",
   /** A retraction holds its draft rows and found no contribution; nothing is deleted yet. */
   "retract.afterRecheck",
+  /** An inverse's capture read a document's live bytes and nothing after them. */
+  "inverse.afterCaptureRead",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */
   "inverse.beforeCommitScope",
   /**

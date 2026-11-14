@@ -6,19 +6,15 @@ import type {
   DocumentEdits,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
-import { boundDocumentAuthority } from "./document-handle.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import { blockOriginsFromDraftSeed } from "./draft-store.js";
 import { currentInversePrincipal } from "./inverse-principal.js";
-import { liveRoom } from "./observation-rooms.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
 
 export function createModelDocumentEdits(input: {
   service(): TurnInverseService;
   drafts: ApplicationDraftStore;
-  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
 }): DocumentEdits {
   async function query(
     request: DocumentEditRequest & { command: { file: string } },
@@ -32,15 +28,9 @@ export function createModelDocumentEdits(input: {
     let blockOrigins: BlockOriginMap | undefined;
     if (version === "draft" && view?.kind === "branch") {
       if (ensure) {
-        const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) => {
-          const authority = boundDocumentAuthority(liveDoc);
-          if (!authority) throw new Error(`Live document ${documentId} has no authority binding`);
-          return input.drafts.ensureDocumentDraft({
-            documentId,
-            branchId: view.branchId,
-            liveDoc,
-            liveRoom: liveRoom(documentId, authority.generation),
-          });
+        const documentDraft = await input.drafts.ensureLiveDocumentDraft({
+          documentId,
+          branchId: view.branchId,
         });
         draftId = documentDraft.draftId;
         blockOrigins = blockOriginsFromDraftSeed(documentDraft.seed) ?? undefined;

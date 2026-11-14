@@ -43,7 +43,6 @@ import { createAgentEditRouter } from "../domain/agent-edit-router.js";
 import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
-import { boundDocumentAuthority } from "../domain/document-handle.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
 import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
@@ -338,7 +337,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
     drafts: draftStore,
-    coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
@@ -393,17 +391,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   }: {
     documentId: DocumentId;
     branchId: string;
-  }) =>
-    liveCoordinator.withDocument(documentId, (liveDoc) => {
-      const authority = boundDocumentAuthority(liveDoc);
-      if (!authority) throw new Error(`Live document ${documentId} has no authority binding`);
-      return draftStore.ensureDocumentDraft({
-        documentId,
-        branchId: branchId as never,
-        liveDoc,
-        liveRoom: liveRoom(documentId, authority.generation),
-      });
-    });
+  }) => draftStore.ensureLiveDocumentDraft({ documentId, branchId: branchId as never });
   const modelEvidence = createDrizzleModelEvidence(db);
   const modelEdits = createDrizzleModelEdits(
     db,
@@ -511,7 +499,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     identity,
     discard: createBranchDiscard({
       branches: workBranches,
-      attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
         removal: documentRemoval,
@@ -519,9 +506,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         branches: workBranches,
         workProjection: createTestWorkProjectionMutation(db),
         catalog: { refreshSources: async () => "" },
+        releaseObjects: async () => {},
       }),
       holdRetirement: draftClose.holdRetirement,
-      releaseObjects: async () => {},
     }),
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,

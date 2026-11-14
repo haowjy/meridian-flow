@@ -7,10 +7,8 @@ import { eq } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
-  isInDrizzleTransaction,
-  joinRootTransactionsInAmbient,
+  runInCommandTransaction,
   runInDrizzleSavepoint,
-  runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import {
@@ -28,16 +26,7 @@ export function createDrizzleDocumentCommands(db: Database): DocumentCommands {
     async lookup(key) {
       return lookupCommand(currentDrizzleDb(db), key);
     },
-    async run(envelope, effect, refusal = () => undefined) {
-      const topLevel = !isInDrizzleTransaction();
-      const result = await runInDrizzleTransaction(db, async () => {
-        joinRootTransactionsInAmbient();
-        bindEditsToCommand(envelope.commandId);
-        return runCommandWithinTx(db, envelope, effect, refusal);
-      });
-      if (topLevel) await testHook("command.afterCommit");
-      return result;
-    },
+    run: (envelope, effect, refusal) => runCommand(db, envelope, effect, refusal),
   };
 }
 
@@ -63,49 +52,60 @@ export async function lookupCommand(db: DrizzleDb, key: CommandLookupKey): Promi
 }
 
 /**
- * Runs a command's effect inside the effect transaction: the claim is its first write, the
- * effect runs in a savepoint under the claim, and the outcome is stored before the caller's
- * transaction commits, so no committed row is ever unsettled.
+ * Runs one command in its own transaction (`runInCommandTransaction`): the claim is its first
+ * write, the effect runs in a savepoint under the claim, and the outcome is stored before the
+ * transaction commits, so no committed row is ever unsettled. The effect takes its locks after
+ * the claim in the one order every command keeps: Works, document keys, draft rows; and no
+ * process mutex.
  *
  * `refusal` names the causes that are a final answer: the effect rolls back to its savepoint
  * and the refusal is stored as the outcome. Any other throw, including a miss the server
- * retries itself, rolls back past the claim.
+ * retries (a deadlock, a serialization failure, a changed capture), rolls back past the claim.
  *
- * An id already taken throws `DocumentCommandExistsError`: the caller rolls back and answers
- * the winner's row.
+ * An id already taken throws `DocumentCommandExistsError`: the caller answers the winner's row.
  */
-export async function runCommandWithinTx<R extends StoredDocumentCommandResult>(
+export async function runCommand<R extends StoredDocumentCommandResult>(
   db: Database,
   envelope: DocumentCommandEnvelope,
   effect: () => Promise<R>,
-  refusal: (cause: unknown) => R | undefined,
+  refusal: (cause: unknown) => R | undefined = () => undefined,
 ): Promise<R> {
-  const tx = currentDrizzleDb(db);
-  const [claimed] = await tx
-    .insert(documentCommands)
-    .values({
-      id: envelope.commandId,
-      kind: envelope.kind,
-      accountId: envelope.accountId,
-      projectId: envelope.projectId,
-      requestDigest: envelope.digest,
-      // Replaced below, before this transaction can commit.
-      outcome: { status: "never" },
-    })
-    .onConflictDoNothing()
-    .returning({ id: documentCommands.id });
-  if (!claimed) throw new DocumentCommandExistsError(envelope.commandId);
-  let result: R;
-  try {
-    result = await runInDrizzleSavepoint(db, effect);
-  } catch (cause) {
-    const refused = refusal(cause);
-    if (!refused) throw cause;
-    result = refused;
-  }
-  await tx
-    .update(documentCommands)
-    .set({ outcome: outcomeOf(result) })
-    .where(eq(documentCommands.id, envelope.commandId));
+  await testHook("command.beforeClaim");
+  const result = await runInCommandTransaction(db, async () => {
+    bindEditsToCommand(envelope.commandId);
+    const tx = currentDrizzleDb(db);
+    const [claimed] = await tx
+      .insert(documentCommands)
+      .values({
+        id: envelope.commandId,
+        kind: envelope.kind,
+        accountId: envelope.accountId,
+        projectId: envelope.projectId,
+        requestDigest: envelope.digest,
+        // Replaced below, before this transaction can commit.
+        outcome: { status: "never" },
+      })
+      .onConflictDoNothing()
+      .returning({ id: documentCommands.id });
+    if (!claimed) throw new DocumentCommandExistsError(envelope.commandId);
+    let settled: R;
+    try {
+      settled = await runInDrizzleSavepoint(db, async () => {
+        await testHook("command.afterClaim");
+        return effect();
+      });
+    } catch (cause) {
+      const refused = refusal(cause);
+      if (!refused) throw cause;
+      settled = refused;
+    }
+    await tx
+      .update(documentCommands)
+      .set({ outcome: outcomeOf(settled) })
+      .where(eq(documentCommands.id, envelope.commandId));
+    await testHook("command.beforeCommit");
+    return settled;
+  });
+  await testHook("command.afterCommit");
   return result;
 }

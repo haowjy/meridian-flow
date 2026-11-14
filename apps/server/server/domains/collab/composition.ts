@@ -99,7 +99,6 @@ import {
   createBlockDeriver,
   createDocumentDerivationService,
 } from "./domain/document-derivations.js";
-import { boundDocumentAuthority } from "./domain/document-handle.js";
 import {
   scopeAgentEdit,
   scopeDraftPeer,
@@ -295,7 +294,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
     drafts,
-    coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
@@ -360,18 +358,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     enterDraftSeam: async () => {
       await lockSeamWorks(deps.db, []);
     },
-    ensureWorkDraft: async ({ documentId, branchId }) =>
-      (await drafts.findBranchDraft(documentId, branchId as BranchId)) ??
-      liveCoordinator.withDocument(documentId, (liveDoc) => {
-        const authority = boundDocumentAuthority(liveDoc);
-        if (!authority) throw new Error(`Live document ${documentId} has no authority binding`);
-        return drafts.ensureDocumentDraft({
-          documentId,
-          branchId: branchId as BranchId,
-          liveDoc,
-          liveRoom: liveRoom(documentId, authority.generation),
-        });
-      }),
+    ensureWorkDraft: ({ documentId, branchId }) =>
+      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId }),
     lockDraft: async (draftId) => {
       await currentDrizzleDb(deps.db)
         .select({ id: documentDrafts.id })
@@ -484,13 +472,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches: workBranches,
     workProjection: deps.workProjectionMutation,
     catalog: deps.catalogMutations,
+    releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
   });
   const discard = createBranchDiscard({
     branches: workBranches,
     store: discardStore,
     holdRetirement: deps.draftClose.holdRetirement,
-    releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
-    attemptScope,
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);

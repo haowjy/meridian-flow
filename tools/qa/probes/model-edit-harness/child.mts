@@ -8,7 +8,7 @@
  *   {op:"release", point}
  *   {op:"send", threadId, userId, text}   admit a message, as the chat route does
  *   {op:"sweep"}                     the recovery lanes once: wake scan, orphan repair
- *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo
+ *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo, as the route sends it
  *   {op:"resolve", responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
  *   {op:"discard", projectId, branchId, userId, commandId}   Discard all on a Work's branch
  *   {op:"timeout", tool, ms}        shorten a tool's registered timeout, for the timeout cases
@@ -29,6 +29,7 @@ import {
   composeAppServices,
   createProductionAppPorts,
 } from "../../../../apps/server/server/lib/compose.ts";
+import { reverseTurnCard } from "../../../../apps/server/server/lib/work-receipt-reversal.ts";
 import {
   createYjsGateway,
   selectYjsGatewayServices,
@@ -139,7 +140,7 @@ async function handle(message: Op): Promise<unknown> {
         activatedSkillSlugs: [],
       });
     case "reverse":
-      return app.documentSync.reverseThreadContext(message as never);
+      return reverseTurnCard(app, message as never);
     case "resolve":
       return ports.documentSync.modelEdits().resolve({
         responseId: message.responseId,

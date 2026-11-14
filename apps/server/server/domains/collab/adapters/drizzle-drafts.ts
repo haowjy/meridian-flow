@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId, DraftOwner } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -59,6 +59,7 @@ import {
   type RewriteOutcome,
   type StaleEffectCursor,
 } from "../domain/draft-store.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
@@ -267,26 +268,57 @@ export function createDrizzleDraftStore(
     return "retracted";
   }
 
-  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
-  async function ensureCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<DraftSnapshot> {
-    if (!live) throw new Error("A created document's draft needs the collab live journal");
-    const snapshot = await live.journal.read(input.documentId);
+  /** The document's live state as its journal holds it, read in this transaction. */
+  async function withJournalDocument<T>(
+    documentId: DocumentId,
+    run: (liveDoc: Y.Doc, snapshot: JournalSnapshot) => Promise<T>,
+  ): Promise<T> {
+    if (!live) throw new Error("A document's draft needs the collab live journal");
+    const snapshot = await live.journal.read(documentId);
     const liveDoc = createCollabYDoc({ gc: false });
     try {
       if (snapshot.checkpoint) Y.applyUpdate(liveDoc, snapshot.checkpoint);
       for (const update of snapshot.updates) Y.applyUpdate(liveDoc, update.update);
-      return await ensureDocumentDraft({
+      return await run(liveDoc, snapshot);
+    } finally {
+      liveDoc.destroy();
+    }
+  }
+
+  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
+  function ensureCreatedDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<DraftSnapshot> {
+    return withJournalDocument(input.documentId, (liveDoc, snapshot) =>
+      ensureDocumentDraft({
         ...input,
         liveDoc,
         liveRoom: null,
         livePosition: snapshot.persistenceWatermark ?? 0,
+      }),
+    );
+  }
+
+  /**
+   * The branch's draft of a living document, seeded from its live journal read in the caller's
+   * transaction under its document lock: no room mutex, so a command can make one.
+   */
+  async function ensureLiveDocumentDraft(input: {
+    documentId: DocumentId;
+    branchId: BranchId;
+  }): Promise<DraftSnapshot> {
+    const current = await activeDocumentDraft(input.documentId, input.branchId);
+    if (current) return current;
+    return withJournalDocument(input.documentId, (liveDoc, snapshot) => {
+      if (!snapshot.authority)
+        throw new Error(`Live document ${input.documentId} has no authority binding`);
+      return ensureDocumentDraft({
+        ...input,
+        liveDoc,
+        liveRoom: liveRoom(input.documentId, snapshot.authority.generation),
       });
-    } finally {
-      liveDoc.destroy();
-    }
+    });
   }
 
   /**
@@ -598,6 +630,7 @@ export function createDrizzleDraftStore(
     },
 
     ensureCreatedDocumentDraft,
+    ensureLiveDocumentDraft,
     retractCreatedDocumentDraft,
   };
 }
