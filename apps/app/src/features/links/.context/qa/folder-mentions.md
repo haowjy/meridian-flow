@@ -74,7 +74,8 @@ then a folder with one document and an empty subfolder:
    folder chip, and the console has no `folderAt is not a function`
    error. Delete the Work with `./mf api DELETE "/api/works/$work_id" --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\"}"`. Without
    reloading, the chip turns dashed: the server's `gone` answer reached a link
-   whose target this Editor's link index never held.
+   whose target this Editor's link index never held. Known failure: the chip stays filled
+   and still opens the folder until a reload ([FUTURE](../FUTURE)).
 
 9. **Server identity boundaries.** Create a fresh holder whose first content
    includes a folder link, then rename the folder:

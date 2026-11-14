@@ -15,3 +15,6 @@
 - `document-identity-bar.md` still describes path crumbs (`DocumentPath.tsx`) that the identity row no longer renders; rewrite its first sections to what the bar shows now (state chips, the review line).
 - A burst of separate tree-list updates redraws every tree once per update: a model's 60 `write move` calls in one turn make 60 publishes from `core/tree-list/tree-list-session.ts`, each re-rendering the sidebar, the Changes panel and the open tab. The card's Undo now sends one update per list (`drizzle-turn-tree-inverse.ts`), which took a 60-rename Undo from about 15 s of blocked tab to 0.5 s; coalescing publishes to one per frame would cover the model's bursts too, but changes when every tree reader sees a change.
 - The sidebar's "Chapter 01 deleted. Undo" notice stays up after the document is restored from Trash; it should go when what it offers to undo no longer stands.
+- A tree delete's Undo notice ("X deleted. Undo") stays in the Chats sidebar footer after the
+  writer leaves Manuscript for another source. It belongs to the Manuscript tree; show it there,
+  or dismiss it when the source changes (`project/shell/sidebar/use-sidebar-undo.ts`).

@@ -16,12 +16,14 @@ recipe is not a current pass claim.
    ```
 
    Save its `id` as `$PROJECT`.
-3. Seed `a.md`, `Arc/child.md`, and `keep.md` using `./mf doc put <uri>
-   --project "$PROJECT" --text <markdown> --json`. Put links to both targets in
-   `keep.md` before moving them. Record returned document IDs.
+3. Seed `a.md`, `Arc/child.md`, and an empty `keep.md` using `./mf doc put <uri>
+   --project "$PROJECT" --text <markdown> --json`. Record returned document IDs. Markdown the
+   seed writes carries no identity, so a path link put there cannot follow a rename.
 4. Open the owned app origin in two isolated `agent-browser` sessions (`tree-a`, `tree-b`). The
    stack runs with `DEV_AUTH_BYPASS=1`, so both open signed in. Open
-   `/p/$PROJECT/editor/manuscript/keep.md` in each. Capture each sidebar.
+   `/p/$PROJECT/editor/manuscript/keep.md` in each. In `tree-a`, type `@` in `keep.md` and mention
+   `a` and `child`, the way the app stores a link (by identity); wait for the save. Capture each
+   sidebar.
 
 ## Exercise two loaded tabs
 
