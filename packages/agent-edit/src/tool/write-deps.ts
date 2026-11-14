@@ -6,7 +6,6 @@ import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
 import type { AgentEditJournal } from "../ports/update-journal.js";
 import type { UnexpectedWriteErrorDetail } from "./types.js";
 
@@ -30,8 +29,6 @@ export interface CreateWriteToolOptions {
   /** The host's link scope: prepare, holder scope, ahead registration and view revision. */
   links: DocumentLinksPort;
   model: AgentEditModel;
-  /** Durable lookup authority for the response that authored a mutation. */
-  semanticProvenance?: SemanticProvenanceWriter;
   actorSessionStore?: ActorSessionStore;
   defaultSessionId?: string;
   defaultThreadId?: string;

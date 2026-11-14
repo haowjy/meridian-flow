@@ -142,10 +142,11 @@ export function observeRendered(
   for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);
   const removed = removedIds.filter((id) => !source.ownRemoved?.has(frontierBlockId(id)));
   const frontier = recordedFrontier(room, delta, source.position);
-  if (changed.length === 0 && removed.length === 0) return { frontier };
+  if (changed.length === 0 && removed.length === 0 && !source.ownRemoved?.size) return { frontier };
 
-  const authors = changeAuthors(source, prev, changed, removedIds);
-  const hashes = hashMap(doc, project(), removed);
+  const authors = changeAuthors(source, prev, changed, removed);
+  const overwritten = [...authors.values()].flatMap((changes) => [...changes.overwritten]);
+  const hashes = hashMap(doc, project(), [...removed, ...overwritten.map(parseFrontierBlockId)]);
   const touched = new Set<string>();
   const groups: AgentEditConcurrentListing["groups"] = [];
   for (const [author, changes] of authors) {
@@ -163,14 +164,22 @@ export function observeRendered(
       touched.add(id);
       group.removed = [...(group.removed ?? []), hash];
     }
-    if (group.shown || group.other || group.removed) groups.push({ author, ...group });
+    for (const id of changes.overwritten) {
+      const hash = hashes.get(id);
+      if (!hash) continue;
+      touched.add(id);
+      group.overwritten = [...(group.overwritten ?? []), hash];
+    }
+    if (group.shown || group.other || group.removed || group.overwritten)
+      groups.push({ author, ...group });
   }
   if (touched.size > CONCURRENT_REREAD_BLOCKS)
     return { frontier, concurrent: { groups: [], reread: touched.size } };
   return { frontier, ...(groups.length ? { concurrent: { groups } } : {}) };
 }
 
-type AuthorChanges = { changed: Set<string>; removed: Set<string> };
+/** `overwritten`: blocks the author changed that this write then removed (deleted or joined). */
+type AuthorChanges = { changed: Set<string>; removed: Set<string>; overwritten: Set<string> };
 
 function changeAuthors(
   source: ListingSource,
@@ -223,11 +232,20 @@ function changeAuthors(
           continue;
         }
         const author = authorLabel(item.origin);
-        const group = byAuthor.get(author) ?? { changed: new Set(), removed: new Set() };
+        const group = byAuthor.get(author) ?? {
+          changed: new Set(),
+          removed: new Set(),
+          overwritten: new Set(),
+        };
         effect.changed
           .filter((id) => relevantChanged.has(id))
           .forEach((id) => {
             group.changed.add(id);
+          });
+        effect.changed
+          .filter((id) => source.ownRemoved?.has(id))
+          .forEach((id) => {
+            group.overwritten.add(id);
           });
         effect.removed
           .map(frontierBlockId)
@@ -243,7 +261,11 @@ function changeAuthors(
   }
   const attributedChanged = new Set([...byAuthor.values()].flatMap((group) => [...group.changed]));
   const attributedRemoved = new Set([...byAuthor.values()].flatMap((group) => [...group.removed]));
-  const fallback = byAuthor.get("unknown") ?? { changed: new Set(), removed: new Set() };
+  const fallback = byAuthor.get("unknown") ?? {
+    changed: new Set(),
+    removed: new Set(),
+    overwritten: new Set(),
+  };
   changed
     .filter((id) => !attributedChanged.has(id) && !ownChanged.has(id))
     .forEach((id) => {

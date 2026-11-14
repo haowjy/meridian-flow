@@ -226,9 +226,6 @@ failed visibly.
 
 ## Other writes that are not merges
 
-- **The rebuild** (`diff/writer.ts`, `writeChildren`): a block with no minimal edit is deleted and
-  re-created. It never changes the text, only which Yjs items hold it. `WriteStats.replaced` counts it
-  and no caller reads it.
 - **The empty-document convention**: an empty fragment and one empty paragraph are one document,
   because the editor cannot show zero blocks (`diff/equal.ts`, `buildBlocks`).
 
@@ -254,8 +251,6 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
   person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
   text under the splitter's byline.
-- The model rewriting a paragraph so that no word survives while a person types in it rebuilds the
-  paragraph and loses the typing.
 - Unsent typing in a room this tab has no session for: a document or draft not open in any tab
   keeps its unsent typing only in IndexedDB, and a removal, a close or an access change clears it
   with no hand-back. So does typing from before the tab's connection began (typed offline, then

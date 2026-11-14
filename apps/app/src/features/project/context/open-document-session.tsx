@@ -16,7 +16,6 @@ import type { DocumentPresentation } from "./document-presentation";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
-import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
 type OpenDocumentSessionProps = {
   projectId: string;
@@ -37,8 +36,8 @@ type OpenDocumentSessionProps = {
 
 /**
  * One stable host across local adoption; server retention lasts until the host
- * unmounts. A room dropped because the server refused its edits reopens as a
- * fresh session: local probe and server binding both start over.
+ * unmounts. An explicit retry reopens it as a fresh session: local probe and
+ * server binding both start over.
  */
 export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
   const [opening, setOpening] = useState(0);
@@ -236,9 +235,8 @@ function OpenDocumentSession({
   const liveSession =
     state.kind === "opened" && state.documentId === documentId ? state.session : null;
   const selectedSession = liveSession ?? localSession;
-  const session = useRefusedEditsReopen(selectedSession, onReopen);
   return children(
-    session,
+    selectedSession,
     state.kind === "failed" && state.documentId === documentId,
     selectedSession !== null && selectedSession === localSession,
     // Remounting redoes the local probe as well as the live open.

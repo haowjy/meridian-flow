@@ -8,11 +8,12 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a draft-mode write creates its Work draft inside the command's transaction
+ * - a new draft seeds from the live cut the model last read, or live's head when it has none
  * - a write whose last seen draft was discarded is refused, and the refusal is the stored outcome
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { appendToFirstParagraph } from "../drafts-lock-free/harness.mts";
+import { appendToFirstParagraph, paragraphDoc, Y } from "../drafts-lock-free/harness.mts";
 import {
   type Child,
   draftDoc,
@@ -31,6 +32,12 @@ import {
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const reply = { text: "done" };
 const SEED = ["Live seed."];
+const readCall = (path: string) => ({ id: "read-1", name: "read", args: { path } });
+const replaceCall = (path: string) => ({
+  id: "call-1",
+  name: "write",
+  args: { command: "replace", path, in: 1, content: "Rewritten." },
+});
 const oneCall = (path: string) => [{ toolCalls: [insertCall("call-1", path, "Added.")] }, reply];
 
 type Harness = Parameters<typeof state>[0];
@@ -92,7 +99,89 @@ const discard = (child: Child, h: Harness, work: { branchId: string }) =>
     commandId: randomUUID(),
   });
 
+/** The live document with `suffix` typed at the end of its first paragraph, as a human frame. */
+async function writerTypesLive(h: Harness, documentId: string, suffix: string) {
+  const doc = await h.liveDoc(documentId);
+  try {
+    await h.persistence.journal.append(documentId, appendToFirstParagraph(doc, suffix), {
+      origin: `human:${h.ids.user}`,
+      seq: 0,
+    });
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** The Work's one draft, once its paragraphs equal `expected` (a pull is scheduled, not inline). */
+async function draftEventually(h: Harness, documentId: string, expected: string[]) {
+  const until = Date.now() + 10_000;
+  for (;;) {
+    const [found] = await drafts(h, documentId);
+    if (found && JSON.stringify(found.doc) === JSON.stringify(expected)) return found;
+    if (Date.now() > until) assert.deepEqual(found?.doc, expected);
+    await sleep(100);
+  }
+}
+
+/**
+ * The model's first draft write to a document the writer typed into after the model's turn:
+ * `seen` is what the model's first turn did (read it, or never touch it), `forget` drops the
+ * stored cut's history the way a lost generation does.
+ */
+function typedBeforeFirstWrite(
+  name: string,
+  expected: string,
+  options: { read: boolean; forget?: boolean },
+  draftAfter: string[],
+): ModelEditCase {
+  return {
+    name,
+    expected,
+    async run({ h, start }) {
+      const { thread, documentId, path } = await seedCase(h, name, "draft");
+      const child = await start();
+      await child.script([
+        ...(options.read ? [{ toolCalls: [readCall(path)] }] : []),
+        reply,
+        { toolCalls: [replaceCall(path)] },
+        reply,
+      ]);
+      await send(child, h, thread);
+      await waitForAssistantTurn(h, thread);
+      if (options.forget) {
+        // A cut live no longer contains: the snapshot of an unrelated document.
+        const other = paragraphDoc("Other");
+        await h.raw`update observation_frontiers set snapshot=${Buffer.from(
+          Y.encodeSnapshotV2(Y.snapshot(other)),
+        )} where thread_id=${thread}`;
+      }
+      await writerTypesLive(h, documentId, " typed");
+      await send(child, h, thread, "again");
+      await waitForAssistantTurn(h, thread, { count: 2 });
+      await draftEventually(h, documentId, draftAfter);
+    },
+  };
+}
+
 const cases: ModelEditCase[] = [
+  typedBeforeFirstWrite(
+    "the writer types after the model read, then the model's first draft write",
+    "the draft seeds from the cut the model read, so the typing survives the whole-block write",
+    { read: true },
+    ["Rewritten. typed"],
+  ),
+  typedBeforeFirstWrite(
+    "the writer types, the model never read the document",
+    "no cut to seed from: the draft seeds from live's head, and the blind block write replaces what it holds",
+    { read: false },
+    ["Rewritten."],
+  ),
+  typedBeforeFirstWrite(
+    "the writer types, and the cut the model read is gone from live's history",
+    "the draft seeds from live's head, as with no cut, and the block write replaces what it holds",
+    { read: true, forget: true },
+    ["Rewritten."],
+  ),
   killedAt(
     "killed before the claim",
     "command.beforeClaim",

@@ -100,8 +100,7 @@ export function createAccountDocumentSessionRuntime(
         property === "release" ||
         property === "releaseDraftRooms" ||
         property === "revokeDocument" ||
-        property === "revokeAccess" ||
-        property === "whenRefusedRoomDropped"
+        property === "revokeAccess"
       ) {
         return value.bind(target);
       }

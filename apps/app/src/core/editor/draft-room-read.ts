@@ -3,8 +3,8 @@
  * the room, follows whichever session backs it, and says what the room is to a reader right now:
  *
  * - `usable`: a live session. Commands and editors may read and write it.
- * - `rebuilding`: the server refused the writer's edits, or the previous session is still being torn
- *   down. The read joins the pool's one rebuild and becomes `usable` again; refused edits are never replayed.
+ * - `rebuilding`: the previous session is still being torn down, or a retry asked again. The read joins
+ *   the pool's one rebuild and becomes `usable` again.
  * - `fenced`: a schema reset, or a room whose updates the server kept refusing (`updatesRefused`). Its
  *   terminal session is kept so an editor can paint it read-only with its notice, and it is never a
  *   target for a command. `retry()` rebuilds a refused one, which resends its edits from IndexedDB.
@@ -49,14 +49,11 @@ export interface DraftRoomRead {
 
 let sequence = 0;
 
-type Verdict = "usable" | "fenced" | "refused" | "gone";
+type Verdict = "usable" | "fenced" | "gone";
 
 function judge(snapshot: DocumentSessionSnapshot): Verdict {
   const connection = snapshot.connectionState;
-  if (connection?.kind === "reset") {
-    if (connection.disposition === "schema") return "fenced";
-    return connection.disposition === "refused" ? "refused" : "gone";
-  }
+  if (connection?.kind === "reset") return connection.disposition === "schema" ? "fenced" : "gone";
   if (updatesRefused(connection)) return "fenced";
   if (
     snapshot.status === "destroyed" ||
@@ -107,9 +104,8 @@ export function readDraftRoom(registry: DraftRoomRegistry, roomKey: string): Dra
   const bind = (session: DocumentSession) => {
     unwatch?.();
     bound = session;
-    let refused = false;
     unwatch = session.subscribe((snapshot) => {
-      if (disposed || bound !== session || refused) return;
+      if (disposed || bound !== session) return;
       switch (judge(snapshot)) {
         case "usable":
           move({ kind: "usable", session });
@@ -119,11 +115,6 @@ export function readDraftRoom(registry: DraftRoomRegistry, roomKey: string): Dra
           return;
         case "gone":
           move({ kind: "unavailable" });
-          return;
-        case "refused":
-          // The pool retires the session with this very notification; the rebuild joins that teardown.
-          refused = true;
-          rebuild();
           return;
       }
     });

@@ -7,17 +7,7 @@ import { lineageRangesContain, normalizeLineageRanges } from "./lineage/range-se
 
 export type Utf16Span = { from: number; to: number };
 
-export type SemanticOutputRun =
-  | {
-      kind: "preserved";
-      source: LineageRange;
-      output: Utf16Span;
-      /** The source Yjs items remain visible; no continuation fact needs materializing. */
-      materialization?: "retained";
-    }
-  | { kind: "fresh"; payload: string; output: Utf16Span }
-  | { kind: "copy"; source: LineageRange; payload: string; output: Utf16Span }
-  | { kind: "restoration"; root: LineageRange; payload: string; output: Utf16Span };
+export type SemanticOutputRun = { kind: "fresh"; payload: string; output: Utf16Span };
 
 export type SemanticEditIRV1 = {
   version: 1;
@@ -34,10 +24,6 @@ export type SemanticEditIRV1 = {
   deleted: LineageRange[];
 };
 
-export type RestorationCertificatePort = {
-  hasRetainedRoot(documentId: string, root: LineageRange): boolean;
-};
-
 /**
  * Validate the complete resolver declaration before any lowering mutates a PM or Yjs document.
  * This is deliberately strict: missing output, overlap, a split surrogate, or an unbound source
@@ -48,7 +34,6 @@ export function validateSemanticEditIRV1(
   options: {
     expectedDocumentId: string;
     expectedInputRevision: DocumentRevision;
-    restorationCertificates?: RestorationCertificatePort;
   },
 ): SemanticEditIRV1 {
   if (ir.version !== 1) throw new Error("Unsupported semantic edit IR version");
@@ -79,25 +64,8 @@ export function validateSemanticEditIRV1(
     const output = editOutput(declared.edit);
     validateOutputPartition(output, declared.outputRuns);
     for (const run of declared.outputRuns) {
-      if (run.kind === "preserved" || run.kind === "copy") {
-        if (!lineageRangesContain(scope, run.source)) {
-          throw new Error(`${run.kind} source is outside IR scope`);
-        }
-        if (run.kind === "preserved" && spanLength(run.output) !== run.source.length) {
-          throw new Error("Preserved output must map length-for-length to its source root offsets");
-        }
-      }
-      if (run.kind === "restoration") {
-        if (spanLength(run.output) !== run.root.length) {
-          throw new Error("Restoration output must map length-for-length to its certified root");
-        }
-        if (!options.restorationCertificates?.hasRetainedRoot(ir.documentId, run.root)) {
-          throw new Error("Restoration requires a retained root certificate");
-        }
-      }
-      if (run.kind !== "preserved") {
-        const rendered = output.slice(run.output.from, run.output.to);
-        if (rendered !== run.payload) throw new Error(`${run.kind} payload does not match output`);
+      if (output.slice(run.output.from, run.output.to) !== run.payload) {
+        throw new Error("fresh payload does not match output");
       }
     }
   }
@@ -147,10 +115,6 @@ function assertUtf16Boundary(value: string, offset: number): void {
   if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) {
     throw new Error("Semantic output span splits a UTF-16 surrogate pair");
   }
-}
-
-function spanLength(span: Utf16Span): number {
-  return span.to - span.from;
 }
 
 function sameRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {

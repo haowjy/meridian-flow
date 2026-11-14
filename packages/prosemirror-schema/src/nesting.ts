@@ -70,6 +70,21 @@ export function pathOf(steps: readonly Step[]): string | null {
     .join("");
 }
 
+/** True when the block sits in a quote or a list. */
+export function isNested(path: unknown): boolean {
+  return readPath(path).length > 0;
+}
+
+/** True when the block sits in a list, however deep and whatever quotes are around it. */
+export function isListed(path: unknown): boolean {
+  return innermostListStep(readPath(path)) >= 0;
+}
+
+/** A paragraph with no level and no place in a quote or list: a heading or an item is the same node with one. */
+export function isBodyText(node: { type: { name: string }; attrs: NestingAttrs }): boolean {
+  return node.type.name === "paragraph" && node.attrs.level == null && !isNested(node.attrs.path);
+}
+
 /** The index of the last list step, -1 when there is none. */
 export function innermostListStep(steps: ReadonlyArray<{ type: StepType }>): number {
   for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === "list") return i;
@@ -301,6 +316,18 @@ export function sharedSteps(facts: readonly BlockFacts[], from: number, to: numb
     shared = k;
   }
   return shared;
+}
+
+/** Where the item that block `index` belongs to starts, at that block's innermost list level. */
+export function itemStart(facts: readonly BlockFacts[], index: number): number {
+  const level = innermostListStep(facts[index].steps);
+  let start = index;
+  while (start > 0) {
+    const step = facts[start].steps[level];
+    if (!step || step.startsItem || step.opens) break;
+    start--;
+  }
+  return start;
 }
 
 /**

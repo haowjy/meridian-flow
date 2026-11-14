@@ -37,13 +37,7 @@ import { errorResponse, mutationMeta, parseFileAddress, readSuccess } from "./wr
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    | "model"
-    | "codec"
-    | "coordinator"
-    | "semanticProvenance"
-    | "links"
-    | "onLinkSpliceFallback"
-    | "onObservationFailed"
+    "model" | "codec" | "coordinator" | "links" | "onLinkSpliceFallback" | "onObservationFailed"
   >;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
@@ -468,11 +462,9 @@ export function createWriteCommands(deps: {
       registerMinted(edit.assigner, docId, context),
       nextWriteIdentity(docId, session, context, command.tool_use_id),
     ]);
-    const _preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
     // The echo compares with what the model planned on, as the settled receipt does: a block
     // the writer changed since the view shows in full beside the write.
     const planned = snapshotBlocks(toDocHandle(planDoc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(planDoc);
     // A view lacks the room's newer clients; a fresh segment client must avoid them too.
     const roomClients =
       planDoc === room.doc
@@ -485,14 +477,7 @@ export function createWriteCommands(deps: {
       roomClients,
       (beforeSegment) => {
         if ("edits" in plan)
-          return applyEdits(
-            toDocHandle(planDoc),
-            options.model,
-            plan.edits,
-            origin,
-            beforeSegment,
-            certifySegment(planDoc, plan.ir, beforeVector),
-          );
+          return applyEdits(toDocHandle(planDoc), options.model, plan.edits, origin, beforeSegment);
         beforeSegment?.();
         let insertedBlocks: string[] = [];
         planDoc.transact(() => {
@@ -753,24 +738,6 @@ export function createWriteCommands(deps: {
       responseId: context.responseIdentity?.modelResponseId,
     };
   }
-
-  /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
-  function certifySegment(
-    doc: Y.Doc,
-    ir: SemanticEditIRV1,
-    beforeStateVector: Uint8Array,
-  ): (segment: readonly ResolvedEdit[]) => void {
-    return (segment) => {
-      const intent = ir.intent;
-      if (intent.kind === "fullScopeFreshReplacement") return;
-      const edits = intent.edits.filter(({ edit }) => segment.includes(edit));
-      options.semanticProvenance?.writeCertifiedFacts(
-        toDocHandle(doc),
-        { ...ir, intent: { ...intent, edits } },
-        beforeStateVector,
-      );
-    };
-  }
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
@@ -785,7 +752,7 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
 }
 
 /**
- * Capture the synchronous content and certification transactions, not a state-vector
+ * Capture the synchronous content transactions, not a state-vector
  * diff: that diff includes every old tombstone and couples otherwise independent writes.
  */
 function captureWriteUpdate<T>(

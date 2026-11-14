@@ -33,6 +33,7 @@
  * what lets a future surface take Tab at `layer` scope while it is open
  * without touching this file.
  */
+import { isListed } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import {
   type EditorState,
@@ -128,9 +129,8 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
 }
 
 /**
- * Inside a list the key belongs to the list, refusal included: `sinkListItem`
- * has nothing to sink the first item under, and a tab in that bullet's text is
- * not what the writer asked for by pressing the indent key.
+ * In a list the key indents the item; when `indentList` refuses (the first item) it does
+ * nothing, rather than type a tab into the bullet.
  */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
@@ -168,7 +168,7 @@ function insertTab(state: EditorState, dispatch: Parameters<KeymapBinding>[1]): 
 function insideListItem(state: EditorState): boolean {
   const { $from } = state.selection;
   const block = $from.parent.isTextblock ? $from.parent : state.selection.$to.parent;
-  return typeof block.attrs.path === "string" && block.attrs.path.includes("-");
+  return isListed(block.attrs.path);
 }
 
 /**

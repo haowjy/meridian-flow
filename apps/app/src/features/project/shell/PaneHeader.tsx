@@ -17,12 +17,10 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
  * rail is closed its toggle floats over this band, so the band reserves its
  * place; when it is open the toggle floats over the rail instead.
  *
- * A `notice` (a failed command on the pane's subject, like a rejected rename or
- * Archive) sits beside the title when the pane is wide, and floats under the
- * band when the pane is narrow, so the title keeps its width and the band stays
- * one row: a taller band would lift the active title tab off the page. It is
- * one element whose position alone changes, so crossing the width neither
- * remounts it (its alert is not announced again) nor drops focus from its Retry.
+ * A `notice` (a failure on what the pane shows) floats under the band at every
+ * width, as a refused title rename does: in the band it would wrap and lift the
+ * active title tab off the page, and between band and page it would push this
+ * pane's page below the other's.
  */
 export type PaneHeaderRailToggle = { open: boolean };
 
@@ -39,14 +37,14 @@ export type PaneHeaderProps = {
    * in both sidebar states.
    */
   leading?: ReactNode;
-  /** A failed command's row; placement follows the pane's width. */
+  /** A failure on what the pane shows; floats under the band. */
   notice?: ReactNode;
 };
 
 export function PaneHeader({ title, left, right, actions, leading, notice }: PaneHeaderProps) {
   const leftToggle = left && !left.open;
   return (
-    <div className="@container/pane-header tab-band shrink-0">
+    <div className="tab-band shrink-0">
       <header className="flex h-full items-center gap-x-1 pr-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
@@ -60,19 +58,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
 
         {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
         {/* Relative: a refused title rename floats under the band from here. */}
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-1 items-center self-stretch",
-            notice && "@2xl/pane-header:flex-initial",
-          )}
-        >
-          {title}
-        </div>
-        {notice ? (
-          <div className="absolute inset-x-2 top-full z-20 mt-1 rounded-md border border-border bg-card shadow-float @2xl/pane-header:static @2xl/pane-header:z-auto @2xl/pane-header:mt-0 @2xl/pane-header:min-w-0 @2xl/pane-header:flex-initial @2xl/pane-header:rounded-none @2xl/pane-header:border-0 @2xl/pane-header:bg-transparent @2xl/pane-header:shadow-none">
-            {notice}
-          </div>
-        ) : null}
+        <div className="relative flex min-w-0 flex-1 items-center self-stretch">{title}</div>
 
         {/* Band-tall too, so an inactive chip among the actions has its full-height pill. */}
         <div className="ml-auto flex shrink-0 items-center gap-1 self-stretch">
@@ -80,6 +66,11 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
           {right && !right.open ? <PanelToggleSpacer /> : null}
         </div>
       </header>
+      {notice ? (
+        <div className="absolute inset-x-2 top-full z-20 mt-1 rounded-md border border-border bg-card shadow-float">
+          {notice}
+        </div>
+      ) : null}
     </div>
   );
 }

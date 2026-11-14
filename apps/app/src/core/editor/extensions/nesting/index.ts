@@ -6,4 +6,4 @@ export {
   selectionIsQuoted,
   selectionListKind,
 } from "./nesting-commands";
-export { landSlice, moveUnder } from "./nesting-landing";
+export { afterList, landAt, landSlice, moveUnder } from "./nesting-landing";

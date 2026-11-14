@@ -13,7 +13,10 @@
  *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
  *     It begins when the status is `offline` or when `adoptionStalled` (a cached
- *     session that is `detached` because adopting it failed). It stays through
+ *     session that is `detached` because adopting it failed), and ends at once
+ *     when the session says its unsent edits can't be delivered
+ *     (`canDeliverUnsentEdits()`: the room ended, or it was admitted read-only,
+ *     as for an archived Work, whose notice says so beside it). It stays through
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
@@ -47,16 +50,20 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
 
 /**
  * Advance on every snapshot, so the offline→confirmation swap is one state
- * change and no render exists between the two labels. Terminal states reset to
- * idle. An outage (offline, or a stalled adoption) always means awaiting. A
+ * change and no render exists between the two labels. A session whose unsent
+ * edits can't be delivered resets to idle: nothing is waiting to upload. An outage (offline, or a stalled adoption) always means awaiting. A
  * drop while confirmed (any non-synced status) returns to awaiting. A local
  * edit while confirmed (the server no longer has everything) ends the
  * confirmation and hides the pill: the connection is healthy, so it is not
  * "offline" again, and waiting to re-show the confirmation would flicker on
  * every keystroke.
  */
-function nextPhase(phase: OutagePhase, snapshot: DocumentSessionSnapshot): OutagePhase {
-  if (snapshot.status === "access-lost" || snapshot.status === "destroyed") return "idle";
+function nextPhase(
+  phase: OutagePhase,
+  snapshot: DocumentSessionSnapshot,
+  deliverable: boolean,
+): OutagePhase {
+  if (!deliverable) return "idle";
   if (snapshot.status === "offline" || snapshot.adoptionStalled) return "awaiting";
   if (phase === "idle") return phase;
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
@@ -74,7 +81,7 @@ type Tracked = {
 /** A session already offline or stalled when the pill mounts shows its label on the first render. */
 function trackSession(session: DocumentSession): Tracked {
   const snapshot = session.getSnapshot();
-  return { session, snapshot, phase: nextPhase("idle", snapshot) };
+  return { session, snapshot, phase: nextPhase("idle", snapshot, session.canDeliverUnsentEdits()) };
 }
 
 export type SyncStatusProps = {
@@ -105,9 +112,11 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   useEffect(
     () =>
       session.subscribe((next) => {
+        // Read with the snapshot it belongs to, not when React runs the updater.
+        const deliverable = session.canDeliverUnsentEdits();
         setStored((current) =>
           current.session === session
-            ? { session, snapshot: next, phase: nextPhase(current.phase, next) }
+            ? { session, snapshot: next, phase: nextPhase(current.phase, next, deliverable) }
             : current,
         );
       }),

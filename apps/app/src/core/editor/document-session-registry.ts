@@ -22,15 +22,6 @@ export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text
 export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
-  /**
-   * The registry drops a live room whose pending edits the server refused
-   * (4409): it revokes each lease's access, which tears the session down and
-   * clears its local copy, so the next open loads the server's state instead
-   * of replaying them. This is that drop while it runs, so a host can unbind
-   * and reopen after; `null` before a refusal and once the drop has settled,
-   * whether or not it removed the session. Never rejects.
-   */
-  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null;
   retain(
     ownerId: string,
     leases: Iterable<LiveDocumentSessionLease>,

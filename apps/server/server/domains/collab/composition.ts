@@ -334,7 +334,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     codec: runtime.codec,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   const agentEdit = scopeAgentEdit(
