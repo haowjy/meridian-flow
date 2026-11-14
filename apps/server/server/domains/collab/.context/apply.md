@@ -100,17 +100,25 @@ owner is its only writer, which the branch's identity step proved. A creation on
 showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
 the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
 
-`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) copies back both halves of a
-Discard on the Work's current branch (`ensureActiveForWrite`: a whole Discard closed the branch it
-ran on). The tree records the Discard settled come back as pending copies (`restoreDiscard`). The
-text drafts it closed (`discard_command_drafts`, written by the kernel) come back as new active
-drafts holding the closed ones' bytes: a closed draft keeps `state` and its journal until its
-document's content is purged. The next live pull catches a copy up to the live text that moved
-meanwhile. Each half is copied once. A document the Work has drafted again since keeps its newer
-draft, and the Discard's text for it is counted in `leftOut`. With nothing to copy, the answer is a
-refusal that says why: `already_restored`, or `nothing_to_restore` (the Discard settled and closed
-nothing that still exists). Lock order: the Work, the owner's active branch, the lists' keys, then
-the keys of the documents the copies act on.
+`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the
+notice right after it or from Trash; `discardCommandId` may also name an earlier restore (see
+below). The branch in the URL is the one the command ran on. The tree records the Discard settled
+come back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`:
+a whole Discard closed the branch it ran on, so a new one is made; a branch row never reopens). Each
+text draft with `closed_by` = the Discard is **reopened as the same row**, moved to that branch,
+`closed_by` and `closed_cause` cleared: its receipts' origin, authorship and seeds stay keyed to
+the draft id, and the model's next write finds an active draft, not a closed one. If the Work has
+a newer active draft of the document, the restore closes it first with `closed_by` = the restore's
+own command id (`swapped` in the answer): that draft is a member of the restore's entry, and
+restoring that entry swaps it back. Nothing is refused because a newer draft exists. A second
+restore finds no draft closed by the command: `nothing_to_restore` (or `already_restored`, when
+the tree says its records were taken). Other refusals: `expired` (the command is older than
+`DELETION_RETENTION_DAYS`), `document_purged` (everything left was purged), `work_purged` (the
+Work and its branches are gone; the route lets the command through instead of answering 404 so the
+refusal is stored). `listDiscards(projectId)` is the document half of Trash's Discard entries.
+Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
+the copies act on, then the draft rows. The browser rejoining a restored draft's room is the
+client's.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

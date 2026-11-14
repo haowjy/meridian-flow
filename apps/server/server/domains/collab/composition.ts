@@ -63,6 +63,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
+import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -518,6 +519,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       },
     }),
   });
+  const discardEntries = createDrizzleDiscardEntries(deps.db);
   const undoDiscard = createUndoDiscardService({
     commands,
     store: createDrizzleUndoDiscard(deps.db, {
@@ -532,6 +534,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     apply: applyCommands.apply,
     unapplyClick: applyCommands.unapply,
     undoDiscard,
+    listDiscards: (projectId) => discardEntries.list(projectId),
     branches: workBranches,
     reviewItems,
     identity,

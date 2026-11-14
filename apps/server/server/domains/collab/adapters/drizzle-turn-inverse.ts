@@ -210,12 +210,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       try {
         for (const documentId of ids) {
           const removal = removals.get(documentId) ?? null;
-          // A discard released the document's bytes; a delete kept them, and its drafts that
-          // outlived it plan their inverse over the retained live history.
-          const released = removal?.reason === "discarded";
-          const { doc: live, room: liveRoomName } = released
-            ? { doc: new Y.Doc({ gc: false }), room: null }
-            : await materialize(documentId);
+          // A delete keeps the document's bytes, and its drafts that outlived it plan their
+          // inverse over the retained live history.
+          const { doc: live, room: liveRoomName } = await materialize(documentId);
           await testHook("inverse.afterCaptureRead");
           facts.push({
             documentId,

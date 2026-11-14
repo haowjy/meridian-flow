@@ -118,6 +118,18 @@ async function requireBranchIdentity(
   return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
 }
 
+/** `requireBranchIdentity`, or null when the branch is gone (its Work was purged). */
+async function branchIdentityOrGone(
+  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
+  input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
+): Promise<BranchAccess | null> {
+  await requireProjectOwned(deps, input);
+  const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
+  return found && found.branch.projectId === input.projectId
+    ? { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle }
+    : null;
+}
+
 /** `requireBranchIdentity`, and the owner is not deleted. */
 export async function requireBranchAccess(
   deps: Pick<BranchRouteServices, "projects" | "documentSync">,
@@ -791,21 +803,23 @@ export async function handleApplyClickRequest(
 }
 
 /** A branch-level command: the project's branch, the parsed body and the command's envelope. */
-async function branchCommand<Request extends { commandId: string }, Answer>(
+async function branchCommand<Request extends { commandId: string }, Answer, Access = BranchAccess>(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
   command: {
     kind: DocumentCommandKind;
     what: string;
     schema: z.ZodType<Request>;
+    /** Resolves the branch; the default answers a missing one with 404. */
+    identity?: (deps: BranchRouteServices, input: CommandScope) => Promise<Access>;
     run(call: {
       request: Request;
       envelope: DocumentCommandEnvelope;
-      access: BranchAccess;
+      access: Access;
     }): Promise<Answer>;
   },
 ): Promise<Answer> {
-  const access = await requireBranchIdentity(deps, input);
+  const access = await (command.identity ?? (requireBranchIdentity as never))(deps, input);
   const request = parseBody(command.schema, input.request, command.what);
   return command.run({
     request,
@@ -932,6 +946,8 @@ export function handleUndoDiscardRequest(
     kind: "undo_discard",
     what: "Undo of a Discard",
     schema: UndoDiscardBody,
+    // A stale Trash screen may name a purged Work's branch: the command stores `work_purged`.
+    identity: branchIdentityOrGone,
     run: async ({ request, envelope, access }) => {
       const commandId = request.commandId as DocumentCommandId;
       const lookup = async () =>
@@ -942,12 +958,14 @@ export function handleUndoDiscardRequest(
       const recorded = await lookup();
       if (recorded) return recorded;
       const grants: FileGrant<"edit">[] = [];
-      for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofDiscard({
-        discardCommandId: request.discardCommandId as DocumentCommandId,
-        accountId: input.userId,
-        branchId: input.branchId,
-      })) {
-        const grant = await documentGrant(deps, input, documentId, access.owner);
+      for (const documentId of access
+        ? await deps.documentSync.draftReview.commandDocuments.ofDiscard({
+            discardCommandId: request.discardCommandId as DocumentCommandId,
+            accountId: input.userId,
+            branchId: input.branchId,
+          })
+        : []) {
+        const grant = await documentGrant(deps, input, documentId, access?.owner ?? null);
         if (unseen(grant)) continue;
         if (isFileAccessDenied(grant))
           return (await lookup()) ?? { status: "refused", commandId, reason: denialReason(grant) };

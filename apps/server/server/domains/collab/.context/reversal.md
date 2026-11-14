@@ -151,7 +151,7 @@ before it advanced (simulated rows, one clock). A model count-N Undo records N s
 redoable actions, and a step that reverses an undo puts its edit back on the stack. The commit
 runs the steps in planned order (the card merges documents newest first, redo
 oldest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
-A document removed at capture plans no live text (`document_deleted` or `document_discarded`);
+A document removed at capture plans no live text (`document_deleted`);
 a draft that outlived the removal still takes its own inverse. Commit takes the attempt's
 document mutation locks in id order.
 

@@ -57,8 +57,11 @@ export function createDrizzleUndoDiscard(
         return await runCommand(
           db,
           envelope,
-          () =>
-            deps.workProjection.mutate(
+          async () => {
+            // A purged Work's branches went with it, before the Work's boundary can be entered.
+            if (!(await deps.branches.ownerOf(branchId)))
+              throw new UndoDiscardRefused("work_purged");
+            return deps.workProjection.mutate(
               { branches: [branchId] },
               async (): Promise<UndoDiscardResult> => {
                 const tx = currentDrizzleDb(db);
@@ -84,7 +87,6 @@ export function createDrizzleUndoDiscard(
                   throw new ApplyClickRefused("not_found");
                 if (discard.at <= deletionPurgeCutoff(new Date()))
                   throw new UndoDiscardRefused("expired");
-                // A purged Work's branches went with it.
                 const owner = (await deps.branches.ownerOf(branchId))?.owner;
                 if (!owner) throw new UndoDiscardRefused("work_purged");
                 approveBranchWriteJoin();
@@ -206,7 +208,8 @@ export function createDrizzleUndoDiscard(
                 };
               },
               { requireActive: true, seam: true },
-            ),
+            );
+          },
           (cause) =>
             cause instanceof UndoDiscardRefused
               ? refused(cause.reason)

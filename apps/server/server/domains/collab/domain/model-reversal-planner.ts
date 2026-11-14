@@ -234,10 +234,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
           closedPartCause(direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part),
         ),
       };
-    if (destination.kind === "live" && destination.removed)
-      return every(
-        document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
-      );
+    if (destination.kind === "live" && destination.removed) return every("document_deleted");
     const actionKind =
       direction === "redo" ? "redo" : poppableForTurn(turn).has(entry.id) ? "undo" : "revert";
     return {

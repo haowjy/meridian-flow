@@ -93,11 +93,12 @@ all closes the branch. Edited-text Discard closes no draft. A thread core holds 
 so a close needs no invalidation.
 
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
-cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
+cause, by?)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
 peers in ID order, derives the durable
-`closed_cause` (`document_removed` for a removal, else `discarded`), and joins the root transaction's
+`closed_cause` (`document_removed` for a removal, else `discarded`) and, when a Discard or restore
+command closes it, `closed_by` (that command's id), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
@@ -106,7 +107,9 @@ closes a created document's drafts closes their rooms stale, and one that Apply 
 live closes them `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
-closes their drafts. A live delete closes no draft: the drafts stay
+closes their drafts. A draft a Discard or restore closed retires only while its `closed_by`
+still names that command (`DraftRetirement.stillClosedBy`): a restore that reopened it first makes
+the late retirement leave its room alone. A live delete closes no draft: the drafts stay
 ordinary active drafts and their rooms stay open. A removed document's live
 rooms close `4208`, but only while the
 removal still stands: after every matching room load settles, one batched record

@@ -453,7 +453,11 @@ export type DraftReviewApi = {
       branchId: BranchId;
     }): Promise<DocumentId[]>;
   };
-  /** Fresh pending copies of what a Discard settled and closed, on the Work's current branch. */
+  /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
+  listDiscards(
+    projectId: ProjectId,
+  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
+  /** Restores what a Discard settled and closed: the Work's current branch holds it afterwards. */
   undoDiscard(input: {
     /** The branch the Discard ran on; it may have closed with it. */
     branchId: BranchId;

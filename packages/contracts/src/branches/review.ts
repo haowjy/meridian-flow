@@ -208,6 +208,33 @@ export type UndoDiscardAnswer =
   | UndoDiscardResult
   | { status: "conflict"; commandId: DocumentCommandId };
 
+/**
+ * The document half of a Trash entry for a Discard (or for a restore that swapped a newer draft
+ * out): the command, and the text drafts it closed that are still closed. The tree half is the
+ * tree's own answer for the same command id; an entry with no member in either is not listed.
+ */
+export type DiscardEntry = {
+  commandId: DocumentCommandId;
+  kind: "discard" | "undo_discard";
+  /** When the command ran: the entry leaves Trash 30 days later. */
+  at: string;
+  /** The branch the command ran on; Restore names it. */
+  branchId: BranchId;
+  workId: string | null;
+  drafts: { draftId: string; documentId: string }[];
+};
+
+/** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
+export type ListDiscardEntriesResponse = {
+  entries: (DiscardEntry & {
+    /** What the command settled in the tree and no restore has taken. */
+    tree: {
+      records: number;
+      created: { node: string; kind: string; name: string; path: string[] }[];
+    };
+  })[];
+};
+
 /** What one kind's effect answered, as stored in a command's outcome. */
 export type StoredDocumentCommandResult =
   | DiscardCommandResult
