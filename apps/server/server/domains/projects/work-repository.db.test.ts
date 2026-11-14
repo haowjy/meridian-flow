@@ -15,6 +15,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createCommandStore } from "../../shared/commands/drizzle-commands.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
@@ -43,6 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
+    const { runWorkCommand } = await import("../../lib/work-command.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
     const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { createDrizzleRepositoriesForTest } = await import(
@@ -53,6 +55,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleProjectWorkAuthorityResolver,
       deleteWorkTransition,
       restoreWork,
+      runWorkLifecycleCommand,
+      WorkDeleteRetryError,
       updateWorkTransition,
       WorkRestoreConflictError,
       WorkRestoreExpiredError,
@@ -186,6 +190,99 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ),
       ).resolves.toEqual({ status: 404, code: "work_not_found" });
+    });
+
+    it("settles a Work command's id under a racing resolve, a retried delete and a resend", async () => {
+      const commands = createCommandStore(db);
+      const input = (commandId: string, kind: "work_create" | "work_delete", workId?: string) => ({
+        commandId: commandId as CommandId,
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+        kind,
+        workId,
+        body: {},
+      });
+      const outcomeOf = async (commandId: string) => {
+        const found = await commands.lookup({
+          commandId: commandId as CommandId,
+          accountId: USER_ID,
+        });
+        return found.kind === "stored" ? found.outcome.status : found.kind;
+      };
+
+      // A resolve that arrives while the first request holds its claim waits for it and answers
+      // the committed outcome, not a `never`.
+      const raced = randomUUID();
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let claimed = () => {};
+      const entered = new Promise<void>((resolve) => {
+        claimed = resolve;
+      });
+      const removeHook = setTestHook("command.afterClaim", () => {
+        claimed();
+        return held;
+      });
+      const first = runWorkCommand(commands, input(raced, "work_create"), () =>
+        works.create({ projectId: PROJECT_ID, name: "Raced" }),
+      );
+      await entered;
+      const resolving = commands.resolve({
+        commandId: raced as CommandId,
+        accountId: USER_ID,
+        kind: "work_create",
+      });
+      await waitForLock("transactionid");
+      release();
+      removeHook();
+      await first;
+      expect(await resolving).toMatchObject({ kind: "stored", outcome: { status: "done" } });
+
+      // A resend answers the stored Work and creates nothing.
+      const resent = await runWorkCommand(commands, input(raced, "work_create"), () =>
+        works.create({ projectId: PROJECT_ID, name: "Raced" }),
+      );
+      expect(resent?.name).toBe("Raced");
+      expect(
+        (await works.listByProject(PROJECT_ID, {})).filter((w) => w.name === "Raced"),
+      ).toHaveLength(1);
+
+      // A `never` stored first wins: the request arriving after it changes nothing.
+      const never = randomUUID();
+      await commands.resolve({
+        commandId: never as CommandId,
+        accountId: USER_ID,
+        kind: "work_create",
+      });
+      let ran = false;
+      await expect(
+        runWorkCommand(commands, input(never, "work_create"), async () => {
+          ran = true;
+          return works.create({ projectId: PROJECT_ID, name: "Too late" });
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(ran).toBe(false);
+      expect(await outcomeOf(never)).toBe("never");
+
+      // A delete that missed and was retried rolls back past its claim and claims again.
+      const victim = await works.create({ projectId: PROJECT_ID, name: "Victim" });
+      const deleting = randomUUID();
+      let attempts = 0;
+      await runWorkLifecycleCommand(
+        (attempt) => attempt(),
+        () =>
+          runWorkCommand(commands, input(deleting, "work_delete", victim.id), async () => {
+            attempts += 1;
+            if (attempts === 1) throw new WorkDeleteRetryError();
+            await works.softDelete(victim.id, async () => {});
+            return undefined;
+          }),
+      );
+      expect(attempts).toBe(2);
+      expect(await outcomeOf(deleting)).toBe("done");
+      expect((await works.findById(victim.id))?.deletedAt).not.toBeNull();
     });
 
     it("mints w<n> in creation order, never reuses a handle, and resolves it to its address", async () => {
