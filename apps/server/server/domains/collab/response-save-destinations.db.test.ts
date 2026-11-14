@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * One reply, several destinations: a reply that writes live scratch and a drafted document reads its own writes, undoes as one turn, leaves out archived Works at save, and merges live writes into kept drafts.
  *
@@ -695,6 +696,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // draft it would change is what the archive froze.
       const reverse = (direction: "undo" | "redo") =>
         collab.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD_ID as never,
           userId: USER_ID,
           turnId: TURN_ID as never,

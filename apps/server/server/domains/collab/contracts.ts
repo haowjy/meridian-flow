@@ -5,7 +5,7 @@ import type {
   ObservationFrontier,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { BranchId, DraftOwner, LinkView } from "@meridian/contracts";
+import type { BranchId, DocumentCommandId, DraftOwner, LinkView } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
@@ -227,6 +227,13 @@ export type ReverseThreadContextInput = {
   userId: UserId;
   direction: "undo" | "redo";
   turnId: TurnId;
+  /** Minted by the browser for each click; a resend under it answers the stored outcome. */
+  commandId: DocumentCommandId;
+  /**
+   * Runs in the command's transaction after the documents, on their outcome (the Work
+   * receipts a turn made), so the stored answer is the whole answer.
+   */
+  alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
 };
 
 export type TurnReversalAccess = {

@@ -52,7 +52,6 @@ import type { CollabDomain } from "../../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
-import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
 import type {
   ContextCommandScope,
   ContextCommandTransaction,
@@ -72,6 +71,7 @@ import type {
   ContextScheme,
   CopySourceView,
 } from "../ports/context-port.js";
+import type { CopyCommands } from "./copy-commands.js";
 
 /** How long a read waits for the room to receive the edits a client's vector names. */
 const SOURCE_CATCH_UP_MS = 2_000;
@@ -125,7 +125,7 @@ export interface ContextCopyCommandDeps {
 
 /** The receipt owner and command transaction one authenticated caller's port already holds. */
 export interface ContextCopyEnvironment {
-  receipts: ContextOperationReceipts;
+  commands: CopyCommands;
   commandTransaction: ContextCommandTransaction;
 }
 
@@ -181,21 +181,21 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     // The receipt keeps the selection as the writer made it, so a replay is matched against
     // what was sent; the copy works from its outermost roots.
     const selected = { ...input, sources: outermostRoots(input.sources) };
-    const { receipts, commandTransaction } = input.environment;
+    const { commands, commandTransaction } = input.environment;
     // A replay has nothing to read: its answer is stored, and receipts are never deleted.
-    let replay = await receipts.lookup(input.request.operationId);
+    let replay = await commands.lookup(input.request.operationId);
     // A duplicate that arrives while the first attempt is still preparing waits for it; the
     // winner's receipt, when it records one, is then the waiter's answer.
     const release = replay ? null : await holdOperation(input.request.operationId);
     try {
-      replay = replay ?? (await receipts.lookup(input.request.operationId));
+      replay = replay ?? (await commands.lookup(input.request.operationId));
       // Reading holds no transaction. A source room that is not open loads through a second
       // connection, so Copies that each held one while reading would starve the pool they
       // wait on.
       const prepared = replay ? null : await prepare(selected);
       let claimed = false;
       try {
-        return await receipts.execute(
+        return await commands.execute(
           input.request.operationId,
           receiptCommand(input),
           input.destination.uri,

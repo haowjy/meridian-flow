@@ -7,7 +7,16 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
-accepts only `{ scope: "turn", target: turnId, direction }`. Capture resolves each
+accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
+`commandId` for each click and each Try again. It is a `reverse_turn` row in `document_commands`:
+`DocumentCommands.run` claims the id and runs the whole reversal, then the route's Work receipts
+(`alongside`, in their own savepoint), in one transaction, and stores the full outcome, the
+no-op and refusal answers included (`nothing_to_undo`, `expired`, `permission_denied`). A resend
+under the id answers that outcome and changes nothing; another request under it is
+`command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A
+miss the inverse retries itself rolls back past the claim; exhausting its attempts is
+`ReversalConflictError` and stores nothing. The captured planning reads run on the command's own
+connection (`joinRootTransactionsInAmbient`), as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use

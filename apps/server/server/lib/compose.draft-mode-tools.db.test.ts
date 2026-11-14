@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Production-composed model tools in a Work: scratch stays live while drafted writes name the draft, read, search and ls follow the version the writes change, copies of text and binary files, and a chat's write-mode switch against real repositories.
  *
@@ -201,6 +202,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const reverse = (direction: "undo" | "redo") =>
         script.runtime.ports.documentSync.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: THREAD.threadId as never,
           userId: USER_ID as never,
           direction,

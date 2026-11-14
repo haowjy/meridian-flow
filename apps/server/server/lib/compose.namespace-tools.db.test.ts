@@ -284,6 +284,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const undone = await script.runtime.ports.documentSync.reverseThreadContext({
+        commandId: randomUUID(),
         threadId: THREAD.threadId as never,
         userId: USER_ID as never,
         direction: "undo",
@@ -379,6 +380,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // The writer's card Undo of the first turn moves it back.
       const reversed = await script.runtime.ports.documentSync.reverseThreadContext({
+        commandId: randomUUID(),
         threadId: THREAD.threadId as never,
         userId: USER_ID as never,
         direction: "undo",
@@ -536,6 +538,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await call("write", { command: "redo", path: "ch1" })).isError).toBeFalsy();
       const card = (direction: "undo" | "redo") =>
         script.runtime.ports.documentSync.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: OTHER.threadId as never,
           userId: USER_ID as never,
           direction,
