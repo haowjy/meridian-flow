@@ -48,6 +48,19 @@ this directory never imports application packages. The `./mf` CLI lives in
 - Keep `pnpm dev:production-client`'s API and WebSocket ownership in the app
   launcher; do not add a second route inventory here.
 
+## Idle stacks and memory
+
+A stack costs 1.5–3.5 GB, so forgotten ones exhaust the machine. `pnpm dev:stacks`
+lists every checkout's stack with its memory and idle time. Each stack runs a watcher
+(`dev-idle-watch.ts`, tmux window `idle-watch`) that stops it with `pnpm dev --stop`
+after `DEV_IDLE_STOP_MINUTES` (default 60, `0` turns it off) without work; the next
+`pnpm dev` starts it cleanly. "Work" is the stack's process tree burning CPU, which a
+page load, an `./mf` call or an edit does and an untouched stack does not; pane output
+does not track use. `lib/dev-idle.ts` holds the rule, and `pnpm dev:stacks --reap-idle <minutes>`
+uses it too (`unknown` idle means the stack started without a watcher; restart it).
+Don't stop a stack you didn't start. `pnpm dev` also warns, never blocks, and lists the
+stacks when `MemAvailable` is under `DEV_LOW_MEMORY_GB` (default 8).
+
 ## Cleaning up
 
 1. Stop the dev stack with `pnpm dev --stop`.

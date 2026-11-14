@@ -8,7 +8,9 @@ import { waitForDevReadiness } from "./dev-readiness";
 import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
+import { resolveIdleStopMinutes } from "./lib/dev-idle";
 import { assertDevInfraReady } from "./lib/dev-infra";
+import { collectStacks, formatStackTable, mb, memAvailableBytes } from "./lib/dev-stacks-report";
 import { DEV_TMUX_SOCKET } from "./lib/dev-tmux-socket";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { prunePortlessRoutes } from "./lib/portless-maintenance";
@@ -95,6 +97,17 @@ function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, forc
     throw new Error(
       "expected routes are already registered; use pnpm dev --restart or pnpm dev --force to take over",
     );
+}
+
+/** Warns, never blocks: starting a stack is the writer's call, stopping an idle one is the fix. */
+function warnIfMemoryLow(): void {
+  const limitGb = Number(process.env.DEV_LOW_MEMORY_GB ?? 8);
+  if (!(limitGb > 0) || memAvailableBytes() >= limitGb * 1024 ** 3) return;
+  console.warn(
+    `warning: ${mb(memAvailableBytes())} of memory is available (limit ${limitGb} GB, DEV_LOW_MEMORY_GB). Running dev stacks:`,
+  );
+  console.warn(formatStackTable(collectStacks()));
+  console.warn("Stop idle ones in their checkout with: pnpm dev --stop\n");
 }
 
 function teardownSessions(store: TmuxSessionStore, names: string[]): void {
@@ -292,6 +305,7 @@ async function main(): Promise<void> {
       await releaseBackendPorts(plan);
     }
     await tailscale.pruneStaleRoutes();
+    warnIfMemoryLow();
     requireSuccess(
       store.createSession(session.sessionName, plan.command.env),
       `failed to create tmux session '${session.sessionName}'`,
@@ -306,6 +320,17 @@ async function main(): Promise<void> {
       store.sendKeys(session.sessionName, plan.command.line),
       "failed to start portless in tmux",
     );
+    const idleMinutes = resolveIdleStopMinutes();
+    if (idleMinutes > 0) {
+      requireSuccess(
+        store.startWindow(
+          session.sessionName,
+          "idle-watch",
+          `exec pnpm exec tsx tools/dev/dev-idle-watch.ts ${session.sessionName} ${idleMinutes}`,
+        ),
+        "failed to start the idle watcher",
+      );
+    }
   }
   await verifyAndPublish({
     store,
