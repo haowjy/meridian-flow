@@ -15,7 +15,7 @@ import type { Database } from "@meridian/database";
 import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { Branches } from "../collab/domain/branches.js";
-import type { DocumentCreationAggregate, DraftPeerShadowAccess } from "../collab/index.js";
+import type { DocumentCreationAggregate } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";
@@ -117,7 +117,6 @@ interface AdapterAssembly {
   treeLists: Pick<TreeListStore, "submit" | "read">;
   db: Database;
   arrivals?: DocumentArrivals;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   owner: { projectId: string; userId: string };
 }
 
@@ -151,7 +150,6 @@ function contextFsAdapter(
       sourceId: () => deps.store.contextSourceId(),
     }),
     actor: `user:${assembly.owner.userId}`,
-    drafts: assembly.drafts,
     ...(assembly.arrivals ? { arrivals: assembly.arrivals } : {}),
     placement: placementFor(assembly, deps.scheme),
     documentSync: assembly.documentSync,
@@ -240,7 +238,6 @@ function buildUnifiedContextPort(input: {
   treeLists: AdapterAssembly["treeLists"];
   db: Database;
   arrivals?: DocumentArrivals;
-  drafts: AdapterAssembly["drafts"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   copyCommands?: CopyCommands;
   copy?: ContextCopyCommandDeps;
@@ -255,7 +252,6 @@ function buildUnifiedContextPort(input: {
     branches: input.branches,
     treeLists: input.treeLists,
     db: input.db,
-    drafts: input.drafts,
     ...(input.arrivals ? { arrivals: input.arrivals } : {}),
     owner: { projectId: scope.projectId, userId: scope.userId },
     ...(scope.kind === "work" && scope.thread ? { thread: scope.thread } : {}),
@@ -397,9 +393,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   topPrimaryChats?: TopPrimaryChatResolver;
   links: ContextFSDeps["links"];
   db: Database;
-  documentSync: ContextFSDeps["documentSync"] &
-    DocumentCreationAggregate &
-    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
+  documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   /** The project's tree lists: every create, move and delete is a `submit` on one. */
   treeLists: Pick<TreeListStore, "submit" | "read">;
   /** Told when a source is provisioned: the first write into a Work, a chat or a lineage makes it. */
@@ -487,7 +481,6 @@ export function createProductionUnifiedContextPortFactory(options: {
         branches: options.branches,
         treeLists: options.treeLists,
         db: options.db,
-        drafts: options.documentSync,
         ...(options.arrivals ? { arrivals: options.arrivals } : {}),
         ...(options.copy ? { copy: options.copy } : {}),
       });
@@ -505,7 +498,6 @@ export function createProductionUnifiedContextPortFactory(options: {
         branches: options.branches,
         treeLists: options.treeLists,
         db: options.db,
-        drafts: options.documentSync,
         ...(options.arrivals ? { arrivals: options.arrivals } : {}),
         ...(options.copy ? { copy: options.copy } : {}),
       });

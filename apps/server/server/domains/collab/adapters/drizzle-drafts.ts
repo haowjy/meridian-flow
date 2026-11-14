@@ -176,72 +176,80 @@ export function createDrizzleDraftStore(
     }
   }
 
-  async function ensureDocumentDraft(input: {
+  type DraftSeed = {
     documentId: DocumentId;
     branchId: BranchId;
     liveDoc: Y.Doc;
     liveRoom: string | null;
     livePosition?: number;
-  }): Promise<DraftSnapshot> {
+  };
+
+  async function ensureDocumentDraft(input: DraftSeed): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seeded = seedDraftState(input.liveDoc, input.liveRoom, input.livePosition ?? 0);
-    const { seed, ...checkpoint } = seeded;
     // Creating a draft is a write the Work's lifecycle orders: the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
-    // Both fragments start equal at revision 0; live shares content, never Yjs items.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed branch gains no draft.
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
-      // An active Work draft is returned whatever became of the live document: it outlives a
-      // live delete. Only a new draft needs a living document.
-      const existing = await activeDocumentDraft(input.documentId, input.branchId);
-      if (existing) return existing;
-      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
-      await testHook("draft.ensure.afterDocumentLock");
-      await assertDraftableInBranch(input.documentId, input.branchId);
-      // Racing ensures of one document's draft get one draft.
-      const [inserted] = await currentDrizzleDb(db)
-        .insert(documentDrafts)
-        .values({
-          id: `draft_${randomUUID()}`,
-          documentId: input.documentId,
-          kind: "work_draft",
-          branchId: input.branchId,
-          status: "active",
-          ...checkpoint,
-          ...(seed
-            ? {
-                seedOrigins: seed.origins,
-                seedLiveRoom: seed.liveRoom,
-                seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
-                seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
-                seedLiveState: seed.liveAttribution
-                  ? Buffer.from(seed.liveAttribution.state)
-                  : null,
-                seedLivePosition: seed.liveAttribution?.position,
-              }
-            : {}),
-          hasEffect: false,
-          hasEffectRevision: 0,
-          schemaVersion: packCollabSchemaVersion(
-            (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
-              COLLAB_SCHEMA_VERSION,
-          ),
-        })
-        .onConflictDoNothing()
-        .returning({ id: documentDrafts.id });
-      const documentDraft = await activeDocumentDraft(input.documentId, input.branchId);
-      if (!documentDraft) {
-        throw new Error(
-          `Work draft for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
-        );
-      }
-      return documentDraft;
+      return insertDocumentDraft(input);
     });
+  }
+
+  /** The draft's insert under the document's key, for a caller that has fenced the branch's end. */
+  async function insertDocumentDraft(input: DraftSeed): Promise<DraftSnapshot> {
+    const { seed, ...checkpoint } = seedDraftState(
+      input.liveDoc,
+      input.liveRoom,
+      input.livePosition ?? 0,
+    );
+    // Both fragments start equal at revision 0; live shares content, never Yjs items.
+    await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+    // An active Work draft is returned whatever became of the live document: it outlives a
+    // live delete. Only a new draft needs a living document.
+    const existing = await activeDocumentDraft(input.documentId, input.branchId);
+    if (existing) return existing;
+    await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+    await testHook("draft.ensure.afterDocumentLock");
+    await assertDraftableInBranch(input.documentId, input.branchId);
+    // Racing ensures of one document's draft get one draft.
+    const [inserted] = await currentDrizzleDb(db)
+      .insert(documentDrafts)
+      .values({
+        id: `draft_${randomUUID()}`,
+        documentId: input.documentId,
+        kind: "work_draft",
+        branchId: input.branchId,
+        status: "active",
+        ...checkpoint,
+        ...(seed
+          ? {
+              seedOrigins: seed.origins,
+              seedLiveRoom: seed.liveRoom,
+              seedLiveSnapshot: Buffer.from(seed.liveSnapshot),
+              seedDraftSnapshot: Buffer.from(seed.draftSnapshot),
+              seedLiveState: seed.liveAttribution ? Buffer.from(seed.liveAttribution.state) : null,
+              seedLivePosition: seed.liveAttribution?.position,
+            }
+          : {}),
+        hasEffect: false,
+        hasEffectRevision: 0,
+        schemaVersion: packCollabSchemaVersion(
+          (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
+            COLLAB_SCHEMA_VERSION,
+        ),
+      })
+      .onConflictDoNothing()
+      .returning({ id: documentDrafts.id });
+    const documentDraft = await activeDocumentDraft(input.documentId, input.branchId);
+    if (!documentDraft) {
+      throw new Error(
+        `Work draft for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
+      );
+    }
+    return documentDraft;
   }
 
   /** The document's live state as its journal holds it, read in this transaction. */
@@ -261,13 +269,18 @@ export function createDrizzleDraftStore(
     }
   }
 
-  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
+  /**
+   * §6.2 step 5: seeded from the document's durable live state, read in this transaction. The
+   * caller is the admission of the create and holds the branch's tree list key, which a Work's
+   * archive or delete and a branch's end take before they change it: the branch stays open to
+   * the commit. The Work's lock comes before the list key, so it is not taken here.
+   */
   function ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<DraftSnapshot> {
     return withJournalDocument(input.documentId, (liveDoc, snapshot) =>
-      ensureDocumentDraft({
+      insertDocumentDraft({
         ...input,
         liveDoc,
         liveRoom: null,

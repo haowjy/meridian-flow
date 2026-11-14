@@ -56,7 +56,12 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    previous locations and `location_version`. "Kept" is `keptBranches` and "open" is
    `openBranches` (`tree-list-facts.ts`): only open Works may write, but every kept Work's view is
    kept, so retention and "living" never lose a Work that can come back;
-6. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
+6. a text document a new create made in a Work's version gets its Yjs authority and its Work text
+   draft (`draftCreatedDocuments`, collab's), still under the list's key. It takes no Work lock:
+   the Work's lock comes before the list key, and a Work's archive or delete and a branch's end
+   take the list key before they change it, so the branch stays open to the commit. A copy of a
+   create (Apply's, a restored Discard's) names a node the list holds already and makes no draft;
+7. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
 
 `submit` and `resync` join the caller's transaction, so a caller must hold no document or namespace
 key it did not already hold with the list's (the list's key sorts before them; see the lock order

@@ -609,14 +609,14 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The branch's draft for a document it just created or joined, seeded from its live
-   * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
-   * idempotent against a racing peer ensure (contract §6.2 step 5).
+   * Each text document a branch's admitted create just made gets its Yjs authority and its
+   * Work text draft (empty: a draft create never seeds live Yjs), in the admitting
+   * transaction under the list's key: the tree list store calls it for every create in a
+   * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
    */
-  ensureCreatedDocumentDraft(input: {
-    documentId: DocumentId;
-    branchId: BranchId;
-  }): Promise<import("./domain/draft-store.js").DraftSnapshot>;
+  draftCreatedDocuments(
+    created: readonly { documentId: DocumentId; branchId: BranchId }[],
+  ): Promise<void>;
 };
 
 export type DraftAttributionAccess = {

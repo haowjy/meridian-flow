@@ -21,6 +21,7 @@ import {
 import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
+import { useOpenCreatedDocument } from "../review-launch";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useShellTreeVersion } from "../tree-version";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
@@ -46,6 +47,7 @@ export function ContextTreePanel({
   scheme,
   activeDocumentId,
   onSelectFile,
+  onPicked,
   drop,
 }: {
   treeState: TreeViewResult;
@@ -59,6 +61,8 @@ export function ContextTreePanel({
     file: TreeFile,
     options?: { focus?: true },
   ) => void;
+  /** A file the writer picked opened: the phone's drawer closes. */
+  onPicked?: () => void;
   drop: SourceDrop;
 }) {
   const controller = useOptionalTreeCreation();
@@ -163,14 +167,19 @@ export function ContextTreePanel({
     [requestTreeCreate, scheme],
   );
 
-  // A created file opens once its row shows in the tree.
+  // A created file opens once its row shows in the tree, in the version it was made in.
+  const openCreated = useOpenCreatedDocument(projectId);
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const entry = tree.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
-    onSelectFile(scheme, entry, { focus: true });
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, onSelectFile, scheme]);
+    void openCreated(
+      entry.documentId,
+      async () => onSelectFile(scheme, entry, { focus: true }),
+      onPicked,
+    );
+  }, [pendingOpenPath, tree, onSelectFile, onPicked, scheme, openCreated]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);

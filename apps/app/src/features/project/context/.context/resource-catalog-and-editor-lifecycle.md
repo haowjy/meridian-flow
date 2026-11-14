@@ -37,7 +37,10 @@ content durability. Neither owns the other's state.
 
 New appends a provisional `create` in Unfiled and opens the node by the name the replay gives
 it, before the server has heard of it; its text room connects once the create is admitted and is
-retried while it is not (`4211`). Leaving main removes only browser-local presentation. It never
+retried while it is not (`4211`). On Draft a create (New, a tree's New file, a link's Create) makes
+the Work's text draft at its admission, which only the server can name, so the page opens on that
+draft once the Work's list has the item (`useOpenCreatedDocument` in `review-launch.tsx`) and the
+new row shows in the tree meanwhile. Leaving main removes only browser-local presentation. It never
 deletes the document.
 
 Nothing persists open documents: main shows the document its address names, the side shows
