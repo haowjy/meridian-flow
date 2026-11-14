@@ -405,12 +405,26 @@ export type DraftReviewApi = {
     request: import("@meridian/contracts/branches").ApplyClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /** The tree changes of several nodes, documents or folders, as one command. */
+  applyTree(input: {
+    branchId: BranchId;
+    request: import("@meridian/contracts/branches").ApplyTreeClick;
+    envelope: DocumentCommandEnvelope;
+  }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
-    documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
+  /** Fresh pending copies of what a Discard settled, on the Work's current branch. */
+  undoDiscard(input: {
+    /** The branch the Discard ran on; it may have closed with it. */
+    branchId: BranchId;
+    userId: UserId;
+    request: import("@meridian/contracts/branches").UndoDiscardClick;
+    envelope: DocumentCommandEnvelope;
+  }): Promise<import("@meridian/contracts/branches").UndoDiscardAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { owner: DraftOwner }): Promise<{

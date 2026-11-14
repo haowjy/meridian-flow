@@ -23,7 +23,9 @@ export function createWorkBranchReviewService(input: {
   discard: BranchDiscard;
   commands: DocumentCommands;
   applyClick: CollabBranches["draftReview"]["applyClick"];
+  applyTree: CollabBranches["draftReview"]["applyTree"];
   unapplyClick: CollabBranches["draftReview"]["unapplyClick"];
+  undoDiscard: CollabBranches["draftReview"]["undoDiscard"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
 }): CollabBranches {
@@ -75,7 +77,9 @@ export function createWorkBranchReviewService(input: {
   return {
     draftReview: {
       applyClick: input.applyClick,
+      applyTree: input.applyTree,
       unapplyClick: input.unapplyClick,
+      undoDiscard: input.undoDiscard,
       async list(command) {
         const { items } = await ownerItems(command.owner);
         return items.map(

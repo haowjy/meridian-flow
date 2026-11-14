@@ -32,17 +32,28 @@ import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
 export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
-type StoredApplyEffect = {
-  ordinal: number;
-  groupId: string;
-  liveUpdateSeq: number | null;
-  baseBefore: unknown[];
-  baseAfter: unknown[];
-};
-type PreparedUnapply = {
-  base: DraftBase;
+export type ApplyTreeCommand = Parameters<CollabBranches["draftReview"]["applyTree"]>[0];
+/** What an Un-Apply takes back: the Apply's text effects on its one document, and its tree half. */
+export type PreparedUnapply = {
   branchId: import("@meridian/contracts").BranchId;
-  effects: StoredApplyEffect[];
+  /** Null for an Apply that wrote no text effect (a tree-only Apply). */
+  text: {
+    base: DraftBase;
+    documentId: import("@meridian/contracts").DocumentId;
+    effects: {
+      ordinal: number;
+      groupId: string;
+      liveUpdateSeq: number | null;
+      baseBefore: unknown[];
+      baseAfter: unknown[];
+    }[];
+  } | null;
+  /** One per list the Apply settled records in: the list's state vector it left. */
+  trees: {
+    scope: "project" | "account";
+    mark: Uint8Array;
+    createdHeads: Record<string, { live: number; draft: number }>;
+  }[];
 };
 export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
@@ -67,6 +78,8 @@ export interface ApplyCommandStore {
       | { kind: "text"; base: DraftBase; click: CompiledClick; tree?: TreeCut }
       | { kind: "tree"; branchId: import("@meridian/contracts").BranchId; tree: TreeCut },
   ): Promise<ApplyClickAnswer>;
+  /** The tree changes of several nodes as one command (`ApplyTreeClick`). */
+  applyTree(command: ApplyTreeCommand): Promise<ApplyClickAnswer>;
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
   unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
@@ -246,6 +259,24 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
+  const applyTree = async (command: ApplyTreeCommand): Promise<ApplyClickAnswer> => {
+    const commandId = command.envelope.commandId;
+    const lookup = async () =>
+      replay<ApplyClickResult>(await input.commands.lookup(command.envelope), commandId);
+    const first = await lookup();
+    if (first) return first;
+    try {
+      return await input.store.applyTree(command);
+    } catch (cause) {
+      if (cause instanceof DocumentCommandExistsError) {
+        const winner = await lookup();
+        if (winner) return winner;
+      }
+      if (cause instanceof ApplyClickRefused)
+        return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
+      throw cause;
+    }
+  };
   const unapply = async (command: UnapplyClickCommand): Promise<UnapplyClickAnswer> => {
     const commandId = command.envelope.commandId;
     const lookup = async (): Promise<UnapplyClickAnswer | null> =>
@@ -266,5 +297,5 @@ export function createApplyClickService(input: {
       throw cause;
     }
   };
-  return { apply, unapply };
+  return { apply, applyTree, unapply };
 }

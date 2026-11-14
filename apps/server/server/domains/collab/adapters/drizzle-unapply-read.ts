@@ -5,6 +5,7 @@ import type { DocumentId, EditOrigin } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
+  applyCommandTrees,
   documentCommands,
   documentDrafts,
   documentEditParts,
@@ -14,6 +15,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabBranches } from "../contracts.js";
+import type { PreparedUnapply } from "../domain/apply-click.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 
 const schema = buildDocumentSchema();
@@ -68,12 +70,33 @@ export async function loadUnapplyHistory(
   }));
 }
 
+/**
+ * The command's effects, read for the account that sent it on this branch. Null when it has
+ * none here, or its text draft closed: nothing to take back.
+ */
 export async function loadPreparedUnapply(
   db: Database,
   coordinator: Pick<DraftCoordinator, "loadBase">,
   command: UnapplyClickCommand,
-) {
+): Promise<PreparedUnapply | null> {
   const tx = currentDrizzleDb(db);
+  const applied = command.request.applyCommandId;
+  const trees = await tx
+    .select({
+      scope: applyCommandTrees.scope,
+      mark: applyCommandTrees.mark,
+      createdHeads: applyCommandTrees.createdHeads,
+    })
+    .from(applyCommandTrees)
+    .innerJoin(documentCommands, eq(documentCommands.id, applyCommandTrees.commandId))
+    .where(
+      and(
+        eq(applyCommandTrees.commandId, applied),
+        eq(applyCommandTrees.branchId, command.branchId),
+        eq(documentCommands.accountId, command.envelope.accountId),
+        eq(documentCommands.kind, "apply"),
+      ),
+    );
   const rows = await tx
     .select({
       branchId: documentDrafts.branchId,
@@ -91,8 +114,7 @@ export async function loadPreparedUnapply(
     .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
     .where(
       and(
-        eq(applyCommandEffects.commandId, command.request.applyCommandId),
-        eq(applyCommandEffects.documentId, command.documentId),
+        eq(applyCommandEffects.commandId, applied),
         eq(documentDrafts.branchId, command.branchId),
         eq(documentCommands.accountId, command.envelope.accountId),
         eq(documentCommands.kind, "apply"),
@@ -100,22 +122,17 @@ export async function loadPreparedUnapply(
     )
     .orderBy(applyCommandEffects.ordinal);
   const first = rows[0];
-  if (!first?.branchId || rows.some((row) => row.draftId !== first.draftId)) return null;
+  if (!first) return trees.length ? { branchId: command.branchId, text: null, trees } : null;
+  if (rows.some((row) => row.draftId !== first.draftId)) return null;
   try {
     const base = await coordinator.loadBase(first.draftId);
     if (
       base.snapshot.status === "closed" ||
-      base.snapshot.documentId !== command.documentId ||
+      base.snapshot.documentId !== first.documentId ||
       base.snapshot.branchId !== first.branchId
     )
       return null;
-    const effects: {
-      ordinal: number;
-      groupId: string;
-      liveUpdateSeq: number | null;
-      baseBefore: unknown[];
-      baseAfter: unknown[];
-    }[] = [];
+    const effects: NonNullable<PreparedUnapply["text"]>["effects"] = [];
     let preceding = first.baseStart?.map((node) => schema.nodeFromJSON(node));
     if (!preceding) return null;
     for (const row of rows) {
@@ -137,7 +154,11 @@ export async function loadPreparedUnapply(
         });
       preceding = following;
     }
-    return { base, branchId: first.branchId, effects };
+    return {
+      branchId: command.branchId,
+      text: { base, documentId: first.documentId, effects },
+      trees,
+    };
   } catch (cause) {
     const [draft] = await tx
       .select({ status: documentDrafts.status })

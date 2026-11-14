@@ -366,9 +366,39 @@ export const documentCommands = pgTable(
     index("document_commands_thread").on(table.threadId),
     check(
       "document_commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')`,
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')`,
     ),
   ],
+);
+
+/**
+ * The tree half of an Apply: one row per list the command settled records in, with the list's
+ * state vector right after (Un-Apply is allowed only while the list still has it).
+ */
+export const applyCommandTrees = pgTable(
+  "apply_command_trees",
+  {
+    commandId: uuid("command_id")
+      .$type<DocumentCommandId>()
+      .notNull()
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** The project's list, or its owner's account list (`user://`). */
+    scope: text("scope").$type<"project" | "account">().notNull(),
+    mark: byteaColumn("mark").notNull(),
+    /**
+     * The documents the Apply created in this list, each with the highest live journal row and
+     * draft journal row it had once the command committed: text written past either since is
+     * what an Un-Apply of a created document must not cut off.
+     */
+    createdHeads: jsonb("created_heads")
+      .$type<Record<string, { live: number; draft: number }>>()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */

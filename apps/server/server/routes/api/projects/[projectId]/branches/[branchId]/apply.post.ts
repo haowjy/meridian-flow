@@ -1,19 +1,18 @@
-/** Un-Apply one editor-originated frozen text Apply. */
+/** POST /api/projects/:projectId/branches/:branchId/apply: Apply the tree changes of several nodes as one command. */
 import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
+import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import {
-  handleUnapplyClickRequest,
+  handleApplyTreeRequest,
   selectBranchRouteServices,
-} from "../../../../../../../../../../lib/branch-review-route.js";
+} from "../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  return handleUnapplyClickRequest(selectBranchRouteServices(app), {
+  return handleApplyTreeRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     branchId: (getRouterParam(event, "branchId") ?? "") as BranchId,
-    documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
     request: await readBody(event),
   });

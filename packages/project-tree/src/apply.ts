@@ -320,6 +320,29 @@ function stillFit(writer: TreeWriter, restored: ReadonlySet<string>, undone: rea
   );
 }
 
+/** What an Apply command settled, and the live copies it appended that are still in force. */
+function appliedBy(writer: TreeWriter, applied: string) {
+  const settled = settledBy(writer, applied, "applied", "superseded");
+  const all = new Map(listRecords(writer.doc).map((record) => [record.id, record]));
+  const landed = new Set(
+    settled.flatMap(([id, to]) => {
+      const record = all.get(id);
+      return to === "applied" && record ? [record.carries ?? record.id] : [];
+    }),
+  );
+  const copies = viewRecords(writer.doc, LIVE).filter(
+    (record) => record.carries !== undefined && landed.has(record.carries),
+  );
+  return { settled, copies };
+}
+
+/** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
+export function appliedCreates(writer: TreeWriter, applied: string): string[] {
+  return appliedBy(writer, applied).copies.flatMap((copy) =>
+    copy.type === "create" ? [copy.node] : [],
+  );
+}
+
 /**
  * Undo of an Apply, by the simple rule (design section 5): allowed only while nothing has been
  * admitted to the list since, by anyone, anywhere. `mark` is the list's state vector taken right
@@ -340,17 +363,8 @@ export function undoApply(
   assertNewCommand(writer.doc, command);
   const now = Y.encodeStateVector(writer.doc);
   if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
-  const settled = settledBy(writer, applied, "applied", "superseded");
-  const all = new Map(listRecords(writer.doc).map((record) => [record.id, record]));
-  const landed = new Set(
-    settled.flatMap(([id, to]) => {
-      const record = all.get(id);
-      return to === "applied" && record ? [record.carries ?? record.id] : [];
-    }),
-  );
-  const copies = viewRecords(writer.doc, LIVE).filter(
-    (record) => record.carries !== undefined && landed.has(record.carries),
-  );
+  const { settled, copies } = appliedBy(writer, applied);
+  if (settled.length === 0) return "superseded";
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
   const restored = new Set(settled.map(([id]) => id));
   const undone = copies.map((copy) => copy.id);

@@ -878,6 +878,15 @@ CREATE TABLE "apply_command_effects" (
 	CONSTRAINT "apply_command_effects_command_id_ordinal_pk" PRIMARY KEY("command_id","ordinal")
 );
 --> statement-breakpoint
+CREATE TABLE "apply_command_trees" (
+	"command_id" uuid NOT NULL,
+	"branch_id" uuid NOT NULL,
+	"scope" text NOT NULL,
+	"mark" "bytea" NOT NULL,
+	"created_heads" jsonb NOT NULL,
+	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
+);
+--> statement-breakpoint
 CREATE TABLE "document_block_rooms" (
 	"room_id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "document_block_rooms_room_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"document_id" uuid NOT NULL,
@@ -909,7 +918,7 @@ CREATE TABLE "document_commands" (
 	"request_digest" text NOT NULL,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy'))
+	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy'))
 );
 --> statement-breakpoint
 CREATE TABLE "document_drafts" (
@@ -1130,6 +1139,8 @@ ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_set
 ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_block_rooms" ADD CONSTRAINT "document_block_rooms_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_blocks" ADD CONSTRAINT "document_blocks_room_id_document_block_rooms_room_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."document_block_rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

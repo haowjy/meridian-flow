@@ -114,7 +114,12 @@ export type ApplyClickObservation =
   | ApplyClickAnswer
   | { status: "none"; commandId: DocumentCommandId };
 
-/** Reverse the surviving text groups of one Apply. Tree effects are intentionally absent. */
+/**
+ * Take back one Apply command: the surviving text groups of its document, and everything it
+ * settled in the tree, in one command. The tree half is allowed only while nothing else has
+ * changed the list since (`gone`), and refuses as `superseded` when a record it would bring
+ * back no longer fits; either refuses the whole command.
+ */
 export type UnapplyClick = {
   commandId: DocumentCommandId;
   applyCommandId: DocumentCommandId;
@@ -126,9 +131,48 @@ export type UnapplyClickResult =
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }
-  | { status: "closed" | "refused"; commandId: DocumentCommandId };
+  | { status: "closed"; commandId: DocumentCommandId }
+  | { status: "refused"; commandId: DocumentCommandId; reason?: "gone" | "superseded" };
 export type UnapplyClickAnswer =
   | UnapplyClickResult
+  | { status: "conflict"; commandId: DocumentCommandId };
+
+/**
+ * Apply the tree changes of several nodes, documents or folders, as one command and one Undo
+ * step. Each item carries the revision of the branch's row the writer saw (`tree.revision` of
+ * the review item); any row that holds another now answers `changed` and nothing applies.
+ */
+export type ApplyTreeClick = {
+  commandId: DocumentCommandId;
+  items: { node: string; revision: string | null }[];
+  /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
+  restore?: true;
+};
+
+/**
+ * Take back a Discard: fresh pending copies of the records it settled, on the Work's current
+ * branch (the Discard's own branch when it is still open, else the Work's new one).
+ */
+export type UndoDiscardClick = {
+  commandId: DocumentCommandId;
+  discardCommandId: DocumentCommandId;
+};
+export type UndoDiscardResult =
+  | {
+      status: "restored";
+      commandId: DocumentCommandId;
+      branchId: BranchId;
+      /** The pending copies appended, and the records left out because their node is gone. */
+      restored: number;
+      leftOut: number;
+    }
+  | {
+      status: "refused";
+      commandId: DocumentCommandId;
+      reason: "superseded" | "not_found" | "work_archived" | "chat_frozen" | "work_deleted";
+    };
+export type UndoDiscardAnswer =
+  | UndoDiscardResult
   | { status: "conflict"; commandId: DocumentCommandId };
 
 /** What one kind's effect answered, as stored in a command's outcome. */
@@ -136,6 +180,7 @@ export type StoredDocumentCommandResult =
   | DiscardCommandResult
   | ApplyClickResult
   | UnapplyClickResult
+  | UndoDiscardResult
   | ModelEditCommandResult
   | ReverseTurnCommandResult
   | CopyCommandResult;
@@ -273,6 +318,7 @@ export const DOCUMENT_COMMAND_KINDS = [
   "apply",
   "unapply",
   "discard",
+  "undo_discard",
   "model_edit",
   "reverse_turn",
   "copy",

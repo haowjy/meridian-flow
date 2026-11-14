@@ -294,8 +294,14 @@ function createInMemoryBranchStub(): CollabBranches {
       async applyClick({ request }) {
         return { status: "closed", commandId: request.commandId };
       },
+      async applyTree({ request }) {
+        return { status: "closed", commandId: request.commandId };
+      },
       async unapplyClick({ request }) {
         return { status: "closed", commandId: request.commandId };
+      },
+      async undoDiscard({ request }) {
+        return { status: "refused", commandId: request.commandId, reason: "not_found" };
       },
       async list() {
         return [];

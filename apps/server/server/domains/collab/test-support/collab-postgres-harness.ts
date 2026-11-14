@@ -469,8 +469,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     applyClick: async () => {
       throw new Error("Apply click is not configured in the collab fixture");
     },
+    applyTree: async () => {
+      throw new Error("Apply of tree changes is not configured in the collab fixture");
+    },
     unapplyClick: async () => {
       throw new Error("Un-Apply click is not configured in the collab fixture");
+    },
+    undoDiscard: async () => {
+      throw new Error("Undo of a Discard is not configured in the collab fixture");
     },
     branches: workBranches,
     reviewItems,

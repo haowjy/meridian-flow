@@ -19,10 +19,11 @@ import {
 import type { InversePart, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { draftItemKey, type UserId } from "@meridian/contracts";
+import { type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
+import { appliedCreates, undoApply } from "@meridian/project-tree";
 import {
   allocateDocumentClient,
   buildDocumentSchema,
@@ -31,20 +32,17 @@ import {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import type { TreeListStore } from "../../context/ports/tree-list-store.js";
+import { type TreeListStore, TreeRefusal } from "../../context/ports/tree-list-store.js";
 import type { TreeReader } from "../../context/tree/tree-view.js";
-import {
-  WorkLifecycleUnavailableError,
-  type WorkProjectionMutation,
-} from "../../projects/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type ApplyClickCommand,
   ApplyClickRefused,
   type ApplyCommandStore,
+  type ApplyTreeCommand,
 } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -53,11 +51,14 @@ import type { BranchTreeStateReader } from "../domain/ports/branch-tree-state.js
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
-import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
+import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
+import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
 import { runCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
+import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -80,7 +81,7 @@ export function createDrizzleApplyClick(
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
-    treeLists: Pick<TreeListStore, "lock" | "submit">;
+    treeLists: Pick<TreeListStore, "lock" | "read" | "submit">;
     tree: Pick<TreeReader, "identityStatus">;
     branchTree: BranchTreeStateReader;
     close: Pick<DraftClose, "closeDrafts">;
@@ -140,13 +141,17 @@ export function createDrizzleApplyClick(
     loadUnapply: (command) => loadPreparedUnapply(db, deps.coordinator, command),
     async unapply(command, prepared) {
       const commandId = command.envelope.commandId;
+      const applyCommandId = command.request.applyCommandId;
+      const by = `user:${command.envelope.accountId}`;
       const closed = (): UnapplyClickResult => ({ status: "closed", commandId });
       const unapplyRefusal = (cause: unknown): UnapplyClickResult | undefined =>
-        cause instanceof ApplyClickRefused
-          ? { status: "refused", commandId }
-          : cause instanceof DraftStaleUpdateError
-            ? closed()
-            : undefined;
+        cause instanceof TreeRefusal
+          ? { status: "refused", commandId, reason: cause.reason }
+          : cause instanceof ApplyClickRefused
+            ? { status: "refused", commandId }
+            : cause instanceof DraftStaleUpdateError
+              ? closed()
+              : undefined;
       try {
         return await runCommand(
           db,
@@ -157,11 +162,61 @@ export function createDrizzleApplyClick(
               async (): Promise<UnapplyClickResult> => {
                 const tx = currentDrizzleDb(db);
                 if (!(await deps.branches.lockActive(prepared.branchId))) return closed();
-                await lockDocumentMutation(tx, command.documentId);
-                const currentBase = await deps.coordinator.loadBase(prepared.base.snapshot.draftId);
+                // The lists' keys, then the documents': the text of every document the Apply
+                // created is asked about, and the tree rows are written, under both.
+                const lists = (await treeListsOfBranch(db, prepared.branchId)).filter((list) =>
+                  prepared.trees.some((tree) => tree.scope === list.kind),
+                );
+                await deps.treeLists.lock(lists);
+                const created = lists.length
+                  ? await deps.treeLists.read({
+                      lists,
+                      view: (ends) =>
+                        ends.flatMap(({ writer }) => appliedCreates(writer, applyCommandId)),
+                    })
+                  : [];
+                const documentIds = new Set<string>(created);
+                if (prepared.text) documentIds.add(prepared.text.documentId);
+                for (const id of [...documentIds].sort())
+                  await lockDocumentMutation(tx, id as DocumentId);
+                /** The tree half, whole or not at all: it runs after every check that can end the command quietly. */
+                const undoTree = async () => {
+                  if (lists.length === 0) return;
+                  const written = await textWrittenSince(
+                    db,
+                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
+                  );
+                  await deps.treeLists.submit({
+                    lists,
+                    make: (ends) => {
+                      for (const [at, { writer }] of ends.entries()) {
+                        const mark = prepared.trees.find(
+                          (tree) => tree.scope === lists[at]?.kind,
+                        )?.mark;
+                        const outcome = mark
+                          ? undoApply(writer, applyCommandId, mark, by, commandId, written)
+                          : "superseded";
+                        if (outcome !== "undone") throw new TreeRefusal(outcome);
+                      }
+                    },
+                  });
+                };
+                if (!prepared.text) {
+                  await undoTree();
+                  return {
+                    status: "unapplied",
+                    commandId,
+                    reversedGroupIds: [],
+                    skippedGroupIds: [],
+                  };
+                }
+                const { documentId, effects: stored } = prepared.text;
+                const currentBase = await deps.coordinator.loadBase(
+                  prepared.text.base.snapshot.draftId,
+                );
                 if (
                   currentBase.snapshot.status === "closed" ||
-                  currentBase.snapshot.documentId !== command.documentId ||
+                  currentBase.snapshot.documentId !== documentId ||
                   currentBase.snapshot.branchId !== prepared.branchId
                 )
                   return closed();
@@ -170,22 +225,20 @@ export function createDrizzleApplyClick(
                   .from(applyCommandEffects)
                   .where(
                     and(
-                      eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                      eq(applyCommandEffects.commandId, applyCommandId),
                       isNull(applyCommandEffects.unappliedBy),
                     ),
                   );
                 const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
-                const effects = prepared.effects.filter((effect) =>
-                  activeOrdinals.has(effect.ordinal),
-                );
+                const effects = stored.filter((effect) => activeOrdinals.has(effect.ordinal));
                 if (!effects.length) return { status: "refused", commandId };
 
-                const snapshot = await deps.live.read(command.documentId);
+                const snapshot = await deps.live.read(documentId);
                 const live = storedDocument(snapshot);
                 try {
                   const history = await loadUnapplyHistory(
                     db,
-                    command.documentId,
+                    documentId,
                     effects.flatMap((effect) =>
                       effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
                     ),
@@ -221,13 +274,16 @@ export function createDrizzleApplyClick(
                   const skipped = effects.filter(
                     (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
                   );
-                  if (!reversed.length)
+                  if (!reversed.length) {
+                    await undoTree();
                     return {
                       status: "unapplied",
                       commandId,
                       reversedGroupIds: [],
                       skippedGroupIds: skipped.map((effect) => effect.groupId),
                     };
+                  }
+                  await undoTree();
                   const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
                   for (const edit of inverse.edits) {
                     for (const part of edit.parts) {
@@ -241,7 +297,7 @@ export function createDrizzleApplyClick(
                         ? Y.mergeUpdates([part.update, ...provenance])
                         : part.update;
                       const seq = await deps.live.append(
-                        command.documentId,
+                        documentId,
                         update,
                         { seq: 0, origin: "system" },
                         snapshot.authority,
@@ -251,7 +307,7 @@ export function createDrizzleApplyClick(
                   }
                   if (receipts.length)
                     await recordDocumentEdit(tx, {
-                      documentId: command.documentId,
+                      documentId: documentId,
                       actor: "human",
                       actorUserId: command.envelope.accountId,
                       kind: "undo",
@@ -280,7 +336,7 @@ export function createDrizzleApplyClick(
                               effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
                             ).blocks;
                           writeBlocks(fragment, schema, current);
-                          removeApplyRecords(prefix, command.request.applyCommandId, groupIds);
+                          removeApplyRecords(prefix, applyCommandId, groupIds);
                         }, "unapply");
                         if (!row) throw new Error("Un-Apply must remove its Apply records");
                         return [row];
@@ -300,7 +356,7 @@ export function createDrizzleApplyClick(
                     .set({ unappliedBy: commandId })
                     .where(
                       and(
-                        eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                        eq(applyCommandEffects.commandId, applyCommandId),
                         inArray(
                           applyCommandEffects.ordinal,
                           reversed.map((effect) => effect.ordinal),
@@ -315,8 +371,8 @@ export function createDrizzleApplyClick(
                     skippedGroupIds: skipped.map((effect) => effect.groupId),
                   };
                   deferUntilDrizzleCommit(async () => {
-                    await deps.liveCoordinator.deliver(command.documentId);
-                    await deps.onCommitted(command.documentId);
+                    await deps.liveCoordinator.deliver(documentId);
+                    await deps.onCommitted(documentId);
                   });
                   return answer;
                 } finally {
@@ -328,17 +384,61 @@ export function createDrizzleApplyClick(
           unapplyRefusal,
         );
       } catch (cause) {
-        if (cause instanceof LineageDraftsUnavailableError)
-          throw new ApplyClickRefused("chat_frozen");
-        if (cause instanceof WorkLifecycleUnavailableError)
-          throw new ApplyClickRefused(
-            cause.state === "archived"
-              ? "work_archived"
-              : cause.state === "deleted"
-                ? "work_deleted"
-                : "not_found",
-          );
-        throw cause;
+        throw asLifecycleRefusal(cause);
+      }
+    },
+    async applyTree(command: ApplyTreeCommand) {
+      const { branchId, request } = command;
+      const commandId = command.envelope.commandId;
+      const userId = command.envelope.accountId as UserId;
+      try {
+        return await runCommand(
+          db,
+          command.envelope,
+          () =>
+            deps.workProjection.mutate(
+              { branches: [branchId] },
+              async (): Promise<ApplyClickResult> => {
+                if (!(await deps.branches.lockActive(branchId)))
+                  return { status: "closed", commandId };
+                const nodes = request.items.map((entry) => entry.node);
+                const revisions = await branchRowRevisions(db, branchId, nodes);
+                const documents = new Map(
+                  (await deps.branchTree.read(branchId, [], nodes as DocumentId[])).map((item) => [
+                    item.documentId as string,
+                    item,
+                  ]),
+                );
+                const outcome = await treeHalf.apply({
+                  branchId,
+                  userId,
+                  commandId,
+                  restore: request.restore === true,
+                  items: request.items.map((entry) => ({
+                    node: entry.node,
+                    cut: { revision: entry.revision },
+                    revision: revisions.get(entry.node),
+                    item: documents.get(entry.node) ?? null,
+                  })),
+                });
+                if (outcome.kind !== "applied") return { status: outcome.kind, commandId };
+                await treeHalf.recordCreatedHeads(commandId);
+                return {
+                  status: "applied",
+                  commandId,
+                  applied: outcome.applied,
+                  ...(outcome.restored ? { restored: true as const } : {}),
+                };
+              },
+              { requireActive: true, seam: true },
+            ),
+          (cause) =>
+            cause instanceof ApplyClickRefused
+              ? { status: "refused", commandId, reason: cause.reason }
+              : undefined,
+        );
+      } catch (cause) {
+        throw asLifecycleRefusal(cause);
       }
     },
     measured: deps.measured,
@@ -372,7 +472,7 @@ export function createDrizzleApplyClick(
                   committedAt = performance.now();
                 });
                 // The branch's owner enters the boundary after the claim, as Discard's does.
-                return deps.workProjection.mutate(
+                const answer = await deps.workProjection.mutate(
                   { branches: [branchId] },
                   async (): Promise<ApplyClickResult> => {
                     const tx = currentDrizzleDb(db);
@@ -384,12 +484,17 @@ export function createDrizzleApplyClick(
                     );
                     const outcome = await treeHalf.apply({
                       branchId,
-                      documentId: command.documentId,
                       userId,
                       commandId: command.envelope.commandId,
                       restore: command.request.restore === true,
-                      cut,
-                      item,
+                      items: [
+                        {
+                          node: command.documentId,
+                          cut,
+                          revision: item?.revision ?? undefined,
+                          item,
+                        },
+                      ],
                     });
                     if (outcome.kind !== "applied")
                       return { status: outcome.kind, commandId: command.envelope.commandId };
@@ -554,22 +659,15 @@ export function createDrizzleApplyClick(
                   },
                   { requireActive: true, seam: true },
                 );
+                if (answer.status === "applied")
+                  await treeHalf.recordCreatedHeads(command.envelope.commandId);
+                return answer;
               },
               applyRefusal,
             ),
         );
       } catch (cause) {
-        if (cause instanceof LineageDraftsUnavailableError)
-          throw new ApplyClickRefused("chat_frozen");
-        if (cause instanceof WorkLifecycleUnavailableError)
-          throw new ApplyClickRefused(
-            cause.state === "archived"
-              ? "work_archived"
-              : cause.state === "deleted"
-                ? "work_deleted"
-                : "not_found",
-          );
-        throw cause;
+        throw asLifecycleRefusal(cause);
       } finally {
         deps.measured({
           commandId: command.envelope.commandId,

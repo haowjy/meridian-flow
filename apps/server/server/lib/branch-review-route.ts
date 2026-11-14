@@ -28,9 +28,8 @@ import {
   type DraftMetadataResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
-  type UnapplyClick,
   type UnapplyClickAnswer,
-  type UnapplyClickResult,
+  type UndoDiscardAnswer,
 } from "@meridian/contracts/branches";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -184,6 +183,27 @@ const ApplyClickBody = z
 const UnapplyClickBody = z.strictObject({
   commandId: DocumentCommandIdSchema,
   applyCommandId: DocumentCommandIdSchema,
+});
+const ApplyTreeBody = z.strictObject({
+  commandId: DocumentCommandIdSchema,
+  items: z
+    .array(
+      z.strictObject({
+        node: z.string().uuid(),
+        revision: z
+          .string()
+          .regex(/^[0-9a-f]{32}$/)
+          .nullable(),
+      }),
+    )
+    .min(1)
+    .max(2000)
+    .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
+  restore: z.literal(true).optional(),
+});
+const UndoDiscardBody = z.strictObject({
+  commandId: DocumentCommandIdSchema,
+  discardCommandId: DocumentCommandIdSchema,
 });
 const DiscardBody = z.discriminatedUnion("ends", [
   z.strictObject({ ...Base, ends: z.literal("tree") }),
@@ -687,54 +707,81 @@ export async function handleApplyClickRequest(
   return result.ok ? result.value : denied(result.refusal.refused[0]);
 }
 
-/** Reverse only the text effect owned by one Apply command. */
-export async function handleUnapplyClickRequest(
+/**
+ * A branch-level command whose service looks the id up before it runs and answers a stored
+ * outcome or `conflict` itself: the route checks the branch is the writer's project's, parses
+ * the body and builds the envelope. Which documents it touches is the command's own record,
+ * not the URL's.
+ */
+async function branchCommand<Request extends { commandId: string }, Answer>(
   deps: BranchRouteServices,
-  input: CommandScope & { documentId: DocumentId; request: unknown },
-): Promise<UnapplyClickAnswer> {
+  input: CommandScope & { request: unknown },
+  command: {
+    kind: DocumentCommandKind;
+    what: string;
+    schema: z.ZodType<Request>;
+    run(call: { request: Request; envelope: DocumentCommandEnvelope }): Promise<Answer>;
+  },
+): Promise<Answer> {
   await requireBranchIdentity(deps, input);
-  const parsed = UnapplyClickBody.safeParse(input.request);
-  if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid Un-Apply request" });
-  const request = parsed.data as UnapplyClick;
-  const envelope: DocumentCommandEnvelope = {
-    commandId: request.commandId,
-    accountId: input.userId,
-    projectId: input.projectId,
-    kind: "unapply",
-    digest: commandDigest({
-      accountId: input.userId,
-      projectId: input.projectId,
+  const request = parseBody(command.schema, input.request, command.what);
+  return command.run({
+    request,
+    envelope: envelopeOf(input, {
+      commandId: request.commandId,
+      kind: command.kind,
       branchId: input.branchId,
-      kind: "unapply",
-      selectors: { documentId: input.documentId },
+      selectors: {},
       body: request,
     }),
-  };
-  const lookup = async () =>
-    replay<UnapplyClickResult>(
-      await deps.documentSync.draftReview.lookupCommand(envelope),
-      request.commandId,
-    );
-  const recorded = await lookup();
-  if (recorded) return recorded;
-  const grant = await deps.fileAccess.authorize(
-    { accountId: input.userId },
-    documentTarget(input.documentId),
-    "edit",
-  );
-  if (isFileAccessDenied(grant))
-    return (await lookup()) ?? { status: "refused", commandId: request.commandId };
-  const result = await runWithEditGrants(deps.fileAccess, [grant], () =>
-    deps.documentSync.draftReview.unapplyClick({
-      branchId: input.branchId,
-      documentId: input.documentId,
-      request,
-      envelope,
-    }),
-  );
-  return result.ok
-    ? result.value
-    : ((await lookup()) ?? { status: "refused", commandId: request.commandId });
+  });
+}
+
+/** Take back one Apply command: its text groups and everything it settled in the tree. */
+export function handleUnapplyClickRequest(
+  deps: BranchRouteServices,
+  input: CommandScope & { request: unknown },
+): Promise<UnapplyClickAnswer> {
+  return branchCommand(deps, input, {
+    kind: "unapply",
+    what: "Un-Apply",
+    schema: UnapplyClickBody,
+    run: ({ request, envelope }) =>
+      deps.documentSync.draftReview.unapplyClick({ branchId: input.branchId, request, envelope }),
+  });
+}
+
+/** Apply the tree changes of several nodes, a folder and what is under it, as one command. */
+export function handleApplyTreeRequest(
+  deps: BranchRouteServices,
+  input: CommandScope & { request: unknown },
+): Promise<ApplyClickAnswer> {
+  return branchCommand(deps, input, {
+    kind: "apply",
+    what: "Apply",
+    schema: ApplyTreeBody,
+    run: ({ request, envelope }) =>
+      deps.documentSync.draftReview.applyTree({ branchId: input.branchId, request, envelope }),
+  });
+}
+
+/** Take back a Discard: the Work gets fresh pending copies of the records it settled. */
+export function handleUndoDiscardRequest(
+  deps: BranchRouteServices,
+  input: CommandScope & { request: unknown },
+): Promise<UndoDiscardAnswer> {
+  return branchCommand(deps, input, {
+    kind: "undo_discard",
+    what: "Undo of a Discard",
+    schema: UndoDiscardBody,
+    run: ({ request, envelope }) =>
+      deps.documentSync.draftReview.undoDiscard({
+        branchId: input.branchId,
+        userId: input.userId,
+        request,
+        envelope,
+      }),
+  });
 }
 
 /** An item the branch no longer holds, as a 200 body status. */

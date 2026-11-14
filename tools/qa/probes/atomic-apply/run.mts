@@ -275,7 +275,6 @@ async function fixture(
         userId: h.ids.user,
         projectId: h.ids.project,
         branchId: work.branchId,
-        documentId: document.documentId,
         request: { commandId, applyCommandId: click.request.commandId },
       });
     },
