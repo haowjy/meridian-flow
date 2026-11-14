@@ -457,24 +457,29 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
         const empty = only?.type.name === "paragraph" && only.childCount === 0;
         if (!empty && (chipOf === null || chipOf !== replaces)) return false;
+        // The caller runs this from an effect, and Tiptap `flushSync`es the chip's React node
+        // view when it mounts, which React forbids inside a commit; a microtask is outside it.
         // `setContent` leaves the whole draft selected, so the next keystroke would replace the
         // chip; the caret goes after it instead.
-        editor
-          .chain()
-          .setContent({
-            type: "doc",
-            content: [
-              {
-                type: "paragraph",
-                content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
-              },
-            ],
-          })
-          .command(({ tr }) => {
-            tr.setSelection(TextSelection.atEnd(tr.doc));
-            return true;
-          })
-          .run();
+        queueMicrotask(() => {
+          if (editor.isDestroyed) return;
+          editor
+            .chain()
+            .setContent({
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
+                },
+              ],
+            })
+            .command(({ tr }) => {
+              tr.setSelection(TextSelection.atEnd(tr.doc));
+              return true;
+            })
+            .run();
+        });
         return true;
       },
       attachFiles: (entries) => attachFilesRef.current(entries),
