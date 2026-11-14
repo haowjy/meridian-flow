@@ -7,7 +7,6 @@
 
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
@@ -17,6 +16,7 @@ import {
   type CopySourceHandoff,
   createContextCopyCommand,
 } from "./copy-command.js";
+import type { CopyCommands } from "./copy-commands.js";
 
 /** A canonical address resolved to the adapter that owns it. */
 export interface CopyEnd {
@@ -30,7 +30,7 @@ export interface CopyEnd {
 export interface ContextCopyPortDeps {
   /** Absent compositions refuse Copy typed. */
   copy: ContextCopyCommandDeps | undefined;
-  receipts: ContextOperationReceipts | undefined;
+  commands: CopyCommands | undefined;
   commandTransaction: ContextCommandTransaction | undefined;
   /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
@@ -58,8 +58,8 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
   return async function copy(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    const { receipts, commandTransaction } = deps;
-    if (!deps.copy || !receipts || !commandTransaction) {
+    const { commands, commandTransaction } = deps;
+    if (!deps.copy || !commands || !commandTransaction) {
       return Err({
         code: "invalid_operation",
         uri: request.destinationUri,
@@ -104,7 +104,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
     const parent = request.destinationParent;
     const folderParent = parent?.kind === "folder" ? parent : null;
     return createContextCopyCommand(deps.copy).copy({
-      environment: { receipts, commandTransaction },
+      environment: { commands, commandTransaction },
       request,
       sources,
       destination: destinationHandoff,

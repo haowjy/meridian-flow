@@ -12,7 +12,10 @@ import {
   type WorkReversalResult,
 } from "@meridian/contracts/protocol";
 
-import { postJson } from "./http-client";
+import { httpErrorStatus, postJson } from "./http-client";
+
+/** A lost request is sent again under the same id, which the server answers once. */
+const LOST_REQUEST_ATTEMPTS = 3;
 
 export type ReversalDirection = "undo" | "redo";
 
@@ -21,12 +24,24 @@ export type ReverseTurnInput = {
   direction: ReversalDirection;
 };
 
-export function reverseTurn(threadId: string, input: ReverseTurnInput): Promise<ReversalOutcome> {
-  return postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), {
+/** One click: a new command id, sent again unchanged until the server answers. */
+export async function reverseTurn(
+  threadId: string,
+  input: ReverseTurnInput,
+): Promise<ReversalOutcome> {
+  const body = {
+    commandId: crypto.randomUUID(),
     scope: "turn",
     target: input.turnId,
     direction: input.direction,
-  });
+  };
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), body);
+    } catch (cause) {
+      if (httpErrorStatus(cause) !== undefined || attempt >= LOST_REQUEST_ATTEMPTS) throw cause;
+    }
+  }
 }
 
 /** A Work the reverse endpoint reports as put back. `name` is the writer-facing

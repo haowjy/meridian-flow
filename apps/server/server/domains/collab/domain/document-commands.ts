@@ -25,7 +25,7 @@ export type DocumentCommandEnvelope = {
 export function commandDigest(envelope: {
   accountId: string;
   projectId: string;
-  branchId: string;
+  branchId?: string;
   kind: DocumentCommandKind;
   selectors: Record<string, string | null>;
   body: unknown;
@@ -61,6 +61,15 @@ export type CommandLookupKey = Pick<DocumentCommandEnvelope, "commandId" | "acco
 export interface DocumentCommands {
   /** Fresh and authenticated: the account and digest the key names are all it reads. */
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
+  /**
+   * Claims the id and runs the effect in one transaction that holds no second connection
+   * (`runCommandWithinTx`). An id already taken throws `DocumentCommandExistsError`.
+   */
+  run<R extends StoredDocumentCommandResult>(
+    envelope: DocumentCommandEnvelope,
+    effect: () => Promise<R>,
+    refusal?: (cause: unknown) => R | undefined,
+  ): Promise<R>;
 }
 
 /** The answer a resend gets from a lookup: what was stored, or `conflict`; null when nothing is. */
@@ -74,7 +83,14 @@ export function replay<R extends StoredDocumentCommandResult>(
   return found.outcome.result as R;
 }
 
-const DONE_STATUSES: ReadonlySet<string> = new Set(["applied", "unapplied", "discarded", "edited"]);
+const DONE_STATUSES: ReadonlySet<string> = new Set([
+  "applied",
+  "unapplied",
+  "discarded",
+  "edited",
+  "reversed",
+  "copied",
+]);
 
 /** `done` when the effect committed; every other answer is a refusal that changed nothing. */
 export function outcomeOf(result: StoredDocumentCommandResult): DocumentCommandOutcome {
@@ -86,5 +102,13 @@ export class DocumentCommandExistsError extends Error {
   constructor(readonly commandId: DocumentCommandId) {
     super(`Command ${commandId} already has an effect`);
     this.name = "DocumentCommandExistsError";
+  }
+}
+
+/** The id was used by another account or for a different request: a bug in the client. */
+export class DocumentCommandConflictError extends Error {
+  constructor(readonly commandId: DocumentCommandId) {
+    super(`Command ${commandId} was used for a different command`);
+    this.name = "DocumentCommandConflictError";
   }
 }

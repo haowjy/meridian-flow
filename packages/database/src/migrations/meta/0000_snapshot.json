@@ -10217,7 +10217,7 @@
       "checkConstraints": {
         "document_commands_kind_valid": {
           "name": "document_commands_kind_valid",
-          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'model_edit')"
+          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')"
         }
       },
       "isRLSEnabled": false

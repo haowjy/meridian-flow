@@ -71,6 +71,7 @@ export interface ContextPortRouterDeps {
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   eventSink?: EventSink;
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
+  copyCommands?: import("../copy/copy-commands.js").CopyCommands;
   /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   sources: ReadonlyMap<
@@ -580,8 +581,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   }
 
   return {
-    lookupOperation: (operationId) =>
-      deps.operationReceipts?.lookup(operationId) ?? Promise.resolve(null),
+    lookupOperation: async (operationId) =>
+      (await deps.operationReceipts?.lookup(operationId)) ??
+      (await deps.copyCommands?.lookup(operationId)) ??
+      null,
 
     async resolveFolderUri(folderId: string): Promise<Result<{ uri: string }, ContextError>> {
       const uri = await deps.resolveDestinationFolder?.(folderId);
@@ -591,7 +594,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     /** One Copy (`copy/` reads, binds and writes; this only resolves its addresses). */
     copy: createContextCopyPort({
       copy: deps.copy,
-      receipts: deps.operationReceipts,
+      commands: deps.copyCommands,
       commandTransaction: deps.commandTransaction,
       resolveIdentityDestination,
       resolve,

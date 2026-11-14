@@ -53,6 +53,7 @@ import {
   findNoWorkId,
 } from "./context-source-provisioning.js";
 import type { ContextCopyCommandDeps } from "./copy/copy-command.js";
+import { type CopyCommands, createCopyCommands } from "./copy/copy-commands.js";
 import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
 import type { BranchTreePort } from "./ports/branch-tree.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
@@ -270,6 +271,7 @@ function buildUnifiedContextPort(input: {
   placements: AdapterAssembly["placements"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   operationReceipts?: ContextOperationReceipts;
+  copyCommands?: CopyCommands;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
@@ -391,6 +393,7 @@ function buildUnifiedContextPort(input: {
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
     operationReceipts: input.operationReceipts,
+    ...(input.copyCommands ? { copyCommands: input.copyCommands } : {}),
     moveLinks: input.moveLinks,
     ...(input.eventSink ? { eventSink: input.eventSink } : {}),
     ...(input.copy ? { copy: input.copy } : {}),
@@ -737,6 +740,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
+        copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
         ...(options.copy ? { copy: options.copy } : {}),
@@ -755,6 +759,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
+        copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
         ...(options.copy ? { copy: options.copy } : {}),

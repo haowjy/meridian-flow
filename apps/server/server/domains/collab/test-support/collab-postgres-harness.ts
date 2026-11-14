@@ -513,6 +513,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     turnInverse,
     resolveDocumentUri,
+    commands: createDrizzleDocumentCommands(db),
   });
   const reviewItems = createBranchReviewItems({
     tree: createTreeReader(db),

@@ -7,7 +7,9 @@ import { eq } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
+  joinRootTransactionsInAmbient,
   runInDrizzleSavepoint,
+  runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import {
   type CommandLookup,
@@ -17,11 +19,19 @@ import {
   type DocumentCommands,
   outcomeOf,
 } from "../domain/document-commands.js";
+import { bindEditsToCommand } from "./drizzle-document-edits.js";
 
 export function createDrizzleDocumentCommands(db: Database): DocumentCommands {
   return {
     async lookup(key) {
       return lookupCommand(currentDrizzleDb(db), key);
+    },
+    run(envelope, effect, refusal = () => undefined) {
+      return runInDrizzleTransaction(db, async () => {
+        joinRootTransactionsInAmbient();
+        bindEditsToCommand(envelope.commandId);
+        return runCommandWithinTx(db, envelope, effect, refusal);
+      });
     },
   };
 }
