@@ -184,6 +184,11 @@ msgstr ""
 msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
 msgstr ""
 
+#. placeholder {0}: outcome.skipped.length
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
+msgstr ""
+
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
@@ -336,6 +341,10 @@ msgstr ""
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{count, plural, one {# document to review} other {# documents to review}}"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -458,6 +467,11 @@ msgstr "{hours}小时"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{label}…"
+msgstr ""
+
+#. placeholder {0}: placeOf(uri)
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{landedName} is now in {0}."
 msgstr ""
 
 #: src/features/project/context/LinkUpdateNote.tsx
@@ -1067,6 +1081,10 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Apply changes in {name}"
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
@@ -1258,6 +1276,10 @@ msgstr ""
 msgid "Can't go inside itself"
 msgstr ""
 
+#: src/features/draft-review/tree-groups.ts
+msgid "Can't land: the folder it goes to is gone."
+msgstr ""
+
 #: src/features/editor/SessionEditor.tsx
 msgid "Can’t mention inside code"
 msgstr ""
@@ -1302,6 +1324,10 @@ msgstr ""
 #: src/features/chat/namespace-refusal-copy.ts
 #~ msgid "Can't move {source}: the folder for {place} doesn't exist."
 #~ msgstr ""
+
+#: src/features/draft-review/tree-groups.ts
+msgid "Can't move into {into}: it is inside this now."
+msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Can't move or delete all of these"
@@ -2567,6 +2593,10 @@ msgstr ""
 msgid "Deleted from the manuscript. Apply brings it back."
 msgstr ""
 
+#: src/features/draft-review/tree-groups.ts
+msgid "Deleted in live. Restore it to keep this change."
+msgstr ""
+
 #: src/features/draft-review/DraftedDeleteNotice.tsx
 msgid "Deleted in this draft"
 msgstr ""
@@ -2645,6 +2675,10 @@ msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
 msgid "Discard changes"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard changes in {name}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -2761,6 +2795,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Draft view"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -3053,6 +3091,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "flowchart"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Folder"
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
@@ -3817,9 +3859,17 @@ msgstr ""
 msgid "Moving {source} to"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Moving into {into}"
+msgstr ""
+
 #. placeholder {0}: line.place
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Moving to {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Moving to the top"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -3889,6 +3939,10 @@ msgstr ""
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "New folder"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "New in {place}"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -4129,6 +4183,11 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
+#. placeholder {0}: placeOf(only.uri)
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Now in {0}."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -4183,6 +4242,10 @@ msgstr ""
 #. placeholder {1}: chatName(chat)
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Open {0} in {1}"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Open {name}"
 msgstr ""
 
 #: src/features/chat/DocumentName.tsx
@@ -5050,6 +5113,14 @@ msgstr ""
 msgid "Show Work"
 msgstr ""
 
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Showing draft"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Showing live"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr ""
@@ -5077,6 +5148,10 @@ msgstr "跳过"
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Skipped"
 msgstr "已跳过"
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "Skipped your change to {only}: it was changed again since."
+msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
@@ -6259,11 +6334,11 @@ msgstr ""
 msgid "Undid change to Work {0}."
 msgstr ""
 
+#: src/components/app/StatusToast.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-#: src/features/project/context/DocumentTrashRestoreProvider.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
@@ -6464,6 +6539,10 @@ msgstr ""
 #. placeholder {0}: line.name
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Was {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Was {was}"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
