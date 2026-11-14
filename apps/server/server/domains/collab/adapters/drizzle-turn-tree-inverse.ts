@@ -9,12 +9,12 @@
 import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, treeNodes } from "@meridian/database/schema";
+import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
 import { LIVE, undoChange, type View } from "@meridian/project-tree";
-import { and, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import type { AgentTreeHistory, TreeReceipt } from "../contracts.js";
+import type { AgentTreeHistory, MoveBackAcrossLists, TreeReceipt } from "../contracts.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
@@ -39,6 +39,19 @@ export function createTurnTreeInverse(deps: {
 }) {
   const db = () => currentDrizzleDb(deps.db);
 
+  /** The other list of a move between a project's files and the account's: the thread's project, or its owner. */
+  async function otherList(threadId: ThreadId, list: TreeList): Promise<TreeList | null> {
+    const [row] = await db()
+      .select({ projectId: projects.id, userId: projects.userId })
+      .from(threads)
+      .innerJoin(projects, eq(projects.id, threads.projectId))
+      .where(eq(threads.id, threadId));
+    if (!row) return null;
+    return list.kind === "project"
+      ? { kind: "account", userId: row.userId }
+      : { kind: "project", projectId: row.projectId };
+  }
+
   async function plan(
     threadId: ThreadId,
     turnId: TurnId,
@@ -49,7 +62,10 @@ export function createTurnTreeInverse(deps: {
     const lists = new Map<string, TreeList>();
     for (const step of steps) {
       const list = await treeListOfNode(deps.db, step.subject);
-      if (list) lists.set(JSON.stringify(list), list);
+      if (!list) continue;
+      lists.set(JSON.stringify(list), list);
+      const other = step.across ? await otherList(threadId, list) : null;
+      if (other) lists.set(JSON.stringify(other), other);
     }
     const ids = steps.map((step) => step.subject);
     const subjects = new Set(
@@ -96,7 +112,11 @@ export function createTurnTreeInverse(deps: {
   async function run(
     steps: readonly TreeReceipt[],
     direction: "undo" | "redo",
-    input: { threadId: ThreadId; userId: UserId | undefined },
+    input: {
+      threadId: ThreadId;
+      userId: UserId | undefined;
+      moveBackAcrossLists?: MoveBackAcrossLists;
+    },
   ): Promise<{ reversed: number; skips: TurnInverseSkip[] }> {
     const actor = input.userId ? `user:${input.userId}` : "system";
     const skips: TurnInverseSkip[] = [];
@@ -109,11 +129,39 @@ export function createTurnTreeInverse(deps: {
         at: receipt.shownAt,
         cause,
       });
-      // A move between a project's list and the account's is taken back by the model's tools,
-      // which name both ends; the card leaves it.
-      const list = receipt.across ? null : await treeListOfNode(deps.db, receipt.subject);
+      const list = await treeListOfNode(deps.db, receipt.subject);
       if (!list) {
-        skips.push(skip(receipt.across ? "refused" : "superseded"));
+        skips.push(skip("superseded"));
+        continue;
+      }
+      if (receipt.across) {
+        const answer = input.moveBackAcrossLists
+          ? await input.moveBackAcrossLists(receipt)
+          : ({ ok: false, cause: "refused" } as const);
+        if (!answer.ok) skips.push(skip(answer.cause));
+        else {
+          reversed++;
+          await deps.history().recordAgentTreeChange({
+            subject: receipt.subject,
+            nodes: [
+              {
+                nodeId: receipt.subject,
+                beforeAt: receipt.across.to,
+                afterAt: receipt.across.from,
+              },
+            ],
+            records: [
+              { record: answer.records.left, node: receipt.subject },
+              { record: answer.records.entered, node: receipt.subject },
+            ],
+            op: receipt.op,
+            acrossLists: true,
+            threadId: input.threadId,
+            ...(receipt.turnId ? { turnId: receipt.turnId as TurnId } : {}),
+            shownAt: receipt.shownAt ?? "",
+            reverses: { kind: direction, receipt: receipt.id },
+          });
+        }
         continue;
       }
       const view: View = receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;

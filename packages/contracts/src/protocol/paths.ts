@@ -159,12 +159,16 @@ export function apiProjectBranchDocumentDraftApplyPath(
   return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/apply`;
 }
 
-export function apiProjectBranchDocumentDraftUnapplyPath(
-  projectId: string,
-  branchId: string,
-  documentId: string,
-): string {
-  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/unapply`;
+export function apiProjectBranchApplyPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/apply`;
+}
+
+export function apiProjectBranchUnapplyPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/unapply`;
+}
+
+export function apiProjectBranchUndoDiscardPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/undo-discard`;
 }
 
 export function apiProjectBranchDocumentDraftDiscardPath(

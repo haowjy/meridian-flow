@@ -31,7 +31,11 @@ import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
 import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
-import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
+import type {
+  LiveLineageDocument,
+  TurnEditedDocument,
+  TurnTreeFolder,
+} from "./domain/turn-live-lineage.js";
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -194,6 +198,18 @@ export type TreeReceiptInput = {
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
 
+/**
+ * The server's move back for a receipt of a move between a project's files and the account's:
+ * the context port's own `moveAcrossLists`, which the caller builds from the thread's context.
+ * `superseded`: the node was moved or changed since, or is gone; else the move was refused.
+ */
+export type MoveBackAcrossLists = (
+  receipt: TreeReceipt,
+) => Promise<
+  | { ok: true; records: { left: string; entered: string } }
+  | { ok: false; cause: "superseded" | "refused" }
+>;
+
 export type TreeReceipt = {
   id: string;
   subject: string;
@@ -205,6 +221,8 @@ export type TreeReceipt = {
   turnId: string | null;
   /** The path the model gave for it. */
   shownAt: string | null;
+  /** The command that made it: a create with content is one command, so one Undo step. */
+  commandId: string | null;
   /** The write ordinal of the node this receipt was found by. */
   wId: number;
   /** The write ordinal on the subject's counter: the handle the model was given. */
@@ -228,7 +246,12 @@ export type NodeHistory = {
   /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
   /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
-  text: { undo: number[]; redo: number | null };
+  text: {
+    undo: number[];
+    redo: number | null;
+    /** The command of each text edit by ordinal, where it has one: what makes a step of a tree receipt's command. */
+    commands: Record<number, string>;
+  };
 };
 
 export type AgentTreeHistory = {
@@ -267,6 +290,8 @@ export type ReverseThreadContextInput = {
    * stored outcome is the click's answer.
    */
   alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
+  /** How a move between lists is taken back; without it, such a step is refused. */
+  moveBackAcrossLists?: MoveBackAcrossLists;
 };
 
 export type TurnReversalAccess = {
@@ -276,6 +301,7 @@ export type TurnReversalAccess = {
     direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
+    moveBackAcrossLists?: MoveBackAcrossLists;
   }): Promise<ReversalOutcome>;
   reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
@@ -399,18 +425,42 @@ export type ModelDraftRow = {
 };
 
 export type DraftReviewApi = {
-  applyClick(input: {
+  /**
+   * Apply any selection of nodes, documents and folders, tree and text, as one command; a
+   * per-document click is its one-item case.
+   */
+  apply(input: {
     branchId: BranchId;
-    documentId: DocumentId;
-    request: import("@meridian/contracts/branches").ApplyClick;
+    request: import("@meridian/contracts/branches").ApplyItemsClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
-    documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
     envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
+  /** The documents a command touched, from its own record: what its routes authorize. */
+  commandDocuments: {
+    ofApply(input: {
+      applyCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+    ofDiscard(input: {
+      discardCommandId: DocumentCommandId;
+      accountId: UserId;
+      branchId: BranchId;
+    }): Promise<DocumentId[]>;
+  };
+  /** Fresh pending copies of what a Discard settled and closed, on the Work's current branch. */
+  undoDiscard(input: {
+    /** The branch the Discard ran on; it may have closed with it. */
+    branchId: BranchId;
+    userId: UserId;
+    request: import("@meridian/contracts/branches").UndoDiscardClick;
+    envelope: DocumentCommandEnvelope;
+  }): Promise<import("@meridian/contracts/branches").UndoDiscardAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { owner: DraftOwner }): Promise<{
@@ -477,6 +527,8 @@ export type CollabBranchResolver = {
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  /** The folders the turn changed: its card lists them with the documents. */
+  listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 

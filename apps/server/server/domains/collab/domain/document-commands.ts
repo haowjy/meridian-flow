@@ -88,6 +88,7 @@ export function replay<R extends StoredDocumentCommandResult>(
 const DONE_STATUSES: ReadonlySet<string> = new Set([
   "applied",
   "unapplied",
+  "restored",
   "discarded",
   "edited",
   "reversed",

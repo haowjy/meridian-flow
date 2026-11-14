@@ -22,7 +22,7 @@ import {
   apiProjectBranchDocumentDraftApplyPath,
   apiProjectBranchDocumentDraftDiscardPath,
   apiProjectBranchDocumentDraftPath,
-  apiProjectBranchDocumentDraftUnapplyPath,
+  apiProjectBranchUnapplyPath,
   apiProjectDocumentBranchesPath,
   apiProjectDraftsPath,
 } from "@meridian/contracts/protocol";
@@ -78,11 +78,7 @@ export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObs
 }
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
   return postJson<UnapplyClickAnswer>(
-    apiProjectBranchDocumentDraftUnapplyPath(
-      draft.projectId,
-      branchOf(draft.itemKey),
-      draft.documentId,
-    ),
+    apiProjectBranchUnapplyPath(draft.projectId, branchOf(draft.itemKey)),
     body,
     { signal: AbortSignal.timeout(10_000) },
   );

@@ -15,6 +15,7 @@ import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { discardedTree } from "../domains/context/tree/trash-entries.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
+import { reverseTurnCard } from "./work-receipt-reversal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -157,8 +158,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
+    let composed: Awaited<ReturnType<typeof runtimes.compose>>;
     async function start() {
       const runtime = await runtimes.compose();
+      composed = runtime;
       for (const [documentId, markdown] of [
         [CH1, "Chapter one."],
         [CH2, "Chapter two."],
@@ -568,6 +571,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const both = await call("write", { command: "undo", path: "part1/ch1", count: 2 });
         expect(both.isError, text(both)).toBeFalsy();
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
+        // A create with content is one command: one undo takes the node and its text, one redo both.
+        call = await live(await start());
+        await call("write", { command: "create", path: "born", content: "Fresh." });
+        const gone = await call("write", { command: "undo", path: "born" });
+        expect(gone.isError, text(gone)).toBeFalsy();
+        expect(await ls(call, "manuscript://")).not.toContain("born");
+        const back = await call("write", { command: "redo", path: "born" });
+        expect(back.isError, text(back)).toBeFalsy();
+        expect(text(await call("read", { path: "born" }))).toContain("Fresh.");
       });
 
       it("undoing a folder create leaves what the writer put in it, and the folder standing", async () => {
@@ -711,6 +723,109 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const next = await call("write", { command: "restore", path: "ch1" });
         expect(next.isError, text(next)).toBeFalsy();
         expect((await placement(CH1))?.deletedAt).toBeNull();
+      });
+
+      it("a reply that only moved and created has a card, and its Undo and Redo take it back, across lists too", async () => {
+        const script = await start();
+        const { call } = await script.begin();
+        await call("write", { command: "move", from: { path: "ch1" }, path: "user://mine" });
+        await call("write", { command: "move", from: { path: "ch2" }, path: "part1/" });
+        await call("write", { command: "create", path: "fresh", content: "Hi." });
+        const sync = composed.ports.documentSync;
+        const listed = await sync.listEditedDocumentsForTurn(
+          THREAD.threadId as never,
+          THREAD.turnId as never,
+        );
+        expect(listed.map((document) => document.documentId)).toEqual(
+          expect.arrayContaining([CH1, CH2] as never[]),
+        );
+        const chip = await sync.getTurnReceiptChip(
+          THREAD.threadId as never,
+          THREAD.turnId as never,
+        );
+        expect(chip).toMatchObject({ control: "undo" });
+        const card = (direction: "undo" | "redo", commandId = randomUUID()) =>
+          reverseTurnCard(
+            {
+              ...composed.ports,
+              workContextNotices: { workChanged: async () => {} },
+              stopThreads: async () => {},
+            },
+            {
+              threadId: THREAD.threadId as never,
+              turnId: THREAD.turnId as never,
+              userId: USER_ID as never,
+              direction,
+              commandId: commandId as never,
+            },
+          );
+        const clicked = randomUUID();
+        const undone = await card("undo", clicked);
+        expect(undone.status, JSON.stringify(undone)).toBe("reversed");
+        const receipts = async () => (await db.select().from(schema.treeEditReceipts)).length;
+        const stored = await receipts();
+        // The same click again answers its stored outcome and appends nothing.
+        expect(await card("undo", clicked)).toEqual(undone);
+        expect(await receipts()).toBe(stored);
+        const { call: after } = await script.begin();
+        expect(await ls(after, "manuscript://")).toContain("ch1");
+        expect(await ls(after, "manuscript://")).toContain("ch2");
+        expect(await ls(after, "manuscript://")).not.toContain("fresh");
+        expect(await ls(after, "user://")).not.toContain("mine");
+        const redoChip = await sync.getTurnReceiptChip(
+          THREAD.threadId as never,
+          THREAD.turnId as never,
+        );
+        expect(redoChip).toMatchObject({ control: "redo" });
+        const redone = await card("redo");
+        expect(redone.status, JSON.stringify(redone)).toBe("reversed");
+        expect(await ls(after, "user://")).toContain("mine");
+        expect(await ls(after, "manuscript://part1/")).toContain("ch2");
+        expect(await ls(after, "manuscript://")).toContain("fresh");
+      });
+
+      it("a Copy's operation id: a resend answers the stored result, another request or another account's is command_conflict", async () => {
+        const { createCopyCommands } = await import("../domains/context/copy/copy-commands.js");
+        const other = {
+          user: "00000000-0000-4000-8000-000000000d71",
+          project: "00000000-0000-4000-8000-000000000d72",
+        };
+        await db.insert(schema.users).values(conformanceUserValues(other.user, "copy-other"));
+        await db.insert(schema.projects).values({
+          id: other.project,
+          userId: other.user,
+          name: "B",
+          slug: "copy-b",
+          isPersonal: true,
+        });
+        const mine = createCopyCommands(db, { userId: USER_ID, projectId: PROJECT_ID });
+        const theirs = createCopyCommands(db, { userId: other.user, projectId: other.project });
+        const copyTo = (destinationUri: string) => ({
+          kind: "copy" as const,
+          sources: [],
+          destinationUri,
+        });
+        const copied = { ok: true, value: { created: [] } } as never;
+        const conflict = (uri: string) => ({ ok: false, error: { code: "command_conflict", uri } });
+        const id = randomUUID();
+        let ran = 0;
+        const run = async () => {
+          ran += 1;
+          return copied;
+        };
+        expect(await mine.execute(id, copyTo("manuscript://a/"), "manuscript://a/", run)).toEqual(
+          copied,
+        );
+        expect(await mine.execute(id, copyTo("manuscript://a/"), "manuscript://a/", run)).toEqual(
+          copied,
+        );
+        expect(await mine.execute(id, copyTo("manuscript://b/"), "manuscript://b/", run)).toEqual(
+          conflict("manuscript://b/"),
+        );
+        expect(await theirs.execute(id, copyTo("manuscript://a/"), "manuscript://a/", run)).toEqual(
+          conflict("manuscript://a/"),
+        );
+        expect(ran).toBe(1);
       });
 
       it("a document moves to the account's files and back, and Undo takes it back across both lists", async () => {

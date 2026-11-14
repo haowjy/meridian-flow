@@ -6,7 +6,13 @@
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
-import { type Database, treeEditReceiptNodes, treeEditReceipts } from "@meridian/database";
+import type { DocumentId, ThreadId } from "@meridian/contracts";
+import {
+  type Database,
+  documentEdits,
+  treeEditReceiptNodes,
+  treeEditReceipts,
+} from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -17,9 +23,28 @@ export function createDrizzleTreeHistory(
   db: Database,
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
   /** The text engine's own stack of a document for a chat: ordinals of what Undo and Redo would take. */
-  textStack: (threadId: string, documentId: string) => Promise<NodeHistory["text"]>,
+  textStack: (
+    threadId: string,
+    documentId: string,
+  ) => Promise<Omit<NodeHistory["text"], "commands">>,
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
+  const textCommands = async (threadId: string, documentId: string, ordinals: number[]) => {
+    if (ordinals.length === 0) return {};
+    const rows = await tx()
+      .select({ wId: documentEdits.wId, commandId: documentEdits.commandId })
+      .from(documentEdits)
+      .where(
+        and(
+          eq(documentEdits.documentId, documentId as DocumentId),
+          eq(documentEdits.threadId, threadId as ThreadId),
+          inArray(documentEdits.wId, ordinals),
+        ),
+      );
+    return Object.fromEntries(
+      rows.flatMap((row) => (row.wId !== null && row.commandId ? [[row.wId, row.commandId]] : [])),
+    );
+  };
   return {
     async recordAgentTreeChange(input) {
       const [row] = await tx()
@@ -113,6 +138,8 @@ export function createDrizzleTreeHistory(
         .select({
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
+          beforeAt: treeEditReceiptNodes.beforeAt,
+          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(
@@ -121,13 +148,17 @@ export function createDrizzleTreeHistory(
             chosen.map((row) => row.id),
           ),
         );
-      return chosen.map((row) =>
-        receiptOf(
+      return chosen.map((row) => {
+        const own = touched.filter((node) => node.receiptId === row.id);
+        const subject = own.find((node) => node.nodeId === row.nodeId);
+        return receiptOf(
           row,
-          touched.filter((node) => node.receiptId === row.id).map((node) => node.nodeId),
+          own.map((node) => node.nodeId),
           0,
-        ),
-      );
+          0,
+          acrossOf(row, subject),
+        );
+      });
     },
 
     async receiptsAt(threadId, shownAt) {
@@ -148,8 +179,9 @@ export function createDrizzleTreeHistory(
         )
         .orderBy(desc(treeEditReceiptNodes.wId));
       const ids = mine.map((row) => row.receiptId);
-      const text =
+      const stack =
         isDocument && ids.length > 0 ? await textStack(threadId, nodeId) : { undo: [], redo: null };
+      const text = { ...stack, commands: await textCommands(threadId, nodeId, stack.undo) };
       if (ids.length === 0) return { undo: [], redo: [], all: [], text };
       const rows = await tx()
         .select()
@@ -178,9 +210,7 @@ export function createDrizzleTreeHistory(
             own.map((node) => node.nodeId),
             entry.wId,
             subject?.wId ?? entry.wId,
-            row.acrossLists && subject?.beforeAt && subject.afterAt
-              ? { from: subject.beforeAt, to: subject.afterAt }
-              : undefined,
+            acrossOf(row, subject),
           ),
         ];
       });
@@ -215,6 +245,16 @@ export function createDrizzleTreeHistory(
   };
 }
 
+/** A move between two lists: the subject's address before and after. */
+function acrossOf(
+  row: typeof treeEditReceipts.$inferSelect,
+  subject: { beforeAt: string | null; afterAt: string | null } | undefined,
+): { from: string; to: string } | undefined {
+  return row.acrossLists && subject?.beforeAt && subject.afterAt
+    ? { from: subject.beforeAt, to: subject.afterAt }
+    : undefined;
+}
+
 function receiptOf(
   row: typeof treeEditReceipts.$inferSelect,
   nodes: string[],
@@ -232,6 +272,7 @@ function receiptOf(
     reverses: row.reverses,
     draftBranchId: row.draftBranchId,
     turnId: row.turnId,
+    commandId: row.commandId,
     shownAt: row.shownAt,
     wId,
     handle,

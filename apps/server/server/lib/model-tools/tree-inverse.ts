@@ -44,6 +44,8 @@ export type TreeInverse =
       answer: Awaited<ReturnType<typeof reverseReceipt>>;
     };
 
+type TreeHistory = ReturnType<ToolWiringDeps["documentSync"]["treeHistory"]>;
+
 type Chosen = { receipts: TreeReceipt[]; text: number };
 
 /**
@@ -53,9 +55,7 @@ type Chosen = { receipts: TreeReceipt[]; text: number };
  */
 function choose(
   input: InverseInput,
-  history: Awaited<
-    ReturnType<ReturnType<ToolWiringDeps["documentSync"]["treeHistory"]>["historyOf"]>
-  >,
+  history: Awaited<ReturnType<TreeHistory["historyOf"]>>,
 ): Chosen | "insufficient" | null {
   const count = input.command === "revert" ? 1 : (input.count ?? 1);
   if (input.command === "revert") {
@@ -68,16 +68,44 @@ function choose(
     const receipts = history.redo.filter((receipt) => receipt.wId > after).slice(0, count);
     return receipts.length > 0 ? { receipts, text: 0 } : null;
   }
-  const steps = [
-    ...history.undo.map((receipt) => ({ at: receipt.wId, receipt })),
-    ...history.text.undo.map((at) => ({ at, receipt: null })),
-  ]
-    .sort((a, b) => b.at - a.at)
-    .slice(0, count);
-  const receipts = steps.flatMap((step) => (step.receipt ? [step.receipt] : []));
+  const units = undoUnits(history);
+  const taken = units.slice(0, count);
+  const receipts = taken.flatMap((unit) => unit.receipts);
   if (receipts.length === 0) return null;
-  if (steps.length < count) return "insufficient";
-  return { receipts, text: steps.length - receipts.length };
+  if (taken.length < count) return "insufficient";
+  return { receipts, text: taken.reduce((sum, unit) => sum + unit.text, 0) };
+}
+
+/**
+ * What Undo counts, newest first: the steps of one command are one (a create with content is a
+ * tree receipt and a text edit, one call), the rest one each.
+ */
+function undoUnits(history: Awaited<ReturnType<TreeHistory["historyOf"]>>): Chosen[] {
+  const steps = [
+    ...history.undo.map((receipt) => ({
+      at: receipt.wId,
+      receipt,
+      command: receipt.commandId,
+    })),
+    ...history.text.undo.map((at) => ({
+      at,
+      receipt: null,
+      command: history.text.commands[at] ?? null,
+    })),
+  ].sort((a, b) => b.at - a.at);
+  const units: Chosen[] = [];
+  const byCommand = new Map<string, Chosen>();
+  for (const step of steps) {
+    let unit = step.command ? byCommand.get(step.command) : undefined;
+    if (!unit) {
+      unit = { receipts: [], text: 0 };
+      units.push(unit);
+      if (step.command) byCommand.set(step.command, unit);
+    }
+    if (step.receipt) unit.receipts.push(step.receipt);
+    else unit.text += 1;
+  }
+  return units;
 }
 
 export async function runTreeInverse(
@@ -98,11 +126,13 @@ export async function runTreeInverse(
   let node: { id: string; kind: string } | undefined;
   if (reached.ok && reached.value.kind === "node") node = reached.value.node;
   else {
-    // A node deleted since, named by the path the model wrote for it, is found by that receipt.
+    // A node gone since (deleted, or a create that was undone), named by the path the model
+    // wrote for it, is found by that receipt.
     const written = await treeHistory.receiptsAt(threadId, `${parts.area}${parts.rest}`);
-    const deleted = written.find((receipt) => receipt.op === "delete");
-    if (deleted)
-      node = { id: deleted.subject, kind: parts.rest.endsWith("/") ? "folder" : "document" };
+    const gone = written.find(
+      (receipt) => receipt.op === "delete" || (receipt.op === "create" && receipt.kind === "undo"),
+    );
+    if (gone) node = { id: gone.subject, kind: parts.rest.endsWith("/") ? "folder" : "document" };
   }
   if (!node) return null;
   const history = await treeHistory.historyOf(threadId, node.id, node.kind !== "folder");
@@ -113,7 +143,7 @@ export async function runTreeInverse(
       kind: "answer",
       answer: writeToolError(
         input.command,
-        `Only ${history.undo.length + history.text.undo.length} ${history.undo.length + history.text.undo.length === 1 ? "edit" : "edits"} to undo in ${input.path}; requested ${input.count}. Nothing was changed.`,
+        `Only ${undoUnits(history).length} ${undoUnits(history).length === 1 ? "edit" : "edits"} to undo in ${input.path}; requested ${input.count}. Nothing was changed.`,
       ),
     };
 
@@ -213,7 +243,7 @@ async function reverseReceipt(
           ...(scope.view.draft && !result.inLive
             ? { draftBranchId: scope.view.draft as BranchId }
             : {}),
-          shownAt: input.path,
+          shownAt: `${parts.area}${parts.rest}`,
           reverses: { kind, receipt: receipt.id },
         });
         handle = recorded.handle;

@@ -320,26 +320,8 @@ function stillFit(writer: TreeWriter, restored: ReadonlySet<string>, undone: rea
   );
 }
 
-/**
- * Undo of an Apply, by the simple rule (design section 5): allowed only while nothing has been
- * admitted to the list since, by anyone, anywhere. `mark` is the list's state vector taken right
- * after the Apply (on the server: the journal's head). A record that lands earlier in the list
- * but was admitted later moves the state vector too, so it counts. Text is not in the list:
- * `writtenSince` holds documents the Apply created that have text written since. Its live copies
- * leave the replay and everything its command settled, the superseded records too, is pending
- * again, unless one of them no longer fits.
- */
-export function undoApply(
-  writer: TreeWriter,
-  applied: string,
-  mark: Uint8Array,
-  by: Actor,
-  command: string,
-  writtenSince: ReadonlySet<string> = new Set(),
-): "undone" | "gone" | "superseded" {
-  assertNewCommand(writer.doc, command);
-  const now = Y.encodeStateVector(writer.doc);
-  if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
+/** What an Apply command settled, and the live copies it appended that are still in force. */
+function appliedBy(writer: TreeWriter, applied: string) {
   const settled = settledBy(writer, applied, "applied", "superseded");
   const all = new Map(listRecords(writer.doc).map((record) => [record.id, record]));
   const landed = new Set(
@@ -351,9 +333,42 @@ export function undoApply(
   const copies = viewRecords(writer.doc, LIVE).filter(
     (record) => record.carries !== undefined && landed.has(record.carries),
   );
+  return { settled, copies };
+}
+
+/** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
+export function appliedCreates(writer: TreeWriter, applied: string): string[] {
+  return appliedBy(writer, applied).copies.flatMap((copy) =>
+    copy.type === "create" ? [copy.node] : [],
+  );
+}
+
+/**
+ * Undo of an Apply, by the simple rule (design section 5): allowed only while nothing has been
+ * admitted to the list since, by anyone, anywhere. `mark` is the list's state vector taken right
+ * after the Apply (on the server: the journal's head). A record that lands earlier in the list
+ * but was admitted later moves the state vector too, so it counts. Text is not in the list:
+ * `writtenSince` holds documents the Apply created that have text written since. Its live copies
+ * leave the replay, with the restores it made first, and everything its command settled, the
+ * superseded records too, is pending again, unless one of them no longer fits.
+ */
+export function undoApply(
+  writer: TreeWriter,
+  applied: string,
+  mark: Uint8Array,
+  by: Actor,
+  command: string,
+  writtenSince: ReadonlySet<string> = new Set(),
+  /** The live restore records the Apply appended before its copies: they leave live too. */
+  restoredByApply: readonly string[] = [],
+): "undone" | "gone" | "superseded" {
+  assertNewCommand(writer.doc, command);
+  const now = Y.encodeStateVector(writer.doc);
+  if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
+  const { settled, copies } = appliedBy(writer, applied);
   if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
   const restored = new Set(settled.map(([id]) => id));
-  const undone = copies.map((copy) => copy.id);
+  const undone = [...copies.map((copy) => copy.id), ...restoredByApply];
   if (!stillFit(writer, restored, undone)) return "superseded";
   writer.transact(() => {
     writer.settle(by, undone, "undone", { command });

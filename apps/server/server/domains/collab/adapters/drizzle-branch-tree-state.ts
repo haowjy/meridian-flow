@@ -30,6 +30,28 @@ type Row = {
 const REVISION = sql`md5(concat_ws('|', b.context_source_id::text, coalesce(b.parent_id::text, ''),
   b.name, b.rank, b.deleted::text, b.exists_only_in_draft::text))`;
 
+/**
+ * The revision of the Work's row on each of these nodes, documents or folders (null: the Work
+ * has no row on it): what a click that froze the row compares against.
+ */
+export async function branchRowRevisions(
+  db: Database,
+  branchId: BranchId,
+  nodeIds: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = nodeIds.filter(isUuid);
+  if (!isUuid(branchId) || ids.length === 0) return new Map();
+  const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
+    SELECT b.id::text AS id, ${REVISION} AS revision
+    FROM branch_tree_nodes b
+    WHERE b.branch_id = ${branchId}::uuid
+      AND b.id IN (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`);
+  return new Map(rows.map((row) => [row.id, row.revision]));
+}
+
 export function createDrizzleBranchTreeState(
   db: Database,
   tree: Pick<TreeReader, "identityStatus">,

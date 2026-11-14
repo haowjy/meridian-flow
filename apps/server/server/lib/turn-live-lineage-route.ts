@@ -9,6 +9,7 @@ import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
   type TurnEditedDocument,
+  type TurnTreeFolder,
   turnEditDestination,
 } from "../domains/collab/domain/turn-live-lineage.js";
 import { parseContextUri } from "../domains/context/context/uri.js";
@@ -45,13 +46,14 @@ export async function handleTurnLiveLineageRequest(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
-  const [visibleDocuments, receipt, workAvailability] = await Promise.all([
+  const [visibleDocuments, folders, receipt, workAvailability] = await Promise.all([
     deps.documentSync.listEditedDocumentsForTurn(threadId, turnId).then((documents) =>
       filterAccessibleLiveLineageDocuments(deps, {
         documents,
         userId: input.userId,
       }),
     ),
+    deps.documentSync.listFoldersForTurn(threadId, turnId),
     deps.documentSync.getTurnReceiptChip(threadId, turnId),
     getWorkReceiptReversalAvailability(
       {
@@ -69,7 +71,11 @@ export async function handleTurnLiveLineageRequest(
       ? ({ state: "work-reversed", control: "redo" } as const)
       : null;
   return {
-    documents: visibleDocuments.map(serializeLiveLineageDocument),
+    documents: [
+      ...visibleDocuments.map(serializeLiveLineageDocument),
+      // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
+      ...folders.map(serializeLiveLineageFolder),
+    ],
     receipt: receipt ?? workReceipt,
   };
 }
@@ -112,6 +118,22 @@ async function filterAccessibleLiveLineageDocuments(
     }),
   );
   return input.documents.filter((_, index) => readable[index]);
+}
+
+function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocumentItem {
+  const parsed = parseContextUri(folder.shownAt);
+  if (!parsed.ok) {
+    throw createError({ statusCode: 500, message: "Live-lineage folder URI is invalid" });
+  }
+  return {
+    documentId: folder.nodeId,
+    uri: parsed.value.normalized,
+    path: `/${parsed.value.path}`,
+    folder: true,
+    ...(folder.ownerKey
+      ? { scope: "draft" as const, owner: folder.ownerKey }
+      : { scope: "live" as const }),
+  };
 }
 
 function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLineageDocumentItem {

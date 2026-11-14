@@ -34,6 +34,7 @@ import {
   describeModelMove,
   documentDisplayName,
   documentLocationName,
+  folderDisplayName,
   type OwnerNames,
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
@@ -349,6 +350,13 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
+  // A folder has no document to open or drag: its row names where it is.
+  if (document.folder)
+    return (
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
+        {folderDisplayName(document.uri)}
+      </span>
+    );
   const openable =
     document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
   if (!openable) {
@@ -383,7 +391,7 @@ function DocumentRow({
  */
 function useDocumentRowDrag(document: TurnEditDocument) {
   return useReferenceDrag(
-    document.tree?.op !== "delete"
+    document.tree?.op !== "delete" && !document.folder
       ? {
           ref: { kind: "file", id: document.documentId },
           name: documentDisplayName(document.uri),
@@ -448,7 +456,17 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
  * expanded rows, which already open each document.
  */
 function documentCountLabel(documents: readonly TurnEditDocument[]) {
-  const count = new Set(documents.map((document) => document.documentId)).size;
+  if (documents.every((document) => document.folder)) {
+    const folders = new Set(documents.map((document) => document.documentId)).size;
+    return folders === 1 ? (
+      <Trans>Changed 1 folder</Trans>
+    ) : (
+      <Trans>Changed {folders} folders</Trans>
+    );
+  }
+  const count = new Set(
+    documents.filter((document) => !document.folder).map((document) => document.documentId),
+  ).size;
   const drafted = documents.filter((document) => document.scope === "draft").length;
   if (drafted === documents.length)
     return count === 1 ? (
