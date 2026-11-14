@@ -26,7 +26,6 @@ import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
-  MeridianBulletList,
   MeridianCode,
   MeridianCodeBlockLowlight,
   MeridianEm,
@@ -37,8 +36,6 @@ import {
   MeridianJsxContainer,
   MeridianJsxLeaf,
   MeridianLink,
-  MeridianListItem,
-  MeridianOrderedList,
   MeridianParagraph,
   MeridianStrong,
   MeridianTable,
@@ -46,6 +43,7 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { NestingExtension } from "./extensions/nesting";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { PeerCarets } from "./extensions/peer-carets";
@@ -356,9 +354,7 @@ export function createStandaloneEditorExtensions({
     MeridianEm,
     MeridianCode,
     MeridianLink,
-    MeridianBulletList,
-    MeridianOrderedList,
-    MeridianListItem,
+    NestingExtension,
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianParagraph,

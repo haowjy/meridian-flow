@@ -36,10 +36,7 @@ export const SHARED_TRIGGER_ENVELOPE: readonly TriggerEnvelopeRow[] = [
     claim: "opens in a list item",
     opens: true,
     content: (marker) => [
-      {
-        type: "bullet_list",
-        content: [{ type: "list_item", content: [paragraph(text(marker))] }],
-      },
+      { type: "paragraph", attrs: { path: "-", marker: "item" }, content: [text(marker)] },
     ],
   },
   {

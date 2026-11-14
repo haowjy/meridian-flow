@@ -123,10 +123,12 @@ const heading = (text: string): JSONContent => ({
   content: [{ type: "text", text }],
 });
 
-const bullets = (...items: string[]): JSONContent => ({
-  type: "bullet_list",
-  content: items.map((text) => ({ type: "list_item", content: [paragraph(text)] })),
-});
+const bullets = (...items: string[]): JSONContent[] =>
+  items.map((text) => ({
+    type: "paragraph",
+    attrs: { path: "-", marker: "item" },
+    content: [{ type: "text", text }],
+  }));
 
 /** One body row of two block-capable cells under the standard header. */
 function mountCellBlocks(left: JSONContent[], right: JSONContent[]) {
@@ -224,14 +226,14 @@ describe("merging block-capable cells", () => {
   }
 
   it("appends a heading after a list rather than flattening either", () => {
-    const current = mountCellBlocks(
-      [bullets("gather the disciples", "seal the gate")],
-      [heading("The gate")],
-    );
+    const current = mountCellBlocks(bullets("gather the disciples", "seal the gate"), [
+      heading("The gate"),
+    ]);
     mergeBodyRow(current);
 
     expect(mergedCellBlocks(current)).toEqual([
-      ["bullet_list", "gather the disciplesseal the gate"],
+      ["paragraph", "gather the disciples"],
+      ["paragraph", "seal the gate"],
       ["paragraph", "The gate"],
     ]);
   });

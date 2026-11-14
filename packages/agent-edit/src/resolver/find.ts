@@ -36,6 +36,8 @@ interface SerializedBlockEntry {
   block: BlockRef;
   index: number;
   body: string;
+  /** What separates this body from the previous entry's, as the document writes it. */
+  gap: string;
   start: number;
   end: number;
 }
@@ -48,7 +50,7 @@ export function findTextMatches(
 ): FindResult {
   if (find.length === 0) return invalid("`find` must not be empty");
   const entries = serializeScopeBlocks(ctx, scope);
-  const haystack = entries.map((entry) => entry.body).join("\n\n");
+  const haystack = joinEntries(entries);
   return matchSerializedText(entries, haystack, find, all);
 }
 
@@ -90,17 +92,16 @@ function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBl
   const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.node));
   let cursor = 0;
   return selected.map((block, bodyIndex) => {
-    const body = bodies[bodyIndex] ?? "";
-    const serialized = {
-      block: block.ref,
-      index: scope.startIndex + bodyIndex,
-      body,
-      start: cursor,
-      end: cursor + body.length,
-    };
-    cursor = serialized.end + (bodyIndex === selected.length - 1 ? 0 : 2);
-    return serialized;
+    const { body, gap } = bodies[bodyIndex] ?? { body: "", gap: "" };
+    const start = cursor + gap.length;
+    cursor = start + body.length;
+    return { block: block.ref, index: scope.startIndex + bodyIndex, body, gap, start, end: cursor };
   });
+}
+
+/** The entries' Markdown as the document writes it, blank lines and prefixes between blocks included. */
+export function joinEntries(entries: ReadonlyArray<{ body: string; gap: string }>): string {
+  return entries.map((entry) => entry.gap + entry.body).join("");
 }
 
 function nonOverlappingMatches(
@@ -137,7 +138,7 @@ function resolveRangeMatch(
   const first = entries[0];
   const last = entries.at(-1);
   if (!first || !last) return null;
-  const rangeSource = entries.map((entry) => entry.body).join("\n\n");
+  const rangeSource = joinEntries(entries).slice(first.gap.length);
   const matchStart = start - first.start;
   const matchEnd = end - first.start;
   if (matchStart < 0 || matchEnd < matchStart || matchEnd > rangeSource.length) return null;

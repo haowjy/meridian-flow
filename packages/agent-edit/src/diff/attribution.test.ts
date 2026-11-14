@@ -175,13 +175,11 @@ const paragraphXml = (s: string) => {
 };
 const image = schema.nodes.image.create({ src: "foo.png" });
 const withImage = (s: string) => schema.nodes.paragraph.create(null, [image, schema.text(s)]);
-const list = schema.nodes.bullet_list.create(null, [
-  schema.nodes.list_item.create(null, para("alpha beta gamma delta epsilon")),
-]);
-const listText = (d: Y.Doc) =>
-  (((frag(d).get(0) as Y.XmlElement).get(0) as Y.XmlElement).get(0) as Y.XmlElement).get(
-    0,
-  ) as Y.XmlText;
+const list = schema.nodes.paragraph.create(
+  { path: "-", marker: "item" },
+  para("alpha beta gamma delta epsilon").content,
+);
+const listText = (d: Y.Doc) => (frag(d).get(0) as Y.XmlElement).get(0) as Y.XmlText;
 const bold = (s: string) =>
   schema.nodes.paragraph.create(null, schema.text(s, [schema.marks.strong.create()]));
 const heading = (level: number, s: string) =>
@@ -488,7 +486,7 @@ const ROWS: Row[] = [
     run: (r) =>
       r.ai((d) =>
         writeBlocks(frag(d), schema, [
-          schema.nodes.ordered_list.create(null, list.firstChild as PMNode),
+          schema.nodes.paragraph.create({ ...list.attrs, kind: "ordered" }, list.content),
         ]),
       ),
     byline: [T()],
@@ -514,7 +512,7 @@ const ROWS: Row[] = [
     run: (r) => {
       r.ai((d) =>
         writeBlocks(frag(d), schema, [
-          schema.nodes.ordered_list.create(null, list.firstChild as PMNode),
+          schema.nodes.paragraph.create({ ...list.attrs, kind: "ordered" }, list.content),
         ]),
       );
       r.apply();

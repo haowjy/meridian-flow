@@ -4,7 +4,8 @@ Block handles and eligible object bodies enter one gesture, hold, drop calculati
 finalizer.
 
 - The movable unit is a top-level block, so a seam never lands inside a table, figure,
-  fence or list item. Nested reordering is a different design ([FUTURE](.context/FUTURE)),
+  fence or quote; a list item is a block of its own, so a seam lands between items.
+  Nested reordering is a different design ([FUTURE](.context/FUTURE)),
   not a deeper hit-test.
 - Hold the block with `NodeHold`, not a position or child index, and re-derive the seam
   from the pointer's y after transactions and at drop.

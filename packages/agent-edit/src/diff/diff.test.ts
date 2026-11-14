@@ -162,10 +162,10 @@ function toNode(b: Blk): PMNode {
     schema.text(p.text, schema.marks.strong.isInSet(p.marks) || p.marks.length ? p.marks : []),
   );
   if (b.type === "h") return schema.nodes.paragraph.create({ level: 2 }, content);
-  const p = schema.nodes.paragraph.create(null, content);
-  return b.type === "list"
-    ? schema.nodes.bullet_list.create(null, schema.nodes.list_item.create(null, p))
-    : p;
+  return schema.nodes.paragraph.create(
+    b.type === "list" ? { path: "-", marker: "item" } : null,
+    content,
+  );
 }
 
 function mutate(r: Rng, blocks: Blk[]): Blk[] {

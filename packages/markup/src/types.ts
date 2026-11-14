@@ -7,8 +7,9 @@ import type { PluggableList } from "unified";
 import type { MdastRoot } from "./ast.js";
 import type { CodecParseErrorLocation } from "./error.js";
 import type { PreparedSource } from "./prepared-source.js";
+import type { SerializedBlock } from "./serialize-nested.js";
 
-export type { CodecParseErrorLocation, PMNode, SpelledHref };
+export type { CodecParseErrorLocation, PMNode, SerializedBlock, SpelledHref };
 
 /**
  * Synchronous spelling for one holder in one view, over a snapshot prepared
@@ -116,7 +117,8 @@ export interface MarkupCodec {
   parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
-  serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
+  /** One entry per block: its Markdown as it sits in the document, and the gap before it. */
+  serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): SerializedBlock[];
   /** One canonical whole-source parse for presentation while Markdown is arriving. */
   parseStreaming(content: string, options?: MarkdownStreamOptions): MarkdownStreamResult;
 }

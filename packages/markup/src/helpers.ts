@@ -10,6 +10,7 @@ import type {
   MdastInline,
   MdastJsxFlow,
   MdastJsxText,
+  MdastList,
   MdastParagraph,
   MdastRoot,
   MdastText,
@@ -22,6 +23,7 @@ import {
   type ComponentSpec,
   type PropSpec,
 } from "./components.js";
+import { type FlatBlock, flattenSources, type Source, withNesting } from "./flatten.js";
 import { HARD_BREAK_TAG } from "./markdown/blocks/hard-break.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
 import { sourceRange, textSourceRange } from "./presentation-source-map.js";
@@ -54,14 +56,15 @@ export function stringifyBlock(ctx: SerializeContext, block: MdastBlock): string
   return getRuntime(ctx).stringifyMarkdown({ type: "root", children: [block] });
 }
 
+/** A container's children as the mdast their Markdown spelling parses to. */
 export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): MdastBlock[] {
   const runtime = getRuntime(ctx);
-  const out: MdastBlock[] = [];
+  const blocks: PMNode[] = [];
   node.forEach((child) => {
-    const serialized = runtime.serializeBlock(child, ctx);
-    out.push(...parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown).children);
+    blocks.push(child);
   });
-  return out;
+  return parseWithOpaqueHtmlTables(runtime.serializeSequence(blocks, ctx), runtime.parseMarkdown)
+    .children;
 }
 
 /**
@@ -133,13 +136,6 @@ function restoreOpaqueTables(node: unknown, tables: ReadonlyMap<string, string>)
   });
 }
 
-export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseContext): PMNode[] {
-  const out = children
-    .map((child) => parseBlockAst(child, ctx))
-    .filter((node): node is PMNode => node !== null);
-  return out.length > 0 ? out : [ctx.schema.node("paragraph")];
-}
-
 export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   const runtime = getRuntime(ctx);
   for (const codec of runtime.blocks) {
@@ -147,6 +143,42 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
     if (parsed) return asBlockNode(parsed, ctx);
   }
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+}
+
+/** The mdast children as a tree of lists and leaves, for `flattenSources`. */
+export function mdastSources(children: readonly MdastBlock[]): Array<Source<MdastBlock>> {
+  return children.map((child): Source<MdastBlock> => {
+    if (child.type !== "list") return { type: "leaf", value: child };
+    const list = child as MdastList;
+    return {
+      type: "list",
+      ordered: list.ordered,
+      start: list.start ?? null,
+      spread: list.spread,
+      items: list.children.map((item) => ({
+        checked: item.checked ?? null,
+        children: mdastSources(item.children),
+      })),
+    };
+  });
+}
+
+export function flattenMdast(children: readonly MdastBlock[]): Array<FlatBlock<MdastBlock>> {
+  return flattenSources(mdastSources(children));
+}
+
+/** One flat block parsed to a node, or null when its source parses to nothing. */
+export function parseFlatBlock(block: FlatBlock<MdastBlock>, ctx: ParseContext): PMNode | null {
+  const node =
+    block.value === null ? ctx.schema.node("paragraph") : parseBlockAst(block.value, ctx);
+  return node && withNesting(node, block);
+}
+
+export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseContext): PMNode[] {
+  const out = flattenMdast(children)
+    .map((block) => parseFlatBlock(block, ctx))
+    .filter((node): node is PMNode => node !== null);
+  return out.length > 0 ? out : [ctx.schema.node("paragraph")];
 }
 
 /**

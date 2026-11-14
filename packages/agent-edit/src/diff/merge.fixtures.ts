@@ -9,7 +9,7 @@ import type { Conflict } from "./merge.js";
 import type { Tok } from "./tokens.js";
 
 export function parseDoc(schema: Schema, src: string): PMNode[] {
-  return src.split(" | ").map((part) => {
+  return src.split(" | ").flatMap((part) => {
     const i = part.indexOf(":");
     const kind = i < 0 ? part.trim() : part.slice(0, i).trim();
     const text = i < 0 ? "" : part.slice(i + 1);
@@ -21,17 +21,11 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
         schema.nodes.paragraph.create(null, inline(schema, text)),
       );
     if (kind === "list")
-      return schema.nodes.bullet_list.create(
-        null,
-        text
-          .split(";")
-          .map((t) =>
-            schema.nodes.list_item.create(
-              null,
-              schema.nodes.paragraph.create(null, inline(schema, t)),
-            ),
-          ),
-      );
+      return text
+        .split(";")
+        .map((t) =>
+          schema.nodes.paragraph.create({ path: "-", marker: "item" }, inline(schema, t)),
+        );
     if (kind.startsWith("h"))
       return schema.nodes.paragraph.create(
         { level: Number(kind.slice(1)) || 1 },
@@ -56,36 +50,44 @@ function inline(schema: Schema, text: string): PMNode[] {
 }
 
 export function render(blocks: readonly PMNode[]): string {
-  return blocks
-    .map((b) => {
-      if (b.type.name === "horizontal_rule") return "hr";
-      if (b.type.name === "figure") return `fig:${b.attrs.alt}`;
-      if (b.type.name === "blockquote") return `quote:${b.textContent}`;
-      if (b.type.name === "bullet_list") {
-        const items: string[] = [];
-        b.forEach((li) => {
-          items.push(li.textContent);
-        });
-        return `list:${items.join(";")}`;
+  const parts: string[] = [];
+  let items: string[] | null = null;
+  for (const b of blocks) {
+    if (b.type.name === "paragraph" && b.attrs.path === "-" && b.attrs.marker === "item") {
+      if (!items) {
+        items = [];
+        parts.push("");
       }
-      let t = "";
-      b.forEach((n) => {
-        const em = n.marks.some((m) => m.type.name === "em");
-        const st = n.marks.some((m) => m.type.name === "strong");
-        const link = n.marks.find((m) => m.type.name === "link");
-        let s = n.text ?? "";
-        if (link) s = `[${s}](${link.attrs.href})`;
-        t += st && em ? `***${s}***` : st ? `**${s}**` : em ? `*${s}*` : s;
-      });
-      const kind =
-        b.attrs.level !== null && b.type.name === "paragraph"
-          ? `h${b.attrs.level}`
-          : b.attrs.align === "center"
-            ? "pc"
-            : "p";
-      return `${kind}:${t}`;
-    })
-    .join(" | ");
+      items.push(b.textContent);
+      parts[parts.length - 1] = `list:${items.join(";")}`;
+      continue;
+    }
+    items = null;
+    parts.push(renderBlock(b));
+  }
+  return parts.join(" | ");
+}
+
+function renderBlock(b: PMNode): string {
+  if (b.type.name === "horizontal_rule") return "hr";
+  if (b.type.name === "figure") return `fig:${b.attrs.alt}`;
+  if (b.type.name === "blockquote") return `quote:${b.textContent}`;
+  let t = "";
+  b.forEach((n) => {
+    const em = n.marks.some((m) => m.type.name === "em");
+    const st = n.marks.some((m) => m.type.name === "strong");
+    const link = n.marks.find((m) => m.type.name === "link");
+    let s = n.text ?? "";
+    if (link) s = `[${s}](${link.attrs.href})`;
+    t += st && em ? `***${s}***` : st ? `**${s}**` : em ? `*${s}*` : s;
+  });
+  const kind =
+    b.attrs.level !== null && b.type.name === "paragraph"
+      ? `h${b.attrs.level}`
+      : b.attrs.align === "center"
+        ? "pc"
+        : "p";
+  return `${kind}:${t}`;
 }
 
 export class Rng {
@@ -1089,8 +1091,8 @@ export const CASES: Case[] = [
     base: "list:one;two;three",
     live: "list:ONE;two;three",
     draft: "list:one;two;THREE",
-    merged: "list:one;two;THREE",
-    conflicts: 1,
+    merged: "list:ONE;two;THREE",
+    conflicts: 0,
   },
   {
     row: "edits in one container (list, quote, table)",

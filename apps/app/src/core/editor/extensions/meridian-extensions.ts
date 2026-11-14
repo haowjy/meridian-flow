@@ -7,18 +7,14 @@
  * surface; consumed by the editor `config`.
  */
 import {
-  type CommandProps,
-  InputRule,
   isiOS,
   isMacOS,
   type KeyboardShortcutCommand,
   mergeAttributes,
   Node,
   textblockTypeInputRule,
-  wrappingInputRule,
 } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
-import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
@@ -26,8 +22,6 @@ import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image, { type ImageOptions } from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
-import ListItem from "@tiptap/extension-list-item";
-import OrderedList from "@tiptap/extension-ordered-list";
 import Paragraph from "@tiptap/extension-paragraph";
 import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
@@ -39,7 +33,7 @@ import {
   type ResolvedPos,
   Slice,
 } from "@tiptap/pm/model";
-import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
+import { Plugin, Selection } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -300,24 +294,6 @@ export const MeridianParagraph = Paragraph.extend({
         getAttributes: (match) => ({ level: match[1]?.length }),
       }),
     ];
-  },
-});
-
-export const MeridianListItem = ListItem.extend({
-  name: "list_item",
-
-  addAttributes() {
-    return {
-      checked: {
-        default: null,
-        parseHTML: (element) => {
-          const checkbox = element.querySelector('input[type="checkbox"]');
-          return checkbox ? (checkbox as HTMLInputElement).checked : null;
-        },
-        renderHTML: (attrs) =>
-          attrs.checked === null ? {} : { "data-checked": attrs.checked ? "true" : "false" },
-      },
-    };
   },
 });
 
@@ -618,113 +594,6 @@ export const MeridianLink = Link.extend({
   // in a manuscript. `rel` stays as the fence for anything that does navigate.
   HTMLAttributes: { target: null, rel: "noopener noreferrer" },
 });
-
-// We renamed list_item from TipTap's default `listItem`, so the list commands
-// (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
-// via `itemTypeName` — otherwise they resolve "listItem", which isn't in the
-// schema, and throw.
-/** Markdown list tightness is a serialization fact, never a DOM attribute. */
-const tightAttribute = { default: false, renderHTML: () => ({}) };
-
-/** A list item holds body text: wrapping a heading in a list, by shortcut, toolbar or input rule, clears its level. */
-function clearSelectedLevels(tr: Transaction): void {
-  const { from, to } = tr.selection;
-  tr.doc.nodesBetween(from, to, (node, pos) => {
-    if (node.type.name === "paragraph" && node.attrs.level !== null) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, level: null });
-    }
-    return !node.isTextblock;
-  });
-}
-
-function bodyTextListRule(rule: InputRule): InputRule {
-  return new InputRule({
-    find: rule.find,
-    handler: (props) => {
-      const result = rule.handler(props);
-      if (result !== null) clearSelectedLevels(props.state.tr);
-      return result;
-    },
-  });
-}
-
-/** TipTap's toggleList wraps when the selection is outside the list type and unwraps inside it. */
-function toggleListWithBodyText(
-  { chain, editor }: CommandProps,
-  list: { name: string; itemTypeName: string; keepMarks: boolean },
-): boolean {
-  const run = chain();
-  if (!editor.isActive(list.name)) run.command(({ tr }) => (clearSelectedLevels(tr), true));
-  return run.toggleList(list.name, list.itemTypeName, list.keepMarks).run();
-}
-
-export const MeridianBulletList = BulletList.extend({
-  name: "bullet_list",
-  content: "list_item+",
-  group: "block",
-
-  addCommands() {
-    return {
-      toggleBulletList: () => (props) =>
-        toggleListWithBodyText(props, { name: this.name, ...this.options }),
-    };
-  },
-
-  addInputRules() {
-    return (this.parent?.() ?? []).map(bodyTextListRule);
-  },
-
-  addAttributes() {
-    return {
-      tight: tightAttribute,
-    };
-  },
-}).configure({ itemTypeName: "list_item" });
-
-export const MeridianOrderedList = OrderedList.extend({
-  name: "ordered_list",
-  content: "list_item+",
-  group: "block",
-
-  addAttributes() {
-    return {
-      // GFM's list start number. TipTap calls it `start`; the shared schema
-      // calls it `order`, so the rename has to reach the DOM mapping and the
-      // input rule below as well as the attr itself — an inherited `start`
-      // silently falls out of the schema, and the writer's `3. ` opens at one.
-      order: {
-        default: 1,
-        parseHTML: (element) => {
-          const start = Number.parseInt(element.getAttribute("start") ?? "", 10);
-          return Number.isFinite(start) ? start : 1;
-        },
-        renderHTML: (attrs) =>
-          typeof attrs.order === "number" && attrs.order !== 1 ? { start: attrs.order } : {},
-      },
-      tight: tightAttribute,
-    };
-  },
-
-  addCommands() {
-    return {
-      toggleOrderedList: () => (props) =>
-        toggleListWithBodyText(props, { name: this.name, ...this.options }),
-    };
-  },
-
-  addInputRules() {
-    return [
-      bodyTextListRule(
-        wrappingInputRule({
-          find: /^(\d+)\.\s$/,
-          type: this.type,
-          getAttributes: (match) => ({ order: Number(match[1]) }),
-          joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
-        }),
-      ),
-    ];
-  },
-}).configure({ itemTypeName: "list_item" });
 
 export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; owner?: string }>({
   marks: "",

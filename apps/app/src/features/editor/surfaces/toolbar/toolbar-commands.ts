@@ -13,6 +13,7 @@ import {
   undoEditorHistory,
 } from "@/core/editor/editor-history";
 import type { HeadingLevel } from "@/core/editor/extensions/meridian-extensions";
+import { selectedSequence, selectionListKind } from "@/core/editor/extensions/nesting";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -157,7 +158,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? codeBlockRefusal(editor),
     },
     bulletList: {
-      active: editor.isActive("bullet_list"),
+      active: activeListKind(editor) === "bullet",
       blockedBy: readOnly ?? blockType,
     },
     // No precondition on having a selection: a bare caret opens the
@@ -207,8 +208,9 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
 /** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (editor.isActive("code_block")) return "codeBlock";
-  if (editor.isActive("bullet_list")) return "bulletList";
-  if (editor.isActive("ordered_list")) return "orderedList";
+  const listKind = activeListKind(editor);
+  if (listKind === "bullet") return "bulletList";
+  if (listKind === "ordered") return "orderedList";
   if (editor.isActive("blockquote")) return "blockquote";
   for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
     if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
@@ -240,9 +242,9 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":
-      return toggleListBlock(editor, "bullet_list");
+      return editor.chain().focus().toggleListKind("bullet").run();
     case "orderedList":
-      return toggleListBlock(editor, "ordered_list");
+      return editor.chain().focus().toggleListKind("ordered").run();
     case "blockquote":
       return editor.chain().focus().toggleBlockquote().run();
     default:
@@ -258,7 +260,7 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
   let head = selection.$headCell.pos;
 
   // Every conversion moves the positions after it; the walk follows the
-  // document the same way `toggleListBlock` does.
+  // document through the transaction events.
   const followDocument = ({ transaction }: { transaction: Transaction }) => {
     if (!transaction.docChanged) return;
     for (const cell of cells) {
@@ -372,75 +374,9 @@ function hasCollaborativeHistory(editor: Editor): boolean {
   return !editor.isDestroyed && typeof editor.commands.undo === "function";
 }
 
-/** TipTap reverses a list by looking for an ancestor whose extension group holds "list", and the Meridian list nodes declare `group: "block"` to stay in parity with the server schema — so its own toggle only ever wraps. */
-function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
-  if (!editor.isActive(listType)) {
-    const chain = editor.chain().focus();
-    return listType === "bullet_list"
-      ? chain.toggleBulletList().run()
-      : chain.toggleOrderedList().run();
-  }
-
-  let range = { from: editor.state.selection.from, to: editor.state.selection.to };
-  const followDocument = ({ transaction }: { transaction: Transaction }) => {
-    if (!transaction.docChanged) return;
-    range = {
-      from: transaction.mapping.map(range.from, 1),
-      to: transaction.mapping.map(range.to, -1),
-    };
-  };
-  editor.on("transaction", followDocument);
-
-  try {
-    let lifted = false;
-    // Each lift removes at least the two tokens of the list it unwrapped, so
-    // the document's own size is a bound that always terminates.
-    for (let guard = editor.state.doc.content.size; guard > 0; guard -= 1) {
-      const target = listRangeReachedBy(editor.state, listType, range);
-      if (!target) break;
-      const chain = editor.chain().focus().setTextSelection(target);
-      if (!chain.liftListItem("list_item").run()) break;
-      lifted = true;
-    }
-    // The writer selected words, not list items; give them back what they had.
-    if (lifted) editor.commands.setTextSelection(range);
-    return lifted;
-  } finally {
-    editor.off("transaction", followDocument);
-  }
-}
-
-/** The part of the next list of this type that the writer's range actually reaches, or null when none is left. */
-function listRangeReachedBy(
-  state: EditorState,
-  listType: string,
-  range: { from: number; to: number },
-): { from: number; to: number } | null {
-  const { doc } = state;
-  const from = Math.max(0, Math.min(range.from, doc.content.size));
-  const to = Math.max(from, Math.min(range.to, doc.content.size));
-
-  let found: { from: number; to: number } | null = null;
-  doc.nodesBetween(from, to, (node, pos) => {
-    if (found) return false;
-    if (node.type.name !== listType) return true;
-
-    const contentFrom = pos + 1;
-    const contentTo = pos + node.nodeSize - 1;
-    if (from === to && (from <= contentFrom || from >= contentTo)) return true;
-
-    const overlapFrom = Math.max(from, contentFrom);
-    const overlapTo = Math.min(to, contentTo);
-    if (overlapFrom > overlapTo) return true;
-
-    // A list's own boundary positions hold list items, not inline content, so
-    // a text selection cannot sit on them; `between` walks in to the nearest
-    // positions that can hold a caret.
-    const snapped = TextSelection.between(doc.resolve(overlapFrom), doc.resolve(overlapTo));
-    found = { from: snapped.from, to: snapped.to };
-    return false;
-  });
-  return found;
+/** The kind of list every selected block sits in, or null when they are not all in one kind. */
+function activeListKind(editor: Editor): "bullet" | "ordered" | null {
+  return selectionListKind(selectedSequence(editor.state.selection));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

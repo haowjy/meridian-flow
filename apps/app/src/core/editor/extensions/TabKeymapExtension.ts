@@ -19,7 +19,7 @@
  *   the caret stands in a list item or a fence INSIDE a cell, where the walk
  *   declines and the deeper owner's rung below answers;
  * - in a code fence, it indents, line-wise when something is selected;
- * - in a list, it sinks or lifts the item, refusal included;
+ * - in a list, it nests or lifts the item, refusal included;
  * - anywhere else in prose, it inserts one tab character.
  *
  * Prose tabs reach the wire intact (law 9): a tab mid-line is literal
@@ -119,9 +119,10 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
     if (role === "cell" || role === "header_cell") cellDepth = depth;
   }
   if (cellDepth === 0) return false;
+  if (insideListItem(state)) return true;
   for (let depth = $from.depth; depth > cellDepth; depth -= 1) {
     const node = $from.node(depth);
-    if (node.type.name === "list_item" || isSourceBlock(node)) return true;
+    if (isSourceBlock(node)) return true;
   }
   return false;
 }
@@ -133,14 +134,14 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
  */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
-    editor.commands.sinkListItem("list_item");
+    editor.commands.indentList();
     return;
   }
   insertTab(state, dispatch);
 });
 
 const outdentItem = consuming((editor, state) => {
-  if (insideListItem(state)) editor.commands.liftListItem("list_item");
+  if (insideListItem(state)) editor.commands.outdentList();
 });
 
 const indentFence = (direction: 1 | -1) =>
@@ -165,11 +166,9 @@ function insertTab(state: EditorState, dispatch: Parameters<KeymapBinding>[1]): 
 }
 
 function insideListItem(state: EditorState): boolean {
-  const $from = state.selection.$from;
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    if ($from.node(depth).type.name === "list_item") return true;
-  }
-  return false;
+  const { $from } = state.selection;
+  const block = $from.parent.isTextblock ? $from.parent : state.selection.$to.parent;
+  return typeof block.attrs.path === "string" && block.attrs.path.includes("-");
 }
 
 /**

@@ -12,6 +12,13 @@ builder.
 Consumers use `markdownCodec` and `mdxCodec`; codec and plugin composition stays internal.
 
 
+- Lists are not nodes. Parse flattens each mdast list into blocks carrying the nesting
+  attributes (`flatten.ts`, also the walk for table-cell HTML); serialize writes each
+  block's own Markdown under the prefixes `nest` (`@meridian/prosemirror-schema`) reads
+  for it, with the gap before it (`serialize-nested.ts`). `serializeBlocks` returns
+  `{ body, gap }` per block: join with the gaps, never with `"\n\n"`, or two tight items
+  read back loose. A container's children (quote, JSX, cell) are a sequence read the same
+  way.
 - MDX component registries are closure-captured by MDX block codec factories, not
   threaded through parse/serialize contexts.
 - MDX accepts lowercase HTML void elements without JSX closing slashes at the

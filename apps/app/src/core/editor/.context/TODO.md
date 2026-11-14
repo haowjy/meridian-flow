@@ -18,10 +18,18 @@ while the moved figure receives a fresh Yjs item identity.
 
 ## Task-list authoring
 
-The shared schema and Markdown codec support `list_item.checked`, but no writer
-surface can author or toggle it. A surface should use `list_item` plus `checked`,
-with an input rule, keymap and checkbox DOM, not upstream `taskList` or `taskItem`
-nodes.
+The shared schema and Markdown codec carry a task item as `marker: "todo" | "done"` on the
+block that starts the item, and the editor draws the box, but no writer surface can author
+or toggle it. A surface should write `marker`, with an input rule (`[ ] `, `[x] `), a click
+on the box and Mod-Enter, not upstream `taskList` or `taskItem` nodes.
+
+## Editing lists
+
+Lists are drawn and have plain commands (toolbar, Tab, `- `/`N. ` input rules). Not yet:
+Enter in an item (a split copies `path` with its `|`, and `done` stays `done`), Enter or
+Backspace to lift, paste and copy of lists as HTML (a pasted list is plain paragraphs), and
+dragging an item with what is under it. Each item is one top-level block today, so a drag
+moves one item.
 
 ## Two views of one session
 
