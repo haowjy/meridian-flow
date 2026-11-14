@@ -25,7 +25,6 @@ export const projectQueryKeys = {
   /** A document's imported properties, fetched by id once the tree says it has any. */
   documentProperties: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "properties"] as const,
-  documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   documentTrash: (projectId: string) => ["projects", projectId, "document-trash"] as const,
   trashedDocument: (projectId: string, documentId: string) =>
     [...projectQueryKeys.documentTrash(projectId), documentId] as const,

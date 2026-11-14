@@ -1,46 +1,27 @@
 /** Private owner-only browser bookmark resolution. Never emit permanent redirects. */
 import type { ProjectId } from "@meridian/contracts";
+import type { UserId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getQuery } from "nitro/h3";
+import { isFileAccessDenied } from "../../../../../../domains/file-policy/index.js";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
-import { handleDocumentAddressRequest } from "../../../../../../lib/document-address-route.js";
 import { resolveContextRoute } from "./_helpers.js";
 
 export default defineEventHandler(async (event) => {
   const { app, projectId, userId, scheme, workId } = await resolveContextRoute(event);
   const query = getQuery(event);
-  const path = parseContextMutationPath(query.path, "path");
-  // A request still carrying the retired `draftId` selector is a review request that answers unavailable.
-  const hasReview =
-    query.reviewOwner !== undefined || query.itemKey !== undefined || query.draftId !== undefined;
-  if (
-    hasReview &&
-    (typeof query.reviewOwner !== "string" ||
-      !query.reviewOwner ||
-      typeof query.itemKey !== "string" ||
-      !query.itemKey ||
-      query.draftId !== undefined)
-  )
-    return { kind: "unavailable" } as const;
-  return handleDocumentAddressRequest(
-    {
-      documentAddresses: app.documentAddresses,
-      workRepo: app.workRepo,
-      draftReview: app.documentSync.draftReview,
-      fileAccess: app.fileAccess,
-    },
-    {
-      projectId: projectId as ProjectId,
-      userId,
-      scheme,
-      workId,
-      rootThreadId: typeof query.rootThreadId === "string" ? query.rootThreadId : null,
-      path,
-    },
-    hasReview
-      ? {
-          owner: query.reviewOwner as string,
-          itemKey: query.itemKey as string,
-        }
-      : undefined,
+  const resolved = await app.documentAddresses.resolve({
+    projectId: projectId as ProjectId,
+    userId,
+    scheme,
+    workId,
+    rootThreadId: typeof query.rootThreadId === "string" ? query.rootThreadId : null,
+    path: parseContextMutationPath(query.path, "path"),
+  });
+  if (resolved.kind === "unavailable") return resolved;
+  const grant = await app.fileAccess.authorize(
+    { accountId: userId as UserId },
+    { kind: "document", documentId: resolved.document.documentId },
+    "read",
   );
+  return isFileAccessDenied(grant) ? ({ kind: "unavailable" } as const) : resolved;
 });

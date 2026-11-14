@@ -1,5 +1,4 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useEffect } from "react";
@@ -136,9 +135,8 @@ function AuthenticatedAccountProviderTree({
     accountSettingsReadGeneration: number;
   };
 }) {
-  const queryClient = useQueryClient();
   return (
-    <AccountFeatureComposition accountId={user.userId} queryClient={queryClient}>
+    <AccountFeatureComposition accountId={user.userId}>
       <AccountSettingsProvider
         serverValue={user.accountSettings}
         serverReadGeneration={user.accountSettingsReadGeneration}

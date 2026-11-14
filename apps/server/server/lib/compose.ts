@@ -1620,9 +1620,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAddresses: {
-      async resolveById() {
-        return { kind: "unavailable" };
-      },
       async resolve() {
         return { kind: "unavailable" };
       },

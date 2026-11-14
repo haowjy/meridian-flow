@@ -5,6 +5,7 @@
  * offered while the Work has pending changes, and with none the shell is live. Flipping it moves
  * main's page to the Work's draft of it, or back to Live.
  */
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
@@ -42,6 +43,21 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
   return useContext(ShellTreeVersionContext);
 }
 
+/** A Work's tree: live, then the branch's pending records, keeping what it holds text on. */
+export function useDraftTreeVersion(
+  branchId: string | null,
+  rows: readonly ThreadDraftListItem[] | null,
+): TreeVersion | null {
+  const pendingText = useMemo(
+    () => new Set(rows?.filter((row) => row.hasDraft).map((row) => row.documentId)),
+    [rows],
+  );
+  return useMemo<TreeVersion | null>(
+    () => (branchId ? { view: { draft: branchId }, pendingText } : null),
+    [branchId, pendingText],
+  );
+}
+
 export function TreeVersionProvider({
   projectId,
   chatThreadId,
@@ -72,15 +88,7 @@ export function TreeVersionProvider({
   const offered = branchId !== null && (Boolean(drafts.drafts?.length) || pendingTree);
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
-  const rows = drafts.drafts;
-  const pendingText = useMemo(
-    () => new Set(rows?.filter((row) => row.hasDraft).map((row) => row.documentId)),
-    [rows],
-  );
-  const draftVersion = useMemo<TreeVersion | null>(
-    () => (branchId ? { view: { draft: branchId }, pendingText } : null),
-    [branchId, pendingText],
-  );
+  const draftVersion = useDraftTreeVersion(branchId, drafts.drafts);
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
   const main = useOptionalMainItem()?.item;

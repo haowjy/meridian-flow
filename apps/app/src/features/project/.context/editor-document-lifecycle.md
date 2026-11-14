@@ -77,9 +77,10 @@ local persistence readiness or server reconciliation; see the
 
 ## Review addresses
 
-Only a route with `itemKey` and a resolved Work sends its Work and per-document draft selector, both in the
-address query key. A plain manuscript address stays live-only, and no caller guesses a review selector from a
-path or a Work's draft list.
+Only a route with `itemKey` and a resolved owner reads a Work's tree. It finds the item's document by id
+in the tree of the branch the item's metadata names (`useDraftMetadata`), in any source, so a page the draft
+created, renamed or moved opens where the Work puts it; a drafted delete is absent there and reads live. A
+plain address stays live-only, and no caller guesses an item from a path or a Work's draft list.
 
 `ReadableProjectRoute` keeps `useDraftMetadata` above editor address admission, so a list change can't
 unmount the room first and strand the destination as unavailable. See the

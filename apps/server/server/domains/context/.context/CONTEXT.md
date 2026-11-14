@@ -368,15 +368,10 @@ A link resolver is not a capability. A reader who cannot reach a ref receives
 path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
-Browser addresses normally resolve in the live tree. A review address may
-supply `reviewOwner` (a draft owner key) and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree, except
-for a drafted delete whose identity is intentionally absent there, which reads
-the live tree by the validated document identity. The branch's view decides whether the item's
-document is shown: one the Work's tree no longer shows reads as deleted there. Stale,
-foreign, or mismatched selectors return unavailable rather than falling back
-to live. The address resolver returns the canonical current locator; it never
-makes a path-only URL a capability.
+The address endpoint resolves a path in the live tree only; `./mf doc uri` reads it. The browser
+resolves every address from the replay of the project's tree list, a review address in its Work's
+tree included, and never asks this endpoint. The resolver returns the canonical current locator;
+it never makes a path-only URL a capability.
 
 ## Lineage and special namespaces
 
