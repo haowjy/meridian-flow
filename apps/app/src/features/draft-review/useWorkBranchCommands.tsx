@@ -631,7 +631,7 @@ export function useWorkBranchCommands({
               },
         })
         .then((answer) => {
-          if (answer.kind === "done" && !input.all) {
+          if (answer.kind === "done") {
             const ended = new Set(input.drafts.map((draft) => draft.itemKey));
             patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
               rows.filter((listed) => !ended.has(listed.itemKey)),

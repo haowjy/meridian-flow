@@ -7,7 +7,7 @@
  */
 import { type KeyboardEvent, useMemo, useRef } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
-import { focusWhenBack } from "@/components/app/RowWord";
+import { followFocusFrom } from "@/components/app/RowWord";
 import { undoLatest } from "@/core/project-tree/tree-undo";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../../context/account-feature-context";
@@ -49,10 +49,11 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         if (!session || pressing.current) return;
         pressing.current = true;
         const from = document.activeElement;
+        const follow = from ? followFocusFrom(from) : null;
         void undoLatest(session, source, version.view, `user:${accountId}`, version.pendingText)
           .then((outcome) => {
             const [node] = outcome.kind === "undone" ? outcome.nodes : [];
-            if (node && from) focusWhenBack(() => entryRowOf(node), from);
+            if (node && follow) follow(() => entryRowOf(node));
           })
           .finally(() => {
             pressing.current = false;

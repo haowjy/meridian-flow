@@ -56,10 +56,10 @@ export function RowWord({
   const act = () => {
     if (!onAction) return;
     const word = self.current;
-    const held = word !== null && word === document.activeElement;
-    onAction();
     const back = latest.current?.back;
-    if (held && back) focusWhenBack(back, word);
+    const follow = word && word === document.activeElement && back ? followFocusFrom(word) : null;
+    onAction();
+    if (follow && back) follow(back);
   };
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
@@ -140,23 +140,26 @@ export function RowWord({
 }
 
 /**
- * Waits for the row an action brings back, then gives it the focus; focus the writer moved
- * meanwhile wins. Focus still on `from` (what had it at the action), or on a box around it, as a
- * dialog's trap puts it when `from` leaves, is the action's to move.
+ * Called as an action starts, with what has the focus: returns where to send the focus once the
+ * action brings its row back, which waits for the row and gives it the focus unless the writer
+ * moved it meanwhile. Focus still on `from`, or on a box that held it (where the browser or a
+ * dialog's trap puts it when `from` leaves), is the action's to move.
  */
-export function focusWhenBack(back: () => HTMLElement | null, from: Element) {
-  const until = Date.now() + 3000;
+export function followFocusFrom(from: Element): (back: () => HTMLElement | null) => void {
   const around = new Set<Element>();
   for (let at = from.parentElement; at; at = at.parentElement) around.add(at);
-  const step = () => {
-    const active = document.activeElement;
-    const free = active === null || active === from || around.has(active);
-    if (!free) return;
-    const to = back();
-    if (to) moveFocus(to, { ring: lastInputWasKeyboard() });
-    else if (Date.now() < until) requestAnimationFrame(step);
+  return (back) => {
+    const until = Date.now() + 3000;
+    const step = () => {
+      const active = document.activeElement;
+      const free = active === null || active === from || around.has(active);
+      if (!free) return;
+      const to = back();
+      if (to) moveFocus(to, { ring: lastInputWasKeyboard() });
+      else if (Date.now() < until) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   };
-  requestAnimationFrame(step);
 }
 
 /**
