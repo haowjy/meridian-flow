@@ -28,23 +28,32 @@ class Server {
   /** commands refused the first time only. */
   refuseOnce = new Set<string>();
 
-  /** Posts of one lane being answered now: a lane must never have two. */
-  active = new Map<string, number>();
+  /** Commands of one lane being answered now: a lane must never have two different ones. */
+  active = new Map<string, Map<string, number>>();
   overlaps: string[] = [];
   latency = 0;
 
   handle = async (request: TransportRequest, signal: AbortSignal): Promise<TransportAnswer> => {
     const posted = request.method !== "GET" && !request.path.endsWith("/resolve");
     const lane = posted ? (request.body as { label?: string }).label?.[0] : undefined;
+    const id = (request.body as { commandId?: string } | undefined)?.commandId ?? "";
     if (lane) {
-      if ((this.active.get(lane) ?? 0) > 0) this.overlaps.push(lane);
-      this.active.set(lane, (this.active.get(lane) ?? 0) + 1);
+      const running = this.active.get(lane) ?? new Map<string, number>();
+      // The same command sent again while an abandoned attempt is still being answered is fine.
+      if ([...running.keys()].some((other) => other !== id)) this.overlaps.push(lane);
+      running.set(id, (running.get(id) ?? 0) + 1);
+      this.active.set(lane, running);
     }
     try {
       if (this.latency > 0) await new Promise((resolve) => setTimeout(resolve, this.latency));
       return await this.serve(request, signal);
     } finally {
-      if (lane) this.active.set(lane, (this.active.get(lane) ?? 1) - 1);
+      if (lane) {
+        const running = this.active.get(lane);
+        const left = (running?.get(id) ?? 1) - 1;
+        if (left > 0) running?.set(id, left);
+        else running?.delete(id);
+      }
     }
   };
 
@@ -203,6 +212,15 @@ class World {
 const submit = (driver: CommandDriver, label: string, lanes = ["a"]) =>
   driver.submit({ kind: "x", lanes, body: { label } });
 const settle = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+/** Awaits a journal write while the clock runs, since a slow disk waits on a timer. */
+const through = async <T>(promise: Promise<T>): Promise<T> => {
+  let done = false;
+  const result = promise.finally(() => {
+    done = true;
+  });
+  while (!done) await vi.advanceTimersByTimeAsync(50);
+  return result;
+};
 const states = (driver: CommandDriver) =>
   Object.fromEntries(
     driver
@@ -460,20 +478,20 @@ describe("schedules of tabs, outages and reloads", () => {
       const next = random(seed);
       const world = new World();
       world.server.latency = 200;
-      world.jitter = () => (next() < 0.3 ? Math.floor(next() * 1_500) : 0);
+      world.jitter = () => (next() < 0.6 ? Math.floor(next() * 800) : 0);
       const tabs: CommandDriver[] = [await world.tab(), await world.tab()];
       let n = 0;
-      for (let step = 0; step < 40; step++) {
+      for (let step = 0; step < 60; step++) {
         const roll = next();
         const tab = tabs[Math.floor(next() * tabs.length)] as CommandDriver;
         if (roll < 0.35) {
           const lane = next() < 0.5 ? "a" : "b";
           const label = `${lane}${n++}`;
           if (next() < 0.2) world.server.refuseOnce.add(label);
-          await submit(tab, label, [lane]);
+          await through(submit(tab, label, [lane]));
         } else if (roll < 0.5) {
           const never = tab.getSnapshot().records.find((r) => r.state === "never");
-          if (never) await tab.retry(never.id);
+          if (never) await through(tab.retry(never.id));
         } else if (roll < 0.6) {
           world.server.faults.push(next() < 0.5 ? "drop_request" : "drop_response");
         } else if (roll < 0.7) {
@@ -499,7 +517,7 @@ describe("schedules of tabs, outages and reloads", () => {
       await settle(120_000);
       for (let round = 0; round < 3; round++) {
         for (const record of tabs[0]?.getSnapshot().records ?? [])
-          if (record.state === "never") await tabs[0]?.retry(record.id);
+          if (record.state === "never") await through(tabs[0]?.retry(record.id) as Promise<void>);
         await settle(120_000);
       }
       expect(world.server.overlaps).toEqual([]);
