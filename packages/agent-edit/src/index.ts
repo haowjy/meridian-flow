@@ -78,10 +78,10 @@ export type {
 } from "./tool/model-result.js";
 export {
   AGENT_EDIT_RESULT_SCHEMA,
+  type AgentEditTreeFacts,
   agentEditResultCommand,
   isAgentEditResultEnvelope,
   modelResult,
-  type NamespaceRefusal,
   type WriteRejection,
 } from "./tool/model-result.js";
 export { removedFile, survivingDraftNotice } from "./tool/removal-copy.js";

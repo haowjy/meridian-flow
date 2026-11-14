@@ -174,19 +174,22 @@ document keys; a caller holds no document or namespace key when it submits. `con
   (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
   `conflict`; a create never replaces or joins another document. A draft create also makes the
   document's draft (`ensureCreatedDocumentDraft`).
-- **Move and rename.** One `move` record; `move` with `keep` renames or reorders in place. A
-  move writes no document bytes. A destination name taken by another node answers `conflict`.
-  A move between a project and the account (`user://`) crosses two lists and is refused
-  (`invalid_operation`) until `submit` can take two lists.
-- **Delete.** One `delete` record: the node and its subtree go to Trash together; the result
-  lists every document and file the cascade took. `onlyAt` (a model create's retraction) acts only
-  while the node still stands at that path, otherwise `stale_target`. A drafted delete is a
-  branch record and leaves live alone.
+- **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
+  (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
+  bytes. A move between a project and the account (`user://`) crosses two lists:
+  `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' pair in one
+  `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
+  `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
+  `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
+  another node answers `conflict`.
+- **Delete.** `port.delete` is the live one-record delete the upload remove and the placement's
+  retraction use (`SourceTree.delete`): the node and its subtree go to Trash together; the result
+  lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
+  that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
 - **Retraction.** `retractCreate` reverses a create whose write failed: live goes to Trash, drafted
   is discarded when the document's draft holds nothing else.
 - **Edit history.** The model's tree entry (`recordAgentTreeChange`) is written in the same
-  transaction through `inTransaction` / `afterWrite`; a drafted write reports the branch and the
-  node's facts on either side (`drafted`).
+  transaction through `inTransaction` / `afterWrite`.
 
 There is no untitled create, provisional name, hidden row, forward, operation receipt, folder
 table or catalog refresh: the replay is the only tree, and readers see it through the view.
@@ -282,13 +285,13 @@ one source's tree contributes.
 The catalog tables and the catalog read endpoint stay; the server no longer writes them. The
 catalog is a view of the replay, not a second visibility policy, and no write refreshes it.
 
-Move and delete are addressed by entry id: the router takes the node (`{kind, nodeId}`) and an
-area; the area only decides which adapter to ask. The adapter finds the node in the list's replay
-inside `make` (`SourceTree.move`, `delete`), so a rename or move by another writer in the gap is
-neither undone nor refused; the only facts it checks are about the target (the occupant, `onlyAt`,
-the source the caller found the node in). A node that left the source answers `stale_target`. A move
-with no `name` keeps the node's name and one with no destination keeps its folder. A move to an
-occupied name answers `conflict`.
+A delete or a move across lists is addressed by entry id: the router takes the node
+(`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the
+node in the list's replay inside `make` (`SourceTree.delete`, `moveAcrossLists`), so a rename or
+move by another writer in the gap is neither undone nor refused; the only facts it checks are about
+the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
+source answers `stale_target`. A move with no `name` keeps the node's name. A move to an occupied
+name answers `conflict`.
 
 ## Document content and filetype rules
 

@@ -159,7 +159,7 @@ function livePlacement(
         if (!created.ok) return created;
         await options?.recordCreate?.({
           documentId: created.value.documentId as DocumentId,
-          change: { destination: "live", before: null },
+          record: created.value.record,
         });
         return Ok({ documentId: created.value.documentId, created: true });
       });
@@ -243,12 +243,8 @@ function draftPlacement(
         await deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id });
         await options?.recordCreate?.({
           documentId,
-          change: {
-            destination: "draft",
-            branchId: branch.id,
-            before: { row: false, created: false, moved: null, deleted: false },
-            after: { row: true, created: true, moved: null, deleted: false },
-          },
+          record: created.value.record,
+          draftBranchId: branch.id,
         });
         return Ok({ documentId, created: true });
       });

@@ -37,7 +37,12 @@ import type {
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { createDeltaJournal } from "./delta-journal.js";
-import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
+import {
+  type CreditedBlocks,
+  frontierLookup,
+  recordFrontier,
+  shownNamesLookup,
+} from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
@@ -370,6 +375,7 @@ export async function dispatchToolCall(
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
         reply: ctx.replyMutations,
       },
+      shownNames: shownNamesLookup(deps, () => ctx.credited.ids(), correlation),
     },
   );
   outputJournal.seal();
@@ -443,7 +449,8 @@ export async function dispatchToolCall(
         const owner = { threadId: ctx.threadId, turnId: block.turnId };
         for (const showing of evidence.shown)
           await deps.shownLinks.record({ ...showing, ...owner });
-        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+        if (evidence.frontier || evidence.names)
+          await recordFrontier(deps, block.id, evidence.frontier, owner, evidence.names);
       },
     },
   );

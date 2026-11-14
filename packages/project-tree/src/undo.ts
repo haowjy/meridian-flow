@@ -1,5 +1,5 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
-import { placeIn, type Setter } from "./replay.js";
+import { placeIn, type Setter, type TreeProjection } from "./replay.js";
 import { descendantsOf } from "./shape.js";
 import { inForce, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -7,6 +7,37 @@ import type { TreeWriter } from "./writer.js";
 /** Whether the record is the one that last set the fact `setter` stands for. */
 const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecord) =>
   setter?.id === record.id ? setter : undefined;
+
+/** Whether a later record in the view moved or renamed the same node as this kind of record. */
+function movedAfter(writer: TreeWriter, view: View, record: TreeRecord): boolean {
+  const records = viewRecords(writer.doc, view);
+  return records
+    .slice(records.findIndex((other) => other.id === record.id) + 1)
+    .some((other) => other.type === record.type && other.node === record.node);
+}
+
+/**
+ * What a restore brought back below its node: the nodes whose place was last set before the
+ * restore. What was put in the folder after it (a create or a move into it) is not the restore's.
+ */
+function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, record: TreeRecord) {
+  const order = new Map<string, number>();
+  const created = new Map<string, number>();
+  for (const [at, other] of viewRecords(writer.doc, view).entries()) {
+    order.set(other.id, at);
+    if (other.type === "create") created.set(other.node, at);
+  }
+  const at = order.get(record.id) ?? 0;
+  return descendantsOf(projection, record.node).filter((id) => {
+    if (projection.nodes.get(id)?.trashed) return false;
+    const placed = projection.setters.get(id)?.place?.id;
+    const arrived = Math.max(
+      created.get(id) ?? -1,
+      placed === undefined ? -1 : (order.get(placed) ?? -1),
+    );
+    return arrived < at;
+  });
+}
 
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
@@ -33,13 +64,28 @@ export function undoChange(
   switch (record.type) {
     case "create":
       if (node.trashed) return "superseded";
-      return writer.author(
-        view,
-        actor,
-        { type: "delete", node: record.node, cascade: descendantsOf(projection, record.node) },
-        extra,
-      );
+      // Only the node the create made: what others put in a folder since stands, and keeps it standing.
+      return writer.author(view, actor, { type: "delete", node: record.node, cascade: [] }, extra);
     case "move": {
+      if (record.undoes !== undefined) {
+        // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
+        if (movedAfter(writer, view, record)) return "superseded";
+        const { parent, rank } = record.from;
+        const back = projection.nodes.get(parent);
+        if (back?.trashed || (!back && !isSourceRoot(parent))) return "superseded";
+        return writer.author(
+          view,
+          actor,
+          {
+            type: "move",
+            node: record.node,
+            parent,
+            rank,
+            from: { parent: node.parent, rank: node.rank },
+          },
+          extra,
+        );
+      }
       const last = lastSetBy(projection.setters.get(record.node)?.place, record);
       if (!last) return "superseded";
       const { parent, rank } = last.before;
@@ -59,6 +105,17 @@ export function undoChange(
       );
     }
     case "rename": {
+      if (record.undoes !== undefined) {
+        // The same for a rename: the Undo's name taken back is the original name again. An Undo of
+        // a type change does not say the type it changed from, so it is not redone.
+        if (record.filetype !== undefined || movedAfter(writer, view, record)) return "superseded";
+        return writer.author(
+          view,
+          actor,
+          { type: "rename", node: record.node, name: record.fromName, fromName: node.name },
+          extra,
+        );
+      }
       const last = lastSetBy(projection.setters.get(record.node)?.label, record);
       if (!last) return "superseded";
       // A rename that changed the type takes the type back with the name, or it is not undone.
@@ -96,7 +153,7 @@ export function undoChange(
       return writer.author(
         view,
         actor,
-        { type: "delete", node: record.node, cascade: descendantsOf(projection, record.node) },
+        { type: "delete", node: record.node, cascade: liftedBy(writer, view, projection, record) },
         extra,
       );
     case "purge":

@@ -65,6 +65,7 @@ import {
   createFigureAssetService,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
+  createTrashEntries,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
@@ -78,6 +79,7 @@ import {
   type LinkAheadRegistry,
   type ProjectContextAvailabilityPort,
   type PromotionService,
+  type TrashEntries,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -403,6 +405,8 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & DraftOwnerHintPort;
   documentTrash: DocumentTrash;
+  /** Trash as the tree gives it, per view: one entry per delete in force. */
+  trashEntries: TrashEntries;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -701,6 +705,7 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
+    trashEntries: createTrashEntries({ db, store: treeLists }),
     documentTrash: createDrizzleDocumentTrash({
       db,
       objectStore,

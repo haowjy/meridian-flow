@@ -1,5 +1,5 @@
 /**
- * Context port + scheme vocabulary: the stat/read/list/write/search/move/delete
+ * Context port + scheme vocabulary: the stat/read/list/write/search/delete
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
@@ -28,7 +28,7 @@ import type { BranchOwnerRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
-import type { AdapterDraftedChange } from "./context-adapter.js";
+import type { TreeCommandInput, TreeReadInput } from "./context-adapter.js";
 
 /**
  * Registered context URI schemes.
@@ -321,37 +321,30 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-/**
- * Where a moved node lands. The node is read by id under the list's lock, so none of these
- * carry its path; `folderUri` names only the folder it goes into.
- */
-export type ContextMoveDestination =
-  /** The folder the node is in: a rename or a reorder. */
-  | { kind: "keep" }
-  /** A folder by address. */
-  | { kind: "at"; folderUri: string };
-
-/** A move as it landed: `moved` is false when the node already stood there and nothing was written. */
-export type ContextMoved = ContextMoveResult & {
-  moved: boolean;
-  /** The Work's branch and the node's facts in it on either side, for a drafted move. */
-  drafted?: AdapterDraftedChange;
+/** A document that crossed from one list to another. */
+export type ContextMovedAcrossLists = {
+  /** Where it stands now. */
+  destinationUri: string;
+  /** The node moved. */
+  node: string;
+  /** The ids of the move in the list it left and the create in the list it entered. */
+  records: { left: string; entered: string };
 };
 
-export interface ContextLocationChange {
-  destination: ContextMoveDestination;
+export interface ContextMoveAcrossListsChange {
+  /** The folder it goes into, in the other list. */
+  folderUri: string;
   /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
   position?: ContextSiblingPosition;
+  /** Move only while the node stands at this path of its area; else `stale_target`. */
+  onlyAt?: string;
   origin?: WriteProvenance;
-  /** A record of the Work's branch, not of live; the port must have a branch placement. */
-  drafted?: boolean;
   /**
-   * Runs inside the move's own transaction once its records are made, so a caller's entry of
-   * the move (the model's edit history) commits or rolls back with it. Not called when
-   * nothing moved.
+   * Runs inside the move's own transaction once its records are made, so a caller's receipt
+   * of the move commits or rolls back with it.
    */
-  inTransaction?: (moved: ContextMoved) => Promise<void>;
+  inTransaction?: (moved: ContextMovedAcrossLists) => Promise<void>;
 }
 
 /** What a delete took: the documents and files in it, the node itself among them. */
@@ -359,19 +352,16 @@ export type ContextDeleted = {
   /** Where the entry stood. */
   uri: string;
   documentIds: string[];
-  drafted?: AdapterDraftedChange;
 };
 
 export interface ContextDeleteOptions {
   origin?: WriteProvenance;
-  /** A record of the Work's branch, not of live. */
-  drafted?: boolean;
   /**
    * Delete only while the node is still at this path of its area; a node the writer has
    * renamed or moved since survives, and the delete answers `stale_target`.
    */
   onlyAt?: string;
-  /** Runs inside the delete's own transaction once its record is made (see the move's). */
+  /** Runs inside the delete's own transaction once its record is made. */
   inTransaction?: (deleted: ContextDeleted) => Promise<void>;
 }
 
@@ -477,23 +467,32 @@ export interface ContextPort {
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   /**
-   * Move or rename the node `node` names, which the locks find by id wherever it is by then.
-   * `area` is the root URI of the scheme and owner it was last seen in: it picks the adapter
-   * and the locks, and names no entry. `change.destination` says where it lands and
-   * `change.name` what it is called there; whatever the change omits keeps the row's own value.
+   * Move the document or file `node` names from the list of `area` (the root URI of the scheme
+   * and owner it was last seen in; it names no entry) into a folder of another list: a project's
+   * and the account's `user://` are two. One transaction on both lists, found by id under the
+   * locks. Within one list a move is a tree command.
    */
-  move(
+  moveAcrossLists(
     node: ContextEntryRef,
     area: string,
-    change: ContextLocationChange,
-  ): Promise<Result<ContextMoved, ContextError>>;
+    change: ContextMoveAcrossListsChange,
+  ): Promise<Result<ContextMovedAcrossLists, ContextError>>;
 
-  /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
+  /** Delete the node `node` names, live, found by id under the locks (`area` as in the move). */
   delete(
     node: ContextEntryRef,
     area: string,
     options?: ContextDeleteOptions,
   ): Promise<Result<ContextDeleted, ContextError>>;
+
+  /**
+   * One command on the tree of `area` (a source's top address): `make` decides under the
+   * list's lock and the records it makes join the caller's command transaction.
+   */
+  treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
+
+  /** The tree of `area` as this port's reader sees it, at the journal's head. */
+  readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 

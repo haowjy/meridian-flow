@@ -7,7 +7,7 @@ import {
   type ModelInverseCommand,
   prepareEditRoots,
 } from "@meridian/agent-edit/integration";
-import type { BranchId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { FileEditRefusedError } from "../../file-policy/index.js";
@@ -17,6 +17,7 @@ import type { InverseStep } from "./inverse-stream.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import {
   type Entry,
+  entries,
   entryKeys,
   entryRows,
   type Inspection,
@@ -399,6 +400,24 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     }
   }
   return {
+    /**
+     * The write ordinals of the model's text edits Undo would take, newest first, and of the one
+     * Redo would take: what a tree receipt of the same document is ordered against.
+     */
+    async modelStack(documentId: DocumentId, threadId: string) {
+      const history = await store.readHistory(documentId);
+      const inspection = inspectionActions(history, entries(history, threadId));
+      const ordinal = (handle: string) => Number(handle.slice(1));
+      return {
+        undo: inspection.stack.map((entry) => ordinal(entry.handle)),
+        // A part the writer undid has no ordinal: it is the newest thing, and Redo refuses it.
+        redo: inspection.candidate
+          ? Math.max(
+              ...inspection.candidate.parts.map((part) => part.wId ?? Number.MAX_SAFE_INTEGER),
+            )
+          : null,
+      };
+    },
     async modelInverse(
       query: ModelInverseQuery,
       command: ModelInverseCommand,

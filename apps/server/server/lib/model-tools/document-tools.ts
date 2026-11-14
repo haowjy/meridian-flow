@@ -57,12 +57,17 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
-import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inverse-address.js";
-import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
-import { removedPathError } from "./removed-path.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
+import {
+  areaOfPath,
+  namesEvidence,
+  printedNames,
+  type Reached,
+  reachShown,
+  wrongKindMessage,
+} from "./shown-paths.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -70,10 +75,13 @@ import {
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
   resolveToolCall,
+  type ToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
+import { runTreeToolCommand } from "./tree-commands.js";
+import { runTreeInverse } from "./tree-inverse.js";
 
 /** A `write` call the engine runs: everything but the host's whole-document commands. */
 type EngineWriteInput = Exclude<WriteToolInput, { command: NamespaceCommandName }>;
@@ -282,11 +290,24 @@ async function writeUnderGrant(
   };
 }
 
+/** The names a result printed for the document it was about: what the path reached, else the tree's own. */
+async function printedOf(
+  call: ToolCall,
+  address: ResolvedDocumentAddress,
+  reached: Pick<Reached, "delta" | "node"> | null,
+  version?: "draft" | "live",
+) {
+  if (reached?.node?.id === address.documentId && reached.delta) return reached.delta;
+  const area = areaOfPath(address.uri)?.area;
+  return area ? printedNames(call, area, [address.documentId], version) : reached?.delta;
+}
+
 /** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
 export async function readTrackedDocument(
   deps: ToolWiringDeps,
   input: ReadToolInput,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId"> &
+    Partial<Pick<ToolHandlerContext, "frontiers" | "shownNames">>,
   options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
 ): Promise<{
   output: AgentEditResultV1;
@@ -298,14 +319,15 @@ export async function readTrackedDocument(
   const { path, format, version, ...selection } = input;
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
-  const address = await resolveDocumentAddress(call.context, "read", path);
-  if (isToolError(address)) {
-    const removed =
-      address.output.status === "document_not_found"
-        ? await removedPathError(deps, call, "read", path, ctx.threadId)
-        : null;
-    return { ...(removed ?? address), revision: null };
-  }
+  const reached = await reachShown(call, ctx, "read", path, {
+    ...(version ? { version } : {}),
+  });
+  if (isToolError(reached)) return { ...reached, revision: null };
+  const wrongKind = reached.node ? wrongKindMessage(reached.path, reached.node, "read") : null;
+  if (wrongKind)
+    return { ...writeToolError("read", wrongKind, "document_not_found", { path }), revision: null };
+  const address = await resolveDocumentAddress(call.context, "read", reached.path);
+  if (isToolError(address)) return { ...address, revision: null };
   if (options.expectedDocumentId !== undefined && address.documentId !== options.expectedDocumentId)
     return {
       ...writeToolError(
@@ -359,7 +381,10 @@ export async function readTrackedDocument(
     output: { ...outcome.result, ...owner, ...(notice ? { notice } : {}) },
     revision: outcome.revision,
     metadata: documentRevisionMetadata(address, outcome.revision),
-    evidence: evidenceOf(address.documentId, outcome),
+    evidence: {
+      ...evidenceOf(address.documentId, outcome),
+      ...namesEvidence(await printedOf(call, address, reached, version)),
+    },
   };
 }
 
@@ -376,20 +401,38 @@ export function createReadHandler(deps: ToolWiringDeps) {
 
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const parsed = input as WriteToolInput;
-    const skillRefusal = refuseSkillWrite(parsed);
+    let written = input as WriteToolInput;
+    const skillRefusal = refuseSkillWrite(written);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
-    if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
-    if (parsed.command === "move" || parsed.command === "delete")
-      return runNamespaceCommand(deps, call, parsed, ctx);
+    if (isToolError(call)) return writeToolError(written.command, call.output.message);
+    if (
+      written.command === "move" ||
+      written.command === "delete" ||
+      written.command === "restore" ||
+      (written.command === "create" && written.path.endsWith("/"))
+    )
+      return runTreeToolCommand(deps, call, written, ctx);
+    // What the tree took back of this call's `count`, said before the text engine's own line.
+    let treeUndone: string[] = [];
+    if (written.command === "undo" || written.command === "redo" || written.command === "revert") {
+      const tree = await runTreeInverse(deps, call, written, ctx);
+      if (tree?.kind === "answer") return tree.answer;
+      if (tree?.kind === "then_text") {
+        treeUndone = tree.undone;
+        written = { ...written, count: tree.count } as typeof written;
+      }
+    }
     const { context, principal } = call;
-    const inverse =
-      parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert"
-        ? await resolveInverseTarget(deps, call, parsed.command, parsed.path, ctx.threadId)
-        : null;
-    if (isToolError(inverse)) return inverse;
-    const creates = parsed.command === "create" || parsed.command === "copy";
+    const isInverse =
+      written.command === "undo" || written.command === "redo" || written.command === "revert";
+    const creates = written.command === "create" || written.command === "copy";
+    // The path the model wrote is the node it was shown: a create only looks up its folders.
+    const reached = await reachShown(call, ctx, written.command, written.path, {
+      folderOf: creates,
+    });
+    if (isToolError(reached)) return reached;
+    const parsed = { ...written, path: reached.path } as typeof written;
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
@@ -447,49 +490,43 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    let address = inverse
-      ? inverse.address
-      : await inContainer(deps, principal, parsed.command, target, () =>
-          resolveDocumentAddress(context, parsed.command, parsed.path, {
-            origin: {
-              type: "agent",
-              agentSlug: ctx.agentSlug,
-              threadId: ctx.threadId,
-              turnId: ctx.turnId,
-            },
-            ...(parsed.command === "copy" && copied
-              ? {
-                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
-                  sourceExtension: sourceExtension(copied.copiedFrom.uri),
-                }
-              : {}),
-            ...(creates
-              ? {
-                  recordCreate: async ({ documentId, change }) => {
-                    await deps.documentSync.treeHistory().recordAgentTreeChange({
-                      documentId,
-                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
-                      ...(ctx.turnId
-                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
-                        : {}),
-                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-                      op: "create",
-                      change,
-                      shownAt: parsed.path,
-                    });
-                  },
-                }
-              : {}),
-          }),
-        );
-    if (isToolError(address)) {
-      const removed =
-        !creates && address.output.status === "document_not_found"
-          ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
-          : null;
-      return removed ?? address;
-    }
+    const address = await inContainer(deps, principal, parsed.command, target, () =>
+      resolveDocumentAddress(context, parsed.command, parsed.path, {
+        origin: {
+          type: "agent",
+          agentSlug: ctx.agentSlug,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+        },
+        ...(parsed.command === "copy" && copied
+          ? {
+              metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
+              sourceExtension: sourceExtension(copied.copiedFrom.uri),
+            }
+          : {}),
+        ...(creates
+          ? {
+              recordCreate: async ({ documentId, record, draftBranchId }) => {
+                await deps.documentSync.treeHistory().recordAgentTreeChange({
+                  subject: documentId,
+                  nodes: [{ nodeId: documentId, beforeAt: null, afterAt: parsed.path }],
+                  records: [{ record, node: documentId }],
+                  threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                  ...(ctx.turnId
+                    ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                    : {}),
+                  ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                  ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+                  op: "create",
+                  ...(draftBranchId ? { draftBranchId } : {}),
+                  shownAt: parsed.path,
+                });
+              },
+            }
+          : {}),
+      }),
+    );
+    if (isToolError(address)) return address;
 
     if (parsed.command === "copy" && copied) {
       // The copy's new identity is known now: a whole document's own links name the copy, not
@@ -526,48 +563,28 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied,
       ctx,
       context.resolution.uploadsOwner?.chatRef,
-      inverse?.grant,
     );
-    // Nothing of this chat's to reverse here, where it moved or deleted another document away.
-    if (
-      inverse &&
-      (parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert") &&
-      ["nothing_to_undo", "nothing_to_redo", "invalid_write"].includes(
-        outcome.isError ? outcome.output.status : outcome.result.status,
-      )
-    ) {
-      const displaced = await resolveDisplacedTarget(
-        deps,
-        call,
-        parsed.command,
-        address,
-        ctx.threadId,
-      );
-      if (isToolError(displaced)) return displaced;
-      if (displaced) {
-        address = displaced.address;
-        outcome = await writeUnderGrant(
-          deps,
-          principal,
-          parsed,
-          address,
-          copied,
-          ctx,
-          context.resolution.uploadsOwner?.chatRef,
-          displaced.grant,
-        );
-      }
-    }
     // A reversed move left the document somewhere else: the result names where it is now. A
     // reversed creation removed the document, so its text half must not claim an empty document
     // survived the tree half of the same inverse.
-    if (inverse && !outcome.isError && outcome.result.status === "success") {
-      const now = await currentUri(call, address.documentId);
+    if (isInverse && !outcome.isError && outcome.result.status === "success") {
+      const located = await call.context.port.locate(address.documentId);
+      const now = located.ok ? (located.value?.uri ?? null) : null;
       if (now && now !== outcome.result.path)
         outcome = { ...outcome, result: { ...outcome.result, path: now } };
       else if (!now && outcome.result.documentEmpty)
         outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
     }
+    if (treeUndone.length > 0 && !outcome.isError)
+      outcome = {
+        ...outcome,
+        result: {
+          ...outcome.result,
+          message: [`undone: ${treeUndone.join(", ")}`, outcome.result.message]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      };
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {
@@ -631,7 +648,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
-      evidence: outcome.evidence,
+      evidence: {
+        ...outcome.evidence,
+        ...namesEvidence(
+          // A create's own name and an inverse's new place are printed too.
+          await printedOf(call, address, creates || isInverse ? null : reached),
+        ),
+      },
     };
   };
 }

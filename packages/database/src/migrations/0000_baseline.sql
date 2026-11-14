@@ -135,11 +135,12 @@ CREATE TABLE "model_responses" (
 );
 --> statement-breakpoint
 CREATE TABLE "observation_frontiers" (
-	"source_block_id" uuid PRIMARY KEY NOT NULL,
+	"source_block_id" uuid NOT NULL,
 	"room_key" text NOT NULL,
 	"snapshot" "bytea" NOT NULL,
 	"journal_position" bigint,
-	"recorded_seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "observation_frontiers_recorded_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1)
+	"recorded_seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "observation_frontiers_recorded_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	CONSTRAINT "observation_frontiers_source_block_id_room_key_pk" PRIMARY KEY("source_block_id","room_key")
 );
 --> statement-breakpoint
 CREATE TABLE "project_handle_counters" (
@@ -661,17 +662,41 @@ CREATE TABLE "document_edits" (
 	"kind" text NOT NULL,
 	"action_id" uuid,
 	"consumes" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"tree_change" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_edits_actor_valid" CHECK ("document_edits"."actor" IN ('agent','human','system')),
-	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert','rollback')),
-	CONSTRAINT "document_edits_tree_change_valid" CHECK ("document_edits"."tree_change" IS NULL OR (
-        "document_edits"."tree_change"->>'op' IN ('create','move','delete','restore','settle')
-        AND "document_edits"."tree_change"->'destination'->>'kind' IN ('live','draft')
-        AND jsonb_typeof("document_edits"."tree_change"->'seq') = 'number'
-        AND jsonb_typeof("document_edits"."tree_change"->'targets') = 'array'
-        AND ("document_edits"."tree_change"->>'op' <> 'settle' OR "document_edits"."tree_change" ? 'settles')
-      ))
+	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert','rollback'))
+);
+--> statement-breakpoint
+CREATE TABLE "tree_edit_receipt_nodes" (
+	"receipt_id" uuid NOT NULL,
+	"thread_id" uuid,
+	"node_id" uuid NOT NULL,
+	"w_id" integer NOT NULL,
+	"before_at" text,
+	"after_at" text,
+	CONSTRAINT "tree_edit_receipt_nodes_receipt_id_node_id_pk" PRIMARY KEY("receipt_id","node_id")
+);
+--> statement-breakpoint
+CREATE TABLE "tree_edit_receipts" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "tree_edit_receipts_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"thread_id" uuid,
+	"turn_id" uuid,
+	"response_id" text,
+	"edit_scope_id" text,
+	"tool_call_id" text,
+	"node_id" uuid NOT NULL,
+	"records" jsonb NOT NULL,
+	"op" text NOT NULL,
+	"kind" text DEFAULT 'write' NOT NULL,
+	"reverses" uuid,
+	"draft_branch_id" uuid,
+	"across_lists" boolean DEFAULT false NOT NULL,
+	"shown_at" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "tree_edit_receipts_op_valid" CHECK ("tree_edit_receipts"."op" IN ('create','move','delete','restore')),
+	CONSTRAINT "tree_edit_receipts_kind_valid" CHECK ("tree_edit_receipts"."kind" IN ('write','undo','redo')),
+	CONSTRAINT "tree_edit_receipts_reverses_valid" CHECK (("tree_edit_receipts"."kind" = 'write') = ("tree_edit_receipts"."reverses" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "import_entries" (
@@ -1118,6 +1143,10 @@ ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_document_id_document
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipt_nodes" ADD CONSTRAINT "tree_edit_receipt_nodes_receipt_id_tree_edit_receipts_id_fk" FOREIGN KEY ("receipt_id") REFERENCES "public"."tree_edit_receipts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipt_nodes" ADD CONSTRAINT "tree_edit_receipt_nodes_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_recent_documents" ADD CONSTRAINT "user_recent_documents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1249,6 +1278,10 @@ CREATE INDEX "document_edit_parts_live_origin_seq" ON "document_edit_parts" USIN
 CREATE INDEX "document_edits_document_idx" ON "document_edits" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_edits_turn_idx" ON "document_edits" USING btree ("turn_id");--> statement-breakpoint
 CREATE INDEX "document_edits_action_idx" ON "document_edits" USING btree ("action_id");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipt_nodes_node_idx" ON "tree_edit_receipt_nodes" USING btree ("thread_id","node_id","w_id");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipts_thread_idx" ON "tree_edit_receipts" USING btree ("thread_id","shown_at");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipts_turn_idx" ON "tree_edit_receipts" USING btree ("turn_id");--> statement-breakpoint
+CREATE INDEX "tree_edit_receipts_reverses_idx" ON "tree_edit_receipts" USING btree ("reverses");--> statement-breakpoint
 CREATE INDEX "import_entries_import_order" ON "import_entries" USING btree ("import_id","ordinal");--> statement-breakpoint
 CREATE INDEX "import_entries_import_state" ON "import_entries" USING btree ("import_id","state");--> statement-breakpoint
 CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","created_at");--> statement-breakpoint

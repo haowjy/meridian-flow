@@ -648,8 +648,8 @@ msgid "{skipped, plural, one {# skipped} other {# skipped}}"
 msgstr "{skipped, plural, one {# skipped} other {# skipped}}"
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "{source} is a folder. Only documents can be moved or deleted."
-msgstr "{source} is a folder. Only documents can be moved or deleted."
+#~ msgid "{source} is a folder. Only documents can be moved or deleted."
+#~ msgstr "{source} is a folder. Only documents can be moved or deleted."
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is already at {place}."
@@ -658,6 +658,10 @@ msgstr "{source} is already at {place}."
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is already there."
 msgstr "{source} is already there."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} was deleted after the AI last listed it."
+msgstr "{source} was deleted after the AI last listed it."
 
 #: src/features/chat/thinking-digest.ts
 msgid "{steps, plural, one {# step} other {# steps}}"
@@ -1243,12 +1247,12 @@ msgid "Can't copy these"
 msgstr "Can't copy these"
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't delete {source} from this location."
-msgstr "Can't delete {source} from this location."
+#~ msgid "Can't delete {source} from this location."
+#~ msgstr "Can't delete {source} from this location."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't delete {source}: it changed during the delete."
-msgstr "Can't delete {source}: it changed during the delete."
+#~ msgid "Can't delete {source}: it changed during the delete."
+#~ msgstr "Can't delete {source}: it changed during the delete."
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't go inside itself"
@@ -1264,36 +1268,40 @@ msgid "Can’t mention that here"
 msgstr "Can’t mention that here"
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source} to that location."
-msgstr "Can't move {source} to that location."
+#~ msgid "Can't move {source} to that location."
+#~ msgstr "Can't move {source} to that location."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: {place} is already taken."
-msgstr "Can't move {source}: {place} is already taken."
+#~ msgid "Can't move {source}: {place} is already taken."
+#~ msgstr "Can't move {source}: {place} is already taken."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: it or its destination changed during the move."
-msgstr "Can't move {source}: it or its destination changed during the move."
+#~ msgid "Can't move {source}: it or its destination changed during the move."
+#~ msgstr "Can't move {source}: it or its destination changed during the move."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: renaming it can't change its file type."
-msgstr "Can't move {source}: renaming it can't change its file type."
+msgid "Can't move {source}: it would go inside itself."
+msgstr "Can't move {source}: it would go inside itself."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that extension needs a different kind of document."
-msgstr "Can't move {source}: that extension needs a different kind of document."
+#~ msgid "Can't move {source}: renaming it can't change its file type."
+#~ msgstr "Can't move {source}: renaming it can't change its file type."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that folder doesn't exist."
-msgstr "Can't move {source}: that folder doesn't exist."
+#~ msgid "Can't move {source}: that extension needs a different kind of document."
+#~ msgstr "Can't move {source}: that extension needs a different kind of document."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that location is already taken."
-msgstr "Can't move {source}: that location is already taken."
+#~ msgid "Can't move {source}: that folder doesn't exist."
+#~ msgstr "Can't move {source}: that folder doesn't exist."
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: the folder for {place} doesn't exist."
-msgstr "Can't move {source}: the folder for {place} doesn't exist."
+#~ msgid "Can't move {source}: that location is already taken."
+#~ msgstr "Can't move {source}: that location is already taken."
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: the folder for {place} doesn't exist."
+#~ msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Can't move or delete all of these"
@@ -2018,7 +2026,6 @@ msgstr "Couldn't find {name}."
 msgid "Couldn't find {source} or {destination}."
 msgstr "Couldn't find {source} or {destination}."
 
-#: src/features/chat/namespace-refusal-copy.ts
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {source}."
 msgstr "Couldn't find {source}."
@@ -5470,6 +5477,10 @@ msgstr "The AI in a chat deleted this document."
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "The AI's path for {source} now names a different document, so nothing was done."
+msgstr "The AI's path for {source} now names a different document, so nothing was done."
 
 #: src/features/chat/tool-failure.tsx
 msgid "The assistant called this tool with arguments it couldn't use."

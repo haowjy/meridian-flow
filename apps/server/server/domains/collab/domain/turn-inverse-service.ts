@@ -92,6 +92,8 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
+  readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
   commit(input: {
     plans: PreparedDocumentInverse[];
