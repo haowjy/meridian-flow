@@ -19,9 +19,10 @@ explanations. See [trust the LLM][trust-llm] and [trust the user][trust-user].
 the server neither refuses what a client sends nor re-checks it against attacks. The client
 shows the result at once; the server stores it and settles conflicts by a rule every client
 reaches on its own (two writes to one name keep both, a move of a deleted document restores it,
-typing into a closed draft comes back with Copy). Each refusal is a design to replace, and the
-writer never has to send something again. The server still checks who is signed in and
-everything that costs money.
+typing into a closed draft comes back with Copy). Each AI agent is a client too, one that runs
+on the server: its writes land and settle the same way, and it is never told to re-read and try
+again. Each refusal is a design to replace, and no writer or agent sends anything twice. The
+server still checks who is signed in, and runs everything that costs money.
 
 ## Engineering
 
