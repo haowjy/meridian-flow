@@ -86,7 +86,7 @@ export class AccountFeatureLifetime {
       },
     });
     this.notices = new RemovedNoticeStore(this.standings);
-    this.removal = new ContextRemovalCoordinator(accountId, {
+    this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
       copies: this.registry,
       notices: this.notices,
