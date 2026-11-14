@@ -67,7 +67,7 @@ export function blockTypeLabel(id: BlockTypeId): string {
       return t`Bulleted list`;
     case "orderedList":
       return t`Numbered list`;
-    case "blockquote":
+    case "quote":
       return t`Quote`;
     case "codeBlock":
       return t`Code block`;

@@ -5,6 +5,7 @@ import type { Mark, Node as PMNode } from "prosemirror-model";
 import type {
   JsonValue,
   MdastBlock,
+  MdastBlockquote,
   MdastBreak,
   MdastImage,
   MdastInline,
@@ -145,9 +146,12 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
 }
 
-/** The mdast children as a tree of lists and leaves, for `flattenSources`. */
+/** The mdast children as a tree of quotes, lists and leaves, for `flattenSources`. */
 export function mdastSources(children: readonly MdastBlock[]): Array<Source<MdastBlock>> {
   return children.map((child): Source<MdastBlock> => {
+    if (child.type === "blockquote") {
+      return { type: "quote", children: mdastSources((child as MdastBlockquote).children) };
+    }
     if (child.type !== "list") return { type: "leaf", value: child };
     const list = child as MdastList;
     return {

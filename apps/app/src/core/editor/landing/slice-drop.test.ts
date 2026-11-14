@@ -107,10 +107,11 @@ it("keeps copied list items and their nested list in order", () => {
 });
 
 it("keeps a copied quote at one quote level", () => {
-  const quote = (...lines: string[]) => schema.node("blockquote", null, lines.map(paragraph));
+  const quote = (...lines: string[]) =>
+    lines.map((line) => schema.node("paragraph", { path: ">" }, schema.text(line)));
   const source = quote("q one", "q two", "q three");
   const state = dropRange(
-    schema.node("doc", null, [source, paragraph("landing words")]),
+    schema.node("doc", null, [...source, paragraph("landing words")]),
     { from: ["q one", 2], to: ["q three", 3] },
     ["landing words", 4],
     true,
@@ -119,9 +120,9 @@ it("keeps a copied quote at one quote level", () => {
   expect(state.doc.toJSON()).toEqual(
     schema
       .node("doc", null, [
-        source,
+        ...source,
         paragraph("land"),
-        quote("one", "q two", "q t"),
+        ...quote("one", "q two", "q t"),
         paragraph("ing words"),
       ])
       .toJSON(),

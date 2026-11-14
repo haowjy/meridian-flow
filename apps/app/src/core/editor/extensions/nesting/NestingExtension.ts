@@ -1,7 +1,7 @@
 /**
  * The editor half of the flat block model: the five nesting attributes on every block that
  * can sit in a list or a quote, the commands and keys that write them, the drawing, and the
- * clipboard. Lists have no node of their own; see `nesting-commands.ts`.
+ * clipboard. Lists and quotes have no node of their own; see `nesting-commands.ts`.
  */
 import { Extension, InputRule } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -11,11 +11,14 @@ import {
   indent,
   type ListKindName,
   outdent,
+  quote,
   selectedSequence,
+  selectionIsQuoted,
   selectionIsTaskList,
   selectionListKind,
   setList,
   setTaskList,
+  unquote,
   unsetList,
 } from "./nesting-commands";
 import { nestingDrawPlugin } from "./nesting-draw";
@@ -36,7 +39,6 @@ const NESTED_TYPES = [
   "horizontal_rule",
   "jsx_leaf",
   "jsx_container",
-  "blockquote",
 ];
 
 declare module "@tiptap/core" {
@@ -50,6 +52,8 @@ declare module "@tiptap/core" {
       toggleTaskList: () => ReturnType;
       indentList: () => ReturnType;
       outdentList: () => ReturnType;
+      /** Quotes the selected blocks, or takes them out of their innermost quote when every one is quoted. */
+      toggleQuote: () => ReturnType;
     };
   }
 }
@@ -74,6 +78,18 @@ function listInputRule(find: RegExp, kind: ListKindName): InputRule {
           start,
         });
       }
+      return undefined;
+    },
+  });
+}
+
+/** `> ` at the start of a block quotes it, one quote deeper each time, as Markdown reads it. */
+function quoteInputRule(): InputRule {
+  return new InputRule({
+    find: /^\s*>\s$/,
+    handler: ({ state, range }) => {
+      const tr = state.tr.delete(range.from, range.to);
+      quote(tr);
       return undefined;
     },
   });
@@ -176,13 +192,26 @@ export const NestingExtension = Extension.create({
           if (dispatch && changed) dispatch(tr);
           return changed;
         },
+      toggleQuote:
+        () =>
+        ({ tr, dispatch }) => {
+          const quoted = selectionIsQuoted(selectedSequence(tr.selection));
+          const changed = quoted ? unquote(tr) : quote(tr);
+          if (dispatch && changed) dispatch(tr);
+          return changed;
+        },
     };
+  },
+
+  addKeyboardShortcuts() {
+    return { "Mod-Shift-b": () => this.editor.commands.toggleQuote() };
   },
 
   addInputRules() {
     return [
       listInputRule(/^\s*[-+*]\s$/, "bullet"),
       listInputRule(/^(\d{1,9})\.\s$/, "ordered"),
+      quoteInputRule(),
       taskInputRule(),
     ];
   },

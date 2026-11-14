@@ -10,7 +10,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, flattenMdast, parseFlatBlock } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
-import { exportBlockquote, exportText } from "./markdown/export-text.js";
+import { exportText } from "./markdown/export-text.js";
 import { markdownParser } from "./markdown-parse.js";
 import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
 import { blockSourceMap, sourceRange } from "./presentation-source-map.js";
@@ -95,7 +95,7 @@ function buildMarkupCodec(
       ...MARKDOWN_STRINGIFY_OPTIONS,
       handlers: {
         ...attentionHandlers,
-        ...(options.export ? { text: exportText, blockquote: exportBlockquote } : {}),
+        ...(options.export ? { text: exportText } : {}),
       },
     })
     .use(remarkGfm)
@@ -244,13 +244,12 @@ function buildMarkupCodec(
     ctx: SerializeContext,
     blankEmpty: boolean,
   ): SerializedBlock[] =>
-    serializeNested(
-      blockList,
-      blockList.map((block) => {
-        const body = trimOneTrailingNewline(serializeOne(block, ctx));
-        return blankEmpty && body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
-      }),
-    );
+    serializeNested(blockList, (block, facts) => {
+      const innermost = facts.steps.at(-1);
+      const leadsQuote = innermost?.type === "quote" && innermost.opens;
+      const body = trimOneTrailingNewline(serializeOne(block, { ...ctx, leadsQuote }));
+      return blankEmpty && body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+    });
 
   const serializeBlocks = (
     blockList: readonly PMNode[],

@@ -1,7 +1,7 @@
 /**
- * Lists on the way in: a tree of lists and items becomes a flat sequence of blocks, each
- * carrying the nesting attributes `nest` reads (`@meridian/prosemirror-schema`). Generic over the
- * leaf so Markdown (mdast) and table-cell HTML share one walk.
+ * Quotes and lists on the way in: a tree of quotes, lists and items becomes a flat sequence of
+ * blocks, each carrying the nesting attributes `nest` reads (`@meridian/prosemirror-schema`).
+ * Generic over the leaf so Markdown (mdast) and table-cell HTML share one walk.
  */
 import type { Node as PMNode } from "prosemirror-model";
 
@@ -12,9 +12,10 @@ export type ListSource<T> = {
   spread: boolean;
   items: Array<{ checked: boolean | null; children: Array<Source<T>> }>;
 };
-export type Source<T> = { type: "leaf"; value: T } | ListSource<T>;
+export type QuoteSource<T> = { type: "quote"; children: Array<Source<T>> };
+export type Source<T> = { type: "leaf"; value: T } | ListSource<T> | QuoteSource<T>;
 
-/** `value` is null for the empty paragraph that carries an item no block starts. */
+/** `value` is null for the empty paragraph that carries an item or a quote no block starts. */
 export type FlatBlock<T> = {
   value: T | null;
   path: string | null;
@@ -46,6 +47,11 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
     for (const child of children) {
       if (child.type === "leaf") {
         out.push({ ...own(path), value: child.value });
+      } else if (child.type === "quote") {
+        const at = out.length;
+        walk(child.children, `${path}>`);
+        if (out.length === at) out.push(own(`${path}>`) as FlatBlock<T>);
+        if (previous?.type === "quote") markFresh(out[at] as FlatBlock<T>, path.length);
       } else {
         const at = out.length;
         walkList(child, `${path}-`);
@@ -71,8 +77,10 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
       const at = out.length;
       walk(item.children, step);
       // A block's marker speaks for its innermost list, so an item with no block of its
-      // own (empty, or beginning with a deeper list) gets an empty paragraph.
-      if (item.children.length === 0 || item.children[0]?.type === "list") {
+      // own (empty, or whose first block sits in a deeper list, through any quotes) gets an
+      // empty paragraph.
+      const first = out[at]?.path?.replaceAll("|", "").slice(step.length) ?? "-";
+      if (first.includes("-")) {
         out.splice(at, 0, { ...own(step), ...item0 } as FlatBlock<T>);
       } else {
         Object.assign(out[at] as FlatBlock<T>, item0);

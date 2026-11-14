@@ -10,7 +10,8 @@ The root `@meridian/markup` exports:
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
   The separate `mdxCodec({ schema, export: true })` instance preserves literal
   wiki-style text spans: `[[…]]`/`![[…]]`, a `[!type]` callout marker
-  opening a blockquote's first line, and footnote `[^id]` (so `[^id]:`
+  opening a quote's first line (the serializer tells the paragraph codec, through
+  `leadsQuote`, which block opens a quote), and footnote `[^id]` (so `[^id]:`
   definitions too) unless a neighbouring `(`, `[`, `]` or `!` could still form
   a link. Other bracket constructs stay escaped. Ordinary and model output keep
   the default configuration.
@@ -260,8 +261,8 @@ malformed. `layout` is therefore excluded from `mdxRequiredBlockNames`.
 Tables serialize as canonical raw HTML unconditionally. GFM pipes remain
 liberal ingress and normalize to HTML in one parse-serialize pass, including
 the backslash-newline hard-break spelling. HTML cells carry paragraphs,
-headings, lists (`ul`, `ol`, `li` regrouped from the cell's blocks by `nest`, and flattened back
-on parse), blockquotes, fenced-code content, horizontal rules, and nested
+headings, lists and quotes (`ul`, `ol`, `li`, `blockquote` regrouped from the cell's blocks by
+`nest`, and flattened back on parse), fenced-code content, horizontal rules, and nested
 tables; inline marks, links, images, and `<br>` remain legal inside their text
 blocks. Block kinds without a native cell HTML spelling use one
 `<meridian-block>` envelope carrying their ordinary top-level wire form. A
@@ -293,10 +294,10 @@ MDX, which preserves entity-encoded literal newlines and braces. `Layout`
 wrapping is applied by the runtime block hook before a block's list or quote prefixes, so
 alignment on a list item round-trips.
 
-## Lists as attributes
+## Lists and quotes as attributes
 
-A list is a run of blocks whose `path`, `kind`, `marker`, `start` and `loose` attributes say
-which lists they sit in; `nest` in `@meridian/prosemirror-schema` is the one reader. The
+A list or a quote is a run of blocks whose `path`, `kind`, `marker`, `start` and `loose`
+attributes say which quotes and lists they sit in; `nest` in `@meridian/prosemirror-schema` is the one reader. The
 codec rules that are not obvious from the code:
 
 - A block's marker speaks for its innermost list only. An item that begins with a deeper
@@ -309,8 +310,9 @@ codec rules that are not obvious from the code:
   the next line and read the same (`joinsDirectly`): after a code block, heading or rule, or
   before a code block, heading, raw `<table>`, quote, or a list opening at a bullet or `1.`.
   Anything else gets a blank line, so a paragraph after a nested list does not join it.
-- `blockquote` is still a node whose children are a sequence of their own; its Markdown
-  comes from `mdast-util-to-markdown` over the sequence's Markdown.
+- A quote step prefixes `> `. A quote right after a quote is marked `|` on its first block, so
+  `> a` / blank / `> b` reads back as two quotes. A table cell's quotes are written as
+  `<blockquote>` around the cell's blocks and flattened back the same way as its lists.
 
 ## Preprocessed source
 

@@ -67,13 +67,24 @@
   pointer-events: none;
 }
 
-/* Lists are runs of sibling blocks, not wrapper elements. The nesting plugin
-   (`core/editor/extensions/nesting`) marks each listed block with its depth, the
-   kind of item it starts, and the item's number; the marker is generated
-   content in the indent. */
-.meridian-editor .ProseMirror .meridian-listed {
+/* Lists and quotes are runs of sibling blocks, not wrapper elements. The nesting
+   plugin (`core/editor/extensions/nesting`) gives each nested block its indent, the
+   inline offset of its own list marker, the kind of item it starts, the item's number
+   and, in a quote, one bar per quote it sits in; the marker is generated content in
+   the indent. */
+.meridian-editor .ProseMirror {
+  --nest-list-step: 1.5rem;
+  --nest-quote-step: 1.1875rem;
+  --nest-bar-width: 0.1875rem;
+  --nest-bar: var(--color-focus);
+}
+
+.meridian-editor .ProseMirror .meridian-nested {
   position: relative;
-  padding-inline-start: calc(var(--nest-depth) * 1.5rem);
+  padding-inline-start: var(--nest-indent);
+}
+
+.meridian-editor .ProseMirror .meridian-listed {
   margin-block: var(--prose-space-row);
 }
 
@@ -81,9 +92,41 @@
   margin-top: var(--prose-space-row);
 }
 
+.meridian-editor .ProseMirror .meridian-quoted {
+  --nest-join-pad: calc(var(--prose-space-block) / 2);
+  background-repeat: no-repeat;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+.meridian-editor .ProseMirror .meridian-quoted.meridian-listed {
+  --nest-join-pad: calc(var(--prose-space-row) / 2);
+}
+
+/* A quote keeps its own space from the blocks around it, list items included. */
+.meridian-editor .ProseMirror .meridian-quoted:not([data-quote-join~="above"]) {
+  margin-top: var(--prose-space-quote);
+}
+
+.meridian-editor .ProseMirror .meridian-quoted:not([data-quote-join~="below"]) {
+  margin-bottom: var(--prose-space-quote);
+}
+
+/* Blocks of one quote meet through padding instead of margin, so its bars run unbroken
+   from the quote's first line to its last. */
+.meridian-editor .ProseMirror .meridian-quoted[data-quote-join~="above"] {
+  margin-top: 0;
+  padding-top: var(--nest-join-pad);
+}
+
+.meridian-editor .ProseMirror .meridian-quoted[data-quote-join~="below"] {
+  margin-bottom: 0;
+  padding-bottom: var(--nest-join-pad);
+}
+
 .meridian-editor .ProseMirror .meridian-listed[data-item]::before {
   position: absolute;
-  inset-inline-start: calc(var(--nest-depth) * 1.5rem - 1.25rem);
+  inset-inline-start: calc(var(--nest-marker) - 1.25rem);
   width: 1.25rem;
   padding-inline-end: 0.35rem;
   color: var(--color-muted-foreground);
@@ -103,7 +146,7 @@
 .meridian-editor .ProseMirror .meridian-listed[data-item="done"]::before {
   content: "";
   top: calc((1lh - 0.9em) / 2);
-  inset-inline-start: calc(var(--nest-depth) * 1.5rem - 1.2em);
+  inset-inline-start: calc(var(--nest-marker) - 1.2em);
   box-sizing: border-box;
   width: 0.9em;
   height: 0.9em;
@@ -129,7 +172,7 @@
   content: "";
   position: absolute;
   top: calc((1lh - 0.9em) / 2 + 0.14em);
-  inset-inline-start: calc(var(--nest-depth) * 1.5rem - 1.2em + 0.3em);
+  inset-inline-start: calc(var(--nest-marker) - 1.2em + 0.3em);
   width: 0.28em;
   height: 0.5em;
   border: solid var(--color-primary-foreground);

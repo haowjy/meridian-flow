@@ -7,9 +7,9 @@
  * only rename types those rules resolve the server-parity names (`strong`,
  * `em`, `code_block`). Reimplementing them here would be a
  * second set of rules competing for the same keystrokes. Inherited unchanged:
- * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `> `
- * blockquote, `---` divider, and completion on Enter as well as on space. The
- * `- ` / `* ` / `+ ` and `1. ` list rules are `NestingExtension`'s. The `# `…`###### ` heading rule is
+ * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `---` divider, and completion
+ * on Enter as well as on space. The `- ` / `* ` / `+ `, `1. ` list and `> `
+ * quote rules are `NestingExtension`'s. The `# `…`###### ` heading rule is
  * `MeridianParagraph`'s: a heading is a paragraph with a level.
  *
  * What this extension owns is the remaining autoformat behavior: the code

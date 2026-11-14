@@ -1,7 +1,8 @@
 /**
- * List commands as attribute writes. A list is not a node: a block's `path`, `kind`, `marker`,
- * `start` and `loose` say which lists it sits in (`nest`, `@meridian/prosemirror-schema`), so
- * making, nesting and lifting an item changes attributes on the same elements and wraps nothing.
+ * List and quote commands as attribute writes. Neither is a node: a block's `path`, `kind`,
+ * `marker`, `start` and `loose` say which quotes and lists it sits in (`nest`,
+ * `@meridian/prosemirror-schema`), so making, nesting, quoting and lifting change attributes
+ * on the same elements and wrap nothing.
  */
 import {
   type BlockFacts,
@@ -10,6 +11,7 @@ import {
   nestNodes,
   pathOf,
   readPath,
+  sharedSteps,
 } from "@meridian/prosemirror-schema";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, type Transaction } from "@tiptap/pm/state";
@@ -196,6 +198,64 @@ export function outdent(tr: Transaction): boolean {
       const stillListed = steps.some((s) => s.type === "list");
       write(tr, sequence, i, stillListed ? { path } : { path, ...NO_LIST });
     }
+    changed = true;
+  }
+  return changed;
+}
+
+/** True when every selected block sits in a quote. */
+export function selectionIsQuoted(sequence: Sequence): boolean {
+  for (let i = sequence.from; i < sequence.to; i++) {
+    if (!sequence.facts[i].steps.some((step) => step.type === "quote")) return false;
+  }
+  return true;
+}
+
+/**
+ * Puts the selected blocks in a quote of their own, inside every container they share: in one
+ * item that quotes the item's words (`- > text`), over several items it quotes the list. A quote
+ * just above or below stays separate (`|`).
+ */
+export function quote(tr: Transaction): boolean {
+  const sequence = selectedSequence(tr.selection);
+  const { from, to } = sequence;
+  const at = sharedSteps(sequence.facts, from, to);
+  const paths = sequence.blocks.map((block) => readPath(block.attrs.path));
+  for (let i = from; i < to; i++) paths[i].splice(at, 0, { type: "quote", fresh: false });
+  const reading = () =>
+    nestNodes(
+      sequence.blocks.map((block, i) => ({
+        type: block.type,
+        attrs: { ...block.attrs, path: pathOf(paths[i]) },
+      })),
+    );
+  if (!reading()[from].steps[at].opens) paths[from][at].fresh = true;
+  const below = reading()[to]?.steps[at];
+  const splitsBelow = below?.type === "quote" && !below.opens;
+  if (splitsBelow) paths[to][at].fresh = true;
+  for (let i = from; i < (splitsBelow ? to + 1 : to); i++) {
+    write(tr, sequence, i, { path: pathOf(paths[i]) });
+  }
+  return to > from;
+}
+
+/**
+ * Takes the selected blocks out of the innermost quote they share, so quoting a list and
+ * unquoting it gives the list back. Blocks that share no quote each leave their innermost one.
+ */
+export function unquote(tr: Transaction): boolean {
+  const sequence = selectedSequence(tr.selection);
+  const shared = sequence.facts[sequence.from].steps
+    .slice(0, sharedSteps(sequence.facts, sequence.from, sequence.to))
+    .map((step) => step.type)
+    .lastIndexOf("quote");
+  let changed = false;
+  for (let i = sequence.from; i < sequence.to; i++) {
+    const steps = readPath(sequence.blocks[i].attrs.path);
+    const at = shared >= 0 ? shared : steps.map((step) => step.type).lastIndexOf("quote");
+    if (at < 0) continue;
+    steps.splice(at, 1);
+    write(tr, sequence, i, { path: pathOf(steps) });
     changed = true;
   }
   return changed;

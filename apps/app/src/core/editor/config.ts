@@ -196,7 +196,9 @@ const STARTER_KIT_YJS_SAFETY_OPTIONS = {
 const DOCUMENT_STARTER_KIT_OPTIONS = {
   ...STARTER_KIT_YJS_SAFETY_OPTIONS,
   // Schema names diverge from the server for these built-ins, so Meridian
-  // installs snake_case/parity wrappers below instead.
+  // installs snake_case/parity wrappers below instead. A quote is not a node:
+  // `NestingExtension` owns it.
+  blockquote: false,
   bold: false,
   bulletList: false,
   code: false,
@@ -212,7 +214,6 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
-  blockquote: false,
   document: false,
 } as const;
 

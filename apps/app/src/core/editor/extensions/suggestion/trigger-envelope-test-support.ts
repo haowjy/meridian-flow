@@ -43,7 +43,7 @@ export const SHARED_TRIGGER_ENVELOPE: readonly TriggerEnvelopeRow[] = [
     claim: "opens in a quote paragraph",
     opens: true,
     content: (marker) => [
-      { type: "blockquote", content: [paragraph(text(`She wrote ${marker}`))] },
+      { type: "paragraph", attrs: { path: ">" }, content: [text(`She wrote ${marker}`)] },
     ],
   },
   {

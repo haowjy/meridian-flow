@@ -16,7 +16,6 @@ const BLOCK_ID_TYPES = [
   "horizontal_rule",
   "jsx_leaf",
   "jsx_container",
-  "blockquote",
 ];
 
 export const BlockIdExtension = Extension.create({

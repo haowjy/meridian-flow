@@ -29,7 +29,12 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 const schema = buildDocumentSchema();
 const paragraph = (text: string) =>
   schema.nodes.paragraph.create({ id: "p" }, text ? schema.text(text) : null);
-const quote = (text: string) => schema.nodes.blockquote.create({ id: "q" }, paragraph(text));
+// A quote is the same block with a `>` step: wrapping keeps its element and its id.
+const quote = (text: string) =>
+  schema.nodes.paragraph.create({ id: "p", path: ">" }, text ? schema.text(text) : null);
+// Retyping to a code block replaces the element, so late frames on the paragraph need recovery.
+const rebuilt = (text: string) =>
+  schema.nodes.code_block.create({ id: "c" }, text ? schema.text(text) : null);
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
 const docs: Y.Doc[] = [];
@@ -229,9 +234,10 @@ try {
     const second = captured(stale, () => textAt(stale).insert(9, "B"));
     await writer(s, second);
     const result = await read(s);
-    assert.equal(result.length, 2);
+    // The quote kept the paragraph's element, so the late typing lands in the quoted block.
+    assert.equal(result.length, 1);
     once(result, "lateAB");
-    assert.equal(result.filter((node) => node.type.name === "blockquote").length, 1);
+    assert.equal(result[0]?.attrs.path, ">");
     assert.equal((await writer(s, Y.encodeStateAsUpdate(stale))).admitted, false);
   });
   await row("deletion-only-late-frame-advances-span-memory", async () => {
@@ -241,7 +247,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [quote("ab")]);
+    await live(s, [rebuilt("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     assert.equal((await read(s)).length, 3);
@@ -264,7 +270,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [quote("ab")]);
+    await live(s, [rebuilt("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     const next = captured(stale, () => textAt(stale).insert(2, "Z"));
@@ -306,7 +312,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [quote("ab")]);
+    await live(s, [rebuilt("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     const deletion = captured(stale, () => textAt(stale).delete(2, 1));
@@ -371,13 +377,12 @@ try {
   await row("reconnect-with-unsent-typing-after-base-tombstones", async () => {
     const s = await seed("r-reconnect");
     const old = clone(s.room);
-    await live(s, [quote("Base words.")]);
+    await live(s, [rebuilt("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     await coordinator.readDraft(s.draftId, async (doc) => {
       Y.applyUpdate(old, Y.encodeStateAsUpdate(doc));
     });
-    const wrapped = (fragment(old).get(0) as Y.XmlElement).get(0) as Y.XmlElement;
-    const text = wrapped.get(0) as Y.XmlText;
+    const text = (fragment(old).get(0) as Y.XmlElement).get(0) as Y.XmlText;
     text.insert(text.length, " unsentReconnect");
     assert.equal((await writer(s, Y.encodeStateAsUpdate(old))).admitted, true);
     once(await read(s), "unsentReconnect");
