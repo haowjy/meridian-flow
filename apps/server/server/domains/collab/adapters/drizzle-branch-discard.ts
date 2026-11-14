@@ -42,7 +42,7 @@ import type { DraftClose } from "./drizzle-draft-close.js";
 type KernelDeps = {
   close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
-  treeLists: Pick<TreeListStore, "submit" | "resync">;
+  treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
 };
 
 /**
@@ -174,6 +174,10 @@ export function createDrizzleBranchDiscard(
       return discardWholeLocked(db, deps, { branchId, userId: input.userId, commandId });
     const { items } = input.selection;
     const documents = items.map((item) => item.documentId);
+    // The Work's lists' keys, then the documents', before the records are written: the rows
+    // they write are the ones derivation locks under a document's key.
+    await deps.treeLists.lock(await treeListsOfBranch(db, branchId));
+    for (const id of [...documents].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
     // The Work's records on these documents settle discarded, in the list that holds them. A
     // created document is then in no view; it and its text stay until retention purges them.
     const { had, created } = await discardTreeRecords(db, deps, {
@@ -182,7 +186,6 @@ export function createDrizzleBranchDiscard(
       commandId,
       documents,
     });
-    for (const id of [...documents].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
     const drafts = await lockActiveDrafts(db, branchId, documents);
     for (const item of items)
       if (

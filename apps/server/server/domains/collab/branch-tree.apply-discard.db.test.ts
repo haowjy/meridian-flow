@@ -26,8 +26,11 @@ import {
 import { LIVE, lastSettlements, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
@@ -104,12 +107,21 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     });
 
     const viewOf = () => ({ draft: branchId as string });
+    // The account's list sorts before the project's: a path that takes the project's key first
+    // and the account's later is the one that can deadlock.
+    let ACCOUNT_LIST = "";
+    let PROJECT_LIST = "";
 
     beforeEach(async () => {
+      ACCOUNT_LIST = `0${randomUUID().slice(1)}`;
+      PROJECT_LIST = `f${randomUUID().slice(1)}`;
       await deleteDrizzleRows(db, [users]);
-      await db.insert(users).values(conformanceUserValues(USER, "apply-discard"));
+      await db
+        .insert(users)
+        .values({ ...conformanceUserValues(USER, "apply-discard"), treeListId: ACCOUNT_LIST });
       await db.insert(projects).values({
         id: PROJECT,
+        treeListId: PROJECT_LIST,
         userId: USER,
         name: "Project",
         slug: "project",
@@ -368,6 +380,81 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect((await db.select().from(documents).where(eq(documents.id, made)))[0]).toBeDefined();
       const [branch] = await db.select().from(branches).where(eq(branches.id, branchId));
       expect(branch?.status).toBe("closed");
+    });
+
+    it("Apply of a drafted delete and another Work's whole Discard take the lists in one order", async () => {
+      const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
+      await db.insert(documentDrafts).values({
+        id: randomUUID(),
+        documentId: a,
+        kind: "work_draft",
+        branchId,
+        state: Buffer.alloc(0),
+        stateVector: Buffer.alloc(0),
+      });
+      await submit((writer) => writer.delete(viewOf(), AGENT, a));
+      const revision = await revisionOf(a);
+      const otherWork = randomUUID();
+      await db.insert(works).values({
+        id: otherWork,
+        projectId: PROJECT,
+        createdByUserId: USER,
+        name: "Other",
+        handle: "w2",
+      });
+      const [other] = await db
+        .insert(branches)
+        .values({ projectId: PROJECT, originWorkId: otherWork, createdBy: USER })
+        .returning({ id: branches.id });
+      const otherBranch = (other as { id: BranchId }).id;
+
+      // Apply holds its list and the document, and has written; the other Work's Discard takes
+      // the account's list and waits on the project's.
+      const {
+        a: applied,
+        b: discarded,
+        bWaited,
+      } = await interleave(
+        db,
+        () => click(a, revision),
+        "treeList.afterRows",
+        () =>
+          discard.discardItems({
+            branchId: otherBranch,
+            userId: USER,
+            selection: { kind: "whole" },
+            command: asCommand(),
+          }),
+      );
+      expect(bWaited).toBe(true);
+      expect(applied).toMatchObject({ ok: true, value: { status: "applied" } });
+      expect(discarded).toMatchObject({ ok: true });
+    });
+
+    it("Apply writes the list's rows only under the document's key, which derivation takes first", async () => {
+      const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
+      await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
+      const revision = await revisionOf(a);
+      // Derivation's certification (`certifyDocumentDerivation`): the document's key, then the
+      // location row of the document.
+      const certify = () =>
+        runInDrizzleTransaction(db, async () => {
+          const tx = currentDrizzleDb(db);
+          await lockDocumentMutation(tx, a);
+          await tx
+            .select({ version: treeNodes.locationVersion })
+            .from(treeNodes)
+            .where(eq(treeNodes.id, a))
+            .for("no key update");
+        });
+      const {
+        a: applied,
+        b: certified,
+        bWaited,
+      } = await interleave(db, () => click(a, revision), "treeList.afterRows", certify);
+      expect(bWaited).toBe(true);
+      expect(applied).toMatchObject({ ok: true, value: { status: "applied" } });
+      expect(certified).toMatchObject({ ok: true });
     });
 
     it("refuses a Discard of an item the Work has nothing left on", async () => {

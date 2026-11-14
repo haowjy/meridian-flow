@@ -30,6 +30,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import {
   type FileAccess,
   FileEditRefusedError,
@@ -61,7 +62,9 @@ import {
 import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-draft-storage.js";
+import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
+import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-inverse.js";
 import {
   type PlannedDraft,
   type PlannedInverse,
@@ -83,6 +86,8 @@ type Dependencies = {
   workProjection: Pick<WorkProjectionMutation, "mutate">;
   /** A removed document's text is not reversed; its record words the refusal. */
   removals: DocumentRemovals;
+  /** The tree half of a card's reversal: the reply's tree receipts, in the lists that hold them. */
+  treeLists: Pick<TreeListStore, "lock" | "submit">;
   fileAccess: Pick<
     FileAccess,
     "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
@@ -91,6 +96,17 @@ type Dependencies = {
 
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
+  const treeInverse = createTurnTreeInverse({
+    db: input.db,
+    treeLists: input.treeLists,
+    // The receipts' own adapter; its text stack is this service's, read once it exists.
+    history: () => treeHistory,
+  });
+  /** A card's reversal takes the reply's tree receipts too; the model's own tools take their own. */
+  const treePlanOf = (query: TurnInverseQuery, direction: "undo" | "redo") =>
+    query.model || !query.turnId
+      ? Promise.resolve(NO_TREE_STEPS)
+      : treeInverse.plan(query.threadId, query.turnId, direction);
   const readDisposition = createDraftDispositionReader(
     createDrizzleDraftDispositionStore(input.db),
   );
@@ -409,6 +425,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
+    async treeStepCount(query, direction) {
+      return (await treePlanOf(query, direction)).steps.length;
+    },
     async readHistory(documentId) {
       return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
     },
@@ -442,8 +461,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
-      const grants = await admitInverse(sequence, query, userId);
-      const works = { drafts: attempt.draftIds, branches: [] };
+      const direction = kind === "redo" ? "redo" : "undo";
+      // Off every lock: the tree receipts the reply left, which lists and Works they write.
+      const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query, direction);
+      const grants = await admitInverse(sequence, query, userId, tree.documents);
+      const works = { drafts: attempt.draftIds, branches: tree.branches };
+      let treeReversed = 0;
       const operation = async () => {
         // What each plan was computed against is still what the documents hold.
         await confirmCapture(query, attempt);
@@ -455,6 +478,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             if (outcome) handles.push(outcome);
           } else skips.push(outcome);
         }
+        // After the text: a node a reply made is taken back once the text written into it is.
+        if (tree.steps.length) {
+          const now = await treePlanOf(query, direction);
+          const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
+          if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
+            throw new InverseAttemptMiss();
+          const done = await treeInverse.run(now.steps, direction, {
+            threadId: query.threadId,
+            userId,
+          });
+          treeReversed = done.reversed;
+          skips.push(...done.skips);
+        }
         for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
       };
       const admitted = await runEditAdmission({
@@ -464,6 +500,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         works,
         commitScope: (operation) => scope.commit(operation),
         acquireMutationScope: async () => {
+          // The lists' keys come before every document key (the order in collab's CONTEXT.md).
+          if (tree.lists.length) await input.treeLists.lock(tree.lists);
           for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
         },
         operation,
@@ -474,6 +512,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         handles,
         updates: documents.flatMap((entry) => entry.updates.map(({ update }) => update)),
         skips,
+        treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
         outcomes: documents.flatMap((entry) => entry.outcomes),
       };
@@ -484,17 +523,33 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     sequence: readonly { plan: PreparedDocumentInverse; step: InverseStep }[],
     query: TurnInverseQuery,
     userId: UserId | undefined,
+    treeDocuments: readonly { documentId: string; branchId: BranchId | null; restore: boolean }[],
   ): Promise<FileGrant<"edit">[] | null> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Every inverse supplies its principal explicitly; an absent one here means a composition
     // bug, not live routing.
     if (!principal) return null;
-    const requirements = new Map<string, { documentId: DocumentId; branchId: BranchId | null }>();
+    const requirements = new Map<
+      string,
+      { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
+    >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
       const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
-      requirements.set(`${documentId}:${branchId ?? "live"}`, { documentId, branchId });
+      requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
+        documentId,
+        branchId,
+        restore: false,
+      });
     }
+    // A tree change is taken back where it was made, by the one who may edit that document; a
+    // live document in Trash may only be restored.
+    for (const { documentId, branchId, restore } of treeDocuments)
+      requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
+        documentId: documentId as DocumentId,
+        branchId,
+        restore: restore && branchId === null,
+      });
     const admittedRequirements = [...requirements.values()];
     const branchIds = [
       ...new Set(admittedRequirements.flatMap((r) => (r.branchId ? [r.branchId] : []))),
@@ -522,7 +577,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         principal,
         holder
           ? { kind: "draft", documentId: requirement.documentId, owner: holder.owner }
-          : { kind: "document", documentId: requirement.documentId },
+          : requirement.restore
+            ? { kind: "restore", documentId: requirement.documentId }
+            : { kind: "document", documentId: requirement.documentId },
         holder
           ? { kind: "draft", owner: holder.owner, ownerHandle: holder.handle }
           : { kind: "live" },
@@ -729,7 +786,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     });
   }
 
-  return createTurnInverseService(store);
+  const service = createTurnInverseService(store);
+  const treeHistory = createDrizzleTreeHistory(input.db, input.journal, (threadId, documentId) =>
+    service.modelStack(documentId as DocumentId, threadId),
+  );
+  return service;
 }
 
 /** A commit attempt of an inverse: four, then one classification pass (section 2.4, F5). */

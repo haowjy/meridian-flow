@@ -91,6 +91,8 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /** How many tree receipts of the reply this card reversal would take back. */
+  treeStepCount(query: TurnInverseQuery, direction: "undo" | "redo"): Promise<number>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -105,6 +107,8 @@ export interface TurnInverseStore {
     updates: Uint8Array[];
     /** Steps that couldn't run; the rest ran. A model inverse refuses whole instead. */
     skips: TurnInverseSkip[];
+    /** Tree receipts of the reply taken back by the same command (a card's, never the model's). */
+    treeReversed: number;
     /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
     /** The destinations that actually committed. */
@@ -319,40 +323,55 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(store, documents, query, query.direction, randomUUID());
-        const committed = countAccepted(plans)
-          ? await store.commit({
-              plans,
-              sequence: inSequence(plans, query.direction),
-              kind: query.direction,
-              query,
-              userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
-            })
-          : {
-              skips: [],
-              reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
-            };
+        const treeSteps = await store.treeStepCount(query, query.direction);
+        if (!query.documentIds && !plans.length && !treeSteps)
+          return {
+            status: query.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
+            documents: [],
+          };
+        const committed =
+          countAccepted(plans) || treeSteps
+            ? await store.commit({
+                plans,
+                sequence: inSequence(plans, query.direction),
+                kind: query.direction,
+                query,
+                userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
+              })
+            : {
+                skips: [],
+                treeReversed: 0,
+                reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
+              };
         const reversedAt = (plan: PreparedDocumentInverse) =>
           [...(committed.reversed.get(plan.document.documentId) ?? [])].flatMap(([branchId, n]) =>
             n > 0 ? [branchId] : [],
           );
-        const accepted = [...committed.reversed.values()].reduce(
-          (n, byDestination) => [...byDestination.values()].reduce((m, count) => m + count, n),
-          0,
-        );
+        const accepted =
+          committed.treeReversed +
+          [...committed.reversed.values()].reduce(
+            (n, byDestination) => [...byDestination.values()].reduce((m, count) => m + count, n),
+            0,
+          );
         const skips = [...plans.flatMap((plan) => plan.skips), ...committed.skips];
+        // A reply of tree changes alone, each since changed again: the fault is the answer.
+        const onlySuperseded =
+          !plans.length && skips.length > 0 && skips.every((skip) => skip.cause === "superseded");
         return {
           status: accepted
             ? skips.length
               ? "partial"
               : "reversed"
-            : plans.length &&
-                plans.every(
-                  (plan) =>
-                    plan.skips.length &&
-                    plan.skips.every((skip) => skip.cause === "draft_archived"),
-                )
-              ? "permission_denied"
-              : "expired",
+            : onlySuperseded
+              ? "superseded"
+              : plans.length &&
+                  plans.every(
+                    (plan) =>
+                      plan.skips.length &&
+                      plan.skips.every((skip) => skip.cause === "draft_archived"),
+                  )
+                ? "permission_denied"
+                : "expired",
           // One row per destination a document's steps reversed in, or one for its refusal.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = reversedAt(plan);

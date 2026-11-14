@@ -23,7 +23,7 @@ export async function treeListsOfBranch(db: DrizzleDb, branchId: BranchId): Prom
 }
 
 /** The list that claimed a node id: the one whose records and rows hold the node. */
-export async function treeListOfNode(db: Database, nodeId: string): Promise<TreeList | null> {
+export async function treeListOfNode(db: DrizzleDb, nodeId: string): Promise<TreeList | null> {
   const [row] = await currentDrizzleDb(db).execute<{
     project_id: string | null;
     user_id: string | null;

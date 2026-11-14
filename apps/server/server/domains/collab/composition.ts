@@ -435,6 +435,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     workProjection: deps.workProjectionMutation,
     removals: removalRecords,
     fileAccess: deps.fileAccess,
+    treeLists: deps.treeLists,
   });
   const treeReader = createTreeReader(deps.db);
   const branchTreeState = createDrizzleBranchTreeState(deps.db, treeReader);

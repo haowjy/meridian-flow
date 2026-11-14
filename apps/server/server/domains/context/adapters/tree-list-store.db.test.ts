@@ -36,7 +36,11 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInDrizzleSavepoint,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
@@ -419,6 +423,34 @@ describe("the tree list store (postgres)", () => {
       c.writer.create(LIVE, actor, { kind: "folder", name: "E", parent: sourceRoot(MANUSCRIPT) });
       await admit(behind);
       expect(reads).toBe(2);
+      await expectRowsEqualReplay();
+    });
+  });
+
+  describe("a rolled-back transaction", () => {
+    it("takes the copies it held with it, however many savepoints and no-change reads came after the change", async () => {
+      const store = newStore();
+      const create = (name: string) =>
+        store.submit({
+          lists: [list],
+          make: ([{ writer }]) =>
+            writer.create(LIVE, actor, { kind: "folder", name, parent: sourceRoot(MANUSCRIPT) }),
+        });
+      await create("Kept");
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await runInDrizzleSavepoint(db, () => create("Phantom"));
+          // A read that changes nothing, after a change its parent has not committed.
+          await store.submit({ lists: [list], make: () => {} });
+          throw new Error("refused");
+        }),
+      ).rejects.toThrow("refused");
+
+      await create("Next");
+      expect(await storedRows().then((rows) => rows.live.map((row) => row.name).sort())).toEqual([
+        "Kept",
+        "Next",
+      ]);
       await expectRowsEqualReplay();
     });
   });

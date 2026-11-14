@@ -63,8 +63,11 @@ a move of what live has in Trash) lands nothing of the item: the click is `refus
 `ancestor_taken` and the draft stays pending. A text-only click leaves a pending move or delete
 pending, except for a creation only the Work shows, which lands whole.
 
-Lock order inside the click: Work, branch, the list (inside `submit`), then the document's mutex
-for the text half, then draft rows. Nothing takes a document mutex before the list's lock.
+Lock order inside the click: Work, branch, the list's key (`treeLists.lock`), the document's
+mutex, then the writes: the list's records and rows (`submit`), the closed draft's resync, draft
+rows. The rows are written under the document's key because derivation certification takes that
+key and then the document's `tree_nodes` row. Nothing takes a document mutex before the list's
+lock.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

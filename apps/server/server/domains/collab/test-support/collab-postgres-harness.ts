@@ -428,6 +428,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     workProjection: createTestWorkProjectionMutation(db),
     removals,
     fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
+    treeLists,
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,

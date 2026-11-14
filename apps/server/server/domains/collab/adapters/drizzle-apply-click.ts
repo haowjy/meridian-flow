@@ -80,7 +80,7 @@ export function createDrizzleApplyClick(
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
-    treeLists: Pick<TreeListStore, "submit">;
+    treeLists: Pick<TreeListStore, "lock" | "submit">;
     tree: Pick<TreeReader, "identityStatus">;
     branchTree: BranchTreeStateReader;
     close: Pick<DraftClose, "closeDrafts">;

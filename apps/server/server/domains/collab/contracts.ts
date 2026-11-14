@@ -202,6 +202,9 @@ export type TreeReceipt = {
   kind: "write" | "undo" | "redo";
   reverses: string | null;
   draftBranchId: string | null;
+  turnId: string | null;
+  /** The path the model gave for it. */
+  shownAt: string | null;
   /** The write ordinal of the node this receipt was found by. */
   wId: number;
   /** The write ordinal on the subject's counter: the handle the model was given. */
@@ -236,6 +239,13 @@ export type AgentTreeHistory = {
   recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
   /** Whether the turn (one reply) already made a drafted tree change. */
   draftedInReply(turnId: TurnId): Promise<boolean>;
+  /**
+   * What a card Undo or Redo of a reply takes: the reply's receipts that were not reversed (Undo,
+   * newest first), or the ones a reversal took back and nothing redid (Redo, oldest first), each
+   * with the nodes it changed. The same receipts, reversed by the same `reverses` links, as
+   * the model's `undo` chooses from.
+   */
+  turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
   receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */

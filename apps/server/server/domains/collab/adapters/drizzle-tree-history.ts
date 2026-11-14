@@ -76,6 +76,60 @@ export function createDrizzleTreeHistory(
       return row !== undefined;
     },
 
+    async turnSteps(threadId, turnId, direction) {
+      const mine = await tx()
+        .select()
+        .from(treeEditReceipts)
+        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.turnId, turnId)))
+        .orderBy(desc(treeEditReceipts.seq));
+      if (mine.length === 0) return [];
+      const reversing = async (ids: string[]) =>
+        ids.length === 0
+          ? []
+          : await tx()
+              .select()
+              .from(treeEditReceipts)
+              .where(inArray(treeEditReceipts.reverses, ids));
+      const undoneBy = await reversing(mine.map((row) => row.id));
+      const reversedIds = new Set(undoneBy.flatMap((row) => (row.reverses ? [row.reverses] : [])));
+      let chosen: (typeof mine)[number][];
+      if (direction === "undo") {
+        chosen = mine.filter((row) => row.kind !== "undo" && !reversedIds.has(row.id));
+      } else {
+        // What was taken back: an undo of the reply's receipts that nothing redid since.
+        const undos = undoneBy.filter((row) => row.kind === "undo");
+        const redone = new Set(
+          (await reversing(undos.map((row) => row.id))).flatMap((row) =>
+            row.reverses ? [row.reverses] : [],
+          ),
+        );
+        const order = new Map(mine.map((row) => [row.id, row.seq]));
+        chosen = undos
+          .filter((row) => !redone.has(row.id))
+          .sort((a, b) => (order.get(a.reverses ?? "") ?? 0) - (order.get(b.reverses ?? "") ?? 0));
+      }
+      if (chosen.length === 0) return [];
+      const touched = await tx()
+        .select({
+          receiptId: treeEditReceiptNodes.receiptId,
+          nodeId: treeEditReceiptNodes.nodeId,
+        })
+        .from(treeEditReceiptNodes)
+        .where(
+          inArray(
+            treeEditReceiptNodes.receiptId,
+            chosen.map((row) => row.id),
+          ),
+        );
+      return chosen.map((row) =>
+        receiptOf(
+          row,
+          touched.filter((node) => node.receiptId === row.id).map((node) => node.nodeId),
+          0,
+        ),
+      );
+    },
+
     async receiptsAt(threadId, shownAt) {
       const rows = await tx()
         .select()
@@ -177,6 +231,8 @@ function receiptOf(
     kind: row.kind,
     reverses: row.reverses,
     draftBranchId: row.draftBranchId,
+    turnId: row.turnId,
+    shownAt: row.shownAt,
     wId,
     handle,
     nodes,

@@ -54,6 +54,7 @@ try {
     notices: { async record() {} },
     workProjection: h.projection,
     removals: createTestRemovalDeps(h.db).removals,
+    treeLists: createTestRemovalDeps(h.db).treeLists,
     onDraftCommitted: () => {},
   });
 

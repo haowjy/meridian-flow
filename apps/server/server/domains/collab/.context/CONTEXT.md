@@ -503,22 +503,34 @@ peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
-live `withDocument` mutexes (sorted) before any transaction, then inside the
-database Work rows (only through the Works mutation boundary, in ID order, with the
-lifecycle and grant locks `lockSeamWorks` takes), the branch row, a project's or an
-account's tree list key (by list ID when a path takes several), then the sorted document
-advisory keys (`lockDocumentMutation`'s keys in ID order), then draft rows in ID order. The
-list's key sorts before every document key, not among them by ID: a path that needs a list and
-documents takes the list first. Apply, Discard and a tree tool call reach the lists through
-`treeListStore.submit` inside their command's transaction and take the documents' keys after
-it. Closing a Work's draft (`DraftClose.closeDrafts`) and ending a branch call the store's
-`resync`, so a path that closes drafts holds the lists' keys already or takes them before any
-document key. A tree list's write (`withLists`) takes the seam's Work locks first, so the append
-under the key takes no lock it lacks; a Work's close, archive, restore and delete takes the
-project's list key after its Work row and before its document keys (`lockProjectTreeList`), so
-the open Works an admission reads under that key are current.
-No path takes a Work row, a live lock or a list's key after a draft row, and none takes a
-list's key while holding a document key. No writer-ingress epoch barrier remains.
+
+1. Live `withDocument` mutexes (sorted), before any transaction.
+2. In the database, the command's claim row (`runCommand`).
+3. Work rows (only through the Works mutation boundary, in ID order, with the lifecycle and
+   grant locks `lockSeamWorks` takes), then the branch row.
+4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
+   and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
+   or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
+   a document key. A list's key sorts before every document key, not among them by ID.
+5. The sorted document advisory keys (`lockDocumentMutation`, in ID order).
+6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
+   `branch_tree_nodes`, `tree_node_ids`, `documents`), then the draft rows, in ID order. Derivation
+   certification takes a document key and then locks that document's `tree_nodes` row, so a path
+   that holds a document key writes its rows after it, and one that writes first never takes that
+   document's key afterwards.
+
+`submit` and `resync` take the list keys themselves when a path holds no document key, as the
+tree tools do. `resync` (and so `DraftClose.closeDrafts`, which resyncs the list that holds each
+document it closes a Work draft of) takes none: it throws when the transaction does not hold the
+key, so a close that would take one after a document key fails in its first test, not as a
+deadlock. Apply, Discard of items, a card's tree Undo and the purge all take the key, then the
+documents', then write. A path with a second list in view (Apply's `closeDrafts`, a purge's
+drafts) reaches only the list that holds the document, which it holds. A tree list's write
+(`withLists`) takes the seam's Work locks first, so the append under the key takes no lock it
+lacks; a Work's close, archive, restore and delete takes both lists' keys after its Work row and
+before its document keys (`lockProjectTreeList`), so the open Works an admission reads under that
+key are current. No path takes a Work row, a live lock or a list's key after a draft row, and
+none takes a list's key while holding a document key. No writer-ingress epoch barrier remains.
 
 A document command (a model edit, a tree tool call, `reverse_turn`, Apply, Un-Apply, Discard,
 Copy, the server's move between a project's list and the account's) runs in
@@ -533,8 +545,9 @@ serialization failure, a moved capture or revision) rolls back past the claim an
 as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
-copy is marked `pending` by the transaction that changed it, and any other transaction reloads),
-so it joins the command's transaction. A card Undo's Work receipts are a second command
+copy is marked `pending` by the root transaction that changed it, and any other transaction
+reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's
+transaction. A card Undo's Work receipts are a second command
 after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
 document key.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,

@@ -104,9 +104,19 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 ## Tree changes
 
-A chat card's Undo of a turn does not reverse tree changes: a tree change (create,
-move, rename, delete, restore, folders included) is its own command with its records in the
-project's tree list, and a failed reply leaves what its tree calls did. The model's tree call
+A tree change (create, move, rename, delete, restore, folders included) is its own command
+with its records in the project's tree list, and a failed reply leaves what its tree calls did.
+A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, in the same
+`reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
+steps, newest receipt first; a Redo takes the receipts an Undo reversed, oldest first). It
+chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
+each back by `undoChange` in the list that holds the node, and records the reversal as a
+receipt, so the two histories are one. A receipt something changed since answers `superseded`
+(a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
+is left to the model's tools (`refused`). Its lists' keys are taken before the documents' (in
+`acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
+A turn's text on a document the same turn deleted is not a card target while the document is in
+Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call
 keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and one
 `tree_edit_receipt_nodes` row for every node it changed, each with a write ordinal reserved on
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
@@ -124,7 +134,8 @@ what they take back (`undoes`), a Redo's included. A move between a project and 
 lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
 way. A model `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
-The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do.
+The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do;
+nothing reads it yet (it is there to make one command one Undo step).
 
 Every inverse (model undo, redo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,

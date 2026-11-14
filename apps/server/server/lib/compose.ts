@@ -1573,6 +1573,9 @@ export function createInMemoryAppServices(): AppServices {
       async read() {
         throw new Error("Tree lists are unavailable in memory");
       },
+      async lock() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
       async resync() {
         throw new Error("Tree lists are unavailable in memory");
       },

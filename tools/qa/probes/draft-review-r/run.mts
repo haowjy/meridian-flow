@@ -404,6 +404,7 @@ try {
       notices: { record: async () => {} },
       workProjection: h.projection,
       removals: createTestRemovalDeps(h.db).removals,
+      treeLists: createTestRemovalDeps(h.db).treeLists,
     });
     const result = await runWithEditConfirmation(workGrant(h, s.workId), () =>
       inverse.modelInverse(
