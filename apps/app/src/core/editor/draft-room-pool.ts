@@ -176,7 +176,7 @@ export class DraftRoomPool {
     this.holds.delete(roomKey);
     void this.deps.teardownOwner
       .retire({ kind: "draft", roomKey }, session)
-      .catch(() => undefined)
+      .catch((error: unknown) => reportError(error))
       .then(async () => (await hold)?.release());
   }
 }
