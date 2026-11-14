@@ -2344,6 +2344,10 @@ msgstr ""
 msgid "Couldn’t pin {title}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Couldn't put them back in Trash. Retry tries again."
+msgstr ""
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr ""
@@ -5089,11 +5093,23 @@ msgid "Restored from Trash just now. Undo puts it back in Trash."
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Restored just now: the drafts are back in {workName}."
+#~ msgid "Restored just now: the drafts are back in {workName}."
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now: the drafts are back in {workName}. Undo puts them back in Trash."
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Restored just now: the drafts are back."
+#~ msgid "Restored just now: the drafts are back."
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now: the drafts are back. Undo puts them back in Trash."
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now."
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
@@ -5181,6 +5197,10 @@ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Retry undoing applying {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Retry undoing the restore of {title}"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -6761,6 +6781,7 @@ msgstr ""
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -6804,6 +6825,10 @@ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo restore of {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Undo restore of {title}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx

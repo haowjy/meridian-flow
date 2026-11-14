@@ -24,6 +24,8 @@ export function TrashDiscardRow({
   now,
   state,
   onRestore,
+  onUndo,
+  undo,
 }: {
   entry: DiscardEntry;
   /** The documents it took, by name: what the writer looks for. */
@@ -32,6 +34,10 @@ export function TrashDiscardRow({
   now: number;
   state: DiscardRestoreState | undefined;
   onRestore: () => void;
+  /** Undo of a restore made here: Discard the same drafts again. Absent until it can be sent. */
+  onUndo?: () => void;
+  /** The Undo's Discard is on its way, or was refused. */
+  undo?: "sending" | "failed";
 }) {
   const title =
     names.length > 0
@@ -47,15 +53,30 @@ export function TrashDiscardRow({
         title={title}
         detail={detail}
         notice={
-          <RowWord
-            tone="done"
-            word={<Trans>Restored</Trans>}
-            sentence={
-              workName
-                ? t`Restored just now: the drafts are back in ${workName}.`
-                : t`Restored just now: the drafts are back.`
-            }
-          />
+          undo === "failed" ? (
+            <RowWord
+              tone="warning"
+              word={<Trans>Retry</Trans>}
+              label={t`Retry undoing the restore of ${title}`}
+              sentence={t`Couldn't put them back in Trash. Retry tries again.`}
+              onAction={onUndo}
+            />
+          ) : !onUndo ? (
+            // Restored elsewhere first: nothing here can put it back.
+            <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
+          ) : (
+            <RowWord
+              word={<Trans>Undo</Trans>}
+              label={t`Undo restore of ${title}`}
+              sentence={
+                workName
+                  ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
+                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
+              }
+              pending={undo === "sending"}
+              onAction={onUndo}
+            />
+          )
         }
       />
     );

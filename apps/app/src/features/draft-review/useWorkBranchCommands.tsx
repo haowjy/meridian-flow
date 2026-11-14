@@ -1,7 +1,7 @@
 /** Work-scoped authority over the account command owner; its notices live in the owner (`DraftNotices`). */
 
 import { t } from "@lingui/core/macro";
-import { parseDraftItemKey } from "@meridian/contracts";
+import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +28,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { draftTreeVersion } from "@/features/project/tree-version";
 import { isDeletedFromManuscript } from "./deleted-drafts";
-import { type CommandOutcome, folderKey } from "./draft-command-owner";
+import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
   AppliedFact,
   DiscardPart,
@@ -717,7 +717,7 @@ export async function restoreDiscard(
     discardCommandId: string;
     documentIds: readonly string[];
   },
-): Promise<Omit<DiscardUndoAnswer, "landed">> {
+): Promise<Omit<DiscardUndoAnswer, "landed"> & { branchId?: string }> {
   const { projectId } = input;
   try {
     const answer = await undoDiscard(projectId, input.branchId, {
@@ -733,7 +733,8 @@ export async function restoreDiscard(
         queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
       });
     }
-    if (answer.status === "restored") return { answer: "ok", leftOut: answer.leftOut };
+    if (answer.status === "restored")
+      return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
     if (answer.status === "conflict") return { answer: "failed" };
     switch (answer.reason) {
       case "already_restored":
@@ -759,6 +760,42 @@ const reviewOf = (item: ThreadDraftListItem): ReviewFileTarget => ({
   draft: item,
   draftOnly: item.isNew || item.deletedLive,
 });
+
+/**
+ * Discards these documents' drafts of a Work's branch as one command (`DraftCommandOwner
+ * .discardBranch`, the one a selection's Discard sends): the Undo of a restore made from Trash,
+ * which puts them back in Trash as a new entry.
+ */
+export async function discardDrafts(
+  queryClient: QueryClient,
+  owner: DraftCommandOwner,
+  input: { projectId: string; ownerKey: string; branchId: string; documentIds: readonly string[] },
+): Promise<CommandOutcome> {
+  const { projectId, ownerKey, branchId } = input;
+  const outcome = await owner.discardBranch({
+    projectId,
+    branchId,
+    commandId: crypto.randomUUID(),
+    selection: {
+      items: input.documentIds.map((documentId) => ({
+        ref: {
+          projectId,
+          ownerKey,
+          documentId,
+          itemKey: draftItemKey(branchId as BranchId, documentId),
+        },
+        ends: "item" as const,
+      })),
+    },
+  });
+  refreshTurnCards(queryClient);
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+  });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.draftMetadataOf(projectId) });
+  return outcome;
+}
 
 const editorHistoryOf = (editor: Editor | null | undefined) =>
   editor ? editorHistory(editor) : null;

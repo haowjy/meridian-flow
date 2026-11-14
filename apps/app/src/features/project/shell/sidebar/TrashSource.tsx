@@ -1,15 +1,19 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { TrashEntry } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { Folder } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useDocumentTrash, useTrashDiscards } from "@/client/query/useDocumentTrash";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord, withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
+import { discardDrafts } from "@/features/draft-review/useWorkBranchCommands";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { useDraftCommandOwner } from "../../context/account-feature-context";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { documentPlace } from "../../context/context-schemes";
@@ -88,6 +92,8 @@ export function TrashSource({
                   notices.end();
                   discards.restore(discard.entry);
                 }}
+                onUndo={discards.undoOf(discard.entry)}
+                undo={discards.undoing.get(discard.entry.commandId)}
               />
             ) : !entry ? null : gone ? (
               <ListRow
@@ -221,7 +227,17 @@ function useTrashDiscardRows(projectId: string) {
   const trees = useProjectTrees(projectId);
   const { works, deleted } = useWorks(projectId);
   const { states, restore } = useRestoreDiscard(projectId);
+  const queryClient = useQueryClient();
+  const owner = useDraftCommandOwner();
   const restored = useRef(new Map<string, DiscardEntry>());
+  const [undoing, setUndoing] = useState<ReadonlyMap<string, "sending" | "failed">>(new Map());
+  const mark = (commandId: string, state: "sending" | "failed" | null) =>
+    setUndoing((current) => {
+      const next = new Map(current);
+      if (state) next.set(commandId, state);
+      else next.delete(commandId);
+      return next;
+    });
   const listed = query.data?.entries ?? [];
   for (const entry of listed)
     if (states.get(entry.commandId)?.kind === "restored")
@@ -246,6 +262,29 @@ function useTrashDiscardRows(projectId: string) {
     states,
     isError: query.isError,
     refetch: query.refetch,
+    undoing,
+    /** The Undo of a restore made here: the drafts go back to Trash as a new Discard entry. */
+    undoOf: (entry: DiscardEntry) => {
+      const state = states.get(entry.commandId);
+      if (state?.kind !== "restored" || !state.branchId || !entry.workId) return undefined;
+      const { branchId } = state;
+      const ownerKey = workOwnerKey({ id: entry.workId });
+      return () => {
+        if (undoing.get(entry.commandId) === "sending") return;
+        mark(entry.commandId, "sending");
+        void discardDrafts(queryClient, owner, {
+          projectId,
+          ownerKey,
+          branchId,
+          documentIds: documentsOf(entry),
+        }).then((outcome) => {
+          if (outcome.kind !== "done") return mark(entry.commandId, "failed");
+          // The restored row gives way to the new entry the refetch lists.
+          restored.current.delete(entry.commandId);
+          mark(entry.commandId, null);
+        });
+      };
+    },
     restore: (entry: DiscardEntry) => {
       restored.current.clear();
       restore({

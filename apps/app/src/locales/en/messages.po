@@ -2344,6 +2344,10 @@ msgstr "Couldn't open this folder."
 msgid "Couldn’t pin {title}"
 msgstr "Couldn’t pin {title}"
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Couldn't put them back in Trash. Retry tries again."
+msgstr "Couldn't put them back in Trash. Retry tries again."
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
@@ -5089,12 +5093,24 @@ msgid "Restored from Trash just now. Undo puts it back in Trash."
 msgstr "Restored from Trash just now. Undo puts it back in Trash."
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Restored just now: the drafts are back in {workName}."
-msgstr "Restored just now: the drafts are back in {workName}."
+#~ msgid "Restored just now: the drafts are back in {workName}."
+#~ msgstr "Restored just now: the drafts are back in {workName}."
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Restored just now: the drafts are back."
-msgstr "Restored just now: the drafts are back."
+msgid "Restored just now: the drafts are back in {workName}. Undo puts them back in Trash."
+msgstr "Restored just now: the drafts are back in {workName}. Undo puts them back in Trash."
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+#~ msgid "Restored just now: the drafts are back."
+#~ msgstr "Restored just now: the drafts are back."
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now: the drafts are back. Undo puts them back in Trash."
+msgstr "Restored just now: the drafts are back. Undo puts them back in Trash."
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now."
+msgstr "Restored just now."
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -5182,6 +5198,10 @@ msgstr "Retry the handoff brief"
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Retry undoing applying {name}"
 msgstr "Retry undoing applying {name}"
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Retry undoing the restore of {title}"
+msgstr "Retry undoing the restore of {title}"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Retry Work"
@@ -6761,6 +6781,7 @@ msgstr "Undid change to Work {0}."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"
@@ -6805,6 +6826,10 @@ msgstr "Undo rename of {name}"
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo restore of {name}"
 msgstr "Undo restore of {name}"
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Undo restore of {title}"
+msgstr "Undo restore of {title}"
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped applying {name}: the tree changed since."

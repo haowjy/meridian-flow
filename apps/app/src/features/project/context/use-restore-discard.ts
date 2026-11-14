@@ -17,7 +17,8 @@ export type RestorableDiscard = {
 /** Where one Discard's restore stands here; none until it is pressed. */
 export type DiscardRestoreState =
   | { kind: "restoring" }
-  | { kind: "restored" }
+  /** `branchId`: the Work's current branch, where the drafts came back (absent: already back). */
+  | { kind: "restored"; branchId?: string }
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "failed" };
 
@@ -54,7 +55,7 @@ export function useRestoreDiscard(projectId: string) {
         run.status === "pending"
           ? { kind: "restoring" }
           : answer?.answer === "ok" || answer?.answer === "gone"
-            ? { kind: "restored" }
+            ? { kind: "restored", ...(answer.branchId ? { branchId: answer.branchId } : {}) }
             : answer?.answer === "returned" && answer.why
               ? { kind: "returned", why: answer.why }
               : { kind: "failed" },
