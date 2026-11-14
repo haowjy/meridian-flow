@@ -136,6 +136,10 @@ async function containerGrant(
   return isFileAccessDenied(grant) ? fileAccessDeniedError("move", grant, path) : grant;
 }
 
+function livePort(deps: ToolWiringDeps, call: ToolCall) {
+  return contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
+}
+
 /**
  * The live move or delete, its tree entry recorded inside the mutation's own transaction. The
  * placement before is read just ahead of it. The port acts on the document by id, so a rename or
@@ -149,9 +153,7 @@ async function commitLive(
   source: FileRef & { documentId: DocumentId },
   ctx: ToolHandlerContext,
 ): Promise<{ handle: string; uri: string } | WriteToolErrorOutput> {
-  const port = contextPortForThread(deps.contextPorts, call.context.resolution, {
-    liveWrites: true,
-  });
+  const port = livePort(deps, call);
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
@@ -213,6 +215,7 @@ async function commitLive(
       destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
       name: typed.slice(slash + 1),
       origin,
+      linksFlushed: true,
       ...(position ? { position } : {}),
       inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
     },
@@ -349,6 +352,10 @@ export async function runNamespaceCommand(
       drafted ||= container.destination.kind === "draft";
     }
   }
+  // The mover flushes stale link derivations before it locks, on connections of its own, so
+  // a move that runs as a command flushes before the claim.
+  if (input.command === "move" && !drafted)
+    await livePort(deps, call).flushMoveLinks(contextAreaOf(source.uri));
   return settle(async () => {
     const result = await runWithEditGrants(deps.fileAccess, grants, () =>
       drafted

@@ -7,6 +7,7 @@ import type {
 import type { Database } from "@meridian/database";
 import { documentCommands } from "@meridian/database/schema";
 import {
+  currentDrizzleDb,
   isInDrizzleTransaction,
   joinRootTransactionsInAmbient,
   runInDrizzleTransaction,
@@ -26,7 +27,7 @@ export function createDrizzleModelEdits(
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {
     const ids = modelEditIds(key);
-    const found = await lookupCommand(db, {
+    const found = await lookupCommand(currentDrizzleDb(db), {
       commandId: ids.commandId,
       accountId: key.accountId,
       digest: ids.digest,
@@ -96,11 +97,12 @@ export function createDrizzleModelEdits(
     },
 
     async resolve(key) {
-      if (isInDrizzleTransaction())
-        throw new Error("Resolving a model edit waits on other transactions; it cannot join one");
       const ids = modelEditIds(key);
-      // The insert waits on a transaction still holding the key, then conflicts with its row.
-      await db
+      // Recovery calls this inside the finalizer's thread-lock transaction, so it joins the
+      // ambient one: a transaction of its own would need a second connection while the first
+      // holds the lock. The insert waits on a transaction still holding the key, then
+      // conflicts with its row.
+      await currentDrizzleDb(db)
         .insert(documentCommands)
         .values({
           id: ids.commandId,

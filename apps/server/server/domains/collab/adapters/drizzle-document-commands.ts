@@ -7,10 +7,12 @@ import { eq } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
+  isInDrizzleTransaction,
   joinRootTransactionsInAmbient,
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import {
   type CommandLookup,
   type CommandLookupKey,
@@ -26,12 +28,15 @@ export function createDrizzleDocumentCommands(db: Database): DocumentCommands {
     async lookup(key) {
       return lookupCommand(currentDrizzleDb(db), key);
     },
-    run(envelope, effect, refusal = () => undefined) {
-      return runInDrizzleTransaction(db, async () => {
+    async run(envelope, effect, refusal = () => undefined) {
+      const topLevel = !isInDrizzleTransaction();
+      const result = await runInDrizzleTransaction(db, async () => {
         joinRootTransactionsInAmbient();
         bindEditsToCommand(envelope.commandId);
         return runCommandWithinTx(db, envelope, effect, refusal);
       });
+      if (topLevel) await testHook("command.afterCommit");
+      return result;
     },
   };
 }

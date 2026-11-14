@@ -446,6 +446,11 @@ export interface ContextLocationChange {
   origin?: WriteProvenance;
   operation?: ContextOperationInput<"move">;
   /**
+   * The caller ran `flushMoveLinks` for this area already. A move run inside a command
+   * transaction sets it: the flush needs connections of its own, so it ran before the claim.
+   */
+  linksFlushed?: boolean;
+  /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
    * the move (the model's edit history) commits or rolls back with it.
    */
@@ -623,6 +628,12 @@ export interface ContextPort {
     area: string,
     change: ContextLocationChange,
   ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /**
+   * Derives the links of every stale document in `area`'s scope, so the move that follows
+   * rewrites current ones. `commitWriterLocation` does this itself unless `linksFlushed`.
+   */
+  flushMoveLinks(area: string): Promise<void>;
 
   /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
   delete(

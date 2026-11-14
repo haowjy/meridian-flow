@@ -22,6 +22,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
+import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -410,38 +411,45 @@ export async function dispatchToolCall(
   const persistedMetadata = execResult.metadata;
   const persistedResult = execResult.result;
 
+  await testHook("block.beforeStore");
   const persistedToolResult = await deps.delivery.storeUnderLease(ctx.lease, () =>
-    persistAndAppendEvents(deps.persistenceDeps, ctx.threadId, async () => {
-      const block = contentForBlockInput({
-        turnId: ctx.currentTurn.id,
-        ...(execResult.blockId ? { id: execResult.blockId } : {}),
-        blockType: "tool_result",
-        sequence: ctx.blockSeqRef.value++,
-        content: {
-          toolCallId: execResult.toolCallId,
-          content: persistedContent,
-          result: persistedResult,
-          ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
-          ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
-        },
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [
-          { type: "block.upserted", block },
-          {
-            type: "tool.result",
+    persistAndAppendEvents(
+      deps.persistenceDeps,
+      ctx.threadId,
+      async () => {
+        const block = contentForBlockInput({
+          turnId: ctx.currentTurn.id,
+          ...(execResult.blockId ? { id: execResult.blockId } : {}),
+          blockType: "tool_result",
+          sequence: ctx.blockSeqRef.value++,
+          content: {
             toolCallId: execResult.toolCallId,
             content: persistedContent,
             result: persistedResult,
-            isError: persistedIsError,
+            ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
-        ],
-      };
-    }),
+          status: "complete",
+        });
+        return {
+          result: localBlockFromEvent(block),
+          events: [
+            { type: "block.upserted", block },
+            {
+              type: "tool.result",
+              toolCallId: execResult.toolCallId,
+              content: persistedContent,
+              result: persistedResult,
+              isError: persistedIsError,
+              ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
+            },
+          ],
+        };
+      },
+      { afterEvents: () => testHook("block.duringStore") },
+    ),
   );
+  await testHook("block.afterStore");
   // The model is shown exactly the result stored above, so its evidence is handed over only now:
   // a cancelled or timed-out call never reaches this point, and an edit's was recorded in its own
   // transaction.

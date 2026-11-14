@@ -27,7 +27,8 @@ lock and under the caller's session claim (no lease check). Every path that ends
 an assistant turn recovers: the run's close, the orphan repair, and the spawn
 report repair. `createCommandRecovery` (`loop/command-recovery.ts`) takes each
 `tool_use` of the turn with no `tool_result` whose registration has `documentCommand`,
-in call order, resolves its command and stores the result block under
+in call order, resolves its command (`resolve` joins the finalizer's transaction: a connection of
+its own would wait on the thread lock the first holds) and stores the result block under
 `modelEditIds(key).blockId` (the outcome's result, or "did not run" for `never`). Other
 tools' open calls keep the request-time stub.
 

@@ -66,6 +66,7 @@ import type {
   GenerateResult,
   Gateway as LlmGateway,
 } from "@meridian-flow/gateway";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -908,6 +909,7 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentTurn.responseCount;
   const toolCalls = collectToolCalls(result);
+  await testHook("response.beforeStore");
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
     input.inboxAckIds,
