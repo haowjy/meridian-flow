@@ -17,15 +17,16 @@ An update with a deletion, a type or anything but `ContentAny` comes back whole.
 updates, the last keeps the original's shape (a SyncStep2 stays one) so the receiver's own
 bookkeeping happens once. Frames under 16 KB are not decoded.
 
-## Rebuild (`connect.ts`)
+## Recovery (`connect.ts`)
 
-After a close with `4210` the copy's `replace()` keeps the records the copy held (`carried()`) and
-gives an empty document under a new client id, and once the server's state has arrived
-(`onSynced`) the records the new copy lacks (by record id) are appended again, then
-`settleCarried()`. The first rebuild appends them in one update (an honest client's rebuild is one
-admission, never a stream that meets the rate limit). When the server's refusal names a
-record (the close reason is `list-rebuild:<record id>`; `admit` returns the record in its whole
-refusal), that record is given up on (`onRejected`) and the rest go again in one update, so one
-hostile record cannot starve the honest ones behind it. A refusal about the update's own
-structure names none: after more than three rebuilds within a minute all the carried records are
-given up on, so the copy cannot rebuild forever.
+After a close with `4212` the copy's `replace(carried, listId)` keeps the records the copy held
+(`carried()`) and gives an empty document under a new client id; once the server's state has
+arrived (`onSynced`) the records the new copy lacks (by record id) are appended in one update,
+then `settleCarried()`. A record `clientMayWrite` refuses is not appended: it is what a client of
+another build wrote, and `onDropped` reports the lot. `recovering` stays set until the server
+has taken the appended records (`onUnsyncedChanges` reaching 0), so a second `4212` in that
+window is `broken` and nothing loops; a later fault is a new recovery.
+
+A close with `4213` names the list the room serves: `replace([], id)`, nothing carried, since the
+old records name nodes of a list that is gone. The id also arrives as the room's first stateless
+message for a copy that has none, and goes on the socket URL as `?list=`.

@@ -26,7 +26,6 @@ import {
   toolActivityPhrase,
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
-import type { OwnerNames } from "./document-display-name";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
@@ -262,7 +261,7 @@ export function toolRowFailed(tool: ToolView): boolean {
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): string {
+export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -508,10 +507,7 @@ function fileGivenLine(file: ReadFile): string {
 }
 
 function DocumentFailureText({ tool }: { tool: ToolView }) {
-  const names = useOwnerNames();
-  return (
-    <div className="text-compact text-destructive">{documentToolFailureCopy(tool, names)}</div>
-  );
+  return <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>;
 }
 
 function readPath(tool: ToolView): string | undefined {

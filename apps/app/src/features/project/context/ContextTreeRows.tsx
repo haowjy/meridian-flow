@@ -253,12 +253,7 @@ function DirRow({
           revealActions
           trailing={
             dir.namespaceFailure && !env.refusalNotice ? (
-              <NamespaceFailureMark
-                failure={dir.namespaceFailure}
-                move={Boolean(dir.namespaceRepairMove)}
-                reason={dir.failureReason}
-                folder
-              />
+              <NamespaceFailureMark reason={dir.failureReason} folder />
             ) : env.changed?.has(dir.entryId) ? (
               <DraftChangeMark />
             ) : null
@@ -267,8 +262,6 @@ function DirRow({
             dir.namespaceFailure && env.refusalNotice ? (
               <RowNotice depth={depth}>
                 <EntryRefusalNotice
-                  failure={dir.namespaceFailure}
-                  move={Boolean(dir.namespaceRepairMove)}
                   reason={dir.failureReason}
                   folder
                   actions={interaction.actions}
@@ -368,11 +361,7 @@ function FileRow({
         revealActions
         trailing={
           file.namespaceFailure && !env.refusalNotice ? (
-            <NamespaceFailureMark
-              failure={file.namespaceFailure}
-              move={Boolean(file.namespaceRepairMove)}
-              reason={file.failureReason}
-            />
+            <NamespaceFailureMark reason={file.failureReason} />
           ) : env.changed?.has(file.documentId) ? (
             <DraftChangeMark />
           ) : null
@@ -381,8 +370,6 @@ function FileRow({
           file.namespaceFailure && env.refusalNotice ? (
             <RowNotice depth={depth}>
               <EntryRefusalNotice
-                failure={file.namespaceFailure}
-                move={Boolean(file.namespaceRepairMove)}
                 reason={file.failureReason}
                 actions={interaction.actions}
                 onAction={interaction.onAction}

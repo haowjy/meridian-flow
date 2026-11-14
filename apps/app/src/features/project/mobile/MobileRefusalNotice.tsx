@@ -79,8 +79,6 @@ function RefusedDocument({
           <RenameField options={interaction.rename} />
         ) : file.namespaceFailure ? (
           <EntryRefusalNotice
-            failure={file.namespaceFailure}
-            move={Boolean(file.namespaceRepairMove)}
             reason={file.failureReason}
             actions={interaction.actions}
             onAction={interaction.onAction}

@@ -35,7 +35,7 @@ export type TreeDestination = Readonly<{
 }>;
 
 /** What the server refused of the writer's own work, shown on the row it concerns. */
-export type NamespaceFailure = "delete" | "set-location" | "create";
+export type NamespaceFailure = "create";
 
 export type TreeFailure = {
   namespaceFailure: NamespaceFailure;

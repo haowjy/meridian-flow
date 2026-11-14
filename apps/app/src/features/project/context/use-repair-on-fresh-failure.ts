@@ -1,5 +1,5 @@
 /**
- * Offers a refused rename's repair field once, as the refusal arrives. A failure
+ * Offers a dropped create's repair field once, as the drop arrives. A failure
  * that was already there when the row mounted (a reload, or collapsing and expanding
  * a parent) is not offered again, and neither is one that lands while the writer
  * is typing elsewhere: the field never takes focus from another input. The failure
@@ -7,7 +7,6 @@
  */
 
 import { useEffect } from "react";
-import type { TreeEntry } from "@/core/project-tree/tree-view";
 
 const FRESH_MS = 5_000;
 const offered = new Set<number>();
@@ -28,14 +27,4 @@ export function useRepairOnFreshFailure(failedAt: number | undefined, openRepair
     if (Date.now() - failedAt > FRESH_MS || anotherInputIsActive()) return;
     openRepair();
   }, [failedAt, openRepair]);
-}
-
-/** All Files and Scratch rows distinguish move refusal from name-only repair. */
-export function useEntryRenameRepair(entry: TreeEntry, openRepair: () => void, allowed = true) {
-  useRepairOnFreshFailure(
-    allowed && entry.namespaceFailure === "set-location" && !entry.namespaceRepairMove
-      ? entry.namespaceFailureAt
-      : undefined,
-    openRepair,
-  );
 }

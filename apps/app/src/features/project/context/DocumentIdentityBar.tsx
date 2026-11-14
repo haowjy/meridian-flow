@@ -82,10 +82,10 @@ export function DocumentIdentityBar({
     chatId: location.chatId,
   });
   const file = tree?.findDocument(document.documentId) ?? null;
-  // A refused delete has no placement to repair here; a refused create and a refused move do.
+  // A create the server dropped is repaired here by choosing a place.
   const failure = file?.namespaceFailure;
   const repair =
-    file && failure && failure !== "delete" && file.failureRecord
+    file && failure && file.failureRecord
       ? {
           kind: failure,
           record: file.failureRecord,
@@ -192,11 +192,10 @@ export function DocumentIdentityBar({
                   setFieldOpen(true);
                 }}
               >
-                <NamespaceFailureMark failure={repair.kind} labelled />
+                <NamespaceFailureMark labelled />
               </button>
             ) : (
               <NamespaceFailureMark
-                failure={repair.kind}
                 message={repair.kind === "create" ? undefined : passiveFailure}
               />
             )

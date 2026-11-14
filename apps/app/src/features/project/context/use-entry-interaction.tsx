@@ -13,7 +13,6 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { type DragEntry, dragEntry } from "./entry-drag/entry";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
-import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
 export type EntryCapabilities = readonly Exclude<
   EntryAction,
@@ -107,7 +106,6 @@ export function useEntryInteraction({
     ...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined),
     ...(node.failureRecord ? (["dismiss"] as const) : []),
   ];
-  useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
