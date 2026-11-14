@@ -23,7 +23,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
-import { pausedAppend, rebaseLive } from "./phase4.mts";
+import { pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
 
 const KEYS = 20;
 
@@ -110,7 +110,7 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no DraftCasConflictError, one appendRows per frame`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no DraftCasConflictError, one appendRows per frame`,
   async run(harness) {
     // One sequence point per frame (design §9): today's revision miss, retried inside the frame
     // as `DraftCasConflictError`, would show as a second `appendRows` call.
@@ -159,6 +159,8 @@ export const twoProcessFrames: Probe = {
     observe("frames", { admitted, failures });
     observe("tokens", { durable, rooms });
     // `lock_timeout` plays no part here: an append waits for the row as long as a holder holds it.
+    // Wall time is reported, not asserted: it tracks the machine. The structural claim, one
+    // sequence point per frame, is the `appendRowsCalls` check below.
     observe("latency", {
       wallMs: latency(wall),
       waitMs: latency(appends.map((append) => append.waitMs)),
@@ -168,7 +170,6 @@ export const twoProcessFrames: Probe = {
     });
     assert.equal(appendRowsCalls, 2 * KEYS, "a frame retried its sequence point");
     assert.ok(!Object.keys(failures).some((name) => name.startsWith("DraftCasConflictError")));
-    assert.ok(Math.max(...wall) < 1_000, "a frame took a second or more");
     assert.equal(admitted, 2 * KEYS);
     assert.deepEqual(
       { durable, rooms },
@@ -265,8 +266,8 @@ export const twoProcessCompaction: Probe = {
       const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release.open();
       await pause.done.wait;
-      // The compaction delivers after its own commit returns.
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      // The compaction delivers after its own commit returns, so wait for the room, not a sleep.
+      const deliveredMs = await roomHolds(f.a.room, "FOREIGN", 10_000, "room A, FOREIGN");
       const durable = await harness.readDraft(f.draftId);
       const room = roomText(f.a);
       const next = await type(f.a, f.draftId, " NEXT");
@@ -275,6 +276,7 @@ export const twoProcessCompaction: Probe = {
         tail: durable.tail,
         durableHasForeign: durable.text.includes("FOREIGN"),
         roomHasForeign: room.includes("FOREIGN"),
+        deliveredMs,
       });
       observe("next", next);
       assert.equal(durable.tail, 0);
