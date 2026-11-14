@@ -41,7 +41,6 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
