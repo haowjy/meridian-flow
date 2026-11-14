@@ -128,6 +128,7 @@ function harness(
   const threadProject = vi.fn(async () => projectId);
   const runClaim = createInMemoryRunClaim();
   const service = createUserTurnAdmission({
+    chatMedia: { keep: async () => null },
     runClaim,
     records: {
       lookup,

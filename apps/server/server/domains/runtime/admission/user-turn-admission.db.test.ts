@@ -137,6 +137,7 @@ if (!RUN) {
       const uploadIntake = createDrizzleUploadIntakeRepository(firstDb, NO_PROJECT_HINTS);
       const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
+        chatMedia: { keep: async () => null },
         runClaim: createInMemoryRunClaim(),
         records,
         availability: {
@@ -510,6 +511,7 @@ if (!RUN) {
         claimExpiresAt: new Date(0),
       });
       const service = createUserTurnAdmission({
+        chatMedia: { keep: async () => null },
         records,
         runClaim: createDrizzleRunClaim(firstDb),
         availability: {

@@ -284,6 +284,7 @@ import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createChatMedia } from "./runtime-host/chat-media.js";
 import { createHostEffects } from "./runtime-host/host-effects.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
@@ -1060,6 +1061,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
+    chatMedia: createChatMedia({ identities: ports.uploadIdentity, objects: ports.objectStore }),
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,

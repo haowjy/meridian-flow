@@ -50,6 +50,39 @@ export function createContextMediaResolver(deps: {
     return link.value === null ? bytesSource(key, mediaType, sizeBytes) : { url: link.value };
   }
 
+  /** A stored file as the request can use it; null when its preview can't be told apart from missing. */
+  async function resolvedMedia(file: {
+    key: string;
+    mediaType: string;
+    sizeBytes: number;
+    name: string;
+    mayHavePreview: boolean;
+    window: LinkWindow;
+  }): Promise<ResolvedMedia | null> {
+    const previewKey = previewObjectKey(file.key);
+    let preview: ResolvedMedia["preview"];
+    if (file.mayHavePreview) {
+      const head = await deps.objects.readHead(previewKey, 0);
+      if (head.ok) preview = { mediaType: PREVIEW_MIME_TYPE, sizeBytes: head.value.sizeBytes };
+      else if (head.error.code !== "not_found") return null;
+    }
+    return {
+      mediaType: file.mediaType,
+      sizeBytes: file.sizeBytes,
+      name: file.name,
+      ...(preview ? { preview } : {}),
+      source: (variant, transport) => {
+        const [key, type, size] =
+          variant === "preview" && preview
+            ? [previewKey, preview.mediaType, preview.sizeBytes]
+            : [file.key, file.mediaType, file.sizeBytes];
+        return transport === "link"
+          ? linkOrBytes(key, type, size, file.window)
+          : bytesSource(key, type, size);
+      },
+    };
+  }
+
   return {
     diagnose(input) {
       emitEvent(deps.eventSink, {
@@ -60,8 +93,23 @@ export function createContextMediaResolver(deps: {
         payload: { projectId: input.projectId, reason: input.reason },
       });
     },
-    async resolve(context, reference, window) {
+    async resolve(context, part, window) {
       try {
+        const reference = part.ref;
+        if (part.chatCopy) {
+          // The writer's own picture in their own chat: no placement or grant, and an upload that
+          // is deleted or purged changes nothing here.
+          const mediaType = part.mediaType;
+          return resolvedMedia({
+            key: part.chatCopy.key,
+            mediaType,
+            sizeBytes: part.sizeBytes,
+            name: part.name,
+            // A copy records no preview flag; a missing preview object reads as none.
+            mayHavePreview: !UNIVERSAL_IMAGE_TYPES.has(mediaType),
+            window,
+          });
+        }
         const placed = await deps.availability.placed(
           { projectId: context.projectId as never, documentIds: [reference.documentId] },
           { userId: context.actorUserId },
@@ -85,31 +133,14 @@ export function createContextMediaResolver(deps: {
         if (identity.sizeBytes === null) return null;
         const originalKey = objectStoreKeyFromStorageUrl(identity.storageUrl);
         if (!originalKey) return null;
-        const originalSize = identity.sizeBytes;
-
-        let preview: ResolvedMedia["preview"];
-        const previewKey = previewObjectKey(originalKey);
-        if (isImage && !UNIVERSAL_IMAGE_TYPES.has(mediaType) && identity.hasPreview) {
-          const head = await deps.objects.readHead(previewKey, 0);
-          if (head.ok) preview = { mediaType: PREVIEW_MIME_TYPE, sizeBytes: head.value.sizeBytes };
-          else if (head.error.code !== "not_found") return null;
-        }
-
-        return {
+        return await resolvedMedia({
+          key: originalKey,
           mediaType,
-          sizeBytes: originalSize,
+          sizeBytes: identity.sizeBytes,
           name: identity.name,
-          ...(preview ? { preview } : {}),
-          source: (variant, transport) => {
-            const [key, type, size] =
-              variant === "preview" && preview
-                ? [previewKey, preview.mediaType, preview.sizeBytes]
-                : [originalKey, mediaType, originalSize];
-            return transport === "link"
-              ? linkOrBytes(key, type, size, window)
-              : bytesSource(key, type, size);
-          },
-        };
+          mayHavePreview: isImage && !UNIVERSAL_IMAGE_TYPES.has(mediaType) && identity.hasPreview,
+          window,
+        });
       } catch (error) {
         if (error instanceof MediaResolutionError) throw error;
         throw new MediaResolutionError("Media resolution failed", { cause: error });

@@ -15,6 +15,7 @@ export {
 export { putDerivedObject } from "./derived-object.js";
 export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export {
+  chatMediaPrefix,
   createObjectStorageUrl,
   derivedObjectKeys,
   drawObjectKey,
