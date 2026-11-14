@@ -9,11 +9,13 @@
  * The projection reads tokens and (for positions) node sizes only. Unchanged nodes are never touched
  * beyond `nodeSize`, so a caller that retains PM nodes between edits pays for the changed region.
  */
+import { NESTING_ATTRS } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { type ComposeMode, composeHunks, type SpanPatch } from "./compose.js";
+import { correspond } from "./correspond.js";
 import { Dsu } from "./dsu.js";
 import type { BlockDiff, Hunk, HunkKind } from "./hunks.js";
-import { hunkKind } from "./hunks.js";
+import { diffBlocks, hunkKind } from "./hunks.js";
 import { isBlockTok, isWordTok, type Side, type Tok } from "./tokens.js";
 
 /** Words of unchanged text that keep two hunks apart; a block start counts as one word. */
@@ -38,6 +40,18 @@ export interface ReviewHunk {
   inserted: { from: number; to: number } | null; // positions in the draft doc, drawn green
   anchor: number; // draft position where the red widget sits
   kind: HunkKind;
+  /**
+   * What the hunk changed in its blocks' attributes, for the painter. `only`: no text or mark changed,
+   * so there is no before and after text to draw. `nested`: draft positions of blocks whose nesting
+   * (marker, indent, bar) changed.
+   */
+  attributes?: { only: boolean; nested: number[] };
+  /**
+   * For a table both sides kept (same id) whose rows and cells pair one for one: the changes inside its
+   * cells, each placed in the cell, to paint instead of the whole table. The hunk is still the whole
+   * table to Apply, Discard and the count.
+   */
+  inner?: ReviewHunk[];
   /** Expanded paint for changed block attributes: this replacement plus unchanged context, excluding other hunks. */
   formatContext?: { removed: ProseMirrorJSON[]; inserted: BlockSpan[] };
 }
@@ -304,6 +318,8 @@ function descend<T>(root: ContentMemo<T>, keys: Iterable<object>): ContentMemo<T
   return memo;
 }
 type HunkContent = Pick<ReviewHunk, "removed" | "kind"> & {
+  /** `ReviewHunk.attributes`, with `nested` as token offsets from the hunk's start in the draft. */
+  attributes?: { only: boolean; nested: number[] };
   context?: { removed: ProseMirrorJSON[]; ranges: Array<BlockSpan & { baseFrom: number }> };
 };
 const hunkContents: ContentMemo<Map<string, HunkContent>> = { next: new WeakMap() };
@@ -333,6 +349,7 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
     content = {
       removed: tokensToJSON(diff.base.toks.slice(h.from, h.to)),
       kind: hunkKind(diff.base.toks, h),
+      ...attributeChange(diff, h),
       ...(ranges &&
         tokens && {
           context: {
@@ -366,6 +383,11 @@ function reviewHunk(
     context.ranges[0].to === diff.base.starts[diff.base.blockOf[h.from] + 1] - h.from &&
     context.ranges[0].to === diff.draft.starts[diff.draft.blockOf[h.sfrom] + 1] - h.sfrom;
   const continues = h.to > h.from && !isBlockTok(diff.base.toks[h.from]);
+  const inner = cellChanges(diff, h, pos);
+  const attributes = content.attributes && {
+    only: content.attributes.only,
+    nested: content.attributes.nested.map((k) => pos.start(h.sfrom + k)),
+  };
   return {
     index,
     baseTokens: { from: h.from, to: h.to },
@@ -374,6 +396,8 @@ function reviewHunk(
     inserted,
     anchor: inserted ? inserted.from : pos.gap(h.sfrom, continues),
     kind: content.kind,
+    ...(attributes && { attributes }),
+    ...(inner && { inner: inner.map((part) => ({ ...part, index })) }),
     ...(content.context && {
       formatContext: {
         removed: content.context.removed,
@@ -389,6 +413,92 @@ function reviewHunk(
       },
     }),
   };
+}
+/**
+ * The changes inside a table a hunk replaced by its own edited copy: rows and cells pair by id, and each
+ * cell's blocks are diffed by themselves, so the paint lands in the cell. Undefined when the hunk is not
+ * such a replacement, or the rows or cells differ in number or attributes: the table is then one change
+ * to paint whole.
+ */
+function cellChanges(diff: BlockDiff, h: Hunk, pos: DraftPositions): ReviewHunk[] | undefined {
+  const [was, now] = [diff.base.toks[h.from], h.ins[0]];
+  if (h.to !== h.from + 1 || h.ins.length !== 1 || was.kind !== "atom" || now.kind !== "atom")
+    return undefined;
+  const changes = containerChanges(was.node, now.node, pos.start(h.sfrom));
+  return changes?.length ? changes : undefined;
+}
+
+const children = (node: PMNode) => {
+  const out: PMNode[] = [];
+  node.forEach((child) => {
+    out.push(child);
+  });
+  return out;
+};
+
+const sameAttrs = (a: PMNode, b: PMNode) =>
+  Object.keys(a.attrs).every(
+    (k) => k === "id" || JSON.stringify(a.attrs[k]) === JSON.stringify(b.attrs[k]),
+  );
+
+/** Changes inside `draft`, which starts at `at` in the draft document and is `base` edited. */
+function containerChanges(base: PMNode, draft: PMNode, at: number): ReviewHunk[] | undefined {
+  if (base.type !== draft.type || !sameAttrs(base, draft)) return undefined;
+  const [bk, dk] = [children(base), children(draft)];
+  // A cell holds the blocks that carry text: they are diffed as a document of their own.
+  if (!dk[0]?.isBlock || dk[0].isTextblock || dk[0].isLeaf) {
+    const diff = diffBlocks(bk, dk);
+    const starts = [at + 1];
+    for (const block of dk) starts.push((starts.at(-1) as number) + block.nodeSize);
+    const pos = new DraftPositions(diff.draft, starts);
+    return diff.hunks.map((h, i) => reviewHunk(diff, i, pos, hunkContent(diff, h)));
+  }
+  const pairs = correspond(bk, dk, { byId: true });
+  if (bk.length !== dk.length || pairs.moved.size || bk.some((_, i) => pairs.partner[i] !== i))
+    return undefined;
+  const out: ReviewHunk[] = [];
+  let childAt = at + 1;
+  for (let i = 0; i < dk.length; i++) {
+    const inner = containerChanges(bk[i], dk[i], childAt);
+    if (!inner) return undefined;
+    out.push(...inner);
+    childAt += dk[i].nodeSize;
+  }
+  return out;
+}
+
+/** What a hunk changed in its blocks' attributes; nothing when no block token differs. */
+function attributeChange(diff: BlockDiff, h: Hunk): Pick<HunkContent, "attributes"> {
+  const isBlock = (t: Tok) => t.kind === "block" || t.kind === "atom";
+  const was: number[] = [];
+  for (let p = h.from; p < h.to; p++) if (isBlock(diff.base.toks[p])) was.push(p);
+  const now: number[] = [];
+  h.ins.forEach((t, k) => {
+    if (isBlock(t)) now.push(k);
+  });
+  if (was.length !== now.length) return {};
+  const nested: number[] = [];
+  let changed = false;
+  was.forEach((p, n) => {
+    const [before, after] = [diff.base.toks[p], h.ins[now[n]]];
+    if (before.key === after.key) return;
+    changed = true;
+    if (
+      before.kind === "block" &&
+      after.kind === "block" &&
+      NESTING_ATTRS.some(
+        (name) =>
+          JSON.stringify(before.node.attrs[name]) !== JSON.stringify(after.node.attrs[name]),
+      )
+    )
+      nested.push(now[n]);
+  });
+  if (!changed) return {};
+  // A "format" hunk pairs its tokens one for one; only block and atom tokens may differ in it.
+  const only =
+    hunkKind(diff.base.toks, h) === "format" &&
+    h.ins.every((t, k) => isBlock(t) || t.key === diff.base.toks[h.from + k].key);
+  return { attributes: { only, nested } };
 }
 
 // ---------- content ----------
