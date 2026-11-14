@@ -10,6 +10,8 @@ import { anchorRange } from "../../anchors";
 import { defaultDiagramProvider } from "../../diagrams";
 import { acceptsInlineImage } from "../../images";
 import { engageObject } from "../../objects";
+import { replaceBlock } from "../block-type";
+import { afterList } from "../nesting";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 
 const TABLE_COLUMNS = 3;
@@ -89,10 +91,10 @@ function diagramInsertion(): SlashInsertion {
 }
 
 type SlashTarget =
-  /** The block the writer typed `/` in becomes the new node. */
-  | { mode: "convert"; from: number; to: number; block: SlashBlock }
-  /** The block keeps its text and the new node lands after it. */
-  | { mode: "insert-after"; pos: number; block: SlashBlock }
+  /** The block the writer typed `/` in becomes the new node, keeping its id and place. */
+  | { mode: "convert"; pos: number; block: SlashBlock }
+  /** The block keeps its text and `node`, already placed, lands after it. */
+  | { mode: "insert-after"; pos: number; node: PMNode; block: SlashBlock }
   /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number }
   /** The trigger's own block is listed, quoted, or taken out of either in place. */
@@ -114,25 +116,6 @@ function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
   return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
 }
 
-/** Where the list the caret's block sits in ends: the position after its last block, and that block's index among its siblings. Null when the block is in no list. */
-function listRunEnd($pos: ResolvedPos): { index: number; pos: number } | null {
-  const depth = $pos.depth;
-  if (depth === 0) return null;
-  const parent = $pos.node(depth - 1);
-  const siblings: PMNode[] = [];
-  parent.forEach((child) => {
-    siblings.push(child);
-  });
-  const facts = nestNodes(siblings);
-  const index = $pos.index(depth - 1);
-  if (facts[index]?.steps[0]?.type !== "list") return null;
-  let end = index;
-  while (facts[end + 1]?.steps[0]?.type === "list" && !facts[end + 1].steps[0].opens) end += 1;
-  let pos = $pos.start(depth - 1);
-  for (let i = 0; i <= end; i += 1) pos += siblings[i].nodeSize;
-  return { index: end, pos };
-}
-
 /** Where the chosen node goes, decided from the document AFTER the `/` and its filter text are gone — so "is this block empty" is a plain question about the block rather than arithmetic on the trigger's range. */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
   const type = doc.type.schema.nodes[block.node.type as string];
@@ -145,21 +128,28 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
     $pos.parent.type.name === "paragraph" &&
     $pos.parent.content.size === 0 &&
     $pos.node(depth - 1).canReplaceWith(index, index + 1, type);
-  if (convertible) {
-    return { mode: "convert", from: $pos.before(depth), to: $pos.after(depth), block };
-  }
+  if (convertible) return { mode: "convert", pos: $pos.before(depth), block };
 
-  // Land after the whole list the block sits in, so a block asked for from inside a
-  // bullet does not split the list, then take the first level that will hold the node,
-  // stopping inside the cell when there is one.
+  // Land after the whole list the block sits in, inside the quotes around it, so a block asked
+  // for from a bullet does not split the list; then take the first level that will hold the
+  // node, stopping inside the cell when there is one.
+  const node = doc.type.schema.nodeFromJSON(block.node);
   const floor = cellFloor($pos);
-  const list = listRunEnd($pos);
-  for (let level = $pos.depth; level > floor; level -= 1) {
+  for (let level = depth; level > floor; level -= 1) {
     const parent = $pos.node(level - 1);
-    const atBlock = level === $pos.depth && list !== null;
-    const insertIndex = atBlock ? list.index + 1 : $pos.indexAfter(level - 1);
+    if (level === depth) {
+      const siblings = parent.children;
+      const landing = afterList(nestNodes(siblings), index, node);
+      let after = $pos.start(level - 1);
+      for (let i = 0; i <= landing.last; i += 1) after += siblings[i].nodeSize;
+      if (parent.canReplaceWith(landing.last + 1, landing.last + 1, type)) {
+        return { mode: "insert-after", pos: after, node: landing.node, block };
+      }
+      continue;
+    }
+    const insertIndex = $pos.indexAfter(level - 1);
     if (parent.canReplaceWith(insertIndex, insertIndex, type)) {
-      return { mode: "insert-after", pos: atBlock ? list.pos : $pos.after(level), block };
+      return { mode: "insert-after", pos: $pos.after(level), node, block };
     }
   }
   return null;
@@ -215,31 +205,20 @@ export function applySlashCommand(
     return true;
   }
 
-  const node = editor.schema.nodeFromJSON(target.block.node);
-  const start = target.mode === "convert" ? target.from : target.pos;
+  const start = target.pos;
   const applied = editor
     .chain()
     .focus()
     .deleteRange(range)
     .command(({ tr, dispatch }) => {
       if (!dispatch) return true;
-
-      if (target.mode === "convert") {
-        const current = tr.doc.nodeAt(target.from);
-        // Same node name: retype in place, so the block keeps its Yjs element
-        // and its alignment; only the attributes the entry names (a heading's level,
-        // a list's nesting) are the writer's choice.
-        if (current?.type === node.type) {
-          tr.setNodeMarkup(target.from, undefined, {
-            ...current.attrs,
-            ...target.block.node.attrs,
-          });
-        } else {
-          tr.replaceWith(target.from, target.to, node);
-        }
-      } else tr.insert(target.pos, node);
-
-      landCaret(tr, start, node.nodeSize, target.block.caret);
+      const made =
+        target.mode === "convert" ? editor.schema.nodeFromJSON(target.block.node) : target.node;
+      // The entry's own attributes (a heading's level, a fence's language) are the writer's
+      // choice; the block keeps the rest, its id and its place among them.
+      if (target.mode === "convert") replaceBlock(tr, start, made, target.block.node.attrs ?? {});
+      else tr.insert(start, made);
+      landCaret(tr, start, tr.doc.nodeAt(start)?.nodeSize ?? made.nodeSize, target.block.caret);
       return true;
     })
     .run();

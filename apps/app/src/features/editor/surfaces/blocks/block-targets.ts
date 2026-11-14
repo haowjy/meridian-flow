@@ -17,7 +17,7 @@
  * the move itself is testable without a view.
  */
 
-import { type BlockFacts, extentOf, nestNodes } from "@meridian/prosemirror-schema";
+import { type BlockFacts, extentOf, isBodyText, nestNodes } from "@meridian/prosemirror-schema";
 import { Fragment, type Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { moveUnder } from "@/core/editor/extensions/nesting";
@@ -248,13 +248,7 @@ export function deleteBlockTransaction(
     if (!paragraph) return null;
     const only = run.nodes.length === 1 ? run.nodes[0] : null;
     // An empty heading or item is not "already empty": deleting it leaves body text.
-    if (
-      only?.type === paragraph &&
-      only.attrs.level == null &&
-      only.attrs.path == null &&
-      only.content.size === 0
-    )
-      return null;
+    if (only && isBodyText(only) && only.content.size === 0) return null;
     const tr = state.tr.replaceWith(run.pos, run.end, paragraph.create());
     return tr.setSelection(TextSelection.near(tr.doc.resolve(run.pos + 1))).scrollIntoView();
   }
