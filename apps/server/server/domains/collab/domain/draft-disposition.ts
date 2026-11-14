@@ -35,7 +35,8 @@ export interface DraftDispositionView {
   projection: ReviewProjection | null;
   classifications: ReadonlyMap<string, ChangeClassification>;
   applyRecord: readonly ApplyEntry[];
-  parts: readonly (DraftReceiptPart & { disposition: PartDisposition })[];
+  /** `waiting`: the part is a member of a change that waits in an open draft. */
+  parts: readonly (DraftReceiptPart & { disposition: PartDisposition; waiting: boolean })[];
 }
 
 const schema = buildDocumentSchema();
@@ -58,7 +59,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         projection: null,
         classifications: new Map(),
         applyRecord: [],
-        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded" })),
+        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded", waiting: false })),
       };
     }
     assertReadableDraft(draft);
@@ -94,6 +95,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         applyRecord,
         parts: parts.map((part, index) => ({
           ...part,
+          waiting: part.status !== "applied" && draft.status === "active" && pending.has(index),
           disposition:
             part.status === "applied"
               ? "applied"

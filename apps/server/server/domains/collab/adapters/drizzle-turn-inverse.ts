@@ -211,12 +211,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       try {
         for (const documentId of ids) {
           const removal = removals.get(documentId) ?? null;
-          // A discard released the document's bytes; a delete kept them, and its drafts that
-          // outlived it plan their inverse over the retained live history.
-          const released = removal?.reason === "discarded";
-          const { doc: live, room: liveRoomName } = released
-            ? { doc: new Y.Doc({ gc: false }), room: null }
-            : await materialize(documentId);
+          // A delete keeps the document's bytes, and its drafts that outlived it plan their
+          // inverse over the retained live history.
+          const { doc: live, room: liveRoomName } = await materialize(documentId);
           await testHook("inverse.afterCaptureRead");
           facts.push({
             documentId,
@@ -271,6 +268,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               doc,
               name: name?.handle ?? "No Work",
               frozen: documentDraft.lifecycle !== "active",
+              waitingRemoved: [],
             });
           }
           document.drafts = drafts;
@@ -304,7 +302,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       const views = new Map<string, DraftDispositionView | null>();
       for (const draftId of dispositionDraftIds) views.set(draftId, await readDisposition(draftId));
+      const waitingParts = new Set<string>();
       const byPart = new Map<string, StoredInversePart["disposition"]>();
+      for (const view of views.values())
+        for (const part of view?.parts ?? [])
+          if (part.waiting) waitingParts.add(`${part.editId}:${part.ordinal}`);
       for (const view of views.values())
         for (const part of view?.parts ?? [])
           if (
@@ -319,6 +321,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const evidence = views.get(draftId);
           if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
             throw new InverseAttemptMiss();
+          draft.waitingRemoved = (evidence.projection?.groups ?? []).map(
+            (group) => group.excerpt.removed,
+          );
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
@@ -328,6 +333,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
+            waiting: waitingParts.has(`${part.editId}:${part.ordinal}`),
             disposition:
               classified === "applied"
                 ? classified
