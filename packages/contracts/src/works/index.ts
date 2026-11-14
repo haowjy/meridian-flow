@@ -23,8 +23,9 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
-  pendingChangeCount: number;
+  /** Documents and folders this Work's active branch changes (the Works badge is their sum), as the server stores them; never derive from visible rows. */
+  pendingDocumentCount: number;
+  pendingFolderCount: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -81,7 +82,8 @@ export const workSchema = z.object({
   archivedAt: z.string().nullable(),
   defaultAiWriteMode: z.enum(["draft", "direct"]),
   entityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
-  pendingChangeCount: z.number().int().nonnegative(),
+  pendingDocumentCount: z.number().int().nonnegative(),
+  pendingFolderCount: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastActivityAt: z.string(),

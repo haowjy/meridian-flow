@@ -14,7 +14,7 @@ import type { DraftOwnerHint } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branches, works } from "@meridian/database/schema";
-import { and, inArray, ne, sql } from "drizzle-orm";
+import { type AnyColumn, and, inArray, ne, or, sql } from "drizzle-orm";
 import {
   type BranchDraftRef,
   branchDraftRefs,
@@ -197,25 +197,30 @@ export function createWorkProjectionMutation(input: {
     const hints = new Map<string, DraftOwnerHint>();
     const wake = (projectId: DraftOwnerHint["projectId"], owner: DraftOwnerHint["owner"]) =>
       hints.set(owner, { type: "draft-owner-hint", projectId, owner });
-    if (branchCounts.length) {
-      const counts = sql`(case ${branches.id} ${sql.join(
-        branchCounts.map(
-          ({ branchId, count }) => sql`when ${branchId}::uuid then ${count}::integer`,
-        ),
+    // One CASE per column: each branch's or Work's documents and folders changed, stored side by
+    // side so a surface can name each (a Work moves when either does).
+    const perKey = (column: AnyColumn, keys: readonly string[], value: (key: string) => number) =>
+      sql`(case ${column} ${sql.join(
+        keys.map((key) => sql`when ${key}::uuid then ${value(key)}::integer`),
         sql` `,
       )} end)`;
+    if (branchCounts.length) {
+      const byBranch = new Map(branchCounts.map((row) => [row.branchId, row]));
+      const ids = [...byBranch.keys()];
+      const documents = perKey(branches.id, ids, (id) => byBranch.get(id)?.documents ?? 0);
+      const folders = perKey(branches.id, ids, (id) => byBranch.get(id)?.folders ?? 0);
       const movedBranches = new Set(
         (
           await tx
             .update(branches)
-            .set({ pendingChangeCount: counts })
+            .set({ pendingDocumentCount: documents, pendingFolderCount: folders })
             .where(
               and(
-                inArray(
-                  branches.id,
-                  branchCounts.map(({ branchId }) => branchId),
+                inArray(branches.id, ids),
+                or(
+                  ne(branches.pendingDocumentCount, documents),
+                  ne(branches.pendingFolderCount, folders),
                 ),
-                ne(branches.pendingChangeCount, counts),
               ),
             )
             .returning({ id: branches.id })
@@ -231,18 +236,31 @@ export function createWorkProjectionMutation(input: {
           );
     }
     if (workIds.length > 0) {
-      // A Work's total is the sum over its active branches.
-      const totals = new Map<string, number>();
+      // A Work's totals are the sums over its active branches.
+      const totals = new Map<string, { documents: number; folders: number }>();
       for (const row of branchCounts)
-        if (row.workId) totals.set(row.workId, (totals.get(row.workId) ?? 0) + row.count);
-      const count = sql`(case ${works.id} ${sql.join(
-        workIds.map((workId) => sql`when ${workId}::uuid then ${totals.get(workId) ?? 0}::integer`),
-        sql` `,
-      )} end)`;
+        if (row.workId) {
+          const total = totals.get(row.workId) ?? { documents: 0, folders: 0 };
+          totals.set(row.workId, {
+            documents: total.documents + row.documents,
+            folders: total.folders + row.folders,
+          });
+        }
+      const documents = perKey(works.id, workIds, (id) => totals.get(id)?.documents ?? 0);
+      const folders = perKey(works.id, workIds, (id) => totals.get(id)?.folders ?? 0);
       const movedWorks = await tx
         .update(works)
-        .set({ pendingChangeCount: count, entityRevision: sql`${works.entityRevision} + 1` })
-        .where(and(inArray(works.id, workIds), ne(works.pendingChangeCount, count)))
+        .set({
+          pendingDocumentCount: documents,
+          pendingFolderCount: folders,
+          entityRevision: sql`${works.entityRevision} + 1`,
+        })
+        .where(
+          and(
+            inArray(works.id, workIds),
+            or(ne(works.pendingDocumentCount, documents), ne(works.pendingFolderCount, folders)),
+          ),
+        )
         .returning({ id: works.id, projectId: works.projectId });
       for (const work of movedWorks)
         wake(work.projectId, draftOwnerKey({ kind: "work", workId: work.id }));

@@ -11,8 +11,10 @@
  *   or a document in no view, hides the text changes everywhere.
  *
  * A write and its undo net to no row, so they net to no item. The Work's review count adds the
- * folders its rows change (`pendingFolders`); the open browser counts the same two sets from its
- * own replay, and this stored count serves the Works it has not opened.
+ * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
+ * each; the open browser counts the same two sets from its own replay (`changedFolders` in
+ * `@meridian/project-tree`, which also writes a row for a folder whose change cannot land), and
+ * this stored count serves the Works it has not opened.
  */
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
@@ -52,10 +54,9 @@ export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
 }
 
 /**
- * The folders a Work's tree changes (created, moved, renamed, deleted), as `(branch_id, folder_id)`:
- * the other half of the Work's review count, the stored fallback for a Work whose list this
- * client has not loaded. The Changes list counts a folder it heads; this counts every changed
- * folder, so the two agree except for a changed folder inside another changed folder.
+ * The folders a Work's tree changes (created, moved, renamed, deleted, or unable to land), as
+ * `(branch_id, folder_id)`: every changed folder is one item of the Changes list and one of the
+ * count.
  */
 export function pendingFolders(branches: SQL): SQL {
   return sql`SELECT c.branch_id, c.document_id AS folder_id FROM (${treeChanges(branches, "folder")}) c`;

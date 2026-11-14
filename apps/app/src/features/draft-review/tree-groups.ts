@@ -6,10 +6,10 @@
  */
 import { t } from "@lingui/core/macro";
 import {
-  branchRows,
+  changedFolders,
   isSourceRoot,
-  projectedRows,
-  type SkipReason,
+  type LandingFault,
+  landingFaults,
   type TreeProjection,
   type TreeRecord,
 } from "@meridian/project-tree";
@@ -21,12 +21,6 @@ export type FolderChange =
   /** `was`: the name before a rename. `moved`: into a folder by name, or `top` of its source. */
   | { kind: "changed"; was: string | null; moved: { into: string } | "top" | null };
 
-/** Why a pending change cannot land: the replay skips it, or live deleted what it changes. */
-export type LandingFault =
-  | { kind: "inside-itself"; into: string }
-  | { kind: "gone" }
-  | { kind: "deleted-live" };
-
 export type ChangeGroup<T> = {
   /** The changed folder heading the group; null for documents under no changed folder. */
   folder: {
@@ -36,69 +30,63 @@ export type ChangeGroup<T> = {
     /** Every changed folder the group takes: this one and the changed folders inside it. */
     folders: string[];
   } | null;
+  /** The documents whose nearest changed folder is this one. */
   files: T[];
+  /** The changed folders inside this one, each a row of its own under it. */
+  inner: ChangeGroup<T>[];
 };
 
-/** A Work's tree changes: its view, its pending records, what cannot land, and the folders it changes. */
+/** The group's documents, then those of the folders inside it: the order its rows show. */
+export function groupFiles<T>(group: ChangeGroup<T>): T[] {
+  return [...group.files, ...group.inner.flatMap(groupFiles)];
+}
+
+/** The group and the groups inside it, in the order their rows show. */
+export function groupsOf<T>(groups: readonly ChangeGroup<T>[]): ChangeGroup<T>[] {
+  return groups.flatMap((group) => [group, ...groupsOf(group.inner)]);
+}
+
+/**
+ * A Work's tree changes across the lists its branch spans (its project's and its owner's
+ * account list): the nodes of its views, its pending records, what cannot land, and the folders
+ * it changes.
+ */
 export type WorkTreeChanges = {
-  work: TreeProjection;
+  work: Pick<TreeProjection, "nodes" | "skipped">;
   pending: readonly TreeRecord[];
   faults: ReadonlyMap<string, LandingFault>;
-  /**
-   * The folders the Work shows differently from live, as the server's rows do. A folder made and
-   * deleted in the Work, or moved and moved back, is no change: Undo of a drafted change leaves
-   * its records and no difference.
-   */
+  /** `changedFolders`: each is a row of the Changes list and one in the Work's review count. */
   folders: ReadonlySet<string>;
 };
 
-export function workTreeChanges(
-  live: TreeProjection,
-  work: TreeProjection,
-  pending: readonly TreeRecord[],
-): WorkTreeChanges {
-  const differing = branchRows(projectedRows(live), projectedRows(work));
-  const folders = new Set<string>();
-  for (const record of pending) {
-    const row = differing.get(record.node);
-    if (row?.kind === "folder" && !(row.existsOnlyInDraft && row.deleted)) folders.add(record.node);
-  }
-  return { work, pending, faults: landingFaults(work, pending), folders };
-}
+/** One list's replays: live, the Work's view of it, and the Work's pending records in it. */
+export type ListChanges = {
+  live: TreeProjection;
+  work: TreeProjection;
+  pending: readonly TreeRecord[];
+};
 
-const GONE: ReadonlySet<SkipReason> = new Set([
-  "missing-node",
-  "missing-parent",
-  "parent-not-folder",
-  "purged",
-]);
-
-/** Each node's fault among the Work's pending records. */
-export function landingFaults(
-  work: TreeProjection,
-  pending: readonly TreeRecord[],
-): Map<string, LandingFault> {
-  const byId = new Map(pending.map((record) => [record.id, record]));
+export function workTreeChanges(lists: readonly ListChanges[]): WorkTreeChanges {
   const faults = new Map<string, LandingFault>();
-  for (const { record: id, reason } of work.skipped) {
-    const record = byId.get(id);
-    if (!record) continue;
-    if (reason === "cycle" && record.type === "move")
-      faults.set(record.node, {
-        kind: "inside-itself",
-        into: work.nodes.get(record.parent)?.displayName ?? "",
-      });
-    else if (GONE.has(reason)) faults.set(record.node, { kind: "gone" });
+  const folders = new Set<string>();
+  for (const { live, work, pending } of lists) {
+    const found = landingFaults(work, pending);
+    for (const [node, fault] of found) faults.set(node, fault);
+    for (const folder of changedFolders(live, work, pending, found)) folders.add(folder);
   }
-  for (const record of pending) {
-    const node = work.nodes.get(record.node);
-    if (node?.keptByPending && !faults.has(record.node))
-      faults.set(record.node, { kind: "deleted-live" });
-  }
-  return faults;
+  // Node ids are unique across lists, so the views' nodes read as one.
+  return {
+    work: {
+      nodes: new Map(lists.flatMap(({ work }) => [...work.nodes])),
+      skipped: lists.flatMap(({ work }) => work.skipped),
+    },
+    pending: lists.flatMap(({ pending }) => pending),
+    faults,
+    folders,
+  };
 }
 
-function folderChange(work: TreeProjection, records: readonly TreeRecord[]): FolderChange {
+function folderChange(work: WorkTreeChanges["work"], records: readonly TreeRecord[]): FolderChange {
   if (records.some((record) => record.type === "create")) return { kind: "new" };
   if (records.at(-1)?.type === "delete") return { kind: "deleted" };
   const renamed = records.find((record) => record.type === "rename");
@@ -117,10 +105,11 @@ function folderChange(work: TreeProjection, records: readonly TreeRecord[]): Fol
 }
 
 /**
- * The drafted documents arranged under the outermost folder the Work changes above each, in
- * the list's order; documents under none come first, ungrouped. A changed folder no drafted
- * document stands under (a rename alone), or whose change cannot land, is a group with no
- * files: what is inside it is not going where it goes.
+ * The drafted documents arranged under the nearest folder the Work changes above each, those
+ * folders nested in the changed folder above them, in the list's order; documents under none
+ * come first, ungrouped. A changed folder no drafted document stands under (a rename alone), or
+ * whose change cannot land, is a group with no files: what is inside it is not going where it
+ * goes. A folder that cannot land stays a top-level group with its reason.
  */
 export function groupByChangedFolder<T extends { documentId: string }>(
   files: readonly T[],
@@ -131,37 +120,46 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     if (!folders.has(record.node)) continue;
     byFolder.set(record.node, [...(byFolder.get(record.node) ?? []), record]);
   }
-  const outermost = (documentId: string): string | null => {
-    let found: string | null = null;
-    let at = work.nodes.get(documentId)?.parent;
+  const nearest = (from: string | undefined): string | null => {
+    let at = from;
     for (let hops = 0; at && !isSourceRoot(at) && hops < 10_000; hops += 1) {
-      if (byFolder.has(at) && !faults.has(at)) found = at;
+      if (byFolder.has(at) && !faults.has(at)) return at;
       at = work.nodes.get(at)?.parent;
     }
-    return found;
+    return null;
   };
-  const loose: T[] = [];
-  const grouped = new Map<string, T[]>();
-  for (const file of files) {
-    const folder = outermost(file.documentId);
-    if (folder === null) loose.push(file);
-    else grouped.set(folder, [...(grouped.get(folder) ?? []), file]);
-  }
-  const heads = [...byFolder.keys()].filter(
-    (folder) => work.nodes.has(folder) && (faults.has(folder) || outermost(folder) === null),
-  );
-  return [
-    ...(loose.length > 0 ? [{ folder: null, files: loose }] : []),
-    ...heads.map((id) => ({
+  const groups = new Map<string, ChangeGroup<T>>();
+  for (const [id, records] of byFolder)
+    groups.set(id, {
       folder: {
         id,
-        change: folderChange(work, byFolder.get(id) ?? []),
+        change: folderChange(work, records),
         fault: faults.get(id) ?? null,
-        folders: [id, ...[...byFolder.keys()].filter((inner) => outermost(inner) === id)],
+        folders: [id],
       },
-      files: grouped.get(id) ?? [],
-    })),
-  ];
+      files: [],
+      inner: [],
+    });
+  const loose: T[] = [];
+  for (const file of files) {
+    const home = nearest(work.nodes.get(file.documentId)?.parent);
+    if (home === null) loose.push(file);
+    else groups.get(home)?.files.push(file);
+  }
+  const heads: ChangeGroup<T>[] = [];
+  for (const [id, group] of groups) {
+    const above = faults.has(id) ? null : nearest(work.nodes.get(id)?.parent);
+    if (above === null) heads.push(group);
+    else groups.get(above)?.inner.push(group);
+  }
+  // Each group takes the folders inside it along, deepest first.
+  const gather = (group: ChangeGroup<T>): string[] => {
+    const inside = group.inner.flatMap(gather);
+    if (group.folder) group.folder.folders = [group.folder.id, ...inside];
+    return group.folder?.folders ?? inside;
+  };
+  for (const head of heads) gather(head);
+  return [...(loose.length > 0 ? [{ folder: null, files: loose, inner: [] }] : []), ...heads];
 }
 
 /** "Can't move into Book One: it is inside this folder now." */

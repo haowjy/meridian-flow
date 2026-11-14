@@ -31,38 +31,40 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       ].filter((clause) => clause !== null);
       const active = sql`SELECT b.id FROM branches b WHERE b.status = 'active'
         AND (${sql.join(owned, sql` OR `)})`;
-      // One row per active branch and changed document or folder, whichever arm made it pending.
+      // One row per active branch: its documents and its folders changed, whichever arm made each pending.
       const rows = await currentDrizzleDb(db).execute<{
         branch_id: string;
         project_id: string;
         work_id: string | null;
         root_thread_id: string | null;
-        count: number;
+        documents: number;
+        folders: number;
       }>(sql`
         SELECT b.id::text AS branch_id, b.project_id::text AS project_id,
                b.origin_work_id::text AS work_id, b.origin_root_thread_id::text AS root_thread_id,
-               coalesce(c.count, 0)::int AS count
+               coalesce(d.count, 0)::int AS documents, coalesce(f.count, 0)::int AS folders
         FROM branches b
         LEFT JOIN (
-          SELECT p.branch_id, count(DISTINCT p.id) AS count
-          FROM (
-            SELECT branch_id, document_id AS id FROM (${pendingDocuments(active)}) d
-            UNION ALL
-            SELECT branch_id, folder_id AS id FROM (${pendingFolders(active)}) f
-          ) p GROUP BY p.branch_id
-        ) c ON c.branch_id = b.id
+          SELECT p.branch_id, count(DISTINCT p.document_id) AS count
+          FROM (${pendingDocuments(active)}) p GROUP BY p.branch_id
+        ) d ON d.branch_id = b.id
+        LEFT JOIN (
+          SELECT p.branch_id, count(DISTINCT p.folder_id) AS count
+          FROM (${pendingFolders(active)}) p GROUP BY p.branch_id
+        ) f ON f.branch_id = b.id
         WHERE b.id IN (${active})`);
       return rows.map((row) => ({
         branchId: row.branch_id,
         projectId: row.project_id,
         workId: row.work_id,
         rootThreadId: row.root_thread_id,
-        count: Number(row.count),
+        documents: Number(row.documents),
+        folders: Number(row.folders),
       }));
     },
     async countPendingInProject(projectId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ count: sql<number>`coalesce(sum(${branches.pendingChangeCount}), 0)::int` })
+        .select({ count: sql<number>`coalesce(sum(${branches.pendingDocumentCount}), 0)::int` })
         .from(branches)
         .where(and(eq(branches.projectId, projectId), eq(branches.status, "active")));
       return row?.count ?? 0;

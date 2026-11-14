@@ -11,7 +11,8 @@ export type BranchPendingCount = {
   /** Exactly one of these two is set. */
   workId: string | null;
   rootThreadId: string | null;
-  count: number;
+  documents: number;
+  folders: number;
 };
 
 export type WorkBranchPendingCounts = {

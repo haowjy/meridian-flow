@@ -1206,7 +1206,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
       pendingDrafts: {
-        count: (projectId) => ports.documentSync.draftReview.pendingChangeCount(projectId),
+        count: (projectId) => ports.documentSync.draftReview.pendingDocumentCount(projectId),
       },
       documents: exportDocumentsFrom(ports.documentSync),
       files: ports.fileAccess,

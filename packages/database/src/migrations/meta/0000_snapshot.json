@@ -4032,8 +4032,15 @@
           "primaryKey": false,
           "notNull": false
         },
-        "pending_change_count": {
-          "name": "pending_change_count",
+        "pending_document_count": {
+          "name": "pending_document_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pending_folder_count": {
+          "name": "pending_folder_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -5443,8 +5450,15 @@
           "notNull": true,
           "default": "1"
         },
-        "pending_change_count": {
-          "name": "pending_change_count",
+        "pending_document_count": {
+          "name": "pending_document_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pending_folder_count": {
+          "name": "pending_folder_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

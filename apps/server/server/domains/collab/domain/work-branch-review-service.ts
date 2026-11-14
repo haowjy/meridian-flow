@@ -100,7 +100,7 @@ export function createWorkBranchReviewService(input: {
         const folders = branchId ? await input.folderRevisions(branchId) : [];
         return { branchId, items, folders, threadTitles };
       },
-      pendingChangeCount: (projectId) => input.pending.countPendingInProject(projectId),
+      pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
       items: (command) => ownerItems(command.owner),
       branchOwner: (branchId) => input.branches.ownerOf(branchId),

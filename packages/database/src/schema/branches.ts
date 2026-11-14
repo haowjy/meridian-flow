@@ -35,7 +35,8 @@ export const branches = pgTable(
      */
     originRootThreadId: uuid("origin_root_thread_id").$type<ThreadId>(),
     /** The branch's pending documents; recounted at commit for every branch a write set locked. */
-    pendingChangeCount: integer("pending_change_count").notNull().default(0),
+    pendingDocumentCount: integer("pending_document_count").notNull().default(0),
+    pendingFolderCount: integer("pending_folder_count").notNull().default(0),
     createdBy: uuid("created_by")
       .$type<UserId>()
       .notNull()

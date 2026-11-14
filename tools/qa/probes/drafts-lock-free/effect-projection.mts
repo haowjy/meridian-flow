@@ -7,7 +7,7 @@
  * or counts a Work. The badge converges within the max wait once typing pauses and eventually
  * while typing.
  *
- * Arms, each on its own draft (the Works badge is the Work's stored `pending_change_count`,
+ * Arms, each on its own draft (the Works badge is the Work's stored `pending_document_count`,
  * its notice is its `entity_revision`):
  * 1. one key into a fresh draft: pending 1 and the Work's revision moved within 1 s;
  * 2. 3 s of keys at 50 ms: pending within the 1 s max wait after the typing pauses, and exactly

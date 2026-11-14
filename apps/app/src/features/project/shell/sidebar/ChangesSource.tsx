@@ -2,9 +2,17 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { pendingRecords } from "@meridian/project-tree";
+import type { LandingFault } from "@meridian/project-tree";
 import { Folder as FolderIcon, Layers } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useProjectTreeViews, useTreeList } from "@/client/query/useProjectTree";
@@ -35,9 +43,9 @@ import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
   groupByChangedFolder,
-  type LandingFault,
+  groupFiles,
+  groupsOf,
   landingFaultSentence,
-  landingFaults,
 } from "@/features/draft-review/tree-groups";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -50,7 +58,7 @@ import { fileKindIcon } from "../../context/context-file-icon";
 import { EDITOR_CONTEXT_SCHEMES, schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../../review-launch";
-import { useShellTreeVersion } from "../../tree-version";
+import { reviewCount, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
 
@@ -89,13 +97,13 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changeCount : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
-    const count = changed ?? (picked ? picked.pendingChangeCount : (lineageCount ?? 0));
+    const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
     const others = (works ?? [])
       .filter((other) => other.id !== work?.id && !isWorkArchived(other))
-      .filter((other) => other.pendingChangeCount > 0)
+      .filter((other) => reviewCount(shell, other) > 0)
       .sort((a, b) => Number(b.id === chatWorkId) - Number(a.id === chatWorkId));
     const other = count === 0 ? others[0] : undefined;
-    const elsewhere = other ? { work: other, count: other.pendingChangeCount } : null;
+    const elsewhere = other ? { work: other, count: reviewCount(shell, other) } : null;
     // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
@@ -119,7 +127,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       offered: Boolean(ownerKey) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed]);
+  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed, shell]);
 }
 
 /**
@@ -198,9 +206,9 @@ export function ChangesSource({
     });
   const groups = tree
     ? groupByChangedFolder(listedFiles, tree)
-    : [{ folder: null, files: listedFiles }];
+    : [{ folder: null, files: listedFiles, inner: [] }];
   // Grouped, the list's order is the groups' order: every index below reads this one.
-  const files = groups.flatMap((group) => group.files);
+  const files = groups.flatMap(groupFiles);
   // Apply needs what it would apply: a new file, a move or delete, or a read draft's changes.
   const applicable = (file: ReviewFileTarget) =>
     (!file.draft.hasDraft && file.draft.isNew) ||
@@ -216,8 +224,8 @@ export function ChangesSource({
     restoring: readonly ReviewFileTarget[];
   } | null>(null);
   // The folder changes Apply all takes along: every one that can land.
-  const changedFolders = groups.flatMap((group) =>
-    group.folder && !group.folder.fault ? group.folder.folders : [],
+  const changedFolders = groupsOf(groups).flatMap((group) =>
+    group.folder && !group.folder.fault ? [group.folder.id] : [],
   );
   // A folder changed alone lists no document, and is still a change to review.
   const hasFiles = files.length > 0 || groups.some((group) => group.folder);
@@ -318,6 +326,67 @@ export function ChangesSource({
         : null),
   );
 
+  /** A group's rows: its folder, then its documents and the folders inside it one step in. */
+  const renderGroup = (group: ChangeGroup<ReviewFileTarget>, depth: number): ReactNode[] => {
+    const { folder } = group;
+    const own = groupFiles(group);
+    const head = folder ? (
+      <FolderGroupRow
+        key={`folder:${folder.id}`}
+        branchId={drafts.branchId}
+        folder={folder}
+        depth={depth}
+        open={!folded.has(folder.id)}
+        onToggle={() => fold(folder.id)}
+        entry={tree?.entry(folder.id) ?? null}
+        files={own}
+        controller={controller}
+        touch={touch}
+        canApply={controller.canApply && !folder.fault && own.every(applicable)}
+        onApply={(name) => startApply(own, folder.folders, name)}
+        onDiscard={(name) =>
+          void controller.discardSelection({
+            drafts: draftsOf(own),
+            folders: folder.folders,
+            name,
+          })
+        }
+      />
+    ) : null;
+    if (folder && folded.has(folder.id)) return [head];
+    return [
+      head,
+      ...group.files.map((file) => {
+        const index = files.indexOf(file);
+        return (
+          <Fragment key={file.documentId}>
+            {inList && notice && index === noticeAt ? (
+              <li>
+                <DraftNoticeLine notice={notice} />
+              </li>
+            ) : null}
+            <ChangeRow
+              projectId={projectId}
+              ownerKey={ownerKey}
+              file={file}
+              depth={folder ? depth + 1 : 0}
+              fault={tree?.faults.get(file.documentId) ?? null}
+              textChanges={
+                readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
+              }
+              active={isOpen(file)}
+              canApply={controller.canApply && applicable(file)}
+              controller={controller}
+              touch={touch}
+              onPicked={onPicked}
+            />
+          </Fragment>
+        );
+      }),
+      ...group.inner.flatMap((inner) => renderGroup(inner, depth + 1)),
+    ];
+  };
+
   return (
     <div ref={list} className="contents">
       <SourcePane
@@ -368,66 +437,7 @@ export function ChangesSource({
         ) : null}
         {hasFiles ? (
           <ul className="flex flex-col px-2">
-            {groups.map((group) => {
-              const depth = group.folder ? 1 : 0;
-              const head = group.folder ? (
-                <FolderGroupRow
-                  key={`folder:${group.folder.id}`}
-                  branchId={drafts.branchId}
-                  folder={group.folder}
-                  open={!folded.has(group.folder.id)}
-                  onToggle={() => fold(group.folder?.id ?? "")}
-                  entry={tree?.entry(group.folder.id) ?? null}
-                  files={group.files}
-                  controller={controller}
-                  touch={touch}
-                  canApply={
-                    controller.canApply && !group.folder.fault && group.files.every(applicable)
-                  }
-                  onApply={(name) => startApply(group.files, group.folder?.folders ?? [], name)}
-                  onDiscard={(name) =>
-                    void controller.discardSelection({
-                      drafts: draftsOf(group.files),
-                      folders: group.folder?.folders ?? [],
-                      name,
-                    })
-                  }
-                />
-              ) : null;
-              const shown = group.folder && folded.has(group.folder.id) ? [] : group.files;
-              return [
-                head,
-                ...shown.map((file) => {
-                  const index = files.indexOf(file);
-                  return (
-                    <Fragment key={file.documentId}>
-                      {inList && notice && index === noticeAt ? (
-                        <li>
-                          <DraftNoticeLine notice={notice} />
-                        </li>
-                      ) : null}
-                      <ChangeRow
-                        projectId={projectId}
-                        ownerKey={ownerKey}
-                        file={file}
-                        depth={depth}
-                        fault={tree?.faults.get(file.documentId) ?? null}
-                        textChanges={
-                          readOf(file)?.status === "ready"
-                            ? readOf(file)?.listedChanges.length
-                            : undefined
-                        }
-                        active={isOpen(file)}
-                        canApply={controller.canApply && applicable(file)}
-                        controller={controller}
-                        touch={touch}
-                        onPicked={onPicked}
-                      />
-                    </Fragment>
-                  );
-                }),
-              ];
-            })}
+            {groups.map((group) => renderGroup(group, 0))}
             {inList && notice && noticeAt !== undefined && noticeAt >= files.length ? (
               <li>
                 <DraftNoticeLine notice={notice} />
@@ -658,6 +668,7 @@ function useWorkTree(projectId: string, ownerKey: string) {
 function FolderGroupRow({
   branchId,
   folder,
+  depth,
   entry,
   open,
   onToggle,
@@ -669,6 +680,8 @@ function FolderGroupRow({
   onDiscard,
 }: {
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
+  /** Under its changed folder's row. */
+  depth: number;
   entry: TreeEntry | null;
   /** Its rows show; a click folds them. */
   open: boolean;
@@ -706,6 +719,7 @@ function FolderGroupRow({
     <li data-change-folder={folder.id}>
       <ListRow
         icon={FolderIcon}
+        depth={depth}
         onOpen={onToggle}
         controlProps={files.length > 0 ? { "aria-expanded": open } : undefined}
         trailing={files.length > 0 ? <DisclosureMark open={open} /> : undefined}

@@ -61,7 +61,8 @@ function modelWork(work: Work): ModelWork {
     createdAt,
     updatedAt,
     lastActivityAt,
-    pendingChangeCount,
+    pendingDocumentCount,
+    pendingFolderCount,
   } = work;
   return {
     handle,
@@ -72,7 +73,8 @@ function modelWork(work: Work): ModelWork {
     createdAt,
     updatedAt,
     lastActivityAt,
-    pendingChangeCount,
+    pendingDocumentCount,
+    pendingFolderCount,
   };
 }
 

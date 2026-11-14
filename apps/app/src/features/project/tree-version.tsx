@@ -9,7 +9,7 @@
  * (`review-launch`, a review address), sets the toggle.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
+import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
@@ -21,6 +21,7 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
 import { workDisplayName } from "@/lib/work-name";
 import { useAccountId } from "./context/account-feature-context";
@@ -54,6 +55,21 @@ const ShellTreeVersionContext = createContext<ShellTreeVersion | null>(null);
 
 export function useShellTreeVersion(): ShellTreeVersion | null {
   return useContext(ShellTreeVersionContext);
+}
+
+/**
+ * A Work's review count, the one every surface shows: the Changes list's items when the shell has
+ * the Work's list open (a change made offline or in flight is in it already), else the stored
+ * count the Works list carries, which the open list agrees with once it syncs.
+ */
+export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
+  return shell?.ownerKey === workOwnerKey(work)
+    ? shell.changeCount
+    : work.pendingDocumentCount + work.pendingFolderCount;
+}
+
+export function useWorkReviewCount(work: Work): number {
+  return reviewCount(useShellTreeVersion(), work);
 }
 
 /**
@@ -118,18 +134,26 @@ export function TreeVersionProvider({
     rows,
     work ? workLifecycleState(work) : "active",
   );
-  // The Work's tree changes, from the browser's replay of its view: what the Changes list builds
-  // its folder groups from, including a change not yet admitted (made offline or in flight).
-  const { session, snapshot } = project;
+  // The Work's tree changes, from the browser's replay of its view in each list its branch
+  // spans: what the Changes list builds its folder groups from, including a change not yet
+  // admitted (made offline or in flight).
   const tree = useMemo(() => {
     const draft = draftVersion?.view.draft ?? null;
-    if (!draftVersion || draft === null || !session || !snapshot) return null;
+    if (!draftVersion || draft === null) return null;
     return workTreeChanges(
-      session.replay(LIVE),
-      session.replay(draftVersion.view, draftVersion.pendingText),
-      pendingRecords(snapshot.doc, draft),
+      [project, account].flatMap(({ session, snapshot }) =>
+        session && snapshot
+          ? [
+              {
+                live: session.replay(LIVE),
+                work: session.replay(draftVersion.view, draftVersion.pendingText),
+                pending: pendingRecords(snapshot.doc, draft),
+              },
+            ]
+          : [],
+      ),
     );
-  }, [draftVersion, session, snapshot]);
+  }, [draftVersion, project, account]);
   // Documents from the server's pending drafts, folders from the replay.
   const changeCount = (rows?.length ?? 0) + (tree?.folders.size ?? 0);
   // The nodes the tree marks on Live.

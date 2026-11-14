@@ -19,6 +19,7 @@ import {
   type BranchRow,
   branchRows,
   type CreateRecord,
+  changedFolders,
   changedRows,
   LIVE,
   type ProjectedRow,
@@ -487,12 +488,26 @@ export async function syncRows(
   const kept = [...(await keptBranches(tx, list))];
   const text = await pendingText(tx, kept);
   const drafted = new Map<string, Map<string, ProjectedRow>>();
-  for (const branchId of kept)
-    if (text.has(branchId) || pendingRecords(doc, branchId).length > 0)
-      drafted.set(branchId, shownRows(replayView(doc, { draft: branchId }, text.get(branchId))));
+  const faulted = new Map<string, Set<string>>();
+  for (const branchId of kept) {
+    const pending = pendingRecords(doc, branchId);
+    if (!text.has(branchId) && pending.length === 0) continue;
+    const projection = replayView(doc, { draft: branchId }, text.get(branchId));
+    drafted.set(branchId, shownRows(projection));
+    faulted.set(branchId, changedFolders(live, projection, pending));
+  }
   await dropEndedSources(tx, [liveRows, ...drafted.values()]);
   const next = new Map(
-    [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
+    [...drafted].map(([branchId, rows]) => {
+      const differing = branchRows(liveRows, rows);
+      // A folder whose move cannot land shows as live does and is still a change: its row stands
+      // for it, so the stored count is the one the Changes list shows.
+      for (const id of faulted.get(branchId) ?? []) {
+        const row = rows.get(id);
+        if (row && !differing.has(id)) differing.set(id, { ...row, existsOnlyInDraft: false });
+      }
+      return [branchId, differing] as const;
+    }),
   );
 
   const created =

@@ -90,7 +90,8 @@ export const works = pgTable(
     // The Works badge: documents the Work's active branch changes, as the collab pending
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
-    pendingChangeCount: integer("pending_change_count").notNull().default(0),
+    pendingDocumentCount: integer("pending_document_count").notNull().default(0),
+    pendingFolderCount: integer("pending_folder_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),

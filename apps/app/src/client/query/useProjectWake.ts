@@ -3,6 +3,7 @@
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
  * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
  * for a Work, its row in the Works list: its count and its lifecycle) and the project's sources.
+ * A hint sent while the socket was down is lost: the reconnect marker reads all of them again.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,6 +50,20 @@ export function useProjectWake(projectId: string): void {
     const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
       if (hint.type === "project-chats-hint") {
         refreshChats();
+        // A reconnect (or a Work delete) names no change: hints sent while the socket was down
+        // are gone, so each read a hint would have refreshed is read again.
+        if (hint.recheckTabs) {
+          void repairWorksSnapshot(queryClient, projectId);
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.ownerDraftsOf(projectId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.contextSources(projectId),
+          });
+        }
       } else if (hint.type === "draft-owner-hint") {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
