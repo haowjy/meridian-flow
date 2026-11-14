@@ -8,7 +8,7 @@ import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { RowWord, useHeldRows } from "@/components/app/RowWord";
+import { RowWord, withGone } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
@@ -19,7 +19,7 @@ import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
-import type { WorkDeletion } from "./useWorkDeletion";
+import { takeWorkFocus, type WorkDeletion, type WorkPlace, workPlace } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import {
   WORK_ROW_OPERATIONS,
@@ -78,7 +78,7 @@ export function WorkCollection({
     operation === "archive" || operation === "unarchive"
       ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
       : undefined;
-  const row = ({ work, state, failure }: WorkListEntry): ReactNode => {
+  const row = ({ work, state, failure }: WorkListEntry, place?: WorkPlace): ReactNode => {
     const shared = { work, now, onOpen: () => onOpen(work.id) };
     switch (state) {
       case "creating":
@@ -132,6 +132,7 @@ export function WorkCollection({
                   label={t`Undo delete of ${name}`}
                   sentence={t`Deleted just now. Undo puts it back.`}
                   onAction={() => deletion.undo(work.id)}
+                  focus={{ take: () => takeWorkFocus(work.id), back: () => workRowOf(work.id) }}
                 />
               )
             }
@@ -153,7 +154,7 @@ export function WorkCollection({
                       toggleArchive(work),
                     )
                   }
-                  onDelete={() => deletion.remove(work)}
+                  onDelete={() => deletion.remove(work, place)}
                 />
               }
             />
@@ -223,6 +224,9 @@ export function WorkCollection({
   );
 }
 
+const workRowOf = (workId: string) =>
+  document.querySelector<HTMLElement>(`[data-work-id="${CSS.escape(workId)}"]`);
+
 /**
  * A tab's rows. A Work deleted from this list keeps its place, struck through with its Undo; one
  * deleted elsewhere (its own page) shows its Undo at the top.
@@ -233,28 +237,38 @@ function WorkRows({
   row,
   empty,
 }: {
-  /** Which tab's list, so a Work's place outlives the dialog's remounts. */
+  /** Which tab's list, where a Work deleted from it keeps its place. */
   list: string;
   entries: readonly WorkListEntry[];
-  row: (entry: WorkListEntry) => ReactNode;
+  row: (entry: WorkListEntry, place?: WorkPlace) => ReactNode;
   empty: ReactNode;
 }) {
-  const undo = new Map<string, WorkListEntry>(
-    entries.flatMap((entry) => (entry.state === "undo" ? [[entry.work.id, entry] as const] : [])),
-  );
-  const held = useHeldRows(
-    list,
-    entries.filter((entry) => entry.state !== "undo"),
-    (entry) => entry.work.id,
-    (id) => undo.has(id),
-  );
-  const placed = new Set(held.flatMap(({ key, gone }) => (gone ? [key] : [])));
+  const listed = entries.filter((entry) => entry.state !== "undo");
+  const undo = entries.filter((entry) => entry.state === "undo");
+  const here = (entry: WorkListEntry) => workPlace(entry.work.id)?.list === list;
+  const ids = listed.map((entry) => entry.work.id);
   const rows = [
-    ...[...undo].flatMap(([id, entry]) => (placed.has(id) ? [] : [entry])),
-    ...held.map(({ key, row: entry, gone }) => (gone ? (undo.get(key) ?? entry) : entry)),
+    ...undo.filter((entry) => !here(entry)).map((entry) => ({ entry, place: undefined })),
+    ...withGone(
+      listed,
+      (entry) => entry.work.id,
+      undo.filter(here).map((entry) => ({
+        key: entry.work.id,
+        row: entry,
+        after: workPlace(entry.work.id)?.after ?? [],
+      })),
+    ).map(({ row: entry, gone }) =>
+      gone
+        ? { entry, place: undefined }
+        : { entry, place: { list, after: ids.slice(0, ids.indexOf(entry.work.id)).reverse() } },
+    ),
   ];
   if (!rows.length) return empty;
-  return <RuledList rows={rows.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
+  return (
+    <RuledList
+      rows={rows.map(({ entry, place }) => ({ key: entry.key, node: row(entry, place) }))}
+    />
+  );
 }
 
 function NewWorkButton({ onNew, variant }: { onNew: () => void; variant?: "outline" }) {

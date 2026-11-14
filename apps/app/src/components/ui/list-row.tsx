@@ -52,7 +52,8 @@ type ListRowProps = {
    * browser's. Ignored while `disabled`.
    */
   href?: string;
-  onOpen: () => void;
+  /** Required unless `gone`. */
+  onOpen?: () => void;
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
   /**
@@ -62,6 +63,11 @@ type ListRowProps = {
   selected?: boolean;
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
+  /**
+   * What the row names is gone (deleted, discarded, restored out of this list) while its
+   * `notice` can still bring it back: the name is struck through and the row opens nothing.
+   */
+  gone?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
   /** The main control, when it is a button. */
@@ -114,7 +120,8 @@ export function ListRow({
   onOpen,
   current = false,
   selected = false,
-  disabled,
+  disabled: disabledProp,
+  gone = false,
   depth = 0,
   ref,
   icon: Icon,
@@ -133,6 +140,7 @@ export function ListRow({
   frameProps,
   menu,
 }: ListRowProps) {
+  const disabled = disabledProp || gone;
   const shared = {
     ...controlProps,
     // The list's keyboard stop, and what the frame watches to draw the ring.
@@ -148,7 +156,7 @@ export function ListRow({
       {leading}
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate">
+          <span className={cn("truncate", gone && "text-muted-foreground line-through")}>
             {title}
             {/* A link can't be pressed or selected; its name says it joined the selection. */}
             {selected && href ? <span className="sr-only">{t`, selected`}</span> : null}
@@ -176,7 +184,7 @@ export function ListRow({
           if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
             return;
           event.preventDefault();
-          onOpen();
+          onOpen?.();
         }}
       >
         {content}

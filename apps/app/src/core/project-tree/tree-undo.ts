@@ -28,11 +28,22 @@ export type UndoStep = TreeStep | ApplyStep;
 /** What the writer did; a create shows no notice (the new row says it). */
 export type TreeGesture = "create" | "rename" | "move" | "delete" | "restore";
 
+export type Was = {
+  name: string;
+  kind: "folder" | "document";
+  /** The folder's name, null at the top of a source. */
+  folder: string | null;
+  /** The folder's or the source's id: the parent the tree's rows are listed under. */
+  parent: string;
+  /** The siblings listed before it, nearest first. */
+  after: readonly string[];
+};
+
 export type TreeStep = {
   kind: "tree";
   gesture: TreeGesture;
-  /** Each node's name and folder before the gesture, for what its notice says. */
-  was: ReadonlyMap<string, { name: string; folder: string | null }>;
+  /** Each node as it was before the gesture: what its notice says, and where a gone row stays. */
+  was: ReadonlyMap<string, Was>;
   /** The records the gesture appended, in order. */
   records: readonly string[];
   /** The view it was made in: a press takes back only steps of the view on screen. */
@@ -275,13 +286,16 @@ export async function undoStep(
     return answer === "unapplied";
   }
   step.ended?.();
-  return takeBack(
+  const view = step.draft === null ? LIVE : { draft: step.draft };
+  const name = step.nodes.flatMap((node) => step.was.get(node)?.name ?? []).at(0) ?? "";
+  const undone = takeBack(session, step, view, actor, pendingText);
+  show(
     session,
-    step,
-    step.draft === null ? LIVE : { draft: step.draft },
-    actor,
-    pendingText,
+    undone
+      ? null
+      : saidOf({ kind: "nothing", skipped: [{ kind: "tree", name, nodes: step.nodes }] }),
   );
+  return undone;
 }
 
 /**

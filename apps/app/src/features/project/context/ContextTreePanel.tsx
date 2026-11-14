@@ -37,7 +37,7 @@ import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
-import { useTreeNoticeWords } from "./use-tree-notice-words";
+import { NOWHERE, treePlace, useTreeNoticeWords } from "./use-tree-notice-words";
 
 /** What a row offers in a tree that takes no change: its documents still copy out. */
 const READ_ONLY: EntryCapabilities = ["copy"];
@@ -201,7 +201,8 @@ export function ContextTreePanel({
   const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
-  const notices = useTreeNoticeWords(projectId);
+  const drawn = useMemo(() => (tree ? treePlace(tree, isExpanded) : NOWHERE), [tree, isExpanded]);
+  const notices = useTreeNoticeWords(projectId, drawn);
   const env = useMemo<TreeEnv | null>(
     () =>
       tree && importedTree
@@ -310,6 +311,7 @@ export function ContextTreePanel({
     <SourcePane
       label={schemeLabel(scheme)}
       actions={actions}
+      notice={notices.header}
       drop={drop}
       search={
         <SettledSearchField

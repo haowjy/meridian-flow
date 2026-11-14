@@ -13,10 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { GoneTitle, useHeldRows } from "@/components/app/RowWord";
+import { withGone } from "@/components/app/RowWord";
 import { contentInset, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
-import type { TreeDirectory, TreeEntry, TreeFile, TreeView } from "@/core/project-tree/tree-view";
+import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
   type ImportedTree,
@@ -133,20 +133,27 @@ export function TreeChildren({
     (child) =>
       child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
   );
-  // A row the writer just deleted stays, struck through, until its notice ends.
-  const held = useHeldRows(`tree:${env.projectId}:${parentId}`, shown, rowId, (id) =>
-    env.notices.held(id, "delete"),
-  );
+  const held = withGone(shown, rowId, env.notices.deleted(parentId));
   return (
     <>
-      {held.map(({ row: child, gone }) =>
-        gone && child.origin !== "import" ? (
-          <GoneRow key={rowId(child)} entry={child.node} depth={depth} />
-        ) : child.origin === "import" ? (
+      {held.map((item) => {
+        if (item.gone)
+          return (
+            <ListRow
+              key={item.key}
+              depth={depth}
+              gone
+              icon={item.row.kind === "folder" ? Folder : fileKindIcon(item.row.name)}
+              title={item.row.name}
+              notice={env.notices.word(item.key, true)}
+            />
+          );
+        const child = item.row;
+        return child.origin === "import" ? (
           <PendingTreeRow key={child.id} row={child} depth={depth} />
         ) : child.node.kind === "dir" ? (
           <DirRow
-            key={rowId(child)}
+            key={item.key}
             dir={child.node}
             depth={depth}
             siblings={siblings}
@@ -154,14 +161,14 @@ export function TreeChildren({
           />
         ) : (
           <FileRow
-            key={rowId(child)}
+            key={item.key}
             file={child.node}
             depth={depth}
             siblings={siblings}
             parent={parent}
           />
-        ),
-      )}
+        );
+      })}
       {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
@@ -371,21 +378,6 @@ function FileRow({
         trailing={env.changed?.has(file.documentId) ? <DraftChangeMark /> : null}
       />
     </EntryDestinationPicker>
-  );
-}
-
-/** A row the writer just deleted, struck through in its place, with its Undo. */
-function GoneRow({ entry, depth }: { entry: TreeEntry; depth: number }) {
-  const env = useTreeEnv();
-  return (
-    <ListRow
-      depth={depth}
-      disabled
-      onOpen={() => {}}
-      icon={entry.kind === "dir" ? Folder : fileKindIcon(entry)}
-      title={<GoneTitle>{entry.name}</GoneTitle>}
-      notice={env.notices.word(entry.entryId)}
-    />
   );
 }
 

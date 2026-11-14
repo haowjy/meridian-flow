@@ -176,14 +176,17 @@ the owner's notice holds. Editor Discard is synchronous.
 
 `DraftNotices` (owned by `DraftCommandOwner`, so account-lived) holds one notice per draft
 owner key: the latest Discard with its Undo, or the latest Apply's facts. The writer's tree
-deletes use the same line under a per-project key (`deleteNoticeKey`, surfaces `tree` and
-`landing`; see the context tree's interactions page). A page whose document a Discard took away
+deletes use the same line under a per-project key (`deleteNoticeKey`), only off the sidebar: on
+main's band or Recently opened (`landing`); the sidebar's rows carry their own (see the context
+tree's interactions page). A page whose document a Discard took away
 (a Work's new document) shows the Discard's notice, Undo included, while it holds the document
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
-`RowWord`): every row a Discard took stays struck through with Undo, and each Apply fact (where a
+`RowWord`): every row a Discard took stays struck through with Undo, in the place the list
+showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
+keeps it), and each Apply fact (where a
 document landed, the name a clash gave it, that it came back to the manuscript) sits on its
 document's row as "Applied" or "Renamed" with the sentence. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on

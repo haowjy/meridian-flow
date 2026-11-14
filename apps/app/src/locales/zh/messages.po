@@ -2126,7 +2126,11 @@ msgid "Couldn't delete that Work"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Couldn't delete this chat"
+#~ msgid "Couldn't delete this chat"
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Couldn't delete this chat. Retry tries again."
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -5014,6 +5018,10 @@ msgstr ""
 #: src/features/draft-review/DocumentChangeRows.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Retry changes"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Retry deleting {title}"
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx

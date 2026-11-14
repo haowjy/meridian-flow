@@ -6,7 +6,6 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
-import { GoneTitle } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
@@ -21,7 +20,7 @@ export function WorkRow({
   notice,
 }: {
   /** A Work still being created has no status yet. */
-  work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status">>;
+  work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status" | "id">>;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -38,20 +37,15 @@ export function WorkRow({
     <div className="px-0.5">
       <ListRow
         onOpen={onOpen}
-        disabled={gone}
+        gone={gone}
         notice={notice}
         controlProps={{
           "aria-label": work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`,
+          ...(work.id && !gone ? { "data-work-id": work.id } : {}),
         }}
         title={
           <WorkTitleLine
-            title={
-              gone ? (
-                <GoneTitle>{work.name}</GoneTitle>
-              ) : (
-                <span className="truncate">{work.name}</span>
-              )
-            }
+            title={<span className="truncate">{work.name}</span>}
             status={work.status}
           />
         }

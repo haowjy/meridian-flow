@@ -1,6 +1,8 @@
 /** One project-lifetime owner for Trash restore progress and outcomes, by node id. */
 import { t } from "@lingui/core/macro";
+import type { TrashEntry } from "@meridian/contracts/protocol";
 import { lastSettlements } from "@meridian/project-tree";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -11,7 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useTreeList } from "@/client/query/useProjectTree";
+import type { GoneRow } from "@/components/app/RowWord";
+import { endTreeNotice } from "@/core/project-tree/tree-undo";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { useAccountId } from "./account-feature-context";
 import type { EntryRef } from "./entry-drag/entry";
@@ -26,6 +31,11 @@ export type TrashRestoreState = { kind: "restored" } | { kind: "failed"; message
 /** `restored`: the node is back in the tree, so a view of it in Trash follows it there. */
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
+  /**
+   * The Trash entries the latest restore took, as Trash listed them then: Trash keeps each one,
+   * struck through, while the tree notice still offers that restore's Undo.
+   */
+  restored: readonly GoneRow<TrashEntry>[];
   /** Restores entries to where they were: a `restore` record each; each shows its own outcome. */
   restore: (entries: readonly Restorable[]) => void;
   /**
@@ -51,7 +61,9 @@ export function DocumentTrashRestoreProvider({
   const accountId = useAccountId();
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
+  const queryClient = useQueryClient();
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
+  const [restored, setRestored] = useState<readonly GoneRow<TrashEntry>[]>([]);
   // A restore the list has taken and the server has not answered, by its record's id.
   const awaiting = useRef(new Map<string, Restorable>());
 
@@ -95,6 +107,14 @@ export function DocumentTrashRestoreProvider({
     },
     [setState],
   );
+
+  // Leaving the project is leaving every place its lists' notices speak in.
+  useEffect(() => {
+    const sessions = [projectList.session, accountList.session];
+    return () => {
+      for (const session of sessions) if (session) endTreeNotice(session);
+    };
+  }, [projectList.session, accountList.session]);
 
   // A refusal comes back as a settlement on the `restore` record; until then the entry is restored.
   useEffect(() => {
@@ -148,22 +168,44 @@ export function DocumentTrashRestoreProvider({
     (entries: readonly Restorable[], destination?: TreeDestination) => {
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ ref }) => ref));
+      const listed =
+        queryClient.getQueryData<{ entries: readonly TrashEntry[] }>(
+          projectQueryKeys.trash(projectId),
+        )?.entries ?? [];
+      const ids = new Set(entries.map(({ ref }) => ref.id));
+      setRestored(
+        listed.flatMap((entry, at) =>
+          ids.has(entry.nodeId)
+            ? [
+                {
+                  key: entry.nodeId,
+                  row: entry,
+                  after: listed
+                    .slice(0, at)
+                    .map((each) => each.nodeId)
+                    .reverse(),
+                },
+              ]
+            : [],
+        ),
+      );
       if (!append(entries, destination)) {
         for (const entry of entries) fail(entry);
         return;
       }
       markRestored(entries.map(({ ref }) => ref.id));
     },
-    [append, fail, markRestored],
+    [append, fail, markRestored, queryClient, projectId],
   );
 
   const value = useMemo(
     () => ({
       states,
+      restored,
       restore: (entries: readonly Restorable[]) => restore(entries),
       restoreInto: restore,
     }),
-    [states, restore],
+    [states, restored, restore],
   );
   return <RestoreContext.Provider value={value}>{children}</RestoreContext.Provider>;
 }

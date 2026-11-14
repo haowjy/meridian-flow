@@ -10,7 +10,7 @@ import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce, announceError } from "@/client/stores";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { GoneTitle, RowWord, useHeldRows } from "@/components/app/RowWord";
+import { RowWord, withGone } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -24,13 +24,25 @@ import { displayThreadTitle } from "@/lib/thread-title";
 import { useSectionFold } from "../../context/use-tree-expansion";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
-import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes } from "./chat-deletes";
+import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes, ChatPlace } from "./chat-deletes";
 import type { RowState } from "./chat-groups";
 import { SourcePane } from "./SourcePane";
 import { useChatGroups } from "./use-chat-groups";
 
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
+
+/** Where the chat's row is now: its list and the chats above it there. */
+function placeOf(id: string): ChatPlace | null {
+  const row = document.querySelector(chatSelector(id));
+  const list = row?.closest<HTMLElement>("[data-chat-list]");
+  const key = list?.dataset.chatList;
+  if (!row || !list || !key) return null;
+  const ids = [...list.querySelectorAll<HTMLElement>("[data-chat-id]")].map(
+    (each) => each.dataset.chatId ?? "",
+  );
+  return { list: key, after: ids.slice(0, ids.indexOf(id)).reverse() };
+}
 
 /** Unpinned chats a list shows at first, and adds with each Show more. */
 const PAGE = 20;
@@ -109,9 +121,9 @@ export function ChatsBody({
     });
   };
   // The chat just deleted stays in its place, struck through, with its Undo.
-  const deleted = notice
+  const deleted: DeletedChat = notice
     ? {
-        held: notice.threadId,
+        notice,
         row: () => (
           <DeletedRow
             key={notice.id}
@@ -259,17 +271,22 @@ export function ChatsBody({
 }
 
 /** The chat whose delete is showing: its row stays where it was, struck through. */
-type DeletedChat = { held: string; row: () => ReactNode } | null;
+type DeletedChat = { notice: ChatDeleteNotice; row: () => ReactNode } | null;
 
-/** A list's chats with the deleted one kept in its place. */
-function useWithDeleted<T extends RowChat>(
+/** A list's chats with the deleted one kept where it was, in the list it was in. */
+function withDeleted<T extends RowChat>(
   list: string,
   chats: readonly T[],
   deleted: DeletedChat,
   render: (chat: T) => ReactNode,
 ): ReactNode[] {
-  return useHeldRows(list, chats, chatKey, (key) => key === deleted?.held).map(({ row, gone }) =>
-    gone && deleted ? deleted.row() : render(row),
+  const place = deleted?.notice.place;
+  const gone =
+    deleted && place?.list === list
+      ? [{ key: deleted.notice.threadId, row: deleted, after: place.after }]
+      : [];
+  return withGone(chats, chatKey, gone).map((item) =>
+    item.gone ? item.row.row() : render(item.row),
   );
 }
 
@@ -309,16 +326,22 @@ function PagedChats({
   const page = chats.slice(0, shown);
   const open = chats.find((chat) => chat.id === openId);
   const openPastPage = open !== undefined && !page.includes(open);
-  const pinnedRows = useWithDeleted(`chats:${listKey}:pinned`, pinned, deleted, render);
-  const pageRows = useWithDeleted(`chats:${listKey}`, page, deleted, (chat) => (
+  const pinnedKey = `chats:${listKey}:pinned`;
+  const pageKey = `chats:${listKey}`;
+  const pinnedRows = withDeleted(pinnedKey, pinned, deleted, render);
+  const pageRows = withDeleted(pageKey, page, deleted, (chat) => (
     <div key={chat.id} data-paged-chat>
       {render(chat)}
     </div>
   ));
   return (
     <>
-      {pinnedRows.length > 0 ? <div data-pinned-list>{pinnedRows}</div> : null}
-      <div ref={list}>
+      {pinnedRows.length > 0 ? (
+        <div data-pinned-list data-chat-list={pinnedKey}>
+          {pinnedRows}
+        </div>
+      ) : null}
+      <div ref={list} data-chat-list={pageKey}>
         {pageRows}
         {openPastPage ? render(open) : null}
       </div>
@@ -374,7 +397,7 @@ function FeedRows({
   deleted: DeletedChat;
   empty: ReactNode;
 }) {
-  const rows = useWithDeleted("chats:search", feed.items, deleted, row);
+  const rows = withDeleted("chats:search", feed.items, deleted, row);
   if (feed.isPending)
     return (
       <ListLine status>
@@ -391,7 +414,7 @@ function FeedRows({
   if (!rows.length && !feed.hasNextPage && !feed.isPlaceholderData)
     return empty ? <ListLine>{empty}</ListLine> : null;
   return (
-    <div aria-busy={feed.isFetching || undefined}>
+    <div aria-busy={feed.isFetching || undefined} data-chat-list="chats:search">
       {rows}
       {feed.isFetchNextPageError ? (
         <InlineErrorRow
@@ -427,22 +450,16 @@ function DeletedRow({
   takeFocus: () => boolean;
   onUndo: () => void;
 }) {
-  const undo = useRef<HTMLButtonElement>(null);
-  const latest = useRef(takeFocus);
-  useEffect(() => {
-    if (latest.current() && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
-  }, []);
   const { title } = notice;
   const failed = notice.status === "failed";
   return (
     <div data-chat-delete-notice={notice.threadId}>
       <ListRow
-        disabled
-        onOpen={() => {}}
-        title={<GoneTitle>{title}</GoneTitle>}
+        gone
+        title={title}
         notice={
           <RowWord
-            ref={undo}
+            focus={{ take: takeFocus }}
             word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
             tone={failed ? "warning" : "action"}
             label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
@@ -496,7 +513,8 @@ const ChatRow = memo(function ChatRow({
       } else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
     });
   // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
-  const onDelete = () => (replying ? setAsking(true) : deletes.delete(chat.id, title));
+  const onDelete = () =>
+    replying ? setAsking(true) : deletes.delete(chat.id, title, placeOf(chat.id));
   return (
     <div data-chat-id={chat.id}>
       <TitleEditSlot
@@ -517,6 +535,17 @@ const ChatRow = memo(function ChatRow({
             icon={pinned ? Pin : undefined}
             title={title}
             trailing={state === "idle" ? null : <StateMark state={state} />}
+            notice={
+              refused?.threadId === chat.id ? (
+                <RowWord
+                  tone="warning"
+                  word={<Trans>Retry</Trans>}
+                  label={t`Retry deleting ${title}`}
+                  sentence={t`Couldn't delete this chat. Retry tries again.`}
+                  onAction={() => deletes.delete(chat.id, title, placeOf(chat.id))}
+                />
+              ) : null
+            }
             actions={
               <OverflowMenu
                 dense
@@ -557,13 +586,8 @@ const ChatRow = memo(function ChatRow({
                   onKeep={() => setAsking(false)}
                   onConfirm={() => {
                     setAsking(false);
-                    deletes.delete(chat.id, title);
+                    deletes.delete(chat.id, title, placeOf(chat.id));
                   }}
-                />
-              ) : refused?.threadId === chat.id ? (
-                <InlineErrorRow
-                  message={t`Couldn't delete this chat`}
-                  onRetry={() => deletes.delete(chat.id, title)}
                 />
               ) : null
             }

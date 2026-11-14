@@ -5,7 +5,7 @@ import { Folder } from "lucide-react";
 import { useMemo } from "react";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { GoneTitle, RowWord, useHeldRows } from "@/components/app/RowWord";
+import { RowWord, withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { useEntryMenu } from "../../context/ContextEntryActions";
@@ -17,7 +17,11 @@ import {
 } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
-import { type TreeNoticeWords, useTreeNoticeWords } from "../../context/use-tree-notice-words";
+import {
+  type NoticePlace,
+  type TreeNoticeWords,
+  useTreeNoticeWords,
+} from "../../context/use-tree-notice-words";
 import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
@@ -37,22 +41,36 @@ export function TrashSource({
   drop: SourceDrop;
 }) {
   const query = useDocumentTrash(projectId);
-  const { states, restore } = useDocumentTrashRestore();
+  const { states, restored, restore } = useDocumentTrashRestore();
   const trash = useTrashNavigation();
   const now = useMinuteClock();
-  const entries = query.data?.entries ?? [];
-  const notices = useTreeNoticeWords(projectId);
+  const listed = query.data?.entries;
+  const place = useMemo<NoticePlace>(() => {
+    const held = new Set([...(listed ?? []).map(trashKey), ...restored.map(({ key }) => key)]);
+    return { holds: (node) => held.has(node), parent: () => null, open: () => true };
+  }, [listed, restored]);
+  const notices = useTreeNoticeWords(projectId, place);
+  const entries = listed ?? [];
   // An entry just restored stays, struck through, with its Undo, until the notice ends.
-  const rows = useHeldRows(`trash:${projectId}`, entries, trashKey, (id) =>
-    notices.held(id, "restore"),
+  const rows = withGone(
+    entries,
+    trashKey,
+    restored.filter(({ key }) => notices.restored(key)),
   );
   return (
-    <SourcePane label={t`Trash`} drop={drop}>
+    <SourcePane label={t`Trash`} drop={drop} notice={notices.header}>
       {rows.length > 0 ? (
         <div className="px-2">
           {rows.map(({ row: entry, gone }) =>
             gone ? (
-              <RestoredRow key={entry.nodeId} entry={entry} notices={notices} />
+              <ListRow
+                key={entry.nodeId}
+                gone
+                detail={deletedFrom(entry, documentPlace(entry.scheme, entry.formerPath))}
+                icon={entry.kind === "folder" ? Folder : fileKindIcon(entry.name)}
+                title={entry.name}
+                notice={notices.word(entry.nodeId, true)}
+              />
             ) : (
               <TrashRow
                 key={entry.nodeId}
@@ -101,21 +119,6 @@ export function TrashSource({
 
 /** A Trash entry: its age at the right, where it was deleted from under its name; its menu restores. */
 const trashKey = (entry: TrashEntry) => entry.nodeId;
-
-/** An entry restored just now: struck through in Trash, with the restore's Undo. */
-function RestoredRow({ entry, notices }: { entry: TrashEntry; notices: TreeNoticeWords }) {
-  const location = documentPlace(entry.scheme, entry.formerPath);
-  return (
-    <ListRow
-      disabled
-      detail={deletedFrom(entry, location)}
-      onOpen={() => {}}
-      icon={entry.kind === "folder" ? Folder : fileKindIcon(entry.name)}
-      title={<GoneTitle>{entry.name}</GoneTitle>}
-      notice={notices.word(entry.nodeId)}
-    />
-  );
-}
 
 function TrashRow({
   entry,

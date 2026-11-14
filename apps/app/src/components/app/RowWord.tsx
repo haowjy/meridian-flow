@@ -1,6 +1,7 @@
 import { Check, TriangleAlert } from "lucide-react";
-import { type ReactNode, type Ref, useId, useRef, useState } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 /**
@@ -8,8 +9,8 @@ import { cn } from "@/lib/utils";
  * `notice`), never on a line of its own: "Undo" in jade, or a muted word with a mark ("Moved
  * back", "Applied"). Hover, keyboard focus and a long press show the sentence ("Deleted just now.
  * Undo puts it back."); a click or a tap does the word's one action, and a word with none shows
- * the sentence. The host decides how long it shows: until the writer's next action there, or
- * leaving.
+ * the sentence, which stays until the next tap elsewhere. The host decides how long the word
+ * shows: until the writer's next action there, or leaving.
  */
 export function RowWord({
   word,
@@ -18,6 +19,7 @@ export function RowWord({
   tone = "action",
   onAction,
   pending,
+  focus,
   ref,
 }: {
   word: ReactNode;
@@ -30,19 +32,44 @@ export function RowWord({
   onAction?: () => void;
   /** The action is running: the word stays, inert. */
   pending?: boolean;
+  /**
+   * Focus for a word the writer's own command just made, where the control they pressed is now
+   * gone (a deleted row): `take` says once whether this word takes the focus; `back` names where
+   * it goes once the action brings the row back.
+   */
+  focus?: { take: () => boolean; back?: () => HTMLElement | null };
   ref?: Ref<HTMLButtonElement>;
 }) {
   const described = useId();
   const [open, setOpen] = useState(false);
+  const self = useRef<HTMLButtonElement | null>(null);
   const press = useRef<{ timer: number; long: boolean } | null>(null);
   const endPress = () => {
     if (press.current) window.clearTimeout(press.current.timer);
+  };
+  const latest = useRef(focus);
+  latest.current = focus;
+  useEffect(() => {
+    if (self.current && latest.current?.take())
+      moveFocus(self.current, { ring: lastInputWasKeyboard() });
+  }, []);
+  const act = () => {
+    if (!onAction) return;
+    const word = self.current;
+    const held = word !== null && word === document.activeElement;
+    onAction();
+    const back = latest.current?.back;
+    if (held && back) returnFocus(back, word);
   };
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
-          ref={ref}
+          ref={(element) => {
+            self.current = element;
+            if (typeof ref === "function") ref(element);
+            else if (ref) ref.current = element;
+          }}
           type="button"
           aria-label={label}
           aria-describedby={described}
@@ -62,6 +89,8 @@ export function RowWord({
           }}
           onPointerDown={(event) => {
             event.stopPropagation();
+            // A word with no action keeps its sentence open: Radix's close on press is skipped.
+            if (!onAction) event.preventDefault();
             if (event.pointerType !== "touch") return;
             endPress();
             const held = {
@@ -75,17 +104,21 @@ export function RowWord({
           }}
           onPointerUp={endPress}
           onPointerCancel={endPress}
-          onPointerLeave={endPress}
+          onPointerLeave={(event) => {
+            endPress();
+            // A finger lifting leaves the button: the sentence a press opened stays.
+            if (event.pointerType === "touch") event.preventDefault();
+          }}
           onClick={(event) => {
             event.stopPropagation();
-            if (press.current?.long) {
-              press.current = null;
-              return;
-            }
+            const long = press.current?.long;
             press.current = null;
-            if (pending) return;
-            if (onAction) onAction();
-            else setOpen((shown) => !shown);
+            // The sentence this click keeps or opens is the word's own: Radix's close on click
+            // is skipped.
+            if (long || !onAction) event.preventDefault();
+            if (long) return;
+            if (!onAction) setOpen(true);
+            else if (!pending) act();
           }}
         >
           {tone === "warning" ? (
@@ -106,40 +139,54 @@ export function RowWord({
   );
 }
 
-/** A row's name struck through: what it names is gone, and its notice can still bring it back. */
-export function GoneTitle({ children }: { children: ReactNode }) {
-  return <span className="truncate text-muted-foreground line-through">{children}</span>;
+/**
+ * Waits for the row an action brings back, then gives it the focus; focus moved meanwhile wins.
+ * Focus a dialog's trap put on a box around the word, as the word left, is still the word's.
+ */
+function returnFocus(back: () => HTMLElement | null, word: HTMLElement) {
+  const until = Date.now() + 3000;
+  const around = new Set<Element>();
+  for (let at = word.parentElement; at; at = at.parentElement) around.add(at);
+  const step = () => {
+    const active = document.activeElement;
+    const free = active === null || active === word || around.has(active);
+    if (!free) return;
+    const to = back();
+    if (to) moveFocus(to, { ring: lastInputWasKeyboard() });
+    else if (Date.now() < until) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
-/** Each list's rows as last shown, by the list's key: a gone row's place outlives a remount. */
-const shownLists = new Map<string, readonly { key: string; row: unknown; gone: boolean }[]>();
+/**
+ * A row that left its list while a notice still speaks for it, and where it was: `after` names the
+ * rows that came before it, nearest first.
+ */
+export type GoneRow<T> = { key: string; row: T; after: readonly string[] };
+
+export type WithGone<T, G> =
+  | { key: string; gone: false; row: T }
+  | { key: string; gone: true; row: G };
 
 /**
- * Keeps rows that left `rows` where they were while `held` says a notice still speaks for them,
- * so a list doesn't close up under the writer's pointer; each gone row comes back after the row
- * it last followed. `list` names the list, so the places survive the list being shown again
- * (another tab, then back). Returns every row with whether it is gone.
+ * Puts each gone row back after the nearest row that came before it and is still shown, or first,
+ * so a list doesn't close up under the writer's pointer. A row still listed is shown once, as
+ * listed.
  */
-export function useHeldRows<T>(
-  list: string,
+export function withGone<T, G = T>(
   rows: readonly T[],
   keyOf: (row: T) => string,
-  held: (key: string) => boolean,
-): { row: T; key: string; gone: boolean }[] {
-  const last = (shownLists.get(list) ?? []) as readonly { row: T; key: string; gone: boolean }[];
-  const shown = rows.map((row) => ({ row, key: keyOf(row), gone: false }));
-  const present = new Set(shown.map((item) => item.key));
-  let after: string | null = null;
-  for (const item of last) {
-    if (present.has(item.key) || !held(item.key)) {
-      if (present.has(item.key)) after = item.key;
-      continue;
+  gone: readonly GoneRow<G>[],
+): WithGone<T, G>[] {
+  const shown: WithGone<T, G>[] = rows.map((row) => ({ row, key: keyOf(row), gone: false }));
+  for (const each of gone) {
+    if (shown.some((item) => item.key === each.key)) continue;
+    let at = -1;
+    for (const key of each.after) {
+      at = shown.findIndex((item) => item.key === key);
+      if (at >= 0) break;
     }
-    const at: number = after === null ? 0 : shown.findIndex((each) => each.key === after) + 1;
-    shown.splice(at, 0, { ...item, gone: true });
-    present.add(item.key);
-    after = item.key;
+    shown.splice(at + 1, 0, { row: each.row, key: each.key, gone: true });
   }
-  shownLists.set(list, shown);
   return shown;
 }

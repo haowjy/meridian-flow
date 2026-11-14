@@ -11,7 +11,7 @@ import { useProjectTreeViews, useTreeList } from "@/client/query/useProjectTree"
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { GoneTitle, useHeldRows } from "@/components/app/RowWord";
+import { type GoneRow, withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
@@ -19,7 +19,6 @@ import {
   ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
-  type DraftNoticeWords,
   noticeAction,
   useDraftNotice,
   useDraftNoticeWords,
@@ -52,6 +51,7 @@ import { fileKindIcon } from "../../context/context-file-icon";
 import { EDITOR_CONTEXT_SCHEMES, schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
+import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
@@ -241,7 +241,8 @@ export function ChangesSource({
     folders: readonly string[],
     restore: ReadonlySet<string>,
     name?: string,
-  ) =>
+  ) => {
+    hold();
     void controller
       .applyMany(
         draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
@@ -260,6 +261,7 @@ export function ChangesSource({
         if (heldBack.length > 0)
           setAsking({ targets: heldBack, folders, deleting: [], restoring, name });
       });
+  };
   const startApply = (
     targets: readonly ReviewFileTarget[],
     folders: readonly string[],
@@ -293,8 +295,23 @@ export function ChangesSource({
   const owned = useDraftNotice(ownerKey);
   const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
-  // One list of the rows as shown, folders heading theirs: a row a Discard or an Apply took
-  // stays in its place, saying so, until the notice ends.
+  const openDocument = useOpenProjectDocument(projectId);
+  // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
+  const drawn = useMemo<NoticePlace>(() => {
+    const folderOf = new Map<string, string | null>();
+    for (const group of groups) {
+      if (group.folder) folderOf.set(group.folder.id, null);
+      for (const file of group.files) folderOf.set(file.documentId, group.folder?.id ?? null);
+    }
+    return {
+      holds: (node) => folderOf.has(node),
+      parent: (node) => folderOf.get(node) ?? null,
+      open: (folder) => !folded.has(folder),
+    };
+  }, [groups, folded]);
+  const treeWords = useTreeNoticeWords(projectId, drawn);
+  const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
+  // One list of the rows as shown, folders heading theirs.
   const items: ChangeItem[] = groups.flatMap((group) => [
     ...(group.folder
       ? [
@@ -321,7 +338,20 @@ export function ChangesSource({
           depth: group.folder ? 1 : 0,
         }))),
   ]);
-  const shown = useHeldRows(`changes:${ownerKey}`, items, changeKey, words.held);
+  // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
+  // saying so, while the notice speaks for it.
+  const hold = () => {
+    const keys = items.map(changeKey);
+    taken.set(
+      ownerKey,
+      items.map((item, at) => ({ key: item.key, row: item, after: keys.slice(0, at).reverse() })),
+    );
+  };
+  const shown = withGone(
+    items,
+    changeKey,
+    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key)),
+  );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
@@ -343,6 +373,7 @@ export function ChangesSource({
     <div ref={list} className="contents">
       <SourcePane
         label={scope.heading}
+        notice={treeWords.header}
         bar={
           question ? (
             <div className="min-w-0 flex-1">
@@ -357,7 +388,10 @@ export function ChangesSource({
               discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
-                  ? () => void controller.discardAll(everyDraft)
+                  ? () => {
+                      hold();
+                      void controller.discardAll(everyDraft);
+                    }
                   : undefined
               }
               onApply={
@@ -398,15 +432,26 @@ export function ChangesSource({
         {hasFiles || goneRows ? (
           <ul className="flex flex-col px-2">
             {shown.map(({ row: item, gone }) => {
+              // A row a Discard took is struck through with its Undo; one an Apply took says
+              // what the Apply did, and opens the document where it is now.
               if (gone)
                 return (
-                  <GoneChangeRow
-                    key={item.key}
-                    item={item}
-                    projectId={projectId}
-                    applied={notice?.kind === "applied"}
-                    words={words}
-                  />
+                  <li key={item.key} data-change-row={item.key} data-command-notice="row">
+                    <ListRow
+                      depth={item.kind === "file" ? item.depth : 0}
+                      gone={notice?.kind !== "applied"}
+                      disabled={item.kind !== "file"}
+                      onOpen={() => void openDocument({ documentId: item.key })}
+                      icon={
+                        item.kind === "file"
+                          ? fileKindIcon(item.file.contextLocation?.path ?? item.name)
+                          : FolderIcon
+                      }
+                      title={item.name}
+                      detail={item.detail}
+                      notice={wordOf(item.key)}
+                    />
+                  </li>
                 );
               if (item.kind === "folder") {
                 const { group } = item;
@@ -423,16 +468,17 @@ export function ChangesSource({
                     files={group.files}
                     controller={controller}
                     touch={touch}
-                    notice={words.word(folder.id)}
+                    notice={wordOf(folder.id)}
                     canApply={controller.canApply && !folder.fault && group.files.every(applicable)}
                     onApply={(name) => startApply(group.files, folder.folders, name)}
-                    onDiscard={(name) =>
+                    onDiscard={(name) => {
+                      hold();
                       void controller.discardSelection({
                         drafts: draftsOf(group.files),
                         folders: folder.folders,
                         name,
-                      })
-                    }
+                      });
+                    }}
                   />
                 );
               }
@@ -454,7 +500,8 @@ export function ChangesSource({
                   canApply={controller.canApply && applicable(file)}
                   controller={controller}
                   touch={touch}
-                  notice={words.word(file.documentId)}
+                  notice={wordOf(file.documentId)}
+                  onCommand={hold}
                   onPicked={onPicked}
                 />
               );
@@ -494,41 +541,10 @@ type ChangeItem = { key: string; name: string; detail: ReactNode } & (
 
 const changeKey = (item: ChangeItem) => item.key;
 
-const NOTHING = () => {};
+/** Each owner's list as its latest Discard or Apply found it; its notice says which rows to keep. */
+const taken = new Map<string, readonly GoneRow<ChangeItem>[]>();
 
-/**
- * A row a Discard took, struck through with its Undo, or one an Apply took, with what the Apply
- * did to it; picking an applied document opens it where it is now.
- */
-function GoneChangeRow({
-  item,
-  projectId,
-  applied,
-  words,
-}: {
-  item: ChangeItem;
-  projectId: string;
-  /** Taken by an Apply, not a Discard: the document is where the Apply put it. */
-  applied: boolean;
-  words: DraftNoticeWords;
-}) {
-  const openDocument = useOpenProjectDocument(projectId);
-  const file = item.kind === "file";
-  return (
-    <li data-change-row={item.key} data-command-notice="row">
-      <ListRow
-        depth={file ? item.depth : 0}
-        disabled={!applied || !file}
-        onOpen={() => void openDocument({ documentId: item.key })}
-        icon={file ? fileKindIcon(item.file.contextLocation?.path ?? item.name) : FolderIcon}
-        // The line under the name stays, so the row keeps its height.
-        title={applied ? item.name : <GoneTitle>{item.name}</GoneTitle>}
-        detail={item.detail}
-        notice={words.word(item.key)}
-      />
-    </li>
-  );
-}
+const NOTHING = () => {};
 
 /**
  * One drafted document: its name, and under it what the draft does to it (a move, rename or
@@ -547,11 +563,14 @@ function ChangeRow({
   controller,
   touch,
   notice,
+  onCommand,
   onPicked,
 }: {
   projectId: string;
   ownerKey: string;
   file: ReviewFileTarget;
+  /** Right before this row's Discard or Apply: the list holds what it shows. */
+  onCommand: () => void;
   /** What the owner's notice says on this row (`useDraftNoticeWords`). */
   notice: ReactNode;
   /** Under its changed folder's row. */
@@ -571,7 +590,10 @@ function ChangeRow({
   // A row's actions are too narrow for its question: it asks on the line under the name.
   const [asking, setAsking] = useState(false);
   const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
-  const discard = () => void controller.discard(file.documentId, file.draft.itemKey);
+  const discard = () => {
+    onCommand();
+    void controller.discard(file.documentId, file.draft.itemKey);
+  };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, ownerKey);
   const drag = useReferenceDrag(
@@ -619,7 +641,10 @@ function ChangeRow({
             onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
             onApply={
               canApply
-                ? () => void controller.apply(file.documentId, file.draft.itemKey)
+                ? () => {
+                    onCommand();
+                    void controller.apply(file.documentId, file.draft.itemKey);
+                  }
                 : undefined
             }
           />

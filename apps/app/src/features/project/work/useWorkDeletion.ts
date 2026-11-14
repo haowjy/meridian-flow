@@ -12,10 +12,25 @@ import { useCallback, useRef } from "react";
 import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-command-store";
 
+/** Where a Work's row was when the writer deleted it: its list and the Works above it, nearest first. */
+export type WorkPlace = { list: string; after: readonly string[] };
+
+const places = new Map<string, WorkPlace>();
+const focusing = new Set<string>();
+
+/** Where the Work's row was when it was deleted from a list; none when deleted elsewhere. */
+export const workPlace = (workId: string) => places.get(workId) ?? null;
+
+/** True once per delete from a list: its Undo takes the focus the deleted row had. */
+export function takeWorkFocus(workId: string): boolean {
+  return focusing.delete(workId);
+}
+
 export type WorkDeletion = {
   /** Open Undo windows, oldest delete first. */
   windows: readonly WorkDeleteWindow[];
-  remove: (work: Work) => void;
+  /** Deletes the Work; `place` keeps its row where it was while its Undo shows. */
+  remove: (work: Work, place?: WorkPlace) => void;
   undo: (workId: string) => void;
   /** Ends every Undo window: opening a Work, starting one, or closing the dialog. */
   dismissAll: () => void;
@@ -35,7 +50,13 @@ export function useWorkDeletion(projectId: string): WorkDeletion {
     for (const open of windowsRef.current) close(open.workId);
   }, [close]);
   const remove = useCallback(
-    (work: Work) => void deleteCommand({ workId: work.id }),
+    (work: Work, place?: WorkPlace) => {
+      if (place) {
+        places.set(work.id, place);
+        focusing.add(work.id);
+      } else places.delete(work.id);
+      void deleteCommand({ workId: work.id });
+    },
     [deleteCommand],
   );
   const undo = useCallback((workId: string) => void restore({ workId }), [restore]);

@@ -28,7 +28,12 @@ export type ChatDeleteNotice = {
   threadId: string;
   title: string;
   status: "ready" | "restoring" | "failed";
+  /** Where the chat's row was when the writer deleted it, for the row to stay there. */
+  place: ChatPlace | null;
 };
+
+/** A row's place in one list: the list's key and the chats listed before it, nearest first. */
+export type ChatPlace = { list: string; after: readonly string[] };
 
 /** A delete the server refused: the chat is back, and its row says so with Retry. */
 export type ChatDeleteRefusal = { threadId: string; title: string };
@@ -72,14 +77,20 @@ export class ChatDeletes {
   notice = (): ChatDeleteNotice | null => this.held?.notice ?? null;
   refused = (): ChatDeleteRefusal | null => this.refusal;
 
-  delete(threadId: string, title: string): void {
+  delete(threadId: string, title: string, place: ChatPlace | null = null): void {
     if (this.closed) return;
     this.end();
     this.refusal = null;
     const { client, accountId, projectId } = this.ports;
     const mark = beginOwnChatDelete(accountId, threadId);
     const taken = this.takeAway(threadId);
-    const notice: ChatDeleteNotice = { id: this.nextId++, threadId, title, status: "ready" };
+    const notice: ChatDeleteNotice = {
+      id: this.nextId++,
+      threadId,
+      title,
+      status: "ready",
+      place,
+    };
     const held: Held = {
       notice,
       taken,

@@ -117,15 +117,21 @@ comes back as a `refused` settlement: the row returns saying "Not deleted" in it
 (`RefusalWord`; the sentence is "Couldn't delete this document." and the server's reason) and its
 menu offers Delete again or Dismiss.
 Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
-struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`) until
-the writer's next gesture there. Its notice is also held in `DraftNotices` under
-`deleteNoticeKey(projectId)`, shown as the Discard notice line on Recently opened for a delete
-made there and on the page main goes back to when the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
-(`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
-applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
-a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
-(`endWhenRestored`). A delete across the project and account lists is one notice, ended with the
-last of its steps.
+struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`), and
+the focus the row had goes to that Undo; after Undo it goes back to the row. The struck-through row
+comes from the step itself (`TreeStep.was`: each node's name, kind, parent and the siblings before
+it), never from an earlier render, so it stays across a switch of sidebar list. The notice lasts
+until the writer's next gesture in that list (an open, another delete, Ctrl+Z) or leaving the
+project. A word whose row isn't drawn (inside a closed folder) goes on the nearest drawn folder
+above it, else on the list's heading (`useTreeNoticeWords`, `NoticePlace`). Off the sidebar the
+delete also shows a line in `DraftNotices` under `deleteNoticeKey(projectId)`: on Recently opened
+for a delete made there, and on the page main goes back to when the delete took main's document;
+the sidebar's rows say it themselves, so it has no sidebar entry. Its Undo and the sidebar's
+Ctrl+Z are one step (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo
+no longer applies: once none of the delete's records has its Trash entry left (a Trash Restore of
+all of it, a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the
+stack (`endWhenRestored`). A delete across the project and account lists is one step per list, each
+with its Undo on its own rows.
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing
 moves on Enter. The source header's New file and New folder name the folder the writer last
@@ -461,7 +467,9 @@ refuses with the hint. The rows leave Trash (the Trash list is a server query, e
 destination at once from the replay. A restore the server refuses comes back as a settlement on its
 record: the entry goes back to Trash with the server's reason. Until the writer's next gesture,
 the restored rows say "Undo" in the tree and stay struck through in Trash with the same Undo, the
-step Ctrl+Z takes, which puts them back in Trash. Trash's own
+step Ctrl+Z takes, which puts them back in Trash. The struck-through Trash rows are the entries as
+Trash listed them at the restore (`restored` on the provider), shown while the step's notice
+stands. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
 Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's

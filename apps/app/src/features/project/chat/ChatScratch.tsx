@@ -27,7 +27,7 @@ import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchTrees } from "../context/use-scratch-trees";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { useTreeNoticeWords } from "../context/use-tree-notice-words";
+import { treePlace, useTreeNoticeWords } from "../context/use-tree-notice-words";
 import { useWorkSourceWritable } from "../context/use-work-source-writable";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
@@ -247,7 +247,8 @@ function ScratchTree({
 }) {
   const openNote = useOpenDocumentInEditor();
   const { isExpanded, toggleEntry } = expansion;
-  const notices = useTreeNoticeWords(projectId);
+  const place = useMemo(() => treePlace(tree, isExpanded), [tree, isExpanded]);
+  const notices = useTreeNoticeWords(projectId, place);
   const env = useMemo(
     () => ({
       projectId,

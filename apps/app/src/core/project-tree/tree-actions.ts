@@ -8,9 +8,11 @@
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).
  */
 import {
+  childrenOf,
   isSourceRoot,
   type NodeKind,
   nameFault,
+  sourceIdOf,
   sourceRoot,
   type TreeProjection,
   type TreeRecord,
@@ -26,6 +28,7 @@ import {
   type TreeStep,
   type UndoStep,
   undoStep,
+  type Was,
 } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
@@ -93,8 +96,16 @@ export class TreeActions {
       nodes.flatMap((node) => {
         const at = before.nodes.get(node);
         if (!at) return [];
-        const folder = isSourceRoot(at.parent) ? null : (before.nodes.get(at.parent)?.name ?? null);
-        return [[node, { name: at.name, folder }] as const];
+        const top = isSourceRoot(at.parent);
+        const siblings = childrenOf(before, at.parent).map((child) => child.id);
+        const was: Was = {
+          name: at.name,
+          kind: at.kind === "folder" ? "folder" : "document",
+          folder: top ? null : (before.nodes.get(at.parent)?.name ?? null),
+          parent: top ? sourceIdOf(at.parent) : at.parent,
+          after: siblings.slice(0, siblings.indexOf(node)).reverse(),
+        };
+        return [[node, was] as const];
       }),
     );
     const step: TreeStep = {
@@ -117,12 +128,6 @@ export class TreeActions {
     const { view, pendingText } = this.version();
     const same = step.kind === "tree" && view.draft === step.draft;
     return undoStep(session, step, this.actor, same ? pendingText : undefined);
-  }
-
-  /** Ends `step` once its deleted nodes are out of Trash; the returned stop ends the watch. */
-  endWhenRestored(step: TreeStep): () => void {
-    const session = this.session();
-    return session ? endWhenRestored(session, step) : () => {};
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */
@@ -203,15 +208,15 @@ export class TreeActions {
     if (!made.ok) return made;
     const replay = made.replay();
     if (nodes.some((node) => !replay.nodes.has(node))) return { ok: false, reason: "missing" };
-    return {
-      ok: true,
-      step: this.remember(
-        made,
-        "delete",
-        replay,
-        made.writer.deleteAll(made.view, this.actor, nodes),
-      ),
-    };
+    const step = this.remember(
+      made,
+      "delete",
+      replay,
+      made.writer.deleteAll(made.view, this.actor, nodes),
+    );
+    // Once nothing it deleted is in Trash any more (restored anywhere, purged), its Undo ends.
+    endWhenRestored(made.session, step);
+    return { ok: true, step };
   }
 
   /**
