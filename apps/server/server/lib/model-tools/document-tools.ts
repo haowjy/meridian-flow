@@ -334,10 +334,9 @@ export async function readTrackedDocument(
   const { path, format, version, ...selection } = input;
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
-  const reached = await reachShown(call, ctx, "read", path, {
+  const reached = await reachShown(call, ctx, path, {
     ...(version ? { version } : {}),
   });
-  if (isToolError(reached)) return { ...reached, revision: null };
   const wrongKind = reached.node ? wrongKindMessage(reached.path, reached.node, "read") : null;
   if (wrongKind)
     return { ...writeToolError("read", wrongKind, "document_not_found", { path }), revision: null };
@@ -449,13 +448,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     const creates = written.command === "create" || written.command === "copy";
     // The path the model wrote is the node it was shown: a create only looks up its folders. An
     // inverse reaches it after its tree half, which may have moved the node.
-    const reach = (path: string) =>
-      reachShown(call, ctx, written.command, path, { folderOf: creates });
+    const reach = (path: string) => reachShown(call, ctx, path, { folderOf: creates });
     let reached: Reached | undefined;
     let parsed = written;
     if (!isInverse) {
       const first = await reach(written.path);
-      if (isToolError(first)) return first;
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
@@ -547,7 +544,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         }
         const first = await reach(written.path);
         // A reversed creation took the document and its text steps with it.
-        if (isToolError(first)) return tree?.kind === "then_text" ? tree.answer : first;
+        if (tree?.kind === "then_text" && !first.node) return tree.answer;
         reached = first;
         engine = { ...engine, path: first.path } as typeof written;
       }

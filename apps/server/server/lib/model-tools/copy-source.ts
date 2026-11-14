@@ -89,14 +89,9 @@ export async function resolveCopySource(
   const call = await resolveToolCall(deps, ctx, source.version);
   if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
   const { context } = call;
-  const reached = await reachShown(call, ctx, command, source.path, {
+  const reached = await reachShown(call, ctx, source.path, {
     ...(source.version ? { version: source.version } : {}),
   });
-  if (isToolError(reached))
-    return {
-      ...reached,
-      output: { ...reached.output, message: fromMessage(source, reached.output.message ?? "") },
-    };
   const { filePath: basePath, fragment } = splitDocumentFile(reached.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {

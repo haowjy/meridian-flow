@@ -2,8 +2,8 @@
  * The model's tree: the names it has been shown (tree-tools.md, "The tree frontier"). A name is a
  * folder and a leaf; the map says which node the model was shown it to mean, or that nothing was
  * there. Paths the model writes are resolved through it against the tree as it is now, so a name
- * that was renamed, moved or deleted since still reaches the node the model meant, and a name that
- * since means a different node reaches nothing.
+ * that was renamed, moved or deleted since still reaches the node the model meant, whatever the
+ * name means now.
  */
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import {
@@ -92,26 +92,19 @@ export function candidates(segment: string, last: boolean, folder: boolean): str
 export type Resolution =
   | {
       kind: "node";
+      /** The node the path meant, wherever it is now: it may have been renamed, moved or deleted. */
       node: TreeNode;
       /** Every name along the path with the node it meant, for the map. */
       along: Array<{ folder: string; name: string; node: string }>;
       /** The folder the node's own name sits in. */
       parent: string;
-      /** Folders along the path that are in Trash (only with `through`). */
+      /** Folders along the path that are in Trash. */
       trashed: TreeNode[];
     }
-  | {
-      /**
-       * The name now means a different node from the one the model was shown. `was` is absent
-       * when that node is not in this view (it was shown in the other view of the chat).
-       */
-      kind: "path_changed";
-      folder: string;
-      name: string;
-      was?: TreeNode;
-      now: TreeNode;
-    }
-  | { kind: "gone"; node: TreeNode }
+  /** The node the path meant was purged: nothing can bring it back. */
+  | { kind: "purged"; node: TreeNode }
+  /** The name was shown in the other version of the tree and is something else here: no node to follow. */
+  | { kind: "other_version"; folder: string; name: string }
   | {
       /** No node: the first segment neither the map nor the tree holds. */
       kind: "missing";
@@ -123,49 +116,54 @@ export type Resolution =
     }
   | { kind: "not_a_folder"; node: TreeNode; at: number };
 
+/** What a name's own `/` is stored as (`normalEntryName`). */
+const SLASH_LOOKALIKE = "\u2215";
+
 /**
  * Resolves `path` from `root` (a source's top) one name at a time against the map and the tree
- * now (tree-tools.md, "Which tree a stale path is resolved against"). With `through`, a folder
- * the model was shown that is in Trash now is walked through and reported, the last segment
- * included: it is a destination container (a create or move into a deleted folder is made, and the
- * folder stands). Without `through`, a deleted node is refused as `gone`: it is the target.
+ * now (tree-tools.md, "Which tree a stale path is resolved against"). A name the model was shown
+ * is followed to the node it meant, wherever that is now; a node in Trash is returned like any
+ * other, and the folders of Trash along the way are listed in `trashed`. Where a segment names
+ * nothing, it is tried joined to the next with `∕`, the look-alike a name's own `/` is stored as.
  */
 export function resolveShown(
   projection: TreeProjection,
   shown: NamesShown,
   root: string,
   path: { segments: readonly string[]; folder: boolean },
-  options: { through?: boolean } = {},
 ): Resolution {
   const along: Array<{ folder: string; name: string; node: string }> = [];
   const trashed: TreeNode[] = [];
+  const { segments } = path;
   let folder = root;
   let node: TreeNode | undefined;
-  for (const [at, segment] of path.segments.entries()) {
-    const last = at === path.segments.length - 1;
+  let at = 0;
+  while (at < segments.length) {
     node = undefined;
-    let name = segment;
-    for (name of candidates(segment, last, path.folder)) {
-      const now = childrenOf(projection, folder).find((child) => child.displayName === name);
-      const was = shownAt(shown, folder, name);
-      const meant = was ? projection.nodes.get(was) : undefined;
-      // A node the map names but this view lacks (shown in the other view) is still the node the
-      // name meant: a different occupant now is a changed name, whatever the view.
-      if (was && !meant && now) return { kind: "path_changed", folder, name, now };
-      if (meant && now && now.id !== meant.id)
-        return { kind: "path_changed", folder, name, was: meant, now };
-      if (meant?.purged) return { kind: "gone", node: meant };
-      if (meant?.trashed) {
-        if (!options.through) return { kind: "gone", node: meant };
-        trashed.push(meant);
+    let width = 1;
+    let name = segments[at] as string;
+    for (; width <= 2 && at + width <= segments.length && !node; width += 1) {
+      const written = segments.slice(at, at + width).join(SLASH_LOOKALIKE);
+      const last = at + width === segments.length;
+      for (name of candidates(written, last, path.folder)) {
+        const now = childrenOf(projection, folder).find((child) => child.displayName === name);
+        const was = shownAt(shown, folder, name);
+        const meant = was ? projection.nodes.get(was) : undefined;
+        // A node the map names but this view lacks was shown in the other view: its name here
+        // means nothing the model was shown.
+        if (was && !meant && now) return { kind: "other_version", folder, name };
+        if (meant?.purged) return { kind: "purged", node: meant };
+        if (meant?.trashed) trashed.push(meant);
+        node = meant ?? now;
+        if (node) break;
       }
-      node = meant ?? now;
-      if (node) break;
     }
     if (!node) return { kind: "missing", folder, at, along, trashed };
+    width -= 1;
     along.push({ folder, name, node: node.id });
-    if (!last) {
-      if (node.kind !== "folder") return { kind: "not_a_folder", node, at };
+    at += width;
+    if (at < segments.length) {
+      if (node.kind !== "folder") return { kind: "not_a_folder", node, at: at - 1 };
       folder = node.id;
     }
   }

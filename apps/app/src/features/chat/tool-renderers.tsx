@@ -28,7 +28,6 @@ import {
 import { DocumentName } from "./DocumentName";
 import type { OwnerNames } from "./document-display-name";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import { namespaceRefusalCopy } from "./namespace-refusal-copy";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import {
@@ -325,8 +324,6 @@ export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): str
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "invalid_write": {
-      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool), names);
-      if (refused) return refused;
       const reason =
         documentFailureRejected(tool) === "removed"
           ? removedWriteCopy(name, documentFailureRemoval(tool))
@@ -339,13 +336,6 @@ export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): str
         ? t`Something went wrong while changing ${name}.`
         : t`Something went wrong while making that change.`;
   }
-}
-
-/** Why a `move` or `delete` was refused, from its typed result. */
-function documentFailureRefusal(tool: ToolView): string | null {
-  const result = tool.result;
-  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
-  return asString(result.refusal) ?? null;
 }
 
 /** The host's structured reason a staged write was rejected, when it gave one. */

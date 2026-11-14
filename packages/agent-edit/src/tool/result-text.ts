@@ -93,6 +93,17 @@ function pendingLine(result: AgentEditResultV1): string[] {
   ];
 }
 
+const ALREADY_TEXT = {
+  deleted: "already deleted",
+  at_destination: "already at its destination",
+  live: "already there",
+} as const;
+
+const LEFT_OUT_TEXT = {
+  would_loop: "it would go inside itself",
+  purged: "deleted for good",
+} as const;
+
 /** The facts of a tree result after the status line's own fields, in the order the spec shows them. */
 function treeFacts(tree: NonNullable<AgentEditResultV1["tree"]>): string[] {
   const facts: string[] = [];
@@ -105,7 +116,11 @@ function treeFacts(tree: NonNullable<AgentEditResultV1["tree"]>): string[] {
   if (tree.deleted !== undefined) facts.push(`deleted: ${tree.deleted} inside`);
   if (tree.kept) facts.push(`kept: ${tree.kept}`);
   if (tree.placedAtEnd) facts.push(`placed at end: ${tree.placedAtEnd}`);
-  if (tree.alreadyDeleted) facts.push("already deleted by the user");
+  if (tree.already) facts.push(ALREADY_TEXT[tree.already]);
+  if (tree.leftOut?.length)
+    facts.push(
+      `left out: ${tree.leftOut.map((left) => `${left.path} (${LEFT_OUT_TEXT[left.why]})`).join("; ")}`,
+    );
   return facts;
 }
 
