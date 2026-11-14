@@ -240,6 +240,14 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
     if (j < 0 || !sameType(old[i], next[j])) continue;
+    // Most pairs have no unpaired neighbour; counting words for them dominates a large document.
+    const open = (k: number, side: readonly PMNode[], other: Int32Array) =>
+      k >= 0 && k < side.length && other[k] < 0;
+    if (
+      !(open(i - 1, old, partner) || open(i + 1, old, partner)) &&
+      !(open(j - 1, next, back) || open(j + 1, next, back))
+    )
+      continue;
     let ow = contentWords(old[i]);
     let nw = contentWords(next[j]);
     let [ot, nt] = [squash(old[i]), squash(next[j])];
