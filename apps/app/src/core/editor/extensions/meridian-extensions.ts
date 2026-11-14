@@ -7,14 +7,7 @@
  * surface; consumed by the editor `config`.
  */
 import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
-import {
-  isiOS,
-  isMacOS,
-  isNodeActive,
-  type KeyboardShortcutCommand,
-  mergeAttributes,
-  Node,
-} from "@tiptap/core";
+import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -148,8 +141,8 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     headingLevel: {
       /**
-       * Gives every text block under the selection this level, keeping each block and its
-       * Yjs element; a level they all already have, or null, returns them to body text.
+       * Gives every paragraph under the selection this level, keeping each block and its Yjs
+       * element; a level they all already have, or null, returns them to body text.
        */
       toggleHeadingLevel: (attributes: { level: HeadingLevel | null }) => ReturnType;
     };
@@ -223,17 +216,33 @@ export const MeridianParagraph = Paragraph.extend({
 
   addCommands() {
     return {
-      // TipTap's own `setParagraph` rebuilds the block from defaults; ours is body text.
       setParagraph:
         () =>
-        ({ commands }) =>
-          commands.toggleHeadingLevel({ level: null }),
+        ({ tr }) =>
+          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, { level: null }),
+      // Paragraphs only, over every range: a fence or a component under the selection is not a
+      // level, and a swept table reports one cell as `from`..`to`.
       toggleHeadingLevel:
         ({ level }) =>
-        ({ tr, state }) => {
-          const unset = level === null || isNodeActive(state, this.type, { level });
-          const { from, to } = tr.selection;
-          return setBlockType(tr, from, to, this.type, { level: unset ? null : level });
+        ({ tr }) => {
+          const blocks: number[] = [];
+          for (const { $from, $to } of tr.selection.ranges) {
+            tr.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+              if (node.type === this.type) blocks.push(pos);
+              return !node.isTextblock;
+            });
+          }
+          const unset =
+            level === null || blocks.every((pos) => tr.doc.nodeAt(pos)?.attrs.level === level);
+          const start = tr.steps.length;
+          let changed = false;
+          for (const pos of blocks) {
+            const at = tr.mapping.slice(start).map(pos) + 1;
+            if (setBlockType(tr, at, at, this.type, { level: unset ? null : level })) {
+              changed = true;
+            }
+          }
+          return changed;
         },
     };
   },
@@ -257,7 +266,7 @@ export const MeridianParagraph = Paragraph.extend({
         const atStart = isolated
           ? $anchor.pos - $anchor.parentOffset === pos
           : Selection.atStart(tr.doc).from === pos;
-        return atStart && commands.setParagraph();
+        return atStart && commands.toggleHeadingLevel({ level: null });
       });
     const backspaceKeys = ["Backspace", "Mod-Backspace", "Shift-Backspace"];
     if (isMacOS() || isiOS()) backspaceKeys.push("Ctrl-h", "Alt-Backspace");

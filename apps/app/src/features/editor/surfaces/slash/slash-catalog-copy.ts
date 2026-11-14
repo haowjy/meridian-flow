@@ -21,6 +21,9 @@ function diagramName(): string {
   return defaultDiagramProvider().name;
 }
 
+/** The levels the unfiltered menu lists; the deeper ones appear once typed (`h4`, `heading 5`). */
+const UNFILTERED_HEADING_LEVELS = 3;
+
 /** What a writer may type for a level besides `h1`..`h6`. */
 function headingAliases(level: HeadingLevel): string[] {
   if (level === 1) return [t`title`, t`section`];
@@ -34,6 +37,7 @@ function headingItem(level: HeadingLevel): SlashCommandItem {
     group: "text",
     label: blockTypeLabel(`heading${level}`),
     aliases: [`h${level}`, ...headingAliases(level)],
+    onlyWhenSearched: level > UNFILTERED_HEADING_LEVELS,
   };
 }
 

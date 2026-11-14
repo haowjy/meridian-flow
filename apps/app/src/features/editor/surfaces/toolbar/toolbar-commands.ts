@@ -262,9 +262,12 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
 /** The conversion behind Turn into for one selection, toggle semantics intact. */
 function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   const level = blockTypeLevel(id);
-  if (level !== undefined) return editor.chain().focus().toggleHeadingLevel({ level }).run();
+  if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
+    // Body text from any text block, a fence included: a level change touches paragraphs only.
+    case "paragraph":
+      return editor.chain().focus().setParagraph().run();
     case "bulletList":
       return editor.chain().focus().toggleListKind("bullet").run();
     case "orderedList":
