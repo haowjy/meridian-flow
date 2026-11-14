@@ -1,6 +1,6 @@
 import type { ParsedContent } from "@meridian/markup";
 import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
-import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
@@ -24,6 +24,7 @@ import {
   uniqueHashesForBlocks,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
+import { readRepairedRoot } from "./schema-repair.js";
 
 interface TextSegment {
   text: Y.XmlText;
@@ -126,10 +127,6 @@ export function fragmentOf(doc: Y.Doc): Y.XmlFragment {
   return doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
 }
 
-export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
-  return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
-}
-
 /**
  * One walk that pairs each top-level element with its node. Building the root repairs the
  * document (an element the schema can't build is deleted and dropped), so the surviving
@@ -137,7 +134,7 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
  * computed over them, never over the pre-repair list.
  */
 function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
-  const root = prosemirrorRootOf(doc, schema);
+  const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
   const elements = getTopLevelXmlBlocks(doc);
   if (elements.length !== root.childCount) {
     throw new Error(

@@ -21,6 +21,17 @@ reconstruction here rather than in app or undo copies. Hosts choose operations,
 supply identity mapping and own transactions; the adapter copies an item's own
 content, never its descendants.
 
+## Schema repair
+
+Building ProseMirror nodes from Yjs makes y-prosemirror delete any element the schema cannot
+build. `model/schema-repair.ts` is the one place this package does that (`readRepairedRoot`,
+used by `projectBlocks` and `readBlocks`), counts it per path (`schemaRepairCounts()`: `editor`,
+`projectBlocks`, `readBlocks`; the browser witness reports the first) and recognises the
+binding's delete when it arrives as a writer's update (`isSchemaRepairUpdate`), so the server
+journals it with no actor. A new read of a fragment goes through `readRepairedRoot`, or its
+repairs are not counted. A repair inside a caller's transaction (a capture, a write) is part of
+that transaction's update: read before a capture starts.
+
 ## Text runs
 
 Adjacent `Y.XmlText` children of a block are one run of text, as in the patched

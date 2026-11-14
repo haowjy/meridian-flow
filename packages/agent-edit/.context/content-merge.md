@@ -176,9 +176,21 @@ ordering.
 A repair is a write nobody asked for, made so a document is one the editor can show. It may remove
 text. There is one: the **binding's schema repair**, in `y-prosemirror`'s `sync-plugin.js`. It
 deletes an element the schema cannot build, and folds an adjacent text run the reading client
-made into its neighbour. It fires wherever ProseMirror nodes are built from Yjs: the editor
-(watched by `apps/app/src/core/editor/schema-repair-witness.ts`), `projectBlocks`
-(`model/y-prosemirror.ts`) and `readBlocks` (`diff/fragments.ts`).
+made into its neighbour. It fires wherever ProseMirror nodes are built from Yjs.
+
+- **Where it fires, and its count.** `schemaRepairCounts()` (`@meridian/agent-edit`,
+  `model/schema-repair.ts`) returns how often it fired in this process under three paths:
+  `editor` (the witness in `apps/app/src/core/editor/schema-repair-witness.ts` counts its own
+  repairs with `countSchemaRepair("editor")`), `projectBlocks` (`model/y-prosemirror.ts`) and
+  `readBlocks` (`diff/fragments.ts`). The last two read through `readRepairedRoot`, which counts a
+  read that deleted something once. A read that repairs nothing is not counted.
+- **On the server.** The repair reaches the room as an ordinary Yjs update. `isSchemaRepairUpdate`
+  recognises it (the update adds nothing, and every item it deletes is, or sits inside, an element
+  whose node name the schema lacks), and `yjs-ws-handler.ts` journals it with a system origin: no
+  actor and no edit row. A repair of an element the schema knows but refuses the content of (a
+  block inside a paragraph) is not recognised, and journals as the writer's own update.
+- **In the editor.** The witness reports the removed words, and the "Some text was removed" bar
+  shows them with Copy, so the text is not silently gone (see Rescues).
 
 ## Rescues
 
