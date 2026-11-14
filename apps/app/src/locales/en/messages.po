@@ -356,8 +356,8 @@ msgid "{answered, plural, one {# answered} other {# answered}}"
 msgstr "{answered, plural, one {# answered} other {# answered}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{applied} applied"
-msgstr "{applied} applied"
+#~ msgid "{applied} applied"
+#~ msgstr "{applied} applied"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -473,8 +473,8 @@ msgid "{days}d"
 msgstr "{days}d"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{discarded} discarded"
-msgstr "{discarded} discarded"
+#~ msgid "{discarded} discarded"
+#~ msgstr "{discarded} discarded"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {# document} other {# documents}}"
@@ -777,8 +777,8 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{waiting} still a draft"
-msgstr "{waiting} still a draft"
+#~ msgid "{waiting} still a draft"
+#~ msgstr "{waiting} still a draft"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this change could be made."
@@ -2905,8 +2905,24 @@ msgstr "Drafted {what}"
 
 #. placeholder {0}: parts.join(", ")
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {what}: {0}"
-msgstr "Drafted {what}: {0}"
+#~ msgid "Drafted {what}: {0}"
+#~ msgstr "Drafted {what}: {0}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {discarded} discarded"
+msgstr "Drafted {what}: {applied} applied, {discarded} discarded"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
+msgstr "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
+msgstr "Drafted {what}: {applied} applied, {waiting} still a draft"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
+msgstr "Drafted {what}: {discarded} discarded, {waiting} still a draft"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "Drafted 1 document"

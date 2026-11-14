@@ -635,6 +635,12 @@ export function ChatView({
 
   useLiveTurnAnnouncements(latestAssistantTurn, composerRef, chatSurfaceRef);
 
+  // Generating signal: the latest assistant turn is streaming AND it started in
+  // draft mode. A reply keeps the mode it started with while the chat's mode may
+  // already be queued to change, so the running turn's own mode is the signal;
+  // auto-apply streams never light the dock.
+  const generating =
+    isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
   const handleSubmit = useCommittedEvent(
     async (envelope: Parameters<typeof submissions.submit>[0]) => {
       replyRetry.clearRefused();
@@ -678,6 +684,7 @@ export function ChatView({
                   agentName={composerAgentName}
                   running={running}
                   stopStatus={chatStop.status}
+                  generating={generating}
                   writeMode={controls.writeMode}
                   onWriteModeChange={handleWriteModeChange}
                   composerStrip={composerStrip}

@@ -22,7 +22,15 @@ import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-f
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
-export function useDraftDock({ threadId, active = true }: { threadId: string; active?: boolean }) {
+export function useDraftDock({
+  threadId,
+  generating,
+  active = true,
+}: {
+  threadId: string;
+  generating: boolean;
+  active?: boolean;
+}) {
   const controller = useBoundWorkBranchCommands();
   useSyncExternalStore(
     controller.owner.subscribe,
@@ -51,7 +59,11 @@ export function useDraftDock({ threadId, active = true }: { threadId: string; ac
   const queryClient = useQueryClient();
   const refreshTurnCards = useCallback(
     () =>
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) }),
+      void queryClient.invalidateQueries(
+        { queryKey: threadQueryKeys.liveLineageRoot(threadId) },
+        // A read already in flight is the one the writer waits on: don't restart it.
+        { cancelRefetch: false },
+      ),
     [queryClient, threadId],
   );
   const waiting = candidates
@@ -176,6 +188,7 @@ export function useDraftDock({ threadId, active = true }: { threadId: string; ac
   };
 
   return {
+    generating,
     controller,
     files,
     notice,
@@ -196,7 +209,7 @@ export function useDraftDock({ threadId, active = true }: { threadId: string; ac
           (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
             ?.groups.length ?? 0) > 0,
       ),
-    canCommand: actionableFiles.length > 0 && !controller.dispositionLocked,
+    canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,
     fileFailures,

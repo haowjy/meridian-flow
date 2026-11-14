@@ -136,6 +136,7 @@ const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>>
   exception: TOOL_EXCEPTION_CODE,
   timeout: "tool_timeout",
   arguments_parse: "tool_arguments_parse",
+  abort: TOOL_NOT_RUN_CODE,
 };
 
 function executionErrorResult(

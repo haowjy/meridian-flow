@@ -107,13 +107,7 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // A discarded draft has nothing left to take out, and a Redo would bring the discarded text back.
-  const discarded =
-    hasEditedDocuments &&
-    documents.every(
-      (document) => document.scope === "draft" && drafts?.[document.documentId] === "discarded",
-    );
-  const reversible = receipt != null && receipt.control !== "view_change" && !discarded;
+  const reversible = receipt != null && receipt.control !== "view_change";
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -495,14 +489,12 @@ function documentCountLabel(
     const waiting = states.size - applied - discarded;
     if (applied && !discarded && !waiting && counted(true) === 0) return t`Applied ${what}`;
     if (discarded && !applied && !waiting && counted(true) === 0) return t`Discarded ${what}`;
-    if (applied || discarded) {
-      const parts = [
-        applied ? t`${applied} applied` : null,
-        discarded ? t`${discarded} discarded` : null,
-        waiting ? t`${waiting} still a draft` : null,
-      ].filter((part) => part !== null);
-      return t`Drafted ${what}: ${parts.join(", ")}`;
-    }
+    if (applied && discarded && waiting)
+      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
+    if (applied && discarded) return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
+    if (applied && waiting) return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
+    if (discarded && waiting)
+      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
     return t`Drafted ${what}`;
   }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))

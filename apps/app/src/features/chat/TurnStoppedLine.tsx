@@ -2,8 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView, ViewItem } from "@meridian/thread-client";
-import { humanizeToolName } from "./command-descriptor";
-import { documentDisplayName } from "./document-display-name";
+import { liveToolActivityLabel } from "./command-descriptor";
 
 const MOST_NAMED = 3;
 
@@ -22,14 +21,9 @@ export function callsThatDidNotRun(items: readonly ViewItem[]): ToolView[] {
   );
 }
 
-/** "create Scene C": what the call was going to do, when its input says. */
+/** The call as the writer's activity rows name it ("Writing Scene C"), without the in-flight ellipsis. */
 function callLabel(tool: ToolView): string {
-  const input =
-    tool.input && typeof tool.input === "object" && !Array.isArray(tool.input) ? tool.input : null;
-  const path = typeof input?.path === "string" ? input.path : null;
-  const command = typeof input?.command === "string" ? input.command : null;
-  if (!path) return humanizeToolName(tool.toolName);
-  return `${command ?? humanizeToolName(tool.toolName)} ${documentDisplayName(path)}`;
+  return liveToolActivityLabel(tool.toolName, tool.input).replace(/…$/, "");
 }
 
 export function TurnStoppedLine({

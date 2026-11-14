@@ -42,12 +42,6 @@ export type StoredInversePart = InversePart & {
   wId: number | null;
   origin: EditOrigin;
   disposition: PartDisposition;
-  /**
-   * What the part's draft says of it now, before an open draft's unapplied part counts as
-   * pending: "pending" only while the review still holds it as a change. Set on a captured
-   * turn history, where the receipt reads it; the draft's `has_effect` lags a Discard.
-   */
-  standing?: PartDisposition;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -75,7 +69,14 @@ export type InverseDocument = {
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,
-    { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
+    {
+      documentDraft: DraftSnapshot;
+      doc: Y.Doc;
+      name: string;
+      frozen: boolean;
+      /** The draft's review holds a change now, read from the capture (the stored `has_effect` lags a Discard). */
+      holdsChange: boolean;
+    }
   >;
   /** Per-source scratch views reused while this capture describes history and skip excerpts. */
   excerptViews: Map<Y.Doc, Y.Doc>;
@@ -301,9 +302,9 @@ const countAccepted = (plans: PreparedDocumentInverse[]) =>
   );
 
 /**
- * Where each drafted document's text from the turn stands now: waiting while its draft's review
- * still holds a part of it as a change, else applied if any part was, else discarded (a Discard
- * leaves the draft open with nothing in it, or closes it).
+ * Where each drafted document's text from the turn stands now: still a draft while an open draft
+ * holds a change to it (the fact the dock and Changes list read, so a writer's retyping of the
+ * model's text counts), else applied if any part was, else discarded.
  */
 function draftStates(
   documents: readonly InverseDocument[],
@@ -311,13 +312,17 @@ function draftStates(
 ): TurnReceiptChip["drafts"] {
   const states: NonNullable<TurnReceiptChip["drafts"]> = {};
   for (const document of documents) {
-    const drafted = document.history.filter(
-      (part) => targetsTurn(part, query) && part.origin.kind === "pending",
+    const drafted = document.history.flatMap((part) =>
+      targetsTurn(part, query) && part.origin.kind === "pending"
+        ? [{ part, draft: document.drafts.get(part.origin.draftId) }]
+        : [],
     );
     if (!drafted.length) continue;
-    states[document.documentId] = drafted.some((part) => part.standing === "pending")
+    states[document.documentId] = drafted.some(
+      ({ draft }) => draft?.documentDraft.status === "active" && draft.holdsChange,
+    )
       ? "pending"
-      : drafted.some((part) => part.standing === "applied")
+      : drafted.some(({ part }) => part.disposition === "applied")
         ? "applied"
         : "discarded";
   }
@@ -343,7 +348,12 @@ export function createTurnInverseService(store: TurnInverseStore) {
             skips: redo.flatMap((plan) => plan.skips),
           };
         const undo = prepare(store, documents, query, "undo", randomUUID());
-        if (countAccepted(undo) || treeUndo)
+        // Text the writer discarded is gone: an Undo has nothing to take out, and its Redo
+        // would bring the discarded text back.
+        const allDiscarded =
+          drafts !== undefined &&
+          documents.every(({ documentId }) => drafts[documentId] === "discarded");
+        if ((countAccepted(undo) && !allDiscarded) || treeUndo)
           return {
             state: "live-active",
             control: "undo",

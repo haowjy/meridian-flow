@@ -270,6 +270,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               doc,
               name: name?.handle ?? "No Work",
               frozen: documentDraft.lifecycle !== "active",
+              holdsChange: false,
             });
           }
           document.drafts = drafts;
@@ -318,6 +319,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const evidence = views.get(draftId);
           if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
             throw new InverseAttemptMiss();
+          draft.holdsChange = evidence.classifications.size > 0;
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
@@ -327,7 +329,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
-            standing: classified ?? "discarded",
             disposition:
               classified === "applied"
                 ? classified

@@ -9,7 +9,8 @@ document" while a drafted document still waits, "Applied" or "Discarded" once ev
 drafted document has had that outcome, and "Drafted 3 documents: 1 applied, 1
 discarded, 1 still a draft" when they differ. The heading reads what is true now, not
 what was true when the reply ended: the receipt's `drafts` map (each drafted document
-waiting, applied or discarded, from the same capture as the receipt) is re-read when
+still a draft, applied or discarded, from the same capture as the receipt: still a draft
+means an open draft holds a change to the document, even one the writer retyped) is re-read when
 this chat's waiting drafts change (`useDraftDock`). A turn that wrote the manuscript
 reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one or
 wrote both a draft and the manuscript. A drafted row says "Applied" or "Discarded" at
@@ -50,7 +51,7 @@ it was" after one.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `work-active`, reversed, dependent, or expired) decides whether
-it is available. When it is not (`view_change`, or every drafted document
+it is available. When it is not (`view_change`; the server gives no control once every drafted document is
 discarded, where a Redo would bring the discarded text back) the card shows no
 control and no failure line: "can't reverse" is never read as "went wrong". What
 became of each part shows as plain facts after expansion, worded from the typed
@@ -131,11 +132,12 @@ backstop for the case no surface can report: a stage whose surface never mounts.
 A stopped reply keeps the words streamed before Stop and ends with one plain line
 (`TurnStoppedLine`): "Stopped." and, when calls never ran, "Stopped. Didn't run: create
 Scene C." A call the run ended before it settled carries `TOOL_NOT_RUN_CODE` in its
-result (`didNotRunResult`), and its row reads as done, not failed. Edits that landed
+result (`didNotRunResult`, or an abort on the generic executor path), and its row reads as done, not failed. Edits that landed
 stay landed and keep their receipt. A crashed reply keeps its failure card and adds
 the "Didn't run" line when calls never ran. Replies stopped before this code have no
 code, so they read only "Stopped."
 
-The dock's Apply and Discard are open while a round runs, as the review's are: a
-Discard closes the draft and the model's next write settles against it; an Apply
-brings what is there and the model's next write becomes a new draft.
+The dock's Apply and Discard stay locked while a round runs. A mid-round Discard of a
+document the reply created would send the model "File not found"; the lock lifts when the
+server settles an agent write to a discarded draft with `returned`
+(never-refuse §6).
