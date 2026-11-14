@@ -21,6 +21,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
+import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
@@ -415,6 +416,7 @@ export async function dispatchToolCall(
   const persistedMetadata = execResult.metadata;
   const persistedResult = execResult.result;
 
+  await testHook("block.beforeStore");
   const persistedToolResult = await deps.delivery.storeUnderLease(ctx.lease, () =>
     persistAndAppendEvents(
       deps.persistenceDeps,
@@ -454,6 +456,7 @@ export async function dispatchToolCall(
         // it, after the block row exists (the frontier references it); a cancelled or timed-out
         // call never reaches this point.
         afterEvents: async (block) => {
+          await testHook("block.duringStore");
           const evidence = execResult.evidence;
           if (!evidence) return;
           const owner = { threadId: ctx.threadId, turnId: block.turnId };
@@ -464,6 +467,7 @@ export async function dispatchToolCall(
       },
     ),
   );
+  await testHook("block.afterStore");
   ctx.allBlocks.push(persistedToolResult.result);
   ctx.credited.add(persistedToolResult.result.id);
 

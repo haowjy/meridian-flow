@@ -7,6 +7,8 @@ import { z } from "zod";
 const toolCallSchema = z
   .strictObject({
     name: z.string().min(1),
+    /** The call's id as the provider names it; default `call_mock_<request>_<index>`. */
+    id: z.string().min(1).optional(),
     args: z.record(z.string(), z.unknown()).optional(),
     /** The arguments string sent as is, for malformed JSON; replaces `args`. */
     rawArgs: z.string().max(100_000).optional(),
@@ -76,6 +78,8 @@ export const mockModelStepSchema = z
     ...responseFields,
     /** Executed by the real runtime after reasoning/text. End a tool script with a text step. */
     toolCalls: z.array(toolCallSchema).min(1).max(100).optional(),
+    /** The response's provider id; default `chatcmpl-mock-<request>`. */
+    responseId: z.string().min(1).optional(),
     /** Truncation/filtering instead of normal completion; partial tools must not execute. */
     finishReason: z.enum(["length", "content_filter"]).optional(),
     error: z

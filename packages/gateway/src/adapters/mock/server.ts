@@ -318,9 +318,9 @@ export function createMockOpenAICompatibleServer(options?: {
       try {
         const body = (await readJsonBody(req)) as ChatCompletionRequest;
         const promptTokens = inputTokens(body);
-        const id = `chatcmpl-mock-${requestNumber}`;
         const model = body.model ?? "mock-llm-v1";
         const scripted = options?.script?.take(lastUserMessageText(body.messages));
+        const id = scripted?.responseId ?? `chatcmpl-mock-${requestNumber}`;
         if (scripted) {
           writeMockResponse(res, {
             id,
