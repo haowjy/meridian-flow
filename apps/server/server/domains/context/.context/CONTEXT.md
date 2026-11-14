@@ -347,8 +347,8 @@ binds once, to the first live document at its exact address, for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
-capture each other's waiting refs; a soft-deleted Work keeps its identity, so
-refs to its address wait for restore. Refs in a draft's text register globally
+capture each other's waiting refs; a soft-deleted Work keeps its identity and
+its files until the purge, so refs to its address bind while it is deleted. Refs in a draft's text register globally
 and best effort (an agent's mint, a link typed in the review room, and Apply's
 prerequisite for the drafts it publishes); a failed registration never fails
 Apply. The context link-scope adapter must receive the same scope instance as
@@ -356,8 +356,10 @@ collab, whose [document authority notes](../../collab/.context/document-authorit
 hold the scope rules.
 
 Zero or multiple matches resolve to `null`; resolution never guesses. An
-archived Work still resolves as authority and lists its files (archive hides a
-Work from Active, not its contents); only deleted Works hide theirs.
+archived or deleted Work still resolves as authority and lists its files until
+its purge (`ProjectWorkAuthorityResolver`, `presentSourceId`, availability's
+`placed` and `held`): its addresses read, and file policy refuses the writes as
+if the files were gone. Only `lockById` refuses a deleted Work.
 
 A ref-less address resolves in its typed scope; only chat falls back to a
 document's previous locations, and only after a current miss. Personal scope
