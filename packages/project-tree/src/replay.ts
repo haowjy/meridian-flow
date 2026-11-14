@@ -140,6 +140,8 @@ type Working = {
   /** Position of the record that last brought it to its parent under its name: who gets a number. */
   arrivedAt: number;
   purged: boolean;
+  /** The create it was made by, or the original a copy of that create carries. */
+  root: string;
   label: Array<Setter<LabelBefore>>;
   place: Array<Setter<PlaceBefore>>;
 };
@@ -252,8 +254,8 @@ export function replay(
         for (const member of [...entry.cascade])
           if (member === record.node || isAncestor(record.node, member)) takeOut(entry, member);
       }
-    if (!touch || took.entries.length > 0 || took.members.length > 0)
-      lifted.set(record.carries ?? record.id, took);
+    // A create's Undo is a plain delete of the node: nothing to put back.
+    if (record.type !== "create") lifted.set(record.carries ?? record.id, took);
   };
 
   // An Undo of a restore (or of a move or rename that lifted deletes, rule 9) takes it off: the
@@ -314,8 +316,16 @@ export function replay(
     const record = read.record;
     const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
     if (record.type === "create") {
-      if (nodes.has(record.node)) {
-        skip("duplicate");
+      const existing = nodes.get(record.node);
+      if (existing) {
+        // The same create applied again after an Undo of its Apply (the first copy's node is in
+        // Trash): it brings the node back, as a move would (rule 9). Any other is a repeat.
+        if (existing.root !== (record.carries ?? record.id)) {
+          skip("duplicate");
+          continue;
+        }
+        lift(record, existing, { ownOnly: record.draft !== null });
+        pend(record);
         continue;
       }
       if (record.kind === "document" && !isTracked(record.filetype)) {
@@ -346,6 +356,7 @@ export function replay(
         createdAt: index,
         arrivedAt: index,
         purged: false,
+        root: record.carries ?? record.id,
         label: [],
         place: [],
       });

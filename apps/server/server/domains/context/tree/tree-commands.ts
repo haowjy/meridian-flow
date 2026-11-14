@@ -1008,7 +1008,7 @@ export function runTreeCommand(
 
 export type UndoneTree = {
   /** Records the package refused to take back: something changed that fact since. */
-  outcomes: Array<"superseded" | "unknown">;
+  outcomes: Array<"changed_since" | "purged" | "already" | "unknown">;
   made: MadeRecord[];
   /** Whether any opposite record is in live (a drafted change an Apply landed is taken back there). */
   inLive: boolean;

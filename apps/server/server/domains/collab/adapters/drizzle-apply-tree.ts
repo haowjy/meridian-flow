@@ -173,7 +173,7 @@ export function createApplyTreeOperations(input: {
           if (!applied && restored.length === 0) continue;
           perList.push({
             scope: list.kind,
-            mark: applied?.mark ?? Y.encodeStateVector(writer.doc),
+            mark: Y.encodeStateVector(writer.doc),
             created: (applied?.copies ?? []).flatMap((copy) =>
               copy.type === "create" ? [copy.node] : [],
             ),

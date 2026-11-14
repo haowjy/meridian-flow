@@ -418,16 +418,10 @@ export function createDrizzleApplyClick(
                     make: (ends) => {
                       for (const [at, { writer }] of ends.entries()) {
                         const { tree } = pairs[at] as (typeof pairs)[number];
-                        const outcome = undoApply(
-                          writer,
-                          applyCommandId,
-                          tree.mark,
-                          by,
-                          commandId,
-                          written,
-                          tree.restored,
-                        );
-                        if (outcome !== "undone") throw new TreeRefusal(outcome);
+                        undoApply(writer, applyCommandId, by, commandId, {
+                          writtenSince: written,
+                          restoredByApply: tree.restored,
+                        });
                       }
                     },
                   });

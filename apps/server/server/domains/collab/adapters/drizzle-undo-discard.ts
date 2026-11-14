@@ -132,11 +132,11 @@ export function createDrizzleUndoDiscard(
                             target.id,
                             commandId,
                           )
-                        : ("superseded" as const);
+                        : ("already" as const);
                     }),
                 });
                 const restoredTree = result.flatMap((outcome) =>
-                  outcome === "superseded" ? [] : [outcome],
+                  outcome === "already" ? [] : [outcome],
                 );
 
                 let copied = 0;

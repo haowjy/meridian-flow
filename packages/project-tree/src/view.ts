@@ -69,7 +69,6 @@ export function viewValues(
     (value) =>
       !isRecord(value) ||
       (value.draft === null &&
-        settled.get(value.id) !== "undone" &&
         settled.get(value.id) !== "refused" &&
         settled.get(value.id) !== "dropped"),
   );

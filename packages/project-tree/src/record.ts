@@ -137,7 +137,6 @@ export function nameSet(record: TreeRecord): string | undefined {
 export type Settlement =
   | "applied"
   | "discarded"
-  | "undone"
   | "superseded"
   | "refused"
   /** A create the server stamped at admission: its Work or source was closed. In no view. */

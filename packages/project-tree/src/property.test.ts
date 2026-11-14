@@ -18,6 +18,7 @@ import {
   replay,
   replayView,
   sourceRoot,
+  type TreeProjection,
   type TreeRecord,
   TreeWriter,
   treeViolations,
@@ -28,6 +29,18 @@ import {
 } from "./index.js";
 
 const ROOT = sourceRoot("manuscript");
+
+/**
+ * The tree as it stands: what a writer sees, leaving out what is in Trash and the numbers on
+ * names (a node an Undo restored arrives again, so which of two same-named siblings is numbered
+ * can change).
+ */
+const standing = (projection: TreeProjection) =>
+  fingerprint(projection, false)
+    .replaceAll(/ \(\d+\)(?=#)/g, "")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("~") && !line.startsWith("source:"))
+    .join("\n");
 
 const cmd = () => crypto.randomUUID();
 
@@ -100,7 +113,6 @@ function runSeed(seed: number): {
   repaired: number;
   undone: number;
   undoneAny: number;
-  widened: number;
   leftPending: number;
 } {
   const random = rng(seed);
@@ -108,7 +120,6 @@ function runSeed(seed: number): {
   const replicas = makeReplicas();
   let undone = 0;
   let undoneAny = 0;
-  let widened = 0;
   let leftPending = 0;
 
   const deliver = (from: Replica, to: Replica) => {
@@ -166,7 +177,7 @@ function runSeed(seed: number): {
         const move = writer.move(view, actor, node.id, pick(targets), Math.floor(random() * 5));
         if (random() < 0.15) {
           const undo = undoChange(writer, view, actor, move.id);
-          if (undo !== "superseded" && undo !== "unknown")
+          if (typeof undo === "object")
             expect(fingerprint(replayView(writer.doc, view)), `seed ${seed} undo move`).toBe(
               before,
             );
@@ -205,28 +216,29 @@ function runSeed(seed: number): {
       if (pending.length === 0) continue;
       const some = random() < 0.5 ? [pick(pending).id] : undefined;
       if (action < 0.93) {
-        const shownBefore = fingerprint(replayView(writer.doc, view));
+        const shownBefore = standing(replayView(writer.doc, view));
         const shapeBefore = fingerprint(replayView(writer.doc, view), false);
-        const liveBefore = fingerprint(replayView(writer.doc, LIVE));
+        const liveBefore = standing(replayView(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);
         const landed = applyDraft(writer, view.draft, "user:w", cmd(), some);
         const landing = landed.left.length > 0;
-        if (landed.blocked) widened += 1;
-        if (landed.cannot.length > 0) leftPending += 1;
+        if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
-          expect(
-            undoApply(writer, landed.command, landed.mark, "user:w", cmd()),
-            `seed ${seed} undo apply`,
-          ).toBe("undone");
+          // A redo of an Undo with a later move on the node (including the one this very
+          // Undo took back) answers `changed_since` and stays; everything else goes back.
+          const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
-          expect(fingerprint(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(
-            liveBefore,
-          );
-          expect(fingerprint(replayView(writer.doc, view)), `seed ${seed} undo apply draft`).toBe(
-            shownBefore,
-          );
+          if (result.left.length === 0) {
+            expect(standing(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(
+              liveBefore,
+            );
+            if (landed.superseded.length === 0 && landed.left.length === 0)
+              expect(standing(replayView(writer.doc, view)), `seed ${seed} undo apply draft`).toBe(
+                shownBefore,
+              );
+          }
           for (const each of VIEWS)
             expect(viewProblems(writer.doc, each), `seed ${seed} step ${step}`).toEqual([]);
           continue;
@@ -236,7 +248,7 @@ function runSeed(seed: number): {
         // without them.
         // (Why a deleted folder still stands may change: a pending change kept it, and now
         // what landed inside it does. The shape is what must not change.)
-        if (landed.cannot.length === 0 && landed.superseded.length === 0)
+        if (landed.left.length === 0 && landed.superseded.length === 0)
           expect(
             fingerprint(replayView(writer.doc, view), false),
             `seed ${seed} partial apply`,
@@ -244,12 +256,14 @@ function runSeed(seed: number): {
         else {
           // A record settled as superseded was already overridden in the draft, so the whole
           // view must read the same once the rest that could land has landed.
-          if (landed.cannot.length === 0)
+          if (landed.left.length === 0)
             expect(
               fingerprint(replayView(writer.doc, view), false),
               `seed ${seed} apply with superseded`,
             ).toBe(shapeBefore);
-          const cannot = new Set([...landed.cannot, ...landed.superseded].map((op) => op.id));
+          const cannot = new Set(
+            [...landed.left.map(({ record }) => record), ...landed.superseded].map((op) => op.id),
+          );
           const without = (ops: readonly TreeRecord[]) =>
             fingerprint(
               replay(
@@ -322,7 +336,6 @@ function runSeed(seed: number): {
     repaired,
     undone,
     undoneAny,
-    widened,
     leftPending,
   };
 }
@@ -335,7 +348,6 @@ describe("file tree log under random concurrent edits", () => {
     let repaired = 0;
     let undone = 0;
     let undoneAny = 0;
-    let widened = 0;
     let leftPending = 0;
     for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed += 1) {
       const result = runSeed(seed);
@@ -345,7 +357,6 @@ describe("file tree log under random concurrent edits", () => {
       repaired += result.repaired;
       undone += result.undone;
       undoneAny += result.undoneAny;
-      widened += result.widened;
       leftPending += result.leftPending;
     }
     // The run must actually reach the hard cases, or it proves nothing about them.
@@ -354,7 +365,7 @@ describe("file tree log under random concurrent edits", () => {
     expect(undone).toBeGreaterThan(0);
     expect(undoneAny).toBeGreaterThan(0);
     console.info(
-      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${undoneAny} changes undone from a random earlier record, ${leftPending} Applies that left records that could not land, ${widened} Applies that took nothing because what could land was tied to what could not`,
+      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${undoneAny} changes undone from a random earlier record, ${leftPending} Applies that left records that could not land`,
     );
   }, 600_000);
 

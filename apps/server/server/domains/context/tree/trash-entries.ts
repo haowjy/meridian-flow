@@ -70,13 +70,13 @@ export async function discardedTree(
 /**
  * The tree half of restoring a Discard: fresh pending copies on `branchId`, in the caller's
  * command transaction (it joins it and takes the list's key, which sorts after the Work, branch
- * and draft rows). `superseded` when it was restored already or discarded nothing.
+ * and draft rows). `already` when it was restored already or discarded nothing.
  */
 export async function restoreDiscardedTree(
   store: Pick<TreeListStore, "submit">,
   list: TreeList,
   input: { command: string; by: Actor; branchId: string; restoreCommand: string },
-): Promise<{ copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded"> {
+): Promise<ReturnType<typeof restoreDiscard>> {
   const { result } = await store.submit({
     lists: [list],
     make: ([{ writer }]) =>
