@@ -43,20 +43,13 @@ export function createCompactionFixture(db: Database) {
         : ids.caller;
     const claim = createDrizzleRunClaim(db, { holderId: "fixture-owner" });
     const eventWriter = createQuietDrizzleJournalWriter(db);
+    // Compaction threshold in tokens; undefined leaves the model's default trigger.
     let threshold: number | undefined = 2500;
     // A child reads its spawner's binding for the chain's permission.
     const boundThreadIds = new Set([threadId, ...(options.child ? [ids.caller] : [])]);
     const source = createTestAgentBinding("gpt-5.6-luna", "Write stories.", () => [
       ...boundThreadIds,
     ]);
-    const binding = {
-      ...source,
-      async readThreadBinding(id: string) {
-        const result = await source.readThreadBinding(id);
-        if (result?.revision) result.revision.definition.metadata.autocompact = threshold;
-        return result;
-      },
-    };
     const gateway = options.gateway ?? scriptedGateway();
     const summarizer = options.summarizer ?? scriptedSummarizer();
     const { createDrizzleCreditLedger } = await import("../../../billing/index.js");
@@ -67,7 +60,7 @@ export function createCompactionFixture(db: Database) {
       repos,
       eventWriter,
       runClaim: claim,
-      agentRevisions: binding,
+      agentRevisions: source,
       summarizer,
       gateway: {
         ...gateway,
@@ -78,6 +71,8 @@ export function createCompactionFixture(db: Database) {
             tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 128000,
+            // The default trigger is 90% of the smaller of this tier and the usable window.
+            ...(threshold !== undefined && { inputTierTokens: Math.ceil(threshold / 0.9) }),
             maxOutputTokens: 100,
             promptCache: { kind: "automatic", shortTtlSeconds: 60, longTtlSeconds: 60 },
             reasoning: { efforts: ["low", "medium", "high", "max"] },

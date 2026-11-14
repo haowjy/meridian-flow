@@ -57,9 +57,6 @@ export interface NormalizedAgentMetadata {
   "disallowed-tools"?: string[];
   subagents?: string[];
   skills?: { load?: string[]; available?: string[] };
-  /** Nothing sets these any more; the runtime still reads them. */
-  autocompact?: number;
-  autocompact_pct?: number;
 }
 export interface CompiledAgentDefinition {
   schemaVersion: 1;
