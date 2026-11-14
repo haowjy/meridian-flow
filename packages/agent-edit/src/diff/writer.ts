@@ -2,143 +2,32 @@
  * The minimal Yjs writer: writes target blocks into an XmlFragment as per-word edits so every item the
  * target leaves alone keeps its identity, and a peer's concurrent edits to those items survive.
  *
- * `correspond` says which block is which, by id (equal blocks are untouched); a paired block is edited in
- * place, and a container is written the same way over its children. Inside a paragraph its atoms
- * (breaks, images) pair the same way, and the text run in each gap between them is reconciled where
- * it is. Text is diffed by word and written as inserts and deletes (insert first, as
- * `applyTextEdit` does), marks by `format`, attributes by set or remove. Only a block that pairs
- * with nothing (a type change) is deleted and rebuilt. Never use
- * `updateYFragment` here: its one prefix/suffix diff per text retypes everything between two edits, so a
- * peer's deletion in the middle would be undone.
+ * `correspond` says which top-level block is which, by id (equal blocks are untouched). A paired block
+ * is written by the model's own lowering and adapter (`lowerBlock`, `applyOps`): operations on its
+ * text, marks, attributes and, in a container, its nodes, so the element stays. Only a block that pairs
+ * with nothing (a type change) is deleted and rebuilt. Never use `updateYFragment` here: its one
+ * prefix/suffix diff per text retypes everything between two edits, so a peer's deletion in the middle
+ * would be undone.
  */
 
 import { assertBlockIds } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { applyOps, pmNodeToYElement } from "../model/y-prosemirror.js";
+import type { EditOp } from "../ports/model.js";
+import { lowerBlock } from "../resolver/lower-block.js";
 import { splitTextBoundaries } from "../yjs-mutation.js";
-import { TextRun } from "../yjs-text-runs.js";
 import { correspond } from "./correspond.js";
 import { readBlocks } from "./fragments.js";
 import { type RestorationLink, recordWriteBack } from "./restorations.js";
-import { diffKeys, splitWords, wordDiff } from "./tokens.js";
-
-type Attrs = Record<string, unknown>;
-
-/** y-prosemirror's mark encoding: one attribute per mark, holding the mark's attrs. */
-const markAttrs = (n: PMNode): Attrs =>
-  Object.fromEntries(n.marks.map((m) => [m.type.name, m.attrs]));
-
-/** Builds the Yjs element for a node, in the shape y-prosemirror reads back. */
-export function pmToY(node: PMNode): Y.XmlElement {
-  const el = new Y.XmlElement(node.type.name);
-  for (const [k, v] of Object.entries(node.attrs))
-    if (v !== null && v !== undefined) el.setAttribute(k, v as string);
-  const children: Array<Y.XmlElement | Y.XmlText> = [];
-  let text: Y.XmlText | null = null;
-  let at = 0;
-  node.forEach((child) => {
-    if (child.isText) {
-      if (!text) {
-        text = new Y.XmlText();
-        children.push(text);
-        at = 0;
-      }
-      text.insert(at, child.text ?? "", markAttrs(child));
-      at += child.text?.length ?? 0;
-    } else {
-      text = null;
-      children.push(pmToY(child));
-    }
-  });
-  if (children.length) el.insert(0, children);
-  return el;
-}
+import { diffKeys, splitWords } from "./tokens.js";
 
 export interface WriteStats {
   kept: number;
-  edited: number; // written in place: text/attr edits on the existing element
+  edited: number; // written in place: operations on the existing element
   inserted: number;
   deleted: number;
-}
-
-/** Edits one run of adjacent Y.XmlText into the target text and marks, touching only what changed. */
-function editText(text: TextRun, target: readonly PMNode[]) {
-  const cur = text
-    .toDelta()
-    .map((d) => d.insert)
-    .join("");
-  const segs: Array<{ from: number; to: number; attrs: Attrs }> = [];
-  let off = 0;
-  target.forEach((n) => {
-    const len = n.text?.length ?? 0;
-    segs.push({ from: off, to: off + len, attrs: markAttrs(n) });
-    off += len;
-  });
-  const want = target.map((n) => n.textContent).join("");
-  const insertRange = (at: number, tFrom: number, tTo: number) => {
-    for (const s of segs) {
-      const a = Math.max(s.from, tFrom);
-      const b = Math.min(s.to, tTo);
-      if (a < b) {
-        text.insert(at, want.slice(a, b), s.attrs);
-        at += b - a;
-      }
-    }
-  };
-  const ops = wordDiff(cur, want);
-  let idx = 0;
-  let tOff = 0;
-  for (let k = 0; k < ops.length; k++) {
-    const [op, s] = ops[k];
-    if (op === DIFF_EQUAL) {
-      idx += s.length;
-      tOff += s.length;
-    } else if (op === DIFF_DELETE) {
-      const next = ops[k + 1];
-      if (next && next[0] === DIFF_INSERT) {
-        // Insert before deleting: an insert into a deleted run anchors beside writer text typed at
-        // its end and can land in front of it.
-        insertRange(idx, tOff, tOff + next[1].length);
-        idx += next[1].length;
-        tOff += next[1].length;
-        k++;
-      }
-      text.delete(idx, s.length);
-    } else {
-      insertRange(idx, tOff, tOff + s.length);
-      idx += s.length;
-      tOff += s.length;
-    }
-  }
-  // Marks on text that stayed.
-  const delta = text.toDelta();
-  let p = 0;
-  const curSegs = delta.map((d) => {
-    const r = { from: p, to: p + d.insert.length, attrs: d.attributes ?? {} };
-    p = r.to;
-    return r;
-  });
-  for (const s of segs)
-    for (const c of curSegs) {
-      const a = Math.max(s.from, c.from);
-      const b = Math.min(s.to, c.to);
-      if (a >= b) continue;
-      const diff: Attrs = {};
-      for (const k of new Set([...Object.keys(s.attrs), ...Object.keys(c.attrs)]))
-        if (JSON.stringify(s.attrs[k] ?? null) !== JSON.stringify(c.attrs[k] ?? null))
-          diff[k] = s.attrs[k] ?? null;
-      if (Object.keys(diff).length) text.format(a, b - a, diff);
-    }
-}
-
-function editAttrs(el: Y.XmlElement, target: PMNode) {
-  const have = el.getAttributes() as Attrs;
-  for (const [k, v] of Object.entries(target.attrs)) {
-    if (v === null || v === undefined) {
-      if (k in have) el.removeAttribute(k);
-    } else if (JSON.stringify(have[k]) !== JSON.stringify(v)) el.setAttribute(k, v as string);
-  }
 }
 
 /**
@@ -154,27 +43,21 @@ export function writeBlocks(
   // Every door that makes blocks gives them ids first, so one without is a bug at that door.
   for (const block of target) assertBlockIds(block);
   const stats: WriteStats = { kept: 0, edited: 0, inserted: 0, deleted: 0 };
-  writeChildren(frag, readBlocks(frag, schema), target, stats, copies, true);
+  writeChildren(frag, readBlocks(frag, schema), target, stats, copies);
   return stats;
 }
 
-/** A container (a table, a JSX container) whose children are blocks: written child by child. */
-const nests = (cur: PMNode, tgt: PMNode) =>
-  cur.type === tgt.type && !tgt.isTextblock && cur.childCount > 0 && tgt.childCount > 0;
-
 /**
- * Writes `target` into the block children of `parent`, which hold `current`. A paired container is
- * written the same way over its own children, so a block added or removed inside a table or JSX
- * container leaves the container's element, and anything aimed at it, in place. `record` says whether
- * this level maps restored copies back to their source (an enclosing rebuild already does).
+ * Writes `target` into the top-level blocks of `parent`, which hold `current`. A gap is
+ * structural for Discard's restoration links when a block in it pairs with nothing or its
+ * operations insert or delete a node (a row added to a table).
  */
 function writeChildren(
-  parent: Y.XmlFragment | Y.XmlElement,
+  parent: Y.XmlFragment,
   current: readonly PMNode[],
   target: readonly PMNode[],
   stats: WriteStats,
   copies: RestorationLink[] | undefined,
-  record: boolean,
 ): void {
   // An id match is final; blocks with no id (the model's write) pair by guess. A block that moved,
   // or whose id now names another type of element, is deleted where it was and inserted where it is.
@@ -200,14 +83,20 @@ function writeChildren(
   for (const [c0, c1, t0, t1] of gaps.reverse()) {
     const pairs: Array<[number, number]> = [];
     for (let c = c0; c < c1; c++) if (partner[c] >= 0) pairs.push([c, partner[c]]);
-    const rebuilt = copies !== undefined && (pairs.length !== c1 - c0 || pairs.length !== t1 - t0);
+    // Operations address each block as it is now, so they are lowered before anything is written.
+    const ops = new Map(pairs.map(([c, t]) => [c, lowerBlock(current[c], target[t])]));
+    const rebuilt =
+      copies !== undefined &&
+      (pairs.length !== c1 - c0 ||
+        pairs.length !== t1 - t0 ||
+        [...ops.values()].some((list) =>
+          list.some((op) => op.kind === "insert" || op.kind === "delete"),
+        ));
     // Only a structural gap needs a source map; capture it before deleting containers can
     // collect their descendants.
-    const before =
-      rebuilt && record ? copyUnits(parent.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
+    const before = rebuilt ? copyUnits(parent.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
     // Yjs splits with Array.splice. Pre-splitting in clock order keeps a full rewrite from
     // shifting all later paragraphs' new word items at each boundary; no clocks are allocated.
-    // A nested level's items are inside the enclosing level's paired subtrees, already split.
     const runs: Array<{ text: Y.XmlText; offsets: number[] }> = [];
     const visit = (element: Y.XmlElement) => {
       for (const child of element.toArray()) {
@@ -240,21 +129,14 @@ function writeChildren(
       const ins: PMNode[] = [];
       for (let k = t + 1; k < tPtr; k++) if (!pairedT.has(k)) ins.push(target[k]);
       if (ins.length) {
-        parent.insert(c + 1, ins.map(pmToY));
+        parent.insert(c + 1, ins.map(pmNodeToYElement));
         stats.inserted += ins.length;
       }
       tPtr = t;
       if (c < c0) break;
-      const el = parent.get(c) as Y.XmlElement;
-      const tgt = target[t];
-      if (nests(current[c], tgt)) {
-        editAttrs(el, tgt);
-        writeChildren(el, children(current[c]), children(tgt), stats, copies, record && !rebuilt);
-        stats.edited++;
-      } else {
-        editContent(el, current[c], tgt);
-        stats.edited++;
-      }
+      const applied = applyOps(parent.get(c) as Y.XmlElement, ops.get(c) as EditOp[]);
+      if (!applied.ok) throw new Error(applied.message);
+      stats.edited++;
     }
     if (before && copies)
       copies.push(
@@ -265,134 +147,6 @@ function writeChildren(
           clock,
         ),
       );
-  }
-}
-
-const children = (node: PMNode): PMNode[] => {
-  const out: PMNode[] = [];
-  node.forEach((child) => {
-    out.push(child);
-  });
-  return out;
-};
-
-/** An XmlText holding `nodes`, text with its marks. */
-function textOf(nodes: readonly PMNode[]): Y.XmlText {
-  const text = new Y.XmlText();
-  let at = 0;
-  for (const n of nodes) {
-    text.insert(at, n.text ?? "", markAttrs(n));
-    at += n.text?.length ?? 0;
-  }
-  return text;
-}
-
-/**
- * Edits an element to `target`, which has the type of the node `cur` it was read as. Its atoms
- * (breaks, images, inline nodes) pair with the target's by `correspond` and are edited in place,
- * an unpaired one is deleted or inserted where it stands. In each gap between two paired atoms
- * the text there is one run, because adjacent texts are one run (`yjs-text-runs.ts`), and it is
- * reconciled with the target's text of the gap: a run only the target has is created there, a run
- * only the element has is emptied, never deleted.
- */
-function editContent(el: Y.XmlElement, cur: PMNode, target: PMNode): void {
-  editAttrs(el, target);
-  const atoms = el
-    .toArray()
-    .filter((child): child is Y.XmlElement => child instanceof Y.XmlElement);
-  const [curAtoms, targetKids] = [children(cur).filter((kid) => !kid.isText), children(target)];
-  const tgtAtoms = targetKids.filter((kid) => !kid.isText);
-  const { partner } = correspond(curAtoms, tgtAtoms);
-  const atomAt = targetKids.flatMap((kid, at) => (kid.isText ? [] : [at]));
-  const paired: Array<[number, number]> = [];
-  partner.forEach((b, a) => {
-    if (b >= 0) {
-      editContent(atoms[a], curAtoms[a], tgtAtoms[b]);
-      paired.push([a, b]);
-    }
-  });
-  // Gaps right to left: [first atom, end atom] on each side, among the unpaired ones.
-  const bounds = [...paired, [atoms.length, tgtAtoms.length] as [number, number]];
-  for (let g = bounds.length - 1; g >= 0; g--) {
-    const [aEnd, bEnd] = bounds[g];
-    const [aFrom, bFrom] = g > 0 ? [bounds[g - 1][0] + 1, bounds[g - 1][1] + 1] : [0, 0];
-    for (let a = aEnd - 1; a >= aFrom; a--) el.delete(el.toArray().indexOf(atoms[a]), 1);
-    const kids = el.toArray();
-    const from = g > 0 ? kids.indexOf(atoms[bounds[g - 1][0]]) + 1 : 0;
-    const to = aEnd < atoms.length ? kids.indexOf(atoms[aEnd]) : kids.length;
-    const texts = kids.slice(from, to) as Y.XmlText[];
-    // The target's nodes in this gap, with its atoms and where they fall in its text.
-    const [tStart, tEnd] = [
-      bFrom > 0 ? atomAt[bFrom - 1] + 1 : 0,
-      bEnd < tgtAtoms.length ? atomAt[bEnd] : targetKids.length,
-    ];
-    const wanted = targetKids.slice(tStart, tEnd);
-    const wantedText = wanted.filter((n) => n.isText);
-    if (texts.length === 0) {
-      let run: PMNode[] = [];
-      const made: Array<Y.XmlText | Y.XmlElement> = [];
-      const flush = () => {
-        if (run.length) made.push(textOf(run));
-        run = [];
-      };
-      for (const n of wanted) {
-        if (n.isText) run.push(n);
-        else {
-          flush();
-          made.push(pmToY(n));
-        }
-      }
-      flush();
-      if (made.length) el.insert(from, made);
-      continue;
-    }
-    editText(new TextRun(texts), wantedText);
-    let offset = wantedText.reduce((sum, n) => sum + (n.text?.length ?? 0), 0);
-    // Atoms from the last, so an earlier position is unmoved by a later split.
-    for (let k = wanted.length - 1; k >= 0; k--) {
-      if (wanted[k].isText) offset -= wanted[k].text?.length ?? 0;
-      else insertAtom(el, texts, offset, pmToY(wanted[k]), from);
-    }
-  }
-}
-
-/**
- * Puts `atom` at `offset` in the run of `texts`, which starts at child `from` of `el`; inside a text,
- * its tail moves to a text after the atom. Atoms at one offset go in from the last, each before the
- * one inserted before it.
- */
-function insertAtom(
-  el: Y.XmlElement,
-  texts: readonly Y.XmlText[],
-  offset: number,
-  atom: Y.XmlElement,
-  from: number,
-): void {
-  let start = 0;
-  for (const text of texts) {
-    const end = start + text.length;
-    if (offset <= end) {
-      const index = el.toArray().indexOf(text);
-      if (offset === end) el.insert(index + 1, [atom]);
-      else if (offset === start) el.insert(from, [atom]);
-      else {
-        const tail = new Y.XmlText();
-        let at = 0;
-        let seen = 0;
-        for (const part of text.toDelta() as Array<{ insert: string; attributes?: Attrs }>) {
-          const skip = Math.max(0, offset - start - seen);
-          seen += part.insert.length;
-          if (skip >= part.insert.length) continue;
-          const rest = part.insert.slice(skip);
-          tail.insert(at, rest, part.attributes);
-          at += rest.length;
-        }
-        text.delete(offset - start, end - offset);
-        el.insert(index + 1, [atom, tail]);
-      }
-      return;
-    }
-    start = end;
   }
 }
 
@@ -446,7 +200,7 @@ function copiedUnits(
   client: number,
   clock: number,
 ): RestorationLink[] {
-  // Match whole words, as editText does. Character matching would falsely link the shared letters
+  // Match whole words, as the lowering's word diff does. Character matching would falsely link the shared letters
   // of a reverted word ("blue" -> "red") to the rejected AI write.
   const tokens = (units: CopyUnit[]) => {
     const out: Array<{ key: string; units: CopyUnit[] }> = [];

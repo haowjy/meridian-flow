@@ -59,4 +59,4 @@ export {
 } from "./review.js";
 export type { Tok } from "./tokens.js";
 export { countWords } from "./word-count.js";
-export { pmToY, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
+export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

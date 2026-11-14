@@ -703,16 +703,16 @@ function replaceScope(
         flushStructural();
         const before = oldNodes[step.old];
         const after = newBlocks[step.next];
-        const lowered = lowerBlock(
-          ctx.codec,
-          before,
-          after,
-          windows && [windows.old[step.old], windows.new[step.next]],
-          () => {
-            const { body, open } = documentEntries(ctx)[scope.startIndex + step.old];
-            return { body, open };
+        const lowered = lowerBlock(before, after, {
+          placed: windows && [windows.old[step.old], windows.new[step.next]],
+          shownBy: {
+            codec: ctx.codec,
+            place: () => {
+              const { body, open } = documentEntries(ctx)[scope.startIndex + step.old];
+              return { body, open };
+            },
           },
-        );
+        });
         anchor = oldBlocks[step.old];
         insertionRun = {};
         if (lowered.length === 0) keptBlocks = true;

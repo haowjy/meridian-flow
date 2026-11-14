@@ -31,6 +31,7 @@ import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import { applyTextEdit } from "../test-support/text-edit.js";
 import { type ResolveWriteParams, resolveWrite } from "./resolve.js";
 
 const schema = buildDocumentSchema();
@@ -46,7 +47,7 @@ const deleteText =
   (room) => {
     const block = model.getBlocks(room)[0];
     const from = model.getText(block).indexOf(text);
-    model.applyTextEdit(room, block, { from, to: from + text.length }, "");
+    applyTextEdit(block, { from, to: from + text.length }, "");
   };
 
 const findInsert = { command: "insert", find: "disciple.", content: " DRAFT-B2." } as const;
@@ -98,7 +99,7 @@ it.each([
     (room: Y.Doc) => {
       deleteLine(room);
       const block = model.getBlocks(room)[0];
-      model.applyTextEdit(room, block, { from: 0, to: 0 }, "WRITER ");
+      applyTextEdit(block, { from: 0, to: 0 }, "WRITER ");
     },
     `WRITER ${WHOLE}`,
   ],

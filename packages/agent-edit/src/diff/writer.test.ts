@@ -9,9 +9,10 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { genScenario, Rng, resetWords, show, toPM } from "../content-merge/merge.fixtures.js";
 import { contentMerge } from "../content-merge/merge.js";
+import { pmNodeToYElement } from "../model/y-prosemirror.js";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
-import { pmToY, writeBlocks } from "./writer.js";
+import { writeBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
 const FRAG = "prosemirror";
@@ -20,7 +21,7 @@ const para = (s: string) =>
 
 function seeded(blocks: readonly PMNode[]): Y.Doc {
   const doc = new Y.Doc();
-  doc.getXmlFragment(FRAG).insert(0, blocks.map(pmToY));
+  doc.getXmlFragment(FRAG).insert(0, blocks.map(pmNodeToYElement));
   return doc;
 }
 

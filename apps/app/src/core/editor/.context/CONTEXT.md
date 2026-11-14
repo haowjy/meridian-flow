@@ -78,14 +78,13 @@ barrier that drains that open.
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
   `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
-  is not a dependency); `agent-edit`'s own writers restate the rule in
-  `src/yjs-text-runs.ts`. Stock y-tiptap and y-prosemirror fold the run into
+  is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
+  rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
   To drop the patch when upstream stops doing either, remove the grouping
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
-  read) and keep `refreshProseMirrorDoc`; then reduce `yjs-text-runs.ts` to what
-  the writers still need.
+  read) and keep `refreshProseMirrorDoc`.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
