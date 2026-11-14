@@ -116,8 +116,6 @@ export type DocumentSessionSnapshot = {
 export type DocumentSessionAccess = "edit" | "read";
 
 export type DocumentSessionResetReason =
-  /** The room's access changed while local edits were pending; the server refused them. */
-  | typeof WS_CLOSE.ACCESS_CHANGED.reason
   | typeof WS_CLOSE.DRAFT_CLOSED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
@@ -130,13 +128,7 @@ export type DocumentSessionResetReason =
  * rebuilds or replays on its own; the session stays read-only until its owner
  * closes it, or an exact open proves the document present and restarts it.
  */
-export type ResetDisposition =
-  | "superseded"
-  | "rebuild"
-  | "refused"
-  | "schema"
-  | "removed"
-  | "closed";
+export type ResetDisposition = "schema" | "removed" | "closed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -452,10 +444,6 @@ export class DocumentSession {
   async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
-    }
-    if (this.resetDisposition === "refused") {
-      // A reconnect would replay the refused edits from this Y.Doc.
-      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
     }
     await this.detachTransport();
     await this.localPeers?.drain();

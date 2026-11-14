@@ -470,8 +470,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   (the server drops a read-only room's writes without closing it). The live registry
   and `DraftRoomPool` both ask it; neither keeps its own list.
 - A held session ends when the server acknowledges its edits, when the predicate turns
-  false, when the room is refused, the document removed or access revoked
-  (`dropRefusedRoom`, `drainDocument`, `drainAccess`), when the account closes
+  false, when the document is removed or access revoked
+  (`drainDocument`, `drainAccess`), when the account closes
   (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time
@@ -492,9 +492,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
   `observeUnsentTyping` once per session. It reads them on a closing or removing reset
   (its own subscription, made before the draft pool's, which retires the room on that same
-  notification) and in `drainDocument`, `drainAccess` (a refused live room's drop ends there)
-  and `closeDraftRoom`. A refused draft room hands nothing back: its rebuild keeps the typing
-  from IndexedDB. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  notification) and in `drainDocument`, `drainAccess`
+  and `closeDraftRoom`. A 4409 access change is no reset: the room reconnects and keeps its
+  typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back: an Undo or a Restore after it cannot.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
