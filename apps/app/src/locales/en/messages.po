@@ -1949,12 +1949,12 @@ msgid "Couldn't create this document. Try another place."
 msgstr "Couldn't create this document. Try another place."
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this file."
-msgstr "Couldn't create this file."
+#~ msgid "Couldn't create this file."
+#~ msgstr "Couldn't create this file."
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this folder."
-msgstr "Couldn't create this folder."
+#~ msgid "Couldn't create this folder."
+#~ msgstr "Couldn't create this folder."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't create this folder. Try another place."
@@ -5136,6 +5136,10 @@ msgstr "Status unknown"
 msgid "Stayed as you edited it"
 msgstr "Stayed as you edited it"
 
+#: src/features/project/context/tree-action-message.ts
+msgid "Still loading. Try again in a moment."
+msgstr "Still loading. Try again in a moment."
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5924,9 +5928,13 @@ msgstr "This file holds code only."
 msgid "This file is binary, so this change can't be reversed."
 msgstr "This file is binary, so this change can't be reversed."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This file is no longer there. Refresh and try again."
+msgstr "This file is no longer there. Refresh and try again."
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This file is unavailable. Refresh and try again."
-msgstr "This file is unavailable. Refresh and try again."
+#~ msgid "This file is unavailable. Refresh and try again."
+#~ msgstr "This file is unavailable. Refresh and try again."
 
 #: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
@@ -5940,9 +5948,13 @@ msgstr "This folder couldn't be created where you put it."
 msgid "This folder is no longer available."
 msgstr "This folder is no longer available."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This folder is no longer there. Refresh and try again."
+msgstr "This folder is no longer there. Refresh and try again."
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This folder is unavailable. Refresh and try again."
-msgstr "This folder is unavailable. Refresh and try again."
+#~ msgid "This folder is unavailable. Refresh and try again."
+#~ msgstr "This folder is unavailable. Refresh and try again."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 msgid "This fork continues here"
@@ -5976,6 +5988,10 @@ msgstr "This Meridian export can't be read. Import its folders one at a time."
 msgid "This move or delete changed since you looked. Check it, then apply again."
 msgstr "This move or delete changed since you looked. Check it, then apply again."
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This name can't be used. Try a different one."
+msgstr "This name can't be used. Try a different one."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
 msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
@@ -5995,6 +6011,10 @@ msgstr "This passage couldn't be recovered."
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
+
+#: src/features/project/context/tree-action-message.ts
+msgid "This project is read-only, so nothing can be changed here."
+msgstr "This project is read-only, so nothing can be changed here."
 
 #: src/client/api/meridian-error.ts
 msgid "This project was deleted."
@@ -6548,6 +6568,10 @@ msgstr "You can't copy there."
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "You can't open these files."
 msgstr "You can't open these files."
+
+#: src/features/project/context/tree-action-message.ts
+msgid "You don't have access to change this."
+msgstr "You don't have access to change this."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

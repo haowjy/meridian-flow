@@ -44,5 +44,5 @@ Children: [`file-suggestions/AGENTS.md`](file-suggestions/AGENTS.md). The list's
 editor admission and identity continuity: [`.context/CONTEXT.md`](.context/CONTEXT.md). Drag,
 selection and menus: [`.context/tree-interactions.md`](.context/tree-interactions.md). Also
 [identity bar](.context/document-identity-bar.md),
-[catalog and editor lifecycle](.context/resource-catalog-and-editor-lifecycle.md),
+[presented documents and editor lifecycle](.context/resource-catalog-and-editor-lifecycle.md),
 [TODO](.context/TODO.md), [FUTURE](.context/FUTURE.md).

@@ -359,7 +359,7 @@ source supplies what it names (a document or folder by identity, the name to sho
 shows). An element spreads the props `useReferenceDrag` returns: `draggable` and an `onDragStart`
 that publishes the drag with `source: "reference"`. A source that isn't an element (the Editor's
 link) takes `useReferenceDragStart()` and calls the start it returns; both give nothing on the
-phone shell, and a source that names nothing yet gets no props. A source never reads the replica
+phone shell, and a source that names nothing yet gets no props. A source never reads the replay
 or decides what a drop does: `resolveDrop` finds the entry by identity, so a renamed or moved
 document drags as itself and a gone one answers "Some of these items are no longer there".
 

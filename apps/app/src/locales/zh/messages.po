@@ -1949,12 +1949,12 @@ msgid "Couldn't create this document. Try another place."
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this file."
-msgstr ""
+#~ msgid "Couldn't create this file."
+#~ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-msgid "Couldn't create this folder."
-msgstr ""
+#~ msgid "Couldn't create this folder."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't create this folder. Try another place."
@@ -5136,6 +5136,10 @@ msgstr "状态未知"
 msgid "Stayed as you edited it"
 msgstr ""
 
+#: src/features/project/context/tree-action-message.ts
+msgid "Still loading. Try again in a moment."
+msgstr "仍在加载，请稍后再试。"
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5924,9 +5928,13 @@ msgstr ""
 msgid "This file is binary, so this change can't be reversed."
 msgstr ""
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This file is no longer there. Refresh and try again."
+msgstr "此文件已不存在。请刷新后重试。"
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This file is unavailable. Refresh and try again."
-msgstr ""
+#~ msgid "This file is unavailable. Refresh and try again."
+#~ msgstr ""
 
 #: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
@@ -5940,9 +5948,13 @@ msgstr ""
 msgid "This folder is no longer available."
 msgstr ""
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This folder is no longer there. Refresh and try again."
+msgstr "此文件夹已不存在。请刷新后重试。"
+
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "This folder is unavailable. Refresh and try again."
-msgstr ""
+#~ msgid "This folder is unavailable. Refresh and try again."
+#~ msgstr ""
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 msgid "This fork continues here"
@@ -5976,6 +5988,10 @@ msgstr ""
 msgid "This move or delete changed since you looked. Check it, then apply again."
 msgstr ""
 
+#: src/features/project/context/tree-action-message.ts
+msgid "This name can't be used. Try a different one."
+msgstr "无法使用这个名称，请换一个。"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
@@ -5995,6 +6011,10 @@ msgstr ""
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
+
+#: src/features/project/context/tree-action-message.ts
+msgid "This project is read-only, so nothing can be changed here."
+msgstr "此项目为只读，无法在此做任何更改。"
 
 #: src/client/api/meridian-error.ts
 msgid "This project was deleted."
@@ -6548,6 +6568,10 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "You can't open these files."
 msgstr ""
+
+#: src/features/project/context/tree-action-message.ts
+msgid "You don't have access to change this."
+msgstr "你没有修改此内容的权限。"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
