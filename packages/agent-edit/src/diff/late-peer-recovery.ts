@@ -243,7 +243,6 @@ export function recoverLatePeerEdits(input: {
       (key) => frameTyped.has(key) || liveIds.has(key),
       afterDelete.has(block) ? documentDeleted : peerDeleted,
     )) {
-      const text = span.text.trim();
       const ids = new Set(span.ids);
       const matches = live.filter((s) => !claimed.has(s) && s.ids.some((id) => ids.has(id)));
       for (const s of matches) claimed.add(s);
