@@ -42,11 +42,12 @@ function parseDocument(value: unknown): OpenDocument | undefined {
   if (!isRecord(value)) return undefined;
   const { kind, documentId, name } = value;
   if (typeof documentId !== "string" || typeof name !== "string") return undefined;
-  if (kind === "new")
-    return typeof value.resourceHandle === "string" ? (value as OpenDocument) : undefined;
+  // A tab stored before a node's handle became its document id carries `resourceHandle`: dropped.
+  const { resourceHandle: _handle, ...stored } = value;
+  if (kind === "new") return stored as OpenDocument;
   if (kind !== "tracked" && kind !== "viewer") return undefined;
   if (!isProjectContextTreeScheme(value.scheme) || typeof value.path !== "string") return undefined;
-  return value as OpenDocument;
+  return stored as OpenDocument;
 }
 
 function parseLane<K extends MainTabKind>(

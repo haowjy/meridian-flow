@@ -3,9 +3,6 @@
  * data (list, detail, threads, works, context tree). Single source of key
  * shapes so reads, writes, and invalidations stay consistent.
  */
-import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { catalogScopeKey } from "@meridian/contracts/protocol";
-
 export function isProjectWorkDerivedKey(
   queryKey: readonly unknown[],
   projectId: string,
@@ -19,44 +16,13 @@ export function isProjectWorkDerivedKey(
   return queryKey[4] === "branches" || (queryKey[4] === "documents" && queryKey.includes("draft"));
 }
 
-export function isWorkScopedProjectContextCatalogKey(
-  queryKey: readonly unknown[],
-  projectId: string,
-  workIds?: ReadonlySet<string>,
-): boolean {
-  if (
-    queryKey.length !== 4 ||
-    queryKey[0] !== "projects" ||
-    queryKey[1] !== projectId ||
-    queryKey[2] !== "context-catalog"
-  ) {
-    return false;
-  }
-  const scopeKey = queryKey[3];
-  if (typeof scopeKey !== "string" || !scopeKey.startsWith("work:")) return false;
-  const workId = scopeKey.split(":").at(-1);
-  return Boolean(workId && (!workIds || workIds.has(workId)));
-}
-
-export function isProjectContextCatalogKey(
-  queryKey: readonly unknown[],
-  projectId: string,
-): boolean {
-  return (
-    queryKey.length === 4 &&
-    queryKey[0] === "projects" &&
-    queryKey[1] === projectId &&
-    queryKey[2] === "context-catalog"
-  );
-}
-
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,
   renamePrefix: ["projects", "rename"] as const,
   rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
-  /** A document's imported properties, fetched by id once the catalog says it has any. */
+  /** A document's imported properties, fetched by id once the tree says it has any. */
   documentProperties: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "properties"] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
@@ -96,25 +62,9 @@ export const projectQueryKeys = {
   ownerDraftMetadataOf: (projectId: string, owner: string, documentId: string) =>
     ["projects", projectId, "draft-metadata", owner, documentId] as const,
   contextSources: (projectId: string) => ["projects", projectId, "context-sources"] as const,
+  /** `fileCount` refetches the facts when an upload arrives or goes. */
+  chatUploads: (projectId: string, chatId: string, fileCount: number) =>
+    ["projects", projectId, "chat-uploads", chatId, fileCount] as const,
   accountContextSources: () => ["account", "context-sources"] as const,
-  contextCatalog: (projectId: string, scope: CatalogScope) =>
-    ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
-  contextCatalogView: (
-    projectId: string,
-    scheme: ProjectContextTreeScheme,
-    owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null } = {},
-  ) => {
-    const scope: CatalogScope =
-      scheme === "user"
-        ? { kind: "user", userId: "self" }
-        : scheme === "uploads"
-          ? { kind: "chat", projectId, chatId: owner.chatId ?? "" }
-          : scheme === "scratch" && owner.rootThreadId
-            ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
-            : scheme === "scratch"
-              ? { kind: "work", projectId, workId: owner.workId ?? "" }
-              : { kind: "project", projectId };
-    return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
-  },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,
 };

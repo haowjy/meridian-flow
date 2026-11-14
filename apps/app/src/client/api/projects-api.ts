@@ -39,13 +39,11 @@ import {
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
   type CatalogChanges,
-  type CatalogLookupResult,
   type CatalogScope,
   type CatalogSnapshot,
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
-  type CreateContextEntryResult,
   type CreateContextFolderRequest,
   type CreateContextFolderResponse,
   type CreateProjectRequest,
@@ -55,7 +53,6 @@ import {
   type CreateUntitledContextDocumentAnswer,
   type CreateUntitledContextDocumentRequest,
   contextReadResponseSchema,
-  createContextEntryResultSchema,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressRequestOptions,
@@ -257,6 +254,25 @@ export async function getProjectContextSources(
   return getJson(apiProjectContextSourcesPath(projectId), { signal });
 }
 
+/**
+ * What a chat's uploads query says that its tree list does not (the server's `ChatUploadsResult`):
+ * when each file was attached and whether a sent message has used it.
+ */
+export type ChatUploadFacts = {
+  uploads: readonly { documentId: string; attachedAt: string; used: boolean }[];
+};
+
+export async function getChatUploadFacts(
+  projectId: string,
+  chatId: string,
+  signal?: AbortSignal,
+): Promise<ChatUploadFacts> {
+  return getJson(
+    `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`,
+    { signal },
+  );
+}
+
 export async function getAccountContextSources(
   signal?: AbortSignal,
 ): Promise<ContextSourcesResult> {
@@ -282,16 +298,6 @@ export async function getContextCatalogChanges(
   return getJson(
     `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
     { signal },
-  );
-}
-
-export async function getContextCatalogLookup(
-  projectId: string,
-  scope: CatalogScope,
-  lookup: { entryId: string } | { uri: string },
-): Promise<CatalogLookupResult> {
-  return getJson(
-    `${apiProjectContextCatalogPath(projectId, "lookup")}?${catalogQuery(scope, lookup)}`,
   );
 }
 
@@ -337,23 +343,6 @@ function acceptsContextConflict(status: number, payload: unknown): boolean {
     "status" in payload &&
     payload.status === "conflict"
   );
-}
-
-export async function createContextEntry(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: { type: "file" | "folder"; path: string; content?: string },
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateContextEntryResult> {
-  return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
-    schema: createContextEntryResultSchema.refine(
-      (result) =>
-        result.status !== "created" || body.type === "folder" || result.documentId !== undefined,
-    ),
-    headers: init?.headers,
-    acceptErrorResponse: acceptsContextConflict,
-  });
 }
 
 export async function createUntitledContextDocument(

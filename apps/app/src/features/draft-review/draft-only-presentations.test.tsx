@@ -3,7 +3,7 @@
  * Which presentations keep a document draft-only, and what ends them: a late answer about an old
  * host mount, the document coming back live, the held draft ending. Real registry, removal
  * coordinator; the presented document, the removed notice and the server answers (draft lists,
- * draft metadata, catalog) are stubs.
+ * draft metadata, tree) are stubs.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one registry token per host mount, and one per draft held open by a live delete
@@ -47,20 +47,18 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => "account-a",
   useOptionalDraftOnlyPresentations: () => registry,
   useOptionalContextRemovalCoordinator: () => removal,
-  useOptionalAccountResourceReplica: () => ({
-    acquireCatalogAfter: async () => ({ entries: new Map() }),
-  }),
-  useObservedResourceProjection: () => ({ records: [], placement: null }),
   useOptionalProjectContextAvailabilityCoordinator: () => null,
   useOptionalRemovedNotices: () => ({
     presentedRemoved: (_project: string, tabs: readonly OpenDocument[]) =>
       removedNotices.push(...tabs.map((tab) => tab.documentId)),
   }),
 }));
+vi.mock("@/client/query/useProjectTrees", () => ({
+  useProjectTrees: () => ({ isComplete: true, find: () => null }),
+}));
 vi.mock("@/client/query/useOwnerDrafts", () => ({
   useOwnerDrafts: () => ({ status: "ready", drafts: [] }),
   cachedOwnerDrafts: () => [],
-  catalogOwnerOf: () => ({}),
   ownerDraftsQueryOptions: (project: string, owner: string) => ({
     queryKey: ["owner-drafts", project, owner],
     queryFn: async () => ({ items: [] }),

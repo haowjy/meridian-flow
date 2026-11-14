@@ -1,7 +1,5 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
-import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { listRecentDocuments } from "@/client/api/recent-documents-api";
@@ -12,11 +10,10 @@ import {
   getAccountRecentsSnapshot,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { useAccountResourceProjection } from "@/features/project/context/account-feature-context";
 import { accountQueryKeys } from "./account-query-keys";
-import { recentDeletionRevision, recentDocumentIdentityIndex } from "./recent-document-identity";
+import { useProjectTrees } from "./useProjectTrees";
 
-/** A recent item with whether the editor can open it: the replica says, or the server list until it loads. */
+/** A recent item with whether the editor can open it: the tree says, or the server list until it loads. */
 export type RecentDocument = AccountRecentItem & { editable: boolean };
 
 export type RecentDocumentsStatus = {
@@ -39,13 +36,7 @@ type RecentListFetch = {
  * another account bind is ignored.
  */
 export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
-  const { snapshot } = useAccountResourceProjection(projectId);
-  const identities = useMemo(
-    () => recentDocumentIdentityIndex(projectId, snapshot),
-    [projectId, snapshot],
-  );
-  const deletionRevision = recentDeletionRevision(projectId, snapshot);
-  const queryClient = useQueryClient();
+  const placed = useProjectTrees(projectId);
   const local = useSyncExternalStore(
     subscribeAccountRecents,
     getAccountRecentsSnapshot,
@@ -65,45 +56,32 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
     applyServerRecentList(accountId, projectId, fetched.documents, fetched.bindEpoch);
   }, [accountId, local.bindEpoch, projectId, query.data]);
 
-  useEffect(() => {
-    if (!accountId || deletionRevision === "" || deletionRevision === "[]") return;
-    void queryClient.invalidateQueries({
-      queryKey: accountQueryKeys.recentDocuments(accountId, projectId),
-    });
-  }, [accountId, deletionRevision, projectId, queryClient]);
-
   const documents = useMemo((): RecentDocument[] => {
     if (!local.bound) return [];
     const served = new Map(query.data?.documents.map((row) => [row.documentId, row.editable]));
-    // Items are newest first, so the first sighting of a resource is its latest open.
-    const seen = new Set<string>();
     return local.items.flatMap((item) => {
       if (item.projectId !== projectId) return [];
-      const identity = identities.get(item.documentId);
-      if (identity === null) return [];
-      const currentId = identity?.documentId ?? item.documentId;
-      if (seen.has(currentId)) return [];
-      seen.add(currentId);
-      if (!identity) return [{ ...item, editable: served.get(item.documentId) ?? false }];
-      const parsed = parseContextUri(identity.path);
+      const place = placed.find(item.documentId);
+      // The list has synced and does not show it: in Trash or gone, so it is not Recent.
+      if (!place) {
+        return placed.isComplete
+          ? []
+          : [{ ...item, editable: served.get(item.documentId) ?? false }];
+      }
       return [
         {
           ...item,
-          editable: identity.editable,
-          documentId: currentId,
-          name: identity.name,
-          address:
-            parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
-              ? {
-                  kind: "document" as const,
-                  scheme: parsed.value.scheme,
-                  path: `/${parsed.value.path}`,
-                }
-              : item.address,
+          editable: place.file.editable,
+          name: place.file.name,
+          address: {
+            kind: "document" as const,
+            scheme: place.source.scheme,
+            path: place.file.path,
+          },
         },
       ];
     });
-  }, [identities, local, projectId, query.data]);
+  }, [placed, local, projectId, query.data]);
   const awaitingServer =
     !local.bound || (documents.length === 0 && (query.isPending || query.isFetching));
   const status =
