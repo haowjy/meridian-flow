@@ -49,11 +49,7 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
     if (kind === "hr") return schema.nodes.horizontal_rule.create(own);
     if (kind === "fig")
       return schema.nodes.figure.create({ src: `asset:${text}`, alt: text, ...own });
-    if (kind === "quote")
-      return schema.nodes.blockquote.create(
-        own,
-        text.split(";").map((t) => para(t)),
-      );
+    if (kind === "quote") return text.split(";").map((t) => para(t, { path: ">" }));
     if (kind === "table")
       return schema.nodes.table.create(
         own,
@@ -155,18 +151,28 @@ function inline(schema: Schema, text: string): PMNode[] {
 
 export function render(blocks: readonly PMNode[]): string {
   const parts: string[] = [];
-  let items: string[] | null = null;
+  let kind: string | null = null;
+  let texts: string[] = [];
   for (const b of blocks) {
-    if (b.type.name === "paragraph" && b.attrs.path === "-" && b.attrs.marker === "item") {
-      if (!items) {
-        items = [];
+    const k =
+      b.type.name !== "paragraph"
+        ? null
+        : b.attrs.path === "-" && b.attrs.marker === "item"
+          ? "list"
+          : b.attrs.path === ">"
+            ? "quote"
+            : null;
+    if (k) {
+      if (k !== kind) {
+        texts = [];
         parts.push("");
       }
-      items.push(b.textContent);
-      parts[parts.length - 1] = `list:${items.join(";")}`;
+      kind = k;
+      texts.push(b.textContent);
+      parts[parts.length - 1] = `${k}:${texts.join(";")}`;
       continue;
     }
-    items = null;
+    kind = null;
     parts.push(renderBlock(b));
   }
   return parts.join(" | ");
@@ -175,13 +181,6 @@ export function render(blocks: readonly PMNode[]): string {
 function renderBlock(b: PMNode): string {
   if (b.type.name === "horizontal_rule") return "hr";
   if (b.type.name === "figure") return `fig:${b.attrs.alt}`;
-  if (b.type.name === "blockquote") {
-    const paras: string[] = [];
-    b.forEach((p) => {
-      paras.push(p.textContent);
-    });
-    return `quote:${paras.join(";")}`;
-  }
   if (b.type.name === "table") {
     const rows: string[] = [];
     b.forEach((row) => {
@@ -243,17 +242,16 @@ export type GBlock =
       kind: "text";
       type: "paragraph" | "heading";
       level: number;
-      /** A list item: a paragraph with a list marker. */
-      item: boolean;
+      /** `-` is a list item, `>` a quoted paragraph. */
+      path: "" | "-" | ">";
       words: Word[];
       origins: number[];
     })
   | (Ided & { kind: "figure"; alt: string; origins: number[] })
   | (Ided & { kind: "rule"; origins: number[] })
-  // A quote's paragraphs, or a table's cells in row order (`cols` per row).
+  // A table's cells in row order (`cols` per row).
   | (Ided & {
       kind: "container";
-      type: "quote" | "table";
       units: Word[][];
       /** The id of each unit's paragraph, and of each table row. */
       unitIds: string[];
@@ -337,21 +335,19 @@ function textBlock(rng: Rng, n: number, origins: number[]): GBlock {
     id: newId(),
     type: heading ? "heading" : "paragraph",
     level: heading ? 1 + rng.int(3) : 1,
-    item: !heading && rng.chance(0.2),
+    path: heading ? "" : rng.pick(["", "", "", "-", ">"] as const),
     words,
     origins,
   };
 }
 
 function container(rng: Rng, origins: number[]): GBlock {
-  const type = rng.pick(["quote", "table"] as const);
-  const cols = type === "table" ? 2 + rng.int(2) : 1;
+  const cols = 2 + rng.int(2);
   const rows = 1 + rng.int(3);
   const units = Array.from({ length: rows * cols }, () => unit(rng));
   return {
     kind: "container",
     id: newId(),
-    type,
     units,
     unitIds: units.map(newId),
     rowIds: Array.from({ length: rows }, newId),
@@ -538,7 +534,7 @@ function applyOpInner(
         id: newId(),
         type: "paragraph",
         level: 1,
-        item: b.item,
+        path: b.path,
         words: tail,
         origins: [...b.origins],
       });
@@ -594,11 +590,11 @@ function applyOpInner(
     case "setType": {
       if (!texts.length) return null;
       const [b] = rng.pick(texts);
-      if (rng.chance(0.3) && b.type === "paragraph") b.item = !b.item;
+      if (rng.chance(0.3) && b.type === "paragraph") b.path = rng.pick(["", "-", ">"] as const);
       else if (b.type === "heading") b.type = "paragraph";
       else {
         b.type = "heading";
-        b.item = false;
+        b.path = "";
         b.level = 1 + rng.int(3);
       }
       touch(b);
@@ -617,7 +613,7 @@ function applyOpInner(
       if (!containers.length) return null;
       const b = rng.pick(containers);
       // A table grows by a row or a column, so live adding one and the draft the other is generated.
-      if (b.type === "table" && rng.chance(0.4)) {
+      if (rng.chance(0.4)) {
         const rows = b.units.length / b.cols;
         const units: Word[][] = [];
         const ids: string[] = [];
@@ -650,9 +646,8 @@ function applyOpInner(
       return op;
     }
     case "editAttr": {
-      const tables = containers.filter((b) => b.type === "table");
-      if (!tables.length) return null;
-      const b = rng.pick(tables);
+      if (!containers.length) return null;
+      const b = rng.pick(containers);
       b.attrs.align = b.attrs.align ? null : "center";
       touch(b);
       return op;
@@ -731,7 +726,6 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
       const { nodes } = schema;
       const para = (u: Word[], k: number) =>
         nodes.paragraph.create({ id: b.unitIds[k] }, wordNodes(schema, u));
-      if (b.type === "quote") return nodes.blockquote.create({ id: b.id }, b.units.map(para));
       const rows: PMNode[] = [];
       for (let r = 0; r < b.units.length; r += b.cols)
         rows.push(
@@ -748,7 +742,7 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
     const attrs = {
       id: b.id,
       ...(b.type === "heading" ? { level: b.level } : {}),
-      ...(b.item ? { path: "-", marker: "item" } : {}),
+      ...(b.path === "-" ? { path: "-", marker: "item" } : b.path ? { path: b.path } : {}),
     };
     return schema.nodes.paragraph.create(attrs, content);
   });

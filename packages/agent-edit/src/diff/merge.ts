@@ -151,7 +151,7 @@ interface ContainerMerge {
 }
 
 /**
- * Both sides changed a run of containers (lists, quotes, tables) that each side kept as the same
+ * Both sides changed a run of containers (tables) that each side kept as the same
  * number of the same types, so the run merges pairwise by the containers' children instead of
  * as whole-block tokens. Null when the run does not have that shape, or when a merged node would
  * not be a valid container: the caller then keeps the `whole-block-unit` clash.

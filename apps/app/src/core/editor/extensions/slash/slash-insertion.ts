@@ -26,12 +26,12 @@ type SlashBlock = {
 /** What an entry lands, which is the question availability has to ask. */
 type SlashInsertion =
   | ({ strategy: "block" } & SlashBlock)
-  /** The block the trigger is in becomes a list item, or leaves the list: the toolbar's toggle. */
-  | { strategy: "list"; kind: SlashListKind }
+  /** The block the trigger is in is listed or quoted, or leaves the list or quote: the toolbar's toggle. */
+  | { strategy: "toggle"; kind: SlashToggleKind }
   /** A picture, inline where the trigger was. */
   | { strategy: "image" };
 
-type SlashListKind = "bullet" | "ordered" | "task";
+type SlashToggleKind = "bullet" | "ordered" | "task" | "quote";
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
 
@@ -58,10 +58,10 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
   "heading-3": heading(3),
-  "bullet-list": { strategy: "list", kind: "bullet" },
-  "numbered-list": { strategy: "list", kind: "ordered" },
-  "task-list": { strategy: "list", kind: "task" },
-  quote: block({ type: "blockquote", content: [emptyParagraph] }),
+  "bullet-list": { strategy: "toggle", kind: "bullet" },
+  "numbered-list": { strategy: "toggle", kind: "ordered" },
+  "task-list": { strategy: "toggle", kind: "task" },
+  quote: { strategy: "toggle", kind: "quote" },
   divider: block({ type: "horizontal_rule" }, "after"),
   table: block({
     type: "table",
@@ -95,15 +95,15 @@ type SlashTarget =
   | { mode: "insert-after"; pos: number; block: SlashBlock }
   /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number }
-  /** The trigger's own block is listed or unlisted in place. */
-  | { mode: "list"; kind: SlashListKind };
+  /** The trigger's own block is listed, quoted, or taken out of either in place. */
+  | { mode: "toggle"; kind: SlashToggleKind };
 
 /** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
   if (insertion.strategy === "image") return inlineImageTarget(doc, pos);
-  if (insertion.strategy === "list") {
+  if (insertion.strategy === "toggle") {
     return doc.resolve(pos).parent.type.name === "paragraph"
-      ? { mode: "list", kind: insertion.kind }
+      ? { mode: "toggle", kind: insertion.kind }
       : null;
   }
   return blockTarget(doc, pos, insertion);
@@ -191,10 +191,15 @@ export function applySlashCommand(
   const target = slashTarget(deleted.doc, at, SLASH_INSERTIONS[item.id]);
   if (!target) return false;
 
-  if (target.mode === "list") {
+  if (target.mode === "toggle") {
     const chain = editor.chain().focus().deleteRange(range);
+    const { kind } = target;
     return (
-      target.kind === "task" ? chain.toggleTaskList() : chain.toggleListKind(target.kind)
+      kind === "task"
+        ? chain.toggleTaskList()
+        : kind === "quote"
+          ? chain.toggleQuote()
+          : chain.toggleListKind(kind)
     ).run();
   }
 

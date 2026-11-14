@@ -139,7 +139,7 @@ describe("mdx prose and component round-trip corpus", () => {
       ),
       paragraph(t("nested "), t("bold-italic", [m("strong"), m("em")]), t(" word.")),
       paragraph(t("line one"), schema.node("hard_break"), t("line two")),
-      schema.node("blockquote", null, [paragraph(t("A quoted line."))]),
+      schema.node("paragraph", { path: ">" }, [t("A quoted line.")]),
       listItem({}, t("first")),
       listItem({}, t("second")),
       listItem({ kind: "ordered", start: 3, loose: true }, t("three")),

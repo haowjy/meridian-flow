@@ -16,8 +16,8 @@ one transaction the host owns, and route inverses through `prepareSave`.
 
 ## Stale-view writes into structural blocks
 
-A write that adds, removes or retypes a node inside a quote, list, table or other
-container (a new list item, a table row), or breaks a line of
+A write that adds, removes or retypes a node inside a table or other container (a
+table row), or breaks a line of
 verse in two, is rewritten as a whole block, as if the writer had deleted nothing since
 the model's read. A model insert beside a line the writer deleted can land split, a
 rewrite can bring the deleted line back, and a change to a word the writer retyped can

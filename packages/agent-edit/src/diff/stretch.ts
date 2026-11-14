@@ -109,7 +109,7 @@ export interface Stretch {
  *
  * Two changes clash when they meet at one place and the token merge cannot be trusted with them:
  * - at a base block, when one side removed the block and the other changed it in any way, or both
- *   sides restructured it, or one side split or joined a container (a table row, a quote) that the
+ *   sides restructured it, or one side split or joined a container (a table row) that the
  *   other changed: the token merge sees a container as one token, so an edit cannot travel into its
  *   pieces as it does into a paragraph's;
  * - at a gap inside a join, when the other side has anything there.

@@ -158,14 +158,14 @@ export function writeBlocks(
   return stats;
 }
 
-/** A container (quote, list, table, ...) whose children are blocks: written child by child. */
+/** A container (a table, a JSX container) whose children are blocks: written child by child. */
 const nests = (cur: PMNode, tgt: PMNode) =>
   cur.type === tgt.type && !tgt.isTextblock && cur.childCount > 0 && tgt.childCount > 0;
 
 /**
  * Writes `target` into the block children of `parent`, which hold `current`. A paired container is
- * written the same way over its own children, so a block added or removed inside a quote, list or
- * table leaves the container's element, and anything aimed at it, in place. `record` says whether
+ * written the same way over its own children, so a block added or removed inside a table or JSX
+ * container leaves the container's element, and anything aimed at it, in place. `record` says whether
  * this level maps restored copies back to their source (an enclosing rebuild already does).
  */
 function writeChildren(

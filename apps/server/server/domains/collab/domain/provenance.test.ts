@@ -134,7 +134,7 @@ describe("provenance materialization", () => {
     const before = Y.encodeStateVector(doc);
     const fragment = doc.getXmlFragment("prosemirror");
     fragment.delete(0, 1);
-    const replacementBlock = new Y.XmlElement("blockquote");
+    const replacementBlock = new Y.XmlElement("code_block");
     replacementBlock.push([new Y.XmlText("old")]);
     fragment.push([replacementBlock]);
 

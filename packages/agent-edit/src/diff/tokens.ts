@@ -343,7 +343,7 @@ export function sharedBound(a: PMNode, b: PMNode): number {
 
 /**
  * Share of words two blocks have in order, over the longer block's words (or the shorter's, for
- * `inPlace` pairs, where position already agrees). A container (a quote, a list) counts the words of
+ * `inPlace` pairs, where position already agrees). A container (a table, a JSX container) counts the words of
  * its textblocks. 1 for equal blocks, 0 for different kinds of block or when it can't reach `floor`.
  */
 export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): number {

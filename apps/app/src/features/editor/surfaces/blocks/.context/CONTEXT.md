@@ -49,9 +49,9 @@ re-parsing the dropped HTML turns a figure into a bare paragraph.
 The handle's menu (left or right click, the `grip` claim rung, both ending in
 one open call) offers Turn into only on text blocks, reusing the toolbar's
 `blockTypeRefusal` fence and greying with a reason when refused; a move with
-nowhere to go is absent. Alignment lives on the toolbar. A list, quote or table
-has no Turn into row, so the menu turns a paragraph into a list but never back;
-un-listing lives on the toolbar.
+nowhere to go is absent. Alignment lives on the toolbar. A list item or a quoted
+line is a paragraph with nesting, so Turn into reaches it and its own row toggles
+back (Quote on a quoted line takes it out); a table has no Turn into row.
 
 ## Placement
 

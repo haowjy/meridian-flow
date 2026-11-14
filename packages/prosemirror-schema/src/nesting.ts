@@ -289,6 +289,21 @@ export function landingBase(above: readonly Step[] | null, depth: number): Step[
 }
 
 /**
+ * How many leading steps the blocks `from` to `to` (exclusive) sit in together: the same quote,
+ * or at a list step the same item. Two items of one list share nothing at that step.
+ */
+export function sharedSteps(facts: readonly BlockFacts[], from: number, to: number): number {
+  let shared = facts[from]?.steps.length ?? 0;
+  for (let i = from + 1; i < to; i++) {
+    const steps = facts[i].steps;
+    let k = 0;
+    while (k < shared && k < steps.length && !steps[k].opens && !steps[k].startsItem) k++;
+    shared = k;
+  }
+  return shared;
+}
+
+/**
  * The block range of the item a block starts: the block plus every following block that is
  * deeper or continues it. A block that starts no item is its own range.
  */
