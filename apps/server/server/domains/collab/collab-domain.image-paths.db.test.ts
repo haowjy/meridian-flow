@@ -318,7 +318,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           writeMode: "draft",
         },
         documentSync: collab,
-      }).grep(grepQuery("See created"));
+      }).grep(
+        grepQuery("See created", {
+          destination: { kind: "draft", owner: view.owner, ownerHandle: "w1" },
+        }),
+      );
       if (!markdown.ok || !hashlines.ok || !search.ok) {
         throw new Error(JSON.stringify({ markdown, hashlines, search }));
       }
