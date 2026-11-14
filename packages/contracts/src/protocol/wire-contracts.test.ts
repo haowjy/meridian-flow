@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from "vitest";
 import type { ControlBody } from "../threads/index.js";
-import { apiProjectDocumentAddressPath } from "./paths.js";
 import { referenceOccurrenceContent, skillOccurrenceContent } from "./user-turn-admission.js";
 import { encodeWsServerMessage, parseWsServerMessage } from "./ws-protocol.js";
 import { encodeChangeEventWsMessage, parseYjsStatelessMessage } from "./yjs-ws.js";
@@ -304,19 +303,3 @@ describe("thread socket frames", () => {
     ).toBeNull();
   });
 }
-
-it("serializes the Work and item selector without changing the manuscript owner", () => {
-  const address = apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", {
-    workId: null,
-    review: { owner: "work:review-work", itemKey: "branch:document" },
-  });
-  const query = new URL(address, "https://example.test").searchParams;
-  expect(Object.fromEntries(query)).toEqual({
-    path: "chapters/one",
-    reviewOwner: "work:review-work",
-    itemKey: "branch:document",
-  });
-  expect(
-    apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", { workId: null }),
-  ).toBe("/api/projects/project/context/manuscript/address?path=chapters%2Fone");
-});

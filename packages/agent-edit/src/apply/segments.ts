@@ -12,7 +12,7 @@ export function editSegments(
   const blocks = model.getBlocks(doc);
   let structuralEnd: number | undefined;
   for (const edit of edits) {
-    if (edit.kind === "ops" || edit.kind === "block") {
+    if (edit.kind === "ops") {
       structuralEnd = undefined;
       segments.push([edit]);
     } else {

@@ -190,7 +190,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   function acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean {
     if (!documentContainment.contains(doc, update)) return false;
     if (!lateTyping.has(draftId)) return true;
-    const lost = findLostEdits(doc, update);
+    const lost = findLostEdits(doc, update, false);
     if (!lost.deleted.length) return true;
     const remember = () => {
       // An outer transaction can outlive another committed frame. Advance the latest
@@ -202,7 +202,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         recoverLatePeerEdits({
           doc,
           update,
-          lost: { typed: [], deleted: lost.deleted },
+          lost: { ...lost, typed: [] },
           memory,
           schema: buildDocumentSchema(),
           fragmentName: PROSEMIRROR_FRAGMENT_NAME,
@@ -469,6 +469,12 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
                     ),
               );
             }
+            if (finalized?.recovered?.length)
+              input.diagnostics?.lateTypingRecovered({
+                draftId: snapshot.draftId,
+                paragraphs: finalized.recovered.length,
+                chars: finalized.recovered.reduce((n, text) => n + text.length, 0),
+              });
             input.onAppendCommitted(snapshot.draftId);
           }
           compactIfLong(snapshot.draftId);
@@ -495,8 +501,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
                 ? {
                     recovery: {
                       memory: () => lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
-                      serverDeletedBlocks: (ids: readonly Y.ID[]) =>
-                        input.store.serverDeletedBlocks(snapshot.draftId, ids),
+                      writerText: (ids: readonly Y.ID[]) =>
+                        input.store.writerText(snapshot.draftId, ids),
                     },
                   }
                 : {}),

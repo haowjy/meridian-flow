@@ -7,6 +7,7 @@
  */
 import type { ContextOwner, ContextSource } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
+import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
 import { buildTreeView, type TreeFile, type TreeView } from "@/core/project-tree/tree-view";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
@@ -40,24 +41,30 @@ const WAITING: ProjectTrees = {
   find: () => null,
 };
 
-/** `account` adds the account's own list (`user://`). */
-export function useProjectTrees(projectId: string, options?: { account?: boolean }): ProjectTrees {
-  const wantsAccount = options?.account ?? false;
+/**
+ * The project's list and the account's own (`user://`, Your files in every project): a document
+ * moved between them is still found. `version` reads a Work's tree in place of live.
+ */
+export function useProjectTrees(
+  projectId: string,
+  options?: { version?: TreeVersion },
+): ProjectTrees {
+  const { view, pendingText } = options?.version ?? LIVE_VERSION;
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
-  const account = useTreeList(wantsAccount ? { kind: "account", userId: accountId } : null);
+  const account = useTreeList({ kind: "account", userId: accountId });
   const projectSources = useProjectContextSources(projectId);
-  const accountSources = useAccountContextSources(wantsAccount);
+  const accountSources = useAccountContextSources();
   return useMemo(() => {
     const lists = [
       { list: project, sources: projectSources },
-      ...(wantsAccount ? [{ list: account, sources: accountSources }] : []),
+      { list: account, sources: accountSources },
     ];
     if (lists.some(({ list, sources }) => !list.session || !list.snapshot || !sources))
       return WAITING;
     const built = new Map<string, { source: ContextSource; tree: TreeView }>();
     const entries = lists.flatMap(({ list, sources }) => {
-      const projection = list.session?.replay();
+      const projection = list.session?.replay(view, pendingText);
       if (!projection) return [];
       return (sources ?? []).map((source) => ({
         source,
@@ -107,6 +114,7 @@ export function useProjectTrees(projectId: string, options?: { account?: boolean
     account.snapshot?.version,
     projectSources,
     accountSources,
-    wantsAccount,
+    view,
+    pendingText,
   ]);
 }

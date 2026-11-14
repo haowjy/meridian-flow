@@ -18,7 +18,7 @@ through `client/query/useProjectTree.ts` (a source's tree from the replay) and w
   follower that hears the rebuild rewrites what it wrote that the owner did not carry.
 - Resolve an address only when the status is `synced`, `read-only` or `offline`; `waiting` is
   "waiting for the list", not "not there". The snapshot's `version` counts changes to the copy:
-  `session.replay()` is the live replay once per version, shared by every reader. The snapshot's `rejected` holds records the server
+  `session.replay(view)` is a view's replay (live by default, or live then a Work's pending records) once per version, shared by every reader. The snapshot's `rejected` holds records the server
   refused until they were given up on.
 - Closing a session cancels its queued lock request, and the connection lives exactly as long as
   the lock callback.

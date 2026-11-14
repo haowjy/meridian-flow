@@ -335,8 +335,9 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
 /**
  * The documents and folders among the requested ids that the view shows and this project (with
  * the writer's own User area) holds, each with the address its source gives it. A node in
- * Trash, in a hidden or deleted source, Work or project, or in another project's source is
- * absent; one whose source identity is inconsistent is named in `inconsistent`.
+ * Trash, in a hidden or deleted source or project, or in another project's source is absent (a
+ * deleted Work's files stay until its purge); one whose source identity is inconsistent is named
+ * in `inconsistent`.
  */
 async function readPlacedNodes(
   db: Database,
@@ -395,8 +396,8 @@ async function readPlacedNodes(
           ])
         ).map((folder) => [folder.id, folder]),
       );
-      const live = (row: SourceFacts) =>
-        !row.source.deletedAt && !row.sourceProject?.deletedAt && !row.work?.deletedAt;
+      // A deleted Work's files read until its purge removes them, like its Scratch's source.
+      const live = (row: SourceFacts) => !row.source.deletedAt && !row.sourceProject?.deletedAt;
       const classify = (row: SourceFacts, parentId: string | null) =>
         classifySourceIdentity({
           row: { ...row, node: { parentId, deleted: false } },
@@ -564,7 +565,7 @@ function heldInProject(row: SourceFacts, projectId: string, userId: string): boo
  * The address this project holds `id` at in live, in Trash included, read from the node and its
  * source rather than through a Work authority. Null when the project holds no such node (a node
  * in no live view is held by no one); `unreachable` when it holds one no live address can name
- * (in Trash, or an inconsistent identity).
+ * (in Trash, or an inconsistent identity). A deleted Work's files are held until its purge.
  */
 async function resolveHeldContextNode(input: {
   db: Database;
@@ -593,8 +594,7 @@ async function resolveHeldContextNode(input: {
   // Another project holding the id is not this project's row.
   if (!heldInProject(found, input.projectId, input.userId)) return null;
   if (found.deleted) return { kind: "unreachable" };
-  if (found.source.deletedAt || found.sourceProject?.deletedAt || found.work?.deletedAt)
-    return { kind: "unreachable" };
+  if (found.source.deletedAt || found.sourceProject?.deletedAt) return { kind: "unreachable" };
   const foldersById = new Map(
     (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
       (folder) => [folder.id, folder],

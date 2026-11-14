@@ -53,7 +53,10 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
-import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
+import {
+  branchFolderRevisions,
+  createDrizzleBranchTreeState,
+} from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -75,6 +78,7 @@ import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
+import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -335,7 +339,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     codec: runtime.codec,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   const agentEdit = scopeAgentEdit(
@@ -359,8 +362,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     enterDraftSeam: async () => {
       await lockSeamWorks(deps.db, []);
     },
-    ensureWorkDraft: ({ documentId, branchId }) =>
-      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId }),
+    ensureWorkDraft: ({ documentId, branchId, seen }) =>
+      drafts.ensureLiveDocumentDraft({ documentId, branchId: branchId as BranchId, seen }),
     lockDraft: async (draftId) => {
       await currentDrizzleDb(deps.db)
         .select({ id: documentDrafts.id })
@@ -502,6 +505,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         await draftPulls.flushLivePull(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
       },
+      merged: ({ commandId, kind, rules, overrode }) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "debug",
+            source: "collab.draft_review",
+            name: `${kind}.merge.counted`,
+            payload: { commandId, rules, overrode },
+          });
+      },
       measured: (measurement) => {
         if (deps.eventSink)
           emitEvent(deps.eventSink, {
@@ -534,6 +546,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
+    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(
@@ -577,6 +590,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const turnReversal = createTurnReversalService({
     turnInverse,
+    lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     commands,

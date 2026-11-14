@@ -5,6 +5,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { isNested } from "@meridian/prosemirror-schema";
 import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
@@ -17,6 +18,7 @@ import { canJoin, dropPoint } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 
 import { sliceForDestination } from "../extensions/meridian-extensions";
+import { landSlice } from "../extensions/nesting";
 import type { DropDoor, DropPlan } from "./drop-plan";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 import { crossesTextblocks, removeRange } from "./range-removal";
@@ -209,7 +211,7 @@ function sliceDropTransaction(
   }
   const insertAt = transaction.steps.length;
   if (single) transaction.replaceRangeWith(gap, gap, single);
-  else transaction.replaceRange(gap, gap, blocks?.slice ?? slice);
+  else transaction.replaceRange(gap, gap, blocks ? landSlice(blocks.slice, $mapped) : slice);
   if (transaction.doc.eq(beforeInsert)) return null;
 
   let from = gap;
@@ -277,12 +279,16 @@ function blocksAtLanding(
     const { $from, $to } = selection;
     if ($from.depth === 1 && $from.parent.isTextblock) {
       if ($from.parentOffset === $from.parent.content.size) nodes.shift();
-      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock)
+      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock && !isNested(nodes[0].attrs.path))
         nodes[0] = retype(nodes[0], landingBlock);
     }
     if ($to.depth === 1 && $to.parent.isTextblock) {
       if ($to.parentOffset === 0) nodes.pop();
-      else if ($to.parentOffset < $to.parent.content.size && nodes.at(-1)?.isTextblock) {
+      else if (
+        $to.parentOffset < $to.parent.content.size &&
+        nodes.at(-1)?.isTextblock &&
+        !isNested(nodes.at(-1)?.attrs.path)
+      ) {
         nodes[nodes.length - 1] = retype(nodes.at(-1) as PMNode, landingBlock);
         joinsTail = true;
       }

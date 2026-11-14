@@ -6,6 +6,7 @@ import {
   classifyChanges,
   composeHunks,
   diffBlocks,
+  type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
@@ -23,9 +24,10 @@ import type {
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+import { CommandExistsError, replay } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
-import { DocumentCommandExistsError, type DocumentCommands, replay } from "./document-commands.js";
+import type { DocumentCommands } from "./document-commands.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -57,12 +59,17 @@ export type PreparedUnapply = {
 };
 export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
-  optimistic: readonly PMNode[];
-  patched: readonly PMNode[];
   groups: CompiledApplyGroup[];
 };
+/**
+ * One selected group, as a step of a chain: `before` is the base with the click's earlier groups
+ * applied (the optimistic base for the first), `patched` that with this group applied too. Merging
+ * each step into live in turn applies the click once; every step merged against the same base would
+ * see its sibling groups as concurrent changes.
+ */
 type CompiledApplyGroup = {
   groupId: string;
+  before: readonly PMNode[];
   patched: readonly PMNode[];
   record: ApplyEntry;
 };
@@ -154,35 +161,31 @@ export function compileClick(
       { ...provenance, snapshot },
       { record: true },
     );
-    const compileGroup = (groupId: string): CompiledApplyGroup => {
+    const chosen: Hunk[] = [];
+    let before = optimistic;
+    const groups = request.groupIds.map((groupId): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
       if (!group) throw new ApplyClickRefused("malformed");
-      const hunks = group.hunks.map((hunk) => projection.diff.hunks[hunk.index]);
-      const patches = composeHunks(schema, projection.diff, hunks, "apply");
-      return {
+      chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
+      const patched = applySpanPatches(
+        optimistic,
+        composeHunks(schema, projection.diff, chosen, "apply"),
+        "base",
+      );
+      const step = {
         groupId,
-        patched: applySpanPatches(optimistic, patches, "base"),
+        before,
+        patched,
         record: {
           ...applyRecordOf(classifications, [groupId]),
           commandId: request.commandId,
           groupId,
         },
       };
-    };
-    const groups = request.groupIds.map(compileGroup);
-    const selected = projection.groups.filter((group) => request.groupIds.includes(group.id));
-    const selectedPatches = composeHunks(
-      schema,
-      projection.diff,
-      selected.flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
-      "apply",
-    );
-    return {
-      schema,
-      optimistic,
-      patched: applySpanPatches(optimistic, selectedPatches, "base"),
-      groups,
-    };
+      before = patched;
+      return step;
+    });
+    return { schema, groups };
   } finally {
     if (cut !== doc) cut.destroy();
   }
@@ -244,7 +247,7 @@ export function createApplyClickService(input: {
       }
       return await input.store.apply(command, prepared);
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }
@@ -264,7 +267,7 @@ export function createApplyClickService(input: {
       if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
       return await input.store.unapply(command, prepared);
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }

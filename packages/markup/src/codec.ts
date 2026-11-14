@@ -7,14 +7,15 @@ import { type PluggableList, unified } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
-import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
+import { EMPTY_PARAGRAPH_SENTINEL, flattenMdast, parseFlatBlock } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
-import { exportBlockquote, exportText } from "./markdown/export-text.js";
+import { exportText } from "./markdown/export-text.js";
 import { markdownParser } from "./markdown-parse.js";
 import { originalOffset, originalSource, type PreparedSource } from "./prepared-source.js";
 import { blockSourceMap, sourceRange } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
+import { type SerializedBlock, serializeNested } from "./serialize-nested.js";
 import {
   markdownOpenCode,
   parseStreamingDocument,
@@ -30,9 +31,13 @@ import type {
   MarkupPlugin,
   OccurrenceSpan,
   ParseContext,
+  ParseOptions,
   PresentationSourceRun,
   SerializeContext,
 } from "./types.js";
+
+/** Not a thematic break after any list marker, `*` included. */
+const STUB_RULE = "___";
 
 const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "table_row", "table_header", "table_cell"]);
 
@@ -94,7 +99,7 @@ function buildMarkupCodec(
       ...MARKDOWN_STRINGIFY_OPTIONS,
       handlers: {
         ...attentionHandlers,
-        ...(options.export ? { text: exportText, blockquote: exportBlockquote } : {}),
+        ...(options.export ? { text: exportText } : {}),
       },
     })
     .use(remarkGfm)
@@ -154,9 +159,9 @@ function buildMarkupCodec(
     const spans: OccurrenceSpan[] = [];
     const sourceMap: PresentationSourceRun[] = [];
     let repairTail: RepairTail | null = null;
-    for (const [index, child] of tree.children.entries()) {
+    for (const flat of flattenMdast(tree.children)) {
       if (runtime.inlineOrigins) runtime.inlineOrigins.length = 0;
-      const node = parseBlockAst(child, ctx);
+      const node = parseFlatBlock(flat, ctx);
       if (node === null) continue;
       if (withSourceMap)
         sourceMap.push(
@@ -168,18 +173,20 @@ function buildMarkupCodec(
           ),
         );
       blocks.push(node);
-      if (
-        withRepairTail &&
-        index === tree.children.length - 1 &&
-        repairableTail(child, source.length)
-      ) {
-        const from = originalOffset(prepared, sourceRange(child)?.from ?? 0);
-        repairTail = { from: physicalLineStart(content, from) };
-      }
-      if (withSpans)
+      if (withSpans && flat.value !== null)
         spans.push(
-          ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
+          ...blockOccurrenceSpans(
+            node,
+            flat.value,
+            source === content ? source : null,
+            content.length,
+          ),
         );
+    }
+    const last = tree.children.at(-1);
+    if (withRepairTail && last && repairableTail(last, source.length)) {
+      const from = originalOffset(prepared, sourceRange(last)?.from ?? 0);
+      repairTail = { from: physicalLineStart(content, from) };
     }
     return { blocks, spans, sourceMap, repairTail };
   };
@@ -189,6 +196,7 @@ function buildMarkupCodec(
     withSpans: boolean,
     withSourceMap = false,
     withRepairTail = false,
+    within: string | null = null,
   ) => {
     if (content.trim().length === 0)
       return {
@@ -197,6 +205,23 @@ function buildMarkupCodec(
         sourceMap: [],
         repairTail: null,
       };
+    if (within) {
+      // The stub opens the same containers as the block the content lands beside, holding one
+      // rule. Its blocks are the rule and, when the stub opens two lists at once, the empty
+      // paragraph that carries the outer item before it. Spans count from the end of the stub.
+      const stub = `${within}${STUB_RULE}\n`;
+      const parsed = parseTopLevel(stub + content, { schema }, withSpans);
+      return {
+        ...parsed,
+        blocks: parsed.blocks.slice(
+          parsed.blocks.findIndex((block) => block.type.name === "horizontal_rule") + 1,
+        ),
+        spans: parsed.spans.map((span) => ({
+          start: Math.max(0, span.start - stub.length),
+          end: Math.max(0, span.end - stub.length),
+        })),
+      };
+    }
     const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRepairTail);
     return parsed.blocks.length > 0
       ? parsed
@@ -217,6 +242,10 @@ function buildMarkupCodec(
     parseBlocks,
     stringifyMarkdown,
     serializeBlock: serializeWithHooks,
+    serializeSequence: (blockList, ctx) =>
+      serializeNestedBlocks(blockList, ctx, false)
+        .map((entry) => entry.gap + entry.body)
+        .join(""),
   });
 
   const serializeWithHooks = (block: PMNode, ctx: SerializeContext): string => {
@@ -231,32 +260,43 @@ function buildMarkupCodec(
   const serializeOne = (block: PMNode, ctx: SerializeContext): string =>
     ensureTrailingNewline(serializeWithHooks(block, ctx));
 
-  const serializeBody = (block: PMNode, ctx: SerializeContext): string => {
-    const body = trimOneTrailingNewline(serializeOne(block, ctx));
-    return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
-  };
+  /** Each block as it sits in the document: its own Markdown under its containers' prefixes. */
+  const serializeNestedBlocks = (
+    blockList: readonly PMNode[],
+    ctx: SerializeContext,
+    blankEmpty: boolean,
+  ): SerializedBlock[] =>
+    serializeNested(blockList, (block, facts) => {
+      const innermost = facts.steps.at(-1);
+      const leadsQuote = innermost?.type === "quote" && innermost.opens;
+      const body = trimOneTrailingNewline(serializeOne(block, { ...ctx, leadsQuote }));
+      return blankEmpty && body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+    });
 
-  const serializeBlocks = (blockList: readonly PMNode[], links: DocumentLinkScope): string[] => {
+  const serializeBlocks = (
+    blockList: readonly PMNode[],
+    links: DocumentLinkScope,
+  ): SerializedBlock[] => {
     const runtime = makeRuntime("");
     const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
-    return blockList.map((block) => serializeBody(block, ctx));
+    return serializeNestedBlocks(blockList, ctx, true);
   };
 
   return {
     serialize(blockList: PMNode[], links: DocumentLinkScope): string {
       const runtime = makeRuntime("");
       const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
-      const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
-      if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
-      return result;
+      const result = runtime.serializeSequence(blockList, ctx);
+      if (result.replace(/\s/g, "").length === 0) return "";
+      return `${result}\n`;
     },
 
-    parse(content: string) {
-      return { blocks: parseDocument(content, false).blocks };
+    parse(content: string, parseOptions?: ParseOptions) {
+      return { blocks: parseDocument(content, false, false, false, parseOptions?.within).blocks };
     },
 
-    parseWithSpans(content: string) {
-      const { blocks, spans } = parseDocument(content, true);
+    parseWithSpans(content: string, parseOptions?: ParseOptions) {
+      const { blocks, spans } = parseDocument(content, true, false, false, parseOptions?.within);
       return { blocks, spans };
     },
 
@@ -266,7 +306,7 @@ function buildMarkupCodec(
     },
 
     serializeBlock(block: PMNode, links: DocumentLinkScope): string {
-      return serializeBlocks([block], links)[0] ?? "";
+      return serializeBlocks([block], links)[0]?.body ?? "";
     },
 
     serializeBlocks,

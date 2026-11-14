@@ -12,13 +12,6 @@ export interface ThreadLock {
   withThreadLock<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T>;
 }
 
-/** Distinct from the run-ownership lock seed (81); never share a seed across concerns. */
-export const THREAD_LOCK_SEED = 82n;
-
-export function threadLockKey(threadId: ThreadId): string {
-  return `meridian:thread-lock:${threadId}`;
-}
-
 const multiThreadLocker = new AsyncLocalStorage<true>();
 
 /**

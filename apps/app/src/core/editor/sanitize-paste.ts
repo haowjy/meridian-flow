@@ -1,5 +1,6 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
+import { flattenDom, NESTING_DATA_ATTRIBUTES } from "./extensions/nesting/nesting-clipboard";
 import {
   classifyLinkTarget,
   clipboardLinkAddress,
@@ -31,10 +32,6 @@ const ELEMENT_NAMES = new Map<string, string>([
   ["h4", "h4"],
   ["h5", "h5"],
   ["h6", "h6"],
-  ["ul", "ul"],
-  ["ol", "ol"],
-  ["li", "li"],
-  ["blockquote", "blockquote"],
   ["pre", "pre"],
   ["code", "code"],
   ["table", "table"],
@@ -64,6 +61,9 @@ export function sanitizePastedHTML(html: string): string {
   const source = parser.parseFromString(html, "text/html");
   const output = document.implementation.createHTMLDocument("");
 
+  // Lists and quotes become blocks that carry their nesting before anything is dropped: the
+  // depth, quotes, numbering and task state live on the elements and attributes this pass removes.
+  flattenDom(source.body);
   appendSanitizedChildren(source.body, output.body, output);
   return output.body.innerHTML;
 }
@@ -81,7 +81,9 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
 
     const outputName = internalClipboardTarget(child.getAttribute("data-meridian-link"))
       ? "a"
-      : ELEMENT_NAMES.get(sourceName);
+      : declaresNormalWeight(child)
+        ? undefined
+        : ELEMENT_NAMES.get(sourceName);
     if (!outputName) {
       appendSanitizedChildren(child, target, output);
       continue;
@@ -91,10 +93,43 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
     if (outputName === "a") copyLinkHref(child, clean);
     if (outputName === "img" && !copyImageAttributes(child, clean)) continue;
     if (outputName === "figure") copyFigureAttributes(child, clean);
+    copyNesting(child, clean);
+    copyBlockId(child, clean);
 
     appendSanitizedChildren(child, clean, output);
     target.appendChild(clean);
   }
+}
+
+/**
+ * A bold element whose own style says it is not bold. Google Docs wraps its whole clipboard in
+ * `<b style="font-weight:normal">`, and reading that as bold makes every pasted word bold.
+ */
+function declaresNormalWeight(element: Element): boolean {
+  if (element.localName !== "b" && element.localName !== "strong") return false;
+  const weight = (element as HTMLElement).style?.fontWeight;
+  return weight === "normal" || weight === "400";
+}
+
+/** Values `flattenDom` writes, and nothing else. */
+const NESTING_VALUES: Record<string, RegExp> = {
+  "data-path": /^[-|>]{1,64}$/,
+  "data-kind": /^ordered$/,
+  "data-marker": /^(item|todo|done)$/,
+  "data-start": /^\d{1,9}$/,
+};
+
+function copyNesting(source: Element, target: Element): void {
+  for (const name of NESTING_DATA_ATTRIBUTES) {
+    const value = source.getAttribute(name);
+    if (value !== null && NESTING_VALUES[name]?.test(value)) target.setAttribute(name, value);
+  }
+}
+
+/** The id this editor's clipboard HTML carries on a block (`extensions/block-id`). */
+function copyBlockId(source: Element, target: Element): void {
+  const id = source.getAttribute("data-block-id");
+  if (id !== null && /^[0-9A-Za-z]{10}$/.test(id)) target.setAttribute("data-block-id", id);
 }
 
 function copyLinkHref(source: Element, target: Element): void {

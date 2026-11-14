@@ -32,7 +32,7 @@ afterAll(() => closeDatabase(db));
 it.each([
   "live",
   "draft",
-] as const)("partial writer Undo leaves the changed newest entry as the %s model blocker", async (destination) => {
+] as const)("Undo after the writer replaced the model's text restores what the writer left of the original and Redo leaves it (%s)", async (destination) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     await harness.seedWriterDocument("red\n\nblue\n\nblack", responseId);
@@ -127,11 +127,7 @@ it.each([
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
       status: "success",
-      result: {
-        message: expect.stringMatching(
-          /undone: e2 \(1 of 2 parts\)\nnot undone: e2 part 1: edited since/,
-        ),
-      },
+      result: { message: expect.stringContaining("undone: e2") },
     });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
@@ -147,21 +143,9 @@ it.each([
       }),
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
-    const edits = await core.read({ ...address, format: "edits" }, current);
-    expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*none/);
-    expect(edits.result.message).not.toContain("undone by the user");
-    expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
-      status: "cant_undo_changed",
-      result: { message: expect.stringContaining("e2") },
-    });
-    expect(await text()).toBe("gold\n\npink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
       state: "live-reversed",
       control: "redo",
-    });
-    expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
-      status: "cant_redo_users_undo",
-      result: { message: expect.stringContaining("e2") },
     });
   } finally {
     await harness.dispose();

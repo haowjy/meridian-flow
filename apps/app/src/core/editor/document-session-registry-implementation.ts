@@ -7,10 +7,16 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import {
+  DocumentSession,
+  type DocumentSessionSnapshot,
+  type ResetDisposition,
+} from "./document-session";
 import type {
   LiveDocumentSessionLease,
   RetainedLiveDocumentReference,
+  UnsentTyping,
+  UnsentTypingCause,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
@@ -24,6 +30,16 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
+
+/** The resets whose teardown ends the room for good, so its unsent typing is handed back first. */
+const UNSENT_CAUSE_OF_RESET: Readonly<
+  Record<ResetDisposition | "none", UnsentTypingCause | undefined>
+> = {
+  closed: "closed",
+  removed: "removed",
+  schema: undefined,
+  none: undefined,
+};
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -63,8 +79,8 @@ export class DocumentSessionRegistry {
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  /** Each refused live session's drop: running, or settled whether or not it removed the room. */
-  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void> | "settled">();
+  private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
+  private readonly handedBack = new WeakSet<DocumentSession>();
 
   constructor(
     private readonly accountId: AccountId,
@@ -113,6 +129,7 @@ export class DocumentSessionRegistry {
     const state = this.liveRooms.get(documentId);
     this.liveRooms.delete(documentId);
     if (state?.session) {
+      this.handBackUnsent(state.session, "removed");
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
@@ -166,12 +183,7 @@ export class DocumentSessionRegistry {
     const session = state.session;
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (
-      snapshot.schemaFence ||
-      snapshot.status === "detached" ||
-      session.resetDisposition === "refused"
-    )
-      return false;
+    if (snapshot.schemaFence || snapshot.status === "detached") return false;
     if (
       snapshot.status !== "access-lost" &&
       snapshot.connectionState?.kind !== "unauthorized" &&
@@ -238,6 +250,8 @@ export class DocumentSessionRegistry {
   }
 
   closeDraftRoom(roomKey: string): Promise<void> {
+    const session = this.draftRooms.peek(roomKey);
+    if (session) this.handBackUnsent(session, "closed");
     return this.draftRooms.close(roomKey);
   }
 
@@ -353,11 +367,14 @@ export class DocumentSessionRegistry {
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
-    // Subscribed before any host can be, so a refusal's drop is already
-    // running when a host hears of it (`whenRefusedRoomDropped`).
+    // Before any other observer: the draft pool retires the room, and its unsent typing, on this
+    // same notification.
+    session.subscribe(() => {
+      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      if (cause) this.handBackUnsent(session, cause);
+    });
     if (session.room.kind === "live")
       session.subscribe(() => {
-        this.dropRefusedRoom(session);
         this.retireDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
@@ -375,24 +392,20 @@ export class DocumentSessionRegistry {
     session.attachTransport(this.transportFactory);
   }
 
-  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null {
-    const drop = this.refusedRoomDrops.get(session);
-    return drop === "settled" ? null : (drop ?? null);
+  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void {
+    this.unsentTypingObservers.add(observer);
+    return () => {
+      this.unsentTypingObservers.delete(observer);
+    };
   }
 
-  /**
-   * Drop a live room whose pending edits the server refused, even when no editor host holds it:
-   * the session is torn down and its local copy cleared. A draft room's editor rebuilds it in
-   * place (`rebuildDraftRoom`).
-   */
-  private dropRefusedRoom(session: DocumentSession): void {
-    if (this.refusedRoomDrops.has(session) || session.resetDisposition !== "refused") return;
-    const documentId = session.documentId as DocumentId;
-    if (this.liveRooms.get(documentId)?.session !== session) return;
-    const settle = () => {
-      this.refusedRoomDrops.set(session, "settled");
-    };
-    this.refusedRoomDrops.set(session, this.clearLocalCopy(documentId).then(settle, settle));
+  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): void {
+    if (this.handedBack.has(session)) return;
+    const text = session.unsentText();
+    if (!text) return;
+    this.handedBack.add(session);
+    const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
+    for (const observer of this.unsentTypingObservers) observer(typing);
   }
 
   private retainedSnapshot(): readonly RetainedLiveDocumentReference[] {
@@ -486,8 +499,8 @@ export class DocumentSessionRegistry {
       // Like draft rooms, a session with unsent edits stays until they are acknowledged.
       // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
       // stays connected without acknowledging ends it at the cap. Offline time never counts.
-      // The other exits (refused room, removed document, revoked access, account close) go
-      // through `dropRefusedRoom`, `clearLocalCopy` and `invalidateAll`.
+      // The other exits (removed document, revoked access, account close) go
+      // through `clearLocalCopy` and `invalidateAll`.
       if (this.mustKeepForUnsentEdits(state.session)) {
         this.holdUntilAcknowledged(roomKey, state, state.session);
         return;
@@ -542,8 +555,6 @@ export class DocumentSessionRegistry {
     const state = this.liveRooms.get(roomKey);
     if (state?.session !== session) return;
     if (this.mustKeepForUnsentEdits(session)) return;
-    // A refused room is dropped by `dropRefusedRoom`, which clears its copy.
-    if (session.resetDisposition === "refused") return;
     this.retireLiveSession(roomKey, state);
   }
 

@@ -5,9 +5,9 @@ import type {
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
-  BranchDiscardAllRequest,
-  BranchDiscardAllResponse,
-  DocumentCommandLookupResponse,
+  ApplyItemsClick,
+  BranchDiscardRequest,
+  BranchDiscardResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
   DraftDiscardResponse,
@@ -15,14 +15,19 @@ import type {
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
+  UndoDiscardAnswer,
+  UndoDiscardClick,
 } from "@meridian/contracts/branches";
+import type { CommandLookupResponse } from "@meridian/contracts/commands";
 import {
-  apiDocumentCommandPath,
+  apiCommandPath,
+  apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
   apiProjectBranchDocumentDraftDiscardPath,
   apiProjectBranchDocumentDraftPath,
   apiProjectBranchUnapplyPath,
+  apiProjectBranchUndoDiscardPath,
   apiProjectDocumentBranchesPath,
   apiProjectDraftsPath,
 } from "@meridian/contracts/protocol";
@@ -68,20 +73,33 @@ export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
 }
 export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObservation> {
   // Only the typed `none` answer proves absence. A 404 may be a stale route, not an unclaimed id.
-  const found = await getJson<DocumentCommandLookupResponse>(
-    apiDocumentCommandPath(body.commandId),
-    { signal: AbortSignal.timeout(10_000) },
-  );
+  const found = await getJson<CommandLookupResponse>(apiCommandPath(body.commandId), {
+    signal: AbortSignal.timeout(10_000),
+  });
   if (found.status === "none" || found.outcome.status === "never")
     return { status: "none", commandId: body.commandId };
   return found.outcome.result as ApplyClickResult;
 }
+/** Several nodes, folders included, as one Apply command. */
+export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick) {
+  return postJson<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+/** Takes one Apply command back, every document and the tree, by its id. */
+export function unapplyCommand(projectId: string, branchId: string, body: UnapplyClick) {
+  return postJson<UnapplyClickAnswer>(apiProjectBranchUnapplyPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
+}
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
-  return postJson<UnapplyClickAnswer>(
-    apiProjectBranchUnapplyPath(draft.projectId, branchOf(draft.itemKey)),
-    body,
-    { signal: AbortSignal.timeout(10_000) },
-  );
+  return unapplyCommand(draft.projectId, branchOf(draft.itemKey), body);
+}
+/** Takes a Discard back: `branchId` is the branch it ran on. */
+export function undoDiscard(projectId: string, branchId: string, body: UndoDiscardClick) {
+  return postJson<UndoDiscardAnswer>(apiProjectBranchUndoDiscardPath(projectId, branchId), body, {
+    signal: AbortSignal.timeout(10_000),
+  });
 }
 export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest) {
   return postJson<DraftDiscardResponse>(
@@ -93,11 +111,9 @@ export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest)
     body,
   );
 }
-export function discardBranchDrafts(draft: DraftAddress, body: BranchDiscardAllRequest) {
-  return postJson<BranchDiscardAllResponse>(
-    apiProjectBranchDiscardPath(draft.projectId, body.branchId),
-    body,
-  );
+/** The branch's Discard: Discard all, or a selection of nodes, as one command. */
+export function discardBranch(projectId: string, branchId: string, body: BranchDiscardRequest) {
+  return postJson<BranchDiscardResponse>(apiProjectBranchDiscardPath(projectId, branchId), body);
 }
 /** A draft's branch, named by its item key (`${branchId}:${documentId}`). */
 export function branchOf(itemKey: string): string {

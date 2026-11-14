@@ -13,7 +13,8 @@ Compatibility seams: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 ## Schema version bump policy
 
 `src/schema-shape.test.ts` checks each transition in `src/schema-shape.history.json`
-against this table and rejects edits to recorded entries from protocol 1.0.0 onward.
+against this table and rejects edits to recorded entries `main` already has. An
+integration branch may rewrite entries it added before it reaches `main`: they never shipped.
 It cannot judge the two rows that need review:
 
 | Change | Version class |

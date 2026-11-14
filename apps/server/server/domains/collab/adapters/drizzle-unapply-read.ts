@@ -6,7 +6,7 @@ import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
   applyCommandTrees,
-  documentCommands,
+  commands,
   documentDrafts,
   documentEditParts,
   documentEdits,
@@ -90,13 +90,13 @@ export async function loadPreparedUnapply(
       restored: applyCommandTrees.restored,
     })
     .from(applyCommandTrees)
-    .innerJoin(documentCommands, eq(documentCommands.id, applyCommandTrees.commandId))
+    .innerJoin(commands, eq(commands.id, applyCommandTrees.commandId))
     .where(
       and(
         eq(applyCommandTrees.commandId, applied),
         eq(applyCommandTrees.branchId, command.branchId),
-        eq(documentCommands.accountId, command.envelope.accountId),
-        eq(documentCommands.kind, "apply"),
+        eq(commands.accountId, command.envelope.accountId),
+        eq(commands.kind, "apply"),
       ),
     );
   const rows = await tx
@@ -112,14 +112,14 @@ export async function loadPreparedUnapply(
       unappliedBy: applyCommandEffects.unappliedBy,
     })
     .from(applyCommandEffects)
-    .innerJoin(documentCommands, eq(documentCommands.id, applyCommandEffects.commandId))
+    .innerJoin(commands, eq(commands.id, applyCommandEffects.commandId))
     .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
     .where(
       and(
         eq(applyCommandEffects.commandId, applied),
         eq(documentDrafts.branchId, command.branchId),
-        eq(documentCommands.accountId, command.envelope.accountId),
-        eq(documentCommands.kind, "apply"),
+        eq(commands.accountId, command.envelope.accountId),
+        eq(commands.kind, "apply"),
       ),
     )
     .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);

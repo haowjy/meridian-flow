@@ -41,6 +41,9 @@ export const m = (
   attrs?: Record<string, unknown>,
 ) => schema.marks[name].create(attrs);
 export const paragraph = (...children: PMNode[]) => schema.node("paragraph", null, children);
+/** A paragraph that starts a list item at one level; `attrs` adds the rest of its nesting. */
+export const listItem = (attrs: Record<string, unknown>, ...children: PMNode[]) =>
+  schema.node("paragraph", { path: "-", marker: "item", ...attrs }, children);
 export const emptyParagraph = () => schema.node("paragraph");
 
 export function docFrom(blocks: PMNode[]): PMNode {

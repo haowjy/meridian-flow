@@ -10,6 +10,7 @@ import {
   stringifyBlock,
 } from "../../helpers.js";
 import type { BlockCodec } from "../../types.js";
+import { markQuoteLead } from "../export-text.js";
 
 export const paragraphCodec: BlockCodec<MdastParagraph | MdastHeading> = {
   name: "paragraph",
@@ -25,6 +26,7 @@ export const paragraphCodec: BlockCodec<MdastParagraph | MdastHeading> = {
     const paragraph: MdastParagraph = isWhitespaceOnlyParagraph(node)
       ? { type: "paragraph", children: [{ type: "text", value: EMPTY_PARAGRAPH_SENTINEL }] }
       : { type: "paragraph", children: inlineContentToMdast(node, ctx) };
+    if (ctx.leadsQuote) markQuoteLead(paragraph.children[0]);
     return stringifyBlock(ctx, paragraph);
   },
 

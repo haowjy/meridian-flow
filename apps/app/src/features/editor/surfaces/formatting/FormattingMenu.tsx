@@ -43,14 +43,7 @@ import {
   EditorMenuSubTrigger,
 } from "../../chrome";
 import { TableCaretMenuItems } from "../table";
-import {
-  BLOCK_TYPE_IDS,
-  type BlockedSubject,
-  type BlockTypeId,
-  blockTypeLabel,
-  toggleTextMark,
-  turnIntoBlockType,
-} from "../toolbar";
+import { BLOCK_TYPE_IDS, type BlockedSubject, BlockTypeMenuItem, toggleTextMark } from "../toolbar";
 import { ClipboardMenuItems } from "./clipboard-menu";
 import {
   addLinkLabel,
@@ -170,7 +163,7 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
   const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
 
   // Every type refuses for one reason, so the list is not worth opening: the
-  // trigger greys in the list's place and answers for all eight.
+  // trigger greys in the list's place and answers for all of them.
   if (blockedReason) {
     return (
       <EditorMenuItem blockedReason={blockedReason}>
@@ -199,30 +192,16 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
         }}
       >
         {BLOCK_TYPE_IDS.map((id) => (
-          <TurnIntoItem key={id} id={id} state={model.turnInto[id]} editor={editor} />
+          <BlockTypeMenuItem
+            key={id}
+            editor={editor}
+            id={id}
+            active={model.turnInto[id].active}
+            blockedReason={formattingBlockedMessage("block-type", model.turnInto[id].blockedBy)}
+          />
         ))}
       </EditorMenuSubContent>
     </EditorMenuSub>
-  );
-}
-
-function TurnIntoItem({
-  id,
-  state,
-  editor,
-}: {
-  id: BlockTypeId;
-  state: FormattingItemState;
-  editor: Editor;
-}) {
-  return (
-    <EditorMenuItem
-      selected={state.active}
-      blockedReason={formattingBlockedMessage("block-type", state.blockedBy)}
-      onSelect={() => turnIntoBlockType(editor, id)}
-    >
-      {blockTypeLabel(id)}
-    </EditorMenuItem>
   );
 }
 

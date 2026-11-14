@@ -14,7 +14,6 @@ import {
   documentToolbarControls,
   setToolbarAlignment,
   type ToolbarContext,
-  toggleHeadingBlock,
   toggleTextMark,
   turnIntoBlockType,
 } from "./toolbar-commands";
@@ -81,7 +80,7 @@ describe("block-type commands refuse non-text targets", () => {
     const target = editorWith(FIGURE_DOC);
     selectNodeOfType(target, "figure");
 
-    expect(toggleHeadingBlock(target)).toBe(false);
+    expect(turnIntoBlockType(target, "heading1")).toBe(false);
     expect(target.state.doc.lastChild?.type.name).toBe("figure");
   });
 
@@ -90,7 +89,7 @@ describe("block-type commands refuse non-text targets", () => {
     target.commands.setTextSelection({ from: 1, to: 5 });
     target.setEditable(false);
 
-    expect(toggleHeadingBlock(target)).toBe(false);
+    expect(turnIntoBlockType(target, "heading1")).toBe(false);
     expect(toggleTextMark(target, "strong")).toBe(false);
     expect(setToolbarAlignment(target, "center")).toBe(false);
     expect(target.state.doc.firstChild?.type.name).toBe("paragraph");

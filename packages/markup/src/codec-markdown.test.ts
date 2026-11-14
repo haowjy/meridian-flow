@@ -70,11 +70,11 @@ describe("markdown codec round-trip corpus", () => {
 
   it("parses mixed task list item checked attrs", () => {
     const doc = parsedDoc(codec, "- [x] a\n- plain\n- [ ] b\n");
-    const list = doc.firstChild;
-    expect(list?.type.name).toBe("bullet_list");
-    expect(
-      [...Array(list?.childCount ?? 0)].map((_, index) => list?.child(index).attrs.checked),
-    ).toEqual([true, null, false]);
+    expect(blocksOf(doc).map((block) => [block.attrs.path, block.attrs.marker])).toEqual([
+      ["-", "done"],
+      ["-", "item"],
+      ["-", "todo"],
+    ]);
   });
 
   it("stabilizes empty paragraphs through the NBSP wire sentinel", () => {
@@ -93,7 +93,9 @@ describe("markdown codec round-trip corpus", () => {
   it("serializes all-empty documents to an empty string", () => {
     expect(codec.serialize([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
     expect(codec.serialize([emptyParagraph(), emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
-    expect(codec.serializeBlocks([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toEqual([""]);
+    expect(codec.serializeBlocks([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toEqual([
+      { body: "", gap: "", open: "" },
+    ]);
   });
 
   it("keeps [[name]] literal text, never a link", () => {

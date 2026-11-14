@@ -3,9 +3,9 @@ import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/c
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 
 export interface ContextSources {
-  /** Every source the project's owner can read: the project's, each Work's, each lineage's, each chat's. */
+  /** Every source the project's owner can read: the project's, each Work's until it is purged, each lineage's, each chat's. */
   inProject(projectId: ProjectId): Promise<ContextSource[]>;
-  /** The project's sources that ended but are restorable: a deleted Work's, a deleted chat's. */
+  /** The project's sources that ended but are restorable: a frozen lineage's, a deleted chat's. */
   endedIn(projectId: ProjectId): Promise<ContextSourceId[]>;
   /** The account's own `user://` source. */
   ofUser(userId: UserId): Promise<ContextSource[]>;

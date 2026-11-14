@@ -58,3 +58,7 @@ Only the receipt line and the draft review rail were seen on screen: chats fold
 the write rows into the receipt. Open a chat that shows the raw tool-call row
 for a model `write(move)` with `position` and no path change, and confirm the
 copy there.
+
+## A rename-only live turn's card reads "Edited N documents"
+
+A turn whose tree changes landed live (renames, moves) lists its documents in the card without the `tree` marker, so `documentCountLabel` in `TurnEditsReceipt.tsx` counts them as text edits ("Edited 60 documents"). Seen after Apply all, then the card's Undo and Redo, on `fix/project-tree-probe2-fixes`. The item rows need the marker from the receipt that made them; then the label says "Changed".

@@ -212,8 +212,8 @@ The move takes a plain navigation ticket, never the writer's intent. A denied li
 with Retry. A draft-only document is not found by its path on either shell: its review binds on
 arrival. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
 destination source's tree lacks (a draft that creates it, or moves it to another area) comes from
-the address's answer (`addressedDocument`). Only a review address asks the server
-(`documentAddressQueryOptions`).
+the address's answer (`addressedDocument`). A review address is read the same way in its Work's
+tree (`useDraftTreeVersion`): nothing about an address asks the server.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.

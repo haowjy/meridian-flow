@@ -58,7 +58,6 @@ export type {
   CompactionPlan,
   CompactionProps,
   CompactionTrigger,
-  CompactionTriggerSource,
   PlanCompactionInput,
   ProjectedActiveHistory,
   ResolveCompactionTriggerInput,
@@ -138,11 +137,7 @@ export {
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export { threadControlRequestSchema } from "./loop/thread-control-request.js";
 export { ThreadControlError } from "./loop/thread-controls.js";
-export {
-  THREAD_LOCK_SEED,
-  type ThreadLock,
-  threadLockKey,
-} from "./loop/thread-lock.js";
+export type { ThreadLock } from "./loop/thread-lock.js";
 export {
   createWorkContextReader,
   renderWorkContext,

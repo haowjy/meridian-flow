@@ -7,7 +7,7 @@ import {
 } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, treeNodes, works } from "@meridian/database/schema";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -78,7 +78,10 @@ function mapWork(row: WorkRow): Work {
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
   projectionMutation: WorkProjectionMutation;
-  /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
+  /**
+   * Each lifecycle change re-decides the Work's own files' access (file-access §7) and wakes
+   * the project's Works list (`projectionMutation.lifecycleChanged`).
+   */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
   lineageScratch: LineageScratchLifecycle;
   /** Restored documents arrive at their addresses (contract §9.3). */
@@ -105,6 +108,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         ),
       );
     return rows.map((row) => row.id as DocumentId);
+  }
+
+  async function lifecycleChanged(work: Pick<Work, "id" | "projectId">): Promise<void> {
+    await deps.fileAccessChanges.publish({ workId: work.id as WorkId });
+    projectionMutation.lifecycleChanged({ id: work.id as WorkId, projectId: work.projectId });
   }
 
   async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
@@ -303,7 +311,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (existing.archivedAt !== null) return existing;
         await lockProjectTreeList(db, existing.projectId);
         const archived = await updateWork(id, { archivedAt: new Date() });
-        await deps.fileAccessChanges.publish({ workId: id });
+        await lifecycleChanged(archived);
         return archived;
       });
     },
@@ -313,7 +321,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (existing.archivedAt === null) return existing;
         await lockProjectTreeList(db, existing.projectId);
         const unarchived = await updateWork(id, { archivedAt: null });
-        await deps.fileAccessChanges.publish({ workId: id });
+        await lifecycleChanged(unarchived);
         return unarchived;
       });
     },
@@ -345,7 +353,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
-        await deps.fileAccessChanges.publish({ workId: id });
+        await lifecycleChanged(before);
         const after = await findWorkById(id);
         await lineageScratch.reconcile(lockedTree.threadIds);
         return { before, after };
@@ -388,7 +396,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           projectionMutation.recountAfterCommit({ workIds: [id], lineageRootIds: [] });
           await lineageScratch.reconcile(lockedTree.threadIds);
           if (arriving.length > 0) await deps.arrivals?.settle(arriving);
-          await deps.fileAccessChanges.publish({ workId: id });
+          await lifecycleChanged(existing);
           return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {
@@ -398,6 +406,17 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         }
         throw cause;
       }
+    },
+    async lockRestoreNamespaces(ids: readonly WorkId[]): Promise<void> {
+      if (!deps.arrivals || ids.length === 0) return;
+      const deleted = await currentDrizzleDb(db)
+        .select({ id: works.id })
+        .from(works)
+        .where(and(inArray(works.id, [...ids]), isNotNull(works.deletedAt)));
+      const arriving = (
+        await Promise.all(deleted.map(({ id }) => workSourceDocumentIds(id)))
+      ).flat();
+      if (arriving.length > 0) await deps.arrivals.lockNamespaces(arriving);
     },
     async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
       await runInDrizzleTransaction(db, async () => {

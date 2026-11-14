@@ -25,6 +25,8 @@ export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   /** The server's word that the owner's drafts are frozen (`ThreadDraftListResponse.frozen`). */
   frozen: boolean;
+  /** The owner's active branch: the `draft` of its tree records. */
+  branchId: string | null;
 };
 
 /** The tree owner whose Scratch names this draft owner's documents. */
@@ -155,6 +157,7 @@ export function useOwnerDrafts(
       files: null,
       fileForDocument,
       frozen: false,
+      branchId: null,
     };
   }
 
@@ -171,5 +174,6 @@ export function useOwnerDrafts(
     files,
     fileForDocument,
     frozen: query.data?.frozen ?? false,
+    branchId: query.data?.branchId ?? null,
   };
 }

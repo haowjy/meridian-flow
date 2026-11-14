@@ -1,3 +1,4 @@
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   admit,
@@ -115,9 +116,18 @@ export type PgTreeListStore = TreeListStore & {
   listen(): Promise<{ unlisten: () => Promise<void> }>;
 };
 
+/** A text document a create in a Work's version made: it needs that Work's text draft. */
+export type DraftedDocument = { documentId: DocumentId; branchId: BranchId };
+
 export function createDrizzleTreeListStore(deps: {
   db: Database;
   journal: CollabJournal;
+  /**
+   * Makes the Yjs authority and the Work text draft of each drafted document in the admitting
+   * transaction, under the list's key, so the document opens on Draft as soon as its create is
+   * admitted. Collab's (`draftCreatedDocuments`); a composition without collab makes rows only.
+   */
+  draftCreatedDocuments?: (created: readonly DraftedDocument[]) => Promise<void>;
 }): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
@@ -283,7 +293,7 @@ export function createDrizzleTreeListStore(deps: {
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
     // An arrived node has its `documents` row already: only the creates of new nodes make one.
-    await syncRows(
+    const made = await syncRows(
       tx,
       list,
       listId,
@@ -291,6 +301,12 @@ export function createDrizzleTreeListStore(deps: {
       created.filter((record) => !arrived.has(record.node)),
     );
     await testHook("treeList.afterRows");
+    const drafted = made.flatMap((record) =>
+      record.kind === "document" && record.draft !== null
+        ? [{ documentId: record.node as DocumentId, branchId: record.draft as BranchId }]
+        : [],
+    );
+    if (drafted.length > 0) await deps.draftCreatedDocuments?.(drafted);
     const committed = { listId, update, seq };
     const owner = copy.pending;
     runAfterDrizzleCommit(async () => {

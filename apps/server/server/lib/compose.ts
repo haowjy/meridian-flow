@@ -67,7 +67,6 @@ import {
   createProjectHints,
   createProjectWakeHub,
   createPromotionService,
-  createTrashEntries,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
@@ -80,7 +79,6 @@ import {
   type ProjectContextAvailabilityPort,
   type ProjectWakeHub,
   type PromotionService,
-  type TrashEntries,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -133,6 +131,7 @@ import {
   createDrizzleAgentRevisionStore,
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
+  recompileStalePackages,
   seedGeneralAgent,
   seedLaunchAgentPackage,
 } from "../domains/packages/index.js";
@@ -154,6 +153,7 @@ import {
   type ProjectWorkAuthorityResolver,
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
+  type WorkProjectionMutation,
 } from "../domains/projects/index.js";
 import {
   createDrizzleRecentDocumentsRepository,
@@ -272,6 +272,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
@@ -301,6 +302,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The command record every kind of request claims its id in. */
+  commands: CommandStore;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
@@ -399,10 +402,11 @@ export type ProductionAppPorts = {
   contextSources: ContextSources;
   documentTrash: DocumentTrash;
   /** Trash as the tree gives it, per view: one entry per delete in force. */
-  trashEntries: TrashEntries;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
+  /** The Works projection: counts, revisions, and the wake a Work's change sends. */
+  workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
   /**
    * Per-(project, reader) link snapshots: every serializing door spells
@@ -573,7 +577,12 @@ export async function createProductionAppPorts(input: {
   // thread peers) exists only once the collab domain does, which binds it; nothing retires
   // before a commit, so the late binding is never observed unbound in production.
   // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
-  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+  const treeLists = createDrizzleTreeListStore({
+    db,
+    journal: createDrizzleJournal(db),
+    // Collab is composed below, before anything can submit or admit a record.
+    draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
+  });
   const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
@@ -642,6 +651,7 @@ export async function createProductionAppPorts(input: {
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
   await seedLaunchAgentPackage(agentRevisions);
+  await recompileStalePackages(agentRevisions);
   const users = createDrizzleUserRepository({ db });
   const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
@@ -700,7 +710,6 @@ export async function createProductionAppPorts(input: {
     linkAheadRegistry,
     contextPorts,
     contextSources,
-    trashEntries: createTrashEntries({ db, store: treeLists }),
     documentTrash: createDrizzleDocumentTrash({
       db,
       objectStore,
@@ -714,6 +723,7 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     projectWakeHub,
+    workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
       sources: contextSources,
       workAuthorityResolver,
@@ -971,6 +981,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
@@ -1227,6 +1238,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    commands: createCommandStore(ports.db),
     treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
@@ -1572,6 +1584,17 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    commands: {
+      async lookup() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async resolve() {
+        throw new Error("The command record requires durable persistence");
+      },
+      async run() {
+        throw new Error("The command record requires durable persistence");
+      },
+    },
     treeLists: {
       async open() {
         throw new Error("Tree lists are unavailable in memory");
@@ -1633,9 +1656,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAddresses: {
-      async resolveById() {
-        return { kind: "unavailable" };
-      },
       async resolve() {
         return { kind: "unavailable" };
       },
@@ -1727,6 +1747,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1811,6 +1832,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
+      async lockRestoreNamespaces() {},
       async setDefaultAiWriteMode() {
         throw new Error("in-memory work repository is not implemented");
       },

@@ -5,7 +5,13 @@
  * immutable snapshot.
  */
 import { type TreeListRef, treeRoomName, yjsWsPath } from "@meridian/contracts/protocol";
-import { LIVE, replayView, type TreeProjection, type TreeRecord } from "@meridian/project-tree";
+import {
+  LIVE,
+  replayView,
+  type TreeProjection,
+  type TreeRecord,
+  type View,
+} from "@meridian/project-tree";
 import { connectTreeList, type ListSyncState } from "@meridian/tree-list-sync";
 import type * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
@@ -161,14 +167,29 @@ export class TreeListSession {
 
   getSnapshot = (): TreeListSnapshot => this.current;
 
-  private replayed: { doc: Y.Doc; edits: number; projection: TreeProjection } | null = null;
+  private readonly replayed = new Map<
+    string | null,
+    { doc: Y.Doc; edits: number; pendingText?: ReadonlySet<string>; projection: TreeProjection }
+  >();
 
-  /** The live replay of the copy as it stands, records appended a moment ago included: one replay per change however many views and writers read it. */
-  replay(): TreeProjection {
+  /**
+   * The replay of the copy as it stands in `view` (live, or live and one Work's pending records),
+   * records appended a moment ago included: one replay per change and view however many views and
+   * writers read it. `pendingText` is the Work's documents with pending text, which the list
+   * cannot see (rule 7); pass the same set while it is unchanged, or the view replays again.
+   */
+  replay(view: View = LIVE, pendingText?: ReadonlySet<string>): TreeProjection {
     const { doc } = this.current;
-    if (this.replayed?.doc !== doc || this.replayed.edits !== this.edits)
-      this.replayed = { doc, edits: this.edits, projection: replayView(doc, LIVE) };
-    return this.replayed.projection;
+    const held = this.replayed.get(view.draft);
+    if (
+      held?.doc === doc &&
+      held.edits === this.edits &&
+      (view.draft === null || held.pendingText === pendingText)
+    )
+      return held.projection;
+    const projection = replayView(doc, view, pendingText);
+    this.replayed.set(view.draft, { doc, edits: this.edits, pendingText, projection });
+    return projection;
   }
 
   subscribe = (listener: () => void): (() => void) => {

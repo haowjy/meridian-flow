@@ -5,11 +5,11 @@
  * extensions already ship GFM input rules, its engine already refuses to run
  * them inside anything whose spec is `code`, and because the Meridian wrappers
  * only rename types those rules resolve the server-parity names (`strong`,
- * `em`, `bullet_list`, `code_block`). Reimplementing them here would be a
+ * `em`, `code_block`). Reimplementing them here would be a
  * second set of rules competing for the same keystrokes. Inherited unchanged:
- * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `> `
- * blockquote, `- ` / `* ` / `+ ` bullets, `1. ` ordered lists, `---` divider,
- * and completion on Enter as well as on space. The `# `…`###### ` heading rule is
+ * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `---` divider, and completion
+ * on Enter as well as on space. The `- ` / `* ` / `+ `, `1. ` list and `> `
+ * quote rules are `NestingExtension`'s. The `# `…`###### ` heading rule is
  * `MeridianParagraph`'s: a heading is a paragraph with a level.
  *
  * What this extension owns is the remaining autoformat behavior: the code
@@ -18,7 +18,9 @@
  * beside it pins the whole surface, inherited rules included, so an upgrade
  * that drops a trigger fails loudly instead of quietly.
  */
-import { Extension, textblockTypeInputRule } from "@tiptap/core";
+import { Extension } from "@tiptap/core";
+
+import { blockTypeInputRule } from "./block-type";
 
 /**
  * A fence is an opening run of at least three fence characters and an info
@@ -56,12 +58,12 @@ export const MarkdownAutoformatExtension = Extension.create({
     if (!codeBlock) return [];
 
     return [
-      textblockTypeInputRule({
+      blockTypeInputRule({
         find: BACKTICK_FENCE,
         type: codeBlock,
         getAttributes: fenceAttributes,
       }),
-      textblockTypeInputRule({
+      blockTypeInputRule({
         find: TILDE_FENCE,
         type: codeBlock,
         getAttributes: fenceAttributes,

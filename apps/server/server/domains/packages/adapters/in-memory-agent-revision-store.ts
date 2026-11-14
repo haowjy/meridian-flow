@@ -9,24 +9,21 @@ import {
   type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
-import {
-  type AgentSourceSnapshot,
-  prepareAgentSourceRevision,
-} from "../domain/agent-source-revision.js";
+import { type AgentSourceSnapshot, compilePackage } from "../domain/compile-package.js";
+import { GRAMMAR_VERSION } from "../domain/mars.js";
 import type {
   AgentCatalogEntry,
-  AgentPackageHistoryEntry,
   AgentPackageInstallation,
   AgentRevision,
   AgentRevisionStore,
+  CatalogRevision,
 } from "../ports/agent-revision-store.js";
 
 type State = {
   projectRemovals: Map<string, boolean>;
   installations: Map<string, AgentPackageInstallation>;
-  installationHistory: Map<string, AgentPackageHistoryEntry[]>;
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
-  revisions: Map<string, AgentRevision>;
+  revisions: Map<string, CatalogRevision>;
   catalog: Map<string, AgentCatalogEntry>;
   history: Map<string, Set<string>>;
   bindings: Map<
@@ -55,7 +52,6 @@ export function createInMemoryAgentRevisionStore(input: {
   const current: State = {
     projectRemovals: transactionOwner.map(),
     installations: transactionOwner.map(),
-    installationHistory: transactionOwner.map(),
     sources: transactionOwner.map(),
     revisions: transactionOwner.map(),
     catalog: transactionOwner.map(),
@@ -64,6 +60,16 @@ export function createInMemoryAgentRevisionStore(input: {
   };
   const state = () => current;
   const copy = <T>(value: T): T => structuredClone(value);
+  const available = (row: CatalogRevision | undefined): AgentRevision | undefined =>
+    row?.definition
+      ? {
+          id: row.id,
+          packageRevisionId: row.packageRevisionId,
+          slug: row.slug,
+          grammarVersion: row.grammarVersion,
+          definition: row.definition,
+        }
+      : undefined;
   const findEntry = (ownerUserId: string | null, logicalKey: string) =>
     [...state().catalog.values()].find(
       (entry) => entry.ownerUserId === ownerUserId && entry.logicalKey === logicalKey,
@@ -77,10 +83,19 @@ export function createInMemoryAgentRevisionStore(input: {
           .sort((a, b) => a.coordinate.localeCompare(b.coordinate)),
       );
     },
-    async readInstallationHistory(owner, id) {
-      return state().installations.get(id)?.ownerUserId === owner
-        ? copy(state().installationHistory.get(id) ?? [])
-        : [];
+    async listInstallationsWithoutRows(grammarVersion) {
+      return copy(
+        [...state().installations.values()]
+          .filter(
+            (item) =>
+              ![...state().revisions.values()].some(
+                (row) =>
+                  row.packageRevisionId === item.currentRevisionId &&
+                  row.grammarVersion === grammarVersion,
+              ),
+          )
+          .sort((a, b) => a.coordinate.localeCompare(b.coordinate)),
+      );
     },
     async advanceInstallation(input) {
       return store.transaction(async () => {
@@ -94,18 +109,10 @@ export function createInMemoryAgentRevisionStore(input: {
             : expectedRevisionId !== undefined
         )
           return undefined;
-        for (const id of [input.currentRevisionId, input.upstreamRevisionId]) {
-          if (!state().sources.has(id))
-            throw new Error("Installation references a missing source revision");
-        }
+        if (!state().sources.has(input.currentRevisionId))
+          throw new Error("Installation references a missing source revision");
         const row = { ...values, id: existing?.id ?? randomUUID() };
         state().installations.set(row.id, copy(row));
-        const history = copy(state().installationHistory.get(row.id) ?? []);
-        for (const packageRevisionId of [input.currentRevisionId, input.upstreamRevisionId]) {
-          if (!history.some((item) => item.packageRevisionId === packageRevisionId))
-            history.push({ packageRevisionId, createdAt: new Date().toISOString() });
-        }
-        state().installationHistory.set(row.id, history);
         return copy(row);
       });
     },
@@ -116,64 +123,61 @@ export function createInMemoryAgentRevisionStore(input: {
         return { agentDefinitionRevisionId: null, agentName: GENERIC_SUBAGENT_NAME };
       }
       const revision = state().revisions.get(binding.revisionId);
-      return revision
-        ? {
-            agentDefinitionRevisionId: revision.id,
-            agentName: revision.definition.metadata.name ?? revision.slug,
-          }
-        : null;
+      return revision ? { agentDefinitionRevisionId: revision.id, agentName: revision.name } : null;
     },
     transaction: (operation) => transactionOwner.run(operation),
     withCatalogTransaction(_ownerUserId, operation) {
       return store.transaction(operation);
     },
-    installSource(source) {
-      const prepared = prepareAgentSourceRevision(source);
+    installSource(source, grammarVersion = GRAMMAR_VERSION) {
+      const compiled = compilePackage(source, grammarVersion);
       return store.transaction(async () => {
-        for (const dependency of Object.values(prepared.dependencies)) {
-          if (!state().sources.has(dependency))
-            throw new Error("Agent source references a missing dependency revision");
-        }
         const existing = [...state().sources.entries()].find(
           ([, record]) =>
-            record.source.coordinate === prepared.coordinate &&
-            record.digest === prepared.contentDigest,
+            record.source.coordinate === compiled.coordinate &&
+            record.digest === compiled.contentDigest,
         );
-        if (existing)
-          return {
-            packageRevisionId: existing[0],
-            definitions: await store.readPackageDefinitions(existing[0]),
-          };
-        const packageRevisionId = randomUUID();
-        state().sources.set(packageRevisionId, {
-          digest: prepared.contentDigest,
-          source: {
-            coordinate: prepared.coordinate,
-            files: prepared.source.files,
-            dependencies: prepared.dependencies,
-          },
-        });
-        for (const definition of prepared.definitions) {
+        const packageRevisionId = existing?.[0] ?? randomUUID();
+        if (!existing) {
+          state().sources.set(packageRevisionId, {
+            digest: compiled.contentDigest,
+            source: { coordinate: compiled.coordinate, files: compiled.files },
+          });
+        }
+        const rows = [...state().revisions.values()].filter(
+          (row) =>
+            row.packageRevisionId === packageRevisionId && row.grammarVersion === grammarVersion,
+        );
+        for (const agent of compiled.agents) {
+          if (rows.some((row) => row.slug === agent.slug)) continue;
           const id = randomUUID();
-          state().revisions.set(id, { id, packageRevisionId, ...definition });
+          state().revisions.set(id, { id, packageRevisionId, grammarVersion, ...agent });
         }
         return {
           packageRevisionId,
-          definitions: await store.readPackageDefinitions(packageRevisionId),
+          definitions: await store.readPackageCatalogRevisions(packageRevisionId, grammarVersion),
         };
       });
     },
     async readSource(id) {
       return copy(state().sources.get(id)?.source);
     },
-    async readRevision(id) {
+    async readCatalogRevision(id) {
       return copy(state().revisions.get(id));
     },
-    async readPackageDefinitions(id) {
+    async readRevision(id) {
+      return copy(available(state().revisions.get(id)));
+    },
+    async readPackageCatalogRevisions(id, grammarVersion) {
       return copy(
         [...state().revisions.values()]
-          .filter((revision) => revision.packageRevisionId === id)
+          .filter((row) => row.packageRevisionId === id && row.grammarVersion === grammarVersion)
           .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
+      );
+    },
+    async readPackageDefinitions(id, grammarVersion) {
+      return (await store.readPackageCatalogRevisions(id, grammarVersion)).flatMap(
+        (row) => available(row) ?? [],
       );
     },
     selectRevision(selection) {
@@ -196,7 +200,7 @@ export function createInMemoryAgentRevisionStore(input: {
             ? { ok: true, entry: copy(existing) }
             : { ok: false, reason: "conflict" };
         }
-        const name = target.definition.metadata.name ?? target.slug;
+        const { name } = target;
         const entry: AgentCatalogEntry = {
           id: existing?.id ?? randomUUID(),
           ownerUserId: selection.ownerUserId,
@@ -220,8 +224,12 @@ export function createInMemoryAgentRevisionStore(input: {
         return undefined;
       if (entry.selectedRevisionId !== revisionId && !state().history.get(entryId)?.has(revisionId))
         return undefined;
-      const revision = state().revisions.get(revisionId);
-      return revision ? copy({ entry, revision }) : undefined;
+      let revision = state().revisions.get(revisionId);
+      if (revision && revision.grammarVersion !== GRAMMAR_VERSION)
+        revision = state().revisions.get(entry.selectedRevisionId);
+      return revision && revision.grammarVersion === GRAMMAR_VERSION
+        ? copy({ entry, revision })
+        : undefined;
     },
     async listCatalog(input) {
       if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)
@@ -264,20 +272,6 @@ export function createInMemoryAgentRevisionStore(input: {
         return true;
       });
     },
-    restoreOwnedEntry(user, id, expectedRevisionId) {
-      return store.transaction(async () => {
-        const entry = state().catalog.get(id);
-        if (
-          !entry ||
-          entry.ownerUserId !== user ||
-          !entry.removed ||
-          entry.selectedRevisionId !== expectedRevisionId
-        )
-          return false;
-        state().catalog.set(id, { ...entry, removed: false });
-        return true;
-      });
-    },
     bindThread(threadId, revisionId, configuration, invocationOverlay) {
       return store.transaction(async () => {
         if (
@@ -304,8 +298,12 @@ export function createInMemoryAgentRevisionStore(input: {
     async readThreadBinding(threadId) {
       const binding = state().bindings.get(threadId);
       if (!binding) return undefined;
-      const revision =
+      const row =
         binding.revisionId !== null ? state().revisions.get(binding.revisionId) : undefined;
+      const revision = available(row);
+      if (row && !revision) {
+        throw new Error(`Thread ${threadId} is bound to an Agent revision with no definition`);
+      }
       return copy({
         revision: revision ?? null,
         configuration: binding.configuration,

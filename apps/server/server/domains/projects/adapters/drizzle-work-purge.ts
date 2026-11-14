@@ -34,6 +34,7 @@ import {
   objectStoreKeyFromStorageUrl,
 } from "../../storage/index.js";
 import type { WorkBranchDisposal } from "../ports/work-branch-disposal.js";
+import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
 
@@ -42,6 +43,8 @@ export function createDrizzleWorkPurger(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
+  /** A purged Work leaves the project's Works list, which is woken for it. */
+  works: Pick<WorkProjectionMutation, "lifecycleChanged">;
   /** What the model was shown of documents, kept by the document side. */
   evidence: { forgetThreads(threadIds: readonly ThreadId[]): Promise<void> };
   now?: () => Date;
@@ -82,7 +85,7 @@ export function createDrizzleWorkPurger(deps: {
       }
       const activeDb = currentDrizzleDb(deps.db);
       const [work] = await activeDb
-        .select({ id: works.id, deletedAt: works.deletedAt })
+        .select({ id: works.id, projectId: works.projectId, deletedAt: works.deletedAt })
         .from(works)
         .where(eq(works.id, workId));
       if (!work?.deletedAt || work.deletedAt.getTime() > cutoff.getTime()) {
@@ -237,6 +240,8 @@ export function createDrizzleWorkPurger(deps: {
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
         .returning({ id: works.id });
+      if (deleted.length > 0)
+        deps.works.lifecycleChanged({ id: workId, projectId: work.projectId });
       return { purged: deleted.length > 0, objectKeys };
     });
   }

@@ -312,7 +312,6 @@ export async function prepareNextTurnContext(
 
   const compactionTrigger = resolvedModel
     ? resolveCompactionTrigger({
-        ...agentContext.compaction,
         contextWindow: resolvedModel.contextWindow,
         inputTierTokens: resolvedModel.inputTierTokens,
         maxOutputTokens: resolvedModel.maxOutputTokens,

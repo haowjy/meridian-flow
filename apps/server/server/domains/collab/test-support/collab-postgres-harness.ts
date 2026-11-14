@@ -10,7 +10,11 @@ import {
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  withBlockIds,
+} from "@meridian/prosemirror-schema";
 import { updateYFragment } from "@tiptap/y-tiptap";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
@@ -32,6 +36,7 @@ import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
+import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
@@ -77,7 +82,9 @@ const { createDrizzleWorkBranchPendingStore } = await import(
 );
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
-const { createDrizzleBranchTreeState } = await import("../adapters/drizzle-branch-tree-state.js");
+const { branchFolderRevisions, createDrizzleBranchTreeState } = await import(
+  "../adapters/drizzle-branch-tree-state.js"
+);
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
 const { treeSeeder } = await import("../../../test-support/tree-seed.js");
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
@@ -353,7 +360,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     codec: runtime.codec,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    semanticProvenance: runtime.semanticProvenance,
     observability,
   });
   // Scoped as composition scopes it, so a real link scope sees every model call.
@@ -433,6 +439,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     turnInverse,
+    lockOwners: createDrizzleReversalLocks(db),
     resolveDocumentUri,
     commands: createDrizzleDocumentCommands(db),
   });
@@ -481,6 +488,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     branches: workBranches,
     reviewItems,
+    folderRevisions: (branchId) => branchFolderRevisions(db, branchId),
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
@@ -522,6 +530,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const collab = {
     agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
+    reversalOwners: turnInverse.reversalOwners,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
@@ -637,7 +646,7 @@ function serializeMarkdown(doc: Y.Doc): string {
 
 function replaceMarkdown(doc: Y.Doc, markdown: string): void {
   const parsed = markupCodec.parse(markdown);
-  const replacement = documentSchema.node("doc", null, parsed.blocks);
+  const replacement = documentSchema.node("doc", null, parsed.blocks.map(withBlockIds));
   updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
     mapping: new Map(),
     isOMark: new Map(),

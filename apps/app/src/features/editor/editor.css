@@ -67,6 +67,120 @@
   pointer-events: none;
 }
 
+/* Lists and quotes are runs of sibling blocks, not wrapper elements. The nesting
+   plugin (`core/editor/extensions/nesting`) gives each nested block its indent, the
+   inline offset of its own list marker, the kind of item it starts, the item's number
+   and, in a quote, one bar per quote it sits in; the marker is generated content in
+   the indent. */
+.meridian-editor .ProseMirror {
+  --nest-list-step: 1.5rem;
+  --nest-quote-step: 1.1875rem;
+  --nest-bar-width: 0.1875rem;
+  --nest-bar: var(--color-focus);
+}
+
+.meridian-editor .ProseMirror .meridian-nested {
+  position: relative;
+  padding-inline-start: var(--nest-indent);
+}
+
+.meridian-editor .ProseMirror .meridian-listed {
+  margin-block: var(--prose-space-row);
+}
+
+.meridian-editor .ProseMirror .meridian-listed + .meridian-listed {
+  margin-top: var(--prose-space-row);
+}
+
+.meridian-editor .ProseMirror .meridian-quoted {
+  --nest-join-pad: calc(var(--prose-space-block) / 2);
+  background-repeat: no-repeat;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+.meridian-editor .ProseMirror .meridian-quoted.meridian-listed {
+  --nest-join-pad: calc(var(--prose-space-row) / 2);
+}
+
+/* A quote keeps its own space from the blocks around it, list items included. */
+.meridian-editor .ProseMirror .meridian-quoted:not([data-quote-join~="above"]) {
+  margin-top: var(--prose-space-quote);
+}
+
+.meridian-editor .ProseMirror .meridian-quoted:not([data-quote-join~="below"]) {
+  margin-bottom: var(--prose-space-quote);
+}
+
+/* Blocks of one quote meet through padding instead of margin, so its bars run unbroken
+   from the quote's first line to its last. */
+.meridian-editor .ProseMirror .meridian-quoted[data-quote-join~="above"] {
+  margin-top: 0;
+  padding-top: var(--nest-join-pad);
+}
+
+.meridian-editor .ProseMirror .meridian-quoted[data-quote-join~="below"] {
+  margin-bottom: 0;
+  padding-bottom: var(--nest-join-pad);
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item]::before {
+  position: absolute;
+  inset-inline-start: calc(var(--nest-marker) - 1.25rem);
+  width: 1.25rem;
+  padding-inline-end: 0.35rem;
+  color: var(--color-muted-foreground);
+  text-align: end;
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item="bullet"]::before {
+  content: "\2022";
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item="ordered"]::before {
+  content: attr(data-number) ".";
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item="todo"]::before,
+.meridian-editor .ProseMirror .meridian-listed[data-item="done"]::before {
+  content: "";
+  top: calc((1lh - 0.9em) / 2);
+  inset-inline-start: calc(var(--nest-marker) - 1.2em);
+  box-sizing: border-box;
+  width: 0.9em;
+  height: 0.9em;
+  padding: 0;
+  border: 1.5px solid var(--color-muted-foreground);
+  border-radius: 0.2em;
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item="done"]::before {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+/* The box is a control: a press on it checks the task (`NestingExtension`). The
+   press lands on the block's own element, so the pointer is all CSS adds. */
+.meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="todo"]::before,
+.meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="done"]::before {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.meridian-editor .ProseMirror .meridian-listed[data-item="done"]::after {
+  content: "";
+  position: absolute;
+  top: calc((1lh - 0.9em) / 2 + 0.14em);
+  inset-inline-start: calc(var(--nest-marker) - 1.2em + 0.3em);
+  width: 0.28em;
+  height: 0.5em;
+  border: solid var(--color-primary-foreground);
+  border-width: 0 0.12em 0.12em 0;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
 /* A picture is a big glyph. Its bottom sits on the text baseline, so the words
    before it and after it stand at its foot, the line box grows as tall as the
    picture, and what follows wraps onto the line below — the "in line" of Docs
@@ -298,10 +412,13 @@
 }
 
 .meridian-editor .tableWrapper.meridian-object-selected > table {
-  /* One cell border thicker than the ring above: the grid's own 1px border
-     paints over the outermost pixel of an inset shadow, so this is what
-     leaves the same weight of jade showing. */
-  box-shadow: inset 0 0 0 calc(0.125rem + 1px) var(--color-primary);
+  /* The table's own top and left strokes turn jade and sit outside the shadow; on the
+     right and bottom the cells' strokes paint over the shadow's outermost pixel, so the
+     second shadow reaches one pixel further there. Every side shows the same weight. */
+  border-color: var(--color-primary);
+  box-shadow:
+    inset 0 0 0 0.125rem var(--color-primary),
+    inset -1px -1px 0 0.125rem var(--color-primary);
 }
 
 .meridian-peer-carets {

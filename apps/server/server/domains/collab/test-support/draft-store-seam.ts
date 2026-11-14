@@ -15,6 +15,7 @@ import {
 export function proseDraftUpdate(text = "drafted"): Uint8Array {
   const doc = new Y.Doc({ gc: false });
   const paragraph = new Y.XmlElement("paragraph");
+  paragraph.setAttribute("id", "p");
   paragraph.insert(0, [new Y.XmlText(text)]);
   doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph]);
   return Y.encodeStateAsUpdate(doc);

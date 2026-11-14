@@ -7,17 +7,19 @@
  */
 import type { Node as PMNode } from "prosemirror-model";
 import { type Alignment, align } from "./align.js";
+import { correspond } from "./correspond.js";
 import { buildSide, coreKey, type Side, type Tok } from "./tokens.js";
 
 export interface Hunk {
   from: number; // base token range replaced
   to: number;
-  sfrom: number; // side token index where `ins` starts
-  ins: Tok[];
-  sidx?: number[]; // side index of each `ins` token when they aren't contiguous from `sfrom` (merge only)
+  sfrom: number; // side token range this hunk came from: set where the hunk is made, never by a filter
+  sto: number;
+  ins: Tok[]; // the payload: all of sfrom..sto, or what a filter kept of it
+  sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
 
-/** "format" changes marks or a block's type, "whitespace" only spacing, "text" anything else. */
+/** "format" changes marks or a block's type or attributes, "whitespace" only spacing, "text" anything else. */
 export type HunkKind = "text" | "format" | "whitespace";
 
 /** Base token -> side token outside hunks, else -1. */
@@ -28,7 +30,7 @@ export function posMap(n: number, hunks: readonly Hunk[]): Int32Array {
   for (const h of hunks) {
     while (b0 < h.from) pos[b0++] = s0++;
     b0 = h.to;
-    s0 = h.sfrom + h.ins.length;
+    s0 = h.sto;
   }
   while (b0 < n) pos[b0++] = s0++;
   return pos;
@@ -57,7 +59,7 @@ function whitespaceHunks(B: Side, S: Side, al: Alignment): Hunk[] {
       if (j < 0 || x.kind !== "text" || i === 0 || al.pos[i - 1] !== j - 1) continue;
       const y = st[j] as typeof x;
       if (x.ws === y.ws && (!x.ws || sameMarks(wsMarksOf(x), wsMarksOf(y)))) continue;
-      out.push({ from: i, to: i + 1, sfrom: j, ins: [y] });
+      out.push({ from: i, to: i + 1, sfrom: j, sto: j + 1, ins: [y] });
     }
   }
   return out;
@@ -71,6 +73,12 @@ export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
     const x = bt[h.from + k];
     const y = h.ins[k];
     if (x.kind === "block" && y.kind === "block") {
+      differs ||= x.key !== y.key;
+      continue;
+    }
+    // A rule, figure or table that kept its content and changed its attributes is a format change.
+    if (x.kind === "atom" && y.kind === "atom" && x.node.type === y.node.type) {
+      if (!x.node.content.eq(y.node.content)) return "text";
       differs ||= x.key !== y.key;
       continue;
     }
@@ -89,8 +97,7 @@ export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
 function cleanupHunks(hunks: readonly Hunk[], B: Side, S: Side): Hunk[] {
   // Carry endpoints until publication: slicing each accumulated replacement repeats its prefix.
   type Range = { first: Hunk; last: Hunk };
-  const size = ({ first, last }: Range) =>
-    Math.max(last.to - first.from, last.sfrom + last.ins.length - first.sfrom);
+  const size = ({ first, last }: Range) => Math.max(last.to - first.from, last.sto - first.sfrom);
   const crossesBlock = (side: Side, from: number, to: number) =>
     from < to &&
     (side.starts[side.blockOf[from]] === from || side.blockOf[from] !== side.blockOf[to - 1]);
@@ -114,7 +121,8 @@ function cleanupHunks(hunks: readonly Hunk[], B: Side, S: Side): Hunk[] {
           from: first.from,
           to: last.to,
           sfrom: first.sfrom,
-          ins: S.toks.slice(first.sfrom, last.sfrom + last.ins.length),
+          sto: last.sto,
+          ins: S.toks.slice(first.sfrom, last.sto),
         },
   );
 
@@ -124,11 +132,7 @@ function cleanupHunks(hunks: readonly Hunk[], B: Side, S: Side): Hunk[] {
     // A leading block token already in a may be an attribute edit followed by its first changed word.
     return (
       !crossesBlock(B, a.first.from + (a.last.to > a.first.from ? 1 : 0), b.last.to) &&
-      !crossesBlock(
-        S,
-        a.first.sfrom + (a.last.sfrom + a.last.ins.length > a.first.sfrom ? 1 : 0),
-        b.last.sfrom + b.last.ins.length,
-      )
+      !crossesBlock(S, a.first.sfrom + (a.last.sto > a.first.sfrom ? 1 : 0), b.last.sto)
     );
   }
 }
@@ -150,7 +154,7 @@ export function diffBlocks(
 ): BlockDiff {
   const B = buildSide(base);
   const D = buildSide(draft);
-  const alignment = align(B, D);
+  const alignment = align(B, D, correspond(base, draft, { byId: true }));
   let hunks = alignment.hunks;
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);

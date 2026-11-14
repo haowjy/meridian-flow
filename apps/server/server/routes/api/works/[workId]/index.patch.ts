@@ -1,18 +1,21 @@
 /** Updates mutable Work metadata; archive state remains an explicit lifecycle action. */
+
+import type { CommandId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { UpdateWorkRequest } from "@meridian/contracts/works";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 import { updateWorkMetadataForWriter } from "../../../../lib/work-metadata-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const workId = requireRequestId(getRouterParam(event, "workId"), "workId");
-  const body =
-    (await readBody<Partial<Record<keyof UpdateWorkRequest, unknown>> & Record<string, unknown>>(
-      event,
-    )) ?? {};
+  const { commandId, body } = splitCommandBody(await readBody(event)) as {
+    commandId: CommandId;
+    body: Partial<Record<keyof UpdateWorkRequest, unknown>> & Record<string, unknown>;
+  };
   if (body.name !== undefined && typeof body.name !== "string") {
     throw createError({ statusCode: 400, message: "name must be a string" });
   }
@@ -25,11 +28,13 @@ export default defineEventHandler(async (event) => {
 
   const work = await updateWorkMetadataForWriter(
     {
+      commands: app.commands,
       works: app.workRepo,
       projects: app.projectRepo,
       workContextNotices: app.workContextNotices,
     },
     {
+      commandId,
       workId,
       userId: user.userId,
       name: body.name as string | undefined,

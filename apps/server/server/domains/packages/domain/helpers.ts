@@ -1,28 +1,27 @@
-/**
- * Shared coercion/hashing utilities for the package domain: safe JSON-shape
- * accessors (objectAt, stringAt, ...) and sha256. Owns the
- * defensive parsing primitives used by mars-source/sync/resolution; depends only
- * on the domain types.
- */
+/** Hashing and canonical-JSON helpers for package digests. */
 import { createHash } from "node:crypto";
 
-import type { JsonObject } from "./types.js";
-
-export function objectAt(value: unknown): JsonObject {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as JsonObject;
-  }
-  return {};
-}
-
-export function stringAt(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-export function booleanAt(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
+type JsonObject = Record<string, unknown>;
 
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** Canonical JSON object for checksum stability — keys sorted recursively. */
+export function canonicalizeJsonObject(value: JsonObject): JsonObject {
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalizeJsonValue(value[key])]),
+  );
+}
+
+/**
+ * Arrays are descended into because Postgres jsonb scrambles the key order of objects nested
+ * inside them just like top-level objects.
+ */
+function canonicalizeJsonValue(entry: unknown): unknown {
+  if (Array.isArray(entry)) return entry.map(canonicalizeJsonValue);
+  if (entry && typeof entry === "object") return canonicalizeJsonObject(entry as JsonObject);
+  return entry;
 }

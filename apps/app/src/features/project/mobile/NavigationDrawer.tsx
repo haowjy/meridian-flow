@@ -28,7 +28,6 @@ export type NavigationDrawerProps = {
   editorWorkId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
-  activeContextPath: string | null;
   /** Who owns main's document when it is a Work's Scratch note. */
   activeContextWork: string | null;
   /** The chat on screen: its row reads as current. */
@@ -44,7 +43,6 @@ export function NavigationDrawer({
   editorWorkId,
   contextLive,
   activeContextScheme,
-  activeContextPath,
   activeContextWork,
   chatThreadId,
 }: NavigationDrawerProps) {
@@ -122,6 +120,7 @@ export function NavigationDrawer({
                 <div className="flex shrink-0 flex-col py-1">
                   <WorkScopePicker
                     projectId={projectId}
+                    chatThreadId={chatThreadId}
                     workId={scope.workId}
                     onPick={scope.setWorkId}
                     onManage={() => {
@@ -136,7 +135,6 @@ export function NavigationDrawer({
                   chatThreadId={chatThreadId}
                   contextLive={contextLive}
                   activeScheme={activeContextScheme}
-                  activePath={activeContextPath}
                   activeWorkId={activeContextWork}
                   onSelectFile={handleSelectFile}
                   scopeWorkId={scope.workId}

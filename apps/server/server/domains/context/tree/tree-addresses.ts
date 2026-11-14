@@ -211,9 +211,8 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
 /**
  * The live source a scheme names: a project-scoped one in its project (or the owner's
  * personal project), a lineage Scratch by its first chat, a Work-scoped one in the named Work
- * or No Work. Liveness facts (live
- * source, live project, live work) are the same ones recent-documents' visibleIdentity
- * filters on and project-context-availability explains as a reason.
+ * or No Work. A deleted Work's source stays until its purge removes it: its files read, and
+ * file policy refuses the writes.
  */
 export async function presentSourceId(
   db: DrizzleDb,
@@ -251,7 +250,6 @@ export async function presentSourceId(
             : workScoped
               ? and(
                   projectId === null ? sql`false` : eq(works.projectId, projectId),
-                  isNull(works.deletedAt),
                   input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
                 )
               : and(

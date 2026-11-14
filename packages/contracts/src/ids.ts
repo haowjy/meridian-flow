@@ -33,7 +33,7 @@ export function parseDraftItemKey(
     : null;
 }
 /** A client-generated UUID naming one document command; resends reuse it. */
-export type DocumentCommandId = string;
+export type CommandId = string;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;

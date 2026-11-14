@@ -1,7 +1,7 @@
 // Immutable document edit receipts, independent of compactable transport journals.
 import type {
   BranchId,
-  DocumentCommandId,
+  CommandId,
   DocumentId,
   EditOrigin,
   ThreadId,
@@ -52,7 +52,7 @@ export const documentEdits = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
     /** The command that made this edit; no foreign key: the receipt outlives the command row. */
-    commandId: uuid("command_id").$type<DocumentCommandId>(),
+    commandId: uuid("command_id").$type<CommandId>(),
     /** The model tool call that made this edit; scoped by its response identity. */
     toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
@@ -127,7 +127,7 @@ export const treeEditReceipts = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
     /** The command that made this change; no foreign key: the receipt outlives the command row. */
-    commandId: uuid("command_id").$type<DocumentCommandId>(),
+    commandId: uuid("command_id").$type<CommandId>(),
     toolCallId: text("tool_call_id"),
     /** A document's or a folder's node id: a folder has no `documents` row. */
     nodeId: uuid("node_id").notNull(),

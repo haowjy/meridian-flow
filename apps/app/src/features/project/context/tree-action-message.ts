@@ -12,6 +12,10 @@ export function treeActionMessage(reason: TreeActionRefusal, what: "folder" | "f
         : t`This file is no longer there. Refresh and try again.`;
     case "read-only":
       return t`This project is read-only, so nothing can be changed here.`;
+    case "archived":
+      return t`This Work is archived. Unarchive it to change its tree.`;
+    case "deleted":
+      return t`This Work is deleted. Restore it to change its tree.`;
     case "denied":
       return t`You don't have access to change this.`;
     case "no-list":

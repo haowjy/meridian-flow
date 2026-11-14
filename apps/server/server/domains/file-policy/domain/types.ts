@@ -147,6 +147,8 @@ export interface FileBranchOwnerFacts {
   isNoWork: boolean;
   archived: boolean;
   deleted: boolean;
+  /** The owner's row is gone: a Work purged for good, or a lineage whose root is. */
+  purged: boolean;
   frozen: boolean;
 }
 

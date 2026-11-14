@@ -144,24 +144,32 @@ export function setDocumentView(
 }
 
 /**
- * A Work pick returns every view showing a draft of a document that also exists Live to Live.
- * `keepsDraft` names the documents with no Live version (created by their draft): those keep it.
+ * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it, and so does a
+ * document with no Live version (`keepsDraft`); every other view showing a draft returns to Live.
+ * Returns whether a page live also has stayed on the Work's draft: the toggle then lands on Draft,
+ * because the scope's drafts of such pages show only on Draft (`shownDraft`).
  */
-export function returnDraftsToLive(
+export function pickWorkViews(
   accountId: string,
   projectId: string,
+  ownerKey: string | null,
   keepsDraft: (documentId: string) => boolean,
-): void {
+): boolean {
   const views = read(accountId, projectId);
   let changed = false;
+  let onWorkDraft = false;
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
-    if (view.version === "draft" && !keepsDraft(documentId)) {
+    const onWork = ownerKey !== null && view.pin?.ownerKey === ownerKey;
+    const draftOnly = keepsDraft(documentId);
+    onWorkDraft ||= onWork && !draftOnly;
+    if (view.version === "draft" && !onWork && !draftOnly) {
       changed = true;
       if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
+  return onWorkDraft;
 }
 
 /**

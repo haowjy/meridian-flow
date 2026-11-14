@@ -6,6 +6,7 @@ import { moveDocumentAcrossLists } from "@/client/api/projects-api";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { parseContextUri } from "@/lib/context-uri";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
@@ -110,6 +111,7 @@ export function useIdentityCommit({
   const trees = useProjectTreeViews(projectId, EDITOR_SCHEMES, {
     workId: location.workId ?? editorWorkId,
     rootThreadId: location.rootThreadId,
+    version: useTreeVersion(),
   });
   return async (target) => {
     const plan = deriveIdentityCommitPlan(document, target, editorWorkId);

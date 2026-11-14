@@ -39,7 +39,6 @@ import {
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
 import {
-  dependentChangeCopy,
   type ReversalRefusal,
   refusedReversalStatus,
   reversalRefusalCopy,
@@ -173,7 +172,12 @@ export function TurnEditsReceipt({
       const refusal = status && !documentHalfEmpty ? status : null;
       setCommandRefusal(
         refusal
-          ? { direction, status: refusal, at: treeFaultLocation(refusal, outcome.skips) }
+          ? {
+              direction,
+              status: refusal,
+              at: treeFaultLocation(refusal, outcome.skips),
+              denial: outcome.denial,
+            }
           : null,
       );
       const notices = [
@@ -323,12 +327,6 @@ export function TurnEditsReceipt({
 }
 
 function undoGuardCopy(receipt: TurnReceiptChip | null, partsListed: boolean): string | undefined {
-  // Same fact as the refused-command copy, so it is the same sentence: a
-  // receipt that rests on `cant_undo_dependent` and a command refused with it
-  // are the writer's one situation.
-  if (receipt?.state === "cant_undo_dependent") {
-    return dependentChangeCopy();
-  }
   // Listed parts already say why nothing can be undone, part by part.
   if ((receipt?.control === "view_change" || receipt == null) && !partsListed) {
     return t`This change is no longer reversible.`;
@@ -450,37 +448,27 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
 
 /**
  * "Drafted" when every change went into a draft, so the manuscript is as it was until the writer
- * applies it; else "Edited" while the turn only changed text, "Changed" once it moved or deleted
- * a document or wrote both drafts and the manuscript. The part lines say what became of each.
+ * applies it; else "Edited" while the turn only changed text, "Changed" once it moved, deleted or
+ * made something or wrote both drafts and the manuscript. Documents and folders are counted
+ * apart, so a reorganisation says it touched folders too. The part lines say what became of each.
  * It counts, never names: a name inside the toggle would compete for the click with the
  * expanded rows, which already open each document.
  */
-function documentCountLabel(documents: readonly TurnEditDocument[]) {
-  if (documents.every((document) => document.folder)) {
-    const folders = new Set(documents.map((document) => document.documentId)).size;
-    return folders === 1 ? (
-      <Trans>Changed 1 folder</Trans>
-    ) : (
-      <Trans>Changed {folders} folders</Trans>
-    );
-  }
-  const count = new Set(
-    documents.filter((document) => !document.folder).map((document) => document.documentId),
-  ).size;
-  const drafted = documents.filter((document) => document.scope === "draft").length;
-  if (drafted === documents.length)
-    return count === 1 ? (
-      <Trans>Drafted 1 document</Trans>
-    ) : (
-      <Trans>Drafted {count} documents</Trans>
-    );
-  if (drafted > 0 || documents.some((document) => document.tree))
-    return count === 1 ? (
-      <Trans>Changed 1 document</Trans>
-    ) : (
-      <Trans>Changed {count} documents</Trans>
-    );
-  return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
+function documentCountLabel(documents: readonly TurnEditDocument[]): string {
+  const counted = (folder: boolean) =>
+    new Set(
+      documents
+        .filter((document) => !!document.folder === folder)
+        .map(({ documentId }) => documentId),
+    ).size;
+  const files = plural(counted(false), { one: "# document", other: "# documents" });
+  const folders = plural(counted(true), { one: "# folder", other: "# folders" });
+  const what =
+    counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
+  if (documents.every((document) => document.scope === "draft")) return t`Drafted ${what}`;
+  if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
+    return t`Changed ${what}`;
+  return t`Edited ${what}`;
 }
 
 /**

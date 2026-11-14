@@ -1,7 +1,7 @@
 import type {
   BranchId,
+  CommandId,
   DocumentAuthorityId,
-  DocumentCommandId,
   DocumentId,
   ModelResponseId,
   ProjectId,
@@ -9,7 +9,7 @@ import type {
   TurnId,
   UserId,
 } from "@meridian/contracts";
-import type { DocumentCommandKind, DocumentCommandOutcome } from "@meridian/contracts/branches";
+import type { CommandKind, CommandOutcome } from "@meridian/contracts/commands";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
@@ -335,38 +335,38 @@ export const documentBlocks = pgTable(
 );
 
 /**
- * One row per command sent as a request, keyed by the sender's id, so a resend answers the
- * first command's outcome. The row is the effect transaction's first write and holds its final
- * outcome when it commits.
+ * One row per command sent as a request, of any kind, keyed by the sender's id, so a resend
+ * answers the first command's outcome. The row is the effect transaction's first write and
+ * holds its final outcome when it commits. Only the account is a foreign key: a row outlives
+ * its project and its chat, so a late resend of a create cannot create twice. A chat purge
+ * deletes the chat's rows by `thread_id` (`model_edit` today); nothing else removes one.
  */
-export const documentCommands = pgTable(
-  "document_commands",
+export const commands = pgTable(
+  "commands",
   {
-    id: uuid("id").$type<DocumentCommandId>().primaryKey(),
-    kind: text("kind").$type<DocumentCommandKind>().notNull(),
+    id: uuid("id").$type<CommandId>().primaryKey(),
+    kind: text("kind").$type<CommandKind>().notNull(),
     accountId: uuid("account_id")
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** Null for a command on account-level documents. */
-    projectId: uuid("project_id")
-      .$type<ProjectId>()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    /**
-     * The chat of a `model_edit` command, so a purge of the chat deletes its stored tool results.
-     * Plain, no foreign key, like the evidence tables.
-     */
+    /** Null for a command on account-level documents; plain, so a project's rows outlive it. */
+    projectId: uuid("project_id").$type<ProjectId>(),
+    /** The chat of a `model_edit` command, so a purge of the chat deletes its stored tool results. */
     threadId: uuid("thread_id").$type<ThreadId>(),
-    /** Hash of the canonical request; another digest under this id is a conflict. */
-    requestDigest: text("request_digest").notNull(),
-    outcome: jsonb("outcome").$type<DocumentCommandOutcome>().notNull(),
+    /**
+     * Hash of the canonical request; another digest under this id is a conflict. Null only on a
+     * `never` row a resolve stored: it answers `never` to every attempt, whatever its digest.
+     */
+    requestDigest: text("request_digest"),
+    outcome: jsonb("outcome").$type<CommandOutcome>().notNull(),
     createdAt: createdAt(),
   },
   (table) => [
-    index("document_commands_thread").on(table.threadId),
+    index("commands_thread").on(table.threadId),
     check(
-      "document_commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')`,
+      "commands_kind_valid",
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')`,
     ),
   ],
 );
@@ -379,9 +379,9 @@ export const applyCommandTrees = pgTable(
   "apply_command_trees",
   {
     commandId: uuid("command_id")
-      .$type<DocumentCommandId>()
+      .$type<CommandId>()
       .notNull()
-      .references(() => documentCommands.id, { onDelete: "cascade" }),
+      .references(() => commands.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id")
       .$type<BranchId>()
       .notNull()
@@ -414,15 +414,15 @@ export const discardCommandDrafts = pgTable(
   "discard_command_drafts",
   {
     commandId: uuid("command_id")
-      .$type<DocumentCommandId>()
+      .$type<CommandId>()
       .notNull()
-      .references(() => documentCommands.id, { onDelete: "cascade" }),
+      .references(() => commands.id, { onDelete: "cascade" }),
     draftId: text("draft_id")
       .notNull()
       .references(() => documentDrafts.id, { onDelete: "cascade" }),
     restoredBy: uuid("restored_by")
-      .$type<DocumentCommandId>()
-      .references(() => documentCommands.id, { onDelete: "set null" }),
+      .$type<CommandId>()
+      .references(() => commands.id, { onDelete: "set null" }),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.draftId] })],
 );
@@ -432,9 +432,9 @@ export const applyCommandEffects = pgTable(
   "apply_command_effects",
   {
     commandId: uuid("command_id")
-      .$type<DocumentCommandId>()
+      .$type<CommandId>()
       .notNull()
-      .references(() => documentCommands.id, { onDelete: "cascade" }),
+      .references(() => commands.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     groupId: text("group_id").notNull(),
     documentId: uuid("document_id")
@@ -448,7 +448,7 @@ export const applyCommandEffects = pgTable(
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
-    unappliedBy: uuid("unapplied_by").$type<DocumentCommandId>(),
+    unappliedBy: uuid("unapplied_by").$type<CommandId>(),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),

@@ -13,8 +13,8 @@ stateDiagram-v2
   awaiting --> confirmed: the server has the local changes
   confirmed --> idle: 3 seconds pass, or the writer edits again
   confirmed --> awaiting: the connection drops again
-  awaiting --> idle: access lost, or the session is destroyed
-  confirmed --> idle: access lost, or the session is destroyed
+  awaiting --> idle: the unsent edits can't be delivered
+  confirmed --> idle: the unsent edits can't be delivered
 ```
 
 - **The phase and the snapshot are stored together** and advanced in one state update, so no
@@ -22,4 +22,9 @@ stateDiagram-v2
 - **A healthy session never leaves `idle`.** The confirmation exists to answer "did my offline
   edits make it?"; showing it after ordinary typing would flicker on every keystroke. For the
   same reason an edit made while `confirmed` hides the pill instead of returning to `awaiting`.
+- **Can't be delivered is the session's answer, `canDeliverUnsentEdits()`:** the room ended
+  (access lost, reset, terminal, destroyed) or the server admitted it read-only, as it does an
+  archived Work's draft. A browser with typing still unsent when the Work is archived
+  (offline then, or online with it in flight) reconnects read-only; the pill goes quiet instead of saying "offline", the
+  archived notice says why, and the typing stays on screen for an Unarchive to deliver.
 - A refused update (`updatesRefused`) is not a phase. It is checked first and replaces the pill.

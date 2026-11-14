@@ -164,28 +164,6 @@
   & > :last-child {
     margin-bottom: 0;
   }
-  & table {
-    @apply w-full border-collapse;
-  }
-  & thead {
-    @apply bg-ink-fill text-left text-foreground;
-  }
-  & tbody tr:nth-child(even) {
-    @apply bg-ink-fill/50;
-  }
-  & tr {
-    @apply border-b border-border-subtle last:border-0;
-  }
-  & th {
-    /* em (not rem) so headers ride the text-size preference; 0.867em inside
-       the 0.9em table ≈ the previous 0.78rem at the medium stop. */
-    font-size: 0.867em;
-    @apply border-b border-border-subtle px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-semibold uppercase;
-  }
-  & td {
-    font-size: 1em;
-    @apply px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] align-top text-foreground;
-  }
 }
 
 .prose-tokens li > ul,
@@ -297,9 +275,15 @@
   color: var(--color-jade-text);
 }
 
+/* Separate, not collapsed: collapsed borders paint every crossing twice, and a translucent
+   stroke painted twice is a darker dot. Each cell draws its right and bottom edge and the
+   table its top and left, so no two strokes overlap, merged cells included. */
 .document-prose table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  border-left: 1px solid var(--color-border-subtle);
   overflow: hidden;
   border-radius: var(--radius-md);
 }
@@ -316,14 +300,48 @@
 .document-prose th,
 .document-prose td {
   position: relative;
-  border: 1px solid var(--color-border-subtle);
+  border-right: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+  /* A fill stops at the stroke, so the stroke reads the same over a header or a striped row. */
+  background-clip: padding-box;
   padding: 0.5rem 0.625rem;
   vertical-align: top;
 }
 
+.document-prose td {
+  color: var(--color-foreground);
+}
+
+.document-prose thead {
+  color: var(--color-foreground);
+}
+
+/* On the cells, not the row: a row's fill would reach under the cells' strokes. */
+.document-prose tbody tr:nth-child(even) > td {
+  @apply bg-ink-fill/50;
+}
+
+/* Both strokes of this corner are the cell's own, so the table's clip would cut them: the
+   cell rounds them itself. */
+.document-prose :is(tbody, tfoot):last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: var(--radius-md);
+}
+
+/* A cell spanning rows can hold that corner from an earlier row, where no selector finds it,
+   and the last row's last cell is then an inner one: keep the corner square instead. */
+.document-prose table:has([rowspan]:not([rowspan="1"])) {
+  border-bottom-right-radius: 0;
+  & :is(tbody, tfoot):last-child > tr:last-child > :last-child {
+    border-bottom-right-radius: 0;
+  }
+}
+
 .document-prose th {
-  background: var(--color-ink-fill);
+  background-color: var(--color-ink-fill);
+  /* em, so headers follow the text-size preference. */
+  font-size: 0.867em;
   font-weight: 650;
+  text-transform: uppercase;
   /* The UA default centres headers; GFM leaves unaligned columns at start.
      Aligned columns override this with an inline text-align. */
   text-align: start;

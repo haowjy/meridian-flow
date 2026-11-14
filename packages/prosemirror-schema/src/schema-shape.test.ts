@@ -192,8 +192,9 @@ function historyAt(reference: string): SchemaShapeHistoryEntry[] | null {
   }
 }
 
+// Shipped history is main's: an integration branch may rewrite entries it added
+// and never shipped. For a PR into main the merge base is the PR's base.
 function baseReference(): string | null {
-  if (process.env.GITHUB_EVENT_NAME === "pull_request") return "HEAD^1";
   try {
     return git("merge-base", "HEAD", "origin/main");
   } catch {

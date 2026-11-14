@@ -8,6 +8,7 @@
 import {
   type AgentEditCore,
   modelResult,
+  type ObservationFrontier,
   parseDocumentAddress,
   rejectedWriteResult,
   splitDocumentFile,
@@ -47,7 +48,12 @@ export type ModelEditWriteDeps = {
   /** A drafted write's first locks: the grants' Works and lineages, then their confirmation. */
   enterDraftSeam(): Promise<void>;
   /** The branch's draft of the document, made from live text when absent. */
-  ensureWorkDraft(input: { documentId: DocumentId; branchId: string }): Promise<DraftSnapshot>;
+  ensureWorkDraft(input: {
+    documentId: DocumentId;
+    branchId: string;
+    /** The live cut the model last saw, which a new draft seeds from. */
+    seen: ObservationFrontier | null;
+  }): Promise<DraftSnapshot>;
   /** Row-locks the draft: the append's own lock, taken before the room is read. */
   lockDraft(draftId: string): Promise<void>;
   /** Every Work draft of the document, any status, and the live room's current name. */
@@ -120,11 +126,13 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     // An unaddressable file has no draft: the core answers it as the invalid write it is.
     if (!documentId)
       return threadCoreFor(given).write(command, { ...given, linkView, documentVersion: "draft" });
-    const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id });
+    const { liveRoom } = await deps.roomsOf(documentId);
+    const seen = liveRoom ? ((await given.frontiers?.planning?.(liveRoom)) ?? null) : null;
+    const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id, seen });
     if (await sawClosedDraft(documentId, given.creditedBlockIds)) return discardedWrite(command);
     await deps.lockDraft(workDraft.draftId);
     await testHook("command.afterLock");
-    return threadCoreFor(given).write(command, {
+    const outcome = await threadCoreFor(given).write(command, {
       ...given,
       linkView,
       documentVersion: "draft",
@@ -133,6 +141,9 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
         { workDraftId: workDraft.draftId, seed: workDraft.seed },
       ]),
     });
+    // A draft seeded from an older cut is behind live: the pull brings the writer's typing in.
+    if (seen && !workDraft.hasEffect) deps.afterLiveCommit(documentId);
+    return outcome;
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {

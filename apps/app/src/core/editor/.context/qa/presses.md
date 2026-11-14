@@ -9,7 +9,7 @@ It does not claim a current pass.
 
 Use a prose document at 1440×900 holding, in order: a paragraph long enough to
 wrap to three lines, two paragraphs with a visible gap between them, a bullet
-list, a table (with one cell holding two paragraphs), a rendered diagram, and
+list with a nested item, a task list with one item checked, a table (with one cell holding two paragraphs), a rendered diagram, and
 a paragraph. Make a second document that ends with a fenced code block, a third
 that ends with a table, and a fourth that ends with a rendered diagram. Use
 real mouse clicks; read the caret from a screenshot (the DOM does not show
@@ -48,7 +48,12 @@ which line a caret is on).
    press makes a paragraph only past a closing diagram. Do not expect the same
    below a diagram that ends a cell.
 7. **Read-only.** Repeat 1 in a read-only view: no caret appears and nothing
-   changes.
+   changes. Click a task box there: it does not change.
+8. **Task box and list gutter.** Click a task's box: it checks, the caret does not
+   move, and one undo unchecks it. Click it again: it unchecks. The pointer is a
+   hand over the box only. Click in a bullet's gutter, left of its text: the caret
+   goes to the start of that line and the bullet stays. With the caret in a task,
+   Mod-Enter checks and unchecks it.
 
 Record the commit, date, app URL, and a screenshot per step in the PR asset
 directory.

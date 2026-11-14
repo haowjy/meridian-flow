@@ -72,18 +72,19 @@ stateDiagram-v2
   rebuilding --> usable: the room is rebuilt and bound
   rebuilding --> error: the rebuild threw
   usable --> fenced: this tab's document schema no longer fits the room
-  usable --> rebuilding: reset because the room was refused
+  usable --> fenced: the server refused its updates three times in a row
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
+  fenced --> rebuilding: retry, for a room whose updates were refused
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
 
-- **Commands act only on `usable`** (`usable()`). The editor may still show a `fenced` room,
-  with a notice, but a command on it would write with a schema the server has refused.
-- **A refused room is rebuilt once per session.** The pool retires the session in the same
-  notification, and the `refused` latch stops later snapshots from the retired session from
-  starting a second rebuild.
+- **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
+  read-only with its notice: a schema fence, or "Couldn't save your latest changes" with Try
+  again. A command on it would write what the server has refused.
+- **An access change is not a state.** A 4409 reconnects the same session, which stays
+  `usable`; the server's new scope only makes it read-only or writable again.
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
   closed for good stays unavailable.
 - A rebuild result is used only if it is still the newest attempt and the read is not disposed.
@@ -101,8 +102,7 @@ stateDiagram-v2
   closing --> closed: providers and sessions drained
 ```
 
-- **`closing` refuses new work and lets go of what is held.** `release`, `releaseDraftRooms` and
-  `whenRefusedRoomDropped` still run, so a view unmounting during the close does not leak a hold.
+- **`closing` refuses new work and lets go of what is held.** `release` and `releaseDraftRooms` still run, so a view unmounting during the close does not leak a hold.
 - **Closing the runtime does not delete local copies.** A copy goes at the node's purge or when
   access is lost (`local-document-copies.ts`); closing ends the sessions and the copies stay for
   the next sign-in of the same account. The decision also names sign-out as deleting them; the

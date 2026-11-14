@@ -37,8 +37,10 @@ export type {
   ParseContext,
   ParsedContent,
   ParsedContentWithSpans,
+  ParseOptions,
   PMNode,
   PresentationSourceRun,
   SerializeContext,
+  SerializedBlock,
   SpelledHref,
 } from "./types.js";

@@ -26,12 +26,14 @@ const OTHER = "00000000-0000-4000-8000-000000000872";
 const PROJECT = "00000000-0000-4000-8000-000000000873";
 const THREAD = "00000000-0000-4000-8000-000000000874";
 const url = process.env.DATABASE_URL;
+const MANIFEST = '[package]\nname = "fixture"\nversion = "0.1.0"\nschema = 1\n';
 const source = (body = "Original prompt.") => ({
   coordinate: "fixture/agents",
   files: {
+    "mars.toml": MANIFEST,
     "agents/general.md": `---\nname: General\nmodel: fixture-model\n---\n\n${body}`,
-    "skills/voice/SKILL.md": "---\nname: voice\n---\n\nVoice guidance.",
-    "skills/voice/reference.bin": { encoding: "base64" as const, data: "AP8=" },
+    "skills/voice/SKILL.md": "---\nname: voice\ndescription: How to sound.\n---\n\nVoice guidance.",
+    "skills/voice/reference.txt": "Reference text.",
   },
 });
 
@@ -133,11 +135,8 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const reopenedDb = createDb(url, { max: 1 });
       try {
         const reopened = createDrizzleAgentRevisionStore(reopenedDb);
-        expect(await reopened.readSource(installed.packageRevisionId)).toEqual({
-          ...original,
-          dependencies: {},
-        });
-        expect(await reopened.readRevision(installed.definitions[0].id)).toEqual(
+        expect(await reopened.readSource(installed.packageRevisionId)).toEqual(original);
+        expect(await reopened.readCatalogRevision(installed.definitions[0].id)).toEqual(
           installed.definitions[0],
         );
         expect(await reopened.installSource(original)).toEqual(installed);
@@ -165,7 +164,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toHaveLength(1);
     });
 
-    it("keeps bindings through catalog advance and removal, then restores only the advanced selection", async () => {
+    it("keeps bindings through catalog advance and removal", async () => {
       const first = (await store.installSource(source())).definitions[0];
       const second = (await store.installSource(source("New prompt."))).definitions[0];
       const entry = await store.selectRevision({
@@ -200,7 +199,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual([]);
       const configuration = bindingConfiguration;
       expect(await store.readThreadBinding(THREAD)).toEqual({
-        revision: first,
+        revision: await store.readRevision(first.id),
         configuration,
         invocationOverlay: null,
         invokedSkills: {},
@@ -230,12 +229,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           })
         ).ok,
       ).toBe(false);
-      expect(await store.restoreOwnedEntry(OTHER, id, second.id)).toBe(false);
-      expect(await store.restoreOwnedEntry(USER, id, first.id)).toBe(false);
-      expect(await store.restoreOwnedEntry(USER, id, second.id)).toBe(true);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toMatchObject([
-        { id, selectedRevisionId: second.id },
-      ]);
+      expect(id).toBe(entry.entry.id);
     });
 
     it("round-trips an agent-less binding with a retained invocation overlay", async () => {
@@ -298,12 +292,15 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       });
       const publication = (version: number) => ({
         coordinate: "concurrent-system",
-        files: Object.fromEntries(
-          ["a", "b", "c"].map((slug) => [
-            `agents/${slug}.md`,
-            `---\nname: ${slug}\n---\nv${version}`,
-          ]),
-        ),
+        files: {
+          "mars.toml": MANIFEST,
+          ...Object.fromEntries(
+            ["a", "b", "c"].map((slug) => [
+              `agents/${slug}.md`,
+              `---\nname: ${slug}\n---\nv${version}`,
+            ]),
+          ),
+        },
       });
       await catalog.installSystemSource(publication(0));
       await Promise.all(
@@ -327,7 +324,10 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       });
       await catalog.installSystemSource({
         coordinate: "specialist",
-        files: { "agents/child.md": "---\nname: Child\nmode: subagent\n---\n" },
+        files: {
+          "mars.toml": MANIFEST,
+          "agents/child.md": "---\nname: Child\nmode: subagent\n---\n",
+        },
       });
       const page = await catalog.list(USER, { limit: 100 });
       expect(page.agents[0].unavailableReasons).toHaveLength(2);

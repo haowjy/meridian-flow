@@ -11,15 +11,24 @@ import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
 import { LIVE, undoChange, type View } from "@meridian/project-tree";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import type { AgentTreeHistory, MoveBackAcrossLists, TreeReceipt } from "../contracts.js";
+import { placedNodesSql } from "../../context/tree/tree-addresses.js";
+import type {
+  AgentTreeHistory,
+  MoveBackAcrossLists,
+  TreeReceipt,
+  TreeReceiptInput,
+} from "../contracts.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
+  /** The steps to reverse. */
   steps: TreeReceipt[];
+  /** Drafted steps whose Work's branch no longer holds the node (a Discard took it): skipped, never run. */
+  gone: TreeReceipt[];
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
   /** The Works whose branches a drafted step writes. */
@@ -28,7 +37,13 @@ export type TreePlan = {
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
 };
 
-export const NO_TREE_STEPS: TreePlan = { steps: [], lists: [], branches: [], documents: [] };
+export const NO_TREE_STEPS: TreePlan = {
+  steps: [],
+  gone: [],
+  lists: [],
+  branches: [],
+  documents: [],
+};
 
 export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
 
@@ -57,8 +72,31 @@ export function createTurnTreeInverse(deps: {
     turnId: TurnId,
     direction: "undo" | "redo",
   ): Promise<TreePlan> {
-    const steps = await deps.history().turnSteps(threadId, turnId, direction);
-    if (steps.length === 0) return NO_TREE_STEPS;
+    const all = await deps.history().turnSteps(threadId, turnId, direction);
+    if (all.length === 0) return NO_TREE_STEPS;
+    // A drafted step is applicable while its branch still places the node; once a Discard took it
+    // out there is no file to ask a grant about and nothing to reverse. Every other denial of a
+    // step's document refuses the reversal.
+    const held = new Set<string>();
+    const draftedIn = new Map<string, string[]>();
+    for (const step of all)
+      if (step.draftBranchId)
+        draftedIn.set(step.draftBranchId, [
+          ...(draftedIn.get(step.draftBranchId) ?? []),
+          step.subject,
+        ]);
+    for (const [branchId, ids] of draftedIn)
+      for (const row of await db().execute<{ id: string }>(sql`
+        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as BranchId })} n
+        WHERE n.id IN (${sql.join(
+          ids.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`))
+        held.add(`${branchId}:${row.id}`);
+    const gone = all.filter(
+      (step) => step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`),
+    );
+    const steps = all.filter((step) => !gone.includes(step));
     const lists = new Map<string, TreeList>();
     for (const step of steps) {
       const list = await treeListOfNode(deps.db, step.subject);
@@ -85,6 +123,7 @@ export function createTurnTreeInverse(deps: {
     );
     return {
       steps,
+      gone,
       lists: [...lists.values()],
       branches: [
         ...new Set(steps.flatMap((step) => (step.draftBranchId ? [step.draftBranchId] : []))),
@@ -107,10 +146,11 @@ export function createTurnTreeInverse(deps: {
    * Takes the receipts back in the order given (the caller holds the lists' keys, the Works and
    * the documents). A receipt something later changed (`superseded`) is skipped, and a partly
    * superseded one reports as skipped too; the rest is reversed. Returns how many receipts
-   * reversed something.
+   * reversed something. The receipts one list holds go back in one update of it: every browser
+   * showing the list redraws its tree once for the whole Undo, not once a receipt.
    */
   async function run(
-    steps: readonly TreeReceipt[],
+    plan: Pick<TreePlan, "steps" | "gone">,
     direction: "undo" | "redo",
     input: {
       threadId: ThreadId;
@@ -121,85 +161,106 @@ export function createTurnTreeInverse(deps: {
     const actor = input.userId ? `user:${input.userId}` : "system";
     const skips: TurnInverseSkip[] = [];
     let reversed = 0;
-    for (const receipt of steps) {
-      const skip = (cause: "superseded" | "refused"): TurnInverseSkip => ({
-        kind: "tree",
-        documentId: receipt.subject,
-        uri: receipt.shownAt ?? receipt.subject,
-        at: receipt.shownAt,
-        cause,
-      });
-      const list = await treeListOfNode(deps.db, receipt.subject);
-      if (!list) {
-        skips.push(skip("superseded"));
-        continue;
-      }
-      if (receipt.across) {
-        const answer = input.moveBackAcrossLists
-          ? await input.moveBackAcrossLists(receipt)
-          : ({ ok: false, cause: "refused" } as const);
-        if (!answer.ok) skips.push(skip(answer.cause));
-        else {
-          reversed++;
-          await deps.history().recordAgentTreeChange({
-            subject: receipt.subject,
-            nodes: [
-              {
-                nodeId: receipt.subject,
-                beforeAt: receipt.across.to,
-                afterAt: receipt.across.from,
-              },
-            ],
-            records: [
-              { record: answer.records.left, node: receipt.subject },
-              { record: answer.records.entered, node: receipt.subject },
-            ],
-            op: receipt.op,
-            acrossLists: true,
-            threadId: input.threadId,
-            ...(receipt.turnId ? { turnId: receipt.turnId as TurnId } : {}),
-            shownAt: receipt.shownAt ?? "",
-            reverses: { kind: direction, receipt: receipt.id },
-          });
-        }
-        continue;
-      }
-      const view: View = receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
-      const made: { record: string; node: string }[] = [];
-      let failed = 0;
-      let inLive = receipt.draftBranchId === null;
-      await deps.treeLists.submit({
-        lists: [list],
-        make: ([{ writer }]) => {
-          for (const entry of [...receipt.records].reverse()) {
-            let back = undoChange(writer, view, actor, entry.record);
-            // A drafted change an Apply landed is taken back in live: the Work's draft lacks it.
-            if (typeof back === "string" && receipt.draftBranchId !== null) {
-              back = undoChange(writer, LIVE, actor, entry.record);
-              if (typeof back !== "string") inLive = true;
-            }
-            if (typeof back === "string") failed++;
-            else made.push({ record: back.id, node: entry.node });
-          }
-        },
-      });
-      if (failed > 0) skips.push(skip("superseded"));
-      if (made.length === 0) continue;
-      reversed++;
-      await deps.history().recordAgentTreeChange({
+    const skip = (receipt: TreeReceipt, cause: "superseded" | "refused"): TurnInverseSkip => ({
+      kind: "tree",
+      documentId: receipt.subject,
+      uri: receipt.shownAt ?? receipt.subject,
+      at: receipt.shownAt,
+      cause,
+    });
+    const record = (
+      receipt: TreeReceipt,
+      fields: Pick<TreeReceiptInput, "nodes" | "records"> &
+        Partial<Pick<TreeReceiptInput, "acrossLists" | "draftBranchId">>,
+    ) =>
+      deps.history().recordAgentTreeChange({
         subject: receipt.subject,
-        nodes: receipt.nodes.map((nodeId) => ({ nodeId, beforeAt: null, afterAt: null })),
-        records: made,
         op: receipt.op,
         threadId: input.threadId,
         ...(receipt.turnId ? { turnId: receipt.turnId as TurnId } : {}),
-        ...(receipt.draftBranchId && !inLive
-          ? { draftBranchId: receipt.draftBranchId as BranchId }
-          : {}),
         shownAt: receipt.shownAt ?? "",
         reverses: { kind: direction, receipt: receipt.id },
+        ...fields,
+      });
+
+    for (const receipt of plan.gone) skips.push(skip(receipt, "superseded"));
+
+    // Consecutive receipts in one list, taken back together.
+    let batch: { list: TreeList; receipts: TreeReceipt[] } | null = null;
+    const flush = async () => {
+      if (!batch) return;
+      const { list, receipts } = batch;
+      batch = null;
+      const { result } = await deps.treeLists.submit({
+        lists: [list],
+        make: ([{ writer }]) =>
+          receipts.map((receipt) => {
+            const view: View = receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
+            const made: { record: string; node: string }[] = [];
+            let failed = 0;
+            let inLive = receipt.draftBranchId === null;
+            for (const entry of [...receipt.records].reverse()) {
+              const back = undoChange(writer, view, actor, entry.record);
+              if (typeof back === "string") failed++;
+              else {
+                if (back.draft === null) inLive = true;
+                made.push({ record: back.id, node: entry.node });
+              }
+            }
+            return { receipt, made, failed, inLive };
+          }),
+      });
+      for (const { receipt, made, failed, inLive } of result) {
+        if (failed > 0) skips.push(skip(receipt, "superseded"));
+        if (made.length === 0) continue;
+        reversed++;
+        await record(receipt, {
+          nodes: receipt.nodes.map((nodeId) => ({ nodeId, beforeAt: null, afterAt: null })),
+          records: made,
+          ...(receipt.draftBranchId && !inLive
+            ? { draftBranchId: receipt.draftBranchId as BranchId }
+            : {}),
+        });
+      }
+    };
+
+    for (const receipt of plan.steps) {
+      const list = await treeListOfNode(deps.db, receipt.subject);
+      if (!list) {
+        skips.push(skip(receipt, "superseded"));
+        continue;
+      }
+      if (!receipt.across) {
+        if (batch && JSON.stringify(batch.list) === JSON.stringify(list))
+          batch.receipts.push(receipt);
+        else {
+          await flush();
+          batch = { list, receipts: [receipt] };
+        }
+        continue;
+      }
+      // A move between lists writes both: what came before it in the order goes first.
+      await flush();
+      const answer = input.moveBackAcrossLists
+        ? await input.moveBackAcrossLists(receipt)
+        : ({ ok: false, cause: "refused" } as const);
+      if (!answer.ok) {
+        skips.push(skip(receipt, answer.cause));
+        continue;
+      }
+      reversed++;
+      await record(receipt, {
+        nodes: [
+          { nodeId: receipt.subject, beforeAt: receipt.across.to, afterAt: receipt.across.from },
+        ],
+        records: [
+          { record: answer.records.left, node: receipt.subject },
+          { record: answer.records.entered, node: receipt.subject },
+        ],
+        acrossLists: true,
       });
     }
+    await flush();
     return { reversed, skips };
   }
 

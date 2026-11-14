@@ -13,7 +13,7 @@ import {
 } from "@meridian/contracts";
 import { expect, it } from "vitest";
 
-import { components, m, paragraph, schema, t } from "./codec-test-support.js";
+import { components, listItem, m, paragraph, schema, t } from "./codec-test-support.js";
 import { type DocumentLinkScope, mdxCodec } from "./index.js";
 import {
   assignFreshLink,
@@ -98,9 +98,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     schema.node("paragraph", { level: 2 }, [
       t("Ahead", [link("manuscript://book/ch12.md#top", `ahead:${id.open}`)]),
     ]),
-    schema.node("bullet_list", { tight: true }, [
-      schema.node("list_item", null, [paragraph(t("Lin", [link("../kb.md")]))]),
-    ]),
+    listItem({}, t("Lin", [link("../kb.md")])),
     schema.node("figure", {
       src: "manuscript://assets/old-fig.png",
       alt: "Fig",

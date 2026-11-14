@@ -52,6 +52,7 @@ import { UNSPELLED_UPLOAD } from "@meridian/markup/links";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
+import { NestingDOMSerializer } from "../extensions/nesting";
 import { assignPastedSlice, type LinkAssignmentDocument } from "./link-assignment";
 import {
   type LinkAnswerCache,
@@ -352,7 +353,7 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
     key: linkClipboardPluginKey,
     state: { init: () => resolution, apply: (_transaction, value) => value },
     props: {
-      clipboardSerializer: new DOMSerializer(nodes, marks),
+      clipboardSerializer: new NestingDOMSerializer(nodes, marks),
       transformPastedHTML: (html) => keepPastedRefs(html, resolution.assignment?.projectId ?? null),
       transformPasted: (slice, view) =>
         // A drag inside the editor moves links it already holds, as stored.

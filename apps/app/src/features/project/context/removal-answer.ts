@@ -7,17 +7,23 @@ export type RemovalAnswer =
   | { kind: "removed"; record: DocumentRemovalRecord | null }
   | { kind: "available" };
 
-/** The delete record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the notice's sentence reads it. */
-export function removalRecordOf(actor: string | null): DocumentRemovalRecord | null {
+/**
+ * The removing record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the notice's sentence reads
+ * it. A Discard is said as one even when the list doesn't name who made it.
+ */
+export function removalRecordOf(
+  actor: string | null,
+  reason: DocumentRemovalRecord["reason"] = "deleted",
+): DocumentRemovalRecord | null {
   if (actor?.startsWith("user:"))
     return {
-      reason: "deleted",
+      reason,
       actor: { kind: "user", userId: actor.slice(5) as never, displayName: null },
       time: "",
     };
   if (actor?.startsWith("agent:"))
-    return { reason: "deleted", actor: { kind: "agent", chatTitle: null }, time: "" };
-  return null;
+    return { reason, actor: { kind: "agent", chatTitle: null }, time: "" };
+  return reason === "discarded" ? { reason, actor: null, time: "" } : null;
 }
 
 const AVAILABLE: RemovalAnswer = { kind: "available" };
@@ -47,6 +53,8 @@ function answerOf(standing: DocumentStanding): RemovalAnswer {
       return { kind: "removed", record: removalRecordOf(standing.deletedBy) };
     case "purged":
     case "not-in-list":
+      if (standing.discardedBy !== undefined)
+        return { kind: "removed", record: removalRecordOf(standing.discardedBy, "discarded") };
       return { kind: "removed", record: null };
   }
 }

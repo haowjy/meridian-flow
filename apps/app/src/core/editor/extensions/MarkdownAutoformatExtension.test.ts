@@ -61,10 +61,13 @@ describe("block rules fire at their trigger", () => {
     const editor = openEditor();
     type(editor, "7. seventh");
 
-    // The schema calls GFM's start number `order`; TipTap's inherited rule
-    // writes `start`, which the schema drops, so every list opened at one.
-    expect(editor.state.doc.firstChild?.attrs.order).toBe(7);
-    expect(editor.getHTML()).toContain('<ol start="7">');
+    // The list's first number is stored on the block that opens it.
+    expect(editor.state.doc.firstChild?.attrs).toMatchObject({
+      path: "-",
+      kind: "ordered",
+      marker: "item",
+      start: 7,
+    });
   });
 });
 

@@ -1,9 +1,9 @@
 /**
- * DraftChip — the version chip of a document, in its states. Green means a
- * draft exists. Live: a document no Work has drafted. Pending: "Live" on the live document. Reviewing: "Draft". Both are
- * the trigger of the same version menu (`DraftSwitcher`). Same jade pill, dot,
- * chevron and box in every state, so the control the writer clicked to get in is
- * still where they look to get out.
+ * DraftChip — the version chip of a document, in its states, the same state as the sidebar's
+ * Live/Draft toggle. Live: a document no Work has drafted. Pending: "Live", neutral like the
+ * toggle on Live, with a small jade dot for the draft that waits. Reviewing: "Draft", jade like
+ * the toggle on Draft. Each is the trigger of the same version menu (`DraftSwitcher`), in the same
+ * box, so the control the writer clicked to get in is still where they look to get out.
  *
  * Presentational: `DraftChipFace` is the pill; the caller wraps it in the
  * button or menu trigger that owns the click, focus ring and hit area (the
@@ -18,15 +18,18 @@ export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE = {
   live: "neutral",
-  pending: "jade",
+  pending: "neutral",
   reviewing: "jade",
   failed: "destructive",
 } as const satisfies Record<DraftChipState, string>;
 
+const NEUTRAL_RESPONSE =
+  "group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground";
+
 /** The chip answers its wrapper's hover and open menu. */
 const RESPONSE: Record<DraftChipState, string> = {
-  live: "group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground",
-  pending: "group-hover/chip:bg-primary/22",
+  live: NEUTRAL_RESPONSE,
+  pending: NEUTRAL_RESPONSE,
   reviewing: "group-hover/chip:bg-primary/22 group-popup-open/chip:bg-primary/22",
   failed: "",
 };

@@ -360,7 +360,7 @@ function ActiveSessionEditorView({
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
     if (!editor || !active || !effectiveEditable) return;
-    const made = !inReview && claimEditorFocus(focusKey);
+    const made = claimEditorFocus(focusKey);
     if (!made && !loadFocus) return;
     let release: (() => void) | null = null;
     let mounted = true;

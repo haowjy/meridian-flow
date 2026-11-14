@@ -44,14 +44,16 @@ function childBundle(): Promise<string> {
           setup(b) {
             b.onResolve({ filter: /^[^./]/ }, async (args) => {
               if (args.path.startsWith("#")) return { path: args.path, external: true };
-              if (/^@meridian(-flow)?\//.test(args.path) || args.pluginData === "inner")
-                return null;
+              if (args.pluginData === "inner") return null;
               const found = await b.resolve(args.path, {
                 resolveDir: args.resolveDir,
                 kind: args.kind,
                 pluginData: "inner",
               });
-              return found.errors.length ? null : { path: found.path, external: true };
+              // A published package under our scope (mars-schema's CommonJS WASM loader) must stay
+              // external too: only workspace source, which resolves outside node_modules, is inlined.
+              if (found.errors.length || !found.path.includes("/node_modules/")) return null;
+              return { path: found.path, external: true };
             });
           },
         },
@@ -247,7 +249,7 @@ export async function waitForAssistantTurn(
 
 /** The paragraphs of a document's `prosemirror` text, as its XML string holds them. */
 const paragraphs = (xml: string) =>
-  [...xml.matchAll(/<paragraph>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
+  [...xml.matchAll(/<paragraph(?: [^>]*)?>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
 
 /** One result block's outcome in a word: what the model was shown the call did. */
 function resultLabel(content: { result?: Record<string, unknown>; content?: unknown }): string {
@@ -293,7 +295,7 @@ async function commandStatuses(h: Harness, threadId: string) {
   for (const use of uses) {
     const { commandId } = modelEditIds({ responseId: use.response, toolCallId: use.call });
     const [row] = await h.raw<{ status: string }[]>`
-      select outcome->>'status' as status from document_commands where id=${commandId}`;
+      select outcome->>'status' as status from commands where id=${commandId}`;
     if (row) statuses.push(row.status);
   }
   return statuses;
@@ -368,13 +370,13 @@ export async function dropRunClaim(h: Harness, child: Child) {
   if (dropped.length === 0) throw new Error("the child holds no run claim");
 }
 
-/** Waits for a connection blocked on a `document_commands` insert: a resolve waiting on a key. */
+/** Waits for a connection blocked on a `commands` insert: a resolve waiting on a key. */
 export async function waitForKeyWaiter(h: Harness, timeoutMs = 10_000) {
   const until = Date.now() + timeoutMs;
   for (;;) {
     const [waiting] = await h.raw`
       select 1 from pg_stat_activity
-      where datname=current_database() and wait_event_type='Lock' and query ilike '%document_commands%'`;
+      where datname=current_database() and wait_event_type='Lock' and query ilike '%insert into "commands"%'`;
     if (waiting) return;
     if (Date.now() > until) throw new Error("no resolve waited on a command key");
     await new Promise((done) => setTimeout(done, 50));

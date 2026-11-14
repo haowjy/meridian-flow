@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode, Ref } from "react";
 
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
@@ -8,21 +8,38 @@ import { cn } from "@/lib/utils";
 export function Picker({
   label,
   busy,
+  onEscape,
+  ref,
   children,
 }: {
   /** Names the list as a group. Leave it out where the surface around it already has the name. */
   label?: string;
   busy?: boolean;
+  /** For a list no popover closes on Escape, because its host holds the popover open. */
+  onEscape?: () => void;
+  ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // A portalled row menu's Escape bubbles here through React; it closes the menu only.
+    // Not `defaultPrevented`: the enclosing popover's layer prevents every Escape first.
+    if (onEscape && event.key === "Escape" && event.currentTarget.contains(event.target as Node)) {
+      event.preventDefault();
+      event.stopPropagation();
+      onEscape();
+      return;
+    }
+    handleListKeys(event);
+  };
   return (
     // biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport. slop-lint: allow suppression the reason is stated in this comment
     <div
+      ref={ref}
       role="group"
       aria-label={label}
       aria-busy={busy}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
-      onKeyDown={handleListKeys}
+      onKeyDown={handleKeyDown}
     >
       {children}
     </div>

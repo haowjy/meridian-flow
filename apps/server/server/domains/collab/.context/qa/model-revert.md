@@ -57,8 +57,9 @@ Repeat Two parts with `undo`: only the unchanged third paragraph reverses, and
 Redo restores it without replacing the writer's first paragraph.
 
 In Draft mode, Apply N and run model Undo. It reports `reverted: e1`, restores
-the old text as a pending change, and leaves live unchanged. The turn card keeps
-Undo, then offers Redo; Redo reapplies N. With one newer pending edit and one
+the old text as a pending change, and leaves live unchanged. N's turn card offers
+no Redo for the model's undo (the card redoes only its own Undo); the model's
+`redo` reapplies N. With one newer pending edit and one
 applied edit, `undo` with `count: 2` names the newer handle as undone and the
 older as reverted.
 

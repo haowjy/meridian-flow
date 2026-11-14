@@ -17,9 +17,9 @@ JSON in the active work directory. These are manual runtime probes, not CI tests
    still belongs only to the writer row. Count requests while the row is failed:
    a local row status change must not invalidate snapshots and trigger a retry loop.
 3. Force a real create 400: create a named Work through `./mf api POST
-   /api/projects/<project>/works --data '{"name":"Probe"}'`, select it, then
+   /api/projects/<project>/works --data '{"commandId":"<uuid>","name":"Probe"}'`, select it, then
    hold only the create POST with a disposable `window.fetch` wrapper. Send,
-   archive that Work through `./mf api POST /api/works/<work>/archive`, then
+   archive that Work through `./mf api POST /api/works/<work>/archive --data '{"commandId":"<uuid>"}'`, then
    release the POST. Expect Retry and Edit on the writer row. Reload: no create
    or admission is retried. Edit returns the words to New chat in this pane.
 4. Force a real admission 400 with a POST-only fetch wrapper that changes `text`

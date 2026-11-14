@@ -37,6 +37,8 @@ export type WriterFrameDiagnostics = {
     draftId: string;
     clocks: readonly { client: number; clock: number }[];
   }): void;
+  /** Typing that arrived for a block a pull deleted or rebuilt was written back as paragraphs. */
+  lateTypingRecovered(input: { draftId: string; paragraphs: number; chars: number }): void;
 };
 
 export function createWriterFrames(runtime: DraftRuntime) {

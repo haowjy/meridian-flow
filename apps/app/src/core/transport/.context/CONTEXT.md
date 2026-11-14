@@ -40,13 +40,16 @@ Works catalog, which can predate the room's first connect. The host's
 that catalog when a named scope disagrees with `readOnly`. Its own changes to
 `readOnly` don't ask, so the tab that archives fetches nothing extra.
 
-A 4409 close that lands while local updates are unacknowledged resets with reason
-`access-changed`, and `DocumentSession.refusedLocalEdits()` forbids `restartTransport`
-for that session. A draft room rebuilds through `rebuildDraftRoom`. A live room goes
-through the registry's `dropRefusedRoom`, which revokes each lease's access and clears
-the IndexedDB copy still holding the refused edits. Editor hosts unbind at once
-(`useRefusedEditsReopen`) and reopen when the drop settles; a drop that fails leaves the
-refused session bound read-only rather than reopening again.
+A 4409 `access-changed` close never resets the room, whatever is unacknowledged. It marks
+the room read-only at once, the transport reconnects, and the new admission decides: a
+read admission (an archived Work, a trashed chat's draft) holds the unsent edits on
+screen and in the IndexedDB copy, and an edit admission (an Unarchive) delivers them in
+the handshake. A room no editor holds is retired at the read-only mark, before the
+reconnect: its edits stay in the IndexedDB copy and are delivered the next time the
+document opens. Writer text is never dropped for an access change, live room or draft. The
+server sends 4409 only when the scope it admitted no longer holds (an archive, an
+Unarchive, a lifecycle change under a draft write), so the reconnect's admission matches
+what the write path accepts.
 
 ## 4208: the document was removed
 

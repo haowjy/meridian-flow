@@ -70,12 +70,15 @@ export function liveAbsolutePosition(
 /**
  * The manager y-tiptap would build for an editor, built once per document. Only edits
  * written through an editor (`ySyncPluginKey`) are tracked: peer and model edits arrive
- * under other origins, so undo reverts the writer's own and nothing else.
+ * under other origins, so undo reverts the writer's own and nothing else. A block's `id` is its
+ * identity, not content: undo never takes one away. A protected paragraph survives its creator's
+ * undo, so without the filter a peer's text would be left in a paragraph with no id.
  */
 function createDocumentUndoManager(document: Y.Doc): Y.UndoManager {
   return new Y.UndoManager(document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), {
     trackedOrigins: new Set([ySyncPluginKey]),
-    deleteFilter: (item) => defaultDeleteFilter(item, defaultProtectedNodes),
+    deleteFilter: (item) =>
+      item.parentSub !== "id" && defaultDeleteFilter(item, defaultProtectedNodes),
     captureTransaction: (transaction) => transaction.meta.get("addToHistory") !== false,
   });
 }

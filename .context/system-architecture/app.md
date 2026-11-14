@@ -49,14 +49,14 @@ The `_authenticated` layout mounts one provider tree for every route: do not gat
 
 The workspace shell: main and side panes, tabs, Works and routing.
 
-Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
+Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes, with the one Live/Draft toggle that turns every source to the Work's tree. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
 
 The largest feature: every other feature except `billing` imports it or is imported by it.
 
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
-- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
+- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
 - Drift: Features import each other freely: `project` imports `draft-review` from 22 files, `project` imports `chat` from 14, `chat` imports `project` from 19, `editor` imports `draft-review` from 7 (tests left out). No rule forbids it.
 
 ## conversation

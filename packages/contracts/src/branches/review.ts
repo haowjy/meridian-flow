@@ -7,22 +7,13 @@
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
+import { CommandIdSchema, type CommandOutcome } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
-import type {
-  BranchId,
-  DocumentCommandId,
-  DraftItemKey,
-  ProjectId,
-  ThreadId,
-  UserId,
-} from "../ids.js";
+import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
 import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
 import type { DraftOwnerKey } from "./owner.js";
-
-/** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
-export const DocumentCommandIdSchema = z.string().uuid();
 
 /** JSON form of the kernel's SpanPatch; PM nodes cross the wire as node JSON. */
 export type ApplySpanPatch = {
@@ -33,7 +24,7 @@ export type ApplySpanPatch = {
 
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
-  commandId: DocumentCommandId;
+  commandId: CommandId;
   /** Stable room identity; omitted only for a no-room creation reveal. */
   draftId?: string;
   /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
@@ -82,7 +73,7 @@ export type AppliedReviewItem = {
 export type ApplyClickResult =
   | {
       status: "applied";
-      commandId: DocumentCommandId;
+      commandId: CommandId;
       /** Every item whose tree or text this click applied, dependency-first. */
       applied: AppliedReviewItem[];
       overrode?: number;
@@ -96,23 +87,19 @@ export type ApplyClickResult =
       textEffect?: true;
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
-  | { status: "changed"; commandId: DocumentCommandId }
+  | { status: "changed"; commandId: CommandId }
   /**
    * The document is deleted from the manuscript and the click did not carry `restore`: the
    * writer's view did not know (a delete landed after it read the item, or after an Apply
    * all's confirmation named its documents). Nothing changed and the draft stays pending;
    * the client asks the writer, then sends a new click with `restore`.
    */
-  | { status: "needs_restore"; commandId: DocumentCommandId }
-  | { status: "closed"; commandId: DocumentCommandId }
-  | { status: "refused"; commandId: DocumentCommandId; reason: ApplyClickRefusalReason };
+  | { status: "needs_restore"; commandId: CommandId }
+  | { status: "closed"; commandId: CommandId }
+  | { status: "refused"; commandId: CommandId; reason: ApplyClickRefusalReason };
 
-export type ApplyClickAnswer =
-  | ApplyClickResult
-  | { status: "conflict"; commandId: DocumentCommandId };
-export type ApplyClickObservation =
-  | ApplyClickAnswer
-  | { status: "none"; commandId: DocumentCommandId };
+export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
+export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; commandId: CommandId };
 
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
@@ -124,21 +111,19 @@ export type ApplyClickObservation =
  * `reversedGroupIds`.
  */
 export type UnapplyClick = {
-  commandId: DocumentCommandId;
-  applyCommandId: DocumentCommandId;
+  commandId: CommandId;
+  applyCommandId: CommandId;
 };
 export type UnapplyClickResult =
   | {
       status: "unapplied";
-      commandId: DocumentCommandId;
+      commandId: CommandId;
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }
-  | { status: "closed"; commandId: DocumentCommandId }
-  | { status: "refused"; commandId: DocumentCommandId; reason?: "gone" | "superseded" };
-export type UnapplyClickAnswer =
-  | UnapplyClickResult
-  | { status: "conflict"; commandId: DocumentCommandId };
+  | { status: "closed"; commandId: CommandId }
+  | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
+export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
 /** The text cut of one document in an Apply: the writer's frozen click on its review room. */
 export type ApplyTextCut = {
@@ -156,7 +141,7 @@ export type ApplyTextCut = {
  * per-document click is this command with one item.
  */
 export type ApplyItemsClick = {
-  commandId: DocumentCommandId;
+  commandId: CommandId;
   items: { node: string; tree?: { revision: string | null }; text?: ApplyTextCut }[];
   /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
   restore?: true;
@@ -168,13 +153,13 @@ export type ApplyItemsClick = {
  * the text drafts it closed.
  */
 export type UndoDiscardClick = {
-  commandId: DocumentCommandId;
-  discardCommandId: DocumentCommandId;
+  commandId: CommandId;
+  discardCommandId: CommandId;
 };
 export type UndoDiscardResult =
   | {
       status: "restored";
-      commandId: DocumentCommandId;
+      commandId: CommandId;
       branchId: BranchId;
       /** The copies made: tree records and text drafts. */
       restored: number;
@@ -183,7 +168,7 @@ export type UndoDiscardResult =
     }
   | {
       status: "refused";
-      commandId: DocumentCommandId;
+      commandId: CommandId;
       /**
        * `already_restored`: an Undo of this Discard already made its copies. `nothing_to_restore`:
        * the Discard settled no record and closed no draft that still exists.
@@ -196,9 +181,7 @@ export type UndoDiscardResult =
         | "chat_frozen"
         | "work_deleted";
     };
-export type UndoDiscardAnswer =
-  | UndoDiscardResult
-  | { status: "conflict"; commandId: DocumentCommandId };
+export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
 /** What one kind's effect answered, as stored in a command's outcome. */
 export type StoredDocumentCommandResult =
@@ -320,6 +303,16 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
   /**
+   * The owner's active branch, null when it has none: the `draft` its tree records carry, which
+   * the browser replays as the Work's tree (a change to a folder alone lists no item).
+   */
+  branchId: BranchId | null;
+  /**
+   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
+   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
+   */
+  folders: { id: string; revision: string }[];
+  /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.
@@ -338,39 +331,13 @@ export type DraftMetadataResponse =
 // A stored outcome answers every resend of its command id. Frozen Apply clicks have their own
 // answer contract above.
 
-/** Which kind of command a `commandId` was recorded for. */
-export const DOCUMENT_COMMAND_KINDS = [
-  "apply",
-  "unapply",
-  "discard",
-  "undo_discard",
-  "model_edit",
-  "reverse_turn",
-  "copy",
-] as const;
-export type DocumentCommandKind = (typeof DOCUMENT_COMMAND_KINDS)[number];
-
-/** HTTP 409 code: the `commandId` was already used for a different command. */
-export const DOCUMENT_COMMAND_CONFLICT_CODE = "command_conflict";
-
 /** What a model edit's command row holds: its result, or `never` when the call was stopped before it ran. */
 export type ModelEditOutcome =
   | { status: "done" | "refused"; result: ModelEditCommandResult }
   | { status: "never" };
 
-/**
- * The outcome a command's transaction commits. `done`: the effect committed. `refused`: the
- * effect was turned away after the claim and nothing of it committed. `never`: the id was
- * claimed so that no attempt under it can take effect.
- */
-export type DocumentCommandOutcome =
-  | { status: "done" | "refused"; result: StoredDocumentCommandResult }
-  | { status: "never" };
-
-/** `GET /api/document-commands/:id`: the stored outcome, or `none` (also for another account's id). */
-export type DocumentCommandLookupResponse =
-  | { status: "none" }
-  | { status: "stored"; kind: DocumentCommandKind; outcome: DocumentCommandOutcome };
+/** What a document command's row holds. */
+export type DocumentCommandOutcome = CommandOutcome<StoredDocumentCommandResult>;
 
 /** Whether a settled item left review, and how (applied if anything reached live). */
 export type DraftItemSettlement = {
@@ -405,19 +372,42 @@ export type DraftDiscardResponse =
 export type DraftDiscardRequest = {
   branchId: BranchId;
   itemKey: DraftItemKey;
-  commandId: DocumentCommandId;
+  commandId: CommandId;
 } & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
-export const BranchDiscardAllRequestSchema = z.object({
-  /** A `branches` row id, never a per-document draft id. */
-  branchId: z.string().uuid(),
-  commandId: DocumentCommandIdSchema,
-});
-export type BranchDiscardAllRequest = z.infer<typeof BranchDiscardAllRequestSchema>;
-/** `discarded` closes the branch (the only wire signal of closure); `gone` names one that is not the Work's active branch. */
-export type BranchDiscardAllResponse =
-  | { status: "discarded"; branchId: BranchId }
-  | { status: "gone"; branchId: BranchId };
+/**
+ * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
+ * change of the branch, which closes it; only an explicit `all` does that. `items`: any selection
+ * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
+ * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
+ * moved into a folder the Work created). Its text halves close on the server, and Undo of a
+ * Discard brings both halves back.
+ */
+export const BranchDiscardRequestSchema = z.union([
+  z.strictObject({ commandId: CommandIdSchema, all: z.literal(true) }),
+  z.strictObject({
+    commandId: CommandIdSchema,
+    items: z
+      .array(
+        z.strictObject({
+          node: z.string().min(1),
+          ends: z.enum(["tree", "item"]),
+          draftSeenAt: z.string().nullable().optional(),
+        }),
+      )
+      .min(1),
+  }),
+]);
+export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
+/**
+ * `discarded` with `all` closes the branch (the only wire signal of closure); with `items`,
+ * `closed` names the selected nodes nothing of the branch remains on. `gone` names a branch
+ * that is not the Work's active one; `stale` and `draft_changed` refuse a selection the
+ * branch's state no longer allows, and nothing ended.
+ */
+export type BranchDiscardResponse =
+  | { status: "discarded"; branchId: BranchId; closed?: string[] }
+  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId };
 
 /** A Discard's terminal body, exactly what its 200 carries. */
-export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;
+export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

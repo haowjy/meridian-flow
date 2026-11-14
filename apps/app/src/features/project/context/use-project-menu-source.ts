@@ -1,4 +1,5 @@
 /** Project areas read from the replay, for document paths and placement menus. */
+
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
@@ -7,6 +8,7 @@ import { useProjectTreeView, useProjectTreeViews } from "@/client/query/useProje
 import { useWorks } from "@/client/query/useWorks";
 import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
@@ -82,8 +84,11 @@ export function useProjectMenuSource({
     heading: string;
   } | null;
 }): ProjectMenuSource {
+  // The menu's moves and creates write the shell's version: it reads the same one.
+  const version = useTreeVersion();
   const projectViews = useProjectTreeViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,
+    version,
   });
   const { primary, earlier } = useScratchTrees(projectId, scratch);
   const scratchArea = useMemo<MenuArea | null>(
@@ -125,6 +130,7 @@ export function useProjectMenuSource({
     rootThreadId: documentOwner?.rootThreadId,
     chatId: documentOwner?.chatThreadId,
     enabled: hiddenNeeded,
+    version,
   });
 
   const areas = useMemo(() => {
