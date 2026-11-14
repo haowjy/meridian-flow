@@ -224,10 +224,6 @@ try {
       name: "Flow value invalid (no Mars diagnostic)",
       files: fm("harness-overrides: {meridian-flow: {permission: admin}}\n"),
     },
-    {
-      name: "rule on a capability Flow has no row for",
-      files: fm('tools: {"*": deny, bash: allow}\n'),
-    },
     { name: "scoped rule on a Flow tool", files: fm('tools: {"write(kb/**)": deny}\n') },
     { name: "no mars.toml", files: (slug) => ({ [`agents/${slug}.md`]: agent("A") }) },
     {
@@ -319,6 +315,16 @@ try {
       name: "tools: * deny, glob allow (Flow has no glob: met)",
       frontmatter: 'tools: {"*": deny, glob: allow}\n',
       expect: { tools: [] },
+    },
+    {
+      name: "tools: * deny, bash allow (Flow has no bash: met)",
+      frontmatter: 'tools: {"*": deny, bash: allow}\n',
+      expect: { tools: [] },
+    },
+    {
+      name: "tools: mcp(github) allow (Flow has no MCP: met, no allow-list)",
+      frontmatter: 'tools: {"mcp(github)": allow}\n',
+      expect: {},
     },
     {
       name: "tools: * deny, read allow, grep ask (ask runs as allow)",

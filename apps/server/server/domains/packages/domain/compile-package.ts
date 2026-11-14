@@ -373,7 +373,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),
-    ...toolsOf(draft.tools, fields),
+    ...toolsOf(draft.tools),
   };
   return { schemaVersion: 1, systemPrompt: draft.body, metadata };
 }
@@ -384,12 +384,10 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
  */
 function toolsOf(
   projection: ToolProjection | undefined,
-  fields: AgentFields,
 ): Pick<NormalizedAgentMetadata, "tools" | "disallowed-tools"> {
   if (!projection) return {};
-  const allowList = fields.tools.some((rule) => rule.capability === "*" && rule.action === "deny");
   return {
-    ...(allowList ? { tools: [...projection.allow, ...projection.ask] } : {}),
+    ...(projection.default === "deny" ? { tools: [...projection.allow, ...projection.ask] } : {}),
     ...(projection.deny.length ? { "disallowed-tools": projection.deny } : {}),
   };
 }
