@@ -49,8 +49,6 @@ function setup(
     }),
     presented: () => presented,
     isDraftOnly: (documentId) => draftOnly.includes(documentId),
-    admitDraftReview: () => undefined,
-    enterRoute: () => undefined,
   });
   return { open, history };
 }

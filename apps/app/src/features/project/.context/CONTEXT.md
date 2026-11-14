@@ -190,28 +190,24 @@ Rename or move prepares the open document's new locator and the replacement addr
 navigation commit, so the old address keeps its identity continuity until the new one is accepted.
 
 A presented document is its id; its path, name and owner are a display cache the list
-refreshes. A route is bound to a document only when that is proven, and the bound selection records what proved
-it (`by`). A navigation that names the document (a tree open, a Recent row, a chat door) binds the route it
-opens in `commit()` (`enterRoute`), and any other URL (paste, reload, Back/Forward) stays a
-candidate until its address answer binds it (`addressRouteBinding`), so the path's occupant
-decides there. A document found by its cached path may paint but never binds. A selection about another
-route than the URL begins again (`ProjectContextRemovalController`), so a binding that lands late
-cannot stay stale.
-
-A review address binds its route to the item's document at once (`reviewDocumentId` on the
-controller, or a navigation that carries an item, `by: "review"`) and owns its path: the availability planner does not relocate that
-binding, the follow hook does not follow it, and it is never a candidate for rejection. The
-binding ends with the item: Back onto the same path without it begins a candidate, and
-`ReadableProjectRoute` stops counting it in that render. A writer's exit from the review or its
-close keeps the document (`adoptReviewBinding` makes it a navigation's), because the drafted path
-still has to be repaired to the live one.
+refreshes. The history entry keeps the continuity (`meridianRouteDocument` in `location.state`, beside
+`meridianProjectSelection`): the last document id its address resolved, kept for the place that
+address spells, so Back, Forward and reload each find the document their entry showed. While the
+address stays at that place the route is that document wherever the replay now puts it (a rename
+or a move), and a path another document later takes is not it. A new entry has no remembered id
+until it resolves one. A review address names its document by its item, so a review is that
+document; leaving the review keeps what the address last resolved, because the drafted path still
+has to be repaired to the live one. There is no selection state, revision or fence to order.
 
 A plain address resolves against the replay of the list (`resolveReplayAddress`): to a document,
 to "not there" once the list has synced, or to "waiting for the list" until it has. A bound
-document this source's tree does not list holds (`held`): the path's occupant is not the route's
-document, so the route waits until the list has synced. Then the replay says where the document
-is now: in another source, the route goes there; anywhere else it drops the binding (`unbindRoute`,
-only while the selection is still bound to that document at this route) so the address decides.
+document this source's tree does not list holds (`held`), and `ReadableProjectRoute` decides what
+to show from the id, every source's tree (`useProjectTrees`) and the id's standing
+(`ProjectStandings`): found in another source, the route goes there, to that source's owner (a
+project document moved to `user://` or another Work's Scratch included); in Trash, main shows its
+Trash view, unless a draft retains the document or the writer's own removal is sending main back;
+purged, the Trash view says it is gone for good; in no list once synced, the id is forgotten and
+the address decides. The observer never navigates main: it keeps copies, notices and recents.
 The move takes a plain navigation ticket, never the writer's intent. A denied list shows the error
 with Retry. A draft-only document is not found by its path on either shell: its review binds on
 arrival. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the

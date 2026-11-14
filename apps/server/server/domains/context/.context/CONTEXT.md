@@ -127,20 +127,19 @@ empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocu
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
 `DocumentRevisions.current` resolves the thread's current primary Work and the
-chat's write mode, checks project-final availability, and delegates effective
+chat's write mode, checks the document is placed in the view, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
 live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
 independent pull transaction rules. It reports settled authority, not a
 response's staged overlay.
 
-A project-final identity lookup distinguishes missing, deleted, and
-reversibly hidden authority; foreign identities stay indistinguishable from
-missing IDs. Lineage hiding is authority loss rather than
-file deletion, so cached Scratch resources can return when a live lineage
-member or Work is restored. Document tombstones and lineage-hidden sources
-retain distinct status. Stable IDs never become capabilities without a policy
-check.
+`ProjectContextAvailabilityPort.placed` answers where this project (or the writer's own
+User area) holds documents and folders in a view, read from `visibleDocuments`/`visibleFolders`.
+A node in Trash, in a hidden or deleted source, Work or project, or in a foreign source is absent,
+and foreign ids are indistinguishable from missing ones. Lineage hiding is authority loss rather than
+file deletion, so cached Scratch resources return when a live lineage member or Work is restored.
+Stable IDs never become capabilities without a policy check.
 
 `DocumentTrash` owns the deleted-document lifecycle outside live `ContextPort`
 path resolution. List and identity reads admit only a currently restorable

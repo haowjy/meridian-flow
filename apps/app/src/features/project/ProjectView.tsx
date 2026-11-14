@@ -44,7 +44,6 @@ import { recentAddressFromTab } from "./context/recent-opening";
 import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
-import { useFollowOpenDocumentPlacement } from "./context/use-follow-open-document-placement";
 import { DesktopProject } from "./DesktopProject";
 import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentReview";
 import { useProjectSurfacePrefsStore } from "./layout";
@@ -84,8 +83,10 @@ export type ProjectViewProps = {
   onRetryEditorRoute?: () => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
-  /** Browser route adapter for atomic removal repairs. */
+  /** Browser route adapter for taking main off a closed document. */
   contextRemovalRoute: Omit<ContextRemovalRoutePort, "goBack">;
+  /** The document main's address is: the one it last resolved, or its review's item names. */
+  routeDocumentId: string | null;
   /** Main's document scheme, when the address names a document. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** A Work's Scratch route: its owning Work. Null for every other document. */
@@ -100,8 +101,6 @@ export type ProjectViewProps = {
   reviewOwner?: string | null;
   /** The owner the address itself names (a Scratch document's or a draft's), if any. */
   reviewAddressOwner?: string;
-  /** The document that item names. */
-  reviewDocumentId?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -211,12 +210,7 @@ export function ProjectView(props: ProjectViewProps) {
                 {resolvedProps.contextLive && editorScope.status === "ready" ? (
                   <ProjectContextRemovalController
                     projectId={props.projectId}
-                    activeContextScheme={props.activeContextScheme}
-                    activeContextPath={props.activeContextPath}
-                    activeContextChat={props.activeContextChat}
                     editorWorkId={editorScope.workId}
-                    activeContextWork={props.activeContextWork}
-                    reviewDocumentId={props.reviewDocumentId}
                     route={props.contextRemovalRoute}
                   />
                 ) : null}
@@ -289,6 +283,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     path: props.activeContextPath,
     workId: props.activeContextWork,
     rootThreadId: props.activeContextChat,
+    boundDocumentId: props.routeDocumentId,
     addressed: props.addressedDocument,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
@@ -447,16 +442,6 @@ function HydratedReviewControllers({
     }),
     [main, props.reviewItemKey, props.reviewAddressAdmission],
   );
-  useFollowOpenDocumentPlacement({
-    projectId: props.projectId,
-    editorWorkId: props.editorWorkId,
-    activeContextWork: props.activeContextWork,
-    review: props.reviewItemKey !== undefined,
-    activeContextScheme: props.activeContextScheme,
-    activeContextPath: props.activeContextPath,
-    activeContextChat: props.activeContextChat,
-    onOpenContextTarget: props.onOpenContextTarget,
-  });
   const scopedProps = { ...props, chatWork, chatCommands };
   return (
     <ChatThreadNavigationProvider onOpenThread={openThread}>

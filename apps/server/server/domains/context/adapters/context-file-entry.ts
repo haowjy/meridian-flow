@@ -57,7 +57,6 @@ export function sourceAuthority(
 
 export function mapAuthoritativeFile(input: {
   document: CatalogFileRow;
-  observationVersion: string;
   scope: CatalogScope;
   scheme: ContextUriScheme;
   workId: string | null;
@@ -95,7 +94,6 @@ export function mapAuthoritativeFile(input: {
           };
   return {
     kind: "file",
-    observationVersion: input.observationVersion,
     ...(document.locationVersion !== undefined
       ? { locationVersion: document.locationVersion.toString() }
       : {}),

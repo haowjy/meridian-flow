@@ -34,10 +34,8 @@ export function observeListRemovals(input: {
   standings: Pick<ProjectStandings, "watch" | "standing" | "status" | "inProjectList">;
   removal: Pick<
     ContextRemovalCoordinator,
-    "applyRemovals" | "clearLocalCopies" | "watchedDocumentIds" | "shownAmong"
+    "applyRemovals" | "clearLocalCopies" | "watchedDocumentIds"
   >;
-  /** Main shows a document that went to Trash: it shows its Trash view (who deleted it, Restore). */
-  showTrashed(documentId: string): void;
   registry: Pick<
     LiveDocumentSessionRegistry,
     "observeLocalCopies" | "observeRetainedLiveDocuments"
@@ -47,9 +45,8 @@ export function observeListRemovals(input: {
   /** The sign-in did not hold: the writer signs in again. Called once per time it begins. */
   signInRequired(): void;
 }): ListRemovalObserver {
-  const { projectId, standings, removal, registry, showTrashed } = input;
+  const { projectId, standings, removal, registry } = input;
   const cleared = new Set<string>();
-  const shownTrashed = new Set<string>();
   /** When the list first named each source the sources did not. */
   const unlisted = new Map<string, number>();
   let facts: SourceFacts | null = null;
@@ -112,23 +109,9 @@ export function observeListRemovals(input: {
         (status === "denied" && standings.inProjectList(projectId, documentId))
       )
         commands.push({ kind: "gone", projectId, documentId });
-      else if (standing.kind === "in-tree") {
-        commands.push({ kind: "back", projectId, documentId });
-        shownTrashed.delete(documentId);
-      }
+      else if (standing.kind === "in-tree") commands.push({ kind: "back", projectId, documentId });
     }
-    const trashed = commands.flatMap((command) =>
-      command.kind === "gone" &&
-      standings.standing(projectId, command.documentId).kind === "in-trash"
-        ? [command.documentId]
-        : [],
-    );
-    const shown = removal.shownAmong(projectId, trashed);
     removal.applyRemovals(commands);
-    if (shown && !shownTrashed.has(shown)) {
-      shownTrashed.add(shown);
-      showTrashed(shown);
-    }
     clear([...new Set([...viewIds, ...copies])].filter(goneForGood));
   };
 

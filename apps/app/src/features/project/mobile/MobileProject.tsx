@@ -287,7 +287,7 @@ function PhoneMain(props: MobileProjectProps) {
       />
     );
   const tab = main.document.document;
-  if (!tab) return <MainDocumentStatus projectId={props.projectId} main={main.document} />;
+  if (!tab) return <MainDocumentStatus main={main.document} />;
   return (
     <DocumentHost
       key={tab.documentId}

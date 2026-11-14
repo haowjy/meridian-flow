@@ -34,11 +34,9 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
     document: {
       kind: "available",
       documentId: "doc-id",
-      generation: "1",
       authority: { kind: "project", projectId: "project-id" },
       entry: {
         kind: "file",
-        observationVersion: "1",
         entryId: "doc-id",
         parentId: "source",
         sourceId: "source",
