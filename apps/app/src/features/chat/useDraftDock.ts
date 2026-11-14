@@ -2,8 +2,8 @@
 import { t } from "@lingui/core/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
@@ -54,18 +54,8 @@ export function useDraftDock({
       ),
     [listedFiles, threadId],
   );
-  // The chat's turn cards say what became of their drafted documents, and nothing pushes that
-  // to them: an Apply, a Discard (a peer's too) or a new write changes which drafts wait here.
+  // A peer's Apply or Discard reaches this chat only as a change in which drafts wait here.
   const queryClient = useQueryClient();
-  const refreshTurnCards = useCallback(
-    () =>
-      void queryClient.invalidateQueries(
-        { queryKey: threadQueryKeys.liveLineageRoot(threadId) },
-        // A read already in flight is the one the writer waits on: don't restart it.
-        { cancelRefetch: false },
-      ),
-    [queryClient, threadId],
-  );
   const waiting = candidates
     .filter((row) => row.draft.hasDraft)
     .map((row) => row.draft.itemKey)
@@ -74,8 +64,8 @@ export function useDraftDock({
   useEffect(() => {
     if (seenWaiting.current === waiting) return;
     seenWaiting.current = waiting;
-    refreshTurnCards();
-  }, [refreshTurnCards, waiting]);
+    refreshTurnCards(queryClient);
+  }, [queryClient, waiting]);
   const targets = useMemo(
     () =>
       candidates
@@ -169,7 +159,6 @@ export function useDraftDock({
       if (items.length === 0) return Promise.resolve([]);
       // An Apply is one command over every file; a Discard is one notice with one Undo.
       const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
-      void sent.finally(refreshTurnCards);
       return sent.then(
         (outcomes) =>
           files.filter((_file, index) => {
@@ -179,7 +168,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [actionableFiles, applicable, runner, controller.frozen, refreshTurnCards],
+    [actionableFiles, applicable, runner, controller.frozen],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {

@@ -7,10 +7,12 @@ document edits, moves and deletes. Its header counts documents and never names o
 document names belong to the expanded rows, which navigate. It reads "Drafted 1
 document" while a drafted document still waits, "Applied" or "Discarded" once every
 drafted document has had that outcome, and "Drafted 3 documents: 1 applied, 1
-discarded, 1 still a draft" when they differ. The heading reads what is true now, not
+discarded, 1 still a draft" when they differ. The heading reads what is true now of this reply's change, not
 what was true when the reply ended: the receipt's `drafts` map (each drafted document
 still a draft, applied or discarded, from the same capture as the receipt: still a draft
-means an open draft holds a change to the document, even one the writer retyped) is re-read when
+means a change waits in an open draft at this reply's own text, or the writer typed over
+it; another reply's change in the same draft does not count, so each reply's card records
+what became of that reply's change) is re-read when
 this chat's waiting drafts change (`useDraftDock`). A turn that wrote the manuscript
 reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one or
 wrote both a draft and the manuscript. A drafted row says "Applied" or "Discarded" at
@@ -132,7 +134,7 @@ backstop for the case no surface can report: a stage whose surface never mounts.
 A stopped reply keeps the words streamed before Stop and ends with one plain line
 (`TurnStoppedLine`): "Stopped." and, when calls never ran, "Stopped. Didn't run: create
 Scene C." A call the run ended before it settled carries `TOOL_NOT_RUN_CODE` in its
-result (`didNotRunResult`, or an abort on the generic executor path), and its row reads as done, not failed. Edits that landed
+result (`didNotRunResult`, or any abort exit, read and write included), and its row reads as done, not failed. Edits that landed
 stay landed and keep their receipt. A crashed reply keeps its failure card and adds
 the "Didn't run" line when calls never ran. Replies stopped before this code have no
 code, so they read only "Stopped."

@@ -136,7 +136,6 @@ const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>>
   exception: TOOL_EXCEPTION_CODE,
   timeout: "tool_timeout",
   arguments_parse: "tool_arguments_parse",
-  abort: TOOL_NOT_RUN_CODE,
 };
 
 function executionErrorResult(
@@ -144,6 +143,13 @@ function executionErrorResult(
   registration: ToolRegistration | undefined,
   error: ToolExecutionError,
 ): ToolExecutionResult {
+  // A call the run ended is not a failure the tool words: every tool reads it the same way.
+  if (error.kind === "abort") {
+    return errorResult(
+      toolCallId,
+      meridianErrorFromTool(error.message, undefined, TOOL_NOT_RUN_CODE),
+    );
+  }
   if (registration?.formatExecutionError) {
     try {
       return {

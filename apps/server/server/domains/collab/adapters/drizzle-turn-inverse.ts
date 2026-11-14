@@ -270,7 +270,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               doc,
               name: name?.handle ?? "No Work",
               frozen: documentDraft.lifecycle !== "active",
-              holdsChange: false,
+              waitingRemoved: [],
             });
           }
           document.drafts = drafts;
@@ -304,7 +304,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       const views = new Map<string, DraftDispositionView | null>();
       for (const draftId of dispositionDraftIds) views.set(draftId, await readDisposition(draftId));
+      const waitingParts = new Set<string>();
       const byPart = new Map<string, StoredInversePart["disposition"]>();
+      for (const view of views.values())
+        for (const part of view?.parts ?? [])
+          if (part.waiting) waitingParts.add(`${part.editId}:${part.ordinal}`);
       for (const view of views.values())
         for (const part of view?.parts ?? [])
           if (
@@ -319,7 +323,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const evidence = views.get(draftId);
           if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
             throw new InverseAttemptMiss();
-          draft.holdsChange = evidence.classifications.size > 0;
+          draft.waitingRemoved = (evidence.projection?.groups ?? []).map(
+            (group) => group.excerpt.removed,
+          );
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
@@ -329,6 +335,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
+            waiting: waitingParts.has(`${part.editId}:${part.ordinal}`),
             disposition:
               classified === "applied"
                 ? classified
