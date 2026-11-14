@@ -1886,6 +1886,10 @@ msgstr ""
 msgid "Copy reference"
 msgstr ""
 
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
+msgid "Copy the draft's text"
+msgstr ""
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy these between your files and a project"
 msgstr ""
@@ -1899,8 +1903,8 @@ msgid "Copy to…"
 msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
-msgid "Copy unsent text"
-msgstr ""
+#~ msgid "Copy unsent text"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -2684,7 +2688,7 @@ msgstr ""
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/ReviewToast.tsx
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/EntryRefusalNotice.tsx
@@ -5627,6 +5631,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
+msgstr ""
+
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
+msgid "The draft was discarded before your latest typing reached it."
 msgstr ""
 
 #: src/features/import/reason-copy.ts

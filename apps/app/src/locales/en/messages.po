@@ -1886,6 +1886,10 @@ msgstr "Copy link address"
 msgid "Copy reference"
 msgstr "Copy reference"
 
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
+msgid "Copy the draft's text"
+msgstr "Copy the draft's text"
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy these between your files and a project"
 msgstr "Copy these between your files and a project"
@@ -1899,8 +1903,8 @@ msgid "Copy to…"
 msgstr "Copy to…"
 
 #: src/features/draft-review/ReviewToast.tsx
-msgid "Copy unsent text"
-msgstr "Copy unsent text"
+#~ msgid "Copy unsent text"
+#~ msgstr "Copy unsent text"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -2684,7 +2688,7 @@ msgstr "Discarding"
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/ReviewToast.tsx
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/EntryRefusalNotice.tsx
@@ -5628,6 +5632,10 @@ msgstr "The destination was deleted. Trying again adds it at the area root."
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
+
+#: src/features/draft-review/UnsentDraftTextNotice.tsx
+msgid "The draft was discarded before your latest typing reached it."
+msgstr "The draft was discarded before your latest typing reached it."
 
 #: src/features/import/reason-copy.ts
 msgid "The folder you chose isn't there anymore."
