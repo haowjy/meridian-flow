@@ -321,7 +321,7 @@ export function contentWords(node: PMNode): string[] {
 
 const wordCounts = new WeakMap<PMNode, Map<string, number>>();
 /** Shared words ignoring order: an upper bound on the in-order count, and cheap. */
-function sharedBound(a: PMNode, b: PMNode): number {
+export function sharedBound(a: PMNode, b: PMNode): number {
   const get = (n: PMNode) => {
     let m = wordCounts.get(n);
     if (!m) {

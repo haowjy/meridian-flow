@@ -273,9 +273,7 @@ function pairLargeGap(
   ).map(([i, j]) => [i, j]);
 }
 
-/** Whether two blocks may be halves of one: text blocks of any type, or containers of one type. */
-const piecesOf = (a: PMNode, b: PMNode) =>
-  a.isTextblock ? b.isTextblock : !b.isTextblock && a.type === b.type;
+const sameType = (a: PMNode, b: PMNode) => a.type === b.type;
 
 const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
 
@@ -289,14 +287,14 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
   const { partner, back } = c;
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
-    if (j < 0 || !piecesOf(old[i], next[j])) continue;
+    if (j < 0 || !sameType(old[i], next[j])) continue;
     let ow = contentWords(old[i]);
     let nw = contentWords(next[j]);
     let [ot, nt] = [squash(old[i]), squash(next[j])];
     for (const dir of [-1, 1]) {
       for (
         let k = i + dir;
-        k >= 0 && k < old.length && partner[k] < 0 && c.oldPiece[k] < 0 && piecesOf(old[i], old[k]);
+        k >= 0 && k < old.length && partner[k] < 0 && c.oldPiece[k] < 0 && sameType(old[i], old[k]);
         k += dir
       ) {
         const w = contentWords(old[k]);
@@ -318,7 +316,7 @@ function findPieces(old: readonly PMNode[], next: readonly PMNode[], c: Correspo
         k < next.length &&
         back[k] < 0 &&
         c.nextPiece[k] < 0 &&
-        piecesOf(next[j], next[k]);
+        sameType(next[j], next[k]);
         k += dir
       ) {
         const w = contentWords(next[k]);
