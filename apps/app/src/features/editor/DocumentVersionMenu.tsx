@@ -49,7 +49,9 @@ export function DocumentVersionMenu({
   const { works } = useWorks(projectId);
   if (document.kind === "new") return null;
 
-  const shown = review ? (paint?.draft ?? null) : null;
+  // The chip reads the paint, the one version rule, never whether the review's controls are up:
+  // a draft whose room is still opening is already the version on screen.
+  const shown = paint?.draft ?? null;
   const ownerWork = (owner: string) => {
     const workId = workIdOfDraftOwnerKey(owner);
     return workId ? works?.find((candidate) => candidate.id === workId) : undefined;
@@ -104,7 +106,7 @@ export function DocumentVersionMenu({
   return (
     <DraftSwitcher
       // An ended draft's review stays open ("No changes left") while main paints Live.
-      showing={review && paint?.showing !== "live" ? "draft" : "live"}
+      showing={paint && paint.showing !== "live" ? "draft" : "live"}
       drafts={drafts}
       owner={outOfScope ?? undefined}
       draftOnly={review?.draftOnly ?? false}
