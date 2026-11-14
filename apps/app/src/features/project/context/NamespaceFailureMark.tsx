@@ -1,10 +1,13 @@
 /**
- * The mark a document or folder row carries when the server refused its delete, rename, move or
- * first creation and the row went back. The Editor tree shows it as an icon with a tooltip; the
- * identity bar says it in words. The server's reason follows the sentence, in its own words.
+ * What a document or folder says when the server refused its delete, rename, move or first
+ * creation and the change came back. A sidebar row says it as a `RowWord` ("Moved back"), its
+ * repairs in the row's menu; the identity bar says it in words. The server's reason follows the
+ * sentence, in its own words.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { TriangleAlert } from "lucide-react";
+import { RowWord } from "@/components/app/RowWord";
 import type { NamespaceFailure } from "@/core/project-tree/tree-view";
 
 function namespaceFailureMessage(
@@ -27,6 +30,38 @@ function namespaceFailureMessage(
   if (move) return `${t`Couldn't move this entry.`} ${again}`;
   const said = folder ? t`Couldn't rename this folder.` : t`Couldn't rename this document.`;
   return `${said} ${again}`;
+}
+
+/** A sidebar row's refusal: a warning word, the sentence and the server's reason behind it. */
+export function RefusalWord({
+  failure,
+  folder = false,
+  move = false,
+  reason,
+}: {
+  failure: NamespaceFailure;
+  folder?: boolean;
+  /** The refused change moved it, not only renamed it. */
+  move?: boolean;
+  reason?: string;
+}) {
+  return (
+    <RowWord
+      tone="warning"
+      word={
+        failure === "create" ? (
+          <Trans>Not placed</Trans>
+        ) : failure === "delete" ? (
+          <Trans>Not deleted</Trans>
+        ) : move ? (
+          <Trans>Moved back</Trans>
+        ) : (
+          <Trans>Name back</Trans>
+        )
+      }
+      sentence={namespaceFailureMessage(failure, folder, move, reason)}
+    />
+  );
 }
 
 export function NamespaceFailureMark({

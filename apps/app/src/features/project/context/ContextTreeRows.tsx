@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { GoneTitle, useHeldRows } from "@/components/app/RowWord";
-import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
+import { contentInset, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import type { TreeDirectory, TreeEntry, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
@@ -31,10 +31,9 @@ import { type ContextEntrySibling, parentContextEntryPath } from "./context-entr
 import { fileKindIcon } from "./context-file-icon";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
-import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import type { DragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
-import { NamespaceFailureMark } from "./NamespaceFailureMark";
+import { RefusalWord } from "./NamespaceFailureMark";
 import { DropRegion, InsertionLine } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
 import { useCreateEntryForm } from "./use-create-entry-form";
@@ -83,8 +82,6 @@ export type TreeEnv = {
   /** The tree's rows with the imports still being built; the tree's own when none is. */
   rows?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
-  /** Rows say a refusal in words with its repair, where nothing can hover (the phone). */
-  refusalNotice?: true;
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -260,33 +257,18 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          notice={env.notices.word(dir.entryId)}
-          trailing={
-            dir.namespaceFailure && !env.refusalNotice ? (
-              <NamespaceFailureMark
+          notice={
+            env.notices.word(dir.entryId) ??
+            (dir.namespaceFailure ? (
+              <RefusalWord
                 failure={dir.namespaceFailure}
                 move={Boolean(dir.namespaceRepairMove)}
                 reason={dir.failureReason}
                 folder
               />
-            ) : env.changed?.has(dir.entryId) ? (
-              <DraftChangeMark />
-            ) : null
+            ) : null)
           }
-          below={
-            dir.namespaceFailure && env.refusalNotice ? (
-              <RowNotice depth={depth}>
-                <EntryRefusalNotice
-                  failure={dir.namespaceFailure}
-                  move={Boolean(dir.namespaceRepairMove)}
-                  reason={dir.failureReason}
-                  folder
-                  actions={interaction.actions}
-                  onAction={interaction.onAction}
-                />
-              </RowNotice>
-            ) : null
-          }
+          trailing={env.changed?.has(dir.entryId) ? <DraftChangeMark /> : null}
         />
       </EntryDestinationPicker>
       {isOpen ? (
@@ -376,31 +358,17 @@ function FileRow({
         frameProps={drop.dropProps}
         menu={interaction.menu}
         revealActions
-        notice={env.notices.word(file.entryId)}
-        trailing={
-          file.namespaceFailure && !env.refusalNotice ? (
-            <NamespaceFailureMark
+        notice={
+          env.notices.word(file.entryId) ??
+          (file.namespaceFailure ? (
+            <RefusalWord
               failure={file.namespaceFailure}
               move={Boolean(file.namespaceRepairMove)}
               reason={file.failureReason}
             />
-          ) : env.changed?.has(file.documentId) ? (
-            <DraftChangeMark />
-          ) : null
+          ) : null)
         }
-        below={
-          file.namespaceFailure && env.refusalNotice ? (
-            <RowNotice depth={depth}>
-              <EntryRefusalNotice
-                failure={file.namespaceFailure}
-                move={Boolean(file.namespaceRepairMove)}
-                reason={file.failureReason}
-                actions={interaction.actions}
-                onAction={interaction.onAction}
-              />
-            </RowNotice>
-          ) : null
-        }
+        trailing={env.changed?.has(file.documentId) ? <DraftChangeMark /> : null}
       />
     </EntryDestinationPicker>
   );
@@ -430,11 +398,6 @@ function DraftChangeMark() {
       </span>
     </span>
   );
-}
-
-/** Under a row, on its title's edge: a refusal said in words, with its repair. */
-function RowNotice({ depth, children }: { depth: number; children: ReactNode }) {
-  return <div style={{ paddingLeft: contentInset(depth) + ICON_SLOT_PX }}>{children}</div>;
 }
 
 function RenameRow({

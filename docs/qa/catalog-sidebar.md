@@ -168,7 +168,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    the same journal attempt settles from its receipt. Switch accounts during
    dispatch and return: only the original account settles. Inject a typed
    nonretryable refusal for one delete: the folder and descendants return, with
-   a delete failure mark, no rename field, and a "Couldn't delete zz-probe." toast with Retry.
+   "Not deleted" in the row's trailing place, no rename field, and a "Couldn't delete zz-probe." toast with Retry.
 5. Delete another open folder through `./mf api` using its catalog folder node
    ID. Availability reconciliation ends their presentations (wake/focus/poll),
    without a general durable deletion intake (session authority retains its adopted

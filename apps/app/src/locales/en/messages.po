@@ -3971,6 +3971,10 @@ msgstr "Moved {source} to {place}"
 msgid "Moved a document"
 msgstr "Moved a document"
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Moved back"
+msgstr "Moved back"
+
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Moved from {folder} just now. Undo puts it back."
 msgstr "Moved from {folder} just now. Undo puts it back."
@@ -4025,6 +4029,10 @@ msgstr "Moving to {0}"
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Moving to the top"
 msgstr "Moving to the top"
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Name back"
+msgstr "Name back"
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -4251,6 +4259,10 @@ msgstr "None"
 msgid "Not created"
 msgstr "Not created"
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Not deleted"
+msgstr "Not deleted"
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
 msgstr "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
@@ -4267,6 +4279,10 @@ msgstr "Not imported: {0}"
 #: src/features/import/reason-copy.ts
 msgid "Not in the folder you picked."
 msgstr "Not in the folder you picked."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Not placed"
+msgstr "Not placed"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"

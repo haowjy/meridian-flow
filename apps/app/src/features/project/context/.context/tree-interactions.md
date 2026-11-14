@@ -113,8 +113,9 @@ list that holds it (`TreeActions.remove`, one update per list). The row leaves t
 the document waits in Trash. One own removal covers every document the gesture takes away, and an
 entry inside another entry's folder goes with that folder, never on its own. A list that cannot
 take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
-comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
-delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
+comes back as a `refused` settlement: the row returns saying "Not deleted" in its trailing place
+(`RefusalWord`; the sentence is "Couldn't delete this document." and the server's reason) and its
+menu offers Delete again or Dismiss.
 Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
 struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`) until
 the writer's next gesture there. Its notice is also held in `DraftNotices` under
@@ -144,7 +145,8 @@ A refusal comes back as a `refused` settlement on the record, and `treeFailures`
 (`core/project-tree/tree-failures.ts`) puts it on the row as `TreeFailure` fields:
 `namespaceFailure` (`delete`, `set-location`, `create`), the server's `failureReason`, the repair
 (`namespaceRepairName` for a rename, `namespaceRepairMove` for a move) and `failureRecord`. The row
-returns to where it was with `NamespaceFailureMark`; the identity bar of a homed document shows a
+returns to where it was saying so in its trailing place (`RefusalWord`: "Moved back", "Name back",
+"Not placed", the reason in its sentence, the repairs in its menu); the identity bar of a homed document shows a
 passive status directing the writer to Rename in the file list. The list's repair field opens once,
 as the refusal arrives (`use-repair-on-fresh-failure.ts`): a failure already there on mount, a
 remount, or one that lands while another input is active leaves only the mark; blur dismisses the
