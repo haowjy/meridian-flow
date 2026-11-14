@@ -466,11 +466,18 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
-    applyClick: async () => {
-      throw new Error("Apply click is not configured in the collab fixture");
+    apply: async () => {
+      throw new Error("Apply is not configured in the collab fixture");
     },
     unapplyClick: async () => {
       throw new Error("Un-Apply click is not configured in the collab fixture");
+    },
+    commandDocuments: {
+      ofApply: async () => [],
+      ofDiscard: async () => [],
+    },
+    undoDiscard: async () => {
+      throw new Error("Undo of a Discard is not configured in the collab fixture");
     },
     branches: workBranches,
     reviewItems,

@@ -7,6 +7,7 @@ export {
 } from "./admission.js";
 export {
   type ApplyResult,
+  appliedCreates,
   applyDraft,
   type DiscardedBy,
   discardDraft,

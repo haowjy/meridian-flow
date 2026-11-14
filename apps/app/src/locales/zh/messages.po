@@ -1449,12 +1449,20 @@ msgstr ""
 msgid "Changed {count} Work"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {folders} folders"
+msgstr ""
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed 1 document"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 folder"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

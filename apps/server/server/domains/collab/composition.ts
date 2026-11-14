@@ -59,6 +59,7 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
+import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -77,6 +78,7 @@ import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import {
@@ -127,6 +129,7 @@ import {
   createTurnReversalService,
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
+import { createUndoDiscardService } from "./domain/undo-discard.js";
 import { createWorkBranchReviewService } from "./domain/work-branch-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeRemovedDocumentRooms } from "./hocuspocus-rooms.js";
@@ -482,7 +485,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
   const applyCommands = createApplyClickService({
-    identity,
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
     store: createDrizzleApplyClick(deps.db, {
@@ -512,11 +514,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       },
     }),
   });
-  const applyClick = applyCommands.apply;
-  const unapplyClick = applyCommands.unapply;
+  const undoDiscard = createUndoDiscardService({
+    commands,
+    store: createDrizzleUndoDiscard(deps.db, {
+      workProjection: deps.workProjectionMutation,
+      branches: workBranches,
+      treeLists: deps.treeLists,
+      coordinator: draftCoordinator,
+    }),
+  });
   const branches = createWorkBranchReviewService({
-    applyClick,
-    unapplyClick,
+    commandDocuments: createDrizzleCommandDocuments(deps.db, { treeLists: deps.treeLists }),
+    apply: applyCommands.apply,
+    unapplyClick: applyCommands.unapply,
+    undoDiscard,
     branches: workBranches,
     reviewItems,
     identity,

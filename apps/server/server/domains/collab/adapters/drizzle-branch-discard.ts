@@ -18,7 +18,7 @@
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts } from "@meridian/database/schema";
+import { discardCommandDrafts, documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords } from "@meridian/project-tree";
 import { and, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -98,23 +98,31 @@ async function discardTreeRecords(
 }
 
 /**
- * Closes the branch's drafts (both kinds) on these documents, or on all of them. Closing
- * keeps each draft's bytes and apply record: the receipt and model `write undo` read them
- * to tell applied parts (`cant_undo_applied`) from discarded ones (`cant_undo_discarded`).
+ * Closes the branch's drafts on these documents, or on all of them, and records them on the
+ * Discard command, whose Undo copies them back. Closing keeps each draft's bytes and apply
+ * record: the receipt and model `write undo` read them to tell applied parts
+ * (`cant_undo_applied`) from discarded ones (`cant_undo_discarded`).
  */
 async function closeBranchDrafts(
   db: Database,
   deps: KernelDeps,
-  branchId: BranchId,
+  input: { branchId: BranchId; command?: string },
   cause: Exclude<DraftCloseCause, object>,
   documentIds?: readonly DocumentId[],
 ): Promise<void> {
   if (documentIds?.length === 0) return;
-  await deps.close.closeDrafts(
+  const { branchId } = input;
+  const closed = await deps.close.closeDrafts(
     currentDrizzleDb(db),
     documentIds ? { documentIds, branchId } : { branchId },
     cause,
   );
+  if (input.command && closed.length > 0)
+    await currentDrizzleDb(db)
+      .insert(discardCommandDrafts)
+      .values(
+        closed.map((draft) => ({ commandId: input.command as never, draftId: draft.draftId })),
+      );
 }
 
 /**
@@ -127,7 +135,12 @@ async function discardWholeLocked(
   input: { branchId: BranchId; userId?: UserId; commandId?: string },
 ): Promise<DiscardKernelResult> {
   await discardTreeRecords(db, deps, { ...input, commandId: input.commandId ?? newId() });
-  await closeBranchDrafts(db, deps, input.branchId, "branch_closed");
+  await closeBranchDrafts(
+    db,
+    deps,
+    { branchId: input.branchId, command: input.commandId },
+    "branch_closed",
+  );
   await deps.branches.close(input.branchId, new Date());
   // The branch ended and its drafts closed: the rows of its view go.
   await deps.treeLists.resync(await treeListsOfBranch(db, input.branchId));
@@ -171,7 +184,11 @@ export function createDrizzleBranchDiscard(
     const { branchId } = input;
     const commandId = input.commandId ?? newId();
     if (input.selection.kind === "whole")
-      return discardWholeLocked(db, deps, { branchId, userId: input.userId, commandId });
+      return discardWholeLocked(db, deps, {
+        branchId,
+        userId: input.userId,
+        commandId: input.commandId,
+      });
     const { items } = input.selection;
     const documents = items.map((item) => item.documentId);
     // The Work's lists' keys, then the documents', before the records are written: the rows
@@ -216,9 +233,13 @@ export function createDrizzleBranchDiscard(
       if (hasText) textClosed.push(item.documentId);
       closed.push(item.documentId);
     }
-    await closeBranchDrafts(db, deps, branchId, "document_discarded", [
-      ...new Set([...created, ...textClosed]),
-    ]);
+    await closeBranchDrafts(
+      db,
+      deps,
+      { branchId, command: input.commandId },
+      "document_discarded",
+      [...new Set([...created, ...textClosed])],
+    );
     return { closed };
   }
 

@@ -113,7 +113,13 @@ chooses from the same receipts and `reverses` links the model's `undo` does (`tu
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
 (a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
-is left to the model's tools (`refused`). Its lists' keys are taken before the documents' (in
+goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
+`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
+`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
+renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
+a folder has no document, so the item carries the node id with `folder: true` and no door), and
+the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call
@@ -134,8 +140,9 @@ what they take back (`undoes`), a Redo's included. A move between a project and 
 lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
 way. A model `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
-The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do;
-nothing reads it yet (it is there to make one command one Undo step).
+The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
+and Undo counts by it: the steps of one command (a create with content is a node and its text)
+are one step, taken and redone together; `revert` names a handle and takes that receipt only.
 
 Every inverse (model undo, redo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,

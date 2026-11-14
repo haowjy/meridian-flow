@@ -63,6 +63,9 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         turnId: command.turnId,
         direction: command.direction,
         actor: { type: "user", userId: command.userId },
+        ...(command.moveBackAcrossLists
+          ? { moveBackAcrossLists: command.moveBackAcrossLists }
+          : {}),
         ...(targets.length
           ? { documentIds: [...new Set(targets.map((target) => target.documentId))] }
           : {}),

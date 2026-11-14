@@ -21,7 +21,7 @@ commits after the route resolved the item, its authorization or the transaction'
 grant confirmation refuses the live grant, nothing is claimed, and the route runs the
 click once more, which resolves the item as deleted.
 
-Editor Undo sends an `unapply` command for the original Apply command. This path
+Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). This path
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
 
@@ -33,8 +33,7 @@ outcome, so a resend under the same id gets the same refusal and "Try again" nee
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
 turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
-authorises through the effect's draft: `apply_command_effects.draft_id` names the draft whose
-branch must be the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
+reads only the effects whose draft's branch is the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
 account that sent it.
 
 The command stores one full starting base plus per-group deltas, not a full
@@ -68,6 +67,50 @@ mutex, then the writes: the list's records and rows (`submit`), the closed draft
 rows. The rows are written under the document's key because derivation certification takes that
 key and then the document's `tree_nodes` row. Nothing takes a document mutex before the list's
 lock.
+
+### One Apply over any nodes, Un-Apply, Undo of a Discard
+
+An Apply is one command over any selection of nodes, folders included: `POST
+.../branches/:branchId/apply` (`ApplyItemsClick`) carries, per item, a tree cut and/or a text
+cut. The per-document click (`.../documents/:documentId/draft/apply`) is the same command with
+one item (`itemsOfClick`), and Apply all sends every item at once; a loop of per-document
+commands could be taken back only one at a time. `adapters/drizzle-apply-click.ts` runs the tree
+cuts first (`applyDraft` over all the chosen records in each list), then each document's text
+cut in id order, all in one transaction. A text draft closed under the click answers `closed` for
+the whole command; a row that holds another revision answers `changed` and nothing lands. An item
+that cannot land stays pending; none landing is `refused` `ancestor_taken`.
+
+The command records its whole effect. Tree half: one `apply_command_trees` row per list, with the
+list's state vector right after, the created documents' journal heads once the text is in, the
+live restore records the Apply made (a "Restore and apply" brings a document out of Trash before
+its copies), and the nodes it touched. Text half: `apply_command_effects`, one row per group per
+document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
+and the restores leave live), then each document's text groups. It runs the tree half before any
+write and after every check that can end the command quietly, so a refusal (`gone`: the list moved,
+or a created document has text past its heads; `superseded`) stores nothing of either half. A text
+group a later edit overlaps stays applied and is named in `skippedGroupIds`; when every group stays
+and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
+the lists' keys, then the keys of the documents the Apply wrote text in or created.
+
+Every route that writes documents on behalf of a command takes the same grants before it runs:
+Apply the draft's and the live grant on each document (and a restore grant for one live has
+deleted), Un-Apply and Undo of a Discard an edit grant, or the restore grant, on each document the
+command's own record names (`commandDocuments`). A folder has no file of its own: the project's
+owner is its only writer, which the branch's identity step proved. A creation only the Work
+showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
+the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
+
+`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) copies back both halves of a
+Discard on the Work's current branch (`ensureActiveForWrite`: a whole Discard closed the branch it
+ran on). The tree records the Discard settled come back as pending copies (`restoreDiscard`). The
+text drafts it closed (`discard_command_drafts`, written by the kernel) come back as new active
+drafts holding the closed ones' bytes: a closed draft keeps `state` and its journal until its
+document's content is purged. The next live pull catches a copy up to the live text that moved
+meanwhile. Each half is copied once. A document the Work has drafted again since keeps its newer
+draft, and the Discard's text for it is counted in `leftOut`. With nothing to copy, the answer is a
+refusal that says why: `already_restored`, or `nothing_to_restore` (the Discard settled and closed
+nothing that still exists). Lock order: the Work, the owner's active branch, the lists' keys, then
+the keys of the documents the copies act on.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

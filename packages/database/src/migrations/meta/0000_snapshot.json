@@ -8879,6 +8879,12 @@
               "nulls": "last"
             },
             {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "group_id",
               "isExpression": false,
               "asc": true,
@@ -8925,6 +8931,175 @@
           "columns": [
             "command_id",
             "ordinal"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.apply_command_trees": {
+      "name": "apply_command_trees",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mark": {
+          "name": "mark",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_heads": {
+          "name": "created_heads",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "restored": {
+          "name": "restored",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nodes": {
+          "name": "nodes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "apply_command_trees_command_id_document_commands_id_fk": {
+          "name": "apply_command_trees_command_id_document_commands_id_fk",
+          "tableFrom": "apply_command_trees",
+          "tableTo": "document_commands",
+          "columnsFrom": [
+            "command_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "apply_command_trees_branch_id_branches_id_fk": {
+          "name": "apply_command_trees_branch_id_branches_id_fk",
+          "tableFrom": "apply_command_trees",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "apply_command_trees_command_id_scope_pk": {
+          "name": "apply_command_trees_command_id_scope_pk",
+          "columns": [
+            "command_id",
+            "scope"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discard_command_drafts": {
+      "name": "discard_command_drafts",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "restored_by": {
+          "name": "restored_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "discard_command_drafts_command_id_document_commands_id_fk": {
+          "name": "discard_command_drafts_command_id_document_commands_id_fk",
+          "tableFrom": "discard_command_drafts",
+          "tableTo": "document_commands",
+          "columnsFrom": [
+            "command_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discard_command_drafts_draft_id_document_drafts_id_fk": {
+          "name": "discard_command_drafts_draft_id_document_drafts_id_fk",
+          "tableFrom": "discard_command_drafts",
+          "tableTo": "document_drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discard_command_drafts_restored_by_document_commands_id_fk": {
+          "name": "discard_command_drafts_restored_by_document_commands_id_fk",
+          "tableFrom": "discard_command_drafts",
+          "tableTo": "document_commands",
+          "columnsFrom": [
+            "restored_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "discard_command_drafts_command_id_draft_id_pk": {
+          "name": "discard_command_drafts_command_id_draft_id_pk",
+          "columns": [
+            "command_id",
+            "draft_id"
           ]
         }
       },
@@ -9217,7 +9392,7 @@
       "checkConstraints": {
         "document_commands_kind_valid": {
           "name": "document_commands_kind_valid",
-          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'model_edit', 'reverse_turn', 'copy')"
+          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')"
         }
       },
       "isRLSEnabled": false
