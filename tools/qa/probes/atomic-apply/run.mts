@@ -71,13 +71,15 @@ const schema = buildDocumentSchema();
 // Ids by position: the merge pairs blocks by id, so each block of a document needs its own.
 const paragraph = (text: string, at = 0) =>
   schema.nodes.paragraph.create({ id: `p${at}` }, text ? schema.text(text) : undefined);
-// A text starting with "+" is a block the writer made new (a split's second part): a new id.
+// A text starting with "+" is a block the writer made new (a split's second part): a new id. A text
+// ending in "@2" is the block that had position 2 in the base, wherever it stands now.
 const blocks = (texts: string[]) =>
-  texts.map((text, at) =>
-    text.startsWith("+")
-      ? schema.nodes.paragraph.create({ id: `n${at}` }, schema.text(text.slice(1)))
-      : paragraph(text, at),
-  );
+  texts.map((text, at) => {
+    const [, body, was] = /^(.*?)(?:@(\d+))?$/s.exec(text) ?? [];
+    return body.startsWith("+")
+      ? schema.nodes.paragraph.create({ id: `n${at}` }, schema.text(body.slice(1)))
+      : paragraph(body, was === undefined ? at : Number(was));
+  });
 const clone = (doc: Y.Doc, id = Math.floor(Math.random() * 1e9) + 100) => {
   const out = new Y.Doc({ gc: false });
   Y.applyUpdate(out, Y.encodeStateAsUpdate(doc));
@@ -1009,20 +1011,31 @@ try {
     f.close();
   });
   await row("a click's groups chain: live ends at the draft, Un-Apply returns it", async () => {
-    // Removing a paragraph break and adding one elsewhere: each group alone against the click's base
-    // restores the other's break.
+    // A join and, far from it, a split: with block ids a join is an edit of the first block and the
+    // removal of the second, a split an edit and a new block, so there are two groups to chain.
+    const long = "Then the long quiet hours of the night passed slowly by";
     const f = await fixture(
-      ["She turned away", "She waited by the door"],
-      ["+She turned away She waited by", "+the door"],
+      ["She turned away", "She waited by", long, "He opened the door"],
+      ["She turned away She waited by", `${long}@2`, "He opened@3", "+the door"],
     );
     const click = f.click();
     assert.equal(click.request.groupIds.length, 2);
     await applied(f, click);
-    assert.deepEqual(await f.liveText(), ["She turned away She waited by", "the door"]);
+    assert.deepEqual(await f.liveText(), [
+      "She turned away She waited by",
+      long,
+      "He opened",
+      "the door",
+    ]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     if (answer.status === "unapplied") assert.equal(answer.reversedGroupIds.length, 2);
-    assert.deepEqual(await f.liveText(), ["She turned away", "She waited by the door"]);
+    assert.deepEqual(await f.liveText(), [
+      "She turned away",
+      "She waited by",
+      long,
+      "He opened the door",
+    ]);
     f.close();
   });
   await row("Un-Apply skips an edited group and reverses an intact peer", async () => {
