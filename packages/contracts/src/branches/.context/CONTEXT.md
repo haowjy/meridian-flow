@@ -42,5 +42,7 @@ contract](../../../../../apps/server/server/domains/collab/.context/apply.md). P
 ProseMirror node JSON; the server constructs and validates the nodes.
 
 The authenticated scope and whole body are part of the request digest. Server item Discard takes
-`{ branchId, itemKey, commandId }` only to end a still-hidden creation's use; Discard all takes
-`{ branchId, commandId }` and closes drafts.
+`{ branchId, itemKey, commandId }` only to end a still-hidden creation's use. The branch's Discard
+(`BranchDiscardRequest`) takes `{ commandId, all: true }` for Discard all, which closes the
+branch, or `{ commandId, items }` for a selection of documents and folders; a selection never
+widens to the branch.

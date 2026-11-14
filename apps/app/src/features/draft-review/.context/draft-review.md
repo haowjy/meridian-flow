@@ -112,10 +112,15 @@ so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every docume
 frozen in the click's event turn and joins its own FIFO as a member sharing the command's id;
 the member's send hands its click to the group, and the group posts `ApplyItemsClick` once
 every member reached its queue's head, so each text cut lands after that document's earlier
-clicks. A member that ends unsent (closed draft, unread room) is left out. Folders ride on
-the command as nodes with no queue, their tree cut the list response's `folders[].revision`.
-Every member's queue settles from the one answer; groups are enqueued in item order in one
-turn, so two groups never wait on each other.
+clicks. A member that ends unsent (closed draft, unread room) is left out; a drop before the
+group is sealed decides nothing. A folder is a member too: a tree cut in its own item's queue
+under `folderKey(branchId, folderId)`, so a folder-only command has the same pending, refused
+and unknown-delivery states, shown on the folder row with Retry, as a document's. Its cut is the
+list response's `folders[].revision`, read once when the command first goes, so a resend
+carries the same body; folders lead the items. Every member's queue settles from the one answer,
+`conflict` included; groups are enqueued in item order in one turn, so two groups never wait on
+each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
+the same id.
 
 An editor text Apply gives that editor's history the Undo and Redo callbacks of the
 schedule-owned command handle. The handle owns command identity, reversal outcome and
@@ -183,7 +188,7 @@ phone review header, Changes list, strip) wraps its notice and controls in one
 the controls that come back (the Changes list prefers the restored row). If the writer moved
 before the go-back resolved, the notice ends. Apply
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
-facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
+facts (`useManuscriptState`). Discard all is one notice and one server command. A room's Undo is done
 once the prose is back in the room, which sends it whenever it can: the notice ends and the row
 returns at once, offline too. This path does not re-read the owner list, and the view does not
 follow back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled
@@ -232,9 +237,11 @@ Discard (`discardOnServer`, everything the branch holds on the document), a move
 `discardItem`. Every Discard shows the owner's notice, and its Undo takes back each share: a
 room's text locally, a server Discard by Undo of a Discard (`undo-discard`, both halves onto
 the Work's current branch); `leftOut` stays on the notice as what couldn't come back. Only a
-frozen owner's Discard asks first (`discardAsks`): its Undo would be refused. A Discard all of
-only local drafts is local, one notice; any other Discard all (rows still loading, a room in
-error) is the server's branch Discard, one share standing for every draft. A Discard never reports success for a draft it didn't discard. Their optimistic
+frozen owner's Discard asks first (`discardAsks`): its Undo would be refused. A Discard of a
+selection (a folder group's ×, a folder changed alone) is one server command over exactly those
+documents and folders, both halves, with what stands on them (`discardSelection`,
+`BranchDiscardRequest.items`); only Discard all sends `all`, the one command that closes the
+branch. Neither falls back to the other. A Discard never reports success for a draft it didn't discard. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 
