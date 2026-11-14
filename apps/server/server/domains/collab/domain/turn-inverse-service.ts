@@ -293,16 +293,19 @@ export function createTurnInverseService(store: TurnInverseStore) {
     async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
-        if (!documents.length) return null;
+        // A reply that only changed the tree has no text to capture, and its card still takes it back.
+        const treeRedo = await store.treeStepCount(query, "redo");
+        const treeUndo = await store.treeStepCount(query, "undo");
+        if (!documents.length && !treeRedo && !treeUndo) return null;
         const redo = prepare(store, documents, query, "redo", randomUUID());
-        if (countAccepted(redo))
+        if (countAccepted(redo) || treeRedo)
           return {
             state: "live-reversed",
             control: "redo",
             skips: redo.flatMap((plan) => plan.skips),
           };
         const undo = prepare(store, documents, query, "undo", randomUUID());
-        if (countAccepted(undo))
+        if (countAccepted(undo) || treeUndo)
           return {
             state: "live-active",
             control: "undo",

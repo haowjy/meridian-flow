@@ -9,9 +9,17 @@
 import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, treeNodes } from "@meridian/database/schema";
-import { LIVE, undoChange, type View } from "@meridian/project-tree";
-import { and, inArray, isNull } from "drizzle-orm";
+import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
+import {
+  isSourceRoot,
+  LIVE,
+  moveBetweenLists,
+  recordsOf,
+  sourceRoot,
+  undoChange,
+  type View,
+} from "@meridian/project-tree";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { AgentTreeHistory, TreeReceipt } from "../contracts.js";
@@ -39,6 +47,19 @@ export function createTurnTreeInverse(deps: {
 }) {
   const db = () => currentDrizzleDb(deps.db);
 
+  /** The other list of a move between a project's files and the account's: the thread's project, or its owner. */
+  async function otherList(threadId: ThreadId, list: TreeList): Promise<TreeList | null> {
+    const [row] = await db()
+      .select({ projectId: projects.id, userId: projects.userId })
+      .from(threads)
+      .innerJoin(projects, eq(projects.id, threads.projectId))
+      .where(eq(threads.id, threadId));
+    if (!row) return null;
+    return list.kind === "project"
+      ? { kind: "account", userId: row.userId }
+      : { kind: "project", projectId: row.projectId };
+  }
+
   async function plan(
     threadId: ThreadId,
     turnId: TurnId,
@@ -49,7 +70,10 @@ export function createTurnTreeInverse(deps: {
     const lists = new Map<string, TreeList>();
     for (const step of steps) {
       const list = await treeListOfNode(deps.db, step.subject);
-      if (list) lists.set(JSON.stringify(list), list);
+      if (!list) continue;
+      lists.set(JSON.stringify(list), list);
+      const other = step.across ? await otherList(threadId, list) : null;
+      if (other) lists.set(JSON.stringify(other), other);
     }
     const ids = steps.map((step) => step.subject);
     const subjects = new Set(
@@ -109,11 +133,36 @@ export function createTurnTreeInverse(deps: {
         at: receipt.shownAt,
         cause,
       });
-      // A move between a project's list and the account's is taken back by the model's tools,
-      // which name both ends; the card leaves it.
-      const list = receipt.across ? null : await treeListOfNode(deps.db, receipt.subject);
+      const list = await treeListOfNode(deps.db, receipt.subject);
       if (!list) {
-        skips.push(skip(receipt.across ? "refused" : "superseded"));
+        skips.push(skip("superseded"));
+        continue;
+      }
+      if (receipt.across) {
+        const other = await otherList(input.threadId, list);
+        const answer = other ? await moveBack(receipt, list, other, actor) : null;
+        if (answer === null) skips.push(skip("refused"));
+        else if (answer === "superseded") skips.push(skip("superseded"));
+        else {
+          reversed++;
+          await deps.history().recordAgentTreeChange({
+            subject: receipt.subject,
+            nodes: [
+              {
+                nodeId: receipt.subject,
+                beforeAt: receipt.across.to,
+                afterAt: receipt.across.from,
+              },
+            ],
+            records: answer,
+            op: receipt.op,
+            acrossLists: true,
+            threadId: input.threadId,
+            ...(receipt.turnId ? { turnId: receipt.turnId as TurnId } : {}),
+            shownAt: receipt.shownAt ?? "",
+            reverses: { kind: direction, receipt: receipt.id },
+          });
+        }
         continue;
       }
       const view: View = receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
@@ -153,6 +202,80 @@ export function createTurnTreeInverse(deps: {
       });
     }
     return { reversed, skips };
+  }
+
+  /**
+   * A move between lists taken back (or done again) by the same move the other way: the node
+   * returns under the folder the receipt's own move left, or the top of its source when that
+   * folder is gone. Nothing is made when a later change moved or renamed it since.
+   */
+  async function moveBack(
+    receipt: TreeReceipt,
+    here: TreeList,
+    there: TreeList,
+    actor: string,
+  ): Promise<{ record: string; node: string }[] | "superseded"> {
+    const [left, entered] = receipt.records;
+    if (!left || !entered) return "superseded";
+    const { result } = await deps.treeLists.submit({
+      lists: [here, there],
+      make: ([out, into]) => {
+        const node = receipt.subject;
+        const standing = out.writer.view(LIVE);
+        const setters = standing.setters.get(node);
+        const present = standing.nodes.get(node);
+        // Creates set no place or name: the node is as the move left it while nothing later did.
+        const order = recordsOf(out.writer.doc)
+          .toArray()
+          .map((record) => record.id);
+        const arrivedAt = order.indexOf(entered.record);
+        const touched = [setters?.place, setters?.label].some(
+          (setter) => setter !== undefined && order.indexOf(setter.id) > arrivedAt,
+        );
+        if (!present || present.trashed || arrivedAt < 0 || touched) return "superseded" as const;
+        const moved = recordsOf(into.writer.doc)
+          .toArray()
+          .find((record) => record.id === left.record);
+        if (moved?.type !== "move") return "superseded" as const;
+        // The node left `into` under the name and type that list's records last gave it.
+        let name: string | undefined;
+        let source: string | undefined;
+        let filetype: string | undefined;
+        for (const record of recordsOf(into.writer.doc).toArray()) {
+          if (record.id === moved.id) break;
+          if (record.node !== node) continue;
+          if (record.type === "create") source = record.source;
+          if (record.type === "create" || record.type === "rename") {
+            name = record.name;
+            filetype = record.filetype ?? filetype;
+          } else if (record.type === "move" && record.name !== undefined) name = record.name;
+        }
+        const folder = into.writer.view(LIVE).nodes.get(moved.from.parent);
+        const parent =
+          isSourceRoot(moved.from.parent) || (folder && folder.kind === "folder" && !folder.trashed)
+            ? moved.from.parent
+            : source
+              ? sourceRoot(source)
+              : null;
+        if (parent === null) return "superseded" as const;
+        const back = moveBetweenLists(
+          out,
+          {
+            ...into,
+            parent,
+            ...(name !== undefined ? { name } : {}),
+            ...(filetype ? { filetype } : {}),
+          },
+          actor,
+          node,
+        );
+        return [
+          { record: back.left.id, node },
+          { record: back.entered.id, node },
+        ];
+      },
+    });
+    return result;
   }
 
   return { plan, run };
