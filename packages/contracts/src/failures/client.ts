@@ -85,7 +85,7 @@ export function clientFailureEvent(record: ClientDiagnosticRecord): EventRecord 
       payload: {
         occurrenceId: record.occurrenceId,
         rescue: record.rescue.kind,
-        ...(record.rescue.kind === "unsent-typing" ? { rescueCause: record.rescue.cause } : {}),
+        ...(record.rescue.kind === "unsent-typing" ? { endedBy: record.rescue.cause } : {}),
         chars: record.rescue.chars,
         passages: record.rescue.passages,
       },

@@ -170,7 +170,7 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
     <div
       role="status"
       data-unsent-typing={typing.cause}
-      className="pointer-events-auto flex w-full flex-col gap-2 rounded-md border border-border bg-card p-3 text-compact text-foreground shadow-float"
+      className="flex w-full flex-col gap-2 py-1 text-compact"
     >
       <p className="font-medium">
         <UnsentTypingSentence cause={typing.cause} />
