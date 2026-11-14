@@ -20,7 +20,7 @@ and runs the real Drizzle store and catalog over it. It checks:
   returning nothing and a `NULL` `definition` row;
 - files that must resolve with exactly the permission or tool lists their rules give (an allow-list is `tools`, `deny` is `disallowed-tools`, `ask` runs as allow, a rule on a tool Flow lacks is met);
 - saving a valid file over a broken personal Agent;
-- a reader bump: a second reader version's rows, a held old selection refused, a bound chat's
+- a reader bump: a second reader version's rows, a held old selection reaching the entry's current revision (or refused as unavailable when that revision is), a bound chat's
   child Agents still resolving, and the boot recompile advancing a package left at the old version.
 
 ## Server gate

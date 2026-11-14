@@ -224,7 +224,9 @@ export function createInMemoryAgentRevisionStore(input: {
         return undefined;
       if (entry.selectedRevisionId !== revisionId && !state().history.get(entryId)?.has(revisionId))
         return undefined;
-      const revision = state().revisions.get(revisionId);
+      let revision = state().revisions.get(revisionId);
+      if (revision && revision.grammarVersion !== GRAMMAR_VERSION)
+        revision = state().revisions.get(entry.selectedRevisionId);
       return revision && revision.grammarVersion === GRAMMAR_VERSION
         ? copy({ entry, revision })
         : undefined;

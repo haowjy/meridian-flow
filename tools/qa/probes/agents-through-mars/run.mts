@@ -389,7 +389,7 @@ try {
   });
 
   await check(
-    "a reader bump: new rows, held selection refused, bound chat keeps resolving, boot recompiles",
+    "a reader bump: a held selection reaches the current revision, a bound chat keeps resolving, boot recompiles",
     async () => {
       const files = {
         "mars.toml": MANIFEST,
@@ -424,7 +424,34 @@ try {
         (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion !== OLD_READER,
         true,
       );
-      assert.equal(await store.readSelection(USER, entry.id, oldRevision.id), undefined);
+      const held = {
+        catalogEntryId: entry.id,
+        definitionRevisionId: oldRevision.id,
+      };
+      const reached = await catalog.resolvePrimary(USER, held);
+      assert.ok(reached.ok);
+      assert.equal(reached.revision.id, entry.selectedRevisionId);
+
+      // A stricter reader: the held old revision was valid, the current one is not.
+      const strictCoordinate = await publish(
+        { "mars.toml": MANIFEST, "agents/b3.md": agent("B3") },
+        OLD_READER,
+      );
+      const heldStrict = await listed("b3");
+      await publishAgentSource({
+        store,
+        ownerUserId: USER,
+        source: {
+          coordinate: strictCoordinate,
+          files: { "mars.toml": MANIFEST, "agents/b3.md": agent("B3", "permission: read\n") },
+        },
+        expectedRevisionId: (await store.listInstallations(USER)).find(
+          (i) => i.coordinate === strictCoordinate,
+        )?.currentRevisionId,
+      });
+      const refused = await catalog.resolvePrimary(USER, heldStrict.selection);
+      assert.equal(refused.ok, false);
+      assert.equal(!refused.ok && refused.reason, "unavailable");
       const binding = await store.readThreadBinding(THREAD);
       assert.equal(binding?.revision?.id, oldRevision.id);
       for (const target of binding?.configuration.namedTargets ?? []) {

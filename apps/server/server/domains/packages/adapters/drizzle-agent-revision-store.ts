@@ -18,7 +18,7 @@ import {
   type PackageDiagnostic,
 } from "../domain/compile-package.js";
 import { GRAMMAR_VERSION } from "../domain/mars.js";
-import type { SkillFiles } from "../domain/skill-files.js";
+import type { SkillFiles } from "../domain/types.js";
 import type {
   AgentRevision,
   AgentRevisionStore,
@@ -288,7 +288,6 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(
           and(
             eq(agentCatalogEntries.id, catalogEntryId),
-            eq(agentDefinitionRevisions.grammarVersion, GRAMMAR_VERSION),
             availableInProject(projectId),
             or(ownerFilter(null), ownerFilter(userId)),
             eq(agentCatalogEntries.removed, false),
@@ -298,7 +297,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
             ),
           ),
         );
-      return row ? { entry: row.entry, revision: catalogRevision(row.revision) } : undefined;
+      if (!row) return undefined;
+      // A revision compiled by an older reader is stale: serve the entry's current one.
+      let revision = row.revision;
+      if (revision.grammarVersion !== GRAMMAR_VERSION) {
+        [revision] = await db()
+          .select()
+          .from(agentDefinitionRevisions)
+          .where(eq(agentDefinitionRevisions.id, row.entry.selectedRevisionId));
+      }
+      return revision?.grammarVersion === GRAMMAR_VERSION
+        ? { entry: row.entry, revision: catalogRevision(revision) }
+        : undefined;
     },
     async listCatalog(input) {
       if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
