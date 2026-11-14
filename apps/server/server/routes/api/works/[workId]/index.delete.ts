@@ -8,7 +8,8 @@ import {
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../lib/work-command.js";
+import { already, runWorkCommand } from "../../../../lib/work-command.js";
+import { throwWorkMutationHttpError } from "../../../../lib/work-http.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -20,27 +21,34 @@ export default defineEventHandler(async (event) => {
     user.userId,
     { includeSoftDeleted: true },
   );
-  // A tree that changed under the delete's lock rolls the attempt back, claim included, and the
-  // next attempt claims again: the retry wraps the command, not the reverse.
-  await runWorkLifecycleCommand(
-    (attempt) => attempt(),
-    () =>
-      runWorkCommand(
-        app.commands,
-        {
-          commandId,
-          userId: user.userId,
-          projectId: work.projectId,
-          kind: "work_delete",
-          workId,
-          body,
-        },
-        async () => {
-          await softDeleteWork({ works: app.workRepo, stopThreads: app.stopThreads }, work.id);
-          return undefined;
-        },
-      ),
-  );
+  try {
+    // A tree that changed under the delete's lock rolls the attempt back, claim included, and the
+    // next attempt claims again: the retry wraps the command, not the reverse.
+    await runWorkLifecycleCommand(
+      (attempt) => attempt(),
+      () =>
+        runWorkCommand(
+          app.commands,
+          {
+            commandId,
+            userId: user.userId,
+            projectId: work.projectId,
+            kind: "work_delete",
+            workId,
+            body,
+          },
+          async () => {
+            const { changed } = await softDeleteWork(
+              { works: app.workRepo, stopThreads: app.stopThreads },
+              work.id,
+            );
+            return changed ? {} : already("deleted");
+          },
+        ),
+    );
+  } catch (error) {
+    throwWorkMutationHttpError(error);
+  }
   // The Work's chats left the project list with it; which ones is not known here, so windows probe.
   app.projectWakeHub.publish({
     type: "project-chats-hint",

@@ -15,11 +15,7 @@ import type {
   WorkRepository,
   WorkRestoration,
 } from "../../ports/work-repository.js";
-import {
-  WorkLockedError,
-  WorkNameConflictError,
-  WorkRestoreConflictError,
-} from "../../ports/work-repository.js";
+import { WorkLockedError } from "../../ports/work-repository.js";
 import { NO_WORK_NAME } from "./shared.js";
 
 /** In-memory {@link WorkRepository} for tests. */
@@ -78,17 +74,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     };
   }
 
-  function nameIsTaken(projectId: ProjectId, name: string, exceptId?: WorkId): boolean {
-    const normalized = name.trim().toLocaleLowerCase();
-    return [...rows.values()].some(
-      (row) =>
-        row.id !== exceptId &&
-        row.projectId === projectId &&
-        row.deletedAt === null &&
-        row.name.toLocaleLowerCase() === normalized,
-    );
-  }
-
   const repo: WorkRepository = {
     async transaction<T>(operation: () => Promise<T>): Promise<T> {
       const snapshot = structuredClone(rows);
@@ -115,7 +100,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async create(input: CreateWorkInput): Promise<Work> {
       if (input.id && rows.has(input.id)) throw new Error(`Work already exists: ${input.id}`);
       const work = build(input);
-      if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();
       rows.set(work.id, work);
       projectState(work.projectId).revision += 1n;
       return { ...work };
@@ -144,19 +128,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       const existing = await repo.findNoWork(projectId);
       if (existing) return existing;
       const timestamp = now();
-      for (const row of rows.values()) {
-        if (
-          row.projectId === projectId &&
-          !row.isNoWork &&
-          row.deletedAt === null &&
-          row.name.trim().toLocaleLowerCase() === NO_WORK_NAME.toLocaleLowerCase()
-        ) {
-          row.name = `${NO_WORK_NAME} (named)`;
-          row.updatedAt = timestamp;
-          row.lastActivityAt = timestamp;
-          advance(row);
-        }
-      }
       const work: Work = {
         id: crypto.randomUUID(),
         projectId,
@@ -205,10 +176,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
       if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.handle);
       if (row.isNoWork) throw new WorkLockedError();
-      if (input.name !== undefined) {
-        if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
-        row.name = input.name;
-      }
+      if (input.name !== undefined) row.name = input.name;
       if (input.goal !== undefined) row.goal = input.goal;
       const timestamp = now();
       if (input.status !== undefined) row.status = input.status;
@@ -271,12 +239,9 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       return repo.transaction(async () => {
         const row = rows.get(id);
         if (!row) throw new Error(`Work not found: ${id}`);
-        if (decideWorkRestore(row, currentTime()) === "unchanged") {
+        if (decideWorkRestore(row) === "unchanged") {
           const existing = { ...row };
           return { before: existing, after: existing, changed: false };
-        }
-        if (nameIsTaken(row.projectId, row.name, row.id)) {
-          throw new WorkRestoreConflictError();
         }
         const before = { ...row };
         const restoredAt = currentTime();

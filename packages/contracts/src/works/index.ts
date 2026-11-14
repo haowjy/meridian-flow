@@ -90,6 +90,23 @@ export const workSchema = z.object({
   deletedAt: z.string().nullable(),
 }) satisfies z.ZodType<Work>;
 
+/** A Work route's body: the Work, plus what settled differently from the ask when anything did. */
+export const workAnswerSchema = workSchema.extend({
+  settled: z
+    .array(
+      z.discriminatedUnion("rule", [
+        z.object({ rule: z.literal("already"), state: z.string() }),
+        z.object({
+          rule: z.literal("returned"),
+          why: z.enum(["work_archived", "work_deleted"]),
+        }),
+      ]),
+    )
+    .optional(),
+});
+
+export type WorkAnswer = z.infer<typeof workAnswerSchema>;
+
 export const worksSnapshotSchema = z.object({
   projectId: z.string().min(1),
   authorityRevision: z.string().regex(/^(0|[1-9]\d*)$/),

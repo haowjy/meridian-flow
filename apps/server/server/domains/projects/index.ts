@@ -138,17 +138,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
       .limit(1);
     if (existing) return existing.id;
-    await tx
-      .update(works)
-      .set({ name: `${NO_WORK_NAME} (named)`, updatedAt: new Date() })
-      .where(
-        and(
-          eq(works.projectId, projectId),
-          eq(works.isNoWork, false),
-          isNull(works.deletedAt),
-          sql`lower(btrim(${works.name})) = ${NO_WORK_NAME.toLowerCase()}`,
-        ),
-      );
     const [row] = await tx
       .insert(works)
       .values({
@@ -317,11 +306,8 @@ export {
   WorkDeleteRetryError,
   type WorkDeletion,
   WorkLockedError,
-  WorkNameConflictError,
   type WorkRepository,
   type WorkRestoration,
-  WorkRestoreConflictError,
-  WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
 export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";

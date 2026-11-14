@@ -103,9 +103,6 @@ export const works = pgTable(
     index("works_created_by_active")
       .on(table.createdByUserId)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_name_active")
-      .on(table.projectId, sql`lower(${table.name})`)
-      .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("works_project_handle")
       .on(table.projectId, table.handle)
       .where(sql`${table.handle} IS NOT NULL`),

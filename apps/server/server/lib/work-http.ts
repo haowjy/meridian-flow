@@ -1,7 +1,7 @@
 /** Canonical writer-facing HTTP envelopes for Work metadata and archive lifecycle refusals. */
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { isError } from "nitro/h3";
-import { WorkLifecycleUnavailableError, WorkNameConflictError } from "../domains/projects/index.js";
+import { WorkLifecycleUnavailableError, WorkLockedError } from "../domains/projects/index.js";
 import {
   HTTP_INTERRUPT_ENVELOPE_KEY,
   isHttpInterruptEnvelope,
@@ -9,8 +9,8 @@ import {
 } from "../shared/interrupt-boundary.js";
 
 export function throwWorkMutationHttpError(error: unknown): never {
-  if (error instanceof WorkNameConflictError) {
-    throwHttpInterrupt(meridianErrorFromSystem("work_name_conflict", error.message), 409);
+  if (error instanceof WorkLockedError) {
+    throwHttpInterrupt(meridianErrorFromSystem(error.code, error.message), 400);
   }
   if (error instanceof WorkLifecycleUnavailableError) {
     const archived = error.state === "archived";

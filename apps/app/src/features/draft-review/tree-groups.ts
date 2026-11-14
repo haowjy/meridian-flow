@@ -25,6 +25,8 @@ export type ChangeGroup<T> = {
   /** The changed folder heading the group; null for documents under no changed folder. */
   folder: {
     id: string;
+    /** The Work's view's name for it, a deleted folder's included. */
+    name: string;
     change: FolderChange;
     fault: LandingFault | null;
     /** Every changed folder the group takes: this one and the changed folders inside it. */
@@ -133,6 +135,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     groups.set(id, {
       folder: {
         id,
+        name: work.nodes.get(id)?.displayName ?? "",
         change: folderChange(work, records),
         fault: faults.get(id) ?? null,
         folders: [id],

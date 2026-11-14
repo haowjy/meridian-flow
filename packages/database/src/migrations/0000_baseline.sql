@@ -1227,7 +1227,6 @@ CREATE INDEX "upload_intakes_owner_thread" ON "upload_intakes" USING btree ("own
 CREATE INDEX "upload_intakes_open_updated" ON "upload_intakes" USING btree ("updated_at") WHERE "upload_intakes"."state" IN ('reserved', 'object_stored');--> statement-breakpoint
 CREATE INDEX "works_project_updated_active" ON "works" USING btree ("project_id","updated_at" DESC NULLS LAST) WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "works_created_by_active" ON "works" USING btree ("created_by_user_id") WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "works_project_name_active" ON "works" USING btree ("project_id",lower("name")) WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "works_project_handle" ON "works" USING btree ("project_id","handle") WHERE "works"."handle" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "works_project_no_work_active" ON "works" USING btree ("project_id") WHERE "works"."is_no_work" = true AND "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_edit_parts_edit_ordinal" ON "document_edit_parts" USING btree ("edit_id","ordinal");--> statement-breakpoint

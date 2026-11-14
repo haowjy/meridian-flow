@@ -75,6 +75,8 @@ export function renderWorkResult(value: JsonValue, input: JsonObject): string {
   }
   if (isObject(value) && typeof value.name === "string" && command in DONE) {
     const work = value as unknown as ModelWork;
+    if (value.closed === "archived" || value.closed === "deleted")
+      return `Nothing changed: ${workRef(work)} is ${value.closed}, so the ${command} wasn't made.\n${workLines(work, verbose, LIST_GOAL_LENGTH)}`;
     return `${DONE[command]?.(workRef(work))}\n${workLines(work, verbose, LIST_GOAL_LENGTH)}`;
   }
   // `switch` says why it made no move; anything else stays as the handler gave it.
