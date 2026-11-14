@@ -15,14 +15,22 @@ import {
 import { toDocHandle } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
 import { blockIdentityForItem, uniqueHashesForIds } from "../model/block-hash.js";
-import { toHashline } from "../model/hashline.js";
 import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import type { AgentEditConcurrentListing, AgentEditModelPayload } from "./model-result.js";
+import type {
+  AgentEditConcurrentGroup,
+  AgentEditConcurrentListing,
+  AgentEditModelPayload,
+} from "./model-result.js";
 import type { ObservationFailedDetail } from "./write-deps.js";
 
-/** The rendered listing's cap. */
-export const CONCURRENT_LISTING_MAX_BYTES = 8 * 1024;
+/**
+ * Blocks others changed past which the result carries no echo and no listing and sends the model
+ * back to the file. A hash costs the model about three tokens, so the listing is never what costs
+ * too much: past this the model can no longer repair by naming blocks, and a fresh read of the
+ * changed file is what it needs.
+ */
+export const CONCURRENT_REREAD_BLOCKS = 10;
 
 export interface ListingSource {
   doc: Y.Doc;
@@ -62,11 +70,14 @@ export async function recordObservation(
       const { frontier, concurrent: listing } = observeRendered(observedSource, room, prev, [
         result.model,
       ]);
-      observed = {
-        ...result,
-        frontier,
-        ...(listing ? { model: { ...result.model, concurrent: listing } } : {}),
-      };
+      if (listing) {
+        const { blocks: _echo, ...bare } = result.model ?? {};
+        observed = {
+          ...result,
+          frontier,
+          model: { ...(listing.reread ? bare : result.model), concurrent: listing },
+        };
+      } else observed = { ...result, frontier };
     } catch (cause) {
       onFailed?.({ documentId, cause });
     }
@@ -131,60 +142,31 @@ export function observeRendered(
   for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);
   const removed = removedIds.filter((id) => !source.ownRemoved?.has(frontierBlockId(id)));
   const frontier = recordedFrontier(room, delta, source.position);
-  if (!source.links || (changed.length === 0 && removed.length === 0)) return { frontier };
+  if (changed.length === 0 && removed.length === 0) return { frontier };
 
-  const byId = new Map(project().map((block) => [frontierBlockId(block.id), block]));
-  const candidates = changed.filter((id) => !shown.has(id) && byId.has(id));
-  const rendered = candidates.map((id) => byId.get(id) as ProjectedBlock);
-  const bodies = source.links.codec.serializeBlocks(
-    rendered.map((block) => block.node),
-    rendered.map((block) => block.hash),
-  );
-  const items = rendered.map((block, index) => ({ hash: block.hash, body: bodies[index] }));
   const authors = changeAuthors(source, prev, changed, removedIds);
-  const itemById = new Map(candidates.map((id, index) => [id, items[index]]));
   const hashes = hashMap(doc, project(), removed);
+  const touched = new Set<string>();
   const groups: AgentEditConcurrentListing["groups"] = [];
-  let remaining = CONCURRENT_LISTING_MAX_BYTES;
   for (const [author, changes] of authors) {
-    const group: AgentEditConcurrentListing["groups"][number] = { author, blocks: [] };
+    const group: Omit<AgentEditConcurrentGroup, "author"> = {};
     for (const id of changes.changed) {
-      const item = itemById.get(id);
-      if (!item) {
-        if (!shown.has(id)) continue;
-        const hash = hashes.get(id);
-        if (!hash) continue;
-        const bytes = byteLength(hash) + 1;
-        if (bytes > remaining) {
-          group.more = (group.more ?? 0) + 1;
-          continue;
-        }
-        remaining -= bytes;
-        group.shown ??= [];
-        group.shown.push(hash);
-        continue;
-      }
-      const bytes = byteLength(toHashline(item.hash, item.body)) + 1;
-      if (bytes > remaining) {
-        group.more = (group.more ?? 0) + 1;
-        continue;
-      }
-      remaining -= bytes;
-      group.blocks.push(item);
+      const hash = hashes.get(id);
+      if (!hash) continue;
+      touched.add(id);
+      if (shown.has(id)) group.shown = [...(group.shown ?? []), hash];
+      else group.other = [...(group.other ?? []), hash];
     }
     for (const id of changes.removed) {
       const hash = hashes.get(id);
-      if (!hash || byteLength(hash) + 1 > remaining) {
-        group.more = (group.more ?? 0) + 1;
-        continue;
-      }
-      remaining -= byteLength(hash) + 1;
-      group.removed ??= [];
-      group.removed.push(hash);
+      if (!hash) continue;
+      touched.add(id);
+      group.removed = [...(group.removed ?? []), hash];
     }
-    if (group.blocks.length || group.shown?.length || group.removed?.length || group.more)
-      groups.push(group);
+    if (group.shown || group.other || group.removed) groups.push({ author, ...group });
   }
+  if (touched.size > CONCURRENT_REREAD_BLOCKS)
+    return { frontier, concurrent: { groups: [], reread: touched.size } };
   return { frontier, ...(groups.length ? { concurrent: { groups } } : {}) };
 }
 
@@ -261,7 +243,7 @@ function changeAuthors(
   }
   const attributedChanged = new Set([...byAuthor.values()].flatMap((group) => [...group.changed]));
   const attributedRemoved = new Set([...byAuthor.values()].flatMap((group) => [...group.removed]));
-  const fallback = byAuthor.get("unattributed") ?? { changed: new Set(), removed: new Set() };
+  const fallback = byAuthor.get("unknown") ?? { changed: new Set(), removed: new Set() };
   changed
     .filter((id) => !attributedChanged.has(id) && !ownChanged.has(id))
     .forEach((id) => {
@@ -272,14 +254,14 @@ function changeAuthors(
     .forEach((id) => {
       fallback.removed.add(id);
     });
-  if (fallback.changed.size || fallback.removed.size) byAuthor.set("unattributed", fallback);
+  if (fallback.changed.size || fallback.removed.size) byAuthor.set("unknown", fallback);
   return byAuthor;
 }
 
 function authorLabel(origin: ConcurrentUpdate["origin"]): string {
-  if (origin.type === "agent") return origin.author ?? "agent";
+  if (origin.type === "agent") return origin.author ?? "another agent";
   if (origin.type === "human") return "the user";
-  return "unattributed";
+  return "unknown";
 }
 
 function updateEffect(baseline: Y.Doc, update: Uint8Array, room: string) {
@@ -334,8 +316,4 @@ function hashMap(
   const identities = ids.map((id) => blockIdentityForItem(doc, id));
   const hashes = uniqueHashesForIds(identities);
   return new Map(ids.map((id, index) => [frontierBlockId(id), hashes[index]]));
-}
-
-function byteLength(text: string): number {
-  return new TextEncoder().encode(text).byteLength;
 }
