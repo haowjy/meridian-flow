@@ -22,15 +22,16 @@ import { type Harness, observe, type Probe, Y } from "./harness.mts";
 const KEYS = 20;
 const DELETES = 5;
 // A pending tail this large took ~0.8 s to judge when containment re-sorted the pending ranges
-// per incoming struct; the linear check takes a few milliseconds.
+// per incoming struct; the linear check takes a few milliseconds (up to ~85 ms on a loaded
+// two-core runner), so the bound sits between the two.
 const LARGE_PENDING_ITEMS = 10_000;
-const LARGE_PENDING_BOUND_MS = 100;
+const LARGE_PENDING_BOUND_MS = 400;
 
 export const liveDuplicateFrame: Probe = {
   name: "live-duplicate-frame",
   decision: "#946 one novelty owner under the document lock",
   expected:
-    "every arm: one admitted frame, one journal row and one human edit per update; admission sequences have no gaps; journal text equals the room's; a 10,000-Item pending duplicate is judged within 100 ms",
+    "every arm: one admitted frame, one journal row and one human edit per update; admission sequences have no gaps; journal text equals the room's; a 10,000-Item pending duplicate is judged within 400 ms",
   async run(harness: Harness) {
     const { raw, ids, persistence } = harness;
     const { documentId, live: seed } = await harness.seedDocument("dup");

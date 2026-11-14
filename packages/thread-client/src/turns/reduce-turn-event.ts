@@ -20,13 +20,7 @@ import {
 } from "@meridian/contracts/threads";
 import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import { askingTurnStatus } from "../asks/asks";
-import {
-  eventH,
-  nextBlockSequence,
-  parseToolOutput,
-  readString,
-  toBlockContent,
-} from "./state-helpers";
+import { eventH, nextBlockSequence, readString, toBlockContent } from "./state-helpers";
 import type { SwitchTurnFacts } from "./turn-ops";
 
 type CustomBlockUpsertPayload = {
@@ -228,14 +222,12 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     toolName: string;
     input?: JsonValue;
     status: "complete" | "partial";
-    output?: JsonValue;
-    // The tool's typed result beside the model-facing `output` text; mirrors the
-    // durable block's `content.result`.
+    // The tool's typed result; mirrors the durable block's `content.result`.
     result?: JsonValue;
     message?: string | null;
     isError?: boolean;
     // Live, append-only interleaved stdout/stderr buffer streamed via the
-    // `meridian.tool.output_delta` CUSTOM event. Distinct from `output`, which is
+    // `meridian.tool.output_delta` CUSTOM event. Distinct from `result`, which is
     // the authoritative final tool result. Kept past completion so the card can
     // still show the streamed log alongside the structured result.
     streamedOutput?: string | null;
@@ -254,7 +246,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         toolCallId: args.toolCallId,
         toolName: args.toolName,
         input: args.input ?? null,
-        output: args.output ?? null,
         result: args.result ?? null,
         message: typeof args.message === "string" ? args.message : null,
         isError: args.isError ?? false,
@@ -273,7 +264,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
 
   function preservedToolFields(content: Record<string, JsonValue>): {
     input: JsonValue;
-    output: JsonValue;
     result: JsonValue;
     message: string | null;
     isError: boolean;
@@ -286,7 +276,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
   } {
     return {
       input: content.input ?? null,
-      output: content.output ?? null,
       result: content.result ?? null,
       message: typeof content.message === "string" ? content.message : null,
       isError: toolIsErrorFromContent(content),
@@ -815,7 +804,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             toolName: toolNameFromBlock(existingTool),
             ...preservedToolFields(content),
             status: "complete",
-            output: parseToolOutput(event.content),
             result: toolResultEventResult(event),
             isError: toolIsErrorFromContent(content),
             ...(resultMetadata ? { metadata: resultMetadata } : {}),

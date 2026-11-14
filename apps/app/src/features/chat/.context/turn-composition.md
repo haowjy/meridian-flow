@@ -40,7 +40,7 @@ with no live lease is `unknown`, not running.
 
 Each admitted card-bearing invocation has one retained helper-result card. Its
 typed result and bound Agent definition are authoritative; the UI never parses
-model `output` or duplicates hidden protocol rows. Terminal state is child
+the model's `content` or duplicates hidden protocol rows. Terminal state is child
 execution truth, not parent admission. Cards branch on `deliveryMode`: background
 cards remain compact launches while running and expand to a saved report when
 finished; direct cards retain launch, live edge, and expandable result.

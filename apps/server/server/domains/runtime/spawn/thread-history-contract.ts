@@ -24,6 +24,7 @@ import {
 } from "../tools/history-summaries.js";
 import { modelToolSchema } from "../tools/model-tool-schema.js";
 import { SpawnInputSchema } from "../tools/spawn-tools.js";
+import { jsonContent } from "../tools/tool-content.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
 import { type HistoryResult, renderHistoryResult } from "./history-result.js";
 import { readThreadHistory, type ThreadHistoryInput } from "./thread-history.js";
@@ -127,7 +128,7 @@ export function defineThreadHistoryContract(
       input: JsonObject,
       output: JsonValue,
       isError = false,
-      /** The typed result beside the rendered `output`; absent on older rows. */
+      /** The typed result `output` was rendered from; the value itself when omitted. */
       typed?: JsonValue,
     ) {
       const toolCallId = crypto.randomUUID();
@@ -135,8 +136,8 @@ export function defineThreadHistoryContract(
       const result = await block(t, "tool_result", {
         toolCallId,
         toolName: name,
-        output,
-        ...(typed !== undefined ? { result: typed } : {}),
+        content: jsonContent(output),
+        result: typed ?? output,
         isError,
         metadata: {
           documentRevisions: [
@@ -175,14 +176,20 @@ export function defineThreadHistoryContract(
         toolName: "read",
         input: { path: "manuscript://first.md" },
       });
-      await f.block(first, "tool_result", { toolCallId: "reused", output: "FIRST SECRET" });
+      await f.block(first, "tool_result", {
+        toolCallId: "reused",
+        content: jsonContent("FIRST SECRET"),
+      });
       const second = await f.turn();
       await f.block(second, "tool_use", {
         toolCallId: "reused",
         toolName: "read",
         input: { path: "manuscript://second.md" },
       });
-      await f.block(second, "tool_result", { toolCallId: "reused", output: "SECOND SECRET" });
+      await f.block(second, "tool_result", {
+        toolCallId: "reused",
+        content: jsonContent("SECOND SECRET"),
+      });
       const batches = vi.spyOn(f.repos.blocks, "listToolBlocks");
       const text = output(
         await f.read({ order: "oldest_first", include: ["routine_calls", "tool_results"] }),
@@ -562,7 +569,7 @@ export function defineThreadHistoryContract(
       const t = await f.turn();
       await f.block(t, "tool_result", {
         toolCallId: "missing-call",
-        output: "ORPHAN COPY SENTINEL",
+        content: jsonContent("ORPHAN COPY SENTINEL"),
       });
       const text = output(await f.read({ include: ["tool_results"] }));
       expect(text).not.toContain("ORPHAN COPY SENTINEL");

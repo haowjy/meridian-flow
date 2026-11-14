@@ -14,7 +14,7 @@ flowchart LR
   documents["documents<br/><small>the writer's documents</small>"]:::context
   workspace["workspace<br/><small>projects and Works</small>"]:::context
   account["account<br/><small>credits</small>"]:::context
-  files["files<br/><small>bytes and image previews</small>"]:::context
+  files["files<br/><small>bytes, previews and extracted text</small>"]:::context
   browser -->|"1. sends the message"| runtime
   runtime -->|"2. saves the writer's turn"| threads
   runtime -->|"3. loads the Agent and its skills"| packages
@@ -27,7 +27,7 @@ flowchart LR
   threads -->|"queues a notice when a chat changes Work"| notices
   runtime -->|"reads the chat's Work"| workspace
   runtime -->|"charges credits for the turn"| account
-  runtime -->|"loads image previews for the model"| files
+  runtime -->|"signs links to the pictures and PDFs the model reads, and loads extracted text"| files
   note1["A notice is a message for the model, not the writer. runtime reads the queued ones at each model call and adds them to the thread as one trailing system turn."]:::note
   note1 -.- notices
 ```

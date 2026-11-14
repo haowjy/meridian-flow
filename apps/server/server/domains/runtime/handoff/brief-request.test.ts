@@ -24,7 +24,8 @@ const model: ModelInfo = {
   maxOutputTokens: 4_096,
   promptCache: { kind: "explicit", shortTtlSeconds: 60, longTtlSeconds: 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  wire: "openai",
+  inputModalities: ["text"],
 };
 
 const bakedTool: Tool = {
@@ -119,7 +120,7 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
     sequence: 1,
     content: {
       toolCallId: "chapter-read",
-      output: "Earlier chapter text.",
+      content: [{ type: "text", text: "Earlier chapter text." }],
       isError: false,
       metadata: {
         documentRevisions: [

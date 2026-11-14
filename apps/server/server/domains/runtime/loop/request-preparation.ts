@@ -1,12 +1,12 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
-import type { Tool } from "@meridian-flow/gateway";
+import { mediaKind, type Tool } from "@meridian-flow/gateway";
 import {
   activeCompaction,
-  encodeImageInclusionMetadata,
-  type ImageContextBreak,
+  encodeMediaInclusionMetadata,
   isCompactionNotesTurn,
+  type MediaContextBreak,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -24,8 +24,8 @@ import {
   prepareCompactionNotes,
 } from "./compaction/notes-step.js";
 import { frontierLookup } from "./frontier-recording.js";
-import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
+import type { CompactionMediaProjectionMode, MediaInclusionDecision } from "./media-context.js";
 import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
@@ -38,6 +38,7 @@ import {
 import {
   type AssembledNextTurnContext,
   type AssembleNextTurnContextInput,
+  lazyThreadModel,
   prepareNextTurnContext,
   renderPreparedTurnContext,
 } from "./turn-context-assembly.js";
@@ -56,7 +57,7 @@ export type PrepareRequestInput = {
   readReferences?: boolean;
   skipCompaction?: boolean;
   forcedDecision?: ForcedCompactionDecision;
-  imageProjectionMode?: CompactionImageProjectionMode;
+  mediaProjectionMode?: CompactionMediaProjectionMode;
   controlMessageId?: string;
   instructions?: string;
   control?: ControlMessage | null;
@@ -109,6 +110,14 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
           threadId: input.threadId,
           assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
+          model: lazyThreadModel({
+            thread: input.thread,
+            agentRevisions: input.deps.agentRevisions,
+            threads: input.deps.repos.threads,
+            toolRegistry: input.deps.toolRegistry,
+            gateway: input.deps.gateway,
+            baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
+          }),
           signal: input.signal,
           // The read is shown beside what this request carries, so only that credits it (C10).
           recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {
@@ -139,9 +148,10 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     threads: input.deps.repos.threads,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
-    imageAssets: input.deps.imageAssets,
-    imageInclusions: input.deps.repos.imageInclusions,
-    imageProjectionMode: input.imageProjectionMode,
+    mediaResolver: input.deps.mediaResolver,
+    mediaLinkWindowSeconds: input.deps.mediaLinkWindowSeconds,
+    mediaInclusions: input.deps.repos.mediaInclusions,
+    mediaProjectionMode: input.mediaProjectionMode,
     signal: input.signal,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.promptBakes ?? input.deps.repos.promptBakes,
@@ -149,12 +159,12 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
     workContext: input.deps.workContext,
     eventSink: input.deps.eventSink,
-    persistImageProjection: async (projection) => {
-      const updates = buildImageProjectionEvents({
+    persistMediaProjection: async (projection) => {
+      const updates = buildMediaProjectionEvents({
         threadId: input.threadId,
         afterTurnId: projection.afterTurnId,
         afterTurnPosition: projection.afterTurnPosition,
-        imageProjectionMode: projection.imageProjectionMode,
+        mediaProjectionMode: projection.mediaProjectionMode,
         decisions: projection.decisions,
         breaks: projection.breaks,
       });
@@ -316,13 +326,13 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
   };
 }
 
-function buildImageProjectionEvents(input: {
+function buildMediaProjectionEvents(input: {
   threadId: ThreadId;
   afterTurnId: TurnId | null;
   afterTurnPosition: number | null;
-  imageProjectionMode?: CompactionImageProjectionMode;
-  decisions: readonly ImageInclusionDecision[];
-  breaks: readonly ImageContextBreak[];
+  mediaProjectionMode?: CompactionMediaProjectionMode;
+  decisions: readonly MediaInclusionDecision[];
+  breaks: readonly MediaContextBreak[];
 }): { turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] } {
   const turns: Turn[] = [];
   const blocks: Block[] = [];
@@ -330,7 +340,7 @@ function buildImageProjectionEvents(input: {
   let decisionTurnId = input.afterTurnId;
   if (input.breaks.length > 0) {
     if (input.afterTurnPosition === null)
-      throw new Error("Image context break has no prior position");
+      throw new Error("Media context break has no prior position");
     const turn = createLocalTurn({
       threadId: input.threadId,
       position: nextTurnPosition({ position: input.afterTurnPosition }),
@@ -338,14 +348,14 @@ function buildImageProjectionEvents(input: {
       role: "system",
       origin: "system",
       status: "complete",
-      metadata: encodeImageInclusionMetadata(input.breaks),
+      metadata: encodeMediaInclusionMetadata(input.breaks),
     });
     const block = contentForBlockInput({
       id: turn.id,
       turnId: turn.id,
       blockType: "text",
       sequence: 0,
-      textContent: imageContextBreakText(input.breaks),
+      textContent: mediaContextBreakText(input.breaks),
       status: "complete",
     });
     turns.push(turn);
@@ -354,17 +364,18 @@ function buildImageProjectionEvents(input: {
     events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
   }
   if (input.decisions.length > 0 && !decisionTurnId) {
-    throw new Error("Image inclusion decisions require a deciding turn");
+    throw new Error("Media inclusion decisions require a deciding turn");
   }
-  for (const { blockId, included, decidedByCompaction } of input.decisions) {
+  for (const { blockId, partIndex, included, decidedByCompaction } of input.decisions) {
     const decidingTurnId = decidedByCompaction
-      ? input.imageProjectionMode?.decidingTurnId
+      ? input.mediaProjectionMode?.decidingTurnId
       : decisionTurnId;
-    if (!decidingTurnId) throw new Error("Image inclusion decision has no deciding turn");
+    if (!decidingTurnId) throw new Error("Media inclusion decision has no deciding turn");
     events.push({
-      type: "image.inclusion_decided",
+      type: "media.inclusion_decided",
       threadId: input.threadId,
       blockId,
+      partIndex,
       decisionTurnId: decidingTurnId as TurnId,
       included,
     });
@@ -372,15 +383,15 @@ function buildImageProjectionEvents(input: {
   return { turns, blocks, events };
 }
 
-function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
+function mediaContextBreakText(breaks: readonly MediaContextBreak[]): string {
   const lines = [
-    "Image context changed.",
+    "Media context changed.",
     ...breaks.map((entry) =>
       entry.reason === "budget_eviction"
-        ? `Removed ${entry.uri} to fit the image context budget.`
+        ? `Removed the ${mediaKind(entry.mediaType) ?? "file"} ${entry.uri} to fit the media budget.`
         : entry.reason === "asset_unavailable"
-          ? `The model request no longer includes ${entry.uri} because its asset is unavailable.`
-          : `The model could not include ${entry.uri} because its asset is unavailable.`,
+          ? `The model request no longer includes the ${mediaKind(entry.mediaType) ?? "file"} ${entry.uri} because it is unavailable.`
+          : `The model could not include the ${mediaKind(entry.mediaType) ?? "file"} ${entry.uri} because it is unavailable.`,
     ),
   ];
   return `<system_update>\n${lines.join("\n")}\n</system_update>`;

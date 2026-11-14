@@ -41,7 +41,7 @@ describe("document revision settlement", () => {
           });
           return {
             toolCallId: call.id,
-            output: renderAgentEditResult(staged),
+            content: [{ type: "text", text: renderAgentEditResult(staged) }],
             result: JSON.parse(JSON.stringify(staged)),
             metadata: {
               stagedWrite: true,
@@ -89,7 +89,7 @@ describe("document revision settlement", () => {
     );
     expect(results).toHaveLength(1);
     expect(results[0]?.content).toMatchObject({
-      output: `status: success; path: ${uri}`,
+      content: [{ type: "text", text: `status: success; path: ${uri}` }],
       result: { command: "create", status: "success", phase: "committed", path: uri },
       metadata: { documentRevisions: [{ documentId, uri, revision: "y2:at-apply" }] },
     });
@@ -134,7 +134,7 @@ describe("document revision settlement", () => {
           });
           return {
             toolCallId: call.id,
-            output: renderAgentEditResult(staged),
+            content: [{ type: "text", text: renderAgentEditResult(staged) }],
             result: JSON.parse(JSON.stringify(staged)),
             metadata: {
               stagedWrite: true,

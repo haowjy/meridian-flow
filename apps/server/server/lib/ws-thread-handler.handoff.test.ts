@@ -134,7 +134,7 @@ async function harness(
     await hub.appendEvent(THREAD_ID, {
       type: "tool.result",
       toolCallId: "tool-handoff",
-      output: "complete",
+      content: [{ type: "text", text: "complete" }],
       isError: false,
     });
   };

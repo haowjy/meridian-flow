@@ -1,7 +1,7 @@
 // Aligns a scope's current blocks with their replacement so equal blocks stay untouched.
 
 import type { Block } from "../codec-types.js";
-import { weightedOrderedMatches } from "../ordered-matching.js";
+import { correspond } from "../diff/correspond.js";
 
 export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "keep"; old: number; next: number }
@@ -10,260 +10,48 @@ export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "add"; next: number }
 );
 
-/** Whether `next` may rewrite `old` in place (a `change` step). */
-export type CanPair = (old: Block, next: Block) => boolean;
-
-/** Past this many cells a table costs more than rewriting the gap. */
-const MAX_TABLE_CELLS = 4_000_000;
-
 /**
- * Keeps the longest run of equal blocks in order (LCS over whole blocks). The
- * blocks left between two kept ones are paired by similarity first: a pair
- * `canPair` accepts that shares enough text at its edges is changed in place,
- * so inserting a paragraph before one being edited doesn't hand the edited
- * one's element (and its comments) to the new paragraph. What remains pairs by
- * position where `canPair` allows and is otherwise removed or added. Common leading and trailing blocks are matched before any table so
- * a local edit stays cheap in a long document.
+ * Turns the blocks' correspondence into steps: an equal pair is kept, any other pair is changed in
+ * place, and blocks with no counterpart are removed or added. A run of adjacent removes and adds is
+ * one physical insert/delete, and a split or join (a pair with pieces beside it) shares its
+ * boundary with the pieces, so the write records them as one change.
  */
 export function alignBlocks(
   oldBlocks: readonly Block[],
   newBlocks: readonly Block[],
-  canPair: CanPair,
 ): BlockAlignmentStep[] {
-  let start = 0;
-  while (
-    start < oldBlocks.length &&
-    start < newBlocks.length &&
-    oldBlocks[start].eq(newBlocks[start])
-  ) {
-    start += 1;
-  }
-  let oldEnd = oldBlocks.length;
-  let newEnd = newBlocks.length;
-  while (oldEnd > start && newEnd > start && oldBlocks[oldEnd - 1].eq(newBlocks[newEnd - 1])) {
-    oldEnd -= 1;
-    newEnd -= 1;
-  }
-
+  const { partner, oldPiece, nextPiece } = correspond(oldBlocks, newBlocks);
   const steps: BlockAlignmentStep[] = [];
-  for (let index = 0; index < start; index += 1) {
-    steps.push({ kind: "keep", old: index, next: index });
-  }
-  const equal = (oldIndex: number, newIndex: number) =>
-    oldBlocks[oldIndex].eq(newBlocks[newIndex]) ? 1 : 0;
-  const matches =
-    weightedOrderedMatches(equal, start, oldEnd, start, newEnd, MAX_TABLE_CELLS) ?? [];
-  let oldCursor = start;
-  let newCursor = start;
-  for (const [oldIndex, newIndex] of [...matches, [oldEnd, newEnd] as const]) {
-    pairGap(steps, oldBlocks, newBlocks, canPair, oldCursor, oldIndex, newCursor, newIndex);
-    if (oldIndex < oldEnd) steps.push({ kind: "keep", old: oldIndex, next: newIndex });
-    oldCursor = oldIndex + 1;
-    newCursor = newIndex + 1;
-  }
-  for (let offset = 0; oldEnd + offset < oldBlocks.length; offset += 1) {
-    steps.push({ kind: "keep", old: oldEnd + offset, next: newEnd + offset });
-  }
-  recognizeBoundaries(steps, oldBlocks, newBlocks);
-  return steps;
-}
-
-function pairGap(
-  steps: BlockAlignmentStep[],
-  oldBlocks: readonly Block[],
-  newBlocks: readonly Block[],
-  canPair: CanPair,
-  oldStart: number,
-  oldEnd: number,
-  newStart: number,
-  newEnd: number,
-): void {
-  const oldTexts = new Map<number, string>();
-  const newTexts = new Map<number, string>();
-  const textOf = (texts: Map<number, string>, block: Block, index: number) => {
-    let text = texts.get(index);
-    if (text === undefined) {
-      text = block.textContent;
-      texts.set(index, text);
-    }
-    return text;
+  let [oldCursor, newCursor] = [0, 0];
+  const flush = (oldEnd: number, newEnd: number) => {
+    for (; oldCursor < oldEnd; oldCursor++) steps.push({ kind: "remove", old: oldCursor });
+    for (; newCursor < newEnd; newCursor++) steps.push({ kind: "add", next: newCursor });
   };
-  const similarity = (oldIndex: number, newIndex: number) => {
-    const old = oldBlocks[oldIndex];
-    const next = newBlocks[newIndex];
-    if (!canPair(old, next)) return 0;
-    return edgeSimilarity(textOf(oldTexts, old, oldIndex), textOf(newTexts, next, newIndex));
-  };
-  // Past the table cap there are no similarity pairs and the gap is paired by
-  // position alone, the pre-alignment behaviour. Only a rewrite of thousands
-  // of blocks between unchanged ones gets here, and the equal-block LCS above
-  // has then also given up, so the whole middle is this one gap.
-  const similar =
-    weightedOrderedMatches(similarity, oldStart, oldEnd, newStart, newEnd, MAX_TABLE_CELLS) ?? [];
-  let oldCursor = oldStart;
-  let newCursor = newStart;
-  for (const [oldIndex, newIndex] of [...similar, [oldEnd, newEnd] as const]) {
-    // Blocks left between two similar pairs still pair by position, so an
-    // unrelated rewrite keeps its paragraphs and a writer typing in them
-    // concurrently keeps their words.
-    const paired = Math.min(oldIndex - oldCursor, newIndex - newCursor);
-    for (let offset = 0; offset < paired; offset += 1) {
-      const old = oldCursor + offset;
-      const next = newCursor + offset;
-      if (canPair(oldBlocks[old], newBlocks[next])) steps.push({ kind: "change", old, next });
-      else steps.push({ kind: "remove", old }, { kind: "add", next });
-    }
-    for (let old = oldCursor + paired; old < oldIndex; old += 1)
-      steps.push({ kind: "remove", old });
-    for (let next = newCursor + paired; next < newIndex; next += 1)
-      steps.push({ kind: "add", next });
-    if (oldIndex < oldEnd) steps.push({ kind: "change", old: oldIndex, next: newIndex });
-    oldCursor = oldIndex + 1;
-    newCursor = newIndex + 1;
+  for (let old = 0; old < oldBlocks.length; old++) {
+    const next = partner[old];
+    if (next < 0) continue;
+    flush(old, next);
+    steps.push({ kind: oldBlocks[old].eq(newBlocks[next]) ? "keep" : "change", old, next });
+    [oldCursor, newCursor] = [old + 1, next + 1];
   }
-}
+  flush(oldBlocks.length, newBlocks.length);
 
-/**
- * Weight for rewriting one block as another: the text both keep at their
- * start and end, plus one so two empty blocks still pair. Below a third of the
- * shorter text the two count as unrelated and don't compete with a real match;
- * a stray shared full stop must not outrank the paragraph's own rewrite.
- */
-function edgeSimilarity(oldText: string, newText: string): number {
-  const limit = Math.min(oldText.length, newText.length);
-  let prefix = 0;
-  while (prefix < limit && oldText.charCodeAt(prefix) === newText.charCodeAt(prefix)) prefix += 1;
-  let suffix = 0;
-  while (
-    suffix < limit - prefix &&
-    oldText.charCodeAt(oldText.length - 1 - suffix) ===
-      newText.charCodeAt(newText.length - 1 - suffix)
-  ) {
-    suffix += 1;
-  }
-  const shared = prefix + suffix;
-  return shared * 3 >= limit ? shared + 1 : 0;
-}
-
-/** Only changed pairs and adjacent unpaired blocks can share structural identity. */
-function recognizeBoundaries(
-  steps: BlockAlignmentStep[],
-  oldBlocks: readonly Block[],
-  newBlocks: readonly Block[],
-): void {
-  let start = 0;
-  for (let end = 0; end <= steps.length; end++) {
-    if (end !== steps.length && steps[end].kind !== "keep") continue;
-    const gap = steps.slice(start, end);
-    start = end + 1;
-    const parents = gap.map((_, index) => index);
-    const root = (index: number): number => {
-      while (parents[index] !== index) {
-        parents[index] = parents[parents[index]];
-        index = parents[index];
-      }
-      return index;
-    };
-    const union = (owners: number[]) => {
-      for (const owner of owners) parents[root(owner)] = root(owners[0]);
-    };
-    // Adjacent structural steps already form one physical insert/delete run.
-    for (let index = 1; index < gap.length; index++) {
-      if (
-        (gap[index].kind === "add" || gap[index].kind === "remove") &&
-        (gap[index - 1].kind === "add" || gap[index - 1].kind === "remove")
-      )
-        union([index - 1, index]);
-    }
-    const words = new Intl.Segmenter(undefined, { granularity: "word" });
-    for (let index = 0; index < gap.length; index++) {
-      const pair = gap[index];
-      if (pair.kind !== "change") continue;
-      for (const kind of ["add", "remove"] as const) {
-        const blocks = kind === "add" ? newBlocks : oldBlocks;
-        const pairedIndex = kind === "add" ? pair.next : pair.old;
-        const reference = kind === "add" ? oldBlocks[pair.old] : newBlocks[pair.next];
-        for (const direction of [-1, 1]) {
-          let edge = blocks[pairedIndex].textContent;
-          let middle = false;
-          for (
-            let candidate = index + direction;
-            candidate >= 0 && candidate < gap.length;
-            candidate += direction
-          ) {
-            const step = gap[candidate];
-            if (step.kind === "change") break;
-            if (step.kind !== kind) continue;
-            const text = blocks[step.kind === "add" ? step.next : step.old].textContent;
-            const left = direction < 0 ? text : edge,
-              right = direction < 0 ? edge : text;
-            if (
-              !boundaryContinues(
-                reference.textContent,
-                left,
-                right,
-                words,
-                middle ? (direction < 0 ? "right" : "left") : undefined,
-              )
-            )
-              break;
-            union([index, candidate]);
-            edge = text;
-            middle = true;
-          }
-        }
-      }
-    }
-    const components = new Map<number, BlockAlignmentStep[]>();
-    gap.forEach((step, index) => {
-      const key = root(index),
-        members = components.get(key) ?? [];
-      members.push(step);
-      components.set(key, members);
-    });
-    for (const members of components.values()) {
-      if (members.length < 2) continue;
+  const [joined, split] = [new Set(oldPiece), new Set(nextPiece)];
+  let run: BlockAlignmentStep[] = [];
+  const close = () => {
+    if (run.length > 1) {
       const identity = {};
-      for (const step of members) step.structuralBoundary = identity;
+      for (const step of run) step.structuralBoundary = identity;
+    }
+    run = [];
+  };
+  for (const step of steps) {
+    if (step.kind === "remove" || step.kind === "add") run.push(step);
+    else {
+      close();
+      if (step.kind === "change" && (joined.has(step.old) || split.has(step.next))) run = [step];
     }
   }
-}
-
-const MAX_BOUNDARY_CHARACTERS = 4096;
-/** Direct continuation accepts any occurrence, including fragments of a source word. */
-function boundaryContinues(
-  reference: string,
-  left: string,
-  right: string,
-  words: Intl.Segmenter,
-  middle?: "left" | "right",
-): boolean {
-  if (reference.length + left.length + right.length > MAX_BOUNDARY_CHARACTERS) return true;
-  const edgeWord = (piece: string, head: boolean) => {
-    const parts = [...words.segment(piece)];
-    let word = -1;
-    for (let index = 0; index < parts.length; index++) {
-      if (!parts[index].isWordLike) continue;
-      word = index;
-      if (!head) break;
-    }
-    if (word < 0) return piece;
-    let start = word,
-      end = word;
-    while (start > 0 && !parts[start - 1].isWordLike && !/\s/u.test(parts[start - 1].segment))
-      start--;
-    while (
-      end + 1 < parts.length &&
-      !parts[end + 1].isWordLike &&
-      !/\s/u.test(parts[end + 1].segment)
-    )
-      end++;
-    return piece.slice(parts[start].index, parts[end].index + parts[end].segment.length);
-  };
-  const normalize = (text: string) => text.replace(/\s+/gu, "");
-  // On the outward walk the already-joined edge is an interior piece, not
-  // another independently selected word fragment.
-  const head = normalize(middle === "left" ? left : edgeWord(left, true));
-  const tail = normalize(middle === "right" ? right : edgeWord(right, false));
-  return head.length > 0 && tail.length > 0 && normalize(reference).includes(head + tail);
+  close();
+  return steps;
 }

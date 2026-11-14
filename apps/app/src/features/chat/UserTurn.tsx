@@ -6,10 +6,7 @@ import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import {
-  canOpenReference,
-  useProjectDocumentNavigationProjectId,
-} from "@/features/project/context/open-project-document";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { Markdown } from "@/rich-content/Markdown";
 import { referenceKey } from "@/rich-content/TranscriptReference";
@@ -72,7 +69,6 @@ function UserTurnComponent({
       references={projected.references}
       skills={projected.skills}
       referenceResolutions={resolutions}
-      canOpenReference={canOpenReference}
       uploadsChat={uploadsChat}
       onOpenReference={(documentId) => void openDocument(documentId)}
     >

@@ -62,7 +62,7 @@ export {
   upsertBlockIn,
 } from "./turns/turn-ops";
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
-export { isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
+export { isToolDeliveryBlock } from "./view/block-kind";
 export { componentBlockContent } from "./view/component-block-content";
 export type { DeliveryGroup } from "./view/delivery-groups";
 export {

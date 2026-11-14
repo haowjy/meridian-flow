@@ -31,7 +31,7 @@ describe("tool results", () => {
     const events = projector.project({
       type: "tool.result",
       toolCallId: "call-1",
-      output: "status: success; path: ch1.md",
+      content: [{ type: "text", text: "status: success; path: ch1.md" }],
       result,
     });
 

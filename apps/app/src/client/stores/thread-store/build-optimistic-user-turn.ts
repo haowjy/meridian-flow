@@ -14,6 +14,12 @@ import {
 
 import { baseTurnFields } from "@meridian/thread-client";
 
+function isNotImage(
+  block: UserMessageBlock,
+): block is Exclude<UserMessageBlock, { type: "image" }> {
+  return block.type !== "image";
+}
+
 export function buildOptimisticUserTurn(input: {
   id: string;
   threadId: string;
@@ -41,7 +47,9 @@ export function buildOptimisticUserTurn(input: {
     ...baseTurnFields(),
     createdAt: timestamp,
     completedAt: null,
-    blocks: input.blocks.map((block, sequence) => {
+    // A picture's stored block carries the file's type and size, which only the server knows; the
+    // reference chip before it is what the writer sees until the server's turn replaces this row.
+    blocks: input.blocks.filter(isNotImage).map((block, sequence) => {
       const { blockType, content } = userMessageTurnBlock(block);
       return {
         id: `${input.id}_block_${sequence + 1}`,

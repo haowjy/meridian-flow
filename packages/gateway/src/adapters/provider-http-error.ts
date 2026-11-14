@@ -73,10 +73,18 @@ function httpStatus(err: unknown): number | undefined {
     : undefined;
 }
 
+/**
+ * A provider's error can echo a media link it failed to fetch, and a signed link's query string
+ * is a credential, so error text never keeps one.
+ */
+export function stripUrlQueries(text: string): string {
+  return text.replace(/(https?:\/\/[^\s"'<>?#]*)[?#][^\s"'<>]*/g, "$1");
+}
+
 function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) return stripUrlQueries(err.message);
   const message = record(err)?.message;
-  return message !== undefined ? String(message) : String(err);
+  return stripUrlQueries(message !== undefined ? String(message) : String(err));
 }
 
 // SDKs parse failure bodies and keep only part (OpenAI keeps `body.error`). The
@@ -164,7 +172,7 @@ function providerErrorOf(err: unknown): ProviderErrorResponse | undefined {
   const parsed = exact === undefined ? record(err)?.error : parseJson(exact);
   if (status === undefined && parsed === undefined && exact === undefined) return undefined;
   const message = bodyMessage(parsed) ?? (exact?.trim() || errorMessage(err));
-  return { status: status ?? null, message };
+  return { status: status ?? null, message: stripUrlQueries(message) };
 }
 
 export function mapProviderHttpError(

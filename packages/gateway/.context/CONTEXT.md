@@ -1,6 +1,6 @@
 # Gateway
 
-The gateway normalizes Anthropic, OpenAI, and OpenAI-compatible providers behind
+The gateway normalizes Anthropic, OpenAI, Gemini, and OpenAI-compatible providers behind
 one streaming `Gateway` port. It owns routing, retry/deadline policy, usage
 normalization, cancellation settlement, and provider-error mapping.
 
@@ -49,7 +49,9 @@ and, per provider offering, pricing and cache descriptor, plus the required toke
 warn during construction rather than silently replacing an entry. Registry model
 facts (limits, prices, modalities, effort ranges) come from
 [models.dev](https://models.dev/api.json); a provider's API docs are only for what
-models.dev lacks, such as per-TTL cache-write rates and wire parameters.
+models.dev lacks, such as per-TTL cache-write rates and wire parameters. Nothing fetches
+models.dev at run time; `pnpm check:models` (network, so outside `pnpm check`) reports a row's
+input modalities, context window or output limit that drifted from it.
 
 `attempt-stream.ts` is the only retry layer. Provider SDK retries are disabled.
 Retry occurs only before committed text or tool output; reasoning-only
@@ -112,6 +114,70 @@ Malformed tool-argument JSON is repaired at the gateway helper or surfaced as a
 typed parse refusal. Tool execution still validates the original Zod contract;
 provider advertisement is not argument authority.
 
+## Media
+
+One part, `MediaPart` (`{ type: "media", mediaType, filename?, source }`), carries an image or a
+PDF in a user message and inside a `ToolResultPart`, whose `content` is an array of text and media
+parts. `source` is `{ url }` (https only; a data URL is refused), `{ data }` (base64) or
+`{ reference: { provider, id } }` (a provider's own file id, for the provider that issued it; no
+mapper sends one yet and one reaching a mapper is an error). `mediaType` is required and never
+guessed from a URL. A mapper never downloads a link: a source its wire can't take is an error,
+and the caller decides between link and bytes before building the request, because file bytes
+should not pass through the server on every model request.
+
+Two levels, in `domain/media.ts`. The model says what it takes: `ModelInfo.inputModalities`
+(models.dev's `modalities.input`) and `maxLinkBytes`, the largest file its provider fetches by
+link where documented. The wire (`ModelInfo.wire`, stamped from the provider's adapter when the
+gateway is built) says whether a link works per kind and where a tool result's media goes.
+`placeMedia(model, { mediaType, sizeBytes? })` answers `link`, `bytes` or `none` plus the
+placement; it takes the model, not the wire, so the Gemini wire can key placement on the
+model's major version (nested `functionResponse` parts need Gemini 3, and `placeMedia` answers
+`none` for a file in a tool result, with `inToolResult`, for an older or unrecognised Gemini id).
+It also answers `none` for an image type the wire doesn't accept (each wire lists its types), so
+the caller can send the preview instead.
+
+| Wire | Link | Tool result media |
+|---|---|---|
+| `anthropic` (Messages) | image, PDF | inside `tool_result.content` as `image`/`document` blocks; an `is_error` result carries text only (Anthropic rejects media in it) and its media follow the tool results in the same user message |
+| `openai` (Responses) | image, PDF | inside `function_call_output.output` as `input_image`/`input_file` |
+| `openai-compatible` (Chat Completions) | image only, and only where the provider's `imageLinks` is set (default: bytes) | one user message after the run of `tool` messages, each attachment group named by its tool call; a PDF is bytes only (`file` with `file_data`) |
+| `gemini` (native `generateContent`) | image, PDF (`fileData`, up to 15 MB) | Gemini 3 and later: inside `functionResponse.parts` (`fileData` or `inlineData`); older: none |
+
+Image types by wire: Anthropic JPEG, PNG, GIF, WebP; OpenAI and Chat Completions PNG, JPEG, WebP, GIF;
+Gemini PNG, JPEG, WebP, HEIC, HEIF (Google lists only PNG, JPEG and WebP for a function response
+and nothing rejects the others before the request).
+Whether a Chat Completions host fetches image links is that host's fact, so it is
+`ProviderConfig.imageLinks` (stamped on `ModelInfo.imageLinks`), not assumed of the wire.
+
+A PDF sent as bytes always has a filename (`document.pdf` by default); one sent by link needs none.
+Provider facts and the reasons behind this are in
+[files the model sees](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/files-the-model-sees.md).
+
+## Gemini adapter
+
+`adapters/gemini/` calls the native `generateContent` API through `@google/genai`; the SDK reads
+every environment option (the key, Vertex mode, project, location, base URL, API version)
+only when it is unset, so the adapter passes each, and it retries nothing unless `retryOptions`
+is set, which it never is. If the machine sets both of the SDK's own Google key variables it
+prints a console warning, and the explicit key still wins. Facts a cold reader would miss:
+
+- A tool result is a `functionResponse` named for its call, found from the earlier `tool_use`;
+  results of parallel calls share one user turn (adjacent same-role messages merge).
+- Thought signatures live in `providerOptions.gemini.signature` beside `meridian: {provider,
+  model}` on the text, reasoning or `tool_use` part they came on, and go back only to that
+  provider/model. A replayed first function call of a Gemini 3+ model without one gets
+  `skip_thought_signature_validator`, Google's documented bypass, because Gemini 3 refuses the
+  step otherwise (history from another model, a compacted turn).
+- `Usage` folds thought tokens into `outputTokens` and tool-use prompt tokens into `inputTokens`.
+  A file fetched by link is counted in `totalTokenCount` only (`promptTokenCount` is absent), so
+  the input is read from the total.
+- Google answers a bad key with 400 `API_KEY_INVALID`; the adapter maps it to `auth_error`. The
+  SDK's `ApiError` keeps the body as JSON text (twice wrapped for a non-JSON-typed body) and drops
+  the headers, so `geminiErrorShape` rebuilds the status, message and `RetryInfo` delay for the
+  shared error mapping.
+- No cache mark is sent; `automaticFunctionCalling` and `automaticContinuation` are off, so the
+  SDK never loops or re-sends a request behind the gateway's retry layer.
+
 ## Cache, limits, and persisted selections
 
 A provider lists offerings: `{ model, pricing, promptCache? }`. What an endpoint caches
@@ -142,7 +208,8 @@ split by lifetime, adapters attribute all writes to the lifetime the request ask
 the other set, and two lifetimes with `cacheWriteUsdPerMillionTokens` but no
 `cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire
 can express, used for both the creation-time check and the request mapping (OpenAI: 30m and
-12h; Anthropic: 5m and 1h, explicit models only).
+12h; Anthropic: 5m and 1h, explicit models only; Gemini: none, its implicit cache documents no
+lifetime and takes no mark).
 
 Only `explicit` offerings get `cache_control`. The Anthropic adapter marks the last system
 block and the last block of the two most recent wire `user` messages (tool results are user
@@ -206,7 +273,7 @@ the request, chat binding or Agent names. `createGatewayFromEnv` (in `lib/gatewa
 provider key set), refuses it in production (a staging deploy must set `APP_ENV=staging`),
 and wraps the gateway once (`lib/gateway/live-test-model.ts`). The wrapper rewrites the
 request's model and lists every registry id, keyed or not, with the override's facts,
-because availability checks, compaction, image support and the tokenizer look models up by
+because availability checks, compaction, media placement and the tokenizer look models up by
 the stored id. Stored bindings, Agent files and the catalog still show the model they
 name, and `getDefaultModel()` stays the real default, so seeding never records the
 override. Cache prediction is the exception: a chat bound to another model reads cold

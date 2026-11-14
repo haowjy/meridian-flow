@@ -55,7 +55,9 @@ still commits.
 `historySummary` owns the text after a history call line. Missing registration or
 pairing fails closed.
 
-A completed compaction owns frozen `metadata.elisions`, applied by the active
+A policy's `elide` returns the replacement `text`, which becomes the block's whole
+`content` (one text part), so a media part in a stale result goes with its text; the
+stub describes the document. A completed compaction owns frozen `metadata.elisions`, applied by the active
 projector only to C's retained tail and pinned requests; failed, pending and
 superseded owners don't apply them. Forks inherit elisions only when their cutoff
 includes C.

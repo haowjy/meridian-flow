@@ -18,10 +18,8 @@ here is a known defect.
   newest opens account-wide may not cover it. Per-project pruning needs the
   project on the recents row, which is only worth doing if the short list shows
   up in use.
-- Uploads rows would open onto the "Viewing chat resources is not available
-  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). Main's
-  host records no such document, so none is recorded today; omit that scheme from
-  the list if one ever is.
+- An upload opens in a dialog, not main, so no such document is recorded today; omit that
+  scheme from the list if one ever is.
 - Nothing asserts that every scheme in `CONTEXT_URI_SCHEMES` is resolvable by
   `document-address`, which is the one axis where recents' listability and
   context's addressability can genuinely diverge: a listed but unaddressable

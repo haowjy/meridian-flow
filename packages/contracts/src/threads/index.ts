@@ -245,7 +245,7 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
-  | "image.inclusion_decided"
+  | "media.inclusion_decided"
   | "block.updated"
   | "block.delta"
   | "tool.invoked"
@@ -342,6 +342,8 @@ export type {
 } from "./run-state.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
+export type { StoredMediaPart, StoredTextPart, ToolContentPart } from "./tool-result-content.js";
+export { toolContentPartText, toolContentText } from "./tool-result-content.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,

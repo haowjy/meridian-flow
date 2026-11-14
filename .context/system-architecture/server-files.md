@@ -6,11 +6,11 @@ The domains that move bytes. An import: the browser uploads the chosen files to 
 flowchart LR
   import["import<br/><small>uploads a folder and builds its tree</small>"]:::domain
   export["export<br/><small>streams a project as a ZIP</small>"]:::domain
-  file-intake["file-intake<br/><small>classifies files, makes previews</small>"]:::domain
+  file-intake["file-intake<br/><small>classifies files, makes previews, extracts text</small>"]:::domain
   storage["storage<br/><small>puts and gets bytes</small>"]:::domain
   browser["browser<br/><small>the writer's tab</small>"]:::context
   documents["documents<br/><small>the writer's documents</small>"]:::context
-  conversation["conversation<br/><small>the model's image attachments</small>"]:::context
+  conversation["conversation<br/><small>the model's pictures, PDFs and text</small>"]:::context
   objectstore["objectstore<br/><small>file bytes</small>"]:::context
   browser -->|"1. uploads the chosen files"| import
   import -->|"2. stages the bytes"| storage
@@ -20,7 +20,8 @@ flowchart LR
   export -->|"reads the document inventory"| documents
   export -->|"reads file bytes"| storage
   export -->|"streams the ZIP"| browser
-  conversation -->|"loads image previews"| file-intake
+  conversation -->|"loads previews and extracted text"| file-intake
+  conversation -->|"signs links to the original bytes"| storage
   note1["Upload and organizing are two separate phases. When the upload finishes the server marks the import organizing and its own organizer builds the tree; the browser does not drive that half."]:::note
   note1 -.- import
 ```
@@ -49,16 +50,16 @@ Drafts are not included. The inventory and addresses are captured before any con
 
 ## file-intake
 
-Classifies uploaded files and makes image previews.
+Classifies uploaded files, makes image previews and extracts text from PDFs and EPUBs.
 
-HEIC, BMP and TIFF become WebP previews on a small worker pool. `sharp` is native, so build on the target platform.
+HEIC, BMP and TIFF become WebP previews, and an EPUB or PDF becomes Markdown (and a PDF's page count), each on a small worker pool that stops a job at its deadline. `sharp` is native, so build on the target platform.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/file-intake`
 
 ## storage
 
-`ObjectStorePort`: put, get, stream, copy, sign and list bytes.
+`ObjectStorePort`: put, get, stream, copy, sign and list bytes. A signed link is what a model provider fetches.
 
 Results are tagged ok or error and never throw. It has no domain meaning: which bytes mean what is the callers' business.
 

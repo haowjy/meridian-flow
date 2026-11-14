@@ -15,6 +15,7 @@ import { copiedFilename, renderFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
+  derivedObjectKeys,
   type ObjectRelease,
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
@@ -57,10 +58,14 @@ export async function prepareBinaryCopy(input: {
   const key = `copies/${crypto.randomUUID()}`;
   const copy = await input.objectStore.copy(sourceKey, key);
   if (!copy.ok) return ioError(input.source.uri, copy.error.message);
-  // The preview is derived, so a copy that can't carry it just shows the file card.
+  // Derived files (a preview, extracted text) are remade on demand, so a copy that can't carry
+  // one just shows the file card or converts again; most files have none.
+  const sources = derivedObjectKeys(sourceKey);
+  const copied = await Promise.all(
+    derivedObjectKeys(key).map((to, index) => input.objectStore.copy(sources[index], to)),
+  );
   const hasPreview =
-    input.source.hasPreview === true &&
-    (await input.objectStore.copy(previewObjectKey(sourceKey), previewObjectKey(key))).ok;
+    input.source.hasPreview === true && copied[sources.indexOf(previewObjectKey(sourceKey))].ok;
   return {
     ok: true,
     value: {
@@ -77,7 +82,7 @@ interface BinaryCopyInput {
   /** The copier's own port: where the destination path must be free and the file is created. */
   port: ContextPort;
   objectStore: ObjectStorePort;
-  /** Deletes the duplicated object, and its preview, when the destination write fails. */
+  /** Deletes the duplicated object, and its derived files, when the destination write fails. */
   release: ObjectRelease;
   source: BinaryFileRef;
   /** Proof the copier may read the source (file-access §2); a copy can't skip it. */

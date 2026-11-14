@@ -7,9 +7,20 @@ import type {
 import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
 import type { ToolRegistry } from "../tools/index.js";
 
+/** A signed link is a credential and changes each window; the record keeps that it was a link. */
+const LINK_OMITTED = "[signed link omitted]";
+
+function omitLinks(_key: string, value: unknown): unknown {
+  if (value && typeof value === "object" && (value as { type?: unknown }).type === "media") {
+    const source = (value as { source?: object }).source;
+    if (source && "url" in source) return { ...value, source: { url: LINK_OMITTED } };
+  }
+  return value;
+}
+
 function serializeCanonicalRequest(request: GenerateRequest): string {
   const { signal: _signal, correlation: _correlation, ...canonicalRequest } = request;
-  const serialized = JSON.stringify(canonicalRequest);
+  const serialized = JSON.stringify(canonicalRequest, omitLinks);
   if (serialized === undefined) throw new Error("Model request debug capture expected an object");
   return serialized;
 }

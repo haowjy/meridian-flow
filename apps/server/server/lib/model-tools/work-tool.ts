@@ -523,7 +523,7 @@ export function createAllowedWorkExecutor(
         await deps.permissionGrants.grant(thread.projectId as ProjectId, `work.${command.command}`);
       const shaped = handlerToolResult(output, registration, { command: command.command });
       return {
-        output: shaped.output,
+        content: shaped.content,
         result: shaped.result,
         isError: shaped.isError === true,
         ...(shaped.metadata ? { metadata: shaped.metadata } : {}),

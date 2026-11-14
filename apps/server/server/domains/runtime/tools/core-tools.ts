@@ -20,7 +20,11 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { type QuestionAskPayload, questionAskPayloadSchema } from "@meridian/contracts/threads";
+import {
+  type QuestionAskPayload,
+  questionAskPayloadSchema,
+  type ToolContentPart,
+} from "@meridian/contracts/threads";
 import {
   aiWriteModeSchema,
   INVALID_WORK_NAME,
@@ -37,6 +41,7 @@ import { documentHistorySummary, workHistorySummary } from "./history-summaries.
 import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderAsText, textContent } from "./tool-content.js";
 import type { RequestToolHandlerContext, ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
@@ -250,6 +255,27 @@ function renderDocumentResult(tool: "read" | "write") {
   };
 }
 
+/**
+ * What the model reads of a `read`: the result's text, and a file it was given to look at
+ * after it, as the stored media part the request builder resolves.
+ */
+function renderReadResult(result: unknown): ToolContentPart[] {
+  const content = textContent(renderDocumentResult("read")(result));
+  const file = (result as Partial<AgentEditResultV1> | null)?.file;
+  if (file?.given !== "media") return content;
+  return [
+    ...content,
+    {
+      type: "media",
+      ref: { documentId: file.documentId, uri: file.uri },
+      mediaType: file.mediaType,
+      sizeBytes: file.sizeBytes,
+      ...(file.pageCount !== undefined ? { pageCount: file.pageCount } : {}),
+      name: file.name,
+    },
+  ];
+}
+
 /** Executor-owned failures in the document tools' own result protocol. */
 function documentExecutionError(command: (error: ToolExecutionError) => AgentEditResultCommand) {
   return (error: ToolExecutionError) =>
@@ -282,7 +308,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
-      renderResult: renderDocumentResult("read"),
+      renderResult: renderReadResult,
     },
     {
       source: "core",
@@ -304,7 +330,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),
       ),
-      renderResult: renderDocumentResult("write"),
+      renderResult: renderAsText(renderDocumentResult("write")),
     },
     {
       source: "core",
@@ -323,7 +349,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
-      renderResult: renderWorkResult,
+      renderResult: renderAsText(renderWorkResult),
     },
     {
       source: "core",
@@ -337,7 +363,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.ls },
       historyKind: "routine",
       timeoutMs: 30_000,
-      renderResult: renderLsResult,
+      renderResult: renderAsText(renderLsResult),
     },
     {
       source: "core",
@@ -352,7 +378,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: grepDocumentText,
       historyKind: "routine",
       timeoutMs: 30_000,
-      renderResult: renderGrepResult,
+      renderResult: renderAsText(renderGrepResult),
     },
     {
       source: "core",

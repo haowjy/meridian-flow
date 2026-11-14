@@ -1075,17 +1075,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: blockId,
         turnId: resultTurnId,
         sequence: 0,
-        blockType: "image",
+        blockType: "media",
         status: "complete",
         content: {
-          type: "image_reference",
-          documentId: crypto.randomUUID(),
-          uri: "uploads://reference.png",
+          type: "media",
+          ref: { documentId: crypto.randomUUID(), uri: "uploads://reference.png" },
+          mediaType: "image/png",
+          sizeBytes: 5,
+          name: "reference.png",
         },
       });
-      await db.insert(schema.threadImageInclusions).values({
+      await db.insert(schema.threadMediaInclusions).values({
         threadId: THREAD_ID,
         blockId,
+        partIndex: 0,
         decisionTurnId: compactionId,
         included: true,
       });
@@ -1255,8 +1258,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.threadImageInclusions)
-          .where(eq(schema.threadImageInclusions.threadId, THREAD_ID)),
+          .from(schema.threadMediaInclusions)
+          .where(eq(schema.threadMediaInclusions.threadId, THREAD_ID)),
       ).resolves.toEqual([]);
       expect(deleteObservedCommittedPurge).toBe(true);
       await expect(objectStore.get(objectKey)).resolves.toMatchObject({ ok: true });

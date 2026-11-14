@@ -1,11 +1,16 @@
 /** Shared per-part and request-level token estimates for planning and delivery checks. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
+import {
+  type GenerateRequest,
+  PDF_PAGE_TOKENS,
+  type TokenizerFamily,
+} from "@meridian-flow/gateway";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
+/** A PDF whose page count is unknown. */
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
 /** Conservative CJK code-point rates; refresh from published or live probe evidence. */
 export const CJK_CODE_POINT_TOKEN_RATES: Record<TokenizerFamily, number> = {
@@ -76,7 +81,7 @@ export function estimateModelJsonTokens(value: unknown, tokenizer: TokenizerFami
   );
 }
 
-/** Estimates one model content part; image/file payload bytes are replaced by fixed costs. */
+/** Estimates one model content part; image and media payload bytes are replaced by fixed costs. */
 export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamily): number {
   if (part === null || typeof part !== "object" || Array.isArray(part))
     return estimateModelJsonTokens(part, tokenizer);
@@ -86,18 +91,21 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
     const { data: _payload, ...withoutPayload } = record;
     return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload, tokenizer);
   }
-  if (record.type === "file") {
-    const { data: _payload, ...withoutPayload } = record;
-    const fileTextTokens =
-      typeof record.data === "string"
-        ? estimateModelJsonTokens(record.data, tokenizer)
-        : record.data instanceof URL
-          ? estimateModelJsonTokens(record.data.href, tokenizer)
-          : 0;
-    return (
-      Math.max(FILE_PART_TOKEN_ESTIMATE, fileTextTokens) +
-      estimateModelJsonTokens(withoutPayload, tokenizer)
-    );
+  // A stored media part is identity, not payload: a link or bytes exist only in a built request.
+  if (record.type === "media" && !("ref" in record)) {
+    const { source, ...rest } = record as { source?: object } & Record<string, unknown>;
+    const {
+      data: _payload,
+      url: _link,
+      ...sourceWithoutPayload
+    } = (source ?? {}) as Record<string, unknown>;
+    const fixed =
+      typeof record.mediaType === "string" && record.mediaType.startsWith("image/")
+        ? IMAGE_PART_TOKEN_ESTIMATE
+        : typeof record.pageCount === "number"
+          ? record.pageCount * PDF_PAGE_TOKENS
+          : FILE_PART_TOKEN_ESTIMATE;
+    return fixed + estimateModelJsonTokens({ ...rest, source: sourceWithoutPayload }, tokenizer);
   }
   return estimateModelJsonTokens(record, tokenizer);
 }
@@ -125,8 +133,7 @@ function blockModelPart(block: Block): unknown {
         ...content,
         text: typeof content.text === "string" ? content.text : (block.textContent ?? ""),
       };
-    case "image":
-    case "file":
+    case "media":
     case "tool_use":
     case "tool_result":
       return { type: block.blockType, ...content };

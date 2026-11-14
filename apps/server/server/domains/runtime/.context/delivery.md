@@ -141,7 +141,12 @@ Image inclusion decisions are append-only by deciding turn. An upsert would lose
 decision as of an earlier turn and drop an image from a later fork with no notice.
 The removal notice turn owns the decisions it reports, so a decision and its
 explanation fall on the same side of any fork cutoff. Blocks retain identity, never
-bytes or inclusion state.
+bytes, links or inclusion state: a writer's picture and a tool result's media part are the same
+stored media part, `{ ref: { documentId, uri }, mediaType, sizeBytes, name }`, and a decision is
+keyed by `(blockId, partIndex)`. Each request resolves every part again through the host's
+resolver (`ports/media-resolver.ts`), which re-checks the thread's file access, then sends a
+signed link, the preview or a text description, per model. Links are pinned to the cache window
+(`loop/media-link-window.ts`): see [media inclusion](state-machines.md#media-inclusion).
 
 [kb-delivery]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim
 [kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#preparing-a-run-select-prepare-validate-commit

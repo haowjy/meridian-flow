@@ -33,6 +33,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { isEditorScheme, type OpenDocument } from "@/client/stores";
@@ -46,6 +47,7 @@ import { useWorkScopeState } from "../use-work-scope";
 import { useOptionalPresentedDocuments } from "./account-feature-context";
 import { openDocumentFromFile, treeFileFromCatalogEntry } from "./open-document-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
+import { UploadViewerDialog } from "./UploadViewerDialog";
 
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
@@ -278,7 +280,7 @@ export type OpenDocumentOutcome =
   | { kind: "committed"; documentId: string }
   | { kind: "trashed"; documentId: string }
   | { kind: "cancelled" }
-  | { kind: "refused"; reason: "gone" | "no-viewer" | "lookup-failed" };
+  | { kind: "refused"; reason: "gone" | "lookup-failed" };
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
 ) => Promise<OpenDocumentOutcome>;
@@ -290,13 +292,11 @@ type NavigationAdapterDependencies = {
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
   /** Where the replay of the list shows a document, or null while it shows none. */
   locate(documentId: string): KnownDocumentIdentity | null;
+  /** Shows a chat's upload, which belongs to no main address, in its viewer. */
+  viewUpload(tab: Extract<OpenDocument, { kind: "viewer" }>): void;
 };
 
-type CommitResult =
-  | { kind: "applied" }
-  | { kind: "cancelled" }
-  | { kind: "no-viewer" }
-  | { kind: "failed" };
+type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
 
 /** Turns a document identity into a committed destination; the destination owns content. */
 export class ProjectDocumentNavigationAdapter {
@@ -355,6 +355,18 @@ export class ProjectDocumentNavigationAdapter {
         return this.openTrash(documentId, controller.signal, isCurrent, replace);
       const { identity, transfer } = identified;
 
+      if (!isEditorScheme(identity.scheme)) {
+        const tab = openDocumentFromFile(
+          identity.scheme,
+          identity.file,
+          identity.chatId ? { chatThreadId: identity.chatId } : {},
+        );
+        if (tab.kind !== "viewer") return { kind: "refused", reason: "lookup-failed" };
+        if (!isCurrent()) return { kind: "cancelled" };
+        this.dependencies.viewUpload(tab);
+        return { kind: "committed", documentId };
+      }
+
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
@@ -371,7 +383,6 @@ export class ProjectDocumentNavigationAdapter {
         transfer,
       });
       if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
-      if (committed.kind === "no-viewer") return { kind: "refused", reason: "no-viewer" };
       return committed.kind === "applied"
         ? { kind: "committed", documentId }
         : { kind: "cancelled" };
@@ -486,11 +497,6 @@ export class ProjectDocumentNavigationAdapter {
     transfer?: AvailableOpenResolution;
   }): Promise<CommitResult> {
     if (!input.isCurrent()) return { kind: "cancelled" };
-    // An upload belongs to its chat and has no Editor address.
-    if (!isEditorScheme(input.scheme)) {
-      this.current = null;
-      return { kind: "no-viewer" };
-    }
     const owner: ContextOwner = input.rootThreadId
       ? { rootThreadId: input.rootThreadId }
       : { workId: input.workId ?? null };
@@ -558,6 +564,7 @@ export function ProjectDocumentNavigationProvider({
   treesRef.current = trees;
   const presented = useOptionalPresentedDocuments();
   const openContextRoute = useOpenContextRoute();
+  const [upload, setUpload] = useState<Extract<OpenDocument, { kind: "viewer" }> | null>(null);
   // A transfer is taken by the host that mounts its document; one whose document no view
   // presents is let go. Checked after the commit that ended a presentation, whose own new host
   // presents in the same commit.
@@ -593,13 +600,23 @@ export function ProjectDocumentNavigationProvider({
           }
           return null;
         },
+        viewUpload: setUpload,
       }),
     }),
     [openContextRoute, openTrash, opener, projectId, captureNavigation, scopeWorkId],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
-  return createElement(ProjectDocumentNavigationContext.Provider, { value: owner }, children);
+  return createElement(
+    ProjectDocumentNavigationContext.Provider,
+    { value: owner },
+    children,
+    createElement(UploadViewerDialog, {
+      projectId,
+      document: upload,
+      onClose: () => setUpload(null),
+    }),
+  );
 }
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {
@@ -613,11 +630,6 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
     },
     [owner, projectId],
   );
-}
-
-/** Whether a chat's reference opens in main: an upload belongs to its chat and has no Editor address. */
-export function canOpenReference(uri: string): boolean {
-  return !uri.startsWith("uploads://");
 }
 
 /** Resolves a document's descriptor without opening it (`describe`). */
