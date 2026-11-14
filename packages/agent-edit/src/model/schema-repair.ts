@@ -71,7 +71,14 @@ function insideUnbuildableElement(item: Y.Item, schema: Schema): boolean {
  * knows but refuses the content of (a block inside a paragraph) is not recognised.
  */
 export function isSchemaRepairUpdate(room: Y.Doc, update: Uint8Array, schema: Schema): boolean {
-  const { structs, ds } = Y.decodeUpdate(update);
+  let decoded: ReturnType<typeof Y.decodeUpdate>;
+  try {
+    decoded = Y.decodeUpdate(update);
+  } catch {
+    // Client bytes: admission refuses what does not decode; it is no repair.
+    return false;
+  }
+  const { structs, ds } = decoded;
   if (structs.length > 0 || ds.clients.size === 0) return false;
   for (const [client, ranges] of ds.clients) {
     for (const { clock, len } of ranges) {
