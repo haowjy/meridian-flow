@@ -2,7 +2,7 @@
  * The minimal Yjs writer: writes target blocks into an XmlFragment as per-word edits so every item the
  * target leaves alone keeps its identity, and a peer's concurrent edits to those items survive.
  *
- * `correspond` says which block is which (equal blocks are untouched); a paired block is edited in
+ * `correspond` says which block is which, by id (equal blocks are untouched); a paired block is edited in
  * place, and a container is written the same way over its children. Inside a paragraph its atoms
  * (breaks, images) pair the same way, and the text run in each gap between them is reconciled where
  * it is. Text is diffed by word and written as inserts and deletes (insert first, as
@@ -176,7 +176,12 @@ function writeChildren(
   copies: RestorationLink[] | undefined,
   record: boolean,
 ): void {
-  const { partner } = correspond(current, target);
+  // An id match is final; blocks with no id (the model's write) pair by guess. A block that moved,
+  // or whose id now names another type of element, is deleted where it was and inserted where it is.
+  const found = correspond(current, target, { byId: true });
+  const partner = found.partner.map((t, c) =>
+    t >= 0 && !found.moved.has(c) && current[c].type === target[t].type ? t : -1,
+  );
   // Gaps between equal blocks, as [curFrom, curTo, tgtFrom, tgtTo].
   const gaps: Array<[number, number, number, number]> = [];
   let [ci, ti] = [0, 0];

@@ -48,7 +48,9 @@ export function createReviewPaintView(
         `[${RENDER_ATTR}],[${CHANGE_ATTR}]`,
       )) {
         const key = element.getAttribute(RENDER_ATTR) ?? "";
-        const id = changes.get(key);
+        // A removal inside a table cell is `<change key>~<n>`; the rest of the change shares the key.
+        const changeKey = key.split("~", 1)[0];
+        const id = changes.get(changeKey);
         if (!id) {
           // PM removes its decoration attributes, but semantic IDs are owned by this view.
           // A moved/undone node can survive after its decoration, so retire our attributes too.
@@ -61,7 +63,7 @@ export function createReviewPaintView(
         }
         if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
         element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
-        if (animateArrival && arrivals.has(key))
+        if (animateArrival && arrivals.has(changeKey))
           element.classList.add(inlineReviewClassNames.arrived);
         const plan = state.removals.get(key);
         if (plan && element.classList.contains(inlineReviewClassNames.removal))

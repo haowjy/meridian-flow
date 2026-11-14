@@ -25,12 +25,15 @@ import {
 export interface Alignment {
   hunks: Hunk[];
   baseToSide: Int32Array; // base block -> equal side block, else -1
+  /** Base block and side block of each block paired by id out of order: a removal and an addition that are one block. */
+  moves: Array<[number, number]>;
   pos: Int32Array; // base token -> side token outside hunks, else -1
 }
 
 export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
   const hunks: Hunk[] = [];
+  const moves: Array<[number, number]> = [];
   let pb = 0;
   let ps = 0;
   // A removed run and an added run between two units are not each other: a removal, then an addition
@@ -56,6 +59,7 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   for (let i = 0; i < B.blocks.length; i++) {
     const j = corr.partner[i];
     // Unpaired or moved: left as removed and added.
+    if (j >= 0 && corr.moved.has(i)) moves.push([i, j]);
     if (j < 0 || corr.moved.has(i) || j < ps || i < pb) continue;
     let [u0, u1, v0, v1] = [i, i + 1, j, j + 1];
     while (u0 > pb && corr.oldPiece[u0 - 1] === i) u0--;
@@ -76,7 +80,7 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
     if (a.from === a.to && b.from === b.to && a.from === b.from && a.sto === b.sfrom)
       hunks.splice(k - 1, 2, { ...a, sto: b.sto, ins: [...a.ins, ...b.ins] });
   }
-  return { hunks, baseToSide, pos: posMap(B.toks.length, hunks) };
+  return { hunks, baseToSide, moves, pos: posMap(B.toks.length, hunks) };
 }
 
 // 1,000 tokens preserves ordinary split/join units while capping Myers' quadratic search.

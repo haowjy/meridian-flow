@@ -23,7 +23,7 @@ import {
 } from "./attribution.js";
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
-import { tagBySide, tagged } from "./merge.fixtures.js";
+import { tagBySide } from "./merge.fixtures.js";
 import { rebase } from "./merge.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
@@ -32,7 +32,10 @@ import { writeBlocks, writeDiscardBlocks } from "./writer.js";
 const schema = buildDocumentSchema();
 const frag = (d: Y.Doc) => d.getXmlFragment("prosemirror");
 const textOf = (d: Y.Doc, block = 0) => (frag(d).get(block) as Y.XmlElement).get(0) as Y.XmlText;
-const para = (s: string) => schema.nodes.paragraph.create({ id: "t" }, s ? schema.text(s) : null);
+// A block's id is its first word, so a test names "the same block" by starting its text the same way.
+const blockId = (s: string) => s.split(" ")[0] || "empty";
+const para = (s: string, id = blockId(s)) =>
+  schema.nodes.paragraph.create({ id }, s ? schema.text(s) : null);
 
 function peer(from: Y.Doc, clientID: number, gc = false) {
   const doc = new Y.Doc({ gc });
@@ -122,18 +125,14 @@ function room(blocks: Array<string | PMNode>) {
       });
     },
     rebase(live: PMNode[]) {
-      // The rows write every block with one id; the merge pairs by id, so give each side's blocks the
-      // ids an editor would have kept (by guess), as the model's write does.
-      const [b, l, d] = tagBySide(
-        base.map(withoutBlockIds),
-        live.map(withoutBlockIds),
-        readBlocks(frag(draft), schema).map(withoutBlockIds),
-      );
+      // The base and the draft keep the ids the room gave them; live's blocks take the ids an editor
+      // would have kept (by guess), as the model's write does.
+      const [b, l, d] = tagBySide(base, live.map(withoutBlockIds), readBlocks(frag(draft), schema));
       const result = rebase(schema, b, l, d);
       draft.clientID = 1;
-      draft.transact(() => writeBlocks(frag(draft), schema, tagged(result.blocks)));
+      draft.transact(() => writeBlocks(frag(draft), schema, result.blocks));
       draft.clientID = 9;
-      base = live;
+      base = l;
     },
     /** Names and members per change, on the server's doc and on a gc-on reload; the two must agree. */
     read(options: { budget?: number; slide?: number } = {}) {
@@ -174,9 +173,9 @@ interface Row {
 }
 
 const T = (n = 0) => `chat${n}`;
-const paragraphXml = (s: string) => {
+const paragraphXml = (s: string, id = blockId(s)) => {
   const p = new Y.XmlElement("paragraph");
-  p.setAttribute("id", "t");
+  p.setAttribute("id", id);
   const t = new Y.XmlText();
   t.insert(0, s);
   p.insert(0, [t]);
@@ -666,15 +665,17 @@ it("a removed paragraph's block tombstone names its deleter when rebased text ha
     const before = Y.snapshot(r.draft);
     const remove = (doc: Y.Doc) => {
       frag(doc).delete(0, 1);
-      frag(doc).insert(0, [paragraphXml("")]);
+      // The editor re-creates the element and puts the block's id on it.
+      frag(doc).insert(0, [paragraphXml("", "abcdef")]);
     };
     if (actor === "thread") r.ai(remove);
     else r.writer(remove);
-    r.rebase([para("abc LIVE def"), para("tail")]);
+    r.rebase([para("abc LIVE def", "abcdef"), para("tail")]);
     for (const restored of [false, true]) {
       if (restored)
         r.discardUndo(
-          (doc) => writeDiscardBlocks(frag(doc), schema, [para("abc LIVE def"), para("tail")]),
+          (doc) =>
+            writeDiscardBlocks(frag(doc), schema, [para("abc LIVE def", "abcdef"), para("tail")]),
           2,
         );
       const projection = r.projection();
@@ -708,9 +709,9 @@ it("a removed paragraph's block tombstone names its deleter when rebased text ha
     });
     r.writer((doc) => {
       frag(doc).delete(moved ? 2 : 1, 1);
-      frag(doc).insert(1, [paragraphXml("")]);
+      frag(doc).insert(1, [paragraphXml("", "abcdef")]);
     });
-    r.rebase([para("neighbor"), para("abc LIVE def"), para("separator"), para("tail")]);
+    r.rebase([para("neighbor"), para("abc LIVE def", "abcdef"), para("separator"), para("tail")]);
     expect(r.read().map((c) => c.byline)).toEqual([[]]);
   }
   const surviving = room(["neighbor", "tail"]);
@@ -721,6 +722,6 @@ it("a removed paragraph's block tombstone names its deleter when rebased text ha
   });
   surviving.rebase([para("neighbor"), para("abcdef"), para("tail")]);
   surviving.writer((doc) => textOf(doc, 1).delete(0, 6));
-  surviving.rebase([para("neighbor"), para("abc LIVE def"), para("tail")]);
+  surviving.rebase([para("neighbor"), para("abc LIVE def", "abcdef"), para("tail")]);
   expect(surviving.read().map((c) => c.byline)).toEqual([[]]);
 });

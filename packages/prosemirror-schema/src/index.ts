@@ -69,6 +69,9 @@ const nestingAttrs = {
   loose: { default: null },
 };
 
+/** The names of the nesting attributes: what moves a block's marker, indent and bar. */
+export const NESTING_ATTRS = Object.keys(nestingAttrs);
+
 /**
  * A block's permanent identity (`block-id.ts`): set once where the block is made, copied with
  * its other attributes everywhere, and never shown in Markdown. Null means none recorded.
