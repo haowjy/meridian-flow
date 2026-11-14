@@ -445,6 +445,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(restored.isError, text(restored)).toBeFalsy();
       expect(await trashEntries.list({ lists, view: LIVE })).toEqual([]);
       expect((await placement(CH2))?.deletedAt).toBeNull();
+      // An undo of a delete names the path the model deleted.
+      await call("write", { command: "delete", path: "Arc 2/" });
+      const undone = await call("write", { command: "undo", path: "Arc 2/" });
+      expect(text(undone), text(undone)).toContain("status: reversed");
+      expect((await placement(CH2))?.deletedAt).toBeNull();
     });
 
     it("a draft can create, rename, reorder and delete folders; live stays as it was", async () => {

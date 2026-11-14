@@ -8,7 +8,7 @@ import { editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import { type Database, documentEdits, treeEditReceipts } from "@meridian/database";
 import { branches, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, isNotNull, max } from "drizzle-orm";
+import { and, desc, eq, isNotNull, max, type SQL } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory } from "../contracts.js";
 
@@ -17,6 +17,24 @@ export function createDrizzleTreeHistory(
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
+  const receiptsWhere = async (where: SQL | undefined) => {
+    const rows = await tx()
+      .select()
+      .from(treeEditReceipts)
+      .where(where)
+      .orderBy(desc(treeEditReceipts.seq));
+    return rows.map((row) => ({
+      id: row.id,
+      nodeId: row.nodeId,
+      records: row.records,
+      op: row.op,
+      kind: row.kind,
+      reverses: row.reverses,
+      wId: row.wId,
+      draftBranchId: row.draftBranchId,
+      createdAt: row.createdAt,
+    }));
+  };
   return {
     async recordAgentTreeChange(input) {
       // A node's counter is the document's own for a document, so a handle names one edit of
@@ -48,38 +66,24 @@ export function createDrizzleTreeHistory(
       return { handle: editHandle(wId), id: row.id };
     },
 
-    async draftedInReply(editScopeId) {
+    async draftedInReply(turnId) {
       const [row] = await tx()
         .select({ id: treeEditReceipts.id })
         .from(treeEditReceipts)
-        .where(
-          and(
-            eq(treeEditReceipts.editScopeId, editScopeId),
-            isNotNull(treeEditReceipts.draftBranchId),
-          ),
-        )
+        .where(and(eq(treeEditReceipts.turnId, turnId), isNotNull(treeEditReceipts.draftBranchId)))
         .limit(1);
       return row !== undefined;
     },
 
-    async receiptsFor(threadId, nodeId) {
-      const rows = await tx()
-        .select()
-        .from(treeEditReceipts)
-        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.nodeId, nodeId)))
-        .orderBy(desc(treeEditReceipts.seq));
-      return rows.map((row) => ({
-        id: row.id,
-        nodeId: row.nodeId,
-        records: row.records,
-        op: row.op,
-        kind: row.kind,
-        reverses: row.reverses,
-        wId: row.wId,
-        draftBranchId: row.draftBranchId,
-        createdAt: row.createdAt,
-      }));
-    },
+    receiptsFor: (threadId, nodeId) =>
+      receiptsWhere(
+        and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.nodeId, nodeId)),
+      ),
+
+    receiptsAt: (threadId, shownAt) =>
+      receiptsWhere(
+        and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.shownAt, shownAt)),
+      ),
 
     async latestTextEditAt(threadId, documentId) {
       const [row] = await tx()

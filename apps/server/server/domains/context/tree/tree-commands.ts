@@ -645,7 +645,19 @@ export function runTreeCommand(
       const toUri = uriOfPath(cx, command.path);
       if (!command.many) {
         const from = command.from[0] as string;
-        const moved = moveOne(cx, from, to, toUri, command.position, filled, emptied, false);
+        // A document sent to a folder's path goes into that folder under its own name.
+        const into = isFolderPath(command.path) && !isFolderPath(from);
+        const leaf = pathFrom(cx, from).segments.at(-1) ?? "";
+        const moved = moveOne(
+          cx,
+          from,
+          into ? { ...to, segments: [...to.segments, leaf], folder: false } : to,
+          into ? `${toUri}${leaf}` : toUri,
+          command.position,
+          filled,
+          emptied,
+          false,
+        );
         if ("skip" in moved) return refuse("invalid_write", toUri, `Nothing moved: ${moved.skip}`);
         if (moved.fail) return moved.fail;
         return finish({ ...moved.done, delta: changeDelta(emptied, filled) });

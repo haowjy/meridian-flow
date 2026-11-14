@@ -209,7 +209,10 @@ export type AgentTreeHistory = {
    */
   recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
   /** Whether a reply already made a drafted tree change (the first says drafted changes wait). */
-  draftedInReply(editScopeId: string): Promise<boolean>;
+  /** Whether the turn (one reply) already made a drafted tree change. */
+  draftedInReply(turnId: TurnId): Promise<boolean>;
+  /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
+  receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
   /** This chat's receipts for a node, newest first. */
   receiptsFor(threadId: ThreadId, nodeId: string): Promise<TreeReceipt[]>;
   /** When this chat last edited the document's text, or null: a tree receipt older than it is not the newest edit. */

@@ -58,6 +58,12 @@ function commandOf(input: TreeToolInput): TreeCommand | WriteToolErrorOutput {
   }
 }
 
+/** The path as the model wrote it, with its source: what a later `undo` of a deleted node is found by. */
+function uriOfWritten(path: string): string {
+  const at = areaOfPath(path);
+  return at ? `${at.area}${at.rest}` : path;
+}
+
 function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false }>) {
   return {
     isError: true as const,
@@ -126,9 +132,7 @@ export async function runTreeToolCommand(
   const shown = await shownNamesOf(ctx);
   const history = deps.documentSync.treeHistory();
   const firstDrafted =
-    drafted && ctx.responseIdentity
-      ? !(await history.draftedInReply(ctx.responseIdentity.editScopeId))
-      : drafted;
+    drafted && ctx.turnId ? !(await history.draftedInReply(ctx.turnId as TurnId)) : drafted;
   const origin = {
     type: "agent" as const,
     agentSlug: ctx.agentSlug,
@@ -166,7 +170,7 @@ export async function runTreeToolCommand(
                 draftBranchId: scope.view.draft as import("@meridian/contracts").BranchId,
               }
             : {}),
-          shownAt: result.shownAt,
+          shownAt: uriOfWritten(result.shownAt),
           landedAt: result.landedAt,
         });
         handle = recorded.handle;

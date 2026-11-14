@@ -77,8 +77,17 @@ export async function runTreeInverse(
     read: (scope) =>
       reachPath(scope, parts.area, shown, parts.rest, input.command, { allowGone: true }),
   });
-  if (!reached.ok || reached.value.kind !== "node") return null;
-  const node = reached.value.node;
+  const history = deps.documentSync.treeHistory();
+  let node: { id: string; kind: string } | undefined;
+  if (reached.ok && reached.value.kind === "node") node = reached.value.node;
+  else {
+    // A node deleted since, named by the path the model wrote for it, is found by that receipt.
+    const written = await history.receiptsAt(threadId, `${parts.area}${parts.rest}`);
+    const deleted = written.find((receipt) => receipt.op === "delete");
+    if (deleted)
+      node = { id: deleted.nodeId, kind: parts.rest.endsWith("/") ? "folder" : "document" };
+  }
+  if (!node) return null;
   const receipt = await pick(deps, input, threadId, node.id, node.kind !== "folder");
   if (!receipt) return null;
 
@@ -92,7 +101,6 @@ export async function runTreeInverse(
         responseId: ctx.responseIdentity?.editScopeId ?? null,
         liveWrites: true,
       });
-  const history = deps.documentSync.treeHistory();
   let handle: string | undefined;
   const kind = input.command === "redo" ? "redo" : "undo";
 
