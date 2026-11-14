@@ -19,7 +19,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { type AppliedFact, type DraftNotice, hasLine } from "./draft-notices";
+import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -195,6 +195,16 @@ export function DraftNoticeLine({
                   failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
                 };
   const failed = notice.status === "failed";
+  if (notice.status === "returned") {
+    return (
+      <ActionNotice
+        data-command-notice="undo-returned"
+        sentence={restoreReturnedSentence(notice.returned)}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
+    );
+  }
   if (notice.status === "partial") {
     const count = notice.leftOut;
     return (
@@ -293,6 +303,14 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
     held,
     word: (id) => {
       if (!held(id)) return null;
+      if (notice.status === "returned")
+        return (
+          <RowWord
+            tone="warning"
+            word={<Trans>Not back</Trans>}
+            sentence={restoreReturnedSentence(notice.returned)}
+          />
+        );
       if (notice.status === "partial") {
         const left = notice.leftOut;
         return (
@@ -357,6 +375,11 @@ function factSentence(fact: AppliedFact): string {
       return t`Applied with the others: ${from} → ${to}.`;
     }
   }
+}
+
+/** What a restore that did nothing says, wherever it was sent from. */
+export function restoreReturnedSentence(why: RestoreReturned | null): string {
+  return why === "work-closed" ? t`Work was closed.` : t`Gone from Trash.`;
 }
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */

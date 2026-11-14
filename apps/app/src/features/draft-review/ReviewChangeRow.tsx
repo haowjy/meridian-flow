@@ -22,8 +22,6 @@ export type ReviewChangeRowProps = {
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;
-  /** The Discard can't run here, so it carries no Undo and asks first. */
-  discardAsks: boolean;
   touch?: boolean;
   showAttribution?: boolean;
   wholeDocument?: boolean;
@@ -39,7 +37,6 @@ export function ReviewChangeRow({
   onFocus,
   onApply,
   onDiscard,
-  discardAsks,
   touch = false,
   showAttribution = false,
   wholeDocument = false,
@@ -122,7 +119,6 @@ export function ReviewChangeRow({
             density="icon"
             touch={touch}
             className={touch ? undefined : "gap-0.5"}
-            discardAsks={discardAsks}
             onDiscard={onDiscard}
             onApply={
               canApply

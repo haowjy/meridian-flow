@@ -286,10 +286,6 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               scope="document"
               named
               disabled={controller.dispositionLocked}
-              discardAsks={controller.discardAsks({
-                documentId: props.documentId,
-                itemKey: props.reviewItemKey,
-              })}
               onDiscard={() =>
                 void controller.discard(props.documentId, props.reviewItemKey as string)
               }

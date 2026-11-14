@@ -188,10 +188,6 @@ export function useDraftDock({
     files,
     notice,
     mounted: files.length > 0 || notice !== null,
-    /** The strip's Discard carries no Undo for one of its files, so it asks first. */
-    discardAsks: discardItems(actionableFiles).some(({ draft, target }) =>
-      controller.discardAsks(draft, target),
-    ),
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),

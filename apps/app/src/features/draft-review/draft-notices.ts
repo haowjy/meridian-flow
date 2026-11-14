@@ -24,11 +24,19 @@ export type NoticeSubject =
   | { kind: "drafts"; count: number }
   | { kind: "deletes"; count: number };
 
+/**
+ * Why a restore came back with nothing done: the Work is archived or deleted (or its chat is in
+ * Trash), or Trash no longer holds what the Discard took.
+ */
+export type RestoreReturned = "work-closed" | "gone-from-trash";
+
 export type DiscardUndoAnswer = {
-  answer: "ok" | "failed" | "gone";
+  /** `returned`: the restore was answered and did nothing, for `why`. */
+  answer: "ok" | "failed" | "gone" | "returned";
   landed: Promise<void>;
   /** What the Discard held that could not come back (`UndoDiscardResult.leftOut`). */
   leftOut?: number;
+  why?: RestoreReturned;
 };
 
 /**
@@ -73,9 +81,13 @@ export type DraftNotice =
       documentIds: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
-      /** `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back. */
-      status: "ready" | "undoing" | "failed" | "partial";
+      /**
+       * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
+       * `returned`: the Undo was answered with nothing done, for `returned`.
+       */
+      status: "ready" | "undoing" | "failed" | "partial" | "returned";
       leftOut: number;
+      returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
       /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
@@ -208,6 +220,7 @@ export class DraftNotices {
       left: null,
       status: "ready",
       leftOut: 0,
+      returned: null,
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
@@ -271,8 +284,12 @@ export class DraftNotices {
       answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
     const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));
+    const returned = answers.find(({ why }) => why)?.why ?? null;
     if (this.notices.get(ownerKey)?.id === id) {
-      if (failed.length === 0 && leftOut > 0) {
+      if (failed.length === 0 && returned) {
+        this.parts.set(id, []);
+        this.update(ownerKey, id, () => ({ status: "returned", returned }));
+      } else if (failed.length === 0 && leftOut > 0) {
         this.parts.set(id, []);
         this.update(ownerKey, id, () => ({ status: "partial", leftOut }));
       } else if (failed.length === 0) {
@@ -285,6 +302,7 @@ export class DraftNotices {
       }
     }
     if (failed.length) return "failed";
+    if (listed.length === 0) return "unlisted";
     // A view following the Undo waits until the server lists the draft again: a draft-only
     // document opened on a draft the list omits closes as discarded.
     return (await Promise.all(listed)).every(Boolean) ? "ok" : "unlisted";

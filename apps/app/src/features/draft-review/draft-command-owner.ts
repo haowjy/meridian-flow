@@ -43,7 +43,7 @@ import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
-import type { ChangeTarget, ReviewChange, TextTarget } from "./review-model";
+import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
@@ -826,19 +826,13 @@ export class DraftCommandOwner {
     return { commandId: group.commandId, answer: group.answer, outcomes };
   }
 
-  /** Whether a local text Discard can start on the item now: its room is read, bound and has changes. */
-  canDiscardLocally(itemKey: string): boolean {
-    const review = this.byItem.get(itemKey)?.binding?.runtime.state();
-    return this.active && Boolean(review?.ready && review.frame?.groups.length);
-  }
-
   /**
    * The caller names whose history also holds it: its own editor (Ctrl+Z), or none (`notice`).
    * The returned handle is the notice's Undo; the caller shows it or ends it.
    */
   discard(
     ref: DraftRef,
-    target: TextTarget,
+    target: GroupsTarget,
     history: Editor | "notice" | null,
   ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
@@ -854,7 +848,6 @@ export class DraftCommandOwner {
       active: () => this.active,
       state: () => this.state(ref.itemKey),
       setState: (state) => this.setState(ref.itemKey, state),
-      textClicks: () => (entry ? this.textClicks(entry) : []),
       releaseIdle: () => {
         if (entry) this.releaseIdle(entry);
       },
@@ -868,10 +861,8 @@ export class DraftCommandOwner {
     this.items.get(itemKey)?.queue.retry();
   }
   /**
-   * Discards a whole item on the server: a created document, which the draft alone holds, a
-   * picture, a frozen owner's draft, whose room refuses the writer's text, a move or delete
-   * with its text, or a draft whose room isn't read (`canDiscardLocally`). Its Undo is the
-   * server's, by `commandId`. A created document leaves at once; any other stays in review,
+   * Discards a whole item on the server, every Discard of a whole draft: Trash lists it and its
+   * Undo is the server's, by `commandId`. A created document leaves at once; any other stays in review,
    * discarding, until the server answers, so a refusal shows on it. A Discard decided on the
    * frozen reading names the draft the writer saw, so the server refuses it if the chat came
    * back and the draft moved on. Server-only lifecycle commands share this account owner, never
@@ -933,7 +924,7 @@ export class DraftCommandOwner {
   discardItem(
     ref: DraftRef,
     item: ThreadDraftListItem,
-    target: ChangeTarget,
+    target: GroupsTarget | { kind: "tree" },
     history: Editor | "notice" | null,
     commandId: string,
   ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {

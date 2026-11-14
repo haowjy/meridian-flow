@@ -238,16 +238,15 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`): a
-change in a read frame, or a whole text draft that is not a whole item (created document,
-picture), has no move or delete, and whose room is read now
-(`DraftCommandOwner.canDiscardLocally`), is a local text Discard, whose Undo the room holds.
-Anything else goes to the server under a command id the client mints: a whole draft as an item
-Discard (`discardOnServer`, everything the branch holds on the document), a move or delete as
-`discardItem`. Every Discard shows the owner's notice, and its Undo takes back each share: a
-room's text locally, a server Discard by Undo of a Discard (`undo-discard`, both halves onto
-the Work's current branch); `leftOut` stays on the notice as what couldn't come back. Only a
-frozen owner's Discard asks first (`discardAsks`): its Undo would be refused. A Discard of a
+Every Discard of a whole draft is a server command under an id the client mints, so Trash
+lists it and Restore brings it back: one document's draft as an item Discard
+(`discardOnServer`, everything the branch holds on the document), a move or delete as
+`discardItem`. Only a Discard of some changes in a read frame is a local text Discard, whose
+Undo the room holds. Every Discard shows the owner's notice, and its Undo takes back each share:
+a room's text locally, a server Discard by Undo of a Discard (`restoreDiscard`, both halves onto
+the Work's current branch), the one command Trash's Restore and the editor's Restore send too;
+`leftOut` stays on the notice as what couldn't come back, and a restore answered with nothing
+done says why ("Work was closed.", "Gone from Trash."). No Discard asks first. A Discard of a
 selection (a folder group's ×, a folder changed alone) is one server command over exactly those
 documents and folders, both halves, with what stands on them (`discardSelection`,
 `BranchDiscardRequest.items`); only Discard all sends `all`, the one command that closes the

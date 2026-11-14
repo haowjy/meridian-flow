@@ -31,7 +31,7 @@ import {
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
-import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
@@ -131,7 +131,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * folder's apply or discard everything under it, the folder's own change included. Discard all
  * and Apply all act on every change of the scope, new documents, folders, moves and deletes
  * included. Each Apply is one command, which sidebar Undo takes back whole, and each Discard's
- * notice has its Undo; only a frozen owner's Discard asks first (`discardAsks`). An Apply of
+ * notice has its Undo. An Apply of
  * several asks when it would delete documents or bring back documents deleted from the
  * manuscript, naming each, and again for any a newer delete held back. A question takes the
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
@@ -385,7 +385,6 @@ export function ChangesSource({
               density="full"
               touch={touch}
               disabled={archived}
-              discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
@@ -587,9 +586,6 @@ function ChangeRow({
 }) {
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  // A row's actions are too narrow for its question: it asks on the line under the name.
-  const [asking, setAsking] = useState(false);
-  const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
   const discard = () => {
     onCommand();
     void controller.discard(file.documentId, file.draft.itemKey);
@@ -638,7 +634,7 @@ function ChangeRow({
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
+            onDiscard={discard}
             onApply={
               canApply
                 ? () => {
@@ -651,16 +647,6 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
-            {asking && !controller.dispositionLocked ? (
-              <DiscardQuestion
-                scope="document"
-                onKeep={() => setAsking(false)}
-                onConfirm={() => {
-                  setAsking(false);
-                  discard();
-                }}
-              />
-            ) : null}
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
