@@ -21,7 +21,9 @@ export function Picker({
   children: ReactNode;
 }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (onEscape && event.key === "Escape") {
+    // A portalled row menu's Escape bubbles here through React; it closes the menu only.
+    // Not `defaultPrevented`: the enclosing popover's layer prevents every Escape first.
+    if (onEscape && event.key === "Escape" && event.currentTarget.contains(event.target as Node)) {
       event.preventDefault();
       event.stopPropagation();
       onEscape();
