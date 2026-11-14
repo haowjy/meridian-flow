@@ -7,11 +7,9 @@
  * bullet list in the row above the manuscript.
  */
 
+import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import {
   Code,
-  Heading1,
-  Heading2,
-  Heading3,
   Image,
   List,
   ListOrdered,
@@ -23,11 +21,12 @@ import {
   Workflow,
 } from "lucide-react";
 import type { SlashCommandId } from "@/core/editor/extensions/slash";
+import { HEADING_ICONS } from "../toolbar";
 
 export const SLASH_MENU_ICONS: Record<SlashCommandId, LucideIcon> = {
-  "heading-1": Heading1,
-  "heading-2": Heading2,
-  "heading-3": Heading3,
+  ...(Object.fromEntries(
+    HEADING_LEVELS.map((level) => [`heading-${level}`, HEADING_ICONS[level]]),
+  ) as Record<`heading-${HeadingLevel}`, LucideIcon>),
   "bullet-list": List,
   "numbered-list": ListOrdered,
   "task-list": ListTodo,

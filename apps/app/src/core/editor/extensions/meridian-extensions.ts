@@ -6,8 +6,15 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { isNested } from "@meridian/prosemirror-schema";
-import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
+import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
+import {
+  isiOS,
+  isMacOS,
+  isNodeActive,
+  type KeyboardShortcutCommand,
+  mergeAttributes,
+  Node,
+} from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -137,20 +144,17 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
   name: "horizontal_rule",
 });
 
-export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
-
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
-    heading: {
-      /** Sets the level of the blocks under the selection, keeping their elements. */
-      setHeading: (attributes: { level: HeadingLevel }) => ReturnType;
-      /** Sets the level, or returns the blocks to body text when they already have it. */
-      toggleHeading: (attributes: { level: HeadingLevel }) => ReturnType;
+    headingLevel: {
+      /**
+       * Gives every text block under the selection this level, keeping each block and its
+       * Yjs element; a level they all already have, or null, returns them to body text.
+       */
+      toggleHeadingLevel: (attributes: { level: HeadingLevel | null }) => ReturnType;
     };
   }
 }
-
-const HEADING_LEVELS: readonly HeadingLevel[] = [1, 2, 3, 4, 5, 6];
 
 const unclosed = new WeakMap<Slice, Slice>();
 
@@ -201,10 +205,8 @@ export const MeridianParagraph = Paragraph.extend({
         default: null,
         // Enter at the end of a heading starts body text.
         keepOnSplit: false,
-        parseHTML: (element: HTMLElement) => {
-          const match = /^H([1-6])$/.exec(element.tagName);
-          return match ? Number(match[1]) : null;
-        },
+        parseHTML: (element: HTMLElement) =>
+          HEADING_LEVELS.find((level) => element.tagName === `H${level}`) ?? null,
         renderHTML: () => ({}),
       },
     };
@@ -221,20 +223,18 @@ export const MeridianParagraph = Paragraph.extend({
 
   addCommands() {
     return {
+      // TipTap's own `setParagraph` rebuilds the block from defaults; ours is body text.
       setParagraph:
         () =>
-        ({ tr }) =>
-          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, { level: null }),
-      setHeading:
-        ({ level }) =>
         ({ commands }) =>
-          commands.updateAttributes(this.name, { level }),
-      toggleHeading:
+          commands.toggleHeadingLevel({ level: null }),
+      toggleHeadingLevel:
         ({ level }) =>
-        ({ commands, editor }) =>
-          commands.updateAttributes(this.name, {
-            level: editor.isActive(this.name, { level }) ? null : level,
-          }),
+        ({ tr, state }) => {
+          const unset = level === null || isNodeActive(state, this.type, { level });
+          const { from, to } = tr.selection;
+          return setBlockType(tr, from, to, this.type, { level: unset ? null : level });
+        },
     };
   },
 
@@ -257,7 +257,7 @@ export const MeridianParagraph = Paragraph.extend({
         const atStart = isolated
           ? $anchor.pos - $anchor.parentOffset === pos
           : Selection.atStart(tr.doc).from === pos;
-        return atStart && commands.updateAttributes(this.name, { level: null });
+        return atStart && commands.setParagraph();
       });
     const backspaceKeys = ["Backspace", "Mod-Backspace", "Shift-Backspace"];
     if (isMacOS() || isiOS()) backspaceKeys.push("Ctrl-h", "Alt-Backspace");
@@ -267,7 +267,7 @@ export const MeridianParagraph = Paragraph.extend({
       ...Object.fromEntries(
         HEADING_LEVELS.map((level) => [
           `Mod-Alt-${level}`,
-          () => this.editor.commands.toggleHeading({ level }),
+          () => this.editor.commands.toggleHeadingLevel({ level }),
         ]),
       ),
     };

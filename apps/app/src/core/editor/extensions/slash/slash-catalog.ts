@@ -12,12 +12,12 @@
  * catalog without either is a compile error rather than a blank row.
  */
 
+import type { HeadingLevel } from "@meridian/prosemirror-schema";
+
 import type { EditorAnchor } from "../../anchors";
 
 export type SlashCommandId =
-  | "heading-1"
-  | "heading-2"
-  | "heading-3"
+  | `heading-${HeadingLevel}`
   | "bullet-list"
   | "numbered-list"
   | "task-list"
