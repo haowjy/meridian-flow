@@ -1,5 +1,6 @@
 // Immutable document edit receipts, independent of compactable transport journals.
 import type {
+  DocumentCommandId,
   DocumentId,
   EditOrigin,
   ThreadId,
@@ -47,7 +48,8 @@ export const documentEdits = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
-    editScopeId: text("edit_scope_id"),
+    /** The command that made this edit; no foreign key: the receipt outlives the command row. */
+    commandId: uuid("command_id").$type<DocumentCommandId>(),
     /** The model tool call that made this edit; scoped by its response identity. */
     toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
@@ -55,7 +57,7 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
+    kind: text("kind").$type<"write" | "undo" | "redo" | "revert">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     /** A create, move, delete, restore or settlement: a tree entry, which has no parts. */
@@ -66,11 +68,9 @@ export const documentEdits = pgTable(
     index("document_edits_document_idx").on(t.documentId),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
+    index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
-    check(
-      "document_edits_kind_valid",
-      sql`${t.kind} IN ('write','undo','redo','revert','rollback')`,
-    ),
+    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','redo','revert')`),
     check(
       "document_edits_tree_change_valid",
       sql`${t.treeChange} IS NULL OR (

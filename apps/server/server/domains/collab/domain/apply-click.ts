@@ -19,14 +19,15 @@ import type {
   ApplyClickRefusalReason,
   ApplyClickResult,
   UnapplyClickAnswer,
+  UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
-import { BranchCommandExistsError, type BranchCommands } from "./branch-commands.js";
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
+import { DocumentCommandExistsError, type DocumentCommands, replay } from "./document-commands.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -175,21 +176,14 @@ export function compileClick(
 
 export function createApplyClickService(input: {
   identity: BranchReviewIdentity;
-  commands: BranchCommands;
+  commands: DocumentCommands;
   evidence: DraftDispositionStore;
   store: ApplyCommandStore;
 }) {
   const apply = async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
     const commandId = command.envelope.commandId;
-    const lookup = async (): Promise<ApplyClickAnswer | null> => {
-      const found = await input.commands.lookup(command.envelope);
-      if (found.kind === "none") return null;
-      if (found.kind === "done")
-        return found.commandKind === "apply_click"
-          ? (found.result as ApplyClickResult)
-          : { status: "conflict", commandId };
-      return { status: found.kind, commandId };
-    };
+    const lookup = async (): Promise<ApplyClickAnswer | null> =>
+      replay<ApplyClickResult>(await input.commands.lookup(command.envelope), commandId);
     const first = await lookup();
     if (first) return first;
     await testHook("apply.beforeCompile");
@@ -238,18 +232,17 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.apply(command, {
+      return await input.store.apply(command, {
         kind: "text",
         base,
         click,
         ...(tree ? { tree } : {}),
       });
-      return result.status === "closed" || result.status === "refused"
-        ? ((await lookup()) ?? result)
-        : result;
     } catch (cause) {
-      if (cause instanceof BranchCommandExistsError)
-        return (await lookup()) ?? { status: "pending", commandId };
+      if (cause instanceof DocumentCommandExistsError) {
+        const winner = await lookup();
+        if (winner) return winner;
+      }
       if (cause instanceof ApplyClickRefused)
         return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
       throw cause;
@@ -257,15 +250,8 @@ export function createApplyClickService(input: {
   };
   const unapply = async (command: UnapplyClickCommand): Promise<UnapplyClickAnswer> => {
     const commandId = command.envelope.commandId;
-    const lookup = async (): Promise<UnapplyClickAnswer | null> => {
-      const found = await input.commands.lookup(command.envelope);
-      if (found.kind === "none") return null;
-      if (found.kind === "done")
-        return found.commandKind === "unapply_click"
-          ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
-          : { status: "conflict", commandId };
-      return { status: found.kind, commandId };
-    };
+    const lookup = async (): Promise<UnapplyClickAnswer | null> =>
+      replay<UnapplyClickResult>(await input.commands.lookup(command.envelope), commandId);
     const first = await lookup();
     if (first) return first;
     try {
@@ -273,8 +259,10 @@ export function createApplyClickService(input: {
       if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
       return await input.store.unapply(command, prepared);
     } catch (cause) {
-      if (cause instanceof BranchCommandExistsError)
-        return (await lookup()) ?? { status: "pending", commandId };
+      if (cause instanceof DocumentCommandExistsError) {
+        const winner = await lookup();
+        if (winner) return winner;
+      }
       if (cause instanceof ApplyClickRefused)
         return (await lookup()) ?? { status: "refused", commandId };
       throw cause;

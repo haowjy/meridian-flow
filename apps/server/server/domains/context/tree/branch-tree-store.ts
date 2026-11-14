@@ -283,17 +283,12 @@ function unsettledEntries(history: readonly TreeRow[]): { effective: string[]; u
   const settled = new Set(
     history.flatMap((row) => (row.tree.op === "settle" ? row.tree.settles.editIds : [])),
   );
-  const rolledBack = new Set(
-    history.flatMap((row) =>
-      row.kind === "rollback" ? row.targets.map((target) => target.editId) : [],
-    ),
-  );
   const effective: string[] = [];
   const undone: string[] = [];
   for (const row of history) {
-    if (!isTransitionEntry(row) || settled.has(row.editId) || rolledBack.has(row.editId)) continue;
+    if (!isTransitionEntry(row) || settled.has(row.editId)) continue;
     if (row.kind !== "write" && row.kind !== "revert") continue;
-    (latestTransition(row, history, new Set()).stands ? effective : undone).push(row.editId);
+    (latestTransition(row, history).stands ? effective : undone).push(row.editId);
   }
   return { effective, undone };
 }

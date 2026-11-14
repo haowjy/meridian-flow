@@ -137,6 +137,15 @@ async function enterJournalSeam(
   return txDb;
 }
 
+/**
+ * What a model edit's live write takes before it reads: the seam a journal append enters first
+ * (its grants' Works, then the document's lock), so the room it plans on is the one it appends to.
+ * The append re-enters both.
+ */
+export async function enterLiveWriteSeam(db: Database, documentId: string): Promise<void> {
+  await enterJournalSeam(db as JournalDb, [documentId], [documentId]);
+}
+
 function uniqueSortedDocIds(docIds: readonly string[]): string[] {
   return [...new Set(docIds)].sort();
 }
@@ -1207,7 +1216,6 @@ async function captureLiveEdits(
           threadId: asThreadId(mutation.threadId),
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
           responseId: asModelResponseId(mutation.authoringResponseId),
-          editScopeId: mutation.editScopeId,
           toolCallId: mutation.toolCallId,
           actor: mutation.actorKind,
           wId: mutation.wId,

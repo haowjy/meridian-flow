@@ -29,7 +29,6 @@ export type RemovalVoice =
   | { kind: "work"; name: string }
   /** The model of a chat deleted it; null `chat` when that chat has no title. */
   | { kind: "agent"; chat: string | null }
-  | { kind: "unfinished-reply" }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
 
 export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice {
@@ -39,7 +38,6 @@ export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice
     return { kind: "person", name: actor.displayName, reason };
   if (actor?.kind === "work") return { kind: "work", name: actor.name };
   if (actor?.kind === "agent") return { kind: "agent", chat: actor.chatTitle };
-  if (actor?.kind === "system" && actor.cause !== "repair") return { kind: "unfinished-reply" };
   return { kind: "anonymous", reason };
 }
 
@@ -66,8 +64,6 @@ function thisDocumentSentence(voice: RemovalVoice): string {
         ? t`The AI in ${chat} deleted this document.`
         : t`The AI in a chat deleted this document.`;
     }
-    case "unfinished-reply":
-      return t`This document was removed when the reply that created it didn't finish.`;
     case "anonymous":
       return voice.reason === "discarded"
         ? t`This document was discarded from the draft.`
@@ -91,8 +87,6 @@ function oneSentence(title: string, voice: RemovalVoice): string {
       const { chat } = voice;
       return chat ? t`The AI in ${chat} deleted ${title}.` : t`The AI in a chat deleted ${title}.`;
     }
-    case "unfinished-reply":
-      return t`${title} was removed when the reply that created it didn't finish.`;
     case "anonymous":
       return voice.reason === "discarded"
         ? t`${title} was discarded from the draft.`
@@ -175,11 +169,7 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
   const reasons = new Set(
     documents.map((document) => {
       const voice = removalVoice(document.record);
-      return voice.kind === "unfinished-reply"
-        ? "removed"
-        : voice.kind === "work" || voice.kind === "agent"
-          ? "deleted"
-          : voice.reason;
+      return voice.kind === "work" || voice.kind === "agent" ? "deleted" : voice.reason;
     }),
   );
   const [reason] = reasons;

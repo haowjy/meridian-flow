@@ -25,7 +25,6 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
@@ -79,7 +78,7 @@ describe("writer frames racing rewrites (postgres)", () => {
 
   /** The draft holds one AI change: "Beta" became "Gamma". */
   async function draftWithChange(): Promise<string> {
-    const { harness, view, responseId, context } = fixture;
+    const { harness, view, context } = fixture;
     expect(
       await view.collab.agentEdit().write(
         {
@@ -93,7 +92,6 @@ describe("writer frames racing rewrites (postgres)", () => {
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     harness.cancelScheduledPulls();
     return readDraftId(db, ALPHA_ID);
   }
@@ -336,59 +334,12 @@ describe("writer frames racing rewrites (postgres)", () => {
     expect(read.tail.map((tail) => tail.id)).toContain(row.id);
   });
 
-  /** A created document's fresh draft, with no contribution yet. */
-  async function createdDocumentDraft(): Promise<{ draftId: string; branchId: string }> {
-    const [branch] = await db
-      .select({ id: schema.branches.id })
-      .from(schema.branches)
-      .where(eq(schema.branches.originWorkId, WORK_ID));
-    if (!branch) throw new Error("the Work has no branch");
-    await fixture.view.draftStore.ensureCreatedDocumentDraft({
-      documentId: ALPHA_ID,
-      branchId: branch.id as never,
-    });
-    return { draftId: await readDraftId(db, ALPHA_ID), branchId: branch.id };
-  }
-
   /** Novel clocks, no visible effect: a character typed and erased in one frame. */
   const typedAndErased = (fragment: Y.XmlFragment) => {
     const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
     text.insert(0, "x");
     text.delete(0, 1);
   };
-
-  it.each([
-    "frame",
-    "retraction",
-  ] as const)("a created document's retraction and a frame (%s commits first) never lose the frame silently", async (first) => {
-    const { draftId, branchId } = await createdDocumentDraft();
-    const frame = await writerFrame(draftId, typedAndErased);
-    const retract = () =>
-      runInDrizzleTransaction(db, () =>
-        fixture.view.draftStore.retractCreatedDocumentDraft({
-          documentId: ALPHA_ID,
-          branchId: branchId as never,
-        }),
-      );
-    try {
-      if (first === "frame") {
-        // Paused after its unlocked read found no contribution; the frame commits meanwhile.
-        const run = await interleave(db, retract, "retract.beforeLocks", frame.send);
-        expect(run.b).toEqual({ ok: true, value: { admitted: true } });
-        expect(run.a).toEqual({ ok: true, value: "stands" });
-        expect(await writerRows(draftId)).toHaveLength(1);
-      } else {
-        // The retraction holds the rows and found nothing; the frame's append waits on them.
-        const run = await interleave(db, retract, "retract.afterRecheck", frame.send);
-        expect(run.bWaited).toBe(true);
-        expect(run.a).toEqual({ ok: true, value: "retracted" });
-        expect(run.b.ok && run.b.value.admitted).toBe(false);
-        expect((await readDraftAt(db, draftId))?.documentDraft.status).toBe("closed");
-      }
-    } finally {
-      frame.destroy();
-    }
-  });
 
   /** Replaces the first paragraph's text in one writer frame. */
   const retype = (text: string) => (fragment: Y.XmlFragment) => {
@@ -423,10 +374,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       { command: "undo", documentId: ALPHA_ID, file: "alpha.md" },
       {
         ...fixture.context,
-        responseIdentity: {
-          providerResponseId: fixture.responseId,
-          editScopeId: fixture.responseId,
-        },
+        responseIdentity: { modelResponseId: fixture.responseId },
       },
     );
   const cardUndo = () =>

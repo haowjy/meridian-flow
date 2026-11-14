@@ -57,19 +57,14 @@ export type {
 export type {
   DocumentAccess,
   DocumentCoordinator,
-  RetiredWriteReason,
+  PreparedSave,
+  PreparedWrite,
   RoomRead,
   SaveCut,
   SavePrecondition,
-  StagedCut,
-  StagedReconcile,
-  StagedRoomEntries,
-  StagedWriteCommit,
-  StagedWriteRejectionReason,
-  StagedWriteSaveResult,
+  WriteRefusalReason,
 } from "./ports/document-coordinator.js";
 export {
-  DocumentAccessLostError,
   DocumentNotFoundError,
   isDocumentNotFoundError,
   SavePreconditionRefused,
@@ -137,11 +132,6 @@ export {
   rejectedWriteResult,
   removedWriteRefusal,
 } from "./tool/receipt.js";
-export {
-  isResponseLifecycleError,
-  ResponseAttemptStaleError,
-  type ResponseCommitAttempt,
-} from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
 export type {

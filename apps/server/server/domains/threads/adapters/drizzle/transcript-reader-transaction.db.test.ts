@@ -206,7 +206,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         };
         await finalizeOrphanedTurns(
-          { repos: observedRepos, eventWriter: createQuietDrizzleJournalWriter(db) },
+          {
+            repos: observedRepos,
+            eventWriter: createQuietDrizzleJournalWriter(db),
+            recoverCommands: async () => {},
+          },
           { threadId: THREAD_ID },
         );
       });

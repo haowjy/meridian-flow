@@ -136,6 +136,10 @@ async function containerGrant(
   return isFileAccessDenied(grant) ? fileAccessDeniedError("move", grant, path) : grant;
 }
 
+function livePort(deps: ToolWiringDeps, call: ToolCall) {
+  return contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
+}
+
 /**
  * The live move or delete, its tree entry recorded inside the mutation's own transaction. The
  * placement before is read just ahead of it. The port acts on the document by id, so a rename or
@@ -149,10 +153,7 @@ async function commitLive(
   source: FileRef & { documentId: DocumentId },
   ctx: ToolHandlerContext,
 ): Promise<{ handle: string; uri: string } | WriteToolErrorOutput> {
-  const port = contextPortForThread(deps.contextPorts, call.context.resolution, {
-    responseId: ctx.responseIdentity?.editScopeId ?? null,
-    liveWrites: true,
-  });
+  const port = livePort(deps, call);
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
@@ -214,6 +215,7 @@ async function commitLive(
       destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
       name: typed.slice(slash + 1),
       origin,
+      linksFlushed: true,
       ...(position ? { position } : {}),
       inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
     },
@@ -319,6 +321,8 @@ export async function runNamespaceCommand(
   call: ToolCall,
   input: NamespaceInput,
   ctx: ToolHandlerContext,
+  /** Runs the part that changes things: as the call's command, or directly. */
+  settle: (effect: () => Promise<unknown>) => Promise<unknown>,
 ) {
   const source = await resolveSource(call, input);
   if (isToolError(source)) {
@@ -348,39 +352,45 @@ export async function runNamespaceCommand(
       drafted ||= container.destination.kind === "draft";
     }
   }
-  const result = await runWithEditGrants(deps.fileAccess, grants, () =>
-    drafted
-      ? commitDrafted(deps, call, input, source, ctx)
-      : commitLive(deps, call, input, source, ctx),
-  );
-  if (!result.ok)
-    return fileAccessDeniedError(input.command, firstRefusal(result.refusal), source.uri);
-  if (isToolError(result.value)) return result.value;
-  const { handle, uri } = result.value;
-  // A drafted delete leaves live and every Work's drafts alone: nothing outlives anything.
-  const survivingWorks =
-    input.command === "delete" && !drafted
-      ? await deps.documentSync.treeHistory().survivingDraftWorks(source.documentId)
-      : [];
-  const destination = drafted ? draftDestination : grant.destination;
-  if (!destination) throw new Error("A drafted namespace command has no Work destination");
-  return {
-    output: modelResult({
-      command: input.command,
-      status: "success",
-      phase: "committed",
-      payload: {
-        path: uri,
-        destination: destination.kind,
-        ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
-        write: { id: handle },
-        namespace:
-          input.command === "move"
-            ? { kind: "moved", from: source.uri }
-            : { kind: "deleted", ...(survivingWorks.length ? { survivingWorks } : {}) },
-      },
-    }),
-    // Committed at the call: a save boundary after it rotates the reply's edit scope.
-    metadata: { treeWrite: true, documentId: source.documentId },
-  };
+  // The mover flushes stale link derivations before it locks, on connections of its own, so
+  // a move that runs as a command flushes before the claim.
+  if (input.command === "move" && !drafted)
+    await livePort(deps, call).flushMoveLinks(contextAreaOf(source.uri));
+  return settle(async () => {
+    const result = await runWithEditGrants(deps.fileAccess, grants, () =>
+      drafted
+        ? commitDrafted(deps, call, input, source, ctx)
+        : commitLive(deps, call, input, source, ctx),
+    );
+    if (!result.ok)
+      return fileAccessDeniedError(input.command, firstRefusal(result.refusal), source.uri);
+    if (isToolError(result.value)) return result.value;
+    const { handle, uri } = result.value;
+    // A drafted delete leaves live and every Work's drafts alone: nothing outlives anything.
+    const survivingWorks =
+      input.command === "delete" && !drafted
+        ? await deps.documentSync.treeHistory().survivingDraftWorks(source.documentId)
+        : [];
+    const destination = drafted ? draftDestination : grant.destination;
+    if (!destination) throw new Error("A drafted namespace command has no Work destination");
+    return {
+      output: modelResult({
+        command: input.command,
+        status: "success",
+        phase: "committed",
+        payload: {
+          path: uri,
+          destination: destination.kind,
+          ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
+          write: { id: handle },
+          namespace:
+            input.command === "move"
+              ? { kind: "moved", from: source.uri }
+              : { kind: "deleted", ...(survivingWorks.length ? { survivingWorks } : {}) },
+        },
+      }),
+      // Committed at the call: a save boundary after it rotates the reply's edit scope.
+      metadata: { treeWrite: true, documentId: source.documentId },
+    };
+  });
 }

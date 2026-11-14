@@ -128,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     async function threadPort(fixture: ReturnType<typeof createFixture>) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");
-      return contextPortForThread(fixture.contextPorts, resolution, { responseId: null });
+      return contextPortForThread(fixture.contextPorts, resolution);
     }
 
     beforeEach(async () => {

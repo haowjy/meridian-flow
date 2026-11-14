@@ -78,6 +78,12 @@ function documentToolRegistry(dispatched: Array<{ tool: string; input: unknown }
   });
 }
 
+const unusedCommands = {
+  async resolveCommand(): Promise<never> {
+    throw new Error("a refused write opens no command");
+  },
+};
+
 describe("document command recovery through the runtime loop", () => {
   it("refuses the retired write read with repair guidance, then dispatches read", async () => {
     const dispatched: Array<{ tool: string; input: unknown }> = [];
@@ -92,7 +98,7 @@ describe("document command recovery through the runtime loop", () => {
     const rig = await runtimeScenario({
       gateway,
       toolRegistry,
-      toolExecutor: createToolExecutor(toolRegistry),
+      toolExecutor: createToolExecutor(toolRegistry, unusedCommands),
     });
     const { orchestrator, repos, thread, journal: eventWriter } = rig;
 
@@ -199,7 +205,7 @@ describe("document command recovery through the runtime loop", () => {
     const rig = await runtimeScenario({
       gateway,
       toolRegistry,
-      toolExecutor: createToolExecutor(toolRegistry),
+      toolExecutor: createToolExecutor(toolRegistry, unusedCommands),
       agentRevisions,
     });
     const { orchestrator, repos, thread, journal: eventWriter } = rig;

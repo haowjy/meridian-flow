@@ -15,9 +15,29 @@ by the dead run remain queued. A crashed child publishes one failure report and
 is not restarted for its retired parent message.
 
 Once the session claim proves the prior owner is gone, `settleStaleExecution`
-repairs while the stale row still holds the dead reply's turn and
-adopted-message IDs, then ends that execution and deletes the row before any
-new lease is inserted ([run identity](delivery.md#run-identity)). Compaction
+does one thread-lock hold: lock the row, repair while it still holds the dead
+reply's turn and adopted-message IDs, check every
+turn of the execution is terminal, delete the row; reports publish after the
+lock. The new lease row is inserted afterwards
+([run identity](delivery.md#run-identity)).
+
+`finalizeExecution` takes a required `recoverCommands` dependency and calls it
+for an assistant turn before the turn becomes terminal, inside the same thread
+lock and under the caller's session claim (no lease check). Every path that ends
+an assistant turn recovers: the run's close, the orphan repair, and the spawn
+report repair. `createCommandRecovery` (`loop/command-recovery.ts`) takes each
+`tool_use` of the turn whose registration has `documentCommand` and whose result block
+(the id `modelEditIds(key).blockId` derives from its response and call id, never the call id
+alone: adapters number calls per response) is not stored, in call order, resolves its command (`resolve` joins the finalizer's transaction: a connection of
+its own would wait on the thread lock the first holds) and stores the result block under
+`modelEditIds(key).blockId` (the outcome's result, or "did not run" for `never`). Other
+tools' open calls keep the request-time stub.
+
+Every write a running run makes to the transcript (a model response, a tool
+result block, a spawn's invocation card) goes through `storeUnderLease` or `ackWithResponse`: thread lock,
+then a check that the run's own lease row exists. A process that lost its run
+gets `LostRunError`, its write rolls back and the loop exits without closing
+the turn, so nothing it stores can land after recovery read the transcript. Compaction
 uses `finalizeExecution`; handoff uses `completeHandoffSeed` to write an
 unavailable card, interrupted metadata, and history read line. A durable failed
 reply acknowledges its adopted messages and is not restarted by the periodic

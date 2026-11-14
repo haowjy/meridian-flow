@@ -28,9 +28,9 @@ import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
-  ApplyClickAnswer,
   ApplyClickResult,
   ApplyRenamedNote,
+  UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
@@ -67,7 +67,6 @@ import {
   ApplyClickRefused,
   type ApplyCommandStore,
 } from "../domain/apply-click.js";
-import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { DraftStaleUpdateError } from "../domain/draft-store.js";
@@ -75,12 +74,8 @@ import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coor
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
-import {
-  claimCommandWithinTx,
-  lookupCommand,
-  settleCommandWithinTx,
-} from "./drizzle-branch-commands.js";
-import { recordDocumentEdit } from "./drizzle-document-edits.js";
+import { runCommand } from "./drizzle-document-commands.js";
+import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 
@@ -226,212 +221,207 @@ export function createDrizzleApplyClick(
     loadUnapply: (command) => loadPreparedUnapply(db, deps.coordinator, command),
     async unapply(command, prepared) {
       const commandId = command.envelope.commandId;
-      const closed = (): import("@meridian/contracts/branches").UnapplyClickResult => ({
-        status: "closed",
-        commandId,
-      });
+      const closed = (): UnapplyClickResult => ({ status: "closed", commandId });
+      const unapplyRefusal = (cause: unknown): UnapplyClickResult | undefined =>
+        cause instanceof ApplyClickRefused
+          ? { status: "refused", commandId }
+          : cause instanceof DraftStaleUpdateError
+            ? closed()
+            : undefined;
       try {
-        return await deps.workProjection.mutate(
-          { branches: [prepared.branchId] },
-          async (): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> => {
-            const tx = currentDrizzleDb(db);
-            const found = await lookupCommand(tx, command.envelope);
-            if (found.kind === "done")
-              return found.commandKind === "unapply_click"
-                ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
-                : { status: "conflict", commandId };
-            if (found.kind !== "none") return { status: found.kind, commandId };
-            if (
-              !(await claimCommandWithinTx(tx, {
-                ...command.envelope,
-                branchId: prepared.branchId,
-              }))
-            )
-              throw new BranchCommandExistsError(commandId);
-            const finish = async (
-              result: import("@meridian/contracts/branches").UnapplyClickResult,
-            ) => {
-              await settleCommandWithinTx(tx, commandId, result);
-              return result;
-            };
-            if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
-            await lockDocumentMutation(tx, command.documentId);
-            const currentBase = await deps.coordinator.loadBase(prepared.base.snapshot.draftId);
-            if (
-              currentBase.snapshot.status === "closed" ||
-              currentBase.snapshot.documentId !== command.documentId ||
-              currentBase.snapshot.branchId !== prepared.branchId
-            )
-              return finish(closed());
-            const stillActive = await tx
-              .select({ ordinal: applyCommandEffects.ordinal })
-              .from(applyCommandEffects)
-              .where(
-                and(
-                  eq(applyCommandEffects.commandId, command.request.applyCommandId),
-                  isNull(applyCommandEffects.unappliedBy),
-                ),
-              );
-            const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
-            const effects = prepared.effects.filter((effect) => activeOrdinals.has(effect.ordinal));
-            if (!effects.length) return finish({ status: "refused", commandId });
-
-            const snapshot = await deps.live.read(command.documentId);
-            const live = storedDocument(snapshot);
-            try {
-              const history = await loadUnapplyHistory(
-                db,
-                command.documentId,
-                effects.flatMap((effect) =>
-                  effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
-                ),
-              );
-              const bySeq = new Map<number, InversePart>();
-              for (const part of history) {
-                const value = part.origin;
-                if (value?.kind === "live") bySeq.set(value.seq, part);
-              }
-              const targeted = effects.flatMap((effect) => {
-                if (effect.liveUpdateSeq === null) return [];
-                const part = bySeq.get(effect.liveUpdateSeq);
-                return part ? [{ effect, part }] : [];
-              });
-              const inverse = computeInverse(
-                live,
-                history,
-                // Latest group first: a group's live update builds on the earlier groups' items, so the
-                // earlier group is intact only once the later one is out.
-                [...targeted].reverse().map(({ part }) => ({ part, direction: "invert" as const })),
-                { actionId: commandId, allocateClient: allocateDocumentClient },
-              );
-              const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
-              const reversed = effects.filter(
-                (effect) =>
-                  effect.liveUpdateSeq === null ||
-                  targeted.some(
-                    ({ effect: candidate, part }) =>
-                      candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
-                  ),
-              );
-              const reversedWithLive = reversed.filter((effect) => effect.liveUpdateSeq !== null);
-              const skipped = effects.filter(
-                (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
-              );
-              if (!reversed.length)
-                return finish({
-                  status: "unapplied",
-                  commandId,
-                  reversedGroupIds: [],
-                  skippedGroupIds: skipped.map((effect) => effect.groupId),
-                });
-              const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
-              for (const edit of inverse.edits) {
-                for (const part of edit.parts) {
-                  const provenance = captureMutationUpdates(live, () => {
-                    live.transact(() => {
-                      Y.applyUpdate(live, part.update);
-                      appendInverseRestorationFacts(live, part.aliases);
-                    });
-                  });
-                  const update = provenance.length
-                    ? Y.mergeUpdates([part.update, ...provenance])
-                    : part.update;
-                  const seq = await deps.live.append(
-                    command.documentId,
-                    update,
-                    { seq: 0, origin: "system" },
-                    snapshot.authority,
-                  );
-                  receipts.push({ ...part, update, origin: { kind: "live", seq } });
-                }
-              }
-              if (receipts.length)
-                await recordDocumentEdit(tx, {
-                  documentId: command.documentId,
-                  actor: "human",
-                  actorUserId: command.envelope.accountId,
-                  kind: "undo",
-                  actionId: commandId,
-                  receipts,
-                });
-
-              const groupIds = new Set(reversed.map((effect) => effect.groupId));
-              let unapplyMerged = { rules: {} as RuleCounts, overrode: 0 };
-              const write = deps.coordinator.prepareAppend(currentBase, [], {
-                authorServerRows(prefix) {
-                  let row: Uint8Array | undefined;
-                  const capture = (bytes: Uint8Array) => {
-                    row = bytes;
-                  };
-                  prefix.on("update", capture);
-                  try {
-                    prefix.transact(() => {
-                      const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-                      let current = readBlocks(fragment, schema);
-                      const total = ruleCounter();
-                      let overrode = 0;
-                      for (const effect of [...reversedWithLive].reverse()) {
-                        const merge = contentMerge(
-                          schema,
-                          effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
-                          current,
-                          effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
-                        );
-                        addCounts(total.fire, merge.rules);
-                        overrode += merge.overrode;
-                        current = merge.blocks;
-                      }
-                      unapplyMerged = { rules: total.counts, overrode };
-                      writeBlocks(fragment, schema, current);
-                      removeApplyRecords(prefix, command.request.applyCommandId, groupIds);
-                    }, "unapply");
-                    if (!row) throw new Error("Un-Apply must remove its Apply records");
-                    return [row];
-                  } finally {
-                    prefix.off("update", capture);
-                  }
-                },
-              });
-              try {
-                await write.persist();
-                write.transfer();
-              } finally {
-                write.dispose();
-              }
-              deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
-              await tx
-                .update(applyCommandEffects)
-                .set({ unappliedBy: commandId })
-                .where(
-                  and(
-                    eq(applyCommandEffects.commandId, command.request.applyCommandId),
-                    inArray(
-                      applyCommandEffects.ordinal,
-                      reversed.map((effect) => effect.ordinal),
+        return await runCommand(
+          db,
+          command.envelope,
+          () =>
+            deps.workProjection.mutate(
+              { branches: [prepared.branchId] },
+              async (): Promise<UnapplyClickResult> => {
+                const tx = currentDrizzleDb(db);
+                if (!(await deps.branches.lockActive(prepared.branchId))) return closed();
+                await lockDocumentMutation(tx, command.documentId);
+                const currentBase = await deps.coordinator.loadBase(prepared.base.snapshot.draftId);
+                if (
+                  currentBase.snapshot.status === "closed" ||
+                  currentBase.snapshot.documentId !== command.documentId ||
+                  currentBase.snapshot.branchId !== prepared.branchId
+                )
+                  return closed();
+                const stillActive = await tx
+                  .select({ ordinal: applyCommandEffects.ordinal })
+                  .from(applyCommandEffects)
+                  .where(
+                    and(
+                      eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                      isNull(applyCommandEffects.unappliedBy),
                     ),
-                    isNull(applyCommandEffects.unappliedBy),
-                  ),
+                  );
+                const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
+                const effects = prepared.effects.filter((effect) =>
+                  activeOrdinals.has(effect.ordinal),
                 );
-              const answer: import("@meridian/contracts/branches").UnapplyClickResult = {
-                status: "unapplied",
-                commandId,
-                reversedGroupIds: reversed.map((effect) => effect.groupId),
-                skippedGroupIds: skipped.map((effect) => effect.groupId),
-              };
-              await finish(answer);
-              deferUntilDrizzleCommit(async () => {
-                await deps.liveCoordinator.deliver(command.documentId);
-                await deps.onCommitted(command.documentId);
-              });
-              return answer;
-            } finally {
-              live.destroy();
-            }
-          },
-          { requireActive: true, seam: true },
+                if (!effects.length) return { status: "refused", commandId };
+
+                const snapshot = await deps.live.read(command.documentId);
+                const live = storedDocument(snapshot);
+                try {
+                  const history = await loadUnapplyHistory(
+                    db,
+                    command.documentId,
+                    effects.flatMap((effect) =>
+                      effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
+                    ),
+                  );
+                  const bySeq = new Map<number, InversePart>();
+                  for (const part of history) {
+                    const value = part.origin;
+                    if (value?.kind === "live") bySeq.set(value.seq, part);
+                  }
+                  const targeted = effects.flatMap((effect) => {
+                    if (effect.liveUpdateSeq === null) return [];
+                    const part = bySeq.get(effect.liveUpdateSeq);
+                    return part ? [{ effect, part }] : [];
+                  });
+                  const inverse = computeInverse(
+                    live,
+                    history,
+                    // Latest group first: a group's live update builds on the earlier groups' items, so the
+                    // earlier group is intact only once the later one is out.
+                    [...targeted]
+                      .reverse()
+                      .map(({ part }) => ({ part, direction: "invert" as const })),
+                    { actionId: commandId, allocateClient: allocateDocumentClient },
+                  );
+                  const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
+                  const reversed = effects.filter(
+                    (effect) =>
+                      effect.liveUpdateSeq === null ||
+                      targeted.some(
+                        ({ effect: candidate, part }) =>
+                          candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
+                      ),
+                  );
+                  const reversedWithLive = reversed.filter(
+                    (effect) => effect.liveUpdateSeq !== null,
+                  );
+                  const skipped = effects.filter(
+                    (effect) => !reversed.some((candidate) => candidate.ordinal === effect.ordinal),
+                  );
+                  if (!reversed.length)
+                    return {
+                      status: "unapplied",
+                      commandId,
+                      reversedGroupIds: [],
+                      skippedGroupIds: skipped.map((effect) => effect.groupId),
+                    };
+                  const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
+                  for (const edit of inverse.edits) {
+                    for (const part of edit.parts) {
+                      const provenance = captureMutationUpdates(live, () => {
+                        live.transact(() => {
+                          Y.applyUpdate(live, part.update);
+                          appendInverseRestorationFacts(live, part.aliases);
+                        });
+                      });
+                      const update = provenance.length
+                        ? Y.mergeUpdates([part.update, ...provenance])
+                        : part.update;
+                      const seq = await deps.live.append(
+                        command.documentId,
+                        update,
+                        { seq: 0, origin: "system" },
+                        snapshot.authority,
+                      );
+                      receipts.push({ ...part, update, origin: { kind: "live", seq } });
+                    }
+                  }
+                  if (receipts.length)
+                    await recordDocumentEdit(tx, {
+                      documentId: command.documentId,
+                      actor: "human",
+                      actorUserId: command.envelope.accountId,
+                      kind: "undo",
+                      actionId: commandId,
+                      commandId,
+                      receipts,
+                    });
+
+                  const groupIds = new Set(reversed.map((effect) => effect.groupId));
+                  let unapplyMerged = { rules: {} as RuleCounts, overrode: 0 };
+                  const write = deps.coordinator.prepareAppend(currentBase, [], {
+                    authorServerRows(prefix) {
+                      let row: Uint8Array | undefined;
+                      const capture = (bytes: Uint8Array) => {
+                        row = bytes;
+                      };
+                      prefix.on("update", capture);
+                      try {
+                        prefix.transact(() => {
+                          const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+                          let current = readBlocks(fragment, schema);
+                          const total = ruleCounter();
+                          let overrode = 0;
+                          for (const effect of [...reversedWithLive].reverse()) {
+                            const merge = contentMerge(
+                              schema,
+                              effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
+                              current,
+                              effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
+                            );
+                            addCounts(total.fire, merge.rules);
+                            overrode += merge.overrode;
+                            current = merge.blocks;
+                          }
+                          unapplyMerged = { rules: total.counts, overrode };
+                          writeBlocks(fragment, schema, current);
+                          removeApplyRecords(prefix, command.request.applyCommandId, groupIds);
+                        }, "unapply");
+                        if (!row) throw new Error("Un-Apply must remove its Apply records");
+                        return [row];
+                      } finally {
+                        prefix.off("update", capture);
+                      }
+                    },
+                  });
+                  try {
+                    await write.persist();
+                    write.transfer();
+                  } finally {
+                    write.dispose();
+                  }
+                  deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
+                  await tx
+                    .update(applyCommandEffects)
+                    .set({ unappliedBy: commandId })
+                    .where(
+                      and(
+                        eq(applyCommandEffects.commandId, command.request.applyCommandId),
+                        inArray(
+                          applyCommandEffects.ordinal,
+                          reversed.map((effect) => effect.ordinal),
+                        ),
+                        isNull(applyCommandEffects.unappliedBy),
+                      ),
+                    );
+                  const answer: UnapplyClickResult = {
+                    status: "unapplied",
+                    commandId,
+                    reversedGroupIds: reversed.map((effect) => effect.groupId),
+                    skippedGroupIds: skipped.map((effect) => effect.groupId),
+                  };
+                  deferUntilDrizzleCommit(async () => {
+                    await deps.liveCoordinator.deliver(command.documentId);
+                    await deps.onCommitted(command.documentId);
+                  });
+                  return answer;
+                } finally {
+                  live.destroy();
+                }
+              },
+              { requireActive: true, seam: true },
+            ),
+          unapplyRefusal,
         );
       } catch (cause) {
-        if (cause instanceof DraftStaleUpdateError) return closed();
         if (cause instanceof LineageDraftsUnavailableError)
           throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)
@@ -453,6 +443,12 @@ export function createDrizzleApplyClick(
       const branchId =
         prepared.kind === "text" ? prepared.base.snapshot.branchId : prepared.branchId;
       const userId = command.envelope.accountId as UserId;
+      const applyRefusal = (cause: unknown): ApplyClickResult | undefined =>
+        cause instanceof ApplyClickRefused
+          ? { status: "refused", commandId: command.envelope.commandId, reason: cause.reason }
+          : cause instanceof DraftStaleUpdateError
+            ? closed(command)
+            : undefined;
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
@@ -465,375 +461,379 @@ export function createDrizzleApplyClick(
             return await applyTiming.run(
               { commandId: command.envelope.commandId, measured: deps.measured },
               () =>
-                deps.workProjection.mutate(
-                  // The branch's owner enters the boundary as Discard's does.
-                  { branches: [branchId] },
-                  async (): Promise<ApplyClickAnswer> => {
-                    // mutate awaits post-commit delivery too; stop the boundary clock at
+                runCommand(
+                  db,
+                  command.envelope,
+                  async (): Promise<ApplyClickResult> => {
+                    // The command awaits post-commit delivery too; stop the boundary clock at
                     // root commit, before room recovery and document projections run.
                     deferUntilDrizzleCommit(() => {
                       committedAt = performance.now();
                     });
-                    const tx = currentDrizzleDb(db);
-                    const found = await lookupCommand(tx, command.envelope);
-                    if (found.kind === "done")
-                      return found.commandKind === "apply_click"
-                        ? (found.result as ApplyClickResult)
-                        : { status: "conflict", commandId: command.envelope.commandId };
-                    if (found.kind !== "none")
-                      return { status: found.kind, commandId: command.envelope.commandId };
-                    if (
-                      !(await claimCommandWithinTx(tx, {
-                        ...command.envelope,
-                        branchId: branchId,
-                      }))
-                    )
-                      throw new BranchCommandExistsError(command.envelope.commandId);
-                    const finish = async (result: ApplyClickResult) => {
-                      await settleCommandWithinTx(tx, command.envelope.commandId, result);
-                      return result;
-                    };
-                    if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
-                    // Only a tree cut, a hidden-create reveal or a deleted document's restore
-                    // changes the tree. Ordinary text Apply must not serialize unrelated
-                    // documents on their source's namespace lock.
-                    const lifecycle = async () => {
-                      const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
-                      if (!row) throw new ApplyClickRefused("not_found");
-                      return row;
-                    };
-                    const guess = await lifecycle();
-                    treeScope ||= guess.hidden || guess.deleted || cut !== null;
-                    await testHook("apply.afterScopeGuess");
-                    const guessedPlan = cut
-                      ? await dependencyPlan(branchId, command.documentId)
-                      : null;
-                    const scopeIds = guessedPlan
-                      ? [...guessedPlan.nodes.keys()]
-                      : [command.documentId];
-                    if (treeScope)
-                      await acquireTreeScope(db, {
-                        branches: [{ branchId, documentIds: scopeIds }],
-                        documentIds: scopeIds,
-                      });
-                    else await lockDocumentMutation(tx, command.documentId);
-                    const locked = await lifecycle();
-                    if (locked.deleted && !treeScope) {
-                      // A delete committed between the guess and the lock: start over
-                      // namespace-first, never taking a namespace under a document lock.
-                      treeScope = true;
-                      throw new TreeScopeChangedError();
-                    }
-                    const node = await itemNode(branchId, command.documentId);
-                    // The click applies exactly the row revision the writer saw.
-                    if (
-                      cut &&
-                      (!node?.branch || (node.branch.revision?.toString() ?? null) !== cut.revision)
-                    )
-                      return finish({ status: "changed", commandId: command.envelope.commandId });
-                    const state = cut ? (node?.branch?.state ?? null) : null;
-                    // Only the writer's knowledge brings a document back: a delete their view
-                    // did not show leaves the click undone and the draft pending. A
-                    // hidden tombstone is a discarded creation, never asked about.
-                    if (
-                      state !== "deleting" &&
-                      locked.deleted &&
-                      !locked.hidden &&
-                      !command.request.restore
-                    )
-                      return finish({
-                        status: "needs_restore",
-                        commandId: command.envelope.commandId,
-                      });
-                    let restored = false;
-                    const applied: AppliedReviewItem[] = [];
-                    const treeOperations = createApplyTreeOperations({
-                      db,
-                      branchId,
-                      commandDocumentId: command.documentId,
-                      userId,
-                      removal: deps.removal,
-                      history: deps.history,
-                      close: deps.close,
-                      arrivals: deps.arrivals,
-                      catalog: deps.catalog,
-                      releaseObjects: deps.releaseObjects,
-                      onCommitted: deps.onCommitted,
-                      findLive: (documentId) => tree.findById(LIVE_TREE, documentId),
-                      resolveLivePath: async (path) => {
-                        const occupant = await tree.resolvePath(LIVE_TREE, {
-                          contextSourceId: node?.target.contextSourceId ?? locked.contextSourceId,
-                          path,
-                        });
-                        if (occupant.kind === "not_found") return "free";
-                        return occupant.kind === "ambiguous" || occupant.node.kind === "document"
-                          ? "blocked"
-                          : "folder";
-                      },
-                      renamedNote,
-                      displayedPath,
-                    });
-
-                    if (cut && node) {
-                      const plan = await dependencyPlan(branchId, command.documentId);
-                      const scoped = new Set(scopeIds);
-                      if ([...plan.nodes.keys()].some((id) => !scoped.has(id)))
-                        throw new TreeScopeChangedError();
-                      const tolerateDependency = async (
-                        operation: () => Promise<AppliedReviewItem[]>,
-                      ): Promise<AppliedReviewItem[]> => {
-                        try {
-                          return await runInDrizzleSavepoint(db, operation);
-                        } catch (cause) {
-                          if (!(cause instanceof ApplyClickRefused)) throw cause;
-                          return [];
-                        }
-                      };
-                      const cycleIds = plan.cycleAt === null ? [] : plan.chain.slice(plan.cycleAt);
-                      if (cycleIds.length) {
-                        const cycleNodes = cycleIds.map(
-                          (id) => plan.nodes.get(id) as TreeStateNode,
-                        );
-                        const installCycle = async (): Promise<AppliedReviewItem[]> => {
-                          const before = new Map(
-                            await Promise.all(
-                              cycleNodes.map(async (cycleNode) => {
-                                const found = await tree.findById(LIVE_TREE, cycleNode.nodeId);
-                                return [
-                                  cycleNode.nodeId,
-                                  found.kind === "found"
-                                    ? displayedPath(cycleNode, found.document.path)
-                                    : null,
-                                ] as const;
-                              }),
-                            ),
-                          );
-                          await movePlacementCycle(
-                            db,
-                            cycleNodes.map((cycleNode) => ({
-                              documentId: cycleNode.nodeId,
-                              to: liveLocation(cycleNode),
-                            })),
-                            { arrivals: deps.arrivals, catalog: deps.catalog },
-                          );
-                          const items: AppliedReviewItem[] = [];
-                          for (const cycleNode of cycleNodes)
-                            items.push(
-                              await treeOperations.settle(
-                                cycleNode,
-                                before.get(cycleNode.nodeId) ?? null,
-                              ),
-                            );
-                          return items;
+                    // The branch's owner enters the boundary after the claim, as Discard's does.
+                    return deps.workProjection.mutate(
+                      { branches: [branchId] },
+                      async (): Promise<ApplyClickResult> => {
+                        const tx = currentDrizzleDb(db);
+                        if (!(await deps.branches.lockActive(branchId))) return closed(command);
+                        // Only a tree cut, a hidden-create reveal or a deleted document's restore
+                        // changes the tree. Ordinary text Apply must not serialize unrelated
+                        // documents on their source's namespace lock.
+                        const lifecycle = async () => {
+                          const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
+                          if (!row) throw new ApplyClickRefused("not_found");
+                          return row;
                         };
-                        applied.push(
-                          ...(plan.cycleAt === 0
-                            ? await installCycle()
-                            : await tolerateDependency(installCycle)),
-                        );
-                      }
-                      const beforeCycle = plan.cycleAt ?? plan.chain.length;
-                      for (let index = beforeCycle - 1; index >= 0; index--) {
-                        const planned = plan.nodes.get(plan.chain[index] as DocumentId);
-                        if (!planned) continue;
-                        if (index === 0) {
-                          const outcome = await treeOperations.apply(planned);
-                          applied.push(outcome.item);
-                          restored ||= outcome.restored;
-                        } else
-                          applied.push(
-                            ...(await tolerateDependency(async () => [
-                              (await treeOperations.apply(planned)).item,
-                            ])),
-                          );
-                      }
-                      if (state === "deleting")
-                        return finish({
-                          status: "applied",
-                          commandId: command.envelope.commandId,
-                          applied,
-                        });
-                    } else {
-                      if (locked.deleted) {
-                        const outcome = await restoreDocument(
-                          db,
-                          { documentId: command.documentId },
-                          { arrivals: deps.arrivals, catalog: deps.catalog },
-                        );
-                        if (outcome.kind === "ancestor_taken")
-                          throw new ApplyClickRefused("ancestor_taken");
-                        if (outcome.kind === "refused") return finish(closed(command));
-                        restored = outcome.kind === "restored";
-                      }
-                      if (node?.hidden && node.origin === "created" && base) {
-                        await treeOperations.reveal(node, {
-                          contextSourceId: locked.contextSourceId,
-                          parentFolderId: locked.folderId,
-                          name: locked.name,
-                          extension: locked.extension,
-                        });
-                      }
-                    }
-                    if (!cut && node?.origin === "created")
-                      await endCreatedFact(db, { branchId, documentId: command.documentId });
-                    if (
-                      !applied.some(
-                        ({ itemKey }) => itemKey === draftItemKey(branchId, command.documentId),
-                      )
-                    ) {
-                      const renamed = node ? await renamedNote(node) : undefined;
-                      applied.push({
-                        itemKey: draftItemKey(branchId, command.documentId),
-                        ...(renamed ? { renamed } : {}),
-                      });
-                    }
-                    if (!base || !click) {
-                      deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
-                      return finish({
-                        status: "applied",
-                        commandId: command.envelope.commandId,
-                        applied,
-                        ...(restored ? { restored } : {}),
-                      });
-                    }
-                    const { schema } = click;
-                    const snapshot = await deps.live.read(command.documentId);
-                    const live = storedDocument(snapshot);
-                    let update: Uint8Array | undefined;
-                    const capture = (bytes: Uint8Array) => {
-                      update = bytes;
-                    };
-                    live.on("update", capture);
-                    try {
-                      let overrode = 0;
-                      const merged = ruleCounter();
-                      const liveEffects: { groupId: string; seq: number | null }[] = [];
-                      for (const group of click.groups) {
-                        const groupMerge = contentMerge(
-                          schema,
-                          group.before,
-                          readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-                          group.patched,
-                        );
-                        overrode += groupMerge.overrode;
-                        addCounts(merged.fire, groupMerge.rules);
-                        update = undefined;
-                        live.transact(
-                          () =>
-                            writeBlocks(
-                              live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                              schema,
-                              groupMerge.blocks,
-                            ),
-                          "apply",
-                        );
-                        const seq = update
-                          ? await deps.live.append(
-                              command.documentId,
-                              update,
-                              { seq: 0, origin: `human:${command.envelope.accountId}` },
-                              snapshot.authority,
-                            )
+                        const guess = await lifecycle();
+                        treeScope ||= guess.hidden || guess.deleted || cut !== null;
+                        await testHook("apply.afterScopeGuess");
+                        const guessedPlan = cut
+                          ? await dependencyPlan(branchId, command.documentId)
                           : null;
-                        liveEffects.push({ groupId: group.groupId, seq });
-                      }
-                      deps.merged({
-                        commandId: command.envelope.commandId,
-                        kind: "apply",
-                        rules: merged.counts,
-                        overrode,
-                      });
-                      await testHook("apply.afterLive");
-                      const baseEffects: {
-                        groupId: string;
-                        start?: unknown[];
-                        delta: unknown[];
-                      }[] = [];
-                      const write = deps.coordinator.prepareAppend(base, [], {
-                        authorServerRows(prefix) {
-                          const rows: Uint8Array[] = [];
-                          let row: Uint8Array | undefined;
-                          const capture = (bytes: Uint8Array) => {
-                            row = bytes;
-                          };
-                          prefix.on("update", capture);
-                          try {
-                            for (const group of click.groups) {
-                              row = undefined;
-                              const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-                              const before = readBlocks(fragment, schema);
-                              const after = applyBase(schema, before, group.before, group.patched);
-                              prefix.transact(() => {
-                                writeBlocks(fragment, schema, after);
-                                appendApplyRecord(prefix, group.record);
-                              }, "apply");
-                              if (!row) throw new Error("Apply must append its command record");
-                              rows.push(row);
-                              baseEffects.push({
-                                groupId: group.groupId,
-                                ...(baseEffects.length === 0
-                                  ? { start: before.map((block) => block.toJSON()) }
-                                  : {}),
-                                delta: baseViewDelta(schema, before, after).map((patch) => ({
-                                  ...patch,
-                                  blocks: patch.blocks.map((block) => block.toJSON()),
-                                })),
-                              });
-                            }
-                            return rows;
-                          } finally {
-                            prefix.off("update", capture);
-                          }
-                        },
-                      });
-                      try {
-                        await write.persist();
-                        write.transfer();
-                      } finally {
-                        write.dispose();
-                      }
-                      await tx.insert(applyCommandEffects).values(
-                        click.groups.map((group, ordinal) => {
-                          const liveEffect = liveEffects.find(
-                            (effect) => effect.groupId === group.groupId,
-                          );
-                          const baseEffect = baseEffects.find(
-                            (effect) => effect.groupId === group.groupId,
-                          );
-                          if (!liveEffect || !baseEffect)
-                            throw new Error("Apply effect was not captured");
+                        const scopeIds = guessedPlan
+                          ? [...guessedPlan.nodes.keys()]
+                          : [command.documentId];
+                        if (treeScope)
+                          await acquireTreeScope(db, {
+                            branches: [{ branchId, documentIds: scopeIds }],
+                            documentIds: scopeIds,
+                          });
+                        else await lockDocumentMutation(tx, command.documentId);
+                        const locked = await lifecycle();
+                        if (locked.deleted && !treeScope) {
+                          // A delete committed between the guess and the lock: start over
+                          // namespace-first, never taking a namespace under a document lock.
+                          treeScope = true;
+                          throw new TreeScopeChangedError();
+                        }
+                        const node = await itemNode(branchId, command.documentId);
+                        // The click applies exactly the row revision the writer saw.
+                        if (
+                          cut &&
+                          (!node?.branch ||
+                            (node.branch.revision?.toString() ?? null) !== cut.revision)
+                        )
+                          return { status: "changed", commandId: command.envelope.commandId };
+                        const state = cut ? (node?.branch?.state ?? null) : null;
+                        // Only the writer's knowledge brings a document back: a delete their view
+                        // did not show leaves the click undone and the draft pending. A
+                        // hidden tombstone is a discarded creation, never asked about.
+                        if (
+                          state !== "deleting" &&
+                          locked.deleted &&
+                          !locked.hidden &&
+                          !command.request.restore
+                        )
                           return {
+                            status: "needs_restore",
                             commandId: command.envelope.commandId,
-                            ordinal,
-                            groupId: group.groupId,
-                            documentId: command.documentId,
-                            draftId: base.snapshot.draftId,
-                            liveUpdateSeq: liveEffect.seq,
-                            baseStart: baseEffect.start,
-                            baseDelta: baseEffect.delta,
                           };
-                        }),
-                      );
-                      const answer: ApplyClickResult = {
-                        status: "applied",
-                        commandId: command.envelope.commandId,
-                        applied,
-                        textEffect: true,
-                        ...(overrode ? { overrode } : {}),
-                        ...(restored ? { restored } : {}),
-                      };
-                      await finish(answer);
-                      deferUntilDrizzleCommit(async () => {
-                        await deps.liveCoordinator.deliver(command.documentId);
-                        await deps.onCommitted(command.documentId);
-                      });
-                      return answer;
-                    } finally {
-                      live.off("update", capture);
-                      live.destroy();
-                    }
+                        let restored = false;
+                        const applied: AppliedReviewItem[] = [];
+                        const treeOperations = createApplyTreeOperations({
+                          db,
+                          branchId,
+                          commandDocumentId: command.documentId,
+                          userId,
+                          removal: deps.removal,
+                          history: deps.history,
+                          close: deps.close,
+                          arrivals: deps.arrivals,
+                          catalog: deps.catalog,
+                          releaseObjects: deps.releaseObjects,
+                          onCommitted: deps.onCommitted,
+                          findLive: (documentId) => tree.findById(LIVE_TREE, documentId),
+                          resolveLivePath: async (path) => {
+                            const occupant = await tree.resolvePath(LIVE_TREE, {
+                              contextSourceId:
+                                node?.target.contextSourceId ?? locked.contextSourceId,
+                              path,
+                            });
+                            if (occupant.kind === "not_found") return "free";
+                            return occupant.kind === "ambiguous" ||
+                              occupant.node.kind === "document"
+                              ? "blocked"
+                              : "folder";
+                          },
+                          renamedNote,
+                          displayedPath,
+                        });
+
+                        if (cut && node) {
+                          const plan = await dependencyPlan(branchId, command.documentId);
+                          const scoped = new Set(scopeIds);
+                          if ([...plan.nodes.keys()].some((id) => !scoped.has(id)))
+                            throw new TreeScopeChangedError();
+                          const tolerateDependency = async (
+                            operation: () => Promise<AppliedReviewItem[]>,
+                          ): Promise<AppliedReviewItem[]> => {
+                            try {
+                              return await runInDrizzleSavepoint(db, operation);
+                            } catch (cause) {
+                              if (!(cause instanceof ApplyClickRefused)) throw cause;
+                              return [];
+                            }
+                          };
+                          const cycleIds =
+                            plan.cycleAt === null ? [] : plan.chain.slice(plan.cycleAt);
+                          if (cycleIds.length) {
+                            const cycleNodes = cycleIds.map(
+                              (id) => plan.nodes.get(id) as TreeStateNode,
+                            );
+                            const installCycle = async (): Promise<AppliedReviewItem[]> => {
+                              const before = new Map(
+                                await Promise.all(
+                                  cycleNodes.map(async (cycleNode) => {
+                                    const found = await tree.findById(LIVE_TREE, cycleNode.nodeId);
+                                    return [
+                                      cycleNode.nodeId,
+                                      found.kind === "found"
+                                        ? displayedPath(cycleNode, found.document.path)
+                                        : null,
+                                    ] as const;
+                                  }),
+                                ),
+                              );
+                              await movePlacementCycle(
+                                db,
+                                cycleNodes.map((cycleNode) => ({
+                                  documentId: cycleNode.nodeId,
+                                  to: liveLocation(cycleNode),
+                                })),
+                                { arrivals: deps.arrivals, catalog: deps.catalog },
+                              );
+                              const items: AppliedReviewItem[] = [];
+                              for (const cycleNode of cycleNodes)
+                                items.push(
+                                  await treeOperations.settle(
+                                    cycleNode,
+                                    before.get(cycleNode.nodeId) ?? null,
+                                  ),
+                                );
+                              return items;
+                            };
+                            applied.push(
+                              ...(plan.cycleAt === 0
+                                ? await installCycle()
+                                : await tolerateDependency(installCycle)),
+                            );
+                          }
+                          const beforeCycle = plan.cycleAt ?? plan.chain.length;
+                          for (let index = beforeCycle - 1; index >= 0; index--) {
+                            const planned = plan.nodes.get(plan.chain[index] as DocumentId);
+                            if (!planned) continue;
+                            if (index === 0) {
+                              const outcome = await treeOperations.apply(planned);
+                              applied.push(outcome.item);
+                              restored ||= outcome.restored;
+                            } else
+                              applied.push(
+                                ...(await tolerateDependency(async () => [
+                                  (await treeOperations.apply(planned)).item,
+                                ])),
+                              );
+                          }
+                          if (state === "deleting")
+                            return {
+                              status: "applied",
+                              commandId: command.envelope.commandId,
+                              applied,
+                            };
+                        } else {
+                          if (locked.deleted) {
+                            const outcome = await restoreDocument(
+                              db,
+                              { documentId: command.documentId },
+                              { arrivals: deps.arrivals, catalog: deps.catalog },
+                            );
+                            if (outcome.kind === "ancestor_taken")
+                              throw new ApplyClickRefused("ancestor_taken");
+                            if (outcome.kind === "refused") return closed(command);
+                            restored = outcome.kind === "restored";
+                          }
+                          if (node?.hidden && node.origin === "created" && base) {
+                            await treeOperations.reveal(node, {
+                              contextSourceId: locked.contextSourceId,
+                              parentFolderId: locked.folderId,
+                              name: locked.name,
+                              extension: locked.extension,
+                            });
+                          }
+                        }
+                        if (!cut && node?.origin === "created")
+                          await endCreatedFact(db, { branchId, documentId: command.documentId });
+                        if (
+                          !applied.some(
+                            ({ itemKey }) => itemKey === draftItemKey(branchId, command.documentId),
+                          )
+                        ) {
+                          const renamed = node ? await renamedNote(node) : undefined;
+                          applied.push({
+                            itemKey: draftItemKey(branchId, command.documentId),
+                            ...(renamed ? { renamed } : {}),
+                          });
+                        }
+                        if (!base || !click) {
+                          deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
+                          return {
+                            status: "applied",
+                            commandId: command.envelope.commandId,
+                            applied,
+                            ...(restored ? { restored } : {}),
+                          };
+                        }
+                        const { schema } = click;
+                        const snapshot = await deps.live.read(command.documentId);
+                        const live = storedDocument(snapshot);
+                        let update: Uint8Array | undefined;
+                        const capture = (bytes: Uint8Array) => {
+                          update = bytes;
+                        };
+                        live.on("update", capture);
+                        try {
+                          let overrode = 0;
+                          const merged = ruleCounter();
+                          const liveEffects: { groupId: string; seq: number | null }[] = [];
+                          for (const group of click.groups) {
+                            const groupMerge = contentMerge(
+                              schema,
+                              group.before,
+                              readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                              group.patched,
+                            );
+                            overrode += groupMerge.overrode;
+                            addCounts(merged.fire, groupMerge.rules);
+                            update = undefined;
+                            live.transact(
+                              () =>
+                                writeBlocks(
+                                  live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                                  schema,
+                                  groupMerge.blocks,
+                                ),
+                              "apply",
+                            );
+                            const seq = update
+                              ? await deps.live.append(
+                                  command.documentId,
+                                  update,
+                                  { seq: 0, origin: `human:${command.envelope.accountId}` },
+                                  snapshot.authority,
+                                )
+                              : null;
+                            liveEffects.push({ groupId: group.groupId, seq });
+                          }
+                          deps.merged({
+                            commandId: command.envelope.commandId,
+                            kind: "apply",
+                            rules: merged.counts,
+                            overrode,
+                          });
+                          await stampLiveEditsWithCommand(
+                            tx,
+                            command.envelope.commandId,
+                            liveEffects.flatMap((effect) =>
+                              effect.seq === null ? [] : [effect.seq],
+                            ),
+                          );
+                          await testHook("apply.afterLive");
+                          const baseEffects: {
+                            groupId: string;
+                            start?: unknown[];
+                            delta: unknown[];
+                          }[] = [];
+                          const write = deps.coordinator.prepareAppend(base, [], {
+                            authorServerRows(prefix) {
+                              const rows: Uint8Array[] = [];
+                              let row: Uint8Array | undefined;
+                              const capture = (bytes: Uint8Array) => {
+                                row = bytes;
+                              };
+                              prefix.on("update", capture);
+                              try {
+                                for (const group of click.groups) {
+                                  row = undefined;
+                                  const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+                                  const before = readBlocks(fragment, schema);
+                                  const after = applyBase(
+                                    schema,
+                                    before,
+                                    group.before,
+                                    group.patched,
+                                  );
+                                  prefix.transact(() => {
+                                    writeBlocks(fragment, schema, after);
+                                    appendApplyRecord(prefix, group.record);
+                                  }, "apply");
+                                  if (!row) throw new Error("Apply must append its command record");
+                                  rows.push(row);
+                                  baseEffects.push({
+                                    groupId: group.groupId,
+                                    ...(baseEffects.length === 0
+                                      ? { start: before.map((block) => block.toJSON()) }
+                                      : {}),
+                                    delta: baseViewDelta(schema, before, after).map((patch) => ({
+                                      ...patch,
+                                      blocks: patch.blocks.map((block) => block.toJSON()),
+                                    })),
+                                  });
+                                }
+                                return rows;
+                              } finally {
+                                prefix.off("update", capture);
+                              }
+                            },
+                          });
+                          try {
+                            await write.persist();
+                            write.transfer();
+                          } finally {
+                            write.dispose();
+                          }
+                          await tx.insert(applyCommandEffects).values(
+                            click.groups.map((group, ordinal) => {
+                              const liveEffect = liveEffects.find(
+                                (effect) => effect.groupId === group.groupId,
+                              );
+                              const baseEffect = baseEffects.find(
+                                (effect) => effect.groupId === group.groupId,
+                              );
+                              if (!liveEffect || !baseEffect)
+                                throw new Error("Apply effect was not captured");
+                              return {
+                                commandId: command.envelope.commandId,
+                                ordinal,
+                                groupId: group.groupId,
+                                documentId: command.documentId,
+                                draftId: base.snapshot.draftId,
+                                liveUpdateSeq: liveEffect.seq,
+                                baseStart: baseEffect.start,
+                                baseDelta: baseEffect.delta,
+                              };
+                            }),
+                          );
+                          const answer: ApplyClickResult = {
+                            status: "applied",
+                            commandId: command.envelope.commandId,
+                            applied,
+                            textEffect: true,
+                            ...(overrode ? { overrode } : {}),
+                            ...(restored ? { restored } : {}),
+                          };
+                          deferUntilDrizzleCommit(async () => {
+                            await deps.liveCoordinator.deliver(command.documentId);
+                            await deps.onCommitted(command.documentId);
+                          });
+                          return answer;
+                        } finally {
+                          live.off("update", capture);
+                          live.destroy();
+                        }
+                      },
+                      { requireActive: true, seam: true },
+                    );
                   },
-                  { requireActive: true, seam: true },
+                  applyRefusal,
                 ),
             );
           } catch (cause) {
@@ -842,9 +842,6 @@ export function createDrizzleApplyClick(
           }
         }
       } catch (cause) {
-        // The append door alone locks and rechecks the addressed draft. Closure rolls
-        // back the claim and live half with it before the service reads a stored outcome.
-        if (cause instanceof DraftStaleUpdateError) return closed(command);
         if (cause instanceof LineageDraftsUnavailableError)
           throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)

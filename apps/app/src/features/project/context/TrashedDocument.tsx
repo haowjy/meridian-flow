@@ -150,8 +150,8 @@ function trashSentence(entry: DocumentTrashEntry, locale: string, accountId: str
 }
 
 /**
- * Names who deleted it only when that says something: you, another writer, a chat's AI, a Work,
- * or a reply that didn't finish, in `RemovedDocumentNotice`'s words.
+ * Names who deleted it only when that says something: you, another writer, a chat's AI or a Work,
+ * in `RemovedDocumentNotice`'s words.
  */
 function deletedSentence(
   entry: DocumentTrashEntry,
@@ -181,8 +181,6 @@ function deletedSentence(
       const { name } = voice;
       return t`Deleted from ${place} with the Work ${name} on ${deleted}.`;
     }
-    case "unfinished-reply":
-      return t`Removed from ${place} on ${deleted}, when the reply that created it didn't finish.`;
     case "anonymous":
       return t`Deleted from ${place} on ${deleted}.`;
   }

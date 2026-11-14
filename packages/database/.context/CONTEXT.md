@@ -39,8 +39,9 @@ no foreign key), enforced by `branches_one_owner`.
 `branches.pending_document_count` is its own count;
 `works.pending_document_count` sums its active branches.
 `document_drafts` stores document versions, with writes in
-`draft_write_journal`; `branch_tree_changes` and `branch_commands` belong to
-the whole branch.
+`draft_write_journal`; `branch_tree_changes` belongs to the whole branch. `document_commands` holds one row
+per command sent as a request (Apply, Un-Apply, Discard), inserted first in the effect
+transaction with its final outcome.
 
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather
@@ -90,12 +91,15 @@ the baseline. The checkpoint range capture function stays one SQL
 statement: a client-managed savepoint spanning awaits can roll back sibling
 operations queued on the same connection.
 
-`observation_frontiers` rows belong to the transcript block that showed the
-model a document (`source_block_id`, cascading with the block, so a fork finds
-inherited rows by block id with nothing copied). The model's frontier for a room
-is the row with the greatest `recorded_seq` among a conversation's blocks, read
-through the `(room_key, recorded_seq DESC NULLS LAST)` index; the runtime owns when rows are
-written and replaced ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
+`observation_frontiers` and `thread_shown_links` are collab's tables (what the model was shown
+of documents). A frontier is keyed by the transcript block that showed the model a document
+(`source_block_id`, no foreign key, so a fork finds inherited rows by block id with nothing
+copied and a row left behind by a crash is never read). Its `project_id` cascades with the
+project, and its plain `thread_id` is what `forgetThreads` deletes by when a thread is deleted;
+`thread_shown_links` has the same two columns. The model's frontier for a room is the row with
+the greatest `recorded_seq` among the block ids a lookup names, read through the
+`(room_key, recorded_seq DESC NULLS LAST)` index
+([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
 
 Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
 lots represent grants and purchases. The partial free-tier uniqueness guard

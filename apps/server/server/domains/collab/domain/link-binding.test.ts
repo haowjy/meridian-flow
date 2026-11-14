@@ -46,6 +46,7 @@ function setup() {
       register: async (rows: readonly { aheadId: string }[]) => {
         registered.push(...rows.map(({ aheadId }) => `ahead:${aheadId}`));
       },
+      registerInCommand: async () => {},
     },
     resolveFiletype: async () => "markdown",
     inTransaction: () => false,

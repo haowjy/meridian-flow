@@ -22,7 +22,6 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
-  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -54,8 +53,6 @@ export interface ThreadContextView {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;
-  /** The reply in progress, whose own staged writes reads still see. */
-  responseId?: string | null;
   /** The owner whose branch this thread's drafted writes land in; null outside draft mode. */
   branchOwner: BranchOwnerRef | null;
   version?: "draft" | "live";
@@ -448,6 +445,11 @@ export interface ContextLocationChange {
   origin?: WriteProvenance;
   operation?: ContextOperationInput<"move">;
   /**
+   * The caller ran `flushMoveLinks` for this area already. A move run inside a command
+   * transaction sets it: the flush needs connections of its own, so it ran before the claim.
+   */
+  linksFlushed?: boolean;
+  /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
    * the move (the model's edit history) commits or rolls back with it.
    */
@@ -477,13 +479,7 @@ export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
 export interface ContextDeleteOptions {
   origin?: WriteProvenance;
-  removal?: { reason: "discarded"; cause: RetractionCause };
   operation?: ContextOperationInput<"delete">;
-  /**
-   * Delete only while the node is still at this path of its area; a node the writer has
-   * renamed or moved since survives, and the delete answers `stale_target`.
-   */
-  onlyAt?: string;
   /** Runs inside the delete's own transaction once the removal is written (see the move's). */
   inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
@@ -587,17 +583,6 @@ export interface ContextPort {
     options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
-  /**
-   * Reverse a create this port made, for a rolled-back reply or a failed create write
-   * (contract §12.5): a live create is deleted; a branch's create ends the branch's use of
-   * the document unless the document's draft already holds committed text. A draft-mode
-   * port's `delete` never reverses a branch's create.
-   */
-  retractCreate(
-    uri: string,
-    options: { documentId: string; cause: RetractionCause },
-  ): Promise<Result<void, ContextError>>;
-
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(
     uri: string,
@@ -625,6 +610,12 @@ export interface ContextPort {
     area: string,
     change: ContextLocationChange,
   ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /**
+   * Derives the links of every stale document in `area`'s scope, so the move that follows
+   * rewrites current ones. `commitWriterLocation` does this itself unless `linksFlushed`.
+   */
+  flushMoveLinks(area: string): Promise<void>;
 
   /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
   delete(

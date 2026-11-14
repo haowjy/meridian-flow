@@ -17,7 +17,7 @@ export * from "./import-admission.js";
 export * from "./import-node-id.js";
 export * from "./imports.js";
 export * from "./jsonb";
-export type { ModelResponseIdentity } from "./model-response-identity.js";
+export type { ResponseAuthorship } from "./model-response-identity.js";
 export type {
   ExportOutsideArea,
   ProjectExportOptions,

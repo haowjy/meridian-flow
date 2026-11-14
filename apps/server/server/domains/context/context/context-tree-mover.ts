@@ -171,12 +171,16 @@ export class ContextTreeMover {
     );
   }
 
+  async flushLinks(source: ContextTreeDispatch): Promise<void> {
+    await this.moveLinks?.flush(source);
+  }
+
   private async changeLocation(
     node: ContextEntryRef,
     source: ContextTreeDispatch,
     change: MoveChange,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    await this.moveLinks?.flush(source);
+    if (!change.linksFlushed) await this.flushLinks(source);
     const { destination: where } = change;
     let lockedFolder = where.kind === "at" ? where.folder : source;
     const scopeOf = (dispatch: ContextTreeDispatch) => ({
@@ -343,7 +347,7 @@ export class ContextTreeMover {
       return Err({ code: "permission_denied", uri: target.canonical });
     }
 
-    const token = await this.inspectSource(target, node, options.onlyAt);
+    const token = await this.inspectSource(target, node);
     if (!token.ok) return token;
 
     const result = await callAdapter(
@@ -354,7 +358,6 @@ export class ContextTreeMover {
           mode: "recursive",
           actorUserId: options.origin?.type === "human" ? options.origin.userId : undefined,
           actorThreadId: options.origin?.type === "agent" ? options.origin.threadId : undefined,
-          removal: options.removal,
         }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) {
@@ -466,13 +469,10 @@ export class ContextTreeMover {
    * The node a command acts on, found by id under the locks. A row that is gone is `not_found`; a
    * row now in another Work or area than the one the caller locked is a failure the caller
    * answers by looking the entry up again, since locks cannot be taken in a different order.
-   * With `onlyAt`, a row anywhere else is `stale_target`, for a caller that acts only on the
-   * place it put the node.
    */
   private async inspectSource(
     dispatch: ContextTreeDispatch,
     node: ContextEntryRef,
-    onlyAt?: string,
   ): Promise<Result<ContextLocationToken, ContextError>> {
     const tree = dispatch.adapter.tree;
     if (!tree) return Err({ code: "permission_denied", uri: dispatch.canonical });
@@ -483,12 +483,7 @@ export class ContextTreeMover {
     if (found.value === null) return Err({ code: "not_found", uri: dispatch.canonical });
     const scope = await this.destinationSourceId(dispatch);
     if (!scope.ok) return scope;
-    const elsewhere =
-      found.value.sourceId !== scope.value || (onlyAt !== undefined && found.value.path !== onlyAt);
-    if (elsewhere)
-      return onlyAt === undefined
-        ? namespaceChanged(dispatch.canonical)
-        : Err({ code: "stale_target", uri: dispatch.canonical });
+    if (found.value.sourceId !== scope.value) return namespaceChanged(dispatch.canonical);
     return Ok(found.value);
   }
 

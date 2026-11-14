@@ -34,7 +34,8 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `d23-archived-draft-rebases` | An archived Work draft keeps rebasing while its writer stays frozen. | Archive, commit a live edit, flush the background pull, write to the draft, then unarchive. |
 | `two-process-frames` | Two coordinators deliver one sequence point per frame. | Two stores and rooms commit frames over one database, then read each draft as a tab handshake does. |
 | `two-process-fold` | A content rebase delivers another process's committed row. | Pause A before append, commit `FOREIGN` from B, let A incorporate it, then type. |
-| `two-process-compaction` | Background compaction delivers the row it folds. | Pause A's 512-row rewrite while B commits `FOREIGN`, then complete compaction and type. |
+| `two-process-compaction` | Background compaction delivers the row it folds. | Pause A's 512-row rewrite while B commits `FOREIGN`, then complete compaction and type. B's own compaction is stopped, so A's fold is the only one. |
+| `two-process-compaction-moved` | A fold that lost the row to another process's fold pushes nothing; the next exchange brings the text in. | Same, but B's fold commits first. A's is dropped, room A lacks `FOREIGN`, and A's next keystroke brings it in. |
 | `cold-load-commit` | A room loading across a commit enrolls the committed row. | Pause the load after its PostgreSQL read, commit `COMMITTED`, resume, and type. |
 | `dropped-delivery` | A room reconciles after a dropped delivery. | Drop the first delivery, commit `LIVE` during the pull, then type. |
 | `read-only-handshake` | A read-only handshake reconciles an older room. | Join a stale read connection after a dropped delivery and run SyncStep1/2. |

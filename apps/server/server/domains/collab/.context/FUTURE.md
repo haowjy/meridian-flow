@@ -42,9 +42,9 @@ Measure idle recovery query plans with settled history before adding a partial
 state index for dirty-signal reconciliation or delivery. Keep each scan
 bounded to actionable rows rather than settled history.
 
-## Reply-save and room-admission statements
+## Model-write and room-admission statements
 
-Measure current statement counts for reply save and room admission before
+Measure current statement counts for a model write and room admission before
 narrowing confirmation or head/checkpoint reads. Optimize only after identifying
 which persistence or lock boundary dominates.
 

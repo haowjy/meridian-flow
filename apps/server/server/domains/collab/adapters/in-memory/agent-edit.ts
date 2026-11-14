@@ -28,7 +28,7 @@ import { storedDocument } from "../../domain/stored-document.js";
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState } from "../document-loader.js";
-import { emptyWhenMissing, liveRoomFor, liveSave, withStaged } from "../hocuspocus-coordinator.js";
+import { emptyWhenMissing, liveRoomFor, liveSave } from "../hocuspocus-coordinator.js";
 
 export type InMemoryCheckpointRecord = {
   id: string;
@@ -238,7 +238,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
 
   return {
     ensureEmpty,
-    readRoom: async (docId, staged) => withStaged(await roomCopy(docId), staged),
+    readRoom: (docId) => roomCopy(docId),
     prepareSave: async (input) =>
       liveSave(await roomCopy(input.docId).catch(emptyWhenMissing), input, journal, () => {
         void deliver(input.docId);

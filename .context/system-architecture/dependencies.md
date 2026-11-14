@@ -71,7 +71,6 @@ imports one of them fails the check.
 | `adapters/context-media-resolver.ts` | `context` |
 | `adapters/context-media-resolver.ts` | `file-policy` |
 | `adapters/context-media-resolver.ts` | `storage` |
-| `adapters/in-memory/observation-frontiers.ts` | `@meridian/agent-edit` |
 | `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |
 | `admission/user-turn-admission.ts` | `@meridian/markup` |
@@ -110,9 +109,6 @@ imports one of them fails the check.
 | `loop/work-context.ts` | `@meridian/contracts/works` |
 | `loop/write-mode-switch.ts` | `projects` |
 | `loop/write-mode-switch.ts` | `@meridian/contracts/works` |
-| `ports/observation-frontiers.ts` | `@meridian/agent-edit` |
-| `ports/shown-links.ts` | `@meridian/agent-edit` |
-| `ports/shown-links.ts` | `@meridian/markup` |
 | `spawn/apply-invocation-patch.ts` | `packages` |
 | `spawn/child-run-coordinator.ts` | `packages` |
 | `spawn/resolve-child-invocation.ts` | `packages` |

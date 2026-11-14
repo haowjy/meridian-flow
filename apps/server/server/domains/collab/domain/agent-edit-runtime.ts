@@ -28,13 +28,7 @@ import { createSemanticProvenanceWriter } from "./provenance.js";
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "onResponseLifecycleError"
-  | "onResponseClaimDiscarded"
-  | "onResponseCommitterTransition"
-  | "onIdempotencyHit"
-  | "onUnexpectedWriteError"
-  | "onLinkSpliceFallback"
-  | "onObservationFailed"
+  "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 >;
 
 export function createAgentEditRuntime(input: {

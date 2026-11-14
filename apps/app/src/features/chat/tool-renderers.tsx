@@ -362,11 +362,7 @@ function documentFailureRejected(tool: ToolView): string | null {
  * else reads passively.
  */
 function documentFailureRemoval(tool: ToolView): {
-  by:
-    | { kind: "person" | "work"; name: string }
-    | { kind: "agent"; chat: string | null }
-    | { kind: "unfinished-reply" }
-    | null;
+  by: { kind: "person" | "work"; name: string } | { kind: "agent"; chat: string | null } | null;
   reason: "deleted" | "discarded";
 } {
   const result = tool.result;
@@ -386,56 +382,50 @@ function documentFailureRemoval(tool: ToolView): {
         ? { kind: "work", name: work }
         : record?.kind === "agent"
           ? { kind: "agent", chat: name(record.chatTitle) }
-          : record?.kind === "system" && record.cause !== "repair"
-            ? { kind: "unfinished-reply" }
-            : null,
+          : null,
     reason: removal.reason === "discarded" ? "discarded" : "deleted",
   };
 }
 
-/** A write refused because its document was removed before the reply saved it. */
+/** A write refused because its document was removed before the write ran. */
 function removedWriteCopy(
   name: string | null,
   removal: ReturnType<typeof documentFailureRemoval>,
 ): string {
   const { by } = removal;
-  if (by?.kind === "unfinished-reply")
-    return name
-      ? t`${name} was removed when the reply that created it didn't finish, so this change wasn't made.`
-      : t`This document was removed when the reply that created it didn't finish, so this change wasn't made.`;
   if (by?.kind === "person") {
     const who = by.name;
     return removal.reason === "discarded"
       ? name
-        ? t`${who} discarded ${name} from the draft before this reply saved its change.`
-        : t`${who} discarded this document from the draft before this reply saved its change.`
+        ? t`${who} discarded ${name} from the draft before this change could be made.`
+        : t`${who} discarded this document from the draft before this change could be made.`
       : name
-        ? t`${who} deleted ${name} before this reply saved its change.`
-        : t`${who} deleted this document before this reply saved its change.`;
+        ? t`${who} deleted ${name} before this change could be made.`
+        : t`${who} deleted this document before this change could be made.`;
   }
   if (by?.kind === "work") {
     const work = by.name;
     return name
-      ? t`${name} was deleted with the Work ${work} before this reply saved its change.`
-      : t`This document was deleted with the Work ${work} before this reply saved its change.`;
+      ? t`${name} was deleted with the Work ${work} before this change could be made.`
+      : t`This document was deleted with the Work ${work} before this change could be made.`;
   }
   if (by?.kind === "agent") {
     const chat = by.chat;
     return chat
       ? name
-        ? t`The AI in ${chat} deleted ${name} before this reply saved its change.`
-        : t`The AI in ${chat} deleted this document before this reply saved its change.`
+        ? t`The AI in ${chat} deleted ${name} before this change could be made.`
+        : t`The AI in ${chat} deleted this document before this change could be made.`
       : name
-        ? t`The AI in a chat deleted ${name} before this reply saved its change.`
-        : t`The AI in a chat deleted this document before this reply saved its change.`;
+        ? t`The AI in a chat deleted ${name} before this change could be made.`
+        : t`The AI in a chat deleted this document before this change could be made.`;
   }
   return removal.reason === "discarded"
     ? name
-      ? t`${name} was discarded from the draft before this reply saved its change.`
-      : t`This document was discarded from the draft before this reply saved its change.`
+      ? t`${name} was discarded from the draft before this change could be made.`
+      : t`This document was discarded from the draft before this change could be made.`
     : name
-      ? t`${name} was deleted before this reply saved its change.`
-      : t`This document was deleted before this reply saved its change.`;
+      ? t`${name} was deleted before this change could be made.`
+      : t`This document was deleted before this change could be made.`;
 }
 
 function rejectionCopy(rejected: string | null): string | null {

@@ -11,6 +11,7 @@
  */
 
 import type { ReplyMutations } from "@meridian/agent-edit/integration";
+import type { ProjectId, TurnBlockId, UserId } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -21,10 +22,9 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { testHook } from "../../../shared/test-hooks.js";
+import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
-import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
-import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { readModelThreadReport } from "../spawn/model-thread-report.js";
@@ -38,20 +38,24 @@ import type {
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { createDeltaJournal } from "./delta-journal.js";
-import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
+import {
+  type CreditedBlocks,
+  type FrontierRecordingDeps,
+  frontierLookup,
+  recordStoredResult,
+} from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import { toJsonValue } from "./streaming.js";
 
-export interface ToolDispatchDeps {
+export interface ToolDispatchDeps extends FrontierRecordingDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
-  eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
+  /** Every result block of a running run is stored through this, so a lost lease refuses it. */
+  delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "storeUnderLease">;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
-  shownLinks: Pick<ShownLinkStore, "record">;
-  observationFrontiers: ObservationFrontiers;
   askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
 }
 
@@ -66,8 +70,6 @@ export interface ToolDispatchContext {
   lease: import("./ports.js").Lease;
   agentSlug: string | null;
   responseId: string;
-  /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
-  editResponseId?: string;
   threadId: ThreadId;
   currentTurn: Turn;
   signal?: AbortSignal;
@@ -224,6 +226,7 @@ export async function dispatchToolCall(
     turnId: ctx.currentTurn.id,
     blockSeqRef: ctx.blockSeqRef,
     allBlocks: ctx.allBlocks,
+    store: (persist) => deps.delivery.storeUnderLease(ctx.lease, persist),
   };
 
   const spawn =
@@ -356,9 +359,10 @@ export async function dispatchToolCall(
     {
       threadId: ctx.threadId,
       turnId: ctx.currentTurn.id,
-      responseIdentity: {
-        providerResponseId: ctx.responseId,
-        editScopeId: ctx.editResponseId ?? ctx.responseId,
+      responseIdentity: { modelResponseId: ctx.responseId },
+      commandOwner: {
+        accountId: ctx.thread.userId as UserId,
+        projectId: ctx.thread.projectId as ProjectId,
       },
       agentSlug: ctx.agentSlug,
       signal: ctx.signal,
@@ -372,27 +376,31 @@ export async function dispatchToolCall(
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        credited: () => ctx.credited.ids(),
         reply: ctx.replyMutations,
       },
     },
   );
   outputJournal.seal();
   await drainOutput();
-  if (ctx.signal?.aborted) {
+  // A command's outcome is stored even when the run was stopped: its edit may have committed.
+  if (ctx.signal?.aborted && !execResult.blockId) {
     return { kind: "cancelled" };
   }
 
   // A created ask settles the execution, whatever the tool did after asking.
   if (deferredAskId) return { kind: "deferred", askId: deferredAskId };
 
-  const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
   if (execResult.returnResult) {
-    const settled = await persistReturnResult(transcript, {
-      toolCallId: execResult.toolCallId,
-      outcome: execResult.returnResult,
-      capture: returnResultCapture,
-      executionReports: deps.executionReports,
-    });
+    const returned = execResult.returnResult;
+    const settled = await deps.delivery.storeUnderLease(ctx.lease, () =>
+      persistReturnResult(transcript, {
+        toolCallId: execResult.toolCallId,
+        outcome: returned,
+        capture: returnResultCapture,
+        executionReports: deps.executionReports,
+      }),
+    );
     return {
       kind: "completed",
       block: settled.block,
@@ -404,53 +412,59 @@ export async function dispatchToolCall(
   const persistedMetadata = execResult.metadata;
   const persistedResult = execResult.result;
 
-  const persistedToolResult = await persistAndAppendEvents(
-    deps.persistenceDeps,
-    ctx.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        turnId: ctx.currentTurn.id,
-        ...(stagedWrite ? { responseId: ctx.responseId } : {}),
-        blockType: "tool_result",
-        sequence: ctx.blockSeqRef.value++,
-        content: {
-          toolCallId: execResult.toolCallId,
-          content: persistedContent,
-          result: persistedResult,
-          ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
-          ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
-        },
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [
-          { type: "block.upserted", block },
-          {
-            type: "tool.result",
+  await testHook("block.beforeStore");
+  const persistedToolResult = await deps.delivery.storeUnderLease(ctx.lease, () =>
+    persistAndAppendEvents(
+      deps.persistenceDeps,
+      ctx.threadId,
+      async () => {
+        const block = contentForBlockInput({
+          turnId: ctx.currentTurn.id,
+          ...(execResult.blockId ? { id: execResult.blockId } : {}),
+          blockType: "tool_result",
+          sequence: ctx.blockSeqRef.value++,
+          content: {
             toolCallId: execResult.toolCallId,
             content: persistedContent,
             result: persistedResult,
-            isError: persistedIsError,
+            ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
-        ],
-      };
-    },
-    {
-      // The model is shown exactly the result persisted here, so its evidence commits with
-      // it, after the block row exists (the frontier references it); a cancelled or timed-out
-      // call never reaches this point.
-      afterEvents: async (block) => {
-        const evidence = execResult.evidence;
-        if (!evidence) return;
-        const owner = { threadId: ctx.threadId, turnId: block.turnId };
-        for (const showing of evidence.shown)
-          await deps.shownLinks.record({ ...showing, ...owner });
-        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+          status: "complete",
+        });
+        return {
+          result: localBlockFromEvent(block),
+          events: [
+            { type: "block.upserted", block },
+            {
+              type: "tool.result",
+              toolCallId: execResult.toolCallId,
+              content: persistedContent,
+              result: persistedResult,
+              isError: persistedIsError,
+              ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
+            },
+          ],
+        };
       },
-    },
+      { afterEvents: () => testHook("block.duringStore") },
+    ),
   );
+  await testHook("block.afterStore");
+  // The model is shown exactly the result stored above, so its evidence is handed over only now:
+  // a cancelled or timed-out call never reaches this point, and an edit's was recorded in its own
+  // transaction.
+  if (execResult.evidence)
+    await recordStoredResult(
+      deps,
+      {
+        projectId: ctx.thread.projectId as ProjectId,
+        threadId: ctx.threadId,
+        turnId: ctx.currentTurn.id,
+      },
+      persistedToolResult.result.id as TurnBlockId,
+      execResult.evidence,
+    );
   ctx.allBlocks.push(persistedToolResult.result);
   ctx.credited.add(persistedToolResult.result.id);
 

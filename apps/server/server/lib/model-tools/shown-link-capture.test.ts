@@ -27,11 +27,10 @@ import {
   getInMemoryProjectContextStore,
 } from "../../domains/context/support/in-memory-unified-context-stores.js";
 import {
-  createInMemoryShownLinkStore,
+  createInMemoryDocumentEvidence,
   createInspectionToolRegistrations,
   createToolExecutor,
   createToolRegistry,
-  type ShownLinkStore,
   type ToolRegistration,
   type ToolRegistry,
 } from "../../domains/runtime/index.js";
@@ -42,6 +41,7 @@ import type { ReferenceReader } from "../../domains/runtime/loop/reference-conte
 import { dispatchToolCall } from "../../domains/runtime/loop/tool-dispatch.js";
 import { createInMemoryRepositories } from "../../domains/threads/adapters/in-memory/index.js";
 import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
+import type { ResultEvidence } from "../../shared/model-evidence.js";
 import { createModelToolRegistrations, createReferenceReader } from "./index.js";
 import { showingOf } from "./shown-link-capture.js";
 import type { ResolvedModelContextPort, ToolWiringDeps } from "./tool-context.js";
@@ -147,12 +147,12 @@ async function harness(
     /** The blocks every document's grep read returns, with each block's facts. */
     grep?: { entries: string[]; links: SpelledLinkFact[][] };
     write?: (context: {
-      responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+      responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
     }) => Promise<WriteOutcome>;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
-  const inner = createInMemoryShownLinkStore({
+  const inner = createInMemoryDocumentEvidence({
     transactionOwner,
     threads: { findByIdIncludingDeleted: async () => null },
     turns: { findById: async () => null },
@@ -160,14 +160,30 @@ async function harness(
   // Which turn each showing was recorded under, by document.
   const recordedTurns: Array<{ documentId: string; turnId: string }> = [];
   const store: ShownLinkStore = {
-    forDocument: inner.forDocument,
-    async record(input) {
-      await inner.record(input);
-      recordedTurns.push({ documentId: input.documentId, turnId: input.turnId });
+    ...inner,
+    async resultStored(evidence) {
+      await inner.resultStored(evidence);
+      for (const showing of evidence.shown)
+        recordedTurns.push({ documentId: showing.documentId, turnId: evidence.turnId });
     },
   };
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
+  const agentEdit = {
+    // A copy's source read asks for nodes; a plain read shows facts spelled
+    // in a reply's pinned branch view, not the live grant it was routed with.
+    read: async (_command: unknown, context: { includeNodes?: boolean }) => {
+      if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
+      const n = plainReads++;
+      await options.read?.();
+      return success("read", [fact(91 + 10 * n)], BRANCH);
+    },
+    write: async (
+      _command: unknown,
+      context: { responseIdentity?: import("@meridian/contracts").ResponseAuthorship },
+    ) =>
+      options.write ? options.write(context) : success("insert", [fact(92)], undefined, TARGET_URI),
+  };
   const documentSync = {
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
@@ -192,22 +208,31 @@ async function harness(
     }),
     refreshDocumentProjection: async () => {},
     branches: { viewForWork: async () => ({ kind: "live" }) },
-    agentEdit: () => ({
-      // A copy's source read asks for nodes; a plain read shows facts spelled
-      // in a reply's pinned branch view, not the live grant it was routed with.
-      read: async (_command: unknown, context: { includeNodes?: boolean }) => {
-        if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
-        const n = plainReads++;
-        await options.read?.();
-        return success("read", [fact(91 + 10 * n)], BRANCH);
+    agentEdit: () => agentEdit,
+    // Every `write` is a command; this fake runs its effect and answers its result as the outcome.
+    modelEdits: () => ({
+      ...agentEdit,
+      catchUp: async () => {},
+      // An edit's evidence is recorded in its own command, as the document side does.
+      run: async (input: {
+        owner: { threadId: string; turnId: string };
+        effect(): Promise<{ toolResult: unknown; evidence?: ResultEvidence }>;
+      }) => {
+        const rendered = await input.effect();
+        if (rendered.evidence)
+          await store.resultStored({
+            projectId: PROJECT,
+            ...input.owner,
+            shown: rendered.evidence.shown,
+            frontiers: [],
+          });
+        return {
+          outcome: {
+            status: "done",
+            result: { status: "edited", toolResult: rendered.toolResult },
+          },
+        };
       },
-      write: async (
-        _command: unknown,
-        context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
-      ) =>
-        options.write
-          ? options.write(context)
-          : success("insert", [fact(92)], undefined, TARGET_URI),
     }),
   };
   const names: Record<string, string> = {
@@ -269,6 +294,9 @@ async function harness(
   };
 }
 
+/** The in-memory document evidence, read back through `forDocument`. */
+type ShownLinkStore = ReturnType<typeof createInMemoryDocumentEvidence>;
+
 type Harness = Awaited<ReturnType<typeof harness>>;
 
 type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
@@ -297,7 +325,6 @@ async function runTurn(
     during?: (rig: Rig) => Promise<void>;
     userBlocks?: UserMessageBlock[];
     referenceReader?: ReferenceReader;
-    responseWrites?: Parameters<typeof runtimeScenario>[0]["responseWrites"];
     history?: (rig: Rig) => Promise<void>;
   } = {},
 ) {
@@ -319,11 +346,12 @@ async function runTurn(
   const rig = await runtimeScenario({
     gateway,
     toolRegistry,
-    toolExecutor: createToolExecutor(toolRegistry),
-    shownLinks: h.store,
+    toolExecutor: createToolExecutor(toolRegistry, {
+      resolveCommand: async () => ({ status: "never" }),
+    }),
+    documentEvidence: h.store,
     transactionOwner: h.transactionOwner,
     referenceReader: control.referenceReader ?? h.referenceReader,
-    ...(control.responseWrites ? { responseWrites: control.responseWrites } : {}),
   });
   inspection.repos = rig.repos;
   await control.history?.(rig);
@@ -473,65 +501,6 @@ const rows: Array<{
         store: whole.store,
         threadId: verbose.threadId,
         shown: { [SOURCE]: expected([fact(80), fact(81)]) },
-      };
-    },
-  },
-  {
-    name: "a staged echo and its settled receipt each keep the holder their own render spelled from",
-    async act(check) {
-      const MOVED = "user://moved/target";
-      const h = await harness({
-        write: async (context) => ({
-          ...success("insert", [fact(94)], undefined, TARGET_URI),
-          phase: "staged",
-          ...(context.responseIdentity?.editScopeId ? { writeId: "e1", settlementId: "s1" } : {}),
-        }),
-      });
-      const receipt = {
-        ...success("insert", [fact(95)], undefined, MOVED),
-        writeId: "e1",
-        settlementId: "s1",
-      };
-      const { threadId, results } = await runTurn(
-        h,
-        [toolCall("write", { command: "insert", path: TARGET_URI, content: "x" })],
-        {
-          // The holder moved between the echo and the save: the receipt spells from its new folder.
-          responseWrites: {
-            async commitResponse(_id, _ctx, beforeCommit) {
-              const settled = {
-                status: "committed" as const,
-                receipts: [{ documentId: TARGET, receipt: receipt as never }],
-                concurrentEdits: [],
-                refused: [],
-              };
-              await beforeCommit(settled);
-              return settled;
-            },
-            async rollbackResponse() {},
-          },
-        },
-      );
-      check(results, "the staged echo, then the settled receipt").toEqual([
-        expect.not.objectContaining({ isError: true }),
-        expect.not.objectContaining({ isError: true }),
-      ]);
-      check(JSON.stringify(results), "echo and receipt results carry no host facts").not.toMatch(
-        HOST_FACTS,
-      );
-      const bases = (await h.store.forDocument(threadId, TARGET))
-        .map((link) => `${link.ref.slice(4, 12)}@${link.holderUri}`)
-        .sort();
-      check(bases, "each showing's base").toEqual(
-        [
-          `${fact(94).ref.slice(4, 12)}@${TARGET_URI}`,
-          `${fact(95).ref.slice(4, 12)}@${MOVED}`,
-        ].sort(),
-      );
-      return {
-        store: h.store,
-        threadId,
-        shown: { [TARGET]: expected([fact(94), fact(95)]) },
       };
     },
   },
@@ -686,7 +655,10 @@ const rows: Array<{
             }),
           },
           eventSink: { emit() {} },
-          shownLinks: h.store,
+          documentEvidence: h.store,
+          delivery: {
+            storeUnderLease: (_lease: unknown, persist: () => Promise<unknown>) => persist(),
+          },
           persistenceDeps: {
             repos: h.repos,
             eventWriter: {

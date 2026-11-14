@@ -12,7 +12,6 @@ import {
   type Filetype,
   type ParsedDocumentFilename,
   parseDocumentFilename,
-  type RetractionCause,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -588,19 +587,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.placement.ensureTracked(path, options);
   }
 
-  /**
-   * Reverse this adapter's create of `documentId` for a rolled-back reply or a failed
-   * create write (§12.5): a live create is deleted by the router; a branch's create ends
-   * the branch's use unless another contribution makes it stand.
-   */
-  retractCreate(
-    _path: string,
-    documentId: string,
-    cause: RetractionCause,
-  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
-    return this.placement.retract(documentId, cause);
-  }
-
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
@@ -810,12 +796,10 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView():
-    | ({ threadId: ThreadId; responseId?: string | null } & EffectiveReadVersion)
-    | null {
+  private threadView(): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
     const view = this.readView;
     if (!view) return null;
-    const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
+    const reader = { threadId: view.threadId as ThreadId };
     // Without a separate draft both versions are the same document.
     const drafted = sourceDestination(this.scheme, view.branchOwner).kind === "draft";
     return view.version !== "live" && drafted && view.branchOwner

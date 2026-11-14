@@ -11,7 +11,12 @@
  * orchestrator injects for tools that stream live process output.
  */
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
-import type { ModelResponseIdentity } from "@meridian/contracts";
+import type { ResponseAuthorship } from "@meridian/contracts";
+import type {
+  ModelEditKey,
+  ModelEditOutcome,
+  ModelEditToolResult,
+} from "@meridian/contracts/branches";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ReturnResultCapture,
@@ -21,8 +26,8 @@ import type {
 import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts/threads";
 import type { ModelInfo, Tool } from "@meridian-flow/gateway";
 import type { z } from "zod";
-import type { FrontierLookups } from "../ports/observation-frontiers.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
+import type { ResultEvidence } from "../../../shared/model-evidence.js";
+import type { FrontierLookups } from "../ports/document-evidence.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
@@ -62,7 +67,9 @@ export interface ToolExecutionContext {
   threadId: ThreadId;
   turnId: TurnId;
   /** Model-response id currently dispatching tool calls. */
-  responseIdentity?: ModelResponseIdentity;
+  responseIdentity?: ResponseAuthorship;
+  /** Whose thread this is: what a `documentCommand` call's key names beside its response and call. */
+  commandOwner?: Pick<ModelEditKey, "accountId" | "projectId">;
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -120,17 +127,14 @@ export interface ToolExecutionResult {
    * thrown call carries none. Never part of `content`, `result` or `metadata`.
    */
   evidence?: ResultEvidence;
+  /**
+   * Set when a `documentCommand` call's effect may have run: the result is the command's
+   * outcome, and its block is stored under this id even if the run was cancelled meanwhile.
+   */
+  blockId?: string;
 }
 
-/**
- * Host-only: what one result showed the model. Shown-link candidates record
- * under the turn, the frontier on the block that persists the result
- * (contract §7.1).
- */
-export interface ResultEvidence {
-  shown: readonly ShownLinkShowing[];
-  frontier?: ObservationFrontier;
-}
+export type { ResultEvidence };
 
 /**
  * The executor port: dispatches tool calls to registered handlers.
@@ -163,7 +167,7 @@ export interface ToolHandlerContext {
   threadId: string;
   turnId: string;
   /** Model-response id currently dispatching tool calls. */
-  responseIdentity?: ModelResponseIdentity;
+  responseIdentity?: ResponseAuthorship;
   /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**
@@ -178,6 +182,17 @@ export interface ToolHandlerContext {
   frontiers?: FrontierLookups;
   /** The model this turn runs on, for a tool that decides what it can show it. */
   model?: ModelInfo;
+  /** Set for a registration with `documentCommand`: what its effect is keyed by and rendered with. */
+  modelEdit?: ModelEditContext;
+}
+
+/**
+ * A document-changing call's command: its effect settles under `key`, whatever becomes of the
+ * call, and `render` is how its raw handler output becomes the result block's stored result.
+ */
+export interface ModelEditContext {
+  key: ModelEditKey;
+  render(raw: unknown): { toolResult: ModelEditToolResult; evidence?: ResultEvidence };
 }
 
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
@@ -294,6 +309,12 @@ export interface ToolRegistration {
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
+  /**
+   * The call's effect is a command in `document_commands` (`modelEdits().run`): the executor
+   * gives the handler a `modelEdit` context, and a call that does not finish asks the command
+   * for its outcome instead of assuming it did not run.
+   */
+  documentCommand?: true;
   capability?: "spawn" | "thread_message" | "thread_report" | "return_result" | "request";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
@@ -304,6 +325,15 @@ export interface ToolRegistration {
    * reaches it: the executor renders refusals itself.
    */
   renderResult?: (result: JsonValue, input: JsonObject) => ToolContentPart[];
+}
+
+/**
+ * What a handler returns for a call it ran as a command: the command's outcome, which holds the
+ * call's stored result, and what that result showed the model.
+ */
+export interface ModelEditHandlerResult {
+  modelEdit: ModelEditOutcome;
+  evidence?: ResultEvidence;
 }
 
 export interface ToolExecutionError {

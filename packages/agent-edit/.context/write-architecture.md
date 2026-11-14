@@ -44,9 +44,9 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   but loses model letters (`Gamma` over a deleted `Beta` lands `Gamm`); it was tried and
   removed. The apply step never reads the room either: the update deletes what the model's
   view held, including units the writer has since deleted, and Yjs merges it. The write's
-  record is made at save, where the journal takes `heldDeletes` of the room before the
+  record is made when the write is journalled, where the journal takes `heldDeletes` of the room before the
   update applies and `captureEditParts` drops those items from the part's `deleted`
-  (a stale read, or a writer's delete that landed between the call and the save). The record
+  (a stale read, or a writer's delete that landed between the call's read and its append). The record
   and turn Undo therefore never claim the writer's deletion. An attribute the codec does
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
@@ -92,12 +92,11 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
 
 ## Room copies and views
 
-- A view replays only updates the current room contains, so a rolled-back or retired
-  one never enters it.
+- A view replays only updates the current room contains, so a retired one never enters it.
 - Each captured segment takes a fresh client absent from both the view and the room
   copy, so parallel calls and write/undo/write in one reply never reuse a client.
 - A draft read carries its resolved Work-draft identity into the concurrent lookup;
-  attribution never requires or provisions a thread peer.
+  attribution never requires or provisions a draft.
 
 ## Capture and receipts
 
@@ -117,7 +116,7 @@ and GC structs never expand into per-clock identities.
 ## Draft write granularity
 
 One logical draft write may contain paragraph-level segments. Each segment is one
-transaction with a fresh shared-protocol client; reply receipts and rollback stay per
+transaction with a fresh shared-protocol client; receipts stay per
 tool call while storage expands segments into rows. Recognized adjacent splits and
 merges and contiguous insertion or deletion runs stay one structural segment. Sharing
 a paragraph alone never joins independent writes. A live write merges one update.
@@ -129,12 +128,8 @@ a paragraph alone never joins independent writes. A live write merges one update
 - Echo text is verbatim and exact-matchable: truncation may drop a suffix but never
   normalizes what it keeps, because a whitespace-collapsing cleanup breaks the model's
   retry on text it was just shown (find-all deletion legitimately leaves double spaces).
-- Provider tool IDs are response-local: idempotency scopes by response, then turn, then
-  session, and a later response reusing an ID is a new attempt.
-- Undo and redo are save boundaries: the host settles buffered writes before executing
-  an inverse.
-- An empty commit or rollback of an unknown response still closes it, so a late handler
-  cannot reopen it.
+- Provider tool IDs are response-local: the host keys a write by response and tool call, so
+  a later response reusing an ID is a new attempt. The package keeps no idempotency of its own.
 - Copies pass nodes from host read results rather than reading source documents inside
   the kernel, so whitespace and blank paragraphs survive and copied blocks receive fresh
   identities.

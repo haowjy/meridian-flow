@@ -64,10 +64,6 @@ writer data. No additional unit case is needed for these recipe-covered risks.
 - Create Scratch in a named Work. Delete that Work: reason `deleted`, Work
   marker set. Availability must say `authority-unavailable`, not independent
   deletion. Restore the Work: all removal fields are null.
-- Retract a create after a failed write and after reply rollback: reason
-  `discarded`, system causes `create_failed` and `reply_rolled_back`.
-  A prior completed tool response followed by Stop is **not** this scenario:
-  the prior response has already saved.
 - Seed an unused hidden document, then create at its path; separately invoke
   read-triggered hidden-node repair. Both old identities must record
   `discarded` with system cause `repair`.
@@ -122,7 +118,7 @@ known-id denial can include its record without allowing content access.
    boundary document rows too.
 6. Delete a draftless binary creation and a revealed creation. The tree-use arm
    must take each Work's count from one to zero even without a draft journal.
-7. Discard a hidden creation, then retract a reply's unused creation. Rows stay
+7. Discard a hidden creation. Its row stays
    closed with cause `discarded`; journal rows and inline bytes are released.
    `state` and `state_vector` are zero-length bytea (not an empty Yjs document),
    `live_cut` and `discarded_state_vector` are NULL. Wait beyond room checkpoint
@@ -131,15 +127,7 @@ known-id denial can include its record without allowing content access.
    the removal) and a surviving document's draft rooms stale. A creation shared
    by two Works survives the first Work's Discard and keeps the other Work's
    active draft.
-9. A draft-mode reply stages a write into an existing document; the document is
-   tree-deleted between the staging and its step's save (stack with
-   `HOOK_PAUSE_AT=draft.ensure.afterDocumentLock`: the step's second tool call
-   creates a document and parks there; `./mf doc rm` the first). The staged
-   write's tool result reads "This file was deleted by <name> before this reply
-   was saved, so this change wasn't made." with no retry, and its chat card
-   reads "<name> deleted <title> before this reply saved its change." (passive
-   without a name), never "You discarded this new document".
-10. A Work Restore that commits before a Work delete's retirement runs keeps
+9. A Work Restore that commits before a Work delete's retirement runs keeps
    the restored live room. Restart with `HOOK_PAUSE_AT=draft.beforeRetirement
    HOOK_PAUSE_FILE=<file>`, touch the file, delete a Work whose scratch holds an
    open document, restore the Work, reopen the document in main, then delete

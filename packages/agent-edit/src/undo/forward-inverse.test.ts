@@ -221,10 +221,6 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(states(v, original)).toEqual(["active"]);
     inverse(v, original, "invert");
     expect(content(v)).toEqual([initial]);
-    v.history[v.history.length - 1].kind = "rollback";
-    expect(states(v, original)).toEqual(["rolled_back"]);
-    expect(inverse(v, original, "reapply")).toBe(0);
-    expect(content(v)).toEqual([initial]);
     v.doc.destroy();
   });
   it("a restoration in a cold draft does not restore its live replica twice", () => {

@@ -9,12 +9,11 @@ import {
   type ConcurrentUpdate,
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type JournalBatchAppendEntry,
   type JournalSnapshot,
-  type RoomRead,
+  type PreparedSave,
   type SaveCut,
   type SavePrecondition,
-  type StagedRoomEntries,
-  type StagedWriteSaveResult,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
@@ -28,6 +27,7 @@ import {
   RetiredDocumentHandleError,
   retireDocumentHandle,
 } from "../domain/document-handle.js";
+import { inLockedWrite } from "../domain/locked-write.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
@@ -99,7 +99,9 @@ export function createDeferredLiveProjectionCoordinator(deps: {
   // The transaction's own rows stay out of the copy, as they stay out of the room until
   // commit; only a document created in this transaction has nothing committed to start from.
   const committedCopy = async (docId: string) => {
-    if (!deps.transactions.inTransaction()) return liveRoomCopy(deps, docId);
+    // A model edit reads under the document's lock, in the transaction that will append: its
+    // own earlier rows are part of what it plans on.
+    if (!deps.transactions.inTransaction() || inLockedWrite()) return liveRoomCopy(deps, docId);
     const copy = await deps.transactions
       .outsideTransaction(() => liveRoomCopy(deps, docId))
       .catch((cause: unknown) => {
@@ -110,7 +112,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
   };
   const deliver = (docId: string) => () => deps.live.deliver(docId);
   return {
-    readRoom: async (docId, staged) => withStaged(await committedCopy(docId), staged),
+    readRoom: (docId) => committedCopy(docId),
     prepareSave: async (input) =>
       liveSave(
         await committedCopy(input.docId).catch(emptyWhenMissing),
@@ -153,26 +155,23 @@ export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null; posi
 }
 
 /**
- * A live save of one scope's entries onto `copy` (the room's committed state, consumed): every
- * entry is kept, since a live room has no retirement or inverse to reconcile against. `persist`
- * appends them as one journal batch bound to the copy's authority, joining the caller's
- * transaction when there is one, with `precondition` judged on the cut under the document's
- * lock, and resolves the cut that append returned; `transfer` hands them to `deliver`.
+ * A live save of one write's entries onto `copy` (the room's committed state, consumed).
+ * `persist` appends them as one journal batch bound to the copy's authority, joining the
+ * caller's transaction when there is one, with `precondition` judged on the cut under the
+ * document's lock, and resolves the cut that append returned; `transfer` hands them to `deliver`.
  */
 export function liveSave(
   copy: { doc: Y.Doc; room: string | null },
-  input: StagedRoomEntries & { docId: string; precondition?: SavePrecondition },
+  input: {
+    docId: string;
+    entries: readonly JournalBatchAppendEntry[];
+    precondition?: SavePrecondition;
+  },
   journal: Pick<UpdateJournal, "appendBatch">,
   deliver: () => void,
-): StagedWriteSaveResult {
+): PreparedSave {
   try {
-    const result = {
-      kept: input.entries.flatMap((entry) =>
-        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-      ),
-      rejected: [],
-      room: copy.room,
-    };
+    const result = { room: copy.room };
     if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
     const prepared = Y.encodeStateAsUpdate(copy.doc);
     const authority = boundDocumentAuthority(copy.doc) ?? undefined;
@@ -221,7 +220,11 @@ function cutBefore(found: Uint8Array, prepared: Uint8Array): Uint8Array {
 }
 
 /** The cut of `input`'s rows appended after `beforeState`. */
-function appendCut(input: StagedRoomEntries, beforeState: Uint8Array, position: number): SaveCut {
+function appendCut(
+  input: { entries: readonly JournalBatchAppendEntry[] },
+  beforeState: Uint8Array,
+  position: number,
+): SaveCut {
   const doc = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(doc, beforeState);
@@ -269,21 +272,6 @@ async function liveRoomCopy(
     doc: copy,
     room: authority ? liveRoom(docId, authority.generation) : null,
     position: snapshot.persistenceWatermark ?? 0,
-  };
-}
-
-/** A live room has no retirement or inverse to reconcile against: every staged entry is kept. */
-export function withStaged(
-  copy: { doc: Y.Doc; room: string | null },
-  staged: StagedRoomEntries | null,
-): RoomRead {
-  for (const entry of staged?.entries ?? []) Y.applyUpdate(copy.doc, entry.update);
-  return {
-    ...copy,
-    kept: (staged?.entries ?? []).flatMap((entry) =>
-      entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-    ),
-    rejected: [],
   };
 }
 
