@@ -14,7 +14,6 @@ import {
   commandDigest,
   DocumentCommandExistsError,
 } from "../../collab/domain/document-commands.js";
-import { createDrizzleContextOperationReceipts } from "../adapters/context-operation-receipts.js";
 
 type CopyCommand = Extract<ContextOperationCommand, { kind: "copy" }>;
 
@@ -41,7 +40,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     commandDigest({ accountId, projectId, kind: "copy", selectors: {}, body: command });
   const mismatch = (address: string): ContextOperationResult<"copy"> => ({
     ok: false,
-    error: { code: "operation_mismatch", uri: address },
+    error: { code: "command_conflict", uri: address },
   });
 
   /** The stored receipt, for the writer's client to resolve an ambiguous attempt. */
@@ -52,7 +51,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     return (found.outcome.result as CopyCommandResult).receipt;
   }
 
-  /** A resend answers the stored result; another request under the id is `operation_mismatch`. */
+  /** A resend answers the stored result; another request under the id is `command_conflict`. */
   async function stored(
     operationId: string,
     command: CopyCommand,
@@ -72,7 +71,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
   return {
     lookup,
 
-    /** `address` is where the Copy was aimed, which an `operation_mismatch` names. */
+    /** `address` is where the Copy was aimed, which a `command_conflict` names. */
     async execute(
       operationId: string,
       command: CopyCommand,
@@ -107,10 +106,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
             if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
             const receipt = {
               operationId,
-              observationVersion: await createDrizzleContextOperationReceipts(
-                db,
-                owner,
-              ).observationVersion(result.ok ? command.destinationUri : result.error.uri),
               command,
               result,
             } as ContextOperationReceipt;

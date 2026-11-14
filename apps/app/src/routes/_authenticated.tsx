@@ -1,5 +1,4 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useEffect } from "react";
@@ -23,10 +22,7 @@ import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import { ImportsProvider } from "@/features/import/ImportsProvider";
-import {
-  AccountFeatureComposition,
-  useOptionalAccountResourceReplica,
-} from "@/features/project/context/account-feature-context";
+import { AccountFeatureComposition } from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
@@ -139,9 +135,8 @@ function AuthenticatedAccountProviderTree({
     accountSettingsReadGeneration: number;
   };
 }) {
-  const queryClient = useQueryClient();
   return (
-    <AccountFeatureComposition accountId={user.userId} queryClient={queryClient}>
+    <AccountFeatureComposition accountId={user.userId}>
       <AccountSettingsProvider
         serverValue={user.accountSettings}
         serverReadGeneration={user.accountSettingsReadGeneration}
@@ -164,15 +159,12 @@ function AuthenticatedProviderTree({
     accountSettingsReadGeneration: number;
   };
 }) {
-  const resources = useOptionalAccountResourceReplica();
-
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
-    resources?.start();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-  }, [resources, user.userId]);
+  }, [user.userId]);
 
   return (
     <FailureLogProvider accountId={user.userId}>

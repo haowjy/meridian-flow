@@ -42,10 +42,8 @@ export type CapturedDraft = {
 
 export function createInverseDestinationResolver(
   document: InverseDocument,
-  occupancy: ReadonlyMap<BranchId, string>,
-  branchAvailability: ReadonlyMap<BranchId, { frozen: boolean }>,
   liveAvailability: { frozen: boolean; removed: boolean },
-): Pick<InverseDocument, "destinationOf" | "destinationForBranch"> {
+): Pick<InverseDocument, "destinationOf"> {
   const drafts = new Map<string, InverseDestination>();
   const live: LiveInverseDestination = { kind: "live", view: document.live, ...liveAvailability };
   const fromDraft = (draftId: string): InverseDestination => {
@@ -75,17 +73,6 @@ export function createInverseDestinationResolver(
   return {
     destinationOf(origin: EditOrigin) {
       return origin.kind === "live" ? live : fromDraft(origin.draftId);
-    },
-    destinationForBranch(branchId: BranchId) {
-      const draftId = occupancy.get(branchId);
-      return draftId
-        ? fromDraft(draftId)
-        : {
-            kind: "draft",
-            frozen: branchAvailability.get(branchId)?.frozen ?? true,
-            branchId,
-            state: "gone",
-          };
     },
   };
 }

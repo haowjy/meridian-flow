@@ -27,7 +27,7 @@ import {
   runWithEditConfirmation,
 } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendToFirstParagraph,
   type Harness,
@@ -92,8 +92,8 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     flushLivePull: async () => {},
     notices: { record: async () => {} },
     workProjection: harness.projection,
-    removal: createTestDocumentRemoval(harness.db),
-    catalog: { refreshSources: async () => "" },
+    removals: createTestRemovalDeps(harness.db).removals,
+    treeLists: createTestRemovalDeps(harness.db).treeLists,
   });
   const undo = () =>
     inverse.modelInverse(

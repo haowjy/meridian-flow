@@ -10,7 +10,6 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -31,15 +30,11 @@ import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewB
 import { EditorView } from "@/features/editor/EditorView";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
-  useAccountResourceProjection,
-  useAccountResourceReplica,
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
-  useOptionalPresentedDocuments,
 } from "./account-feature-context";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
-import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
-
+import { OpenDocumentSessionBoundary } from "./open-document-session";
 import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
@@ -72,12 +67,7 @@ export function ContextDocumentHost({
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
-  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
-  const availabilityRevision = resourceAvailabilityRevision(
-    resourceProjection,
-    document.documentId,
-  );
   // The host's own review: the one it has open, else the draft its view paints. While the paint
   // is held (the pinned owner's list is loading) the pin already names the item, so the live
   // text stays covered rather than painting Live first.
@@ -168,9 +158,6 @@ export function ContextDocumentHost({
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-          {document.kind === "new" && session ? (
-            <UntitledLifecycle projectId={projectId} document={document} session={session} />
-          ) : null}
           {/* Filename chrome is host-owned: the title chip names the
                   file, so EditorView renders no redundant header bar. */}
           {failed || !hosted ? null : (
@@ -197,11 +184,7 @@ export function ContextDocumentHost({
               <EditorView
                 draftOnly={draftOnly}
                 onCloseDraftOnly={
-                  onCloseDraftOnly ??
-                  (() => {
-                    const closing = removal.writerClose(projectId, document);
-                    if (closing instanceof Promise) closing.catch(reportError);
-                  })
+                  onCloseDraftOnly ?? (() => removal.writerClose(projectId, document))
                 }
                 projectId={projectId}
                 documentId={document.documentId}
@@ -233,8 +216,6 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      resourceHandle={document.resourceHandle}
-      availabilityRevision={availabilityRevision}
       liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}
     >
@@ -292,67 +273,5 @@ function RoomScopeCatalogCheck({
         queryKey: projectQueryKeys.ownerDrafts(projectId, reviewOwner),
       });
   }, [access, projectId, queryClient, reviewRoomName, reviewOwner]);
-  return null;
-}
-
-/**
- * An Untitled document's first word makes its create eligible, which sends it to the server. A
- * view that goes away while it holds no words lets it go (`discardUntouched`): it was never sent.
- */
-function UntitledLifecycle({
-  projectId,
-  document,
-  session,
-}: {
-  projectId: string;
-  document: Extract<OpenDocument, { kind: "new" }>;
-  session: DocumentSession;
-}) {
-  const resources = useAccountResourceReplica();
-  const presented = useOptionalPresentedDocuments();
-  const { documentId, resourceHandle } = document;
-  useEffect(() => {
-    const fragment = session.document.getXmlFragment(session.fragmentName);
-    let armed = true;
-    let observing = true;
-    let pending = false;
-    let retryTimer: number | null = null;
-    const observe = () => {
-      if (!armed || pending || isEmptyDocument(fragment)) return;
-      pending = true;
-      void resources.markCreateEligible({ handle: resourceHandle }).then(
-        () => {
-          if (!armed) return;
-          armed = false;
-          fragment.unobserveDeep(observe);
-          observing = false;
-        },
-        () => {
-          pending = false;
-          if (armed) retryTimer = window.setTimeout(observe, 1_000);
-        },
-      );
-    };
-    fragment.observeDeep(observe);
-    // IndexedDB may already contain words if React remounted this tab.
-    void session.whenLocalPersistenceSynced().then(observe);
-    return () => {
-      armed = false;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      if (observing) fragment.unobserveDeep(observe);
-    };
-  }, [resourceHandle, resources, session]);
-  useEffect(() => {
-    const fragment = session.document.getXmlFragment(session.fragmentName);
-    return () => {
-      // Only a replayed fragment that is empty means no words were written.
-      if (!session.getSnapshot().localPersistenceSynced || !isEmptyDocument(fragment)) return;
-      // A move between main and the side, or a remount, mounts it again before this runs.
-      window.setTimeout(() => {
-        if (presented?.isMounted(projectId, documentId)) return;
-        void resources.discardUntouched(projectId, { handle: resourceHandle });
-      });
-    };
-  }, [documentId, presented, projectId, resourceHandle, resources, session]);
   return null;
 }

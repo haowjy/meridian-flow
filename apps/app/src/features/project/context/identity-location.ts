@@ -2,12 +2,6 @@
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  type ParentRef,
-  type ResourceOwner,
-  resourceWorkAuthorityFor,
-} from "@meridian/resource-replica";
-
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
 
@@ -25,7 +19,8 @@ export type TabLocation = {
 } & OpenDocumentOwner;
 
 export type IdentityDestination = {
-  parent?: ParentRef;
+  /** The folder (or source) the writer picked; absent when the folder path says it. */
+  parentId?: string;
   scheme: ProjectContextTreeScheme;
   /** Tree-style parent folder path: `/`, `/Act 2`. */
   folderPath: string;
@@ -42,7 +37,7 @@ export type DesiredIdentity = {
 export function identityDestination(
   location: TabLocation,
   editorWorkId: string | null,
-  choice?: Pick<IdentityDestination, "scheme" | "folderPath" | "parent">,
+  choice?: Pick<IdentityDestination, "scheme" | "folderPath" | "parentId">,
 ): IdentityDestination {
   const scheme = choice?.scheme ?? location.scheme;
   const folderPath = choice?.folderPath ?? location.parentPath;
@@ -51,7 +46,7 @@ export function identityDestination(
     return {
       scheme,
       folderPath,
-      ...(choice?.parent ? { parent: choice.parent } : {}),
+      ...(choice?.parentId ? { parentId: choice.parentId } : {}),
       ...replaceOwner(location),
     };
   const workId = isWorkScopedScheme(scheme)
@@ -60,38 +55,12 @@ export function identityDestination(
   return {
     scheme,
     folderPath,
-    ...(choice?.parent ? { parent: choice.parent } : {}),
+    ...(choice?.parentId ? { parentId: choice.parentId } : {}),
     ...replaceOwner({ workId }),
   };
 }
 
-/**
- * Resolve a placement's owner: a chat's lineage as stated, otherwise the Work
- * from the project snapshot; null while no known Work owns it.
- */
-export function destinationOwner(
-  destination: { scheme: ProjectContextTreeScheme } & OpenDocumentOwner,
-  works: readonly { id: string; handle: string | null }[] | null | undefined,
-  noWork: { id: string } | null | undefined,
-): ResourceOwner | null {
-  if (destination.rootThreadId !== undefined)
-    return {
-      workId: null,
-      rootThreadId: destination.rootThreadId,
-      rootThreadRef: destination.rootThreadRef,
-    };
-  // Project areas belong to no Work: the Editor's Work never owns their roots.
-  if (!isWorkScopedScheme(destination.scheme)) return { workId: null };
-  const workId = destination.workId;
-  if (!workId || !noWork) return null;
-  try {
-    return resourceWorkAuthorityFor(workId, { works: works ?? [], noWork });
-  } catch {
-    return null;
-  }
-}
-
-/** Local documents acquire their first durable location in the project Unfiled source. */
+/** Where a tab's document sits; a tab with no path yet is in Unfiled. */
 export function tabLocation(tab: OpenDocument): TabLocation {
   if (tab.kind === "new") {
     return {

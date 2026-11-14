@@ -4,7 +4,6 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   branches,
   contextSources,
-  documents,
   projects,
   threads,
   threadWorks,
@@ -18,8 +17,8 @@ import {
   DOCUMENT_RUNTIME_RESET_TABLES,
   deleteDrizzleRows,
 } from "../../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleContextCatalog } from "../../context/adapters/context-catalog.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
@@ -55,7 +54,6 @@ export function createWorkBranchFixture(db: Database) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
         ...createTestRemovalDeps(db),
       }),
     );
@@ -92,13 +90,7 @@ export function createWorkBranchFixture(db: Database) {
       slug: "manuscript",
       scope: "project",
     });
-    await db.insert(documents).values({
-      id: DOC_ID,
-      contextSourceId: SOURCE_ID,
-      name: "chapter",
-      extension: "",
-      fileType: "markdown",
-    });
+    await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
     await db.insert(threads).values({
       rootThreadId: THREAD_ID,
       id: THREAD_ID,

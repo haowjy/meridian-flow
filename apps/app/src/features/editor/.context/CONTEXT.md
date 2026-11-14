@@ -40,7 +40,7 @@ anchors. Their rows come from the shared completion/catalog seams.
 
 `useEditorScope()` reads `{ projectId, workId, rootThreadId }` from the provider.
 Project documents use the project's No Work row; Scratch uses the holder's
-replica location, including No Work. A No Work Scratch note carries
+the source its document is in (the tree's, found by id), including No Work. A No Work Scratch note carries
 its lineage in `rootThreadId`. Until the location is known, scope is
 unresolved; route `?work`, remembered Work, and `baseUri` are not fallbacks.
 

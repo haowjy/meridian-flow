@@ -1,13 +1,12 @@
 /** Card partial inverses and writer text preservation. */
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
+import { LIVE } from "@meridian/project-tree";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
-import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { lockDocuments } from "../context/tree/node-rows.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import {
   ALPHA_ID,
@@ -15,6 +14,7 @@ import {
   closeDatabase,
   createTestDatabase,
   resetDatabase,
+  SOURCE_ID,
   schema,
   THREAD_ID,
   TURN_ID,
@@ -29,7 +29,7 @@ const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
-it("a tombstoned draft document with released storage does not stop another document's receipt from offering Undo", async () => {
+it("a document in no view (deleted after its edit) does not stop another document's receipt from offering Undo", async () => {
   const { harness, view, context } = await fixture();
   try {
     const betaContext = {
@@ -59,14 +59,10 @@ it("a tombstoned draft document with released storage does not stop another docu
             ctx,
           ),
       ).toMatchObject({ status: "success" });
-    // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
-    await runInDrizzleTransaction(db, async () => {
-      await lockDocuments(db, [BETA_ID]);
-      await createTestDocumentRemoval(db).remove({
-        documentIds: [BETA_ID],
-        reason: "discarded",
-        cause: "repair",
-      });
+    // BETA leaves every view; its edit rows stay.
+    await treeSeeder(db).store.submit({
+      lists: [await treeListOfSource(db, SOURCE_ID)],
+      make: ([{ writer }]) => writer.delete(LIVE, "system", BETA_ID),
     });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",

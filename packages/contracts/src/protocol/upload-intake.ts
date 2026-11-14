@@ -38,9 +38,9 @@ export interface UploadSignedPut {
  * file again, so an upload that finishes in between can take it and leave this one off by a number.
  */
 export type UploadStart = { name: string } & (
-  | { state: "reserved"; documentId: string; locationRevision: string; put: UploadSignedPut }
+  | { state: "reserved"; documentId: string; put: UploadSignedPut }
   /** The bytes are in the store and checked: finish, with no PUT. */
-  | { state: "stored"; documentId: string; locationRevision: string }
+  | { state: "stored"; documentId: string }
   | { state: "finalized"; result: UploadIntakeResult }
 );
 
@@ -48,7 +48,6 @@ export interface UploadIntakeResult {
   documentId: string;
   uri: CanonicalContextUri;
   fileType: Filetype;
-  locationRevision: string;
 }
 
 export type UploadIntakeError =
@@ -60,12 +59,18 @@ export type UploadIntakeError =
   | { code: "not_uploaded" }
   | { code: "invalid_filename"; reason: ContextEntryValidationReason; character?: string };
 
+/** An upload's document id is its node's id in the list: the one name the browser has for it. */
 export interface DeleteDraftUploadInput {
-  intakeId: string;
   documentId: string;
-  uri: CanonicalContextUri;
-  expectedRevision: string;
 }
+
+/**
+ * What a chat's uploads query says that its tree list does not: when each file was attached and
+ * whether a sent message has used it. Only an unused upload can be deleted.
+ */
+export type ChatUploadsResult = {
+  uploads: readonly { documentId: string; attachedAt: string; used: boolean }[];
+};
 
 export type DeleteDraftUploadResult =
   | { kind: "deleted" }

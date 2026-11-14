@@ -4,12 +4,20 @@
  * Why independent: Identity persistence shape is shared schema infrastructure;
  * authentication providers and authorization policies live outside this package.
  */
+import type { DocumentId } from "@meridian/contracts";
+import { sql } from "drizzle-orm";
 import { boolean, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** The id of this account's tree list (`user://`), its own and never a node's id. */
+    treeListId: uuid("tree_list_id")
+      .$type<DocumentId>()
+      .notNull()
+      .unique()
+      .default(sql`gen_random_uuid()`),
     externalId: text("external_id").notNull(),
     email: text("email").notNull(),
     name: text("name"),

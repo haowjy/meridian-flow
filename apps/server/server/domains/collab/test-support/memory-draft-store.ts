@@ -113,7 +113,7 @@ export class MemoryDraftStore implements DraftStore {
     };
   }
 
-  async serverDeletedBlocks(
+  async writerText(
     _draftId: string,
     _ids: readonly { client: number; clock: number }[],
   ): Promise<ReadonlySet<string>> {

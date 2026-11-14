@@ -17,6 +17,11 @@ export interface ModelEvidence {
   resultStored(evidence: StoredEvidence): Promise<void>;
   /** The latest-recorded frontier for `room` among `blockIds`, or null. */
   latestFrontier(room: string, blockIds: readonly string[]): Promise<ObservationFrontier | null>;
+  /** Every row for `room` among `blockIds`, oldest recorded first: the names shown. */
+  frontiersIn(
+    room: string,
+    blockIds: readonly string[],
+  ): Promise<{ blockId: string; recordedSeq: number; snapshot: Uint8Array }[]>;
   /** Which of `rooms` the model saw most recently among `blockIds`: the room of the latest row. */
   latestRoom(rooms: readonly string[], blockIds: readonly string[]): Promise<string | null>;
   /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */

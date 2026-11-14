@@ -134,29 +134,6 @@ async function resolvedAuthorities(
   );
 }
 
-/** Resolve the project-owned recovery surface across every non-deleted Work. */
-export async function contextPortForProjectRecovery(input: {
-  deps: ProjectBrowseContextPortDeps;
-  projectId: string;
-  userId: string;
-  requestedWorkId?: string | null;
-}): Promise<ContextPort> {
-  const primaryWorkId = input.requestedWorkId ?? null;
-  const [workAuthorities, primaryAuthority] = await Promise.all([
-    resolvedAuthorities(input.deps, input.projectId),
-    primaryWorkId ? input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId) : null,
-  ]);
-  if (!primaryWorkId || !primaryAuthority) {
-    return input.deps.contextPorts.forProject(input.projectId, input.userId, workAuthorities);
-  }
-  return input.deps.contextPorts.forWork(
-    primaryAuthority,
-    input.projectId,
-    input.userId,
-    workAuthorities,
-  );
-}
-
 /** Resolve one project-browse port whose Work authorities have all been proven. */
 export async function contextPortForProjectAuthorities(input: {
   deps: ProjectBrowseContextPortDeps;

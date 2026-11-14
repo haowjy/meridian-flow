@@ -13,6 +13,7 @@ import {
   type LucideIcon,
   Pencil,
   Trash2,
+  X,
 } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useState } from "react";
 import type { RowMenu, RowMenuEntry, RowMenuItem } from "@/components/ui/row-menu";
@@ -34,7 +35,8 @@ export type EntryAction =
   | "move"
   | "copy"
   | "delete"
-  | "restore";
+  | "restore"
+  | "dismiss";
 
 type EntryActionSpec = {
   action: EntryAction;
@@ -73,6 +75,7 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
     destructive: true,
   },
   { action: "restore", label: <Trans>Restore</Trans>, icon: ArchiveRestore, group: "manage" },
+  { action: "dismiss", label: <Trans>Dismiss the error</Trans>, icon: X, group: "manage" },
 ];
 
 /** What every row of a selection is: one kind names it, a mix is "items". */

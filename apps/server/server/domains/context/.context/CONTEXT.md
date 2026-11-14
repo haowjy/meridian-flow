@@ -1,7 +1,7 @@
 # domains/context — context filesystem contracts
 
 This page holds the cross-module contracts for URI resolution, ContextFS,
-tree views, arrivals, and catalog publication. It deliberately omits adapter
+tree views, arrivals, and the sources query. It deliberately omits adapter
 inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
 know before editing.
 
@@ -45,8 +45,9 @@ document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
 while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
-A free name is chosen against `TreeReader.namesAt` (the rendered filenames under a parent) by the
-contracts' `firstFreeName`; nothing re-derives a name's parts from the rendered string.
+A free name is chosen by the list's writer against its own copy of the tree
+(`@meridian/project-tree`), never by a reader. A node's `name` in `tree_nodes` is its filename as
+shown, extension included; readers never render a filename from a name and an extension.
 
 ## Access, source capabilities, and transactions
 
@@ -54,8 +55,7 @@ File policy decides whether a caller may read or edit and whether an agent
 write is live or drafted. Context asks that policy before mutation. Storage
 transactions begin with the complete resolved Work set, lock user/project
 provisioning where needed, then take sorted Work lifecycle and logical
-namespace locks before source provisioning, preflight, catalog publication, or
-DML. Source locks and document locks follow the caller's established order;
+the list's lock and then namespace keys before source provisioning, preflight or DML. Source locks and document locks follow the caller's established order;
 never add a larger lock set after entering a single-source transaction.
 
 `lockSeamWorks` confirms bound edit grants and holds Work lifecycle rows.
@@ -121,24 +121,23 @@ writer text (`term`; the app's door finds the passage again with it).
 
 The tree module supplies `LIVE_TREE` and `{ kind: "branch", branchId }`. ContextFS
 uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a branch's
-hidden document or folder appears only in that branch. A draft create has an
-empty live Y.Doc and text in its draft until Apply. The hidden predicate has
-one owner in [tree](../tree/AGENTS.md); callers never inspect hidden columns.
+document or folder that exists only in that Work's draft appears only there. A draft create has an
+empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
+`visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
 `DocumentRevisions.current` resolves the thread's current primary Work and the
-chat's write mode, checks project-final availability, and delegates effective
+chat's write mode, checks the document is placed in the view, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
 live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
 independent pull transaction rules. It reports settled authority.
 
-A project-final identity lookup distinguishes missing, deleted, and
-reversibly hidden authority; foreign identities stay indistinguishable from
-missing IDs. Lineage hiding is authority loss rather than
-file deletion, so cached Scratch resources can return when a live lineage
-member or Work is restored. Document tombstones and lineage-hidden sources
-retain distinct status. Stable IDs never become capabilities without a policy
-check.
+`ProjectContextAvailabilityPort.placed` answers where this project (or the writer's own
+User area) holds documents and folders in a view, read from `visibleDocuments`/`visibleFolders`.
+A node in Trash, in a hidden or deleted source, Work or project, or in a foreign source is absent,
+and foreign ids are indistinguishable from missing ones. Lineage hiding is authority loss rather than
+file deletion, so cached Scratch resources return when a live lineage member or Work is restored.
+Stable IDs never become capabilities without a policy check.
 
 `DocumentTrash` owns the deleted-document lifecycle outside live `ContextPort`
 path resolution. List and identity reads admit only a currently restorable
@@ -152,79 +151,50 @@ namespace, document, and draft locks before rechecking eligibility. Pending
 branch text or tree changes defer purge; otherwise collab closes active drafts
 before the storage-release kernel erases the content.
 
-## Creation and hidden-node lifecycle
+## Writes to the tree
 
-Content placement and branch tree visibility are separate. Scratch content writes stay live in
-draft mode, but its adapter reads through the Work's branch and can record branch tree changes.
-This lets one drafted move cross between Scratch and a drafted source: the branch view shows the
-document at its proposed destination while both live sources remain unchanged until Apply. Uploads
-remain read-only. Placement is chosen once per command. Live create can reveal a hidden node at
-its path instead of inserting a twin and admits text on a clone before warm
-room publication after commit. Draft placement creates or joins a hidden row
-and records its branch use; whole-file seed, `mkdir`, and other live-seeding
-operations are not draft operations. A client-minted untitled ID is idempotent
-across authorized project and Work schemes; retries return the materialized
-canonical location rather than allocating another document. That path installs
-an empty Yjs authority and never seeds non-empty Markdown: the client owns the
-initial CRDT content. The writer's
-instant create is never refused for a name: a branch's hidden text document at
-that path is unhidden and keeps its id, the device's minted id forwards to it
-(`document_forwards`, answered `joined`, and link resolution follows forwards for
-ids no document holds), and a visible occupant sends the create to the first
-free name. A create is never reversed by retraction: a model's edit commits at its call.
+Every write of the tree is records made at the call through `treeListStore.submit({ list, make })`
+([the list store](tree-list-store.md)): ContextFS creates, moves, renames, deletes, copies and uploads,
+and the model's tree tools. `make` runs under the list's lock in the command's transaction, reads
+the list's replay (final names and paths come from it, never from a read before the lock) and returns
+the records, ONLY those that create new nodes claim ids. One command is one `submit`. Lock order:
+Work lifecycle rows, the list's key, then namespace keys (an arrival settling ahead refs), then
+document keys; a caller holds no document or namespace key when it submits. `context-fs/tree-writes.ts`
+(`SourceTree`) is the one place ContextFS makes records.
 
-A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
-`create-folder` route): a replay finds the folder under its ID and answers
-`already-exists`. The route reads the ID first (`answerHeldFolder`), before any authority
-over the destination, so an ID held out of reach (deleted, hidden, foreign, a document's) is a
-final `409 conflict` even when the destination's Work is archived. The folder takes the
-first free name at the destination and absorbs a hidden branch folder already there, so a
-create is never refused for a name. A destination that is gone is `destination_missing`.
-A create carries `destination.position` like a document create, resolved under the move
-lock; an anchor the server does not hold leaves the folder at the parent's end.
+- **Placement.** People and auto-apply chats write live (`LIVE`). A draft-mode chat on a drafted
+  source writes the Work's branch (`{ draft: branchId }`); the command transaction ensures and
+  locks the branch (`runInBranch`). Scratch content writes stay live in draft mode, while its tree
+  writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
+  seeds live Yjs: whole-file seed is a live-only command.
+- **Create.** The record, the document's first Yjs state and its arrival are one unit
+  (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
+  `conflict`; a create never replaces or joins another document. A text document created in a
+  Work's version gets its Yjs authority and its Work text draft from the list store, in the
+  transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
+  writer's records through the list's room and the AI's through `submit` take the same path.
+- **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
+  (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
+  bytes. A move between a project and the account (`user://`) crosses two lists:
+  `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' pair in one
+  `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
+  `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
+  `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
+  another node answers `conflict`.
+- **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
+  lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
+  that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
+- **Edit history.** The model's tree entry (`recordAgentTreeChange`) is written in the same
+  transaction through `inTransaction` / `afterWrite`.
 
-A hidden node with no active branch use is tombstoned, never left live. End of
-use locks and rechecks the complete namespace/document scope, releases its
-storage and drafts, and prunes empty hidden folders. A moved scope aborts
-and rediscovers. Read-time repair may schedule the same end-use operation but
-must not silently change the read result. Work restore checks the complete
-arriving tree before unhiding it.
-
-Cross-source moves preserve document identity and never rewrite Yjs content or
-journal rows. A move writes no document bytes. It flushes the project's
-certified derivations (which also registers client-minted ahead refs) before
-entering the namespace transaction, and failed derives never block it. Inside
-the transaction it row-locks every mutated document `FOR NO KEY UPDATE`, never
-`FOR UPDATE`, so journal FK inserts stay compatible. Its receipt counts incoming
-links (`linkUpdate: { links, documents }`) from live content holders in the
-request project only: hidden draft holders, personal and other-project holders,
-and a moved holder's own links to unmoved documents are not counted. A live
-folder rename or move that lands on a hidden folder's path absorbs it (never
-refused); a recursive delete, or a move to a source fewer branches may hold,
-first splits hidden contents into hidden twins at their old paths, so a
-writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
-in the live view, then resolve it again under namespace locks. The mover finds the
-moved row by id under the locks and builds the destination there: the leaf is
-`change.name` or the row's own, the folder is the row's own (`keep`), a folder read by
-id (`folder`), or an address (`at`, a root or the model's typed folder, which
-`createFolders` may extend). No path of the node reaches the mover from outside, so a rename or move
-by another writer in the gap is neither undone nor refused; the only paths it checks
-are facts about the target (the occupant, `onlyAt`). A row that left the locked Work or area answers a non-final
-`io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
-from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
-occupied destination leaf sends the arrival to the next free name and
-returns that actual path. An absent,
-terminal, or denied identity destination returns `destination_missing`.
-Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
-validated beneath the identity anchor in the same transaction; a missing
-anchor creates nothing. Folder deletes validate the supplied folder identity
-before recursive mutation. Every `ContextPort.delete` names its node and an area root
-URI (adapter and locks only); a row that is gone is `not_found`, and with `onlyAt` one
-that has left the place is `stale_target` and acknowledges nothing. There is no
-path-addressed delete. A refusal's `uri` names the area, not the entry.
-Work deletion soft-deletes its owned sources, documents, and folders marked
-`deletedByWorkId`; restore clears only those, so separately deleted content
-stays deleted.
+- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the
+  receipt) owns the transaction: the claim is its first write, a refusal after it is stored, a
+  transient `io_error` rolls the claim back so the id stays retryable, and another request under
+  the id answers `command_conflict`. Inside it the command transaction
+  (`commandTransaction.run`) takes the destination's Work and, through `treeListStore.submit`,
+  its list. The sources are a frozen cut, so their lists are not locked
+  and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
+  identity destination through the router's one resolver (`destination_missing` when the
 
 ## Copy
 
@@ -242,33 +212,28 @@ one source's tree contributes.
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
-  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`: a
+  happens before the command's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`: a
   store-side `copy`, never through memory), the plan, and the binding. A source room that is not open
   loads through a second connection, so a transaction held across the reads would starve
   the pool. Each put key is released if no transaction commits to name its object (a
   refusal, a retryable failure, a replay that never reads it). A process crash between a put
   and the rollback still leaks it (the model copy tool leaks the same way; one storage sweep
   would cover both).
-- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the receipt the
-  client reads back through `GET .../context/operations/:id`) owns the transaction: the claim is its first
-  write, a refusal after it is stored, and a transient `io_error` rolls the claim back so the id stays
-  retryable. Move and delete still use `context_operation_receipts`. Inside it the command
-  transaction takes the destination's Work and namespace, and nothing else: the sources are
-  a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
-  of what the writer saw. The command re-resolves an identity destination through the
-  router's one resolver (the one Create and Move also use: `destination_missing` when the
+- The command transaction (`commandTransaction.run`) takes the destination's Work and, through
+  `treeListStore.submit`, its list. The sources are a frozen cut, so their lists are not locked
+  and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
+  identity destination through the router's one resolver (`destination_missing` when the
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
-  adapter inserts the plan (`copyInto`).
+  adapter inserts the plan (`copyInto`) as one `submit`.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
   against live occupants and the rest of the batch, from a lock-free read of the destination
-  parent. A hidden draft node never takes a name from a copy ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
-  the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
-  free one. Only the roots meet existing occupants.
+  parent ([naming conflicts never
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)).
+  Only the roots meet existing occupants.
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
-  every descendant keeps a server-minted identity, so a replay or a replan keeps the roots
-  the client already names. Any row already holding a `copyId` — live, hidden, deleted, in
-  another source, or a document's — makes the insert a typed `conflict`; a duplicate id
+  every descendant keeps a server-minted identity. A node id already taken (`NodeIdRefusedError`
+  from the list store's claim) makes the insert a typed `conflict`; a replay is not recognised
+  as one until the server keeps document commands; a duplicate id
   within one request is a 400. The plan mints every identity before any content is bound,
   so one old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
   the copies (a settled `ahead:` ref, an unsettled one whose address now holds a copied
@@ -285,23 +250,16 @@ one source's tree contributes.
   run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
   so it lands only in an empty document) and encoded to its first Yjs state
-  (`encodeSeed`) outside the lock. The insert is set-based, because nothing below a root can
-  meet an occupant: `ContextDocumentStore.insertNewTree` writes folders, documents,
-  projections and claimed locations in one statement per batch of 500 (`tree/new-tree.ts`),
-  `InitialDocumentSeeds.seedInitialDocuments` writes the heads and seed checkpoints, and the
-  creation aggregate (`createDocumentsAtomically`) settles every arrival once, so ahead refs
-  pointing at a copy's new address settle. The per-node checks of a single create (occupancy,
-  hidden candidate, hidden-name yield) are skipped on purpose: they are what makes a
-  create cost fifteen statements, and the plan has already allocated around every name.
-  Projections and link rows are derived after the transaction commits, four documents at a
-  time (`refreshDocumentProjection`), and the answer does not wait for them. So a successful
-  answer means the rows are committed, not derived: until they fill, a model `ls` word count
-  and backlinks miss the copies, and a ref the copy itself owns (`ahead:`) registers then.
-  Reading a copy through its room shows its text immediately. A derivation that fails is
-  logged and the stale sweep recovers it. `metadata.copiedFrom` records the source URI, the
-  version read and that version's revision; folder provenance lives in the receipt.
-- Refusals are typed and recorded on the receipt, so a replay under the same operation ID
-  answers the same result: `not_found` or `stale_source` for a gone or changed source,
+  (`encodeSeed`) outside the lock. The insert is one `submit` of `create` records
+  (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
+  (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
+  seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
+  settle. Projections and link rows are derived after the transaction commits, four documents at a
+  time (`refreshDocumentProjection`), and the answer does not wait for them: a successful answer
+  means the rows are committed, not derived. A derivation that fails is logged and the stale sweep
+  recovers it. `metadata.copiedFrom` records the source URI, the version read and that version's
+  revision.
+- Refusals are typed: `not_found` or `stale_source` for a gone or changed source,
   `destination_missing` for a destination that no longer exists, `stale_target` for one that
   moved, `permission_denied` for an identity destination the writer cannot edit,
   `invalid_operation`
@@ -312,66 +270,45 @@ one source's tree contributes.
   sent for a folder are refused by the route before the domain runs, typed and unrecorded. A
   draft view names its Work and no chat: the server reads that Work's active branch's draft of
   the document, and a Work outside the project is refused as `work_missing`.
-- A duplicate request with the same operation ID waits for an in-flight prepare in this
-  process before reading, then answers from the receipt the first attempt recorded (or
-  prepares itself when that attempt recorded none). Another process still re-prepares; only
-  a committed receipt is shared.
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
   catch up, then answers `io_error` with `reason: "source_behind"` ("The source has edits the
-  server has not received yet"): retryable and never recorded, so the replica's replay under
-  the same operation ID reads the room again, and distinct from a transport failure so the
-  replica can stop after a bounded wait. Recording it as `stale_source` would hand the first
-  answer to every replay. A live document's vector from a real tab has been checked; no draft
+  server has not received yet"): retryable and never recorded, so the replica's replay
+  reads the room again, and distinct from a transport failure so the
+  replica can stop after a bounded wait. A live document's vector from a real tab has been checked; no draft
   tab has sent one yet, so confirm the draft room's vector against one first.
-- Lock hold grows with the statements, not with a round trip per document: 200 linked
-  chapters of about 1,500 words hold the destination namespace for about 0.3 s in a fresh
-  project. What is left is the catalog reconcile (`refreshSources`), which reads the whole
-  project scope on every write and runs twice when the destination folder is also created,
-  and the head lock it takes (see `FUTURE.md`).
 - A document that exists only in a Work's draft is not in the live tree, so it cannot be a
   source yet (`not_found`).
-- There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt
-  lists.
+- There is no Undo command: Copy's Undo is ordinary deletion of the identities it created.
 
 ## Catalog and publication
 
-The catalog is a live tree view, not a second visibility policy. Branch-hidden
-rows and folders never enter it. `ContextFS` owns single-source transactions;
-`ContextTreeMover` owns full preflight-through-CAS tree transactions. Apply's
-tree step and the Discard kernel reconcile every affected source inside their
-completion transaction. Refreshes publish authoritative survivors and moved
-children in the same mutation transaction; wake hints are best-effort and
-post-commit.
+There is no catalog: the browser reads placement from the project's list. What the list cannot
+say is the project's **sources** (`context_sources`): which node root is the manuscript, which is
+a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
 
-Availability generations and namespace observation versions are separate. A
-lifecycle or authority change may advance availability without changing a
-path. A live file, folder, or source change publishes a namespace observation;
-versions are lower bounds, not identifiers for one particular change. A move
-or delete invalidates the affected root and re-upserts current survivors, so a
-move away and back still publishes the newer observation. An absent
-invalidated root means the subtree is gone from that scope, not pending
-refetch, and the catalog never names a hidden node, even as a root.
+- `GET /api/projects/:projectId/context/sources` answers `ContextSourcesResult` for the project's
+  owner: the project's own, each Work's until the Work is purged (an archived or deleted Work's
+  read, and refuse writes), each lineage's and each chat's, while the source itself has not ended
+  (a trashed chat's lineage or uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
+  account's own `user://`. Each source carries the `authority` its addresses are spelled with.
+- A source that begins (its first write provisions it), ends or comes back (a chat trashed or
+  restored) publishes a truth-free `context-sources-hint` on the project's
+  subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
+  until its next read.
+- A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
+  (`ChatUploadsResult`): `attachedAt` and `used` per document id. Deleting an unused upload is
+  `DELETE .../context/uploads/upload?chatId=` with `{ documentId }`, refused once a sent message
+  used it; the document id is the node's id.
 
-Operation receipts make browser move/delete attempts idempotent. The receipt
-key is locked before source preflight; typed domain refusal rolls back tree and
-catalog DML before recording the outcome, while infrastructure failure stays
-retryable. A reused operation ID cannot replan a different command. Receipt
-lookup needs current project access, not the old path or Work.
-
-Move and delete are addressed by entry id. `ContextTreeMover` takes the node
-(`{kind, nodeId}`, at the id it has now) and an area, and finds its row under the namespace
-locks (`inspectNode`); the area only decides which adapter and locks to take. A row found in
-another Work or area than the one locked, or a destination folder that now resolves to another
-scope, answers a non-final `io_error` with `reason: "namespace_changed"`: no receipt is recorded and
-the resend relocates the entry and authorizes again. The receipt command is a function of the
-request alone (`expected` with the id the request carried, `destinationParent`, `position`, and
-`name` only when the writer typed one). The route builds it once (`moveCommand`, `deleteCommand`)
-and passes it as `operation` beside the node, so a resend is recognised without locating anything; the address lives in the result
-(`destinationUri`, and `uri` on a delete), and the observation version reads its generation from it
-(`user://` uses the user's counter). A move with no `name` keeps the row's name and one with no
-`destinationParent` keeps its folder.
+A delete or a move across lists is addressed by entry id: the router takes the node
+(`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the
+node in the list's replay inside `make` (`SourceTree.delete`, `moveAcrossLists`), so a rename or
+move by another writer in the gap is neither undone nor refused; the only facts it checks are about
+the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
+source answers `stale_target`. A move with no `name` keeps the node's name. A move to an occupied
+name answers `conflict`.
 
 ## Document content and filetype rules
 
@@ -410,8 +347,8 @@ binds once, to the first live document at its exact address, for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
-capture each other's waiting refs; a soft-deleted Work keeps its identity, so
-refs to its address wait for restore. Refs in a draft's text register globally
+capture each other's waiting refs; a soft-deleted Work keeps its identity and
+its files until the purge, so refs to its address bind while it is deleted. Refs in a draft's text register globally
 and best effort (an agent's mint, a link typed in the review room, and Apply's
 prerequisite for the drafts it publishes); a failed registration never fails
 Apply. The context link-scope adapter must receive the same scope instance as
@@ -419,8 +356,10 @@ collab, whose [document authority notes](../../collab/.context/document-authorit
 hold the scope rules.
 
 Zero or multiple matches resolve to `null`; resolution never guesses. An
-archived Work still resolves as authority and lists its files (archive hides a
-Work from Active, not its contents); only deleted Works hide theirs.
+archived or deleted Work still resolves as authority and lists its files until
+its purge (`ProjectWorkAuthorityResolver`, `presentSourceId`, availability's
+`placed` and `held`): its addresses read, and file policy refuses the writes as
+if the files were gone. Only `lockById` refuses a deleted Work.
 
 A ref-less address resolves in its typed scope; only chat falls back to a
 document's previous locations, and only after a current miss. Personal scope
@@ -430,21 +369,14 @@ reach the document by identity; an alias returns only when that identity is
 currently available to the request owner in the requested project.
 
 A link resolver is not a capability. A reader who cannot reach a ref receives
-`gone` without a location. A hidden document may answer `inBranch` with the
-selected branch and path. Holder binding is stable by document identity, and
+`gone` without a location. A document that exists only in the reader's Work draft answers `inBranch` with that branch and
+path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
-Browser addresses normally resolve in the live tree. A review address may
-supply `reviewOwner` (a draft owner key) and an item key `${branchId}:${documentId}`; the server
-checks that item against active review items, then reads the branch tree, except
-for a drafted delete whose identity is intentionally absent there, which reads
-the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
-(`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
-document deleted live is not listed, so its path finds it gone, but its review
-address still opens the open tab's draft. Stale,
-foreign, or mismatched selectors return unavailable rather than falling back
-to live. The address resolver returns the canonical current locator; it never
-makes a path-only URL a capability.
+The address endpoint resolves a path in the live tree only; `./mf doc uri` reads it. The browser
+resolves every address from the replay of the project's tree list, a review address in its Work's
+tree included, and never asks this endpoint. The resolver returns the canonical current locator;
+it never makes a path-only URL a capability.
 
 ## Lineage and special namespaces
 
@@ -461,7 +393,7 @@ Notice names the previous Scratch root. Work purge explicitly removes lineage so
 set, with documents, journals, memberships, and blobs.
 
 `unfiled://` is project-owned storage with the same ContextFS, Yjs authority,
-catalog, availability, and identity-preserving move rules as Manuscript and
+availability, and identity-preserving move rules as Manuscript and
 KB. Its membership means not yet filed; a name does not change membership.
 
 ## Negative space
@@ -478,10 +410,7 @@ it is `domains/recent-documents`.
 - [Collab codec and authority](../../collab/.context/CONTEXT.md)
 - [Deferred work](FUTURE.md)
 
-## Import staging
+## Import reveal
 
-`context_staged_folders` and `context_staged_documents` are private generation-tagged rows. Catalog, ContextFS, address lookup, link resolution, and tree readers do not read them. Reveal validates the whole placement, locks Works before namespace keys, inserts the generation set-wise, settles membership and arrivals, then publishes one catalog refresh. A changed destination refuses the generation rather than revealing a partial tree.
+An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` numbers each name against the list as it stands at the reveal (a name taken since the plan is renumbered), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
 
-The reveal inserts rows unranked, then places the stage's top level like any other arrival (`placeArrivedBatch` in `tree/sibling-order.ts`): the rows take ranks after the destination's last rank in name order, server-minted under the namespace lock it already holds. Everything below the top level sits in new folders whose children `rankNewFolderChildren` ranks in name order.
-
-Both write paths that insert rows in bulk take their ranks from the same rule, `arrivalRanks` in `tree/sibling-order.ts`: `placeArrivedBatch` updates rows a caller already inserted, and `insertNewTree` (a Copy's result) writes the ranks in with the rows. A write path that inserts `folders` or `documents` rows must place them through `arrivalRanks`; setting `rank` by hand bypasses the allocator.

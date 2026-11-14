@@ -71,9 +71,11 @@ export const threadShownLinks = pgTable(
  * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
  * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
  * captured with that cut.
- * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`.
+ * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`; the room
+ * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
+ * names shown, `domains/context/tree/names-shown.ts`).
  *
- * Keyed by the block's own id, so a fork that renders the inherited block
+ * Keyed by the block's own id and the room, so a fork that renders the inherited block
  * finds its rows with nothing copied. The key has no foreign key to the block: the
  * runtime stores the block, and a row left behind by a crash is never read, because every
  * lookup names the block ids it asks about. `thread_id` is plain; the document side deletes
@@ -84,7 +86,7 @@ export const threadShownLinks = pgTable(
 export const observationFrontiers = pgTable(
   "observation_frontiers",
   {
-    sourceBlockId: uuid("source_block_id").$type<TurnBlockId>().primaryKey(),
+    sourceBlockId: uuid("source_block_id").$type<TurnBlockId>().notNull(),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .notNull()
@@ -96,6 +98,8 @@ export const observationFrontiers = pgTable(
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [
+    // A result records one row per room it showed: a document's, and the names it showed (`tree`).
+    primaryKey({ columns: [table.sourceBlockId, table.roomKey] }),
     // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
     index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
     index("observation_frontiers_thread").on(table.threadId),

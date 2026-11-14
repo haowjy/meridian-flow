@@ -1,6 +1,6 @@
 /**
  * The descriptor a document host paints from: identity, owner and kind, derived per view from
- * the catalog, a draft row or the replica. Nothing stores it.
+ * the project's tree, a draft row or the sources. Nothing stores it.
  */
 import type {
   ContextOwner,
@@ -77,12 +77,8 @@ export type OpenDocument =
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
       provisionalName?: boolean;
-      /** Stable resource identity retained when a local document gains a server location. */
-      resourceHandle?: string;
-      /** Device provenance retained after a local document materializes. */
-      origin?: "local-resource";
       /**
-       * The replica knows the server holds no row for this document yet. A working-set route
+       * The writer made this document here and the server may not hold it yet. A working-set route
        * names only held documents: one for this tab makes the server refuse the whole snapshot.
        */
       localOnly?: true;
@@ -96,14 +92,11 @@ export type OpenDocument =
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
-      /** Stable resource identity for namespace operations and local cache lookup. */
-      resourceHandle?: string;
     } & OpenDocumentOwner)
   | {
       kind: "new";
       documentId: string;
       name: string;
-      resourceHandle: string;
     };
 
 export type ServerOpenDocument = Extract<OpenDocument, { kind: "tracked" | "viewer" }>;

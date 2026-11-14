@@ -34,6 +34,7 @@ import {
   describeModelMove,
   documentDisplayName,
   documentLocationName,
+  folderDisplayName,
   type OwnerNames,
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
@@ -342,6 +343,13 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
+  // A folder has no document to open or drag: its row names where it is.
+  if (document.folder)
+    return (
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
+        {folderDisplayName(document.uri)}
+      </span>
+    );
   const openable =
     document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
   if (!openable) {
@@ -376,7 +384,7 @@ function DocumentRow({
  */
 function useDocumentRowDrag(document: TurnEditDocument) {
   return useReferenceDrag(
-    document.tree?.op !== "delete"
+    document.tree?.op !== "delete" && !document.folder
       ? {
           ref: { kind: "file", id: document.documentId },
           name: documentDisplayName(document.uri),
@@ -435,27 +443,27 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
 
 /**
  * "Drafted" when every change went into a draft, so the manuscript is as it was until the writer
- * applies it; else "Edited" while the turn only changed text, "Changed" once it moved or deleted
- * a document or wrote both drafts and the manuscript. The part lines say what became of each.
+ * applies it; else "Edited" while the turn only changed text, "Changed" once it moved, deleted or
+ * made something or wrote both drafts and the manuscript. Documents and folders are counted
+ * apart, so a reorganisation says it touched folders too. The part lines say what became of each.
  * It counts, never names: a name inside the toggle would compete for the click with the
  * expanded rows, which already open each document.
  */
-function documentCountLabel(documents: readonly TurnEditDocument[]) {
-  const count = new Set(documents.map((document) => document.documentId)).size;
-  const drafted = documents.filter((document) => document.scope === "draft").length;
-  if (drafted === documents.length)
-    return count === 1 ? (
-      <Trans>Drafted 1 document</Trans>
-    ) : (
-      <Trans>Drafted {count} documents</Trans>
-    );
-  if (drafted > 0 || documents.some((document) => document.tree))
-    return count === 1 ? (
-      <Trans>Changed 1 document</Trans>
-    ) : (
-      <Trans>Changed {count} documents</Trans>
-    );
-  return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
+function documentCountLabel(documents: readonly TurnEditDocument[]): string {
+  const counted = (folder: boolean) =>
+    new Set(
+      documents
+        .filter((document) => !!document.folder === folder)
+        .map(({ documentId }) => documentId),
+    ).size;
+  const files = plural(counted(false), { one: "# document", other: "# documents" });
+  const folders = plural(counted(true), { one: "# folder", other: "# folders" });
+  const what =
+    counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
+  if (documents.every((document) => document.scope === "draft")) return t`Drafted ${what}`;
+  if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
+    return t`Changed ${what}`;
+  return t`Edited ${what}`;
 }
 
 /**

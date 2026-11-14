@@ -24,6 +24,7 @@ interface LinkRow extends ShownLink {
 }
 
 interface FrontierRow extends ObservationFrontier {
+  blockId: string;
   recordedSeq: number;
 }
 
@@ -54,7 +55,8 @@ export function createInMemoryDocumentEvidence(deps: {
   return {
     async resultStored(evidence) {
       for (const { blockId, frontier } of evidence.frontiers)
-        frontiers.set(blockId, {
+        frontiers.set(`${blockId}\0${frontier.room}`, {
+          blockId,
           room: frontier.room,
           snapshot: frontier.snapshot.slice(),
           ...(frontier.position === undefined ? {} : { position: frontier.position }),
@@ -90,10 +92,14 @@ export function createInMemoryDocumentEvidence(deps: {
     },
     async latestFrontier(room, blockIds) {
       let latest: FrontierRow | undefined;
-      for (const id of blockIds) {
-        const row = frontiers.get(id);
-        if (row?.room === room && (!latest || row.recordedSeq > latest.recordedSeq)) latest = row;
-      }
+      const among = new Set(blockIds);
+      for (const row of frontiers.values())
+        if (
+          row.room === room &&
+          among.has(row.blockId) &&
+          (!latest || row.recordedSeq > latest.recordedSeq)
+        )
+          latest = row;
       return latest
         ? {
             room,
@@ -101,6 +107,17 @@ export function createInMemoryDocumentEvidence(deps: {
             ...(latest.position === undefined ? {} : { position: latest.position }),
           }
         : null;
+    },
+    async frontiersIn(room, blockIds) {
+      const among = new Set(blockIds);
+      return [...frontiers.values()]
+        .filter((row) => row.room === room && among.has(row.blockId))
+        .sort((a, b) => a.recordedSeq - b.recordedSeq)
+        .map((row) => ({
+          blockId: row.blockId,
+          recordedSeq: row.recordedSeq,
+          snapshot: row.snapshot.slice(),
+        }));
     },
     async forDocument(threadId, documentId) {
       const lineage = await shownLinkLineage(threadId as ThreadId, lookup);

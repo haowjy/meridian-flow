@@ -4,17 +4,19 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { ActionNotice } from "@/components/app/ActionNotice";
+import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import type { DraftNotice } from "./draft-notices";
 
@@ -51,6 +53,16 @@ export function useDocumentNotice(
   return useSyncExternalStore(
     notices.subscribe,
     () => notices.forDocument(projectId, documentId),
+    () => null,
+  );
+}
+
+/** The Discard notice that can bring `documentId` back (`DraftNotices.discarding`). */
+export function useDiscardingNotice(documentId: string | null): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => (documentId ? notices.discarding(documentId) : null),
     () => null,
   );
 }
@@ -97,7 +109,8 @@ export function CommandNotice({
 }
 
 /**
- * One notice: "Draft of Chapter 1 discarded." with Undo and a dismiss, or what an Apply did.
+ * One notice: "Draft of Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
+ * or what an Apply did.
  * An Undo that failed stays, with Retry. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
  * nothing moves.
@@ -113,12 +126,31 @@ export function DraftNoticeLine({
   const presented = useOptionalPresentedDocuments();
   const accountId = useAccountId();
   const { openReviewFile } = useAiDraftLauncher();
+  const openDocument = useOpenProjectDocument(notice.projectId);
   if (notice.kind === "applied") {
-    const sentence = appliedSentence(notice.restored, notice.renamed, notice.alsoApplied);
+    const [only] = notice.landed;
+    const single = only && notice.landed.length === 1;
+    const name = only ? documentDisplayName(only.uri) : "";
+    // One landing names the document on its Open; the line says where it went. Several say it
+    // once per place, so the line holds at sidebar width.
+    const sentence = [
+      ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(notice.landed)),
+      appliedSentence(notice.restored, notice.renamed, notice.alsoApplied),
+    ]
+      .filter(Boolean)
+      .join(" ");
     return (
       <ActionNotice
         data-command-notice="applied"
         sentence={sentence}
+        action={
+          single
+            ? {
+                label: <Trans>Open {name}</Trans>,
+                onClick: () => void openDocument({ documentId: only.documentId }),
+              }
+            : undefined
+        }
         onDismiss={notice.dismiss}
         className={className}
       />
@@ -146,21 +178,50 @@ export function DraftNoticeLine({
           sentence: t`${subject.count} drafts discarded.`,
           failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
         }
-      : subject.kind === "draft"
+      : subject.kind === "deletes"
         ? {
-            sentence: (name: string) => t`Draft of ${name} discarded.`,
-            failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
+            sentence: t`${subject.count} items deleted.`,
+            failedUndo: t`Couldn't bring back ${subject.count} items.`,
           }
-        : {
-            sentence: (name: string) => t`Change to ${name} discarded.`,
-            failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-          };
+        : subject.kind === "deleted"
+          ? {
+              sentence: (name: string) => t`${name} deleted.`,
+              failedUndo: t`Couldn't bring back ${subject.name}.`,
+            }
+          : subject.kind === "draft"
+            ? {
+                sentence: (name: string) => t`Draft of ${name} discarded.`,
+                failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
+              }
+            : subject.kind === "folder"
+              ? {
+                  sentence: (name: string) => t`Changes in ${name} discarded.`,
+                  failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
+                }
+              : {
+                  sentence: (name: string) => t`Change to ${name} discarded.`,
+                  failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
+                };
   const failed = notice.status === "failed";
+  if (notice.status === "partial") {
+    const count = notice.leftOut;
+    return (
+      <ActionNotice
+        data-command-notice="undo-partial"
+        sentence={plural(count, {
+          one: "# change couldn't come back: it was drafted again or is gone.",
+          other: "# changes couldn't come back: they were drafted again or are gone.",
+        })}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
+    );
+  }
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
       sentence={sentence}
-      name={subject.kind === "drafts" ? null : subject.name}
+      name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: undo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
       failure={failed ? { message: failedUndo, onRetry: undo, onDismiss: notice.dismiss } : null}
@@ -210,6 +271,27 @@ export function restoredSentence(titles: readonly string[]): string {
   return titles.length === 1
     ? t`${names} is back in the manuscript.`
     : t`${names} are back in the manuscript.`;
+}
+
+/** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */
+function landedSentences(landed: readonly { uri: string }[]): string[] {
+  const byPlace = new Map<string, string[]>();
+  for (const { uri } of landed) {
+    const place = placeOf(uri);
+    byPlace.set(place, [...(byPlace.get(place) ?? []), documentDisplayName(uri)]);
+  }
+  const list = (names: readonly string[]) =>
+    new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(names);
+  return [...byPlace].map(([place, names]) => {
+    const all = list(names);
+    return names.length === 1 ? t`${all} is now in ${place}.` : t`${all} are now in ${place}.`;
+  });
+}
+
+/** "Manuscript/Arc 3": the source and folder a document is in. */
+function placeOf(uri: string): string {
+  const whole = documentLocationName(uri);
+  return whole.slice(0, whole.lastIndexOf("/")) || whole;
 }
 
 export function appliedSentence(

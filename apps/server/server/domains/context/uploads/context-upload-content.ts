@@ -116,4 +116,4 @@ export function createContextUploadContentPort(
 }
 
 /** The upload moved or left its URI: the writer's identity no longer names a file there. */
-const STALE_DELETE = new Set(["not_found", "stale_source", "stale_target", "operation_mismatch"]);
+const STALE_DELETE = new Set(["not_found", "stale_source", "stale_target", "command_conflict"]);

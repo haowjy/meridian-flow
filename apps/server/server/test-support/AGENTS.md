@@ -28,7 +28,7 @@ DB suites share a worker module cache and an owned database clone. Depth:
   and one that escapes it gets its own shutdown, not a second owner in
   `processDetachedWork`.
 - Drive retry delays through the code's injectable delay and assert the schedule
-  (`context-catalog.ts` is the pattern); keep a real clock only when the claim is
+  ; keep a real clock only when the claim is
   PostgreSQL's own timing. Never poll for work a seed suppressed; await the
   notification that proves it ran.
 - Hoist an immutable large fixture to `beforeAll` only when each case restores its

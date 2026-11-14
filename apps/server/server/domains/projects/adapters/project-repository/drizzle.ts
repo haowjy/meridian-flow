@@ -9,14 +9,15 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockProjectLifecycleExclusive } from "../../../../shared/project-lifecycle-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
-import type { ContextCatalogLifecyclePort } from "../../ports/context-catalog-lifecycle.js";
+import { provisionProjectSources } from "../../../context/index.js";
+import type { FileAccessChanges } from "../../../file-policy/index.js";
 import type {
   CreateProjectInput,
   ListProjectsOptions,
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE, ensureManuscriptSource, nextProjectSlug } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
 type ProjectRow = typeof projects.$inferSelect;
 function mapProject(row: ProjectRow): Project {
@@ -36,7 +37,8 @@ function mapProject(row: ProjectRow): Project {
 }
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
-  catalogLifecycle: ContextCatalogLifecyclePort;
+  /** A deleted project closes the live connections to its tree list. */
+  fileAccessChanges: Pick<FileAccessChanges, "publish">;
   ensureNoWork: (projectId: ProjectId) => Promise<unknown>;
 }
 export function createDrizzleProjectRepository(
@@ -72,9 +74,8 @@ export function createDrizzleProjectRepository(
           })
           .returning();
         if (!row) throw new Error("Failed to create project");
-        await ensureManuscriptSource(db, row.id);
+        await provisionProjectSources(db, row.id, { personal: false });
         await deps.ensureNoWork(row.id);
-        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },
@@ -151,7 +152,7 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle.refreshProject(row.id);
+        await deps.fileAccessChanges.publish({ projectId: row.id });
         return mapProject(row);
       });
     },
@@ -164,7 +165,6 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },

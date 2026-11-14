@@ -59,7 +59,7 @@ own band, so the focus follows to the new one. The band's far right holds the ta
 (`MainTabMenu`, while the lane has a tab): Close all, then every tab, the open one filled. Close all
 sends main to the lane's empty page unless it is there already. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed, and of chats the
-project's list no longer holds, are not drawn once the replica or the list has loaded, and a tab
+project's list no longer holds, are not drawn once the list has loaded, and a tab
 shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.tsx`, one projection a `LiveTabsProvider` shares, read
 by the strip, the tab list and the side's document list; the record is left alone, so a document
 that comes back has its tab). A tab's Live or Draft view is its document's view, so it is per tab
@@ -189,33 +189,31 @@ for canonical, entry-guarded replacement.
 Rename or move prepares the open document's new locator and the replacement address as one
 navigation commit, so the old address keeps its identity continuity until the new one is accepted.
 
-A presented document is its id; its path, name and owner are a display cache the replica
-refreshes. A route is bound to a document only when that is proven, and the bound selection records what proved
-it (`by`). A navigation that names the document (a tree open, a Recent row, a chat door) binds the route it
-opens in `commit()` (`enterRoute`), and any other URL (paste, reload, Back/Forward) stays a
-candidate until its address answer binds it (`addressRouteBinding`), so the path's occupant
-decides there. A document found by its cached path may paint but never binds. A selection about another
-route than the URL begins again (`ProjectContextRemovalController`), so a binding that lands late
-cannot stay stale.
+A presented document is its id; its path, name and owner are a display cache the list
+refreshes. The history entry keeps the continuity (`meridianRouteDocument` in `location.state`, beside
+`meridianProjectSelection`): the last document id its address resolved, kept for the place that
+address spells, so Back, Forward and reload each find the document their entry showed. While the
+address stays at that place the route is that document wherever the replay now puts it (a rename
+or a move), and a path another document later takes is not it. A new entry has no remembered id
+until it resolves one. A review address names its document by its item, so a review is that
+document; leaving the review keeps what the address last resolved, because the drafted path still
+has to be repaired to the live one. There is no selection state, revision or fence to order.
 
-A review address binds its route to the item's document at once (`reviewDocumentId` on the
-controller, or a navigation that carries an item, `by: "review"`) and owns its path: the availability planner does not relocate that
-binding, the follow hook does not follow it, and it is never a candidate for rejection. The
-binding ends with the item: Back onto the same path without it begins a candidate, and
-`ReadableProjectRoute` stops counting it in that render. A writer's exit from the review or its
-close keeps the document (`adoptReviewBinding` makes it a navigation's), because the drafted path
-still has to be repaired to the live one.
-
-A bound document the address catalog does not list holds (`holdsBoundDocument`): the answer naming
-another document is the path's occupant, so the route waits. The hold asks `resolveForOpen` once:
-`available` goes to that location; anything else, a rejected lookup included, drops the binding
-(`unbindRoute`, only while the selection is still bound to that document at this route) so the
-address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
-failed catalog during a hold shows the error with Retry. A draft-only document is not found by its
-cached path on either shell: its review binds on arrival, and a plain URL there waits for the
-address answer. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
-destination area's catalog lacks (a draft that creates it, or moves it to another area) comes from
-the address's answer (`addressedDocument`).
+A plain address resolves against the replay of the list (`resolveReplayAddress`): to a document,
+to "not there" once the list has synced, or to "waiting for the list" until it has. A bound
+document this source's tree does not list holds (`held`), and `ReadableProjectRoute` decides what
+to show from the id, every source's tree (`useProjectTrees`) and the id's standing
+(`ProjectStandings`): found in another source, the route goes there, to that source's owner (a
+project document moved to `user://` or another Work's Scratch included); in Trash, main shows its
+Trash view, unless a draft retains the document or the writer's own removal is sending main back;
+purged, the Trash view says it is gone for good; in no list once synced, the id is forgotten and
+the address decides. The observer never navigates main: it keeps copies, notices and recents.
+The move takes a plain navigation ticket, never the writer's intent. A denied list shows the error
+with Retry. A draft-only document is not found by its path on either shell: its review binds on
+arrival. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
+destination source's tree lacks (a draft that creates it, or moves it to another area) comes from
+the address's answer (`addressedDocument`). A review address is read the same way in its Work's
+tree (`useDraftTreeVersion`): nothing about an address asks the server.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.
@@ -301,8 +299,8 @@ not manage focus or copy.
 
 ## Document admission
 
-A bound document with no source is pending, never a cached occupant. Catalog errors and pending
-refreshes don't prove absence.
+A bound document with no source is pending, never a path's occupant. An unsynced list or an error
+doesn't prove absence.
 
 The opening record is taken from main's host, not an intent or create path. It updates
 locally before a server POST, and the POST waits for `whenOnServer`. The side and the kept host

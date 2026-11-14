@@ -52,9 +52,10 @@ export type NoWorkCatalogEntry = Work & { isNoWork: true; handle: null };
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
   projectId: ProjectId;
-  /** Causal project-catalog evidence; clients do not use it for snapshot ordering. */
-  catalogGeneration: string;
-  /** Project availability generation: the total order for complete snapshots. */
+  /**
+   * The total order for complete snapshots: the sum of the project's Works' `entityRevision`s,
+   * which every Work change raises and no change lowers.
+   */
   authorityRevision: string;
   /** Correlates one acquisition response; it is not ordering authority. */
   requestId: string;
@@ -89,7 +90,6 @@ export const workSchema = z.object({
 
 export const worksSnapshotSchema = z.object({
   projectId: z.string().min(1),
-  catalogGeneration: z.uuid(),
   authorityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
   requestId: z.string().min(1),
   works: z.array(workSchema.extend({ isNoWork: z.literal(false), handle: workHandleSchema })),

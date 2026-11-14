@@ -18,7 +18,7 @@ import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
 import type { ModelInfo } from "@meridian-flow/gateway";
-import type { ShownLinkShowing } from "../../../shared/model-evidence.js";
+import { evidenceFrontiers, type ShownLinkShowing } from "../../../shared/model-evidence.js";
 import type { DocumentEvidence } from "../ports/document-evidence.js";
 import {
   type DocumentTextTreatment,
@@ -52,8 +52,15 @@ export interface ReferenceReader {
  */
 export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
-  /** Each reference block's frontier: the block whose materialized read the model is sent. */
-  frontiers: { sourceBlockId: string; frontier: ObservationFrontier }[];
+  /**
+   * Each reference block's frontier and the tree names its read showed: the block whose
+   * materialized read the model is sent.
+   */
+  frontiers: {
+    sourceBlockId: string;
+    frontier?: ObservationFrontier;
+    names?: ObservationFrontier;
+  }[];
 }
 
 /**
@@ -69,10 +76,9 @@ export async function recordReferenceEvidence(
   await deps.documentEvidence.resultStored({
     ...owner,
     shown: evidence.shown,
-    frontiers: evidence.frontiers.map(({ sourceBlockId, frontier }) => ({
-      blockId: sourceBlockId,
-      frontier,
-    })),
+    frontiers: evidence.frontiers.flatMap(({ sourceBlockId, ...rest }) =>
+      evidenceFrontiers(sourceBlockId, rest),
+    ),
   });
 }
 
@@ -115,7 +121,10 @@ export async function loadReferenceReads(input: {
         return typeof content?.ref?.documentId === "string" ? [content.ref.documentId] : [];
       }),
   );
-  const reads = new Map<string, ReferenceRead & { frontier?: ObservationFrontier }>();
+  const reads = new Map<
+    string,
+    ReferenceRead & { frontier?: ObservationFrontier; names?: ObservationFrontier }
+  >();
   const updated: Block[] = [];
   const evidence: ReferenceEvidence = { shown: [], frontiers: [] };
   for (const block of input.blocks) {
@@ -138,14 +147,19 @@ export async function loadReferenceReads(input: {
         result: read.result,
         revision: read.revision,
         ...(read.evidence?.frontier ? { frontier: read.evidence.frontier } : {}),
+        ...(read.evidence?.names ? { names: read.evidence.names } : {}),
       };
       reads.set(key, result);
       evidence.shown.push(...(read.evidence?.shown ?? []));
     }
     input.signal?.throwIfAborted();
     // A repeated mention shows the same read, so its block records the same frontier.
-    if (result.frontier)
-      evidence.frontiers.push({ sourceBlockId: block.id, frontier: result.frontier });
+    if (result.frontier || result.names)
+      evidence.frontiers.push({
+        sourceBlockId: block.id,
+        ...(result.frontier ? { frontier: result.frontier } : {}),
+        ...(result.names ? { names: result.names } : {}),
+      });
     updated.push({
       ...block,
       content: { ...reference, read: { result: result.result, revision: result.revision } },

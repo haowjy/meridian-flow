@@ -31,7 +31,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   more than it proved; everything else is a live probe or recipe
   ([why](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#few-tests-against-a-scripted-wire)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
-  `@meridian/thread-client` only. Portless discovery uses the route contract
+  `@meridian/thread-client`, plus the tree and document-room clients `doc` needs
+  (`@meridian/project-tree`, `@meridian/tree-list-sync`, `@meridian/agent-edit`,
+  `@meridian/markup`, `@meridian/prosemirror-schema`). Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
   `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
   `dev-session-state.ts`, which finds an active session's routes by its recorded
@@ -47,8 +49,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   schemas. Stop and queue pass unknown bodies to the shared hand-back operation, which
   validates them before confirming. Snapshots use `threadSnapshotSchema` in both hosts.
   Work and document-reference lookups use explicitly typed identity projections, not casts
-  claiming full catalog validation. Deletion must also include the requested document in
-  `removed` with its removal identity before `doc rm` or overwrite reports it deleted.
+  claiming full catalog validation.
   Diagnostic-only assertions remain in `project/list.ts`, `log/log.ts` and
   `thread/context.ts`; none feeds a mutation or terminal claim.
   Generic `api` explicitly requests text, then decodes JSON/transport envelopes when possible;
@@ -119,14 +120,23 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
   failures are results; `--fields` always keeps `type`, `command`, `outcome` and
   `reason`. Set `process.exitCode`; never call `process.exit()`.
-- **Documents.** Commands parse the final path segment with the contracts name
-  codec; `doc put` reports the canonical URI creation returns. `doc put
-  --overwrite` deletes and recreates (new id, drafts and history gone), reports
-  `previousDocumentId`, and says the old document was already deleted if the
-  create then fails. Seed scenario names use writer spelling. `doc copy` sends one
-  Copy command per run under a fresh operation ID, with each source's identity read from
-  the catalog lookup and no state vector (it holds nothing open); `--draft-work`
-  reads every source through that Work's draft.
+- **Documents.** `doc put`, `doc rm` and a copy's source lookup are tree-list clients
+  (`commands/doc/tree-list.ts`): they connect to the project's tree room (`tree:project:<id>`, or
+  the account's for `user://`) with the session's cookie, wait until synced, resolve the URI by
+  replaying the list (`tree-address.ts`: the source id from the sources route, then names down the
+  path), and append records made by the package's `TreeWriter`. A command claims success only
+  after a second copy of the list, synced after the append, holds every record with none
+  refused (the refusal's reason is printed). `doc put` creates the node (missing folders in the
+  same update), then writes the text through the document's own room (`document-room.ts`: the
+  codec's blocks applied to the synced copy) and waits until the read route shows it; between
+  the two the document exists empty, and links in the text stay unbound. Only markdown
+  documents are made (a name with another extension is a usage error). `doc put --overwrite`
+  deletes, waits for the delete's admission, then creates (new id, drafts and history gone),
+  reports `previousDocumentId`, and says the old document was already deleted if the create
+  then fails. `doc rm` deletes documents, not folders. Seed scenario names use writer spelling.
+  `doc copy` stays the server's Copy route: one Copy command per run under a fresh operation
+  ID, each source's identity (`expected`) read from the list, no state vector (it holds nothing
+  open); `--draft-work` reads every source through that Work's draft.
 - **Usage refusals** are current pending state, not terminal run events. Send
   exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's
   `messageFate` is waiting and blocked; an already recovered reply wins.

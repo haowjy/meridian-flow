@@ -18,6 +18,7 @@ import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus } from "@/lib/focus-follow";
 import { workDisplayName } from "@/lib/work-name";
@@ -42,11 +43,15 @@ export function DocumentVersionMenu({
   const { documentId } = document;
   const accountId = useAccountId();
   const paint = useHostDocumentPaint();
+  // The chip and the sidebar's Live/Draft toggle are one state (`shownDraft`): a pick here sets it.
+  const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works } = useWorks(projectId);
   if (document.kind === "new") return null;
 
-  const shown = review ? (paint?.draft ?? null) : null;
+  // The chip reads the paint, the one version rule, never whether the review's controls are up:
+  // a draft whose room is still opening is already the version on screen.
+  const shown = paint?.draft ?? null;
   const ownerWork = (owner: string) => {
     const workId = workIdOfDraftOwnerKey(owner);
     return workId ? works?.find((candidate) => candidate.id === workId) : undefined;
@@ -85,9 +90,12 @@ export function DocumentVersionMenu({
     current: shown?.ownerKey === hint.owner,
     scope: hint.owner === scopeOwner,
     onSelect: () => {
-      setDocumentView(accountId, projectId, documentId, {
-        pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
-      });
+      // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft.
+      if (hint.owner === shell?.ownerKey) shell.show("draft");
+      else
+        setDocumentView(accountId, projectId, documentId, {
+          pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
+        });
       followToChip(documentId);
     },
   }));
@@ -98,7 +106,7 @@ export function DocumentVersionMenu({
   return (
     <DraftSwitcher
       // An ended draft's review stays open ("No changes left") while main paints Live.
-      showing={review && paint?.showing !== "live" ? "draft" : "live"}
+      showing={paint && paint.showing !== "live" ? "draft" : "live"}
       drafts={drafts}
       owner={outOfScope ?? undefined}
       draftOnly={review?.draftOnly ?? false}
@@ -106,6 +114,7 @@ export function DocumentVersionMenu({
       onShowLive={() => {
         if (review) review.onShowLive();
         else setDocumentView(accountId, projectId, documentId, { version: "live" });
+        shell?.show("live");
         followToChip(documentId);
       }}
       onRename={review?.onRename}

@@ -18,8 +18,7 @@ The edit holds its document's lock while it plans, so a second connection or a p
 | Room read (`committedCopy`) stepped outside the transaction | reads inside it while `inLockedWrite()` |
 | A drafted first write's draft, made from the live room under `withDocument` | `ensureLiveDocumentDraft`: the live journal read in the transaction, after the Work, under the document key |
 | Draft live pull in `readRoom` | `catchUp`, before the claim |
-| Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock, so a deadlock with a tree command is possible and Postgres aborts one side |
-| Link-derivation flush before a move (`flushMoveLinks`; the mover would run it on connections of its own) | before the claim; the move passes `linksFlushed` |
+| Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock |
 | `runInRootDrizzleReadSnapshot` in address resolution | joins the command transaction |
 | The model undo's capture snapshot | gone: the capture is taken again under the commit's locks and compared (`confirmCapture`) |
 

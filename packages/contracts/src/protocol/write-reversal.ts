@@ -6,6 +6,8 @@ export type WriteErrorStatus =
   | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
+  | "gone"
+  | "path_changed"
   | "partial_failure"
   | "cant_undo_applied"
   | "cant_undo_discarded"

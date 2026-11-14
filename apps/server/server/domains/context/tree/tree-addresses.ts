@@ -1,11 +1,11 @@
 /**
- * Identity rows and their spelled addresses, hidden and deleted included: the tree
- * owner's address loader. Answers where a row is, never whether a view shows it;
- * `tree-view.ts` decides visibility and uses these to spell what it decided.
+ * Nodes and their spelled addresses, in Trash included: the tree owner's address loader.
+ * Answers where a node is in a view, deleted or not; `tree-view.ts` decides what a reader
+ * sees and uses these to spell what it decided. A document in no view has no place and no
+ * address.
  *
- * The deleted-ancestor rule: a document under a deleted folder keeps the address its
- * chain spells and reads as deleted there, exactly like a deleted row, a deleted source,
- * or a deleted Work.
+ * A node in Trash, or deleted in a Work, reads as deleted and keeps the address its folder
+ * chain spells; a delete takes the whole subtree, so a node's own flag says it.
  */
 import type {
   ContextSourceId,
@@ -21,13 +21,13 @@ import {
   isContextUriScheme,
   isProjectScopedScheme,
 } from "@meridian/contracts/context-uri";
-import { contextSources, folders, projects, works } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { classifyFiletype } from "@meridian/contracts/protocol";
+import { contextSources, projects, works } from "@meridian/database/schema";
+import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import { catalogSourceAuthority } from "../adapters/catalog-file-mapper.js";
-import { renderFilename } from "../context/paths.js";
-import { documentHiddenSql } from "./tree-view-sql.js";
+import { sourceAuthority } from "../adapters/context-file-entry.js";
+import { LIVE_TREE, type TreeView } from "./tree-relations.js";
 
 /** A decoded canonical address resolved to storage coordinates. */
 export type DocumentCoordinates = {
@@ -48,33 +48,55 @@ export type DocumentCoordinates = {
   path: string;
 };
 
-/** Where a document's row is, deleted and hidden rows included (see the deleted-ancestor rule). */
+/** Where a document is in a view, in Trash or deleted in the Work included. */
 export type DocumentAddress = DocumentCoordinates & {
   documentId: DocumentId;
   /** Decoded canonical URI. */
   uri: string;
   deleted: boolean;
-  /** A branch's new document, in no live view; its address is its row's, not a branch overlay. */
-  hidden: boolean;
   image: boolean;
 };
+
+/**
+ * Every node the view places, the deleted ones too (`deleted`): live's `tree_nodes` rows, and
+ * for a Work the same rows it has no row for plus its own. For address and chain reads by id;
+ * what a reader shows is `visibleDocuments` / `visibleFolders`. A walk that steps by name uses
+ * those, not this.
+ */
+export function placedNodesSql(view: TreeView): SQL {
+  const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.extension, t.stem,
+      t.file_type, t.rank, t.location_version, t.trash_record IS NOT NULL AS deleted,
+      false AS exists_only_in_draft
+    FROM tree_nodes t`;
+  if (view.kind === "live") return sql`(${live})`;
+  const branch = sql`${view.branchId}::uuid`;
+  return sql`(${live}
+    WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+    UNION ALL
+    SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.extension,
+      CASE WHEN b.extension <> '' THEN left(b.name, -(length(b.extension) + 1)) ELSE b.name END,
+      b.file_type, b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
+    FROM branch_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
+    WHERE b.branch_id = ${branch})`;
+}
 
 /** Which content documents to spell. */
 export type DocumentAddressSelection =
   | { ids: readonly string[] }
-  /** Every document whose stored name (without extension) is one of these, in these projects. */
+  /** Every document whose name is one of these, in these projects. */
   | { names: readonly string[]; projectIds: readonly string[] }
   /** Every document in this source whose rendered filename is exactly this. */
   | { sourceId: string; filename: string };
 
 /**
- * Content documents and their canonical addresses at their rows' locations: each folder
- * chain walked up to its source root. A row whose path cannot be spelled canonically is
- * dropped.
+ * Content documents and their canonical addresses where the view places them: each folder
+ * chain walked up to its source root. A document the view does not place is not answered; a
+ * path that cannot be spelled canonically is dropped.
  */
 export async function loadDocumentAddresses(
   db: DrizzleDb,
   selection: DocumentAddressSelection,
+  view: TreeView = LIVE_TREE,
 ): Promise<DocumentAddress[]> {
   const filter = selectionFilter(selection);
   if (!filter) return [];
@@ -91,21 +113,20 @@ export async function loadDocumentAddresses(
     is_no_work: boolean | null;
     path: string;
     deleted: boolean;
-    hidden: boolean;
-    image: boolean;
+    file_type: string;
   }>(sql`
     WITH RECURSIVE candidates AS (
-      SELECT d.id, d.name, d.extension, d.folder_id, d.context_source_id, d.file_type,
-        d.deleted_at IS NOT NULL AS deleted, ${documentHiddenSql("d")} AS hidden
-      FROM documents d WHERE ${filter}
+      SELECT d.id, d.name, d.parent_id AS folder_id, d.context_source_id, d.file_type, d.deleted
+      FROM ${placedNodesSql(view)} d WHERE d.kind = 'document' AND ${filter}
     ),
     up AS (
-      SELECT c.id AS document_id, c.folder_id AS folder_id, ''::text AS path, false AS deleted
+      SELECT c.id AS document_id, c.folder_id AS folder_id, ''::text AS path
       FROM candidates c
       UNION ALL
-      SELECT u.document_id, f.parent_id, f.name || '/' || u.path,
-        u.deleted OR f.deleted_at IS NOT NULL
-      FROM up u JOIN folders f ON f.id = u.folder_id
+      SELECT u.document_id, f.parent_id, f.name || '/' || u.path
+      FROM up u CROSS JOIN LATERAL (
+        SELECT p.parent_id, p.name FROM ${placedNodesSql(view)} p WHERE p.id = u.folder_id OFFSET 0
+      ) f
     )
     SELECT c.id::text AS id,
       COALESCE(cs.project_id, w.project_id)::text AS project_id,
@@ -113,11 +134,9 @@ export async function loadDocumentAddresses(
       cs.slug AS scheme, cs.work_id::text AS work_id, w.handle AS work_handle,
       w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
-      up.path || c.name || CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END AS path,
-      c.deleted OR up.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL
-        AS deleted,
-      c.hidden,
-      c.file_type = 'image' AS image
+      up.path || c.name AS path,
+      c.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL AS deleted,
+      c.file_type
     FROM candidates c
     JOIN up ON up.document_id = c.id AND up.folder_id IS NULL
     JOIN context_sources cs ON cs.id = c.context_source_id
@@ -133,7 +152,7 @@ export async function loadDocumentAddresses(
       uri = canonicalContextUri(
         scheme,
         row.path,
-        catalogSourceAuthority(
+        sourceAuthority(
           scheme,
           row.work_id,
           row.is_no_work ? null : row.work_handle,
@@ -157,11 +176,16 @@ export async function loadDocumentAddresses(
         path: row.path,
         uri,
         deleted: row.deleted,
-        hidden: row.hidden,
-        image: row.image,
+        image: isImageFiletype(row.file_type),
       },
     ];
   });
+}
+
+/** A stored image's `file_type` is its filetype (`png`, `jpg`, `svg`), not the word `image`. */
+function isImageFiletype(fileType: string): boolean {
+  const disposition = classifyFiletype(fileType);
+  return disposition.kind === "binary" && disposition.fileType === "image";
 }
 
 function selectionFilter(selection: DocumentAddressSelection): SQL | null {
@@ -172,24 +196,23 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   if ("names" in selection) {
     const projectIds = selection.projectIds.filter(isUuid);
     if (selection.names.length === 0 || projectIds.length === 0) return null;
-    return sql`d.name IN (${sql.join(
+    // A node's name is its full filename; the candidates are stems, so match its stem too.
+    const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,
-    )}) AND d.context_source_id IN (
+    );
+    return sql`(d.name IN (${names}) OR d.stem IN (${names})) AND d.context_source_id IN (
       SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
       WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projectIds)}))`;
   }
-  return sql`d.context_source_id = ${selection.sourceId}::uuid
-    AND d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END
-      = ${selection.filename}`;
+  return sql`d.context_source_id = ${selection.sourceId}::uuid AND d.name = ${selection.filename}`;
 }
 
 /**
  * The live source a scheme names: a project-scoped one in its project (or the owner's
  * personal project), a lineage Scratch by its first chat, a Work-scoped one in the named Work
- * or No Work. Liveness facts (live
- * source, live project, live work) are the same ones recent-documents' visibleIdentity
- * filters on and project-context-availability explains as a reason.
+ * or No Work. A deleted Work's source stays until its purge removes it: its files read, and
+ * file policy refuses the writes.
  */
 export async function presentSourceId(
   db: DrizzleDb,
@@ -227,7 +250,6 @@ export async function presentSourceId(
             : workScoped
               ? and(
                   projectId === null ? sql`false` : eq(works.projectId, projectId),
-                  isNull(works.deletedAt),
                   input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
                 )
               : and(
@@ -246,7 +268,7 @@ export async function presentSourceId(
   return source?.id ?? null;
 }
 
-/** One folder of a chain: walked by id, so hidden and deleted folders spell too. */
+/** One folder of a chain: walked by id, so a folder in Trash spells too. */
 export type FolderLink = {
   id: FolderId;
   parentId: FolderId | null;
@@ -254,10 +276,11 @@ export type FolderLink = {
   deleted: boolean;
 };
 
-/** Each folder and its ancestors, nearest first (the folder itself first). */
+/** Each folder and its ancestors in the view, nearest first (the folder itself first). */
 export async function loadFolderChains(
   db: DrizzleDb,
   folderIds: readonly (FolderId | null)[],
+  view: TreeView = LIVE_TREE,
 ): Promise<ReadonlyMap<FolderId, readonly FolderLink[]>> {
   const ids = [...new Set(folderIds.filter((id): id is FolderId => id !== null && isUuid(id)))];
   const chains = new Map<FolderId, FolderLink[]>();
@@ -271,12 +294,14 @@ export async function loadFolderChains(
     depth: number;
   }>(sql`
     WITH RECURSIVE chain AS (
-      SELECT f.id AS start_id, f.id, f.parent_id, f.name, f.deleted_at IS NOT NULL AS deleted,
-        0 AS depth
-      FROM folders f WHERE f.id IN (${uuidList(ids)})
+      SELECT f.id AS start_id, f.id, f.parent_id, f.name, f.deleted, 0 AS depth
+      FROM ${placedNodesSql(view)} f WHERE f.kind = 'folder' AND f.id IN (${uuidList(ids)})
       UNION ALL
-      SELECT c.start_id, f.id, f.parent_id, f.name, f.deleted_at IS NOT NULL, c.depth + 1
-      FROM chain c JOIN folders f ON f.id = c.parent_id
+      SELECT c.start_id, f.id, f.parent_id, f.name, f.deleted, c.depth + 1
+      FROM chain c CROSS JOIN LATERAL (
+        SELECT p.id, p.parent_id, p.name, p.deleted
+        FROM ${placedNodesSql(view)} p WHERE p.id = c.parent_id OFFSET 0
+      ) f
     )
     SELECT start_id::text, id::text, parent_id::text, name, deleted, depth FROM chain
     ORDER BY start_id, depth`);
@@ -298,35 +323,36 @@ export type FolderAddress = Omit<NodeAddress, "documentId" | "image"> & {
   deleted: boolean;
 };
 
-/** Canonical live-tree locations for folders, including deleted ancestry. */
+/** Canonical locations of folders in a view, in Trash included. */
 export async function loadFolderAddresses(
   db: DrizzleDb,
   folderIds: readonly string[],
+  view: TreeView = LIVE_TREE,
 ): Promise<FolderAddress[]> {
   const ids = [...new Set(folderIds.filter(isUuid))];
   if (ids.length === 0) return [];
-  const rows = await currentDrizzleDb(db)
-    .select({
-      id: folders.id,
-      parentId: folders.parentId,
-      contextSourceId: folders.contextSourceId,
-      name: folders.name,
-      deletedAt: folders.deletedAt,
-    })
-    .from(folders)
-    .where(inArray(folders.id, ids as FolderId[]));
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    parent_id: string | null;
+    context_source_id: string;
+    name: string;
+    deleted: boolean;
+  }>(sql`
+    SELECT n.id::text AS id, n.parent_id::text AS parent_id,
+      n.context_source_id::text AS context_source_id, n.name, n.deleted
+    FROM ${placedNodesSql(view)} n WHERE n.kind = 'folder' AND n.id IN (${uuidList(ids)})`);
   const chains = await loadFolderChains(
     db,
-    rows.map((row) => row.parentId),
+    rows.map((row) => row.parent_id as FolderId | null),
+    view,
   );
   const spelled = await spellNodeAddresses(
     db,
     rows.map((row) => ({
-      documentId: row.id as unknown as DocumentId,
-      contextSourceId: row.contextSourceId,
-      folderId: row.parentId,
+      documentId: row.id as DocumentId,
+      contextSourceId: row.context_source_id as ContextSourceId,
+      folderId: row.parent_id as FolderId | null,
       name: row.name,
-      extension: "",
       fileType: "folder",
     })),
     chains,
@@ -334,14 +360,13 @@ export async function loadFolderAddresses(
   return rows.flatMap((row, index): FolderAddress[] => {
     const address = spelled[index];
     if (!address) return [];
-    const ancestors = row.parentId ? chains.get(row.parentId) : [];
     return [
       {
         ...address,
-        folderId: row.id,
+        folderId: row.id as FolderId,
         path: `${address.path}/`,
         uri: `${address.uri}/`,
-        deleted: row.deletedAt !== null || Boolean(ancestors?.some((folder) => folder.deleted)),
+        deleted: row.deleted,
       },
     ];
   });
@@ -360,8 +385,8 @@ export type NodeLocation = {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
+  /** The filename as the view shows it. */
   name: string;
-  extension: string;
   fileType: string;
 };
 
@@ -433,7 +458,7 @@ export async function spellNodeAddresses(
     if (!source?.project_id || !source.user_id || !isContextUriScheme(source.scheme)) return null;
     const chain = location.folderId === null ? [] : folderChains.get(location.folderId);
     if (!chain || chain.at(-1)?.parentId) return null;
-    const path = chainPrefix(chain) + renderFilename(location.name, location.extension);
+    const path = chainPrefix(chain) + location.name;
     const scheme = source.scheme;
     const workHandle = source.is_no_work ? null : source.work_handle;
     let uri: string;
@@ -441,7 +466,7 @@ export async function spellNodeAddresses(
       uri = canonicalContextUri(
         scheme,
         path,
-        catalogSourceAuthority(
+        sourceAuthority(
           scheme,
           source.work_id,
           workHandle,
@@ -464,23 +489,61 @@ export async function spellNodeAddresses(
       contextSourceId: location.contextSourceId,
       path,
       uri,
-      image: location.fileType === "image",
+      image: isImageFiletype(location.fileType),
     };
   });
 }
 
-/** The project storing a document's source (a Work-scoped source through its Work). */
+export type DocumentPlacement = { contextSourceId: ContextSourceId; fileType: string };
+
+/**
+ * Each document's source and type from a row that places it (live's, else a Work's): they do
+ * not differ between views. A document in no view has none.
+ */
+export async function loadDocumentPlacements(
+  db: DrizzleDb,
+  documentIds: readonly DocumentId[],
+): Promise<ReadonlyMap<DocumentId, DocumentPlacement>> {
+  const ids = [...new Set(documentIds)].filter(isUuid);
+  if (ids.length === 0) return new Map();
+  const list = uuidList(ids);
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    source_id: string;
+    file_type: string;
+  }>(sql`
+    SELECT DISTINCT ON (p.id) p.id::text AS id, p.context_source_id::text AS source_id, p.file_type
+    FROM (
+      SELECT id, context_source_id, file_type, 0 AS ord FROM tree_nodes WHERE id IN (${list})
+      UNION ALL
+      SELECT id, context_source_id, file_type, 1 FROM branch_tree_nodes WHERE id IN (${list})
+    ) p
+    WHERE p.file_type IS NOT NULL
+    ORDER BY p.id, p.ord`);
+  return new Map(
+    rows.map((row) => [
+      row.id as DocumentId,
+      { contextSourceId: row.source_id as ContextSourceId, fileType: row.file_type },
+    ]),
+  );
+}
+
+export async function loadDocumentPlacement(
+  db: DrizzleDb,
+  documentId: DocumentId,
+): Promise<DocumentPlacement | null> {
+  return (await loadDocumentPlacements(db, [documentId])).get(documentId) ?? null;
+}
+
+/** The project that owns a document, whether or not any view places it. */
 export async function projectOfDocument(
   db: DrizzleDb,
   documentId: DocumentId,
 ): Promise<ProjectId | null> {
   if (!isUuid(documentId)) return null;
-  const [row] = await currentDrizzleDb(db).execute<{ project_id: string | null }>(sql`
-    SELECT COALESCE(cs.project_id, w.project_id)::text AS project_id
-    FROM documents d
-    JOIN context_sources cs ON cs.id = d.context_source_id
-    LEFT JOIN works w ON w.id = cs.work_id
-    WHERE d.id = ${documentId}::uuid`);
+  const [row] = await currentDrizzleDb(db).execute<{ project_id: string }>(
+    sql`SELECT project_id::text FROM documents WHERE id = ${documentId}::uuid`,
+  );
   return (row?.project_id ?? null) as ProjectId | null;
 }
 

@@ -192,11 +192,5 @@ function UnsentTypingSentence({ cause }: { cause: UnsentTyping["cause"] }) {
       return (
         <Trans>Your latest typing didn't reach the server before the document was removed.</Trans>
       );
-    case "access-changed":
-      return (
-        <Trans>
-          Your latest typing didn't reach the server before your access to the document changed.
-        </Trans>
-      );
   }
 }

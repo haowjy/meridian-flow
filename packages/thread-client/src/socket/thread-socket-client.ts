@@ -199,20 +199,15 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
-    if (message.type === "draft-owner-hint" || message.type === "project-chats-hint") {
+    if (
+      message.type === "draft-owner-hint" ||
+      message.type === "project-chats-hint" ||
+      message.type === "context-sources-hint"
+    ) {
       for (const listener of this.catalogSubscriptions.get(message.projectId) ?? [])
         listener(message);
       return;
     }
-    if (message.type === "context-catalog-hint") {
-      const projectId = message.scope.kind === "user" ? null : message.scope.projectId;
-      const targets = projectId
-        ? this.catalogSubscriptions.get(projectId)
-        : [...this.catalogSubscriptions.values()].flatMap((listeners) => [...listeners]);
-      if (targets) for (const listener of targets) listener(message);
-      return;
-    }
-
     dispatchWsServerMessage(message, {
       toError: this.options.toError,
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>

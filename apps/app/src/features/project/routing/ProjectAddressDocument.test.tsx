@@ -7,7 +7,7 @@
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { addressedDocument, ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
@@ -17,18 +17,15 @@ function navigationFixture(
   href: string,
   overrides: Partial<Parameters<typeof createProjectNavigation>[0]> = {},
 ) {
-  return createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn(),
-      ...overrides,
-    },
-    () => ({}),
-  );
+  return createProjectNavigation({
+    read: () => ({ key: "entry", href, state: {} }),
+    subscribe: () => () => undefined,
+    flush: () => undefined,
+    settlePendingTraversal: () => undefined,
+    replaceEntry: () => undefined,
+    navigate: vi.fn(),
+    ...overrides,
+  });
 }
 
 function documentResult(kind: "current" | "alias"): DocumentAddressResult {
@@ -37,11 +34,9 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
     document: {
       kind: "available",
       documentId: "doc-id",
-      generation: "1",
       authority: { kind: "project", projectId: "project-id" },
       entry: {
         kind: "file",
-        observationVersion: "1",
         entryId: "doc-id",
         parentId: "source",
         sourceId: "source",
@@ -61,8 +56,8 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   } as DocumentAddressResult;
 }
 
-it("keeps a proven local resource handle on the document an address names", () => {
-  const localFile: CatalogFile = {
+it("names the document by the replay's file when the address resolved there", () => {
+  const localFile: TreeFile = {
     kind: "file",
     entryId: "doc-id",
     parentId: "source",
@@ -77,10 +72,6 @@ it("keeps a proven local resource handle on the document an address names", () =
     editable: true,
     filetype: "markdown",
     schemaType: "document",
-    resourceHandle: "resource-id",
-    resourceState: "acknowledged",
-    resourceOrigin: "local",
-    localContent: true,
   };
   const addressed = addressedDocument(
     {
@@ -93,10 +84,8 @@ it("keeps a proven local resource handle on the document an address names", () =
   );
   expect(addressed?.document).toMatchObject({
     documentId: "doc-id",
-    name: "doc",
-    path: "/doc",
-    resourceHandle: "resource-id",
-    origin: "local-resource",
+    name: "old.md",
+    path: "/old.md",
   });
 });
 

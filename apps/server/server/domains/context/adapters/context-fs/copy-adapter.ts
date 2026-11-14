@@ -4,7 +4,7 @@
  * copy and in what order; this only knows this namespace.
  */
 
-import { compareCatalogSiblings } from "@meridian/resource-replica";
+import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { joinPath, renderFilename } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
@@ -18,7 +18,7 @@ import type { ContextDocument, ContextFolder } from "../../ports/context-documen
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
-import { AMBIGUOUS_PATH_FAULT } from "./create-placement.js";
+import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
   /** Why this placement cannot take a copy (a draft placement), or null. */

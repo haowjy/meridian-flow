@@ -9,6 +9,7 @@ import { toolContentText } from "@meridian/contracts/threads";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -72,13 +73,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(schema.documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "runtime-settlement",
-        extension: "",
-        fileType: "markdown",
-      });
+      await treeSeeder(db).document(SOURCE_ID, "runtime-settlement", { id: DOC_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_ID,
         id: THREAD_ID,

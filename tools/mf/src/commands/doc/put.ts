@@ -1,7 +1,9 @@
 import {
-  apiProjectContextCreatePath,
-  createContextFileResponseSchema,
+  apiProjectDocumentReadPath,
+  contextReadResponseSchema,
+  parseDocumentFilename,
 } from "@meridian/contracts/protocol";
+import { type CreateRecord, LIVE, nameFault, newId } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -13,12 +15,15 @@ import {
 import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
-import { deleteDocument } from "./rm";
-import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
+import { writeMarkdown } from "./document-room";
+import { deleteAt } from "./rm";
+import { lookupPath, Trees, uriIn } from "./tree-address";
+import { PROJECT_OPTION, resolveUri } from "./uri";
 
 /**
- * Creates a tracked markdown document; returns its id. With overwrite, a conflict deletes the
- * existing document and creates a new one at the same URI (new id; the old drafts and history go).
+ * Creates a markdown document through the tree list, then writes its text through the document's
+ * room; returns its id. With overwrite, an existing document is deleted first and a new one made
+ * at the same URI (new id; the old drafts and history go).
  */
 export async function putDocument(
   session: Session,
@@ -37,52 +42,91 @@ export async function putDocument(
   previousDocumentId: string | null;
 }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work, input.chat);
-  const create = () =>
-    session.request(
-      "POST",
-      apiProjectContextCreatePath(input.projectId, target.scheme, ownerOf(target)),
-      { type: "file", path: target.path, content: input.content },
-      { decode: jsonResponse(createContextFileResponseSchema) },
+  const segments = target.path.split("/").filter(Boolean);
+  const parsedName = parseDocumentFilename(segments.at(-1) ?? "");
+  if (!parsedName.ok) throw usageError(parsedName.error.message);
+  if (parsedName.value.extension)
+    throw usageError(
+      `doc put creates markdown documents: drop .${parsedName.value.extension} from ${target.uri}`,
     );
+  const stem = parsedName.value.name;
+  const folders = segments.slice(0, -1);
+  for (const [kind, name] of [
+    ...folders.map((folder) => ["folder", folder] as const),
+    ["document", parsedName.value.name] as const,
+  ]) {
+    if (nameFault(kind, name) !== null)
+      throw usageError(`${name} is not a name a ${kind} may have in ${target.uri}`);
+  }
+
+  const trees = new Trees(session, input.projectId);
   try {
-    const created = await create();
-    return {
-      uri: created.uri,
-      documentId: created.documentId,
-      replaced: false,
-      previousDocumentId: null,
-    };
-  } catch (error) {
-    const conflict =
-      error instanceof CliError &&
-      (error.details as { status?: unknown } | undefined)?.status === "conflict";
-    if (!conflict) throw error;
-    if (!input.overwrite) {
-      throw new CliError("usage", `${target.uri} already exists`, {
-        hint: "Pass --overwrite to delete it and create a new document at this URI (new id, old drafts lost).",
-      });
+    const opened = await trees.at(target);
+    let previousDocumentId: string | null = null;
+    const existing = lookupPath(opened.list.replay(), opened.source, target.path).node;
+    if (existing) {
+      if (!input.overwrite) {
+        throw new CliError("usage", `${target.uri} already exists`, {
+          hint: "Pass --overwrite to delete it and create a new document at this URI (new id, old drafts lost).",
+        });
+      }
+      previousDocumentId = await deleteAt(opened, target);
     }
-    const previousDocumentId = await deleteDocument(session, input.projectId, target);
+    let created: CreateRecord;
     try {
-      const created = await create();
-      return {
-        uri: created.uri,
-        documentId: created.documentId,
-        replaced: true,
-        previousDocumentId,
-      };
-    } catch (createError) {
-      const reason = createError instanceof Error ? createError.message : String(createError);
+      const { parent, missing } = lookupPath(opened.list.replay(), opened.source, target.path);
+      created = (
+        await opened.list.append((writer) => {
+          const made = missing.map((name) => ({ name, kind: "folder" as const, node: newId() }));
+          let at = parent;
+          return writer.createAll(LIVE, opened.actor, [
+            ...made.map((folder) => {
+              const input = { ...folder, parent: at };
+              at = folder.node;
+              return input;
+            }),
+            {
+              name: stem,
+              parent: at,
+              kind: "document" as const,
+              filetype: "markdown",
+            },
+          ]);
+        })
+      ).at(-1) as CreateRecord;
+    } catch (error) {
+      if (previousDocumentId === null) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
       throw new CliError(
-        createError instanceof CliError ? createError.code : "protocol",
+        error instanceof CliError ? error.code : "protocol",
         `${target.uri}: the existing document (${previousDocumentId}) was already deleted, and creating its replacement failed: ${reason}`,
         {
           hint: `Re-run ./mf doc put ${target.uri} to create it; the old document and its drafts are not recoverable here.`,
           details: { previousDocumentId, deleted: true },
-          httpStatus: createError instanceof CliError ? createError.httpStatus : undefined,
+          httpStatus: error instanceof CliError ? error.httpStatus : undefined,
         },
       );
     }
+    if (input.content.trim() !== "") {
+      const stored = async () => {
+        const read = await session.request(
+          "GET",
+          apiProjectDocumentReadPath(input.projectId, created.node),
+          undefined,
+          { decode: jsonResponse(contextReadResponseSchema) },
+        );
+        return read.kind === "tracked" && read.content.trim() !== "";
+      };
+      await writeMarkdown(session, created.node, input.content, stored);
+    }
+    return {
+      uri: uriIn(opened.source, [...folders, created.name].join("/")),
+      documentId: created.node,
+      replaced: previousDocumentId !== null,
+      previousDocumentId,
+    };
+  } finally {
+    await trees.close();
   }
 }
 
@@ -91,7 +135,7 @@ export const docPutCommand: CommandSpec = {
   summary:
     "Create a markdown document (seed content); --overwrite deletes and recreates it (new id)",
   args: "<uri>",
-  route: "POST /api/projects/:projectId/context/:scheme/create",
+  route: "WS /ws/yjs tree:project:<projectId> create record, then the document's room",
   options: {
     ...PROJECT_OPTION,
     text: { type: "string", description: "Content (literal, @file, or - for stdin)" },

@@ -13,6 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -33,25 +34,21 @@ import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import {
-  useAccountResourceProjection,
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
 import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
-import { selectionAtRoute } from "./context-removal-protocol";
-import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
-import { projectResourceDocument } from "./open-document-from-file";
+import { LiveDraftNotice } from "./LiveDraftNotice";
+import { placeTab } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
-import { useContextRemovalProject } from "./use-context-removal-project";
 import { useDocumentFreeze } from "./use-document-freeze";
 import { useDocumentLiveness } from "./use-draft-only-presentation";
-import { settleWriterClose } from "./use-follow-open-document-placement";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
@@ -97,11 +94,7 @@ export function DocumentHost(props: DocumentHostProps) {
         ) : null}
         {props.presentation === "phone" ? (
           place === "main" ? (
-            <PhoneDocumentFrame
-              projectId={projectId}
-              document={tab}
-              local={props.main?.local === true}
-            />
+            <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
           ) : (
             <div className="flex h-full min-h-0 flex-col">
               {props.header}
@@ -123,11 +116,16 @@ export function DocumentHost(props: DocumentHostProps) {
  * placement; main's host gets the same from its address, which follows the document.
  */
 function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolean): OpenDocument {
-  const { records, placement } = useAccountResourceProjection(projectId);
+  const trees = useProjectTrees(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
   if (main) return tab;
-  const projected = projectResourceDocument(tab, records, placement, isDraftOnly(tab.documentId));
-  return projected.kind === "projected" ? projected.document : tab;
+  const found = trees.find(tab.documentId);
+  const placed = placeTab(
+    found && { scheme: found.source.scheme, file: found.file, owner: ownerOfSource(found.source) },
+    trees.isComplete,
+    isDraftOnly(tab.documentId),
+  );
+  return placed.kind === "projected" ? placed.document : tab;
 }
 
 /** Main's and the side's documents are what removals, notices and availability act on. */
@@ -141,8 +139,7 @@ function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentP
 }
 
 /**
- * Binds the route's locator to main's document, or rejects it once the catalog has settled
- * without one, and records the opening once live has the document. Renders nothing.
+ * Records main's route once live has its document, and the opening in Recent. Renders nothing.
  */
 function MainDocumentBinding({
   projectId,
@@ -154,77 +151,45 @@ function MainDocumentBinding({
   main: MainDocument;
 }) {
   const contextRemoval = useContextRemovalCoordinator();
-  const state = useContextRemovalProject(projectId);
-  const { selection } = state;
 
-  useLayoutEffect(() => {
-    if (selection.status === "none") return;
-    if (main.local) {
-      // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
-      // the local document, so a move of it carries the route instead of rejecting its old path.
-      const workspace = resolveWorkspaceRoute(document, selection.locator);
-      if (workspace.kind === "materialized-local")
-        contextRemoval.redirectMaterializedLocal(
-          projectId,
-          selection.revision,
-          document.documentId,
-          workspace.target,
-        );
-      else if (workspace.kind === "owner" && selection.status === "candidate")
-        contextRemoval.bindRouteSelection(
-          projectId,
-          selection.revision,
-          workspace.identity,
-          "answer",
-        );
-      return;
-    }
-    if (main.scheme === null || main.path === null) return;
-    if (
-      !selectionAtRoute(selection, {
-        scheme: main.scheme,
-        path: main.path,
-        workId: main.workId ?? undefined,
-        rootThreadId: main.rootThreadId ?? undefined,
-      })
-    )
-      return;
-    // A draft-only document is never live at its cached path, so the path doesn't identify it:
-    // a review binds on arrival, and a plain URL there waits for the address answer.
-    if (!main.draftOnly && !main.isFetching && !main.isError)
-      contextRemoval.bindRouteSelection(
-        projectId,
-        selection.revision,
-        { kind: "server", documentId: document.documentId },
-        "answer",
-      );
-  }, [contextRemoval, projectId, selection, main, document]);
-
-  // The route is remembered once it is bound to this document; a draft-only document's path dies
-  // with its draft, so it never is.
+  // The route is remembered once main paints this document live; a draft-only document's path
+  // dies with its draft, so it never is.
   const liveness = useDocumentLiveness(projectId, document);
   useLayoutEffect(() => {
     if (
+      main.local ||
       main.draftOnly ||
+      main.isFetching ||
+      main.isError ||
       liveness === "draft-only" ||
-      selection.status !== "bound" ||
-      selection.identity.documentId !== document.documentId
+      document.kind === "new" ||
+      main.scheme === null ||
+      main.path === null
     )
       return;
-    contextRemoval.activate({
+    contextRemoval.recordRoute(
       projectId,
-      selectionRevision: selection.revision,
-      transitionRevision: state.transitionRevision,
-      locator: selection.locator,
-      identity: selection.identity,
-    });
+      document.documentId,
+      contextRouteRequest({
+        scheme: main.scheme,
+        path: main.path,
+        workId: main.workId,
+        rootThreadId: main.rootThreadId,
+      }),
+    );
   }, [
     contextRemoval,
     projectId,
-    selection,
-    state.transitionRevision,
-    document,
+    document.documentId,
+    document.kind,
+    main.local,
     main.draftOnly,
+    main.isFetching,
+    main.isError,
+    main.scheme,
+    main.path,
+    main.workId,
+    main.rootThreadId,
     liveness,
   ]);
 
@@ -385,9 +350,7 @@ function DesktopDocumentChrome({
         editorWorkId={editorWorkId}
         document={document}
         readOnly={Boolean(fileInWork && freeze?.kind === "work")}
-        onCloseDraftOnly={
-          draftOnly ? () => settleWriterClose(removal.writerClose(projectId, document)) : undefined
-        }
+        onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
         focusReview={focusReview}
         onFocusReview={onFocusReview}
         onCommitted={onCommitted}
@@ -448,11 +411,7 @@ function PhoneDocumentFrame({
           projectId={projectId}
           document={document}
           // A draft-only document has no live version to return to: its review closes it.
-          onCloseDraftOnly={
-            draftOnly
-              ? () => settleWriterClose(removal.writerClose(projectId, document))
-              : undefined
-          }
+          onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
         >
           <PhoneEditor projectId={projectId} document={document}>
             <PassageNotice documentId={document.documentId} />
@@ -491,6 +450,7 @@ function PhoneEditor({
         />
       ) : null}
       <MobileRefusalNotice projectId={projectId} document={document} className="shrink-0 px-4" />
+      <LiveDraftNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
@@ -505,40 +465,9 @@ function PhoneEditor({
   );
 }
 
-/**
- * Main while its address has no document to paint: opening, or not found. A candidate route the
- * settled catalog and address both lack is rejected here, so the route stops waiting on it.
- */
-export function MainDocumentStatus({ projectId, main }: { projectId: string; main: MainDocument }) {
-  const contextRemoval = useContextRemovalCoordinator();
-  const { selection } = useContextRemovalProject(projectId);
-  const { scheme, path, catalogResolved, addressState, isError, isFetching } = main;
-  useLayoutEffect(() => {
-    if (scheme === null || path === null || selection.status !== "candidate") return;
-    if (
-      !selectionAtRoute(selection, {
-        scheme,
-        path,
-        workId: main.workId ?? undefined,
-        rootThreadId: main.rootThreadId ?? undefined,
-      })
-    )
-      return;
-    if (catalogResolved && !isFetching && !isError && addressState === "settled")
-      contextRemoval.rejectRouteCandidate(projectId, selection.revision);
-  }, [
-    contextRemoval,
-    projectId,
-    selection,
-    scheme,
-    path,
-    main.workId,
-    main.rootThreadId,
-    catalogResolved,
-    addressState,
-    isError,
-    isFetching,
-  ]);
+/** Main while its address has no document to paint: opening, or not found. */
+export function MainDocumentStatus({ main }: { main: MainDocument }) {
+  const { catalogResolved, addressState, isError, isFetching } = main;
   const opening = addressState === "pending" || (isFetching && !catalogResolved);
   const failed = !opening && (isError || catalogResolved);
   return (

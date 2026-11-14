@@ -4,8 +4,7 @@
  * - Stale-target translation and owner-list row shape
  */
 import { describe, expect, it, vi } from "vitest";
-import { Err, Ok } from "../../../shared/result.js";
-import { deleteAt, moveTo } from "../../../test-support/entry-ref.js";
+import { Ok } from "../../../shared/result.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import {
@@ -26,97 +25,14 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
     name: scheme,
     capabilities: schemeCapabilities(scheme),
     createTrackedDocument: vi.fn(async () => Ok({ documentId: "document-new" })),
-    mkdir: vi.fn(async () => Ok(undefined)),
     writeBinary: vi.fn(async () => Ok({ documentId: "binary-new" })),
     list: vi.fn(async () => Ok([])),
     tree: {
-      inspectMovable: vi.fn(async (path: string) => {
-        if (path === "old.md") {
-          return Ok({
-            observationVersion: "1",
-            kind: "file" as const,
-            nodeId: "document-old",
-            sourceId: `${scheme}-source`,
-            // A stored document's path is its canonical name: a prose suffix is dropped.
-            path: "old",
-            filetype: "markdown",
-          });
-        }
-        if (path === "empty") {
-          return Ok({
-            kind: "directory" as const,
-            nodeId: "folder-empty",
-            sourceId: `${scheme}-source`,
-            path,
-          });
-        }
-        if (path === "") {
-          return Ok({
-            kind: "directory" as const,
-            nodeId: "__context_root__",
-            sourceId: `${scheme}-source`,
-            path,
-          });
-        }
-        return Ok(null);
-      }),
-      inspectNode: vi.fn(async (node: { id: string }) =>
-        Ok(
-          node.id === "document-old"
-            ? {
-                observationVersion: "1",
-                kind: "file" as const,
-                nodeId: "document-old",
-                sourceId: `${scheme}-source`,
-                path: "old",
-                filetype: "markdown" as const,
-                extension: "",
-              }
-            : null,
-        ),
-      ),
-      commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
-      commitPreparedMove: vi.fn(async (prepared) => Ok({ path: prepared.destinationPath })),
-      commitRecursiveDelete: vi.fn(async (command) =>
-        Ok({
-          removed:
-            command.root.kind === "file"
-              ? [
-                  {
-                    documentId: command.root.nodeId,
-                    removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
-                  },
-                ]
-              : [],
-          availabilityGeneration: "7",
-        }),
-      ),
+      sourceId: vi.fn(async () => `${scheme}-source`),
+      delete: vi.fn(async () => Ok({ path: "old", documentIds: ["document-old"] })),
     },
   } as unknown as ContextSchemeAdapter;
 }
-
-describe("context router deletion receipts", () => {
-  it("reports a replacement that wins after inspection as a stale target", async () => {
-    const adapter = writableAdapter("manuscript");
-    if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
-    vi.spyOn(adapter.tree, "commitRecursiveDelete").mockResolvedValueOnce(
-      Err({ code: "stale_source" }),
-    );
-    const port = createContextPortRouter({
-      sources: new Map([["manuscript", { adapter, authority: { kind: "contextual" } }]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(
-      deleteAt(port, "manuscript://old.md", {
-        expected: { kind: "file", nodeId: "document-old" },
-      }),
-    ).resolves.toEqual({
-      ok: false,
-      error: { code: "stale_target", uri: "manuscript://" },
-    });
-  });
-});
 
 describe("context router owner resolution", () => {
   const PRIMARY_ID = "00000000-0000-4000-8000-000000000001";
@@ -258,7 +174,7 @@ describe("context router scheme creation capabilities", () => {
     };
   }
 
-  it("rejects file and directory creation in uploads with an actionable error", async () => {
+  it("rejects file creation in uploads with an actionable error", async () => {
     const { port, uploads } = createPort();
     const expectedError = {
       code: "invalid_operation",
@@ -269,12 +185,7 @@ describe("context router scheme creation capabilities", () => {
       ok: false,
       error: expectedError,
     });
-    await expect(port.mkdir(`uploads://notes`)).resolves.toMatchObject({
-      ok: false,
-      error: expectedError,
-    });
     expect(uploads.createTrackedDocument).not.toHaveBeenCalled();
-    expect(uploads.mkdir).not.toHaveBeenCalled();
   });
 
   it("admits only reserved tracked upload identity through the intake seam", async () => {
@@ -290,31 +201,6 @@ describe("context router scheme creation capabilities", () => {
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
     });
-  });
-
-  it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
-    const { port, uploads } = createPort();
-    const oldDocument = { kind: "file" as const, nodeId: "document-old" };
-
-    await expect(
-      moveTo(port, `scratch://@w7/old.md`, `uploads://old.md`, {
-        expected: oldDocument,
-      }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@c12/" },
-    });
-    await expect(
-      moveTo(port, `uploads://old.md`, `uploads://renamed.md`, {
-        expected: oldDocument,
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        destinationUri: "uploads://@c12/renamed",
-      },
-    });
-    expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });
 });
 

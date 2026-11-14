@@ -20,12 +20,14 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { GenerateResult } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
+import { ContextFS } from "../../domains/context/adapters/context-fs/context-fs.js";
+import { createContextPortRouter } from "../../domains/context/context/router.js";
 import { emptyOwnerLookup } from "../../domains/context/owner-lookup.js";
-import {
-  createInMemoryUnifiedContextStoreRegistry,
-  getInMemoryProjectContextStore,
-} from "../../domains/context/support/in-memory-unified-context-stores.js";
+import type {
+  ContextDocument,
+  ContextDocumentStore,
+} from "../../domains/context/ports/context-document-store.js";
+import type { PathResolution } from "../../domains/context/tree/tree-view.js";
 import {
   createInMemoryDocumentEvidence,
   createInspectionToolRegistrations,
@@ -98,6 +100,30 @@ function success(
     revision: null,
     result: { command, status: "success", phase: "committed" } as never,
     ...(links.length > 0 ? { showing: { holderUri, view, links } } : {}),
+  };
+}
+
+/** The three documents at the root of one source, as the tree reads show them to every view. */
+function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
+  const found = <T>(node: T | undefined): PathResolution<T> =>
+    node ? { kind: "found", node } : { kind: "not_found" };
+  const at = (path: string) =>
+    documents.find((document) => document.name === path.replace(/\/$/, ""));
+  return {
+    transaction: (operation) => operation(),
+    contextSourceId: async () => "source",
+    existingContextSourceId: async () => "source",
+    resolveDocumentAt: async (_view, path) => found(at(path)) as never,
+    resolveFolderAt: async (_view, path) =>
+      (path === "" ? { kind: "found", node: null } : { kind: "not_found" }) as never,
+    findDocumentById: async (_view, id) => {
+      const document = documents.find((candidate) => candidate.id === id);
+      return document ? { contextSourceId: "source", document, path: document.name } : null;
+    },
+    listTree: async () => ({ folders: [], documents }),
+    namesAt: async () => new Set(documents.map((document) => document.name)),
+    listFolders: async () => [],
+    listDocuments: async () => documents,
   };
 }
 
@@ -240,21 +266,22 @@ async function harness(
     [TARGET]: "target",
     [HIDDEN]: "hidden",
   };
-  const registry = createInMemoryUnifiedContextStoreRegistry();
-  const userStore = getInMemoryProjectContextStore(registry, PROJECT, USER, "user");
-  for (const [id, name] of [
-    [SOURCE, "source"],
-    [TARGET, "target"],
-    [HIDDEN, "hidden"],
-  ] as const) {
-    await userStore.createDocumentRecordIfAbsent({
+  const store_ = readOnlyStore(
+    [SOURCE, TARGET, HIDDEN].map((id) => ({
       id,
       folderId: null,
-      name,
+      name: names[id] as string,
       extension: "",
-      filetype: "markdown",
-    });
-  }
+      fileType: null,
+      filetype: "markdown" as const,
+      storageUrl: null,
+      mimeType: null,
+      sizeBytes: null,
+      hasPreview: false,
+      updatedAt: new Date(0).toISOString(),
+      metadata: null,
+    })),
+  );
   const repos = createInMemoryRepositories({ transactionOwner });
   const deps = {
     threads: repos.threads,
@@ -267,12 +294,21 @@ async function harness(
         new Map(ids.filter((id) => id !== HIDDEN).map((id) => [id, { level: "edit" }])),
     },
   } as unknown as ToolWiringDeps;
-  const port = createInMemoryUnifiedContextPortFactory({
+  const adapter = new ContextFS({
+    placement: { kind: "live" },
+    holder: { projectId: PROJECT },
+    links: {
+      within: async (_holder: unknown, run: (scope: never) => unknown) => run({} as never),
+    } as never,
+    store: store_,
+    writes: {} as never,
+    actor: `user:${USER}`,
+    scheme: "user",
     documentSync: documentSync as never,
-    storeRegistry: registry,
-  }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
-    threadId: crypto.randomUUID(),
-    branchOwner: null,
+  });
+  const port = createContextPortRouter({
+    sources: new Map([["user", { adapter, authority: { kind: "contextual" } }]]),
+    workAuthorities: new Map(),
   });
   call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(

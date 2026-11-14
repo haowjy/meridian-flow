@@ -60,10 +60,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    copy the folder. The answer is `io_error` (retryable), no folder or document row
    was written, and the object the first binary duplicated is released (the
    `copies/` count is unchanged).
-6. **Replay.** POST one `operationId` twice: the same identities answer and one copy
-   exists. Delete the copy and send it a third time: still the original answer, no
-   resurrection. A refusal replays as the same refusal. The same `operationId` with
-   another destination answers `operation_mismatch`.
+6. **Replay.** Not available: a Copy keeps no operation receipt, so a second POST of one
+   `operationId` copies again. The replay answer returns with document commands.
 7. **Source not caught up.** POST a source with `stateVector` one client edit ahead of
    the room: after a wait of about 2 s, `io_error` ("The source has edits the server has
    not received yet") with `details.reason: "source_behind"`, `retryable: true`, and no

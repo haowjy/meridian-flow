@@ -6,9 +6,13 @@
  */
 import type { FrontierLookup } from "@meridian/agent-edit/integration";
 import type { ProjectId, TurnBlockId } from "@meridian/contracts";
-import type { ResultEvidence } from "../../../shared/model-evidence.js";
+import {
+  evidenceFrontiers,
+  type ResultEvidence,
+  TREE_NAMES_ROOM,
+} from "../../../shared/model-evidence.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { DocumentEvidence } from "../ports/document-evidence.js";
+import type { DocumentEvidence, RecordedFrontier } from "../ports/document-evidence.js";
 
 export interface FrontierRecordingDeps {
   documentEvidence: DocumentEvidence;
@@ -26,7 +30,7 @@ export async function recordStoredResult(
     await deps.documentEvidence.resultStored({
       ...owner,
       shown: evidence.shown,
-      frontiers: evidence.frontier ? [{ blockId, frontier: evidence.frontier }] : [],
+      frontiers: evidenceFrontiers(blockId, evidence),
     });
   } catch (error) {
     emitEvent(deps.eventSink, {
@@ -62,6 +66,46 @@ export class CreditedBlocks {
   ids(): string[] {
     return [...this.#ids];
   }
+}
+
+/**
+ * What the blocks the run carries showed of the tree: each row's added names, oldest first. Rows
+ * are read once per block for the life of the lookup (a block's rows do not change while the run
+ * carries it), so a call reads only the blocks added since the one before. A failed lookup is
+ * logged and answers nothing shown, which guards nothing.
+ */
+export function shownNamesLookup(
+  deps: FrontierRecordingDeps,
+  blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
+  correlation: { threadId: string; turnId: string },
+): () => Promise<Uint8Array[]> {
+  const loaded = new Set<TurnBlockId>();
+  let rows: RecordedFrontier[] = [];
+  return async () => {
+    try {
+      const ids = await blockIds();
+      const carried = new Set(ids);
+      rows = rows.filter((row) => carried.has(row.blockId));
+      for (const id of loaded) if (!carried.has(id)) loaded.delete(id);
+      const fresh = ids.filter((id) => !loaded.has(id));
+      if (fresh.length > 0) {
+        rows = [...rows, ...(await deps.documentEvidence.frontiersIn(TREE_NAMES_ROOM, fresh))].sort(
+          (a, b) => a.recordedSeq - b.recordedSeq,
+        );
+        for (const id of fresh) loaded.add(id);
+      }
+      return rows.map((row) => row.snapshot);
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "observation_frontier.lookup_failed",
+        correlation,
+        payload: unknownToEventPayload(error),
+      });
+      return [];
+    }
+  };
 }
 
 /** The model's latest frontier for a room among `blockIds`, read when called. */

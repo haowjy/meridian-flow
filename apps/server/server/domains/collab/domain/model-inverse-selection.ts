@@ -2,44 +2,20 @@
 
 import { editHandle, type PreparedEditRoots } from "@meridian/agent-edit/integration";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
-import {
-  isTransitionEntry,
-  materializedTreeEditIds,
-  type StoredTreeEntry,
-  type TransitionEntry,
-  treeKey,
-} from "./tree-inverse.js";
-import type { InverseDocument, StoredInversePart } from "./turn-inverse-service.js";
+import type { StoredInversePart } from "./turn-inverse-service.js";
 
-/** One model-visible edit on the stack. A creation owns its initial text and tree placement. */
+/** One model-visible edit on the stack. */
 export type Entry = {
   id: string;
   handle: string;
   parts: StoredInversePart[];
-  tree?: TransitionEntry;
 };
-export const entryKeys = (entry: Entry) => [
-  ...entry.parts.map(key),
-  ...(entry.tree ? [treeKey(entry.tree.editId)] : []),
-];
-export const entryRows = (entry: Entry): { id: number; key: string }[] => [
-  ...entry.parts.map((part) => ({ id: part.id, key: key(part) })),
-  ...(entry.tree ? [{ id: entry.tree.id, key: treeKey(entry.tree.editId) }] : []),
-];
-export function entries(document: InverseDocument, threadId: string): Entry[] {
+export const entryKeys = (entry: Entry) => entry.parts.map(key);
+export const entryRows = (entry: Entry): { id: number; key: string }[] =>
+  entry.parts.map((part) => ({ id: part.id, key: key(part) }));
+export function entries(history: readonly StoredInversePart[], threadId: string): Entry[] {
   const map = new Map<string, Entry>();
-  const materialized = materializedTreeEditIds(document.tree);
-  for (const row of document.tree)
-    if (
-      isTransitionEntry(row) &&
-      !materialized.has(row.editId) &&
-      row.threadId === threadId &&
-      row.actor === "agent" &&
-      row.wId !== null &&
-      (row.kind === "write" || row.kind === "revert")
-    )
-      map.set(row.editId, { id: row.editId, handle: editHandle(row.wId), parts: [], tree: row });
-  for (const part of document.history) {
+  for (const part of history) {
     if (
       part.threadId !== threadId ||
       part.actor !== "agent" ||
@@ -56,37 +32,10 @@ export function entries(document: InverseDocument, threadId: string): Entry[] {
     entry.parts.push(part);
     map.set(part.editId, entry);
   }
-  const ordered = [...map.values()].sort(
-    (a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)),
-  );
-  const mergedCreates = new Set<Entry>();
-  for (const [index, entry] of ordered.entries()) {
-    if (!entry.parts.length) continue;
-    const create = ordered[index + 1];
-    if (
-      create?.tree?.tree.op !== "create" ||
-      create.parts.length ||
-      Number(entry.handle.slice(1)) !== Number(create.handle.slice(1)) + 1 ||
-      entry.parts[0]?.turnId !== create.tree.turnId ||
-      entry.parts[0]?.responseId !== create.tree.responseId ||
-      !entry.parts[0]?.toolCallId ||
-      entry.parts[0].toolCallId !== create.tree.toolCallId
-    )
-      continue;
-    entry.tree = create.tree;
-    mergedCreates.add(create);
-  }
-  return ordered.filter((entry) => !mergedCreates.has(entry));
+  return [...map.values()].sort((a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)));
 }
-export function inspectionActions(
-  history: StoredInversePart[],
-  tree: readonly StoredTreeEntry[],
-  own: Entry[],
-) {
-  const actions = effectiveActionIndex<StoredInversePart | StoredTreeEntry>(
-    [...history, ...tree],
-    new Set(own.flatMap(entryKeys)),
-  );
+export function inspectionActions(history: StoredInversePart[], own: Entry[]) {
+  const actions = effectiveActionIndex(history, new Set(own.flatMap(entryKeys)));
   const modelConsumed = new Set(
     actions.actions.flatMap((action) =>
       action.parts.every((part) => part.actor === "agent") ? [...action.targets] : [],

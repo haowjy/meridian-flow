@@ -39,7 +39,6 @@ import {
   type ObjectStorePort,
 } from "../../storage/index.js";
 import { projectBrowseContextUri } from "../browse-layer-scheme.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextPort } from "../ports/context-port.js";
 
 /** Bytes of the file's start that classification looks at. */
@@ -87,7 +86,6 @@ export interface UploadReservation {
   /** The length the writer declared; the signed PUT carries exactly this. */
   sizeBytes: number;
   objectKey: string;
-  locationRevision: string;
   state: "reserved" | "object_stored" | "finalized" | "deleted";
   /** Null while `reserved`: the name and type are chosen when the stored bytes are read. */
   fileType: Filetype | null;
@@ -166,7 +164,7 @@ export interface UploadIntakeRepository {
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   /** `finalPath` is the name the upload took. */
   finalize(projectId: string, intakeId: string, finalPath: string): Promise<PlacedUpload>;
-  /** Locks and validates the exact unused identity a writer asked to delete, in the chat they name. */
+  /** Locks the unused upload a writer asked to delete, in the chat they name. */
   lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
@@ -180,7 +178,7 @@ export interface UploadIntakeRepository {
    * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
    * returns the sources whose rows changed. Another chat's file named here is left alone.
    */
-  consume(documentIds: readonly string[], chatId: string): Promise<string[]>;
+  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Intakes never finalized and untouched since `cutoff`, oldest first. */
   listAbandoned(
     cutoff: Date,
@@ -255,7 +253,7 @@ export interface UploadIntake {
     actorUserId: string,
     owner: ChatUploadOwner,
   ): Promise<DeleteDraftUploadResult>;
-  /** Runs in the sending transaction; republishes the catalog rows whose `used` it changed. */
+  /** Runs in the sending transaction: marks the chat's uploads in these documents used. */
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
@@ -270,7 +268,6 @@ const resultOf = (
     documentId: placed.documentId,
     uri: uriOf(placed, source),
     fileType: placed.fileType,
-    locationRevision: placed.locationRevision,
   };
 };
 
@@ -366,7 +363,6 @@ export function createUploadIntake<Bound>(deps: {
   /** Deletes objects (and their previews) the intake no longer needs. */
   release: ObjectRelease;
   eventSink: EventSink;
-  catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 }): UploadIntake {
   const conflict = { ok: false, error: { code: "idempotency_conflict" } } as const;
   const storageFailed = { ok: false, error: { code: "storage_failed" } } as const;
@@ -415,7 +411,7 @@ export function createUploadIntake<Bound>(deps: {
       if (reserved.kind === "owner_unavailable")
         return { ok: false, error: { code: "owner_unavailable" } };
       const { reservation } = reserved;
-      const { documentId, locationRevision } = reservation;
+      const { documentId } = reservation;
       // The name finish would give the file now, by finish's own rule, so a chip can be labelled
       // before the bytes are sent. Finish names it again: another upload finishing first between
       // the two can take this name, and the file lands one number on.
@@ -444,7 +440,7 @@ export function createUploadIntake<Bound>(deps: {
         case "object_stored":
           return {
             ok: true,
-            value: { state: "stored", name: await freeName(), documentId, locationRevision },
+            value: { state: "stored", name: await freeName(), documentId },
           };
         case "reserved": {
           const put = await deps.objectStore.signPut(
@@ -458,7 +454,6 @@ export function createUploadIntake<Bound>(deps: {
               state: "reserved",
               name: await freeName(),
               documentId,
-              locationRevision,
               put: put.value,
             },
           };
@@ -663,8 +658,7 @@ export function createUploadIntake<Bound>(deps: {
     },
 
     async consume(documentIds, chatId) {
-      const sourceIds = await deps.repository.consume(documentIds, chatId);
-      if (sourceIds.length > 0) await deps.catalog.refreshSources(sourceIds);
+      await deps.repository.consume(documentIds, chatId);
     },
 
     async sweepAbandoned(now = new Date()) {

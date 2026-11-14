@@ -25,6 +25,8 @@ export type TurnLiveLineageDocumentItem = {
   path: string;
   /** Present when the turn moved or deleted the document. */
   tree?: TurnTreeLine;
+  /** A folder the turn changed: `documentId` is its node id, and it has no document to open. */
+  folder?: true;
 } & (
   | { scope: "live" }
   /** The edit landed in a draft: `owner` names the Work or lineage whose branch held it. */

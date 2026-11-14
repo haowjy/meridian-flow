@@ -114,7 +114,15 @@ export type ApplyClickObservation =
   | ApplyClickAnswer
   | { status: "none"; commandId: DocumentCommandId };
 
-/** Reverse the surviving text groups of one Apply. Tree effects are intentionally absent. */
+/**
+ * Take back one Apply command: the surviving text groups of every document it applied, and
+ * everything it settled in the tree (a restore it made included), in one command. The tree half
+ * is allowed only while nothing else has changed the list since (`gone`), and refuses as
+ * `superseded` when a record it would bring back no longer fits; either refuses the whole
+ * command. A text group a later edit overlaps stays applied and is named in `skippedGroupIds`;
+ * when every group stays, the tree half still comes back and the answer is `unapplied` with no
+ * `reversedGroupIds`.
+ */
 export type UnapplyClick = {
   commandId: DocumentCommandId;
   applyCommandId: DocumentCommandId;
@@ -126,9 +134,70 @@ export type UnapplyClickResult =
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }
-  | { status: "closed" | "refused"; commandId: DocumentCommandId };
+  | { status: "closed"; commandId: DocumentCommandId }
+  | { status: "refused"; commandId: DocumentCommandId; reason?: "gone" | "superseded" };
 export type UnapplyClickAnswer =
   | UnapplyClickResult
+  | { status: "conflict"; commandId: DocumentCommandId };
+
+/** The text cut of one document in an Apply: the writer's frozen click on its review room. */
+export type ApplyTextCut = {
+  draftId: string;
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
+  snapshot: string;
+  baseViewDelta: ApplySpanPatch[];
+  groupIds: string[];
+};
+
+/**
+ * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
+ * cut (the revision of the branch's row the writer saw; any row that holds another now answers
+ * `changed` and nothing applies) and its text cut. An item has at least one of the two. The
+ * per-document click is this command with one item.
+ */
+export type ApplyItemsClick = {
+  commandId: DocumentCommandId;
+  items: { node: string; tree?: { revision: string | null }; text?: ApplyTextCut }[];
+  /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
+  restore?: true;
+};
+
+/**
+ * Take back a Discard: fresh pending copies, on the Work's current branch (the Discard's own
+ * branch when it is still open, else the Work's new one), of the tree records it settled and of
+ * the text drafts it closed.
+ */
+export type UndoDiscardClick = {
+  commandId: DocumentCommandId;
+  discardCommandId: DocumentCommandId;
+};
+export type UndoDiscardResult =
+  | {
+      status: "restored";
+      commandId: DocumentCommandId;
+      branchId: BranchId;
+      /** The copies made: tree records and text drafts. */
+      restored: number;
+      /** What the Discard held that could not come back: a node or document that is gone, or a document the Work drafted again since. */
+      leftOut: number;
+    }
+  | {
+      status: "refused";
+      commandId: DocumentCommandId;
+      /**
+       * `already_restored`: an Undo of this Discard already made its copies. `nothing_to_restore`:
+       * the Discard settled no record and closed no draft that still exists.
+       */
+      reason:
+        | "already_restored"
+        | "nothing_to_restore"
+        | "not_found"
+        | "work_archived"
+        | "chat_frozen"
+        | "work_deleted";
+    };
+export type UndoDiscardAnswer =
+  | UndoDiscardResult
   | { status: "conflict"; commandId: DocumentCommandId };
 
 /** What one kind's effect answered, as stored in a command's outcome. */
@@ -136,6 +205,7 @@ export type StoredDocumentCommandResult =
   | DiscardCommandResult
   | ApplyClickResult
   | UnapplyClickResult
+  | UndoDiscardResult
   | ModelEditCommandResult
   | ReverseTurnCommandResult
   | CopyCommandResult;
@@ -250,6 +320,16 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
   /**
+   * The owner's active branch, null when it has none: the `draft` its tree records carry, which
+   * the browser replays as the Work's tree (a change to a folder alone lists no item).
+   */
+  branchId: BranchId | null;
+  /**
+   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
+   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
+   */
+  folders: { id: string; revision: string }[];
+  /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.
@@ -273,6 +353,7 @@ export const DOCUMENT_COMMAND_KINDS = [
   "apply",
   "unapply",
   "discard",
+  "undo_discard",
   "model_edit",
   "reverse_turn",
   "copy",
@@ -337,16 +418,39 @@ export type DraftDiscardRequest = {
   commandId: DocumentCommandId;
 } & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
-export const BranchDiscardAllRequestSchema = z.object({
-  /** A `branches` row id, never a per-document draft id. */
-  branchId: z.string().uuid(),
-  commandId: DocumentCommandIdSchema,
-});
-export type BranchDiscardAllRequest = z.infer<typeof BranchDiscardAllRequestSchema>;
-/** `discarded` closes the branch (the only wire signal of closure); `gone` names one that is not the Work's active branch. */
-export type BranchDiscardAllResponse =
-  | { status: "discarded"; branchId: BranchId }
-  | { status: "gone"; branchId: BranchId };
+/**
+ * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
+ * change of the branch, which closes it; only an explicit `all` does that. `items`: any selection
+ * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
+ * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
+ * moved into a folder the Work created). Its text halves close on the server, and Undo of a
+ * Discard brings both halves back.
+ */
+export const BranchDiscardRequestSchema = z.union([
+  z.strictObject({ commandId: DocumentCommandIdSchema, all: z.literal(true) }),
+  z.strictObject({
+    commandId: DocumentCommandIdSchema,
+    items: z
+      .array(
+        z.strictObject({
+          node: z.string().min(1),
+          ends: z.enum(["tree", "item"]),
+          draftSeenAt: z.string().nullable().optional(),
+        }),
+      )
+      .min(1),
+  }),
+]);
+export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
+/**
+ * `discarded` with `all` closes the branch (the only wire signal of closure); with `items`,
+ * `closed` names the selected nodes nothing of the branch remains on. `gone` names a branch
+ * that is not the Work's active one; `stale` and `draft_changed` refuse a selection the
+ * branch's state no longer allows, and nothing ended.
+ */
+export type BranchDiscardResponse =
+  | { status: "discarded"; branchId: BranchId; closed?: string[] }
+  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId };
 
 /** A Discard's terminal body, exactly what its 200 carries. */
-export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;
+export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

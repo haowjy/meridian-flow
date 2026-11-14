@@ -5,6 +5,7 @@ export type {
   OrchestratorEvent,
 } from "@meridian/contracts/threads";
 export type { ShownLinkShowing } from "../../shared/model-evidence.js";
+export { TREE_NAMES_ROOM } from "../../shared/model-evidence.js";
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextMediaResolver } from "./adapters/context-media-resolver.js";
 export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";

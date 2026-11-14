@@ -183,7 +183,7 @@ export interface RuntimeDelivery
      * when the repair retired its receipt or the receipt was already empty.
      */
     repair?: () => Promise<T>,
-  ): Promise<T | void>;
+  ): Promise<T | undefined>;
   /**
    * The run owner's cleanup: unlock only when the row is gone, end the
    * execution when every turn it reserved is terminal, else abandon it for

@@ -9,12 +9,10 @@ import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { lineageHasLiveMember, lockLineageOwners } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockProjectTreeList } from "../../../shared/tree-list-lock.js";
 import type { FileAccessChanges } from "../../file-policy/index.js";
-import type {
-  ContextCatalogMutationPort,
-  WorkAuthorityCatalogMutationPort,
-} from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
+import type { ProjectHintPort } from "../ports/project-hints.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 
@@ -33,23 +31,22 @@ export interface LineageScratchLifecycle {
 
 export function createDrizzleLineageScratchLifecycle(
   db: Database,
-  catalog?: ContextCatalogMutationPort,
   arrivals?: Pick<DocumentArrivals, "settle">,
   /** Who hears that a lineage froze or thawed: its live rooms, and its owner's draft lists. */
   liveness?: {
     fileAccessChanges: Pick<FileAccessChanges, "publish">;
-    draftOwnerHints: Pick<WorkAuthorityCatalogMutationPort, "publishDraftOwnerHints">;
+    hints: ProjectHintPort;
   },
+  /** Who hears that a lineage's Scratch began, when the lifecycle has no `liveness`. */
+  sourceHints: Pick<ProjectHintPort, "publishSourcesHint"> | undefined = liveness?.hints,
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
   // a second lineage lock after that boundary would invert catalog lock order.
-  async function lock(projectId: string) {
-    await lockContextNamespaces(db, { projectId, userId: "" }, [
-      { scheme: "scratch", workId: null },
-    ]);
+  async function lock() {
+    await lockContextNamespaces(db, [{ scheme: "scratch", workId: null }]);
   }
   async function requireLive(projectId: string, rootThreadId: string) {
-    await lock(projectId);
+    await lock();
     const [root] = await currentDrizzleDb(db)
       .select({ live: lineageHasLiveMember(rootThreadId) })
       .from(threads)
@@ -78,7 +75,10 @@ export function createDrizzleLineageScratchLifecycle(
           })
           .onConflictDoNothing()
           .returning({ id: contextSources.id });
-        if (source) return source.id;
+        if (source) {
+          sourceHints?.publishSourcesHint(projectId);
+          return source.id;
+        }
         const [existing] = await currentDrizzleDb(db)
           .select({ id: contextSources.id })
           .from(contextSources)
@@ -103,11 +103,14 @@ export function createDrizzleLineageScratchLifecycle(
         // trash or restore waits for a write in flight and the next write sees the new state.
         const rootIds = [...new Set(roots.map((root) => root.id))].sort();
         await lockLineageOwners(db, rootIds);
-        for (const projectId of [...new Set(roots.map((root) => root.projectId))].sort())
-          await lockContextNamespaces(db, { projectId, userId: "" }, [
-            { scheme: "scratch", workId: null },
-            { scheme: "uploads", workId: null },
-          ]);
+        // The project's tree list next: a chat's end changes which sources the list's admissions
+        // may write, and they read that under this key.
+        const projectIds = [...new Set(roots.map((root) => root.projectId))].sort();
+        for (const projectId of projectIds) await lockProjectTreeList(db, projectId);
+        await lockContextNamespaces(db, [
+          { scheme: "scratch", workId: null },
+          { scheme: "uploads", workId: null },
+        ]);
         for (const rootThreadId of rootIds) {
           await reconcileSources(
             and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),
@@ -115,7 +118,7 @@ export function createDrizzleLineageScratchLifecycle(
           );
           await liveness?.fileAccessChanges.publish({ rootThreadId });
         }
-        liveness?.draftOwnerHints.publishDraftOwnerHints(
+        liveness?.hints.publishDraftOwnerHints(
           [...new Map(roots.map((root) => [root.id, root.projectId]))].map(
             ([rootThreadId, projectId]) => ({
               type: "draft-owner-hint" as const,
@@ -132,6 +135,7 @@ export function createDrizzleLineageScratchLifecycle(
           ),
           sql`NOT EXISTS (SELECT 1 FROM threads chat WHERE chat.id = ${contextSources.chatThreadId} AND chat.deleted_at IS NOT NULL)`,
         );
+        for (const projectId of projectIds) liveness?.hints.publishSourcesHint(projectId);
       }),
   };
 
@@ -167,6 +171,5 @@ export function createDrizzleLineageScratchLifecycle(
       // Reconciliation already holds the namespaces in this transaction.
       await arrivals.settle(content.map((document) => document.id as DocumentId));
     }
-    await catalog?.refreshSources(sources.map((source) => source.id));
   }
 }

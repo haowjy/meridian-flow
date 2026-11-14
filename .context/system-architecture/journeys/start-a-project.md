@@ -51,8 +51,8 @@ Does: clicks a chapter in the Manuscript tree.
 
 Sees: it opens in a tab in the main area, with a chat beside it in the side pane.
 
-- Map: [project](../app.md#project), [core-resources](../app-core.md#core-resources), [context](../server-documents.md#context), [Opening a document](../flows/opening-a-document.md)
-- Machines: [Live document binding](../../../apps/app/src/features/project/context/.context/state-machines.md), [Resource lifecycle](../../../packages/resource-replica/.context/state-machines.md)
+- Map: [project](../app.md#project), [core-tree-list](../app-core.md#core-tree-list), [context](../server-documents.md#context), [Opening a document](../flows/opening-a-document.md)
+- Machines: [Live document binding](../../../apps/app/src/features/project/context/.context/state-machines.md), [List connection](../../../apps/app/src/core/tree-list/.context/state-machines.md)
 
 ## Write
 

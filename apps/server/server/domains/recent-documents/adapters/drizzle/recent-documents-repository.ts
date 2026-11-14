@@ -3,19 +3,13 @@ import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contextAvailabilityHeads,
-  contextSources,
-  projects,
-  userRecentDocuments,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, userRecentDocuments, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, lt, not, or, type SQL, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
-import { mapAuthoritativeFile } from "../../../context/adapters/catalog-file-mapper.js";
+import { mapAuthoritativeFile } from "../../../context/adapters/context-file-entry.js";
 import { classifyAuthoritativeIdentity } from "../../../context/adapters/project-context-availability.js";
 import {
   LIVE_TREE,
@@ -41,10 +35,9 @@ const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
  *
  * The liveness facts here (live source, live owning project, live-or-absent work)
  * are the same facts `context/adapters/document-address` resolves for a path and
- * `context/adapters/project-context-availability` reports as a reason. They are
+ * `context/adapters/project-context-availability` reads for an id. They are
  * written out at each site rather than shared: this one filters by document id
- * for one user, address resolves one (project, scheme, path), and availability
- * has to say which fact failed, which needs the distinct reason. The one fact
+ * for one user and address resolves one (project, scheme, path). The one fact
  * they could disagree about cannot drift: archive lifecycle is represented by archived_at, matching deleted_at.
  */
 function visibleIdentity(userId: UserId): SQL {
@@ -180,22 +173,10 @@ export function createDrizzleRecentDocumentsRepository(deps: {
             .from(folders)
             .where(inArray(folders.contextSourceId, sourceIds as never))
         : [];
-      const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
-
-      const namespaceKeys = [
-        ...new Set([
-          `user:${userId}`,
-          ...rows.flatMap((row) => (row.sourceProject ? [`project:${row.sourceProject.id}`] : [])),
-        ]),
-      ];
-      const namespaceHeads = new Map(
-        (
-          await tx
-            .select()
-            .from(contextAvailabilityHeads)
-            .where(inArray(contextAvailabilityHeads.authorityKey, namespaceKeys))
-        ).map((head) => [head.authorityKey, head.namespaceGeneration]),
+      const foldersById = new Map(
+        folderRows.map((folder) => [folder.id, { ...folder, deleted: false }]),
       );
+
       const documentsOut: RecentDocumentItem[] = [];
       for (const row of rows) {
         const { document, source, sourceProject, work, openedAt } = row;
@@ -206,30 +187,21 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           row: { document, source, sourceProject, work },
           requestProjectId: sourceProject.id,
           actorUserId: userId,
-          projectGeneration: "0",
-          checkedGeneration: "0",
           foldersById,
         });
         if (classification.kind !== "valid") {
           throw new Error(`Recent document ${document.id} has inconsistent identity`);
         }
         const workHandle = work && !work.isNoWork ? work.handle : null;
-        const identityScope = classification.identity.scope;
         const entry = mapAuthoritativeFile({
-          observationVersion: String(
-            namespaceHeads.get(
-              identityScope.kind === "user"
-                ? `user:${identityScope.userId}`
-                : `project:${identityScope.projectId}`,
-            ) ?? 0n,
-          ),
+          // Only the entry's path and name are read.
           document,
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,
           workId: work?.id ?? null,
           workHandle,
           parentPath: classification.identity.parentPath,
-          // Only the entry's path and name are read; a chat upload's address needs no handle here.
+          // A chat upload's address needs no handle here.
           chatOwned: source.scope === "chat",
         });
         documentsOut.push({

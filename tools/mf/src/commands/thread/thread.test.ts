@@ -70,7 +70,6 @@ describe("thread send", () => {
           authority: { kind: "project", projectId: "22222222-2222-4222-8222-222222222222" },
           entry: {
             kind: "file",
-            observationVersion: "1",
             entryId: "entry",
             scope: { kind: "project", projectId: "22222222-2222-4222-8222-222222222222" },
             sourceId: "source",
@@ -98,7 +97,6 @@ describe("thread send", () => {
           authority: { kind: "project", projectId: "22222222-2222-4222-8222-222222222222" },
           entry: {
             kind: "file",
-            observationVersion: "1",
             entryId: "entry",
             scope: { kind: "project", projectId: "22222222-2222-4222-8222-222222222222" },
             sourceId: "source",

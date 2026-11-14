@@ -107,8 +107,6 @@ export type DocumentSessionSnapshot = {
    */
   access: DocumentSessionAccess | null;
   localPersistenceSynced: boolean;
-  /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
-  adoptionStalled: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
 };
@@ -124,11 +122,19 @@ export type DocumentSessionResetReason =
 
 /**
  * How a terminal room reset treats its unacknowledged writer updates.
- * `removed`: the server says the document is gone, so nothing reconnects,
+ * `removed`: the server closed the room because the document was purged, so nothing reconnects,
  * rebuilds or replays on its own; the session stays read-only until its owner
  * closes it, or an exact open proves the document present and restarts it.
  */
 export type ResetDisposition = "schema" | "removed" | "closed";
+
+/**
+ * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
+ * edits like an offline one, and the account's list shows the "sign in again" prompt.
+ */
+export function isSignInLapse(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "unauthorized" && state.code === WS_CLOSE.AUTH_FAILED.code;
+}
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -233,7 +239,6 @@ export class DocumentSession {
   /** The closing of a transport `detachTransport` released; the next one opens after it. */
   private detaching: Promise<void> | null = null;
   /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
-  private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeTransportAccess: (() => void) | null = null;
@@ -293,7 +298,7 @@ export class DocumentSession {
     ownUserId = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
-    if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
+    if (!room || room.kind === "tree") throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
@@ -334,7 +339,6 @@ export class DocumentSession {
     }
 
     this.transportAttachmentPending = true;
-    this.adoptionFailed = false;
     this.recomputeStatus();
     if ((this.persistence && !this.localPersistenceSynced) || this.detaching) {
       void Promise.all([
@@ -373,7 +377,8 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
-        if (state.kind === "unauthorized" || state.kind === "reset") this.localPeers?.stop();
+        if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
+          this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
           if (!attemptClientSchemaReload(this.roomKey)) {
             this.raiseSchemaFence({ reason: "client-superseded" });
@@ -514,7 +519,7 @@ export class DocumentSession {
       status === "destroyed" ||
       status === "access-lost" ||
       connectionState?.kind === "reset" ||
-      connectionState?.kind === "unauthorized" ||
+      (connectionState?.kind === "unauthorized" && !isSignInLapse(connectionState)) ||
       connectionState?.kind === "terminal"
     );
   }
@@ -543,24 +548,9 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       localPersistenceSynced: this.localPersistenceSynced,
-      adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
     };
-  }
-
-  /**
-   * The adopter reports whether a cached session cannot reach server ownership
-   * (authority unreachable or adoption failed). A failure is recorded only while
-   * the session is `detached` with no transport; otherwise it is a no-op, so a
-   * transport-owned or destroyed session is never labelled stalled.
-   */
-  reportAdoptionStalled(stalled: boolean): void {
-    if (this.destroyed) return;
-    const next = stalled && this.status === "detached";
-    if (this.adoptionFailed === next) return;
-    this.adoptionFailed = next;
-    this.emit();
   }
 
   /**
@@ -662,32 +652,6 @@ export class DocumentSession {
     });
   }
 
-  /** Local-only same-session identity change used by conflict remint. */
-  prepareDetachedReidentity(documentId: string): { commit(): void; abort(): void } {
-    if (this.transportProvider || this.status !== "detached")
-      throw new Error("Only a detached local session may be reminted");
-    const room = parseYjsRoomName(documentId);
-    if (room?.kind !== "live") throw new Error("Invalid reminted document identity");
-    let settled = false;
-    return {
-      commit: () => {
-        if (settled) return;
-        settled = true;
-        this.roomKey = documentId;
-        this.room = room;
-        this.documentId = documentId;
-        try {
-          this.emit();
-        } catch {
-          // Durable lineage authority already committed; observers cannot roll identity back.
-        }
-      },
-      abort: () => {
-        settled = true;
-      },
-    };
-  }
-
   get persistenceName(): string | null {
     return this.persistence?.name ?? null;
   }
@@ -714,11 +678,6 @@ export class DocumentSession {
     });
     this.initialization = attempt;
     void attempt.catch((error) => reportError(error));
-  }
-
-  /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
-  get localPersistenceProvider(): object | null {
-    return this.persistence;
   }
 
   /**
@@ -759,12 +718,8 @@ export class DocumentSession {
    * TipTap editor first, then calls this method so providers can detach before
    * the Y.Doc is destroyed.
    */
-  destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
+  destroy(): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
-    const closed =
-      this.transportState?.kind === "reset" &&
-      (this.transportState.disposition === "closed" ||
-        this.transportState.disposition === "removed");
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();
@@ -807,10 +762,7 @@ export class DocumentSession {
         },
         {
           settled: false,
-          run: () =>
-            options.clearPersistence || closed
-              ? this.persistence?.clearData()
-              : this.persistence?.destroy(),
+          run: () => this.persistence?.destroy(),
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
@@ -856,7 +808,7 @@ export class DocumentSession {
       !this.localPeers &&
       this.persistence &&
       !this.schemaFence &&
-      this.transportState?.kind !== "unauthorized" &&
+      (this.transportState?.kind !== "unauthorized" || isSignInLapse(this.transportState)) &&
       this.transportState?.kind !== "reset" &&
       typeof window !== "undefined" &&
       typeof BroadcastChannel === "function"
@@ -917,6 +869,7 @@ export class DocumentSession {
 
     // Terminal transport states pre-empt the initial-sync gate: first sync will
     // never complete after permanent denial or a session-level terminal close.
+    if (isSignInLapse(state)) return "offline";
     if (state?.kind === "unauthorized") return "access-lost";
     if (state?.kind === "reset") return "access-lost";
     if (state?.kind === "terminal") return "offline";

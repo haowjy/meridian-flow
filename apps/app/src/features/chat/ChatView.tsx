@@ -93,7 +93,6 @@ import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
-import { ReferenceAvailabilityContext } from "./reference-availability";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { SubagentStopScope } from "./subagent/SubagentStop";
@@ -665,77 +664,74 @@ export function ChatView({
   return (
     <ChatCardsProvider cards={failureCards.cards} handlers={cardHandlers}>
       <TranscriptLinkNavigationContext.Provider value={links.navigation}>
-        <ReferenceAvailabilityContext.Provider value={links.references}>
-          <FolderMenuContext.Provider value={links.folders}>
-            <ChatContextNavigationProvider
-              onOpenContextUri={links.doors?.open}
-              canOpenContextUri={links.doors?.canOpen}
+        <FolderMenuContext.Provider value={links.folders}>
+          <ChatContextNavigationProvider
+            onOpenContextUri={links.doors?.open}
+            canOpenContextUri={links.doors?.canOpen}
+          >
+            <ChatSurface
+              title={pageTitle}
+              surfaceRef={chatSurfaceRef}
+              footer={
+                <ChatComposer
+                  ref={composerRef}
+                  threadId={threadId}
+                  projectId={projectId}
+                  accountId={accountId}
+                  chatId={topChat.chatId}
+                  active={active}
+                  activeWork={activeWork}
+                  agentName={composerAgentName}
+                  running={running}
+                  stopStatus={chatStop.status}
+                  generating={generating}
+                  writeMode={controls.writeMode}
+                  onWriteModeChange={handleWriteModeChange}
+                  composerStrip={composerStrip}
+                  fileDropActive={fileDrop.over}
+                  availableSkills={availableSkills.skills}
+                  referenceCatalog={referenceCatalog}
+                  chatCommands={chatCommands}
+                  hasComposerCards={composerCards.length > 0}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                />
+              }
             >
-              <ChatSurface
-                title={pageTitle}
-                surfaceRef={chatSurfaceRef}
-                footer={
-                  <ChatComposer
-                    ref={composerRef}
-                    threadId={threadId}
-                    projectId={projectId}
-                    accountId={accountId}
-                    chatId={topChat.chatId}
-                    active={active}
-                    activeWork={activeWork}
-                    agentName={composerAgentName}
-                    running={running}
-                    stopStatus={chatStop.status}
-                    generating={generating}
-                    writeMode={controls.writeMode}
-                    onWriteModeChange={handleWriteModeChange}
-                    composerStrip={composerStrip}
-                    fileDropActive={fileDrop.over}
-                    availableSkills={availableSkills.skills}
-                    referenceCatalog={referenceCatalog}
-                    chatCommands={chatCommands}
-                    hasComposerCards={composerCards.length > 0}
-                    onSubmit={handleSubmit}
-                    onStop={handleStop}
-                  />
-                }
-              >
-                <TurnDerivationProvider value={turnDerivation}>
-                  <SubagentDisclosureProvider>
-                    <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                      <SubagentStopScope value={subagentStopScope}>
-                        <div
-                          className="relative flex min-h-0 flex-1 flex-col"
-                          {...fileDrop.dropProps}
-                        >
-                          <TurnList
-                            threadId={threadId}
-                            uploadsChat={topChat.chatRef ?? undefined}
-                            view={view}
-                            historySettled={historySettled}
-                            tailFollowRevision={tailFollowRevision}
-                            ariaLabel={t`Chat`}
-                            submissionRecoveryByTurnId={submissions.presentation}
-                            controls={controls}
-                            chatStop={chatStop}
-                            queue={queue}
-                            brief={brief}
-                            isStandIn={isStandIn}
-                            busy={running}
-                            inherited={inheritedView}
-                            onRetryInherited={inherited.failed ? inherited.retry : null}
-                            threadUsage={snapshotThreadUsage}
-                          />
-                        </div>
-                      </SubagentStopScope>
-                    </SubagentActivityProvider>
-                  </SubagentDisclosureProvider>
-                </TurnDerivationProvider>
-              </ChatSurface>
-              <LinkFollowDialog {...links.dialog} />
-            </ChatContextNavigationProvider>
-          </FolderMenuContext.Provider>
-        </ReferenceAvailabilityContext.Provider>
+              <TurnDerivationProvider value={turnDerivation}>
+                <SubagentDisclosureProvider>
+                  <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                    <SubagentStopScope value={subagentStopScope}>
+                      <div
+                        className="relative flex min-h-0 flex-1 flex-col"
+                        {...fileDrop.dropProps}
+                      >
+                        <TurnList
+                          threadId={threadId}
+                          view={view}
+                          historySettled={historySettled}
+                          tailFollowRevision={tailFollowRevision}
+                          ariaLabel={t`Chat`}
+                          submissionRecoveryByTurnId={submissions.presentation}
+                          controls={controls}
+                          chatStop={chatStop}
+                          queue={queue}
+                          brief={brief}
+                          isStandIn={isStandIn}
+                          busy={running}
+                          inherited={inheritedView}
+                          onRetryInherited={inherited.failed ? inherited.retry : null}
+                          threadUsage={snapshotThreadUsage}
+                        />
+                      </div>
+                    </SubagentStopScope>
+                  </SubagentActivityProvider>
+                </SubagentDisclosureProvider>
+              </TurnDerivationProvider>
+            </ChatSurface>
+            <LinkFollowDialog {...links.dialog} />
+          </ChatContextNavigationProvider>
+        </FolderMenuContext.Provider>
       </TranscriptLinkNavigationContext.Provider>
     </ChatCardsProvider>
   );

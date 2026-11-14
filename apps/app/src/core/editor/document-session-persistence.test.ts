@@ -1,4 +1,4 @@
-/** Regression coverage for detached-session IndexedDB cleanup.
+/** Regression coverage for session IndexedDB teardown.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - IndexedDB teardown policy and retry
@@ -8,7 +8,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const persistence = vi.hoisted(() => ({
-  clearData: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
   createWhenSynced: vi.fn<() => Promise<void>>(() => Promise.resolve()),
 }));
@@ -16,7 +15,6 @@ const persistence = vi.hoisted(() => ({
 vi.mock("y-indexeddb", () => ({
   IndexeddbPersistence: class {
     readonly whenSynced = persistence.createWhenSynced();
-    readonly clearData = persistence.clearData;
     readonly destroy = persistence.destroy;
   },
 }));
@@ -26,31 +24,12 @@ const { DocumentSession } = await import("./document-session");
 describe("DocumentSession persistence cleanup", () => {
   afterEach(() => {
     vi.useRealTimers();
-    persistence.clearData.mockReset().mockResolvedValue();
     persistence.destroy.mockReset().mockResolvedValue();
     persistence.createWhenSynced.mockReset().mockResolvedValue();
   });
 
-  it.each([
-    { attached: false, clearPersistence: false },
-    { attached: true, clearPersistence: true },
-  ])("cleans persistence with attached=$attached, clear=$clearPersistence", async ({
-    attached,
-    clearPersistence,
-  }) => {
-    const session = new DocumentSession({
-      roomKey: "doc-cleanup",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-    });
-    if (attached)
-      session.attachTransport(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
-    await session.destroy({ clearPersistence });
-    expect(persistence.clearData).toHaveBeenCalledTimes(clearPersistence ? 1 : 0);
-    expect(persistence.destroy).toHaveBeenCalledTimes(clearPersistence ? 0 : 1);
-  });
-
-  it("retries only failed teardown stages and freezes the first persistence policy", async () => {
-    persistence.clearData.mockRejectedValueOnce(new Error("clear failed"));
+  it("retries only failed teardown stages", async () => {
+    persistence.destroy.mockRejectedValueOnce(new Error("destroy failed"));
     const transportDestroy = vi.fn(async () => undefined);
     const session = new DocumentSession({
       roomKey: "doc-retry-clear",
@@ -60,11 +39,10 @@ describe("DocumentSession persistence cleanup", () => {
     await session.whenLocalPersistenceSynced();
     await Promise.resolve();
 
-    await expect(session.destroy({ clearPersistence: true })).rejects.toThrow("clear failed");
+    await expect(session.destroy()).rejects.toThrow("destroy failed");
     await expect(session.destroy()).resolves.toBeUndefined();
 
-    expect(persistence.clearData).toHaveBeenCalledTimes(2);
-    expect(persistence.destroy).not.toHaveBeenCalled();
+    expect(persistence.destroy).toHaveBeenCalledTimes(2);
     expect(transportDestroy).toHaveBeenCalledOnce();
   });
 

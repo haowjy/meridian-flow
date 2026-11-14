@@ -27,18 +27,17 @@ with no row and on a row with no break.
 
 | from | to | rule | example file |
 |---|---|---|---|
-| `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-apply-click.ts` |
+| `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-apply-tree.ts` |
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-drafts.ts` |
-| `collab` | `projects` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-apply-click.ts` |
+| `collab` | `projects` | domains are acyclic | `apps/server/server/domains/collab/adapters/lifecycle-refusal.ts` |
 | `collab` | `runtime` | domains are acyclic | `apps/server/server/domains/collab/hocuspocus-persistence.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
 | `context` | `projects` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
-| `context` | `runtime` | domains are acyclic | `apps/server/server/domains/context/tree/hidden-node-repair.ts` |
 | `context` | `threads` | domains are acyclic | `apps/server/server/domains/context/document-revisions.ts` |
 | `file-policy` | `collab` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
 | `file-policy` | `context` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
-| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/adapters/work-cascade.ts` |
+| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/index.ts` |
 | `runtime` | `context` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
 | `runtime` | `file-policy` | domains are acyclic | `apps/server/server/domains/runtime/adapters/context-media-resolver.ts` |
 | `runtime` | `projects` | domains are acyclic | `apps/server/server/domains/runtime/loop/permissions/agent-chain.ts` |
@@ -125,4 +124,3 @@ imports one of them fails the check.
 | `tools/history-summaries.ts` | `@meridian/agent-edit` |
 | `tools/inspection-tools.ts` | `context` |
 | `tools/skill-tool.ts` | `@meridian/agent-edit` |
-| `tools/types.ts` | `@meridian/agent-edit` |

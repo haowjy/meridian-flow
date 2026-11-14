@@ -17,9 +17,11 @@
 import {
   type DocumentSession,
   type DocumentSessionSnapshot,
+  isSignInLapse,
   updatesRefused,
 } from "./document-session";
 import type { LiveDocumentSessionRegistry } from "./document-session-registry";
+import type { DraftRoomRef } from "./draft-room-pool";
 
 export type DraftRoomRegistry = Pick<
   LiveDocumentSessionRegistry,
@@ -58,14 +60,15 @@ function judge(snapshot: DocumentSessionSnapshot): Verdict {
   if (
     snapshot.status === "destroyed" ||
     connection?.kind === "terminal" ||
-    connection?.kind === "unauthorized"
+    (connection?.kind === "unauthorized" && !isSignInLapse(connection))
   )
     return "gone";
   return "usable";
 }
 
 /** Retain `roomKey` for one reader. Never throws: a room still being torn down is joined, a failure is the `error` state. */
-export function readDraftRoom(registry: DraftRoomRegistry, roomKey: string): DraftRoomRead {
+export function readDraftRoom(registry: DraftRoomRegistry, ref: DraftRoomRef): DraftRoomRead {
+  const { roomKey } = ref;
   const owner = `draft-read:${++sequence}`;
   const listeners = new Set<() => void>();
   let state: DraftRoomState = { kind: "rebuilding" };
@@ -135,7 +138,7 @@ export function readDraftRoom(registry: DraftRoomRegistry, roomKey: string): Dra
     return judge(state.session.getSnapshot()) === "usable" ? state.session : null;
   };
 
-  registry.retainDraftRooms(owner, [roomKey]);
+  registry.retainDraftRooms(owner, [ref]);
   acquire();
 
   return {

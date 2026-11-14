@@ -10,7 +10,6 @@
  * folder, wherever the folder is now. `[[name]]` is text, never a link.
  */
 import { t } from "@lingui/core/macro";
-import { qualifyWrittenHref } from "@meridian/markup/links";
 import {
   createContext,
   type ReactNode,
@@ -80,12 +79,6 @@ export function referenceKey(kind: "document" | "folder", id: string): string {
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
-  /**
-   * The transcript's own chat handle. A message sent from a New chat names an upload bare until
-   * the server names the chat and rewrites the stored text; the referenced href is qualified here
-   * to the spelling the server's answer uses.
-   */
-  uploadsChat?: string;
 }>({});
 
 export function TranscriptReference({
@@ -103,7 +96,7 @@ export function TranscriptReference({
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
-  const { resolutions, onOpen, uploadsChat } = useContext(TranscriptReferenceContext);
+  const { resolutions, onOpen } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
   const folderHost = useFolderMenuHost();
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
@@ -114,18 +107,10 @@ export function TranscriptReference({
       ? { kind: "folder" as const, id: folderId }
       : null;
   const candidate = exact ? resolutions?.get(referenceKey(exact.kind, exact.id)) : null;
-  // A document's available answer counts only at the URI the writer referenced:
-  // one that has moved since is not settled for this occurrence, so it stays
-  // filled and does not follow from here. A folder follows its identity: its
-  // menu opens wherever the folder is now, while the sent text stays as sent.
+  // A reference follows its identity: a document or folder opens wherever it is now, while the
+  // sent text stays as sent.
   const resolution =
-    candidate &&
-    exact &&
-    candidate.kind === exact.kind &&
-    candidate.id === exact.id &&
-    (exact.kind === "folder" ||
-      !candidate.available ||
-      candidate.uri === (uri && qualifyWrittenHref(uri, uploadsChat)))
+    candidate && exact && candidate.kind === exact.kind && candidate.id === exact.id
       ? candidate
       : null;
   const syntax = !exact && target ? target : null;

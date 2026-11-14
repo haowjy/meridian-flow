@@ -20,8 +20,8 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -31,20 +31,23 @@ import {
   createLinkScopeObserver,
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
+import { createDrizzleContextImportReveal } from "../domains/context/adapters/drizzle-import-reveal.js";
 import {
-  type ContextCatalog,
-  type ContextCatalogFileMutationPort,
-  type ContextCatalogMutationPort,
-  type ContextCatalogWakeHub,
-  createContextCatalogWakeHub,
+  createDrizzleTreeListStore,
+  type PgTreeListStore,
+} from "../domains/context/adapters/drizzle-tree-list-store.js";
+import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
+import {
+  type ChatUploads,
+  type ContextSources,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
-  createDocumentRemoval,
   createDocumentRevisions,
   createDraftUploadVerifier,
+  createDrizzleChatUploads,
   createDrizzleChatUploadsOwners,
-  createDrizzleContextCatalog,
+  createDrizzleContextSources,
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
@@ -60,12 +63,10 @@ import {
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
-  createHiddenNodeRepair,
-  createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,
+  createProjectHints,
+  createProjectWakeHub,
   createPromotionService,
-  createRemovalRecords,
-  createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
@@ -74,16 +75,16 @@ import {
   type DocumentRemovals,
   type DocumentTrash,
   type FigureAssetService,
-  InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
+  type ProjectWakeHub,
   type PromotionService,
-  type RestoreRemovedDocuments,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { emptyOwnerLookup } from "../domains/context/owner-lookup.js";
+import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
 import {
@@ -152,6 +153,7 @@ import {
   type ProjectWorkAuthorityResolver,
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
+  type WorkProjectionMutation,
 } from "../domains/projects/index.js";
 import {
   createDrizzleRecentDocumentsRepository,
@@ -300,13 +302,14 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog;
-  restoreRemovedDocuments: RestoreRemovedDocuments;
+  contextSources: ContextSources;
   documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
-  contextCatalogWakeHub: ContextCatalogWakeHub;
+  projectWakeHub: ProjectWakeHub;
   documentLinks: DocumentLinkResolver;
   /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
   linkScopes: DocumentLinkScopes;
@@ -357,6 +360,7 @@ export type AppServices = {
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
+  chatUploads: ChatUploads;
   figureAssets: FigureAssetService;
   documentProperties: DocumentPropertiesReader;
   /** The file policy every route and model call asks (file-access §1). */
@@ -389,16 +393,17 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
+  /** The project tree's lists: the one function that admits records, and the room's reads. */
+  treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog &
-    ContextCatalogMutationPort &
-    ContextCatalogFileMutationPort &
-    ProjectCatalogLifecyclePort;
-  restoreRemovedDocuments: RestoreRemovedDocuments;
+  contextSources: ContextSources;
   documentTrash: DocumentTrash;
+  /** Trash as the tree gives it, per view: one entry per delete in force. */
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
-  contextCatalogWakeHub: ContextCatalogWakeHub;
+  projectWakeHub: ProjectWakeHub;
+  /** The Works projection: counts, revisions, and the wake a Work's change sends. */
+  workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
   /**
    * Per-(project, reader) link snapshots: every serializing door spells
@@ -432,6 +437,7 @@ export type ProductionAppPorts = {
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
+  chatUploads: ChatUploads;
   figureAssets: FigureAssetService;
   documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
@@ -496,15 +502,13 @@ export async function createProductionAppPorts(input: {
   });
   const db = input.db;
   const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
-  const contextCatalogWakeHub = createContextCatalogWakeHub();
+  const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
-    availabilityMutations: projectContextAvailability,
-  });
+  const contextSources = createDrizzleContextSources(db);
+  const projectHints = createProjectHints(projectWakeHub);
   const workProjectionMutation = createWorkProjectionMutation({
     db,
-    availability: projectContextAvailability,
-    catalog: contextCatalog,
+    draftOwnerHints: projectHints,
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
     eventSink,
   });
@@ -516,9 +520,9 @@ export async function createProductionAppPorts(input: {
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const organizeWake = createOrganizeWakeHub();
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals, {
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, arrivals, {
     fileAccessChanges,
-    draftOwnerHints: contextCatalog,
+    hints: projectHints,
   });
   const threadRepos = createDrizzleRepositories(
     db,
@@ -533,7 +537,7 @@ export async function createProductionAppPorts(input: {
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
     db,
-    catalogLifecycle: contextCatalog,
+    fileAccessChanges,
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
@@ -569,30 +573,24 @@ export async function createProductionAppPorts(input: {
   // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
   // thread peers) exists only once the collab domain does, which binds it; nothing retires
   // before a commit, so the late binding is never observed unbound in production.
-  const draftClose = createDraftClose();
-  const documentRemoval = createDocumentRemoval(db, {
-    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
-    workProjection: workProjectionMutation,
-  });
-  // One repair on touch for every production tree reader and create (§12.4).
-  const hiddenNodeRepair = createHiddenNodeRepair({
+  // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
+  const treeLists = createDrizzleTreeListStore({
     db,
-    removal: documentRemoval,
-    eventSink,
-    objects: objectRelease,
+    journal: createDrizzleJournal(db),
+    // Collab is composed below, before anything can submit or admit a record.
+    draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
   });
+  const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
     availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
-    repair: hiddenNodeRepair,
   });
   const documentSync = createCollabDomain({
     db,
     backgroundTasks,
     arrivals,
-    catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,
@@ -600,9 +598,9 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
-    objects: objectRelease,
     draftClose,
-    documentRemoval,
+    treeLists,
+    removals: createTrashRemovals(db),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -627,25 +625,22 @@ export async function createProductionAppPorts(input: {
     links: documentLinks,
     db,
     documentSync,
-    documentDerivations: documentSync.documentDerivations,
-    catalogMutations: contextCatalog,
-    eventSink,
+    treeLists,
     arrivals,
-    hiddenNodeRepair,
-    removal: documentRemoval,
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
+    sourceHints: projectHints,
     copy: { documentSync, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
-    repository: createDrizzleUploadIntakeRepository(db),
+    repository: createDrizzleUploadIntakeRepository(db, projectHints),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     release: objectRelease,
     eventSink,
-    catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
+  const chatUploads = createDrizzleChatUploads(db);
   const figureAssets = createFigureAssetService({
     objectStore,
     documents: createDrizzleFigureDocumentRepository({ db }),
@@ -659,11 +654,10 @@ export async function createProductionAppPorts(input: {
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
-    catalogLifecycle: contextCatalog,
+    treeLists,
   });
   workRepo = createDrizzleProjectWorkRepository({
     db,
-    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -707,33 +701,28 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    treeLists,
     documentArrivals: arrivals,
     organizeWake,
     linkAheadRegistry,
     contextPorts,
-    contextCatalog,
-    restoreRemovedDocuments: createRestoreRemovedDocuments({
-      db,
-      fileAccess,
-      workProjection: workProjectionMutation,
-      arrivals,
-      catalog: contextCatalog,
-    }),
+    contextSources,
     documentTrash: createDrizzleDocumentTrash({
       db,
       objectStore,
       eventSink,
       drafts: documentSync.documentPurgeDraftDisposal,
-      readMarkdown: documentSync.readFrozenMarkdown,
+      tree: treeLists,
     }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
       locations: createDrizzleDocumentAddressStore(db),
       availability: projectContextAvailability,
     }),
-    contextCatalogWakeHub,
+    projectWakeHub,
+    workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
-      catalog: contextCatalog,
+      sources: contextSources,
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
@@ -763,13 +752,14 @@ export async function createProductionAppPorts(input: {
     localObjectStore,
     uploadIntake,
     uploadIdentity,
+    chatUploads,
     figureAssets,
     documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
-    documentRemovals: createRemovalRecords(db),
+    documentRemovals: createTrashRemovals(db),
   };
 }
 
@@ -804,7 +794,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
           .findById(threadId)
           .then((thread) => {
             if (thread)
-              ports.contextCatalogWakeHub.publish({
+              ports.projectWakeHub.publish({
                 type: "project-chats-hint",
                 projectId: thread.projectId,
               });
@@ -826,9 +816,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
     documents: ports.documentSync,
-    ahead: ports.linkAheadRegistry,
-    arrivals: ports.documentArrivals,
-    catalog: ports.contextCatalog,
+    reveal: createDrizzleContextImportReveal({
+      db: ports.db,
+      tree: ports.treeLists,
+      ahead: ports.linkAheadRegistry,
+      arrivals: ports.documentArrivals,
+    }),
   });
   const workContext = createWorkContextReader({
     threads: ports.threadRepos.threads,
@@ -985,6 +978,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
@@ -1229,6 +1223,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
+    treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
@@ -1245,12 +1240,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         },
         projectId,
       ),
-    contextCatalog: ports.contextCatalog,
-    restoreRemovedDocuments: ports.restoreRemovedDocuments,
+    contextSources: ports.contextSources,
     documentTrash: ports.documentTrash,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
-    contextCatalogWakeHub: ports.contextCatalogWakeHub,
+    projectWakeHub: ports.projectWakeHub,
     documentLinks: ports.documentLinks,
     linkScopes: ports.linkScopes,
     projects: ports.projects,
@@ -1293,6 +1287,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     localObjectStore: ports.localObjectStore,
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
+    chatUploads: ports.chatUploads,
     figureAssets: ports.figureAssets,
     documentProperties: ports.documentProperties,
     fileAccess: ports.fileAccess,
@@ -1452,7 +1447,23 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
-  const contextCatalog = new InMemoryContextCatalog();
+  const noContextSources: ContextSources = {
+    async inProject() {
+      return [];
+    },
+    async endedIn() {
+      return [];
+    },
+    async ofUser() {
+      return [];
+    },
+    async ownedBy() {
+      return [];
+    },
+    async liveDocuments() {
+      return [];
+    },
+  };
   const workAuthorityResolver: ProjectWorkAuthorityResolver = {
     async byId() {
       return null;
@@ -1554,13 +1565,38 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    treeLists: {
+      async open() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async readSince() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async admit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async submit() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async read() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async lock() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      async resync() {
+        throw new Error("Tree lists are unavailable in memory");
+      },
+      onCommitted: () => () => {},
+      onJournalAdvanced: () => () => {},
+    },
     liveDocuments: {
       async findById() {
         throw new Error("Live tree reads are unavailable in memory");
       },
     },
     linkAheadRegistry,
-    contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    contextPorts: createInMemoryContextPorts(),
     openImports: async () => [],
     importOrganizer: {
       async runPass() {
@@ -1571,10 +1607,7 @@ export function createInMemoryAppServices(): AppServices {
     imports: () => {
       throw new Error("Import requires durable persistence");
     },
-    contextCatalog,
-    async restoreRemovedDocuments() {
-      throw new Error("Document restore is unavailable in memory");
-    },
+    contextSources: noContextSources,
     documentTrash: {
       async retained() {
         return new Set();
@@ -1593,24 +1626,13 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAddresses: {
-      async resolveById() {
-        return { kind: "unavailable" };
-      },
       async resolve() {
         return { kind: "unavailable" };
       },
     },
     projectContextAvailability: {
-      async lookup(input) {
-        return {
-          projectId: input.projectId,
-          resolutionId: crypto.randomUUID(),
-          resolutions: [...new Set(input.documentIds)].map((documentId) => ({
-            kind: "not-visible" as const,
-            documentId,
-            checkedGeneration: "0",
-          })),
-        };
+      async placed() {
+        return { documents: new Map(), folders: new Map(), inconsistent: new Set() };
       },
       async held() {
         // The in-memory app has no rows; its creates answer replays from their own store.
@@ -1618,8 +1640,8 @@ export function createInMemoryAppServices(): AppServices {
       },
       serializeCreate: (_entryId, create) => create(),
     },
-    contextCatalogWakeHub: createContextCatalogWakeHub(),
-    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    projectWakeHub: createProjectWakeHub(),
+    documentLinks: createDocumentLinkResolver({ sources: noContextSources, workAuthorityResolver }),
     projectExport: createProjectExport({
       pendingDrafts: {
         async count() {
@@ -1656,7 +1678,7 @@ export function createInMemoryAppServices(): AppServices {
         return operation();
       },
       async snapshotIdentity() {
-        return { catalogGeneration: crypto.randomUUID(), authorityRevision: "0" };
+        return { authorityRevision: "0" };
       },
       async create() {
         throw new Error("in-memory work repository is not implemented");
@@ -1740,7 +1762,7 @@ export function createInMemoryAppServices(): AppServices {
         return operation();
       },
       async snapshotIdentity() {
-        return { catalogGeneration: crypto.randomUUID(), authorityRevision: "0" };
+        return { authorityRevision: "0" };
       },
       async create() {
         throw new Error("in-memory work repository is not implemented");
@@ -1886,6 +1908,11 @@ export function createInMemoryAppServices(): AppServices {
       },
       async consume() {},
     },
+    chatUploads: {
+      async list() {
+        return { uploads: [] };
+      },
+    },
     uploadIdentity: {
       async lookupUpload() {
         return null;
@@ -1911,6 +1938,38 @@ export function createInMemoryAppServices(): AppServices {
     async shutdown() {
       await backgroundTasks.drain();
     },
+  };
+}
+
+/** The in-memory app has no tree: a port for any context is refused where it is asked for. */
+function createInMemoryContextPorts(): UnifiedContextPortFactory {
+  const unavailable = (): never => {
+    throw new Error("Context requires durable persistence");
+  };
+  return {
+    lineages: {
+      async byId() {
+        return null;
+      },
+      async rootForThreadRef() {
+        return null;
+      },
+      async byRef() {
+        return null;
+      },
+      async list() {
+        return [];
+      },
+    },
+    chats: {
+      async byRef() {
+        return null;
+      },
+    },
+    topPrimaryChats: { resolveTopPrimaryChat: async () => null },
+    chatFiles: emptyOwnerLookup,
+    forProject: unavailable,
+    forWork: unavailable,
   };
 }
 

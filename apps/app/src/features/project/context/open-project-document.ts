@@ -1,28 +1,17 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import type {
-  AvailabilityGeneration,
-  CatalogFileEntry,
-  LiveDocumentSessionLease,
-  ProjectContextIdentityResolution,
-} from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import {
-  type ResourcePlacement,
-  type ResourceProjectionSnapshot,
-  type ResourceRecord,
-  resourcePlacementForSnapshot,
-} from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type {
+  LiveDocumentSessionLease,
+  LiveDocumentSessionRegistry,
+} from "@/core/editor/document-session-registry";
 import { contextRouteRequest } from "../routing/project-route";
+import type { ProjectStandings } from "./project-standings";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
- * Doors that already render a catalog row carry its identity; id-only doors
- * resolve one. Both commit main's address before the destination acquires its
- * live session, so availability work cannot hold navigation hostage. Every
- * door opens the document in main.
+ * Doors that already render a tree row carry its identity; id-only doors read it from the replay
+ * of the project's list, waiting for the list only while it has not been read. Both commit main's
+ * address before the destination acquires its live session. Every door opens the document in main.
  */
 
 import {
@@ -38,33 +27,24 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
-import {
-  accessibleResourceCatalogView,
-  aggregateCatalogScope,
-  projectCatalogFile,
-  projectCatalogView,
-} from "@/client/query/useContextCatalog";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { isEditorScheme, type OpenDocument } from "@/client/stores";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
   useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
-import {
-  useOptionalAccountResourceReplica,
-  useOptionalPresentedDocuments,
-} from "./account-feature-context";
+import { useProjectStandings } from "./account-feature-context";
 import { openDocumentFromFile } from "./open-document-from-file";
-import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 import { UploadViewerDialog } from "./UploadViewerDialog";
 
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
-  readonly generation: AvailabilityGeneration;
   readonly session: DocumentSession;
   readonly local?: true;
   release(): void;
@@ -73,157 +53,79 @@ export interface LiveDocumentBinding {
 export interface AdmittedLiveDocument {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
-  readonly generation: AvailabilityGeneration;
   bind(ownerId: string): Promise<LiveDocumentBinding>;
 }
 
 export type ProjectDocumentLiveOpenResult =
-  | { kind: "opened"; document: CatalogFileEntry; admission: AdmittedLiveDocument }
+  | { kind: "opened"; admission: AdmittedLiveDocument }
   | { kind: "cancelled" }
-  | { kind: "not-editable"; document: CatalogFileEntry }
+  | { kind: "not-editable" }
   | {
       kind: "unavailable";
-      reason:
-        | "deleted"
-        | "authority-unavailable"
-        | "not-visible"
-        | "indeterminate"
-        | "failed"
-        // The registry's own refusal, kept so the cause is not folded into "failed".
-        | DocumentSessionAuthorityError["kind"];
+      reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
     };
 
 export type ProjectDocumentLiveOpenRequest = {
-  source: "server";
   projectId: ProjectId;
   documentId: DocumentId;
+  /** Also admits a document in Trash: its Trash view shows the text the session holds. */
+  trashed?: true;
   signal?: AbortSignal;
 };
 
-type ExactOpenResolution = ProjectContextIdentityResolution | { kind: "failed" | "malformed" };
-export type AvailableOpenResolution = Extract<ExactOpenResolution, { kind: "available" }>;
-/** A resolved open handed to the host that mounts its document: one host per document. */
-export type TransferToken = { readonly id: string; readonly documentId: string };
-
-/** Exact-resolution application operation, independent from navigation effects. */
+/** Admits a document's live session once the list shows it in the tree. */
 export class ProjectDocumentLiveOpener {
-  private readonly transfers = new Map<
-    string,
-    { token: TransferToken; resolution: AvailableOpenResolution }
-  >();
   constructor(
     private readonly dependencies: {
-      availability: {
-        resolveForOpen(projectId: ProjectId, documentId: DocumentId): Promise<ExactOpenResolution>;
-      };
       registry: Pick<
         LiveDocumentSessionRegistry,
         "admit" | "retain" | "get" | "release" | "restartUnavailableRoom"
       >;
+      standings: Pick<ProjectStandings, "standing" | "whenReadable">;
       epochSignal: AbortSignal;
     },
-  ) {
-    dependencies.epochSignal.addEventListener("abort", () => this.transfers.clear(), {
-      once: true,
-    });
-  }
+  ) {}
 
-  async resolveIdentity(
-    projectId: ProjectId,
-    documentId: DocumentId,
-  ): Promise<ExactOpenResolution> {
+  /**
+   * Admits the document the project's list has in its tree. The list says whether it is there, so
+   * a document made here opens at once, before the server has heard of it: its session paints
+   * from the local copy and its room connects when the server has the create.
+   */
+  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
+    const { projectId, documentId, signal } = input;
+    const cancelled = () => signal?.aborted || this.dependencies.epochSignal.aborted;
+    if (cancelled()) return { kind: "cancelled" };
+    let standing = this.dependencies.standings.standing(projectId, documentId);
+    if (standing.kind === "waiting") {
+      try {
+        await this.dependencies.standings.whenReadable(projectId, signal);
+      } catch {
+        return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
+      }
+      standing = this.dependencies.standings.standing(projectId, documentId);
+    }
+    if (cancelled()) return { kind: "cancelled" };
+    switch (standing.kind) {
+      case "purged":
+        return { kind: "unavailable", reason: "deleted" };
+      case "in-trash":
+        if (!input.trashed) return { kind: "unavailable", reason: "deleted" };
+        if (standing.node.kind !== "document") return { kind: "not-editable" };
+        break;
+      case "not-in-list":
+      case "waiting":
+        return { kind: "unavailable", reason: "not-visible" };
+      case "in-tree":
+        if (standing.node.kind !== "document") return { kind: "not-editable" };
+    }
     try {
-      return await this.dependencies.availability.resolveForOpen(projectId, documentId);
-    } catch {
-      return { kind: "failed" };
-    }
-  }
-
-  replaceTransfer(
-    documentId: string,
-    resolution: AvailableOpenResolution | undefined,
-  ): TransferToken | null {
-    const prior = this.transfers.get(documentId);
-    if (prior) this.disposeTransfer(prior.token);
-    if (!resolution || resolution.documentId !== documentId) return null;
-    const token = Object.freeze({ id: crypto.randomUUID(), documentId });
-    this.transfers.set(documentId, { token, resolution });
-    return token;
-  }
-
-  transferToken(documentId: string): TransferToken | null {
-    return this.transfers.get(documentId)?.token ?? null;
-  }
-
-  takeTransfer(documentId: string): AvailableOpenResolution | null {
-    const transfer = this.transfers.get(documentId);
-    if (!transfer) return null;
-    this.transfers.delete(documentId);
-    return transfer.resolution;
-  }
-
-  disposeTransfer(token: TransferToken): void {
-    if (this.transfers.get(token.documentId)?.token === token)
-      this.transfers.delete(token.documentId);
-  }
-
-  /** A transfer no view presents, nor is about to, is let go. */
-  pruneTransfers(presentedDocumentIds: ReadonlySet<string>): void {
-    for (const transfer of this.transfers.values()) {
-      if (!presentedDocumentIds.has(transfer.token.documentId))
-        this.disposeTransfer(transfer.token);
-    }
-  }
-
-  async open(
-    input: ProjectDocumentLiveOpenRequest & {
-      attempt?: "first" | "retry";
-      resolution?: AvailableOpenResolution;
-    },
-  ): Promise<ProjectDocumentLiveOpenResult> {
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    const resolution =
-      input.attempt !== "retry" && input.resolution
-        ? input.resolution
-        : await this.resolveIdentity(input.projectId, input.documentId);
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    if (resolution.kind !== "available") {
-      const reason =
-        resolution.kind === "malformed" || resolution.kind === "failed"
-          ? "failed"
-          : resolution.kind;
-      return { kind: "unavailable", reason };
-    }
-    if (resolution.documentId !== input.documentId)
-      return { kind: "unavailable", reason: "failed" };
-    if (!resolution.entry.editable) return { kind: "not-editable", document: resolution.entry };
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-
-    let lease: LiveDocumentSessionLease;
-    try {
-      lease = await this.dependencies.registry.admit(
-        input.projectId,
-        input.documentId,
-        resolution.generation,
-      );
-    } catch (error) {
-      if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-        return { kind: "cancelled" };
       return {
-        kind: "unavailable",
-        reason: error instanceof DocumentSessionAuthorityError ? error.kind : "failed",
+        kind: "opened",
+        admission: this.capability(this.dependencies.registry.admit(projectId, documentId)),
       };
+    } catch {
+      return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
     }
-    if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
-      return { kind: "cancelled" };
-    return {
-      kind: "opened",
-      document: resolution.entry,
-      admission: this.capability(lease),
-    };
   }
 
   private capability(lease: LiveDocumentSessionLease): AdmittedLiveDocument {
@@ -231,7 +133,6 @@ export class ProjectDocumentLiveOpener {
     return Object.freeze({
       projectId: lease.projectId,
       documentId: lease.documentId,
-      generation: lease.generation,
       async bind(ownerId: string): Promise<LiveDocumentBinding> {
         registry.retain(ownerId, [lease]);
         try {
@@ -250,7 +151,6 @@ export class ProjectDocumentLiveOpener {
           return Object.freeze({
             projectId: lease.projectId,
             documentId: lease.documentId,
-            generation: lease.generation,
             session,
             release() {
               if (released) return;
@@ -272,15 +172,11 @@ export type KnownDocumentIdentity = {
   workId?: string | null;
   rootThreadId?: string;
   chatId?: string;
-  file: CatalogFile;
+  file: TreeFile;
 };
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
-  /** The caller has already resolved this identity as deleted. */
-  trashed?: true;
-  /** Ignore a local identity projection known to predate a completed mutation. */
-  refreshIdentity?: true;
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
@@ -300,45 +196,15 @@ export type OpenProjectDocument = (
 ) => Promise<OpenDocumentOutcome>;
 
 type NavigationAdapterDependencies = {
-  opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
+  standings: Pick<ProjectStandings, "standing" | "whenReadable">;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
+  /** Where the replay of the list shows a document, or null while it shows none. */
+  locate(documentId: string): KnownDocumentIdentity | null;
   /** Shows a chat's upload, which belongs to no main address, in its viewer. */
   viewUpload(tab: Extract<OpenDocument, { kind: "viewer" }>): void;
-  resources?: Pick<
-    import("@/core/resources/account-resource-replica").AccountResourceReplica,
-    "accountId" | "observeProjection" | "readProjectionState"
-  > | null;
 };
-
-function identityForRecord(
-  projectId: string,
-  record: ResourceRecord,
-  placement: ResourcePlacement,
-): KnownDocumentIdentity | null {
-  const location = placement.resourceLocation(record);
-  if (!location) return null;
-  const scope = aggregateCatalogScope(projectId, location.scheme, location);
-  if (!scope) return null;
-  const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
-  const file = projectCatalogView(projectId, location.scheme, projected, placement, [
-    record,
-  ]).findDocument(record.resource.identity.documentId);
-  if (!file || projected.entries.get(record.resource.identity.documentId)?.kind !== "file")
-    return null;
-  if (location.chatId !== undefined) {
-    const spelled = parseContextUri(file.uri);
-    if (!spelled.ok || spelled.value.authority.kind !== "chat") return null;
-  }
-  return {
-    scheme: location.scheme,
-    workId: location.workId,
-    rootThreadId: location.rootThreadId,
-    chatId: location.chatId,
-    file,
-  };
-}
 
 type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
 
@@ -359,16 +225,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    {
-      documentId,
-      trashed,
-      refreshIdentity,
-      known,
-      workId,
-      focus,
-      replace,
-      signal,
-    }: OpenProjectDocumentRequest,
+    { documentId, known, workId, focus, replace, signal }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
     const navigationIsCurrent = this.dependencies.captureNavigation?.();
     const token = ++this.attempt;
@@ -383,31 +240,17 @@ export class ProjectDocumentNavigationAdapter {
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
-      if (trashed) {
-        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
-        if (!isCurrent()) return { kind: "cancelled" };
-        if (resolution.kind === "deleted")
-          return this.openTrash(documentId, controller.signal, isCurrent, replace);
-        return {
-          kind: "refused",
-          reason:
-            resolution.kind === "failed" || resolution.kind === "malformed"
-              ? "lookup-failed"
-              : "gone",
-        };
-      }
       const identified = await this.identify(projectId, {
         documentId,
-        refreshIdentity,
         known,
-        workId,
+        signal: controller.signal,
         isCurrent,
       });
       if (identified.kind === "cancelled") return identified;
       if (identified.kind === "refused") return identified;
       if (identified.kind === "trashed")
         return this.openTrash(documentId, controller.signal, isCurrent, replace);
-      const { identity, transfer } = identified;
+      const { identity } = identified;
 
       if (!isEditorScheme(identity.scheme)) {
         const tab = openDocumentFromFile(
@@ -419,25 +262,6 @@ export class ProjectDocumentNavigationAdapter {
         if (!isCurrent()) return { kind: "cancelled" };
         this.dependencies.viewUpload(tab);
         return { kind: "committed", documentId };
-      }
-
-      if (refreshIdentity && this.dependencies.resources) {
-        // Restoring a deleted ancestor republishes the document through the catalog. Do not
-        // open it while the replica still holds the prior terminal record: that record would
-        // immediately read as its removal.
-        try {
-          await waitForLivingProjection(
-            this.dependencies.resources,
-            projectId,
-            documentId,
-            controller.signal,
-          );
-        } catch {
-          return controller.signal.aborted
-            ? { kind: "cancelled" }
-            : { kind: "refused", reason: "lookup-failed" };
-        }
-        if (!isCurrent()) return { kind: "cancelled" };
       }
 
       if (!this.dependencies.openRoute)
@@ -453,7 +277,6 @@ export class ProjectDocumentNavigationAdapter {
         replace,
         isCurrent,
         canCommit,
-        transfer,
       });
       if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
       return committed.kind === "applied"
@@ -467,92 +290,57 @@ export class ProjectDocumentNavigationAdapter {
   }
 
   /**
-   * Where a document lives now: the caller's known row, the replica's record, or one lookup.
-   * A lookup's answer rides along as the transfer the host's session takes.
+   * Where a document lives now: the caller's known row, or the replay of the list, which is
+   * waited for only while the list has not been read.
    */
   private async identify(
     projectId: string,
     {
       documentId,
-      refreshIdentity,
       known,
-      workId,
+      signal,
       isCurrent,
-    }: Pick<OpenProjectDocumentRequest, "documentId" | "refreshIdentity" | "known" | "workId"> & {
+    }: Pick<OpenProjectDocumentRequest, "documentId" | "known"> & {
+      signal: AbortSignal;
       isCurrent: () => boolean;
     },
   ): Promise<
-    | { kind: "identified"; identity: KnownDocumentIdentity; transfer?: AvailableOpenResolution }
+    | { kind: "identified"; identity: KnownDocumentIdentity }
     | { kind: "trashed" }
     | { kind: "cancelled" }
     | { kind: "refused"; reason: "gone" | "lookup-failed" }
   > {
-    const projection = this.dependencies.resources?.readProjectionState(projectId);
-    const record =
-      projection?.kind === "ready"
-        ? projection.snapshot.records.find(
-            (candidate) => candidate.resource.identity.documentId === documentId,
-          )
-        : undefined;
-    if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
-      return { kind: "trashed" };
-
-    let identity = refreshIdentity ? undefined : known;
-    if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
-      identity =
-        identityForRecord(
-          projectId,
-          record,
-          resourcePlacementForSnapshot(projectId, projection.snapshot),
-        ) ?? undefined;
-    }
-
-    let transfer: AvailableOpenResolution | undefined;
-    if (!identity) {
-      const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
-      if (!isCurrent()) return { kind: "cancelled" };
-      if (resolution.kind === "deleted") return { kind: "trashed" };
-      if (resolution.kind !== "available") {
-        return {
-          kind: "refused",
-          reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
-        };
+    const { standings } = this.dependencies;
+    // The list's own answer first: a row the caller carries, or the views' last render, can
+    // predate a delete.
+    if (standings.standing(projectId, documentId).kind === "in-trash") return { kind: "trashed" };
+    const placed = known ?? this.dependencies.locate(documentId);
+    if (placed) return { kind: "identified", identity: placed };
+    if (standings.standing(projectId, documentId).kind === "waiting") {
+      try {
+        await standings.whenReadable(projectId, signal);
+      } catch {
+        return isCurrent() ? { kind: "refused", reason: "lookup-failed" } : { kind: "cancelled" };
       }
-      transfer = resolution;
-      const scheme = schemeForEntry(resolution.entry);
-      if (!scheme) return { kind: "refused", reason: "lookup-failed" };
-      identity = {
-        scheme,
-        file: projectCatalogFile(resolution.entry),
-        workId: resolution.entry.scope.kind === "work" ? resolution.entry.scope.workId : workId,
-        rootThreadId:
-          resolution.entry.scope.kind === "lineage"
-            ? resolution.entry.scope.rootThreadId
-            : undefined,
-        chatId: resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
-      };
+      if (!isCurrent()) return { kind: "cancelled" };
     }
-    return { kind: "identified", identity, ...(transfer ? { transfer } : {}) };
-  }
-
-  /** Whether the replica holds `documentId` as a file the Editor never opens (a chat's upload). */
-  isUpload(projectId: string, documentId: string): boolean {
-    const projection = this.dependencies.resources?.readProjectionState(projectId);
-    if (projection?.kind !== "ready") return false;
-    const record = projection.snapshot.records.find(
-      (candidate) => candidate.resource.identity.documentId === documentId,
-    );
-    const scheme = record
-      ? resourcePlacementForSnapshot(projectId, projection.snapshot).resourceLocation(record)
-          ?.scheme
-      : undefined;
-    return scheme !== undefined && !isEditorScheme(scheme);
+    const located = this.dependencies.locate(documentId);
+    if (located) return { kind: "identified", identity: located };
+    switch (standings.standing(projectId, documentId).kind) {
+      case "in-trash":
+        return { kind: "trashed" };
+      case "in-tree":
+        // The list shows it but its source has not come yet.
+        return { kind: "refused", reason: "lookup-failed" };
+      default:
+        return { kind: "refused", reason: "gone" };
+    }
   }
 
   /**
    * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
    * the side's document. Null when the document no longer opens in the editor (removed, or an
-   * upload, which opens in a dialog instead); throws when the lookup failed.
+   * upload); throws when the lookup failed.
    */
   async describe(
     projectId: string,
@@ -561,15 +349,14 @@ export class ProjectDocumentNavigationAdapter {
   ): Promise<OpenDocument | null> {
     const identified = await this.identify(projectId, {
       documentId,
-      workId,
+      signal: new AbortController().signal,
       isCurrent: () => true,
     });
     if (identified.kind === "refused" && identified.reason === "lookup-failed")
-      throw new Error("Couldn't look up the document");
+      throw new Error("Couldn't read the document's place");
     if (identified.kind !== "identified") return null;
-    const { identity, transfer } = identified;
+    const { identity } = identified;
     if (!isEditorScheme(identity.scheme)) return null;
-    this.dependencies.opener.replaceTransfer(documentId, transfer);
     return openDocumentFromFile(
       identity.scheme,
       identity.file,
@@ -594,7 +381,7 @@ export class ProjectDocumentNavigationAdapter {
   private async commitFile(input: {
     projectId: string;
     scheme: ProjectContextTreeScheme;
-    file: CatalogFile;
+    file: TreeFile;
     workId: string | undefined;
     rootThreadId?: string;
     chatId?: string;
@@ -602,7 +389,6 @@ export class ProjectDocumentNavigationAdapter {
     replace?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
-    transfer?: AvailableOpenResolution;
   }): Promise<CommitResult> {
     if (!input.isCurrent()) return { kind: "cancelled" };
     const owner: ContextOwner = input.rootThreadId
@@ -626,8 +412,6 @@ export class ProjectDocumentNavigationAdapter {
         ...(input.replace ? { replace: true } : {}),
         isCurrent: input.isCurrent,
         canCommit: input.canCommit,
-        afterCommit: () =>
-          this.dependencies.opener.replaceTransfer(input.file.documentId, input.transfer),
       },
     );
     return settlement.kind === "failed"
@@ -636,48 +420,6 @@ export class ProjectDocumentNavigationAdapter {
         ? { kind: "applied" }
         : { kind: "cancelled" };
   }
-}
-
-function waitForLivingProjection(
-  resources: NonNullable<NavigationAdapterDependencies["resources"]>,
-  projectId: string,
-  documentId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const living = (snapshot: ResourceProjectionSnapshot) =>
-    snapshot.records.some(
-      (record) =>
-        record.resource.identity.documentId === documentId &&
-        record.resource.lifecycle.kind !== "terminal",
-    );
-  const state = resources.readProjectionState(projectId);
-  if (state.kind === "ready" && living(state.snapshot)) return Promise.resolve();
-  if (state.kind === "failed") return Promise.reject(state.error);
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
-    let stop: () => void = () => undefined;
-    const finish = (settle: () => void) => {
-      signal.removeEventListener("abort", abort);
-      stop();
-      settle();
-    };
-    const abort = () => finish(() => reject(signal.reason));
-    stop = resources.observeProjection(
-      projectId,
-      (snapshot) => {
-        if (living(snapshot)) finish(resolve);
-      },
-      (error) => finish(() => reject(error)),
-    );
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
-}
-
-function schemeForEntry(entry: CatalogFileEntry): ProjectContextTreeScheme | null {
-  const separator = entry.uri.indexOf(":");
-  const scheme = separator < 0 ? "" : entry.uri.slice(0, separator);
-  return isProjectContextTreeScheme(scheme) ? scheme : null;
 }
 
 type ProjectDocumentNavigationOwner = {
@@ -698,51 +440,30 @@ export function ProjectDocumentNavigationProvider({
   captureNavigation?: () => () => boolean;
 }) {
   const { open: openTrash } = useTrashNavigation();
-  const opener = useProjectDocumentLiveOpener();
-  const resources = useOptionalAccountResourceReplica();
-  const presented = useOptionalPresentedDocuments();
+  const standings = useProjectStandings();
+  const trees = useProjectTrees(projectId);
+  // Read at each open, so a change of the list does not make a new adapter.
+  const treesRef = useRef(trees);
+  treesRef.current = trees;
   const openContextRoute = useOpenContextRoute();
   const [upload, setUpload] = useState<Extract<OpenDocument, { kind: "viewer" }> | null>(null);
-  useEffect(() => {
-    if (!resources) return;
-    return resources.observeProjection(
-      projectId,
-      () => undefined,
-      () => undefined,
-    );
-  }, [projectId, resources]);
-  // A transfer is taken by the host that mounts its document; one whose document no view
-  // presents is let go. Checked after the commit that ended a presentation, whose own new host
-  // presents in the same commit.
-  useEffect(() => {
-    if (!presented) return;
-    let live = true;
-    const prune = () =>
-      queueMicrotask(() => {
-        if (live)
-          opener.pruneTransfers(
-            new Set(presented.documents(projectId).map((tab) => tab.documentId)),
-          );
-      });
-    const stop = presented.subscribe(prune);
-    return () => {
-      live = false;
-      stop();
-    };
-  }, [opener, presented, projectId]);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
       adapter: new ProjectDocumentNavigationAdapter({
-        opener,
+        standings,
         openRoute: openContextRoute,
         captureNavigation,
         openTrash,
+        locate: (documentId) => {
+          const place = treesRef.current.find(documentId);
+          if (!place || !isProjectContextTreeScheme(place.source.scheme)) return null;
+          return { scheme: place.source.scheme, file: place.file, ...ownerOfSource(place.source) };
+        },
         viewUpload: setUpload,
-        resources,
       }),
     }),
-    [openContextRoute, openTrash, opener, projectId, captureNavigation, resources],
+    [openContextRoute, openTrash, standings, projectId, captureNavigation],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
@@ -767,18 +488,6 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
         return { kind: "refused", reason: "lookup-failed" };
       return owner.adapter.open(projectId, request);
     },
-    [owner, projectId],
-  );
-}
-
-/** Whether the project's replica already knows `documentId` as a chat's upload. */
-export function useIsChatUpload(projectId: string | undefined): (documentId: string) => boolean {
-  const owner = useContext(ProjectDocumentNavigationContext);
-  return useCallback(
-    (documentId) =>
-      !!projectId &&
-      owner?.projectId === projectId &&
-      owner.adapter.isUpload(projectId, documentId),
     [owner, projectId],
   );
 }

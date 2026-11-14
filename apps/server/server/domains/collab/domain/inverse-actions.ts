@@ -1,20 +1,16 @@
 // Effective immutable action history shared by card and model selectors.
-import { type StoredTreeEntry, treeKey } from "./tree-inverse.js";
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
-/** A text part keys by its ordinal; a tree entry, or a target naming one, by `:tree`. */
-export const partKey = (part: { editId: string; ordinal?: number }) =>
-  part.ordinal === undefined ? treeKey(part.editId) : `${part.editId}:${part.ordinal}`;
-
-/** One row of the action index: a text part or a tree entry, ordered by `id` on one axis. */
-type HistoryRow = StoredInversePart | StoredTreeEntry;
+/** A text part keys by its edit and ordinal. */
+export const partKey = (part: { editId: string; ordinal: number }) =>
+  `${part.editId}:${part.ordinal}`;
 
 /** Consumption is per accepted part. */
-export function effectiveActionIndex<Row extends HistoryRow>(
-  history: readonly Row[],
+export function effectiveActionIndex(
+  history: readonly StoredInversePart[],
   keys: ReadonlySet<string>,
 ) {
-  const grouped = new Map<string, Row[]>();
+  const grouped = new Map<string, StoredInversePart[]>();
   for (const part of history) {
     if (
       (part.kind !== "undo" && !(part.kind === "revert" && part.actor === "human")) ||

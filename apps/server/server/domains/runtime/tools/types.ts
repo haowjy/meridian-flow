@@ -1,16 +1,3 @@
-/**
- * Canonical tool-execution types: tool call inputs, handler/context shapes,
- * registry and executor interfaces. The vocabulary the registry, executor,
- * and thread-facing ports share.
- *
- * These types define the boundary between the model-runtime loop (which
- * produces tool calls from LLM output) and the tool handler implementations
- * (which are wired in by the composition root). They are deliberately narrow:
- * a tool handler is a narrow `(input, context) => Promise<unknown>` function.
- * The only streaming seam is the optional output-delta sink, which the
- * orchestrator injects for tools that stream live process output.
- */
-import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { ResponseAuthorship } from "@meridian/contracts";
 import type {
   ModelEditKey,
@@ -88,6 +75,8 @@ export interface ToolExecutionContext {
   request?: RequestToolHandlerContext["request"];
   /** The run's observation-frontier lookups, for tools that show documents. */
   frontiers?: FrontierLookups;
+  /** The run's shown names, forwarded to the handler (see `ToolHandlerContext`). */
+  shownNames?: () => Promise<Uint8Array[]>;
   /** The model this turn runs on. */
   model?: ModelInfo;
 }
@@ -180,6 +169,11 @@ export interface ToolHandlerContext {
    * a result chains from (`recording`) and the request's view (`planning`).
    */
   frontiers?: FrontierLookups;
+  /**
+   * What the blocks the run carries showed of the tree, each result's added names oldest first
+   * (`domains/context/tree/names-shown.ts`); absent where nothing was shown.
+   */
+  shownNames?: () => Promise<Uint8Array[]>;
   /** The model this turn runs on, for a tool that decides what it can show it. */
   model?: ModelInfo;
   /** Set for a registration with `documentCommand`: what its effect is keyed by and rendered with. */

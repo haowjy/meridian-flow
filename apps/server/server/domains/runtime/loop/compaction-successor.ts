@@ -196,8 +196,14 @@ async function reshowImportantFiles(args: {
     evidence: {
       shown: kept.flatMap(({ read }) => read.evidence?.shown ?? []),
       frontiers: kept.flatMap(({ read }, index) =>
-        read.evidence?.frontier
-          ? [{ sourceBlockId: blocks[index]?.id as string, frontier: read.evidence.frontier }]
+        read.evidence?.frontier || read.evidence?.names
+          ? [
+              {
+                sourceBlockId: blocks[index]?.id as string,
+                ...(read.evidence.frontier ? { frontier: read.evidence.frontier } : {}),
+                ...(read.evidence.names ? { names: read.evidence.names } : {}),
+              },
+            ]
           : [],
       ),
     },

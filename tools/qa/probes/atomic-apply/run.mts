@@ -7,6 +7,7 @@ import type {
   ApplyClickAnswer,
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { projects, works } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -15,20 +16,17 @@ import {
   measureApplyAppend,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-apply-click.ts";
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
+import { createDrizzleBranchTreeActors } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-actors.ts";
+import { createDrizzleBranchTreeState } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-state.ts";
+import { createDrizzleCommandDocuments } from "../../../../apps/server/server/domains/collab/adapters/drizzle-command-documents.ts";
 import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
-import { createDrizzleTreeHistory } from "../../../../apps/server/server/domains/collab/adapters/drizzle-tree-history.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
 import type { CommandLookupKey } from "../../../../apps/server/server/domains/collab/domain/document-commands.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import { lockDocumentNamespaces } from "../../../../apps/server/server/domains/context/adapters/context-fs/document-locations.ts";
-import { recordCreated } from "../../../../apps/server/server/domains/context/tree/branch-tree-store.ts";
-import { acquireTreeScope } from "../../../../apps/server/server/domains/context/tree/mutation-scope.ts";
-import { readRemovalRecords } from "../../../../apps/server/server/domains/context/tree/removal.ts";
 import { createTreeReader } from "../../../../apps/server/server/domains/context/tree/tree-view.ts";
 import {
   createDrizzleFileFacts,
@@ -37,11 +35,12 @@ import {
 } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import {
   handleApplyClickRequest,
+  handleApplyItemsRequest,
   handleUnapplyClickRequest,
 } from "../../../../apps/server/server/lib/branch-review-route.ts";
-import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { treeListOfSource } from "../../../../apps/server/server/test-support/tree-seed.ts";
 import { contentMerge } from "../../../../packages/agent-edit/src/content-merge/index.ts";
 import {
   applySpanPatches,
@@ -54,6 +53,7 @@ import {
   readBlocks,
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
+import { LIVE } from "../../../../packages/project-tree/src/index.ts";
 import {
   createScratchDatabase,
   gate,
@@ -99,15 +99,26 @@ const fileAccess = createFileAccess({
   readAgentChain: async () => [],
 });
 const commands = createDrizzleDocumentCommands(h.db);
+const { treeLists, removals, draftClose } = createTestRemovalDeps(h.db);
+const treeReader = createTreeReader(h.db);
+const branchTree = createDrizzleBranchTreeState(h.db, treeReader);
 
 async function fixture(
   baseText: string[],
   draftText: string[] = baseText,
   existing?: { documentId: string; live: Y.Doc },
   existingWork?: Awaited<ReturnType<typeof h.seedWork>>,
+  /** The document is the Work's drafted create: in the Work's tree view only, not live. */
+  draftedCreate = false,
 ) {
   const work = existingWork ?? (await h.seedWork(`apply-${client++}`));
-  const document = existing ?? (await h.seedDocument(`apply-${client++}`, baseText.join("\n\n")));
+  const document =
+    existing ??
+    (await h.seedDocument(
+      `apply-${client++}`,
+      baseText.join("\n\n"),
+      draftedCreate ? { view: { draft: work.branchId }, actor: `user:${h.ids.user}` } : {},
+    ));
   // The old harness live helper writes one paragraph. Make the requested blocks through the journal.
   if (!existing) {
     const live = await h.liveDoc(document.documentId);
@@ -139,12 +150,11 @@ async function fixture(
         recovered++;
       },
     },
-    catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
-    removal: createTestDocumentRemoval(h.db),
-    history: createDrizzleTreeHistory(h.db, h.persistence.journal),
-    close: createDraftClose(),
-    releaseObjects: async () => {},
+    treeLists,
+    tree: treeReader,
+    branchTree,
+    close: draftClose,
     onCommitted: async () => {},
     merged: () => {},
     measured: (m) => measure.push(m),
@@ -153,14 +163,13 @@ async function fixture(
   const identity = createBranchReviewIdentity({
     branches: h.branches,
     reviewItems: createBranchReviewItems({
-      tree: createTreeReader(h.db),
+      tree: branchTree,
       drafts: pending.listBranchDraftMetadata,
       pendingThreadIds: pending.pendingThreadIds,
-      treeActors: pending.listTreeActors,
+      treeActors: createDrizzleBranchTreeActors(h.db, treeLists),
     }),
   });
   const service = createApplyClickService({
-    identity,
     commands,
     evidence: createDrizzleDraftDispositionStore(h.db),
     store: apiStore,
@@ -176,15 +185,18 @@ async function fixture(
     fileAccess,
     documentSync: {
       draftReview: {
-        applyClick: service.apply,
+        apply: service.apply,
         unapplyClick: service.unapply,
+        commandDocuments: createDrizzleCommandDocuments(h.db, { treeLists }),
         resolveItemByDocument: identity.resolveReviewItemByDocument,
         resolveItemInBranch: identity.resolveReviewItemInBranch,
         branchOwner: (branchId: BranchId) => h.branches.ownerOf(branchId),
         lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
       },
       roomRemoval: async ({ documentId }: { documentId: string }) => {
-        const removal = (await readRemovalRecords(h.db, [documentId])).get(documentId);
+        const removal = (await removals.lookup([documentId as DocumentId])).get(
+          documentId as DocumentId,
+        );
         return removal ? { documentId, removal } : null;
       },
     },
@@ -194,6 +206,7 @@ async function fixture(
     ...document,
     draftId: snapshot.draftId,
     room,
+    routeServices,
     async type(texts: string[], agent = false, owner = work) {
       let update: Uint8Array | undefined;
       const capture = (bytes: Uint8Array) => {
@@ -275,7 +288,6 @@ async function fixture(
         userId: h.ids.user,
         projectId: h.ids.project,
         branchId: work.branchId,
-        documentId: document.documentId,
         request: { commandId, applyCommandId: click.request.commandId },
       });
     },
@@ -530,12 +542,10 @@ try {
     const a = await fixture(["The big black cat sat."], ["The cat sat."]);
     const click = a.click();
     const discard = createDrizzleBranchDiscard(h.db, {
-      releaseObjects: async () => {},
       workProjection: h.projection,
       branches: h.branches,
-      close: createDraftClose(),
-      removal: createTestDocumentRemoval(h.db),
-      catalog: { refreshSources: async () => "0" },
+      close: draftClose,
+      treeLists,
     });
     await discard.discardLocked({
       kernel: { branchId: a.branchId, userId: h.ids.user, selection: { kind: "whole" } },
@@ -755,20 +765,18 @@ try {
     await applied(f, c);
     f.close();
   });
-  /** Deletes the fixture's document live, as the tree's delete does, in its own transaction. */
+  /** Deletes the fixture's document live, as the tree's delete does: it goes to Trash. */
   async function deleteLive(f: Awaited<ReturnType<typeof fixture>>) {
-    await runInDrizzleTransaction(h.db, async () => {
-      await acquireTreeScope(h.db, { documentIds: [f.documentId] });
-      await createTestDocumentRemoval(h.db).remove({
-        documentIds: [f.documentId],
-        reason: "deleted",
-        userId: h.ids.user,
-      });
+    await treeLists.submit({
+      lists: [await treeListOfSource(h.db, h.ids.source)],
+      make: ([{ writer }]) => {
+        writer.delete(LIVE, `user:${h.ids.user}`, f.documentId);
+      },
     });
   }
   const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
-    (await h.raw`select deleted_at is null as living from documents where id=${f.documentId}`)[0]
-      .living;
+    (await h.raw`select trash_record is null as living from tree_nodes where id=${f.documentId}`)[0]
+      ?.living === true;
   const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
   /** The click a writer sends knowing the document is deleted. */
@@ -792,43 +800,15 @@ try {
     assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
     assert.equal(await living(f), true);
     assert.deepEqual(await f.liveText(), ["Changed."]);
-    assert.equal(
-      (await h.raw`select deletion_reason from documents where id=${f.documentId}`)[0]
-        .deletion_reason,
-      null,
-    );
     // The replay answers the stored result, restore included.
     assert.deepEqual(await f.send(c), result);
     f.close();
   });
-  await row(
-    "a delete between Apply's scope guess and its lock retries namespace-first",
-    async () => {
-      const f = await fixture(["Base."], ["Changed."]);
-      let raced = 0;
-      const remove = setTestHook("apply.afterScopeGuess", async () => {
-        if (raced++ === 0) await independently(() => deleteLive(f));
-      });
-      let result: ApplyClickAnswer;
-      try {
-        result = await applied(f, restoring(f.click()));
-      } finally {
-        remove();
-      }
-      assert.equal(raced, 2, "one guess saw it living, the retry saw it deleted");
-      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
-      assert.equal(await living(f), true);
-      assert.deepEqual(await f.liveText(), ["Changed."]);
-      f.close();
-    },
-  );
   await row("Apply restores a deleted document beside a new document at its old path", async () => {
     const f = await fixture(["Base."], ["Changed."]);
-    const [{ name, extension, folder_id: folderId }] =
-      await h.raw`select name, extension, folder_id from documents where id=${f.documentId}`;
+    const [{ name }] = await h.raw`select name from tree_nodes where id=${f.documentId}`;
     await deleteLive(f);
-    await h.raw`insert into documents (context_source_id, folder_id, name, extension)
-      select context_source_id, ${folderId}, ${name}, ${extension} from documents where id=${f.documentId}`;
+    await h.seeds.document(h.ids.source, `${name}.md`);
     const c = restoring(f.click());
     const applied = await f.send(c);
     assert.equal(applied.status, "applied", JSON.stringify(applied));
@@ -842,13 +822,14 @@ try {
   });
 
   await row(
-    "a deleted document's Apply reads its own state beside the branch's hidden creation",
+    "a deleted document's Apply reads its own state beside the Work's drafted creation",
     async () => {
       const f = await fixture(["Base."], ["Changed."]);
-      // An unrelated creation the branch holds hidden: the branch's view lists it first.
-      const created = await h.seedDocument(`apply-${client++}`, "Created.");
-      await h.raw`update documents set hidden=true where id=${created.documentId}`;
-      await recordCreated(h.db, { branchId: f.branchId, documentId: created.documentId });
+      // An unrelated creation only the Work's tree holds: its view lists it first.
+      const created = await h.seedDocument(`apply-${client++}`, "Created.", {
+        view: { draft: f.branchId },
+        actor: `user:${h.ids.user}`,
+      });
       await deleteLive(f);
       const unknowing = f.click();
       assert.deepEqual(await f.send(unknowing), {
@@ -860,27 +841,24 @@ try {
       assert.equal(await living(f), true);
       assert.deepEqual(await f.liveText(), ["Changed."]);
       assert.equal(
-        (await h.raw`select hidden from documents where id=${created.documentId}`)[0].hidden,
-        true,
-        "the other creation stays the branch's",
+        (await h.raw`select count(*)::int as n from tree_nodes where id=${created.documentId}`)[0]
+          .n,
+        0,
+        "the other creation stays the Work's",
       );
       created.live.destroy();
       f.close();
     },
   );
-  await row("hidden creation reveals inside Apply without replacing identity", async () => {
-    const f = await fixture([""], ["Created content."]);
-    await h.raw`update documents set hidden=true where id=${f.documentId}`;
-    await recordCreated(h.db, { branchId: f.branchId, documentId: f.documentId });
+  await row("a drafted creation goes live inside Apply without replacing identity", async () => {
+    const f = await fixture([""], ["Created content."], undefined, undefined, true);
+    assert.equal(await living(f), false, "a drafted create has no live row");
     const c = f.click();
     await applied(f, c);
-    assert.equal(
-      (await h.raw`select hidden from documents where id=${f.documentId}`)[0].hidden,
-      false,
-    );
+    assert.equal(await living(f), true);
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from branch_tree_changes where branch_id=${f.branchId} and node_id=${f.documentId}`
+        await h.raw`select count(*)::int as n from branch_tree_nodes where branch_id=${f.branchId} and id=${f.documentId}`
       )[0].n,
       0,
     );
@@ -926,14 +904,7 @@ try {
       const remove = setTestHook("apply.beforeBoundary", async () => {
         if (once) {
           once = false;
-          await h.projection.mutate({ works: [f.workId] }, async () => {
-            await acquireTreeScope(h.db, { documentIds: [f.documentId] });
-            await createTestDocumentRemoval(h.db).remove({
-              documentIds: [f.documentId],
-              reason: "deleted",
-              userId: h.ids.user,
-            });
-          });
+          await h.projection.mutate({ works: [f.workId] }, () => deleteLive(f));
         }
       });
       try {
@@ -1089,38 +1060,53 @@ try {
     durable.destroy();
     f.close();
   });
-  await row("ordinary text Apply does not take the tree namespace", async () => {
-    const f = await fixture(["Base."], ["Changed."]);
-    const entered = gate(),
-      release = gate();
-    const holder = independently(() =>
-      runInDrizzleTransaction(h.db, async () => {
-        await lockDocumentNamespaces(h.db, [f.documentId]);
-        entered.open();
-        await release.wait;
-      }),
-    );
-    await entered.wait;
-    let completed = false;
-    const command = f.send(f.click()).then((result) => {
-      completed = true;
-      return result;
+  await row("Apply of two documents is one command and one Un-Apply takes back both", async () => {
+    const a = await fixture(["Alpha."], ["Alpha edited."]);
+    const b = await fixture(["Beta."], ["Beta edited."], undefined, a);
+    const clicks = [a, b].map((f) => ({ f, click: f.click() }));
+    const commandId = randomUUID();
+    const scope = { userId: h.ids.user, projectId: h.ids.project, branchId: a.branchId };
+    const answer = await handleApplyItemsRequest(a.routeServices, {
+      ...scope,
+      request: {
+        commandId,
+        items: clicks.map(({ f, click }) => ({
+          node: f.documentId,
+          text: {
+            draftId: f.draftId,
+            snapshot: click.request.snapshot,
+            baseViewDelta: click.request.baseViewDelta,
+            groupIds: click.request.groupIds,
+          },
+        })),
+      },
     });
-    try {
-      // Blocked on the lock, the click cannot finish until the release below, so a generous
-      // limit tells "waited" from "slow" without depending on the runner's speed.
-      await Promise.race([command, new Promise((r) => setTimeout(r, 10_000))]);
-      const beforeRelease = completed;
-      release.open();
-      await holder;
-      assert.equal((await command).status, "applied");
-      assert.ok(beforeRelease, "text Apply waited on an unrelated tree namespace");
-    } finally {
-      release.open();
-      await holder;
-      await command.catch(() => {});
-      f.close();
+    assert.equal(answer.status, "applied", JSON.stringify(answer));
+    assert.deepEqual(await a.liveText(), ["Alpha edited."]);
+    assert.deepEqual(await b.liveText(), ["Beta edited."]);
+    // One command carries both documents' effects.
+    assert.equal(
+      (
+        await h.raw`select count(distinct document_id)::int as n from apply_command_effects where command_id=${commandId}`
+      )[0].n,
+      2,
+    );
+
+    const undone = await handleUnapplyClickRequest(a.routeServices, {
+      ...scope,
+      request: { commandId: randomUUID(), applyCommandId: commandId },
+    });
+    assert.equal(undone.status, "unapplied", JSON.stringify(undone));
+    if (undone.status === "unapplied") assert.equal(undone.reversedGroupIds.length, 2);
+    assert.deepEqual(await a.liveText(), ["Alpha."]);
+    assert.deepEqual(await b.liveText(), ["Beta."]);
+    for (const f of [a, b]) {
+      const durable = await f.durable();
+      assert.deepEqual(readApplyRecord(durable), []);
+      durable.destroy();
     }
+    a.close();
+    b.close();
   });
   console.log(JSON.stringify({ summary: "passed", rows: reports.length, measurements: measure }));
 } finally {

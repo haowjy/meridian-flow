@@ -1,4 +1,4 @@
-/** End a hidden creation's branch use, or close a whole Work branch, with post-commit retirement. */
+/** Settle a Work's drafted tree records discarded, for chosen items or the whole branch, and close the drafts they end. */
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -43,7 +43,7 @@ export type DiscardItem = {
   /**
    * What ends: `tree`, only the branch's move or delete (a live chat's Discard, whose text the
    * writer reverts in the room), or `item`, everything the branch holds on the document. A
-   * hidden creation always ends whole.
+   * creation only the Work shows always ends whole.
    */
   ends: "tree" | "item";
   /**
@@ -55,13 +55,15 @@ export type DiscardItem = {
 
 export type DiscardKernelInput = {
   userId?: UserId;
+  /** The command that settles the tree records; the kernel mints one when none claimed it. */
+  commandId?: string;
   branchId: BranchId;
   selection: DiscardSelection;
 };
 
 export class BranchDiscardApplicableStateChangedError extends Error {
   constructor() {
-    super("This document is no longer a hidden creation");
+    super("The Work has nothing left to discard on this document");
     this.name = "BranchDiscardApplicableStateChangedError";
   }
 }
@@ -75,8 +77,6 @@ export class BranchDiscardDraftChangedError extends Error {
 }
 
 export type DiscardKernelResult = {
-  /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
-  releasedObjects: readonly string[];
   /** The selected documents whose item left review: nothing of the branch remains on them. */
   closed: readonly DocumentId[];
 };
@@ -93,22 +93,14 @@ export type DiscardCommandClaim = {
 export interface BranchDiscardStore {
   /**
    * `discardItems`' command transaction (§12.2): the claim; the branch's owner, refusing an
-   * archived or deleted Work; the branch (null: not active any more); the namespaces and
+   * archived or deleted Work; the branch (null: not active any more); the lists and
    * documents; the kernel inside the Work's pending projection. The kernel's refusals are
-   * stored with the command and returned, not thrown. Its released objects go after commit.
+   * stored with the command and returned, not thrown.
    */
   discardLocked(input: {
     kernel: DiscardKernelInput;
     command: DiscardCommandClaim;
   }): Promise<DiscardKernelResult | DiscardRefusal | null>;
-}
-
-/** One of the branch's created documents moved to another source before the locks: run again. */
-export class BranchDiscardScopeChangedError extends Error {
-  constructor(readonly branchId: BranchId) {
-    super(`Branch ${branchId} changed while its Discard was taking its locks`);
-    this.name = "BranchDiscardScopeChangedError";
-  }
 }
 
 const ATTEMPTS = 4;
@@ -147,8 +139,7 @@ export function createBranchDiscard(deps: {
     return runBoundedAttempts({
       bound: ATTEMPTS,
       scope: NO_ATTEMPT_SCOPE,
-      isMiss: (cause) =>
-        cause instanceof DraftCasConflictError || cause instanceof BranchDiscardScopeChangedError,
+      isMiss: (cause) => cause instanceof DraftCasConflictError,
       run,
       exhausted: (cause) => {
         throw cause;
@@ -185,7 +176,12 @@ export function createBranchDiscard(deps: {
       const { selection } = input;
       if (selection.kind === "items" && selection.items.length === 0)
         return { status: "discarded", branchId, branchClosed: false, closed: [] };
-      const kernel = { userId: input.userId, branchId, selection };
+      const kernel = {
+        userId: input.userId,
+        branchId,
+        selection,
+        commandId: input.command.envelope.commandId,
+      };
       const ended = await deps.holdRetirement(() =>
         attempts((attempt) => commitDiscard(attempt, kernel, input.command)),
       );

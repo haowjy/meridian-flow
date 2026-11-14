@@ -6,7 +6,6 @@ import {
 } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   projects,
   userRecentDocuments,
   users,
@@ -17,6 +16,7 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../../../test-support/tree-seed.js";
 import { RecentDocumentUnavailableError } from "../../ports/recent-documents-repository.js";
 import { createDrizzleRecentDocumentsRepository } from "./recent-documents-repository.js";
 
@@ -104,22 +104,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: USER_SOURCE, projectId: PERSONAL, name: "User", slug: "user" },
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
       ]);
-      await db.insert(documents).values([
-        { id: OWNED, contextSourceId: MANUSCRIPT, name: "chapter", extension: "" },
-        { id: SCRATCH, contextSourceId: WORK_SCRATCH, name: "scene", extension: "" },
-        { id: NO_WORK_DOC, contextSourceId: NO_WORK_SCRATCH, name: "aside", extension: "" },
-        { id: PERSONAL_DOC, contextSourceId: USER_SOURCE, name: "notes", extension: "" },
-        { id: FOREIGN_DOC, contextSourceId: FOREIGN_SOURCE, name: "secret", extension: "" },
-        {
-          id: PDF,
-          contextSourceId: MANUSCRIPT,
-          name: "proof",
-          extension: "pdf",
-          fileType: "pdf",
-          mimeType: "application/pdf",
-        },
-        { id: DOOMED, contextSourceId: MANUSCRIPT, name: "cut", extension: "" },
-      ]);
+      const seed = treeSeeder(db);
+      await seed.document(MANUSCRIPT, "chapter", { id: OWNED });
+      await seed.document(WORK_SCRATCH, "scene", { id: SCRATCH });
+      await seed.document(NO_WORK_SCRATCH, "aside", { id: NO_WORK_DOC });
+      await seed.document(USER_SOURCE, "notes", { id: PERSONAL_DOC });
+      await seed.document(FOREIGN_SOURCE, "secret", { id: FOREIGN_DOC });
+      await seed.file(
+        MANUSCRIPT,
+        "proof.pdf",
+        { storageKey: "proof", mime: "application/pdf", size: 1 },
+        { id: PDF },
+      );
+      await seed.document(MANUSCRIPT, "cut", { id: DOOMED });
       return { db, repo: createDrizzleRecentDocumentsRepository({ db }) };
     }
 

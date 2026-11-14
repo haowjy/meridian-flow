@@ -1,25 +1,40 @@
 /** Structural, lease-qualified session-registry surfaces. */
-import type {
-  AccountId,
-  AvailabilityGeneration,
-  LiveDocumentSessionAuthority,
-  LiveDocumentSessionLease,
-} from "@meridian/contracts/protocol";
+import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
+import type { DraftRoomRef } from "./draft-room-pool";
 
 export type RetainedLiveDocumentReference = Readonly<{
   projectId: ProjectId;
   documentId: DocumentId;
 }>;
 
+/** The account's right to hold one document's live session; `get` and `retain` take it. */
+export type LiveDocumentSessionLease = Readonly<{
+  accountId: AccountId;
+  projectId: ProjectId;
+  documentId: DocumentId;
+}>;
+
 /** Why a room's unsent typing could not be delivered. */
-export type UnsentTypingCause = "closed" | "removed" | "access-changed";
+export type UnsentTypingCause = "closed" | "removed";
 
 /** Typing a room ended with before the server acknowledged it, handed back once. */
 export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string }>;
 
-export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
+export interface LiveDocumentSessionRegistry {
+  admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
+  /**
+   * The document's local copy can no longer come back to this account (its node was purged, or
+   * its project, Work or chat was deleted for good, or the account left the project): the
+   * session closes and the copy is deleted, unless another tab holds it open, which clears it
+   * itself. Resolves once this tab is done.
+   */
+  clearLocalCopy(documentId: DocumentId): Promise<void>;
+  /** True once no open session has unsent edits the server could still acknowledge; false if some remain at the deadline. */
+  settleUnsentEdits(timeoutMs: number): Promise<boolean>;
+  /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
+  observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
@@ -30,7 +45,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   /**
    * Whether the owner's retained documents have a host on screen. An unhosted document closes
    * its socket unless some other owner hosts it or it has unsent edits. No-op once the owner is
-   * released or its documents were revoked.
+   * released.
    */
   setHosted(ownerId: string, hosted: boolean): void;
   release(ownerId: string): void;
@@ -38,23 +53,9 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
   /**
-   * Each live room the server closed because its document was removed (4208),
-   * once per close, whether or not an editor holds it. Draft rooms name no document here;
-   * their review owner reports them.
-   */
-  observeRemovedRooms(
-    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
-  ): () => void;
-  /**
-   * Reconnects a live room closed as removed once an exact lookup proved its
-   * document present (a restore won the race); false when it is no longer the
-   * room's current session or no longer removed.
-   */
-  restartRemovedRoom(session: DocumentSession): Promise<boolean>;
-  /**
    * The words a room, live or draft, held unacknowledged when it ended or its local copy was
-   * cleared (closed, removed, access changed), once per session, read before the copy goes. A
-   * room with no session in this tab has nothing to hand back.
+   * cleared (closed, removed), once per session, read before the copy goes. A room with no
+   * session in this tab has nothing to hand back.
    */
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
@@ -66,27 +67,6 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   ): () => void;
   /** A fresh session for a draft room whose last one reset, synced from the server alone. */
   rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
-  retainDraftRooms(ownerId: string, rooms: readonly string[]): void;
+  retainDraftRooms(ownerId: string, rooms: readonly DraftRoomRef[]): void;
   releaseDraftRooms(ownerId: string): void;
-}
-
-/**
- * Private to resource acquisition: the exact persistence incarnation behind a
- * live registry session. A lease carries only the admission, which can be newer
- * than the room the cache lives in.
- */
-export interface LiveSessionIncarnationPort {
-  /** `null` when `session` is not the registry's current live room. */
-  incarnationOf(session: DocumentSession): AvailabilityGeneration | null;
-}
-
-export interface LocalDocumentSessionFactory {
-  whenAuthorityReady(): Promise<void>;
-  createDetached(input: {
-    accountId: AccountId;
-    projectId: ProjectId;
-    documentId: DocumentId;
-    persistenceKey: string;
-    fresh?: boolean;
-  }): DocumentSession;
 }

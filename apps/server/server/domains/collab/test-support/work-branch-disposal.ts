@@ -2,7 +2,6 @@
 import type { Database } from "@meridian/database";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleContextCatalog } from "../../context/index.js";
 import type { WorkBranchDisposal } from "../../projects/index.js";
 import { createDrizzleWorkBranchDisposal } from "../adapters/drizzle-branch-discard.js";
 import {
@@ -10,15 +9,15 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createBranches } from "../domain/branches.js";
+
 export function createPostgresWorkBranchDisposal(db: Database): WorkBranchDisposal {
-  const { draftClose, documentRemoval } = createTestRemovalDeps(db);
+  const { draftClose, treeLists } = createTestRemovalDeps(db);
   return createDrizzleWorkBranchDisposal(db, {
-    removal: documentRemoval,
     close: draftClose,
+    treeLists,
     branches: createBranches({
       store: createDrizzleBranchStore(db),
       boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
     }),
-    catalog: createDrizzleContextCatalog(db),
   });
 }

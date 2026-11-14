@@ -9,18 +9,9 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import {
-  type NamedRow,
-  type ProjectContextTreeScheme,
-  storedFilename,
-} from "@meridian/contracts/protocol";
-import { useMutation } from "@tanstack/react-query";
+import { type NamedRow, storedFilename } from "@meridian/contracts/protocol";
 import { useCallback, useMemo } from "react";
-import { useWorks } from "@/client/query/useWorks";
-import type { OpenDocumentOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
-import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import {
@@ -29,25 +20,23 @@ import {
   validateContextEntryName,
 } from "./context-entry-name";
 import { describeRenames } from "./entry-drag/drop-choice";
-import { destinationOwner } from "./identity-location";
+import { useEntryActions } from "./entry-drag/entry-actions";
+import { treeActionMessage } from "./tree-action-message";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
   entryId: string;
-  /** Who holds the entry: a Work row, or a chat's lineage with its handle. */
-  owner: OpenDocumentOwner;
-  scheme: ProjectContextTreeScheme;
   /** Stored name of the entry (pre-populates the input). */
   currentName: string;
   /** The renamed file's own naming facts; absent for a folder. */
   row?: NamedRow;
-  /** Failed durable destination restored after asynchronous namespace repair. */
+  /** The name the writer asked for, when the server refused the rename: offered again. */
   repairName?: string;
-  /** Sibling names for collision detection (should include all siblings). */
+  /** Why the server refused it, in its words. */
+  repairReason?: string;
+  /** Sibling names for the clash warning (should include all siblings). */
   siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
-  /** Called with the move's operation id once the rename is admitted, before `onDone`. */
-  onRenamed?: (operationId: string) => void;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
 };
@@ -57,54 +46,29 @@ export type RenameEntryForm = InlineEdit;
 export function useRenameEntryForm({
   projectId,
   entryId,
-  owner,
-  scheme,
   currentName,
   row,
   repairName,
+  repairReason,
   siblings,
   kind,
-  onRenamed,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
-  const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId);
+  const actions = useEntryActions(projectId);
   const storedName = (typed: string) => {
     const stored = storedFilename(typed, row);
     return stored.ok ? stored.name : typed;
   };
-  const mutation = useMutation({
-    mutationFn: async (typed: string) => {
-      const name = typed;
-      const unavailable = () =>
-        new Error(
-          kind === "folder"
-            ? t`This folder is unavailable. Refresh and try again.`
-            : t`This file is unavailable. Refresh and try again.`,
-        );
-      const authority = destinationOwner(
-        { scheme, ...(isWorkScopedScheme(scheme) ? owner : {}) },
-        works,
-        noWork,
-      );
-      if (!authority) throw unavailable();
-      const destination = {
-        parent: await resources.parentForEntry(projectId, entryId),
-        name: allocateContextEntryArrivalName(name, occupancy, kind, row),
-      };
-      if (kind === "folder") {
-        return resources
-          .setFolderLocation(projectId, entryId, destination, name)
-          .catch(() => {
-            throw unavailable();
-          })
-          .then(({ operationId }) => operationId);
-      }
-      const key = await resources.keyForDocument(projectId, entryId);
-      if (!key) throw unavailable();
-      return (await resources.setLocation(projectId, key, destination, name)).operationId;
-    },
-  });
+  // The name is appended as a `rename` record and shows at once; the copy numbers a taken name.
+  const rename = (typed: string) => {
+    const stored = kind === "file" ? storedFilename(typed, row) : null;
+    if (stored && !stored.ok) throw new Error(stored.message);
+    const result = actions
+      .holding(entryId)
+      .list.rename(entryId, stored?.name ?? typed, stored?.filename.filetype ?? undefined);
+    if (!result.ok)
+      throw new Error(treeActionMessage(result.reason, kind === "folder" ? "folder" : "file"));
+  };
 
   // Another entry may have a codec-equivalent name; only this identity is excluded.
   const filteredSiblings = useMemo(
@@ -131,7 +95,7 @@ export function useRenameEntryForm({
     initial: repairName ?? currentName,
     unchanged: currentName,
     initialError: repairName
-      ? t`That rename couldn't be completed. Choose another name or try again.`
+      ? (repairReason ?? t`That rename couldn't be completed. Choose another name or try again.`)
       : undefined,
     validate: (draft) => {
       const invalid = validateContextEntryName(draft, [], kind, row);
@@ -141,11 +105,10 @@ export function useRenameEntryForm({
       const message = as === name ? null : describeRenames([{ name, as }]);
       return message ? { level: "warning", message } : null;
     },
-    onCommit: async (typed) => {
+    onCommit: (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
       if (kind === "file" && storedName(typed) === currentName) return onDone();
-      const operationId = await mutation.mutateAsync(typed);
-      if (operationId) onRenamed?.(operationId);
+      rename(typed);
       onDone();
     },
     onCancel: onDone,

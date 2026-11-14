@@ -57,7 +57,7 @@ what dismissal can do. Only an import no create could have committed closes
 locally. Later refusals and an empty open list cannot erase an unanswered start;
 Stop replays uncertain create before cancelling. Response revisions and upload
 attempts fence late answers; polling never overwrites an in-flight command or
-clears its error. Catalog/receipt progress cannot regress on an old response.
+clears its error. Receipt progress cannot regress on an old response.
 
 `import-presentation.ts` owns the state table; `ImportPanel` renders its controls. The Import button in a destination section header (`ImportHeaderAction`) shows a spinner while an import runs and a dot when one needs the writer, and opens the panel in a popover; a phone opens it in a sheet from the Import entry in the `+` menu. An import in another project shows nothing here. Stop in any
 phase before reveal discards everything; a reveal winning the race reports that
@@ -71,11 +71,11 @@ result; closing the popup acknowledges a result that
 needed a look. Show opens one of the import's files, one that needs a look first, so the tree
 reveals it. An import refused before it starts toasts (`notifyFailure`) and closes locally; durable terminal acknowledgements apply across tabs.
 
-`pending-roots.ts` is the five-rule projection. Catalog identity wins; historical
+`pending-roots.ts` is the five-rule projection. The tree's identity wins; historical
 `root.created` is not liveness. The coordinator remembers observed roots across
-account-lifetime navigation. The 30-second catalog bridge starts when it learns
+account-lifetime navigation. The 30-second bridge starts when it learns
 creation, not when a tree remounts. Pending roots have no URI or document capabilities: activating
-one opens its popup, never an editor. No import state enters the replica.
+one opens its popup, never an editor. No import state enters the tree list.
 A pending root takes the slot its folder will land in (`withPendingRoots`): last in its parent, so it does not
 jump at reveal.
 

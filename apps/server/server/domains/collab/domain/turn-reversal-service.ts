@@ -56,19 +56,19 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
   /** The turn's documents, reversed under the caller's claim; a denial is a stored outcome. */
   async function reverseDocuments(command: ReverseThreadContextInput): Promise<ReversalOutcome> {
     const targets = await input.listTurnTargets(command.threadId, command.turnId);
-    if (targets.length === 0) {
-      return {
-        status: command.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-        documents: [],
-      };
-    }
     try {
+      // A reply of tree changes alone has no target: its receipts are reversed all the same.
       return await reverseTurn({
         threadId: command.threadId,
         turnId: command.turnId,
         direction: command.direction,
         actor: { type: "user", userId: command.userId },
-        documentIds: [...new Set(targets.map((target) => target.documentId))],
+        ...(command.moveBackAcrossLists
+          ? { moveBackAcrossLists: command.moveBackAcrossLists }
+          : {}),
+        ...(targets.length
+          ? { documentIds: [...new Set(targets.map((target) => target.documentId))] }
+          : {}),
       });
     } catch (cause) {
       if (!(cause instanceof FileEditRefusedError)) throw cause;

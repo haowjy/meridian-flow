@@ -1,6 +1,13 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
+import {
+  Ellipsis,
+  FileDiff,
+  ListChecks,
+  type LucideIcon,
+  MessageSquare,
+  Trash2,
+} from "lucide-react";
 import {
   type ComponentType,
   createContext,
@@ -11,9 +18,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
+import { StatusToast } from "@/components/app/StatusToast";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -27,6 +34,10 @@ import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { LIVE_VERSION } from "@/core/project-tree/tree-version";
+import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
+import { DraftNoticeLine, useDraftNotice } from "@/features/draft-review/CommandNotice";
+import { deleteNoticeKey } from "@/features/draft-review/draft-notices";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
@@ -34,23 +45,28 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
+import { ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useWorkSourceWritable } from "../../context/use-work-source-writable";
+import { useAiDraftLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
+import { useShellTreeVersion } from "../../tree-version";
+import { useOptionalMainItem } from "../../views";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
 import type { SourceDrop } from "./SourcePane";
 import { TREE_TABS, type TreeTab, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { useTrashDrop } from "./trash-drop";
+import { useSidebarUndo } from "./use-sidebar-undo";
 
-/** The catalogs the sidebar lists: the project's areas, and the picked named Work's Scratch. */
+/** The trees the sidebar lists: the project's areas, and the picked named Work's Scratch. */
 const TREE_SCHEMES = [...EDITOR_CONTEXT_SCHEMES, "scratch"] as const;
 type TreeKey = (typeof TREE_SCHEMES)[number];
 
@@ -69,9 +85,10 @@ type WriteSources = {
   chatThreadId: string | null;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
-  /** Main's document, as far as the sidebar lists it. */
+  /** Main's document's source, as far as the sidebar lists it: the source it shows. */
   activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
+  /** Main's document, marked current wherever the tree on show puts it. */
+  activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -79,7 +96,9 @@ type WriteSources = {
   ) => void;
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
-  catalogs: Record<TreeKey, CatalogState>;
+  catalogs: Record<TreeKey, TreeViewResult>;
+  /** Whether each tree shown takes changes: an ended Work's Scratch takes none. */
+  writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkBranchCommands;
@@ -108,11 +127,11 @@ type Source = {
   Body: ComponentType<{ drop: SourceDrop }>;
 };
 
-/** A drop at a catalog's top level; a drag resting on it accepted shows the source. */
+/** A drop at a tree's top level; a drag resting on it accepted shows the source. */
 function useRootDrop(scheme: TreeKey, reveal?: () => void): SourceDrop {
-  const rootId = useWriteSources().catalogs[scheme].catalog?.root.entryId ?? null;
+  const rootId = useWriteSources().catalogs[scheme].tree?.root.entryId ?? null;
   const target = useMemo(
-    () => ({ scheme, catalogRootId: rootId ?? `${scheme}:loading`, folder: null }),
+    () => ({ scheme, treeRootId: rootId ?? `${scheme}:loading`, folder: null }),
     [scheme, rootId],
   );
   return useTreeDropTarget(target, { reveal });
@@ -128,12 +147,13 @@ function treeSource(scheme: TreeKey): Source {
       return (
         <ContextTreePanel
           scheme={scheme}
-          catalogState={sources.catalogs[scheme]}
+          treeState={sources.catalogs[scheme]}
+          writable={sources.writable[scheme]}
           projectId={sources.projectId}
           editorWorkId={sources.editorWorkId}
-          activeScheme={sources.activeScheme}
-          activePath={sources.activePath}
+          activeDocumentId={sources.activeDocumentId}
           onSelectFile={sources.onSelectFile}
+          onPicked={sources.onPicked}
           drop={drop}
         />
       );
@@ -185,8 +205,7 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: ListChecks,
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, changes, changesCommands, activeScheme, activePath, onPicked } =
-        useWriteSources();
+      const { projectId, changes, changesCommands, activeDocumentId, onPicked } = useWriteSources();
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
@@ -194,10 +213,7 @@ const SOURCES: Record<SourceKey, Source> = {
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
-          isOpen={(file) =>
-            file.contextLocation?.scheme === activeScheme &&
-            file.contextLocation?.path === activePath
-          }
+          isOpen={(file) => file.documentId === activeDocumentId}
           onPicked={onPicked}
         />
       );
@@ -207,6 +223,10 @@ const SOURCES: Record<SourceKey, Source> = {
 
 /** A source nothing is dropped on. */
 const IDLE_DROP: SourceDrop = { dropProps: {}, dropState: "idle" };
+
+function isTreeKey(key: string): key is TreeKey {
+  return (TREE_SCHEMES as readonly string[]).includes(key);
+}
 
 function isTreeTab(key: string): key is TreeTab {
   return (TREE_TABS as readonly string[]).includes(key);
@@ -235,11 +255,13 @@ export function SourcesBody({
   chatThreadId,
   contextLive,
   activeScheme: mainScheme,
-  activePath: mainPath,
   activeWorkId,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands"> & {
+}: Omit<
+  WriteSources,
+  "catalogs" | "writable" | "changes" | "changesCommands" | "activeDocumentId"
+> & {
   contextLive: boolean;
   /** Who owns main's document when it is a Work's Scratch note. */
   activeWorkId: string | null;
@@ -248,11 +270,14 @@ export function SourcesBody({
   // in its Files menu, and the foot has no Scratch.
   const { noWork } = useWorks(projectId);
   const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
+  // An archived or deleted Work's Scratch shows, and takes no change until it is back.
+  const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
   // Another owner's note (another Work's, a chat's) is in no list here.
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
   const activeScheme = listed ? mainScheme : null;
-  const activePath = listed ? mainPath : null;
+  const main = useOptionalMainItem()?.item;
+  const activeDocumentId = main?.kind === "document" ? main.documentId : null;
   const chosen = useSidebarTabs((state) => state.shown);
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
@@ -320,18 +345,45 @@ export function SourcesBody({
     surface: "changes",
   });
 
-  // Only Scratch reads the Work; without a named one it has no catalog.
-  const catalogs = useContextCatalogViews(projectId, TREE_SCHEMES, {
+  // Every tree follows the Live/Draft toggle. Only Scratch reads the Work; without a named one it
+  // has no tree.
+  const shell = useShellTreeVersion();
+  const version = shell?.version ?? LIVE_VERSION;
+  const drafting = shell?.showing === "draft";
+  const catalogs = useProjectTreeViews(projectId, TREE_SCHEMES, {
     workId: scratchWorkId,
     enabled: contextLive,
+    version,
   });
+  const undo = useSidebarUndo(projectId, version);
+  const deleted = useDraftNotice(deleteNoticeKey(projectId));
+  const { openReviewFile } = useAiDraftLauncher();
+  // On Draft a document the Work drafts opens on its draft, as its Changes row does.
+  const selectFile = useCallback<WriteSources["onSelectFile"]>(
+    (scheme, file, options) => {
+      const draft = drafting && shell ? shell.draftOf(file.documentId) : null;
+      if (!draft || !shell) return onSelectFile(scheme, file, options);
+      openReviewFile(draft, shell.ownerKey);
+      onPicked?.();
+    },
+    [drafting, shell, onSelectFile, openReviewFile, onPicked],
+  );
+  const writable = useMemo(
+    () =>
+      Object.fromEntries(
+        TREE_SCHEMES.map((scheme) => [scheme, scheme !== "scratch" || scratchWritable]),
+      ) as Record<TreeKey, boolean>,
+    [scratchWritable],
+  );
   const areas = useMemo<MoveArea[]>(
     () =>
       TREE_SCHEMES.flatMap((scheme) => {
-        const catalog = catalogs[scheme].catalog;
-        return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
+        const tree = catalogs[scheme].tree;
+        return tree
+          ? [{ scheme, owner: { workId: editorWorkId }, tree, writable: writable[scheme] }]
+          : [];
       }),
-    [catalogs, editorWorkId],
+    [catalogs, editorWorkId, writable],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;
@@ -355,10 +407,11 @@ export function SourcesBody({
       chatThreadId,
       editorWorkId,
       activeScheme,
-      activePath,
-      onSelectFile,
+      activeDocumentId,
+      onSelectFile: selectFile,
       onPicked,
       catalogs,
+      writable,
       changes,
       changesCommands,
     }),
@@ -368,10 +421,11 @@ export function SourcesBody({
       chatThreadId,
       editorWorkId,
       activeScheme,
-      activePath,
-      onSelectFile,
+      activeDocumentId,
+      selectFile,
       onPicked,
       catalogs,
+      writable,
       changes,
       changesCommands,
     ],
@@ -380,9 +434,28 @@ export function SourcesBody({
   return (
     <WriteSourcesContext.Provider value={value}>
       <EntryList list={list} files={files}>
-        <div className="flex min-h-0 flex-1 flex-col">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: hears Ctrl+Z from anywhere inside; a click on its blank space or a heading focuses it (tabIndex -1), so the sidebar's Undo needs no row focused. slop-lint: allow suppression the reason is stated in this comment */}
+        <div
+          tabIndex={-1}
+          className="flex min-h-0 flex-1 flex-col outline-none"
+          onKeyDown={(event) => {
+            const root = isTreeKey(source) ? catalogs[source].tree?.root.entryId : undefined;
+            if (source === "changes" && undo.handles(event)) undo.press(false, null);
+            else if (root && undo.handles(event)) undo.press(source === "user", root);
+          }}
+        >
           <SourceTabs chosen={chosen} tabs={tabs} source={source} onSelect={setPicked} />
-          <SourceView key={source} source={source} />
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              drafting && isTreeKey(source) && "bg-review",
+            )}
+          >
+            <SourceView key={source} source={source} />
+          </div>
+          {deleted?.surface.kind === "tree" ? (
+            <DraftNoticeLine notice={deleted} className="shrink-0 px-4" />
+          ) : null}
           <div className="shrink-0 px-2 pt-1">
             {foot.map((key) => (
               <FootSource
@@ -394,6 +467,7 @@ export function SourcesBody({
             ))}
           </div>
         </div>
+        <StatusToast notice={undo.notice} onDismiss={undo.dismiss} />
       </EntryList>
     </WriteSourcesContext.Provider>
   );
@@ -473,9 +547,46 @@ function SourceTabs({
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-        {tabs.includes("changes") ? <span className="ml-auto flex">{tab("changes")}</span> : null}
+        {tabs.includes("changes") ? (
+          <span className="ml-auto flex items-center gap-0.5 coarse:gap-1">
+            <TreeVersionToggle />
+            {tab("changes")}
+          </span>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The one Live/Draft toggle, beside Changes while the Work has pending changes: a framed icon,
+ * jade on Draft. Every tree, click, rename, move and Ctrl+Z in the sidebar follows it, and so
+ * does main's page.
+ */
+function TreeVersionToggle() {
+  const shell = useShellTreeVersion();
+  if (!shell?.offered) return null;
+  const draft = shell.showing === "draft";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={t`Draft view`}
+          aria-pressed={draft}
+          onClick={shell.flip}
+          className={cn(
+            "focus-ring grid size-7 shrink-0 place-items-center rounded-md border transition-colors coarse:h-8 coarse:w-9",
+            draft
+              ? "border-primary/40 bg-primary/12 text-primary hover:bg-primary/20"
+              : "border-border bg-card text-muted-foreground shadow-raise hover:text-foreground",
+          )}
+        >
+          <FileDiff className="size-4" aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{draft ? t`Showing draft` : t`Showing live`}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -491,7 +602,7 @@ function FootSource({
 }) {
   const { label, icon, useDrop } = SOURCES[source];
   const { catalogs } = useWriteSources();
-  const count = source === "unfiled" ? (catalogs.unfiled.catalog?.files().length ?? 0) : 0;
+  const count = source === "unfiled" ? (catalogs.unfiled.tree?.files().length ?? 0) : 0;
   const drop = useDrop(onSelect);
   return (
     <DropRegion state={drop.dropState} flush>

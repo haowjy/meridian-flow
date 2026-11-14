@@ -11,7 +11,7 @@ removal host. Project-scoped files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` turns a known file identity into main's address before
 content opens: every door opens in main. An ID absent from the in-memory resource projection
-waits for one availability lookup; its available answer is consumed once by the destination.
+waits for one identity lookup; its available answer is consumed once by the destination.
 The destination alone opens local content, admits the live room, and presents Retry. Read-only
 Context files still open a viewer without live Yjs admission. Closing or replacing a
 destination discards its unconsumed answer.
@@ -22,54 +22,47 @@ viewers), whichever pane the door is in. The resolved file's
 Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
-The resource projection has explicit pending, ready, and failed states. A host
-without a resource handle waits for the first ready snapshot; pending is never
-treated as missing local content. A failed projection falls back to the
-transactional identity lookup.
+The replay has explicit waiting, complete and denied states (`resolveIn`: a node, "not there", or
+"waiting for the list"). A host waits for the list to sync; waiting is never treated as missing.
 
-Availability command admission rejects while removal is suspended or disposed;
-an empty successful receipt would let the availability owner falsely acknowledge
-unapplied authority. Local settlement still differs from session-effect completion:
-failed session effects remain pending for retry. This is not durable namespace
-receipt recovery across account/authority shutdown.
+What the list says about a document's removal reaches the coordinator through `applyRemovals`, which is
+refused while removal is suspended or disposed.
 
-## Account resource ownership
+## Tree ownership
 
-`AccountResourceReplica` is the sole browser owner for editable document
-resources. It composes the account-qualified metadata database, serialized
-catalog acquisition, namespace journal runner, exact local content access, and
-same-session server adoption. `AccountFeatureLifetime` installs it before
-project descendants and connects its two-phase close to the document-session
-runtime. Account close fences new commands immediately, aborts transport work,
-drains adoption/catalog/namespace operations, releases every retained session,
-and closes metadata last.
-Transient rename/move selection belongs to the account replica lifetime.
-Remembering an operation starts its projection watch independently of any
-mounted row. The latest matching intention supplies authority after rebase;
-cancellation, refusal and deletion retire immediately. Successful settlement
-leaves feedback until settlement plus four seconds, even
-when no note is mounted; the watch ends at expiry or earlier terminal evidence. Account close disposes every selection and timer.
-The authenticated provider boundary also re-scopes the client creation
-registry, clearing transient Project creation records when the account
-changes; Work command records (including creates) clear through the account's
-abort signal in `work-command-store`. Neither is reload recovery.
+A project's tree is an append-only list of records, replayed into a tree. The browser holds one
+copy per list (the project's and the account's, for `user://`) in a `TreeListSession`, and is
+the writer of its own records: `TreeActions` appends a create, rename, move, delete or restore to
+the copy, the replay shows it at once, and Yjs carries it to the server. Nothing waits on a
+request, and nothing else remembers placement: sidebar, tabs, identity bar, pickers, mentions,
+Recents, folder chips and Trash membership read `useProjectTreeViews` / `useProjectTrees`, which cut
+the session's replay to a source. Those read live unless they name a version; the sidebar names the
+shell's Live/Draft toggle, and `TreeActions` acts in that version, so on Draft a record carries the
+Work's branch as `draft` ([sidebar version](../../.context/tree-version-state-machine.md)). The replay is computed once per change and the writer's
+failures once per version, however many views read them.
 
-The replica uses short account/resource Web Locks for namespace and terminal
-coordination. Typing and ordinary local content access do not hold those locks.
-A stable resource handle survives document-ID remint; the exact persistence name
-and mounted Y.Doc do not change. The resource descriptor also retains the
-catalog-defined file classification so cached code never reopens as rich text.
+The queries own only what the list cannot say: which sources exist (every source is made in the
+transaction that makes its project, account or Work, so a tree without one is a bug and renders
+nothing), each Work's authority, Trash times and retention, and a chat's uploads.
 
-Availability becomes durable only through session authority for adopting or adopted
-local-origin documents retaining their lineage; all other durable deletions require receipts.
+Whoever makes a record names it as its own copy shows it: a create, a rename, and a move into a
+name that is taken record the numbered name (a move is a `move` and a `rename` in one update;
+a move record has no name). The replay numbers only a clash nobody could see.
 
+A refusal comes back as a `refused` settlement on the record and shows on the row as its
+failure mark with the repair the writer asked for (`tree-failures.ts`). A tree action that cannot
+be appended returns a `TreeActionResult` with a reason the writer can act on
+(`tree-action-message.ts` words it): a name the list cannot hold, a folder or node no longer
+there, a read-only or denied list, a list still loading.
+
+The close of `AccountFeatureLifetime` releases the lists with the rest of the account's state.
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
 path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
 address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
-`documents` are main's and the side's only (main first): the removal coordinator, availability
+`documents` are main's and the side's only (main first): the removal coordinator
 and removed notices read them to know what is on screen. Its `shown` list, every mounted document
 newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
 closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
@@ -79,7 +72,7 @@ between main and the side doesn't remount it.
 
 ```text
 ContextTreePanel (desktop sidebar and the phone's drawer)
-       ├─ useContextCatalogViews (batched projection)
+       ├─ useProjectTreeViews (the replay, cut to sources)
        ├─ useCreateEntryForm
        ├─ useEntryInteraction
        │     └─ rename forms + move picker
@@ -91,19 +84,27 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
           validateContextEntryName (pure)
 ```
 
-Document trash is a server snapshot separate from the live catalog projection.
-The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
-listing it newest first on `ListRow`s that select and drag like the trees'. A deleted document has its own address,
+Trash is a server snapshot of the lists' entries, separate from the replay: one entry per delete
+in force, a document deleted on its own or a folder with what its delete took (an empty folder too),
+restored whole. The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
+listing it newest first on `ListRow`s that select and drag like the trees'. An entry shows while
+the replay has a delete of its node in force. A folder entry has no page yet (opening a deleted
+folder is the design's later step): its menu and a drag restore it. A deleted document has its own address,
 `/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
 row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
+An uploaded file shows its card (name, type, size from the replay's blob) instead of text: the
+server serves no file in Trash, so the card has no Download.
+The notice's place, author and the tab's name come from the replay, so they read offline; the
+date and retention come from the server's read of the document, else from the Trash list the
+browser holds.
 It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever
 Restore brought it back, by opening it in place. The record reads the server's Markdown,
 serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;
 it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
-that endpoint before opening it. Every restore goes through one command using the exact
-serialized removal identity. Committed catalog wake hints invalidate the
-snapshot after deletes and restores, while the catalog stream remains the owner
-of a restored document's return to the live tree.
+that endpoint before opening it. Every restore is a `restore` record appended to the list
+(`DocumentTrashRestoreProvider`); the entry leaves the Trash snapshot at once, the replay owns the
+document's return to the live tree, and a restore the server refuses puts the entry back with
+the server's reason.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
@@ -126,15 +127,14 @@ is not the navigation adapter's job: the document row materializes after the
 open intent, so a write there races persistence and is lost. Main's host
 records once the document is in front of the writer, including a local draft. That
 write lands in the account recents continuity record before the POST. A filed
-document navigates by its readable address. A local draft reopens through the
-empty-path local address (the same history pointer a new document uses), not a
-fabricated path. Scratch documents participate in Editor recents; Uploads have no
+document navigates by its readable address, a new document by the name the replay gives its node
+(the empty path is the chooser). Scratch documents participate in Editor recents; Uploads have no
 editor address and are not recorded.
 
 ## Reference pages
 
-- [Resource catalog and Editor lifecycle](resource-catalog-and-editor-lifecycle.md) —
-  replica acquisition, local resource admission, hosts, and recovery.
+- [Presented documents and Editor lifecycle](resource-catalog-and-editor-lifecycle.md) —
+  hosts, removal notices, draft-only presentation and recovery.
 - [Document identity bar](document-identity-bar.md) — identity chrome and the
   placement, rename, and repair contract.
 - [Tree interactions](tree-interactions.md) — inline forms, entry actions,
@@ -159,10 +159,8 @@ chip's menu uses `trailInside(folderId)`, the trail that ends inside that folder
 
 `FolderMenu` is the menu every folder chip opens (composer, transcript, Editor):
 the crumbs' drill-in menu, opened inside the folder. It is opened by identity:
-a folder already in a held catalog opens at once; otherwise
-`lookupProjectFolderAvailability` (the `folderIds` availability lookup, never
-cached past the open) says which area holds it now, and the menu source acquires
-that area. Nothing is acquired until a chip is pressed. A surface provides
+the project's replay (`useProjectTrees`) says which source holds it now, a rename or move made a
+moment ago included. Nothing is read until a chip is pressed. A surface provides
 `FolderMenuContext` (project and how it opens a document); the Editor builds its
 host from the editor scope and link destination. Deleted, not visible or
 unreachable folders say "This folder is no longer available."
@@ -187,6 +185,6 @@ not claim a placement.
 
 ## External-file drops and pending imports
 
-A context tree mounts one drop scope for both catalog-entry moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
+A context tree mounts one drop scope for both row moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
 
-Imports add only a temporary root row until reveal. Pending roots have no catalog identity or URI and reserve no namespace names; every revealed node comes from the catalog.
+Imports add only a temporary root row until reveal. Pending roots have no node id or URI and reserve no names; every revealed node comes from the replay.

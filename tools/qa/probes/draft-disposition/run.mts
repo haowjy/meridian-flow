@@ -8,13 +8,12 @@ import {
   captureReceiptRows,
   recordDocumentEdit,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
 import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendApplyRecord,
   applyRecordOf,
@@ -54,8 +53,8 @@ try {
     async flushLivePull() {},
     notices: { async record() {} },
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: { refreshSources: async () => "" },
+    removals: createTestRemovalDeps(h.db).removals,
+    treeLists: createTestRemovalDeps(h.db).treeLists,
     onDraftCommitted: () => {},
   });
 
@@ -182,18 +181,12 @@ try {
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
   const journalBefore = await h.raw`select id from draft_write_journal order by id`;
-  const close = createDraftClose();
+  const close = createTestRemovalDeps(h.db).draftClose;
   const discard = createDrizzleBranchDiscard(h.db, {
-    releaseObjects: async () => {},
     close,
     branches: h.branches,
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: {
-      async refreshSources() {
-        return "0";
-      },
-    },
+    treeLists: createTestRemovalDeps(h.db).treeLists,
   });
   await discard.discardLocked({
     kernel: { branchId: work.branchId, selection: { kind: "whole" } },

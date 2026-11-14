@@ -37,10 +37,25 @@ export interface ShownLinkShowing {
   links: readonly SpelledLinkFact[];
 }
 
-/** Host-only: what one result showed the model; its frontier is recorded under the result's block. */
+/** The room of the names a result showed of the tree; its rows are not Yjs snapshots. */
+export const TREE_NAMES_ROOM = "tree";
+
+/** Host-only: what one result showed the model; its frontiers are recorded under the result's block. */
 export interface ResultEvidence {
   shown: readonly ShownLinkShowing[];
   frontier?: ObservationFrontier;
+  /** What the result showed of the tree, in the room `tree`: the names it added to the map. */
+  names?: ObservationFrontier;
+}
+
+/** The frontier rows a result's block holds: its document's, and the names it showed. */
+export function evidenceFrontiers(
+  blockId: string,
+  evidence: Pick<ResultEvidence, "frontier" | "names">,
+): { blockId: string; frontier: ObservationFrontier }[] {
+  return [evidence.frontier, evidence.names].flatMap((frontier) =>
+    frontier ? [{ blockId, frontier }] : [],
+  );
 }
 
 /** What stored blocks showed the model: shown links under the turn, a frontier per block. */

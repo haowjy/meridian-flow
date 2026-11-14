@@ -25,15 +25,16 @@ document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use
 that same resolved object; commit validates it before writing the planned view.
 
-After selection, one admission call authorizes every content destination and
-tree branch. Commit runs under those exact grants and confirms them after
+After selection, one admission call authorizes every content destination. Commit runs under those exact grants and confirms them after
 locking their combined Work set. The incoming content grant carries the caller
 identity only; it never chooses the inverse branch. Undo and Redo land in the
 Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
-otherwise an invertible active part offers Undo. Effective action state is
+otherwise an invertible active part offers Undo. The card counts only a person's Undo
+(its own, `actor: "human"`): the model's undo in the reply is part of what the reply did and
+gives the card no Redo, the same rule as for tree receipts below. Effective action state is
 indexed per immutable part. A model count consumes original actions: once a
 partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit; Redo retains the exact parts that were
@@ -98,16 +99,13 @@ edited it". The planner decides these text-part causes once, for the per-edit om
 record (`turnSkipCause` words it for the turn protocol); the service does not derive them. A one-by-one discard in an open draft
 still reads edited: the draft keeps no mark that tells it from retyped text (#1361).
 Live destinations carry the captured physical source owner's lifecycle and the document's removal;
-the chat's query draft never decides availability for live text or tree entries. A surviving draft
+the chat's query draft never decides availability for live text. A surviving draft
 still ignores live removal and accepts its own inverse.
 
 Applied text is not a refusal. Model Undo and the card write its inverse as a forward
 `revert` in the active origin draft, leaving live untouched and making a pending change against
 the review base. Redo of an Undo whose inverse was applied reapplies the original parts through
-that same captured origin. Apply of an effective drafted delete records a fresh live delete
-attributed to the drafting turn. The live entry names the exact draft entry it materialized, so
-history shows one delete and reversal restores the named removal. Applied moves and renames
-still refuse or skip until tree reverts are implemented.
+that same captured origin.
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
@@ -120,79 +118,61 @@ write command; an archived origin shows no action even when the chat's current d
 writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 
-## Tree entries (creates, moves and deletes)
+## Tree changes
 
-A model's `create`, `copy`, `move` or `delete` is represented by a `document_edits` row with a
-`tree_change` and no parts
-(`domain/tree-inverse.ts`, PR 3). It keys as `editId:tree` in the same action index and takes
-its `seq` from the parts' id sequence, so one chronology orders text and tree across turns and
-writers. Its handle is on the same per-document, per-chat counter. It records the exact state
-transition in its destination (live placement or removal; a branch row's facts), and every
-inverse row records the transition it made (`targets` names the entry).
+A tree change (create, move, rename, delete, restore, folders included) is its own command
+with its records in the project's tree list, and a failed reply leaves what its tree calls did.
+A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, in the same
+`reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
+steps, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
+receipt the model's own `undo` reversed in the reply is part of what the reply did, and gives the
+card no Redo). The receipts one list holds go back in one update of that list, so a browser showing
+it redraws once for the whole Undo, not once a receipt. It
+chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
+each back by `undoChange` in the list that holds the node, and records the reversal as a
+receipt, so the two histories are one. A receipt something changed since answers `superseded`
+(a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
+goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
+`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
+`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
+renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
+a folder has no document, so the item carries the node id with `folder: true` and no door), and
+the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
+`acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
+A turn's text on a document the same turn deleted is not a card target while the document is in
+Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call
+keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and one
+`tree_edit_receipt_nodes` row for every node it changed, each with a write ordinal reserved on
+that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
+`e<N>` the model is given is the ordinal on the receipt's subject.
 
-Tree entries are judged by state, never by row presence: an entry stands while its
-destination still holds the `after` of its latest transition (the entry itself, a row naming
-it, or a row reversing such a row: an undo of a revert reapplies the entry; latest, since a redone delete writes a new removal); an
-undo restores the `before`. A later own entry that was undone does not block, so A→B, B→C,
-undo, undo returns to A. Applied or discarded comes only from a later settlement row naming
-the entry; an Apply names entries undone before it as discarded, so their redo refuses
-rather than proposing them again. History is read with folders a live folder absorbed since
-resolved to it (`withCurrentFolders`), and commit resolves the absorber again before writing
-live placement or branch facts. A reversal reports each destination it landed in and, when its
-committed path differs from the recorded one, that path too: live, or the branch whose text
-draft or tree facts took it. The history writer (`recordDocumentEdit`) is the one place a transition's states
-are checked against its destination and op; readers trust the rows.
+A node has one history per chat: this agent's own tree receipts and text edits (each agent is its own peer for the text, as above, so the writer's typing never drops an edit from it; only an edit with no item left to remove or restore does), ordered by that ordinal,
+with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
+not reversed, the receipts an Undo made and a Redo has not, and the ordinals the text engine's
+own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
+`redo` the tree receipts undone after the text engine's newest undo, and `revert` the receipt
+the handle names. Tree records go back through the package's `undoChange`, which finds the live
+copy of an applied or restored change by `carries`, and takes back only what the receipt did:
+what others put in a folder it made stands and keeps it standing. The records an Undo makes name
+what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
+lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
+way. A model `undo` that takes tree and text steps together is one command (the tree receipts
+first, then the text engine's), so a refusal of the text half takes the tree half back with it.
+The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
+and Undo counts by it: the steps of one command (a create with content is a node and its text)
+are one step, taken and redone together; `revert` names a handle and takes that receipt only.
 
 Every inverse (model undo, redo and revert, and the card) is one ordered
-stream of steps (`domain/inverse-stream.ts`): each selected original edit is one step, text or
-tree, with its action and its place on the shared id axis allocated in that one loop, planned
-on a simulation the steps before it advanced (simulated rows, destination states, one clock).
-So a restore planned earlier lets later live text be reversed, a model count-N Undo records N
-separately redoable actions, and a step that reverses an undo puts its edit back on the stack.
-A removal an earlier step makes is `madeBy` that step until it runs; a restore planned after it
-carries the removal that step actually made, while an unrelated removal still refuses it. The
-commit runs the steps in planned order (the card merges documents newest first,
-redo oldest first), each tree step in its own savepoint: a fault (`ancestor_taken`,
-`folder_missing`, `superseded`) is a reported skip for the card, and live text of a
-document a skipped restore left removed is skipped with the rest of that document's text. A
-model inverse is all or nothing (`TreeInverseRefused`). A draft's text still commits as one
-checkpoint rewrite, at its plan's first text step. Every tree inverse commits under
-`acquireTreeScope` over the attempt's documents and the placements it returns to, then
-re-reads the captured tree states (a mismatch is an attempt miss). Live moves back go through
-`moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
-through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
-blocks. Turn targets include every document a turn created, moved or deleted, deleted or not;
-the card authorizes them from those targets, and a deleted one at its restore destination
-(file-policy's `restore` target). The turn lineage gives each document the turn created, moved,
-deleted or copied its net tree line per destination (live, or the Work whose branch a drafted
-entry names) (`TurnTreeLine`: a create whose document records `metadata.copiedFrom` is a copy
-from that source to where it ended up; otherwise deleted, or moved from its first `shownAt` to
-its last move's `landedAt`), leaving out entries an undo reversed. A removed one keeps its
-receipt row at its last or recorded create address, read through the same `restore` target. A
-drafted tree entry's
-inverse writes back the branch facts the plan selected (`writeBackBranchFacts`) while the row
-still holds the state the plan started from, its
-branch is active, a moved folder still stands and the branch's view has room; the attempt also
-locks that branch's Work and where the branch has the document. The routed branch is separate
-from a content `draftId`: a move-only document has no text draft, including a Scratch document
-whose content stays live, but Undo and Redo still write its branch facts. A document the branch deleted is
-authorized where its row is (file facts' branch-deleted fallback).
-
-A create transition precedes its initial text edit in the same per-document stream. Model Undo
-groups those adjacent entries only when both came from the same model tool call, in the same
-turn, response and edit scope. A later write call in that response remains a separate edit. A
-live Undo removes the initial text, then the placement; Redo restores the placement, then
-reapplies only the text parts Undo reversed. A live Undo uses an ordinary reversible removal, so the identity,
-Yjs history, later writer text and drafts remain available; Redo restores that retained state
-through `restoreDocument`, taking the next free name when necessary. A drafted Undo writes the
-branch's existing delete fact: `{ created: true, deleted: true }`. The document and its text are
-hidden in that branch, but its draft remains active and its identity is not tombstoned. Redo
-clears `deleted` on the row's current facts, so a rename or move made while the create was
-undone survives, and keeps writing the same draft. Neither Undo nor Redo rewrites
-the draft text. If another Work Applies the
-shared creation first, that reveal settles this branch's undone creation so it cannot become a
-pending delete of the now-live document, then the ordinary live pull rebases the now-visible
-document into every active Work draft. Empty creates use the same branch-fact cycle.
+stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,
+with its action and its place on the history axis, planned against a simulation the steps
+before it advanced (simulated rows, one clock). A model count-N Undo records N separately
+redoable actions, and a step that reverses an undo puts its edit back on the stack. The commit
+runs the steps in planned order (the card merges documents newest first, redo
+oldest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
+A document removed at capture plans no live text (`document_deleted` or `document_discarded`);
+a draft that outlived the removal still takes its own inverse. Commit takes the attempt's
+document mutation locks in id order.
 
 ## Effects and failures
 

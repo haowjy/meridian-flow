@@ -54,8 +54,6 @@ export type TurnQueueControls = {
 
 export type TurnListProps = {
   threadId: string;
-  /** The chat's handle once it is named: a just-sent upload link follows before the stored text is reloaded. */
-  uploadsChat?: string;
   /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
   view: TranscriptView;
   historySettled: boolean;
@@ -113,7 +111,6 @@ const TOP_INSET = 24;
 
 export function TurnList({
   threadId,
-  uploadsChat,
   view,
   historySettled,
   tailFollowRevision,
@@ -321,7 +318,6 @@ export function TurnList({
           items={items}
           writer={writer}
           threadId={threadId}
-          uploadsChat={local ? uploadsChat : undefined}
           submissionRecovery={local ? submissionRecoveryByTurnId?.get(row.turn.id) : undefined}
           queue={queuedWriter ? queue : null}
           lastQueued={queuedWriter && row.turn.id === lastQueuedTurnId}
@@ -362,7 +358,6 @@ export function TurnList({
       submissionRecoveryByTurnId,
       threadId,
       threadUsage,
-      uploadsChat,
       view.items,
       view.writer,
     ],
@@ -476,7 +471,6 @@ const TranscriptRow = memo(function TranscriptRow({
   items,
   writer,
   threadId,
-  uploadsChat,
   submissionRecovery,
   queue,
   lastQueued,
@@ -494,7 +488,6 @@ const TranscriptRow = memo(function TranscriptRow({
   items?: AssistantView;
   writer?: WriterText;
   threadId: string;
-  uploadsChat?: string;
   submissionRecovery?: UserTurnRecovery;
   queue?: TurnQueueControls | null;
   lastQueued: boolean;
@@ -540,7 +533,6 @@ const TranscriptRow = memo(function TranscriptRow({
       <UserTurn
         turn={turn}
         writer={writer}
-        uploadsChat={uploadsChat}
         submissionRecovery={submissionRecovery}
         queued={row.queued}
         queueControls={queue}
