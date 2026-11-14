@@ -4,14 +4,20 @@ import type { CommandRecord, Journal, JournalChange } from "./types.js";
 export function createMemoryJournal(): Journal & { failNext(error: Error): void } {
   const records = new Map<string, CommandRecord>();
   let nextSeq = 1;
-  let tail: Promise<unknown> = Promise.resolve();
+  let tail: Promise<void> = Promise.resolve();
   let failure: Error | null = null;
   return {
     failNext(error) {
       failure = error;
     },
-    transact(decide) {
-      const run = tail.then(() => {
+    async transact(decide) {
+      const turn = tail;
+      let release!: () => void;
+      tail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await turn;
+      try {
         if (failure) {
           const error = failure;
           failure = null;
@@ -20,9 +26,9 @@ export function createMemoryJournal(): Journal & { failNext(error: Error): void 
         const { change, result } = decide({ records: [...records.values()], nextSeq });
         apply(change);
         return result;
-      });
-      tail = run.catch(() => undefined);
-      return run;
+      } finally {
+        release();
+      }
     },
     read: () => Promise.resolve([...records.values()]),
     close() {},

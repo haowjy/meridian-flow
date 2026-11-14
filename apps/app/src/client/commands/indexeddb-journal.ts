@@ -46,29 +46,24 @@ export function createIndexedDbJournal(accountId: string): Journal {
     async transact(decide) {
       const db = await open();
       const tx = db.transaction([RECORDS, META], "readwrite");
-      const done = new Promise<void>((resolve, reject) => {
+      const [records, counter] = await Promise.all([
+        settled(tx.objectStore(RECORDS).getAll() as IDBRequest<CommandRecord[]>),
+        settled(tx.objectStore(META).get(COUNTER) as IDBRequest<number | undefined>),
+      ]);
+      let decision: ReturnType<typeof decide>;
+      try {
+        decision = decide({ records, nextSeq: counter ?? 1 });
+      } catch (cause) {
+        tx.abort();
+        throw cause;
+      }
+      write(tx, decision.change);
+      await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error ?? new DOMException("Aborted", "AbortError"));
       });
-      try {
-        const [records, counter] = await Promise.all([
-          settled(tx.objectStore(RECORDS).getAll() as IDBRequest<CommandRecord[]>),
-          settled(tx.objectStore(META).get(COUNTER) as IDBRequest<number | undefined>),
-        ]);
-        const { change, result } = decide({ records, nextSeq: counter ?? 1 });
-        write(tx, change);
-        await done;
-        return result;
-      } catch (cause) {
-        try {
-          tx.abort();
-        } catch {
-          // Already finished.
-        }
-        await done.catch(() => undefined);
-        throw cause;
-      }
+      return decision.result;
     },
     async read() {
       const db = await open();

@@ -365,8 +365,15 @@ export class CommandDriver {
       .filter((record) => this.expiry(record) <= now)
       .map((record) => record.id);
     if (expired.length === 0) return;
-    void this.mutate(() => ({ change: { remove: expired }, result: undefined })).catch(
-      () => undefined,
+    this.mutate(() => ({ change: { remove: expired }, result: undefined })).then(
+      undefined,
+      (cause) =>
+        this.ports.log({
+          id: expired[0] as string,
+          kind: "prune",
+          attempt: 0,
+          failure: String(cause),
+        }),
     );
   }
 
