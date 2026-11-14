@@ -43,7 +43,7 @@ The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
 (destination) view. All three use Yjs identity: a part edited since is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
-or current text. Undo and Redo refuse `cant_*_changed` only when none of a text-only
+or current text. Undo and Redo refuse `cant_*_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port. Model actions
 cannot use a reconstruction endpoint, reversal table, or reserved client. A
@@ -52,10 +52,24 @@ last undone edit first; a count beyond what is available refuses with the
 available count and changes nothing. User-actuated entries refuse model stack commands. A card Undo pops the turn's
 poppable stack prefix and writes forward reverts for its other text parts, including applied
 parts. Both kinds share one action identity, so the card's Redo reverses exactly the parts its
-Undo accepted. The card names and skips a part whose draft was discarded (`expired`) or that a
-later writer edit depends on (`cant_undo_dependent`), and inverts the rest.
-A later item depends on an edit when its parent or left neighbour is the edit's text; an item merely placed ahead of it (a concurrent draft's block that Apply put before it) does not.
-A right origin that points at text the edit deleted does not count either: if an edit deletes a paragraph and the writer then places a paragraph in its place, Undo restores the deleted paragraph after the writer's, losing nothing. Counting those pointers would block "chat A replaces a paragraph, chat B places a block before it".
+Undo accepted. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
+Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
+the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
+never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
+the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
+writer deleted), a heading level or other attribute the writer set after the edit. An
+element the edit created that the writer typed in stays, holding only the writer's text.
+A replacement is a deleted run with the part's insertion beside it. The deleted run stays
+gone only when the insertion is gone and text written after the edit (the writer or a pull
+replaced it; a clock at or past the part's `frontier`, read on the original of an
+Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
+double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
+writes only the insertions inside a changed run that only gained characters (`retainShared` in
+`packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
+Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
+the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
+Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
+item can still be removed or restored, `undone` when only Redo can, else `changed`.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
@@ -211,11 +225,10 @@ after the commit, outside the scope.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
-`cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
+`expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document
 blocks an ancestor folder, the folder is missing, or the document moved or was deleted again
-answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired` or
-`cant_undo_dependent`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
+answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
 app words it; a tree skip names the path its entry was shown at.
 
 A released closed draft has no bytes from which to describe a receipt's prose.

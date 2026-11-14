@@ -36,7 +36,6 @@ export type TurnReceiptState =
   | "live-reversed"
   | "work-active"
   | "work-reversed"
-  | "cant_undo_dependent"
   | "expired";
 
 export type TurnReceiptControl = "undo" | "redo" | "view_change";

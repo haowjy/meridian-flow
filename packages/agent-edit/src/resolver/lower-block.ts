@@ -3,7 +3,7 @@ import type { Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
-import { wordDiff } from "../diff/tokens.js";
+import { diffKeys, wordDiff } from "../diff/tokens.js";
 import type { EditOp, FormatRange, TextSplice } from "../ports/model.js";
 import type { TextWindow } from "./find.js";
 
@@ -259,7 +259,7 @@ function lowerText(
       });
     }
   } else {
-    hunks = wordHunks(a, b);
+    hunks = wordHunks(a, b, isAtom);
   }
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
@@ -314,7 +314,7 @@ function slideAtomInserts(
 }
 
 /** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
-function wordHunks(a: string, b: string): Hunk[] {
+function wordHunks(a: string, b: string, isAtom: (units: string, at: number) => boolean): Hunk[] {
   const hunks: Hunk[] = [];
   let base = 0;
   let model = 0;
@@ -336,7 +336,61 @@ function wordHunks(a: string, b: string): Hunk[] {
       open.end = model;
     }
   }
-  return hunks;
+  return hunks.flatMap((hunk) => retainShared(a, b, hunk, isAtom));
+}
+
+/**
+ * A changed run that only gained characters (the old run is a subsequence of the new one) keeps
+ * the old characters' items and writes just the insertions, so the writer's typing inside an AI
+ * word survives an Apply or a pull. Any other change, a deletion or a letter swap, writes the run
+ * whole: a replaced word's letters would otherwise belong to two authors and Undo would restore
+ * fragments. Inline atoms never match: two images share a placeholder, not their attributes. A
+ * run past the diff bound stays whole.
+ */
+function retainShared(
+  a: string,
+  b: string,
+  hunk: Hunk,
+  isAtom: (units: string, at: number) => boolean,
+): Hunk[] {
+  if (hunk.from === hunk.to || hunk.at === hunk.end) return [hunk];
+  const keys = (text: string, from: number, to: number) => {
+    const chars = Array.from(text.slice(from, to));
+    let at = from;
+    const unique = chars.map((char) => {
+      const key = isAtom(char, 0) ? `${char}${at}` : char;
+      at += char.length;
+      return key;
+    });
+    return { unique, widths: chars.map((char) => char.length) };
+  };
+  const before = keys(a, hunk.from, hunk.to);
+  const after = keys(b, hunk.at, hunk.end);
+  const ops = diffKeys(before.unique, after.unique);
+  if (ops.some(([op]) => op === DIFF_DELETE)) return [hunk];
+  const out: Hunk[] = [];
+  let base = hunk.from;
+  let model = hunk.at;
+  let open: Hunk | undefined;
+  let [x, y] = [0, 0];
+  for (const [op, n] of ops) {
+    if (op === DIFF_EQUAL) {
+      open = undefined;
+      for (let k = 0; k < n; k++) {
+        base += before.widths[x++];
+        model += after.widths[y++];
+      }
+      continue;
+    }
+    open ??= out[out.push({ from: base, to: base, at: model, end: model }) - 1];
+    for (let k = 0; k < n; k++) {
+      if (op === DIFF_DELETE) base += before.widths[x++];
+      else model += after.widths[y++];
+    }
+    open.to = base;
+    open.end = model;
+  }
+  return out;
 }
 
 /**

@@ -297,18 +297,18 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(content(v)).toEqual(["one", "BLUE", "two"]);
     v.doc.destroy();
   });
-  it("typing into restored content protects the undone direction", () => {
+  it("Redo after typing into restored content removes only the AI's deletion", () => {
     const v = base(["abcdef"]),
       e = write(v, [(v) => text(v).delete(1, 4)]);
     inverse(v, e, "invert");
     write(v, [(v) => text(v).insert(3, "WRITER")]);
     cold(v);
-    expect(states(v, e)).toEqual(["changed"]);
-    expect(inverse(v, e, "reapply")).toBe(0);
-    expect(content(v)).toEqual(["abcWRITERdef"]);
+    expect(states(v, e)).toEqual(["undone"]);
+    expect(inverse(v, e, "reapply")).toBe(1);
+    expect(content(v)).toEqual(["aWRITERf"]);
     v.doc.destroy();
   });
-  it("partial parts preserve writer edits and root provenance", () => {
+  it("parts undo around the writer's edits and keep root provenance", () => {
     const v = base(["red", "blue"]),
       parts = write(v, [
         (v) => {
@@ -318,9 +318,9 @@ describe("forward inverse on cold Yjs replicas", () => {
         (v) => swap(v, "blue", "silver", 1),
       ]);
     write(v, [(v) => text(v, 1).insert(2, "X")]);
-    expect(states(v, parts)).toEqual(["active", "changed"]);
-    expect(inverse(v, parts, "invert")).toBe(1);
-    expect(content(v)).toEqual(["red", "siXlver"]);
+    expect(states(v, parts)).toEqual(["active", "active"]);
+    expect(inverse(v, parts, "invert")).toBe(2);
+    expect(content(v)).toEqual(["red", "blueX"]);
     expect(v.doc.getArray("provenance").toArray()).toEqual([{ edit: 1 }]);
     inverse(v, parts, "reapply");
     expect(content(v)).toEqual(["gold", "siXlver"]);
@@ -372,7 +372,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     "inserted paragraph",
     "full-span",
     "format extension",
-  ])("POC 1 protects writer dependency: %s", (scenario) => {
+  ])("Undo keeps the writer's typing: %s", (scenario) => {
     const v = base(["The red bird sings."]);
     const e = write(v, [
       (v) => {
@@ -395,21 +395,40 @@ describe("forward inverse on cold Yjs replicas", () => {
           );
       },
     ]);
-    const expected = {
-      interior: "<paragraph>The goWRITERld bird sings.</paragraph>",
-      adjacent: "<paragraph>The goldWRITER bird sings.</paragraph>",
-      "deletion gap": "<paragraph>The WRITER bird sings.</paragraph>",
-      "inserted paragraph":
+    const [undone, redone] = {
+      interior: [
+        "<paragraph>The redWRITER bird sings.</paragraph>",
+        "<paragraph>The goWRITERld bird sings.</paragraph>",
+      ],
+      adjacent: [
+        "<paragraph>The redWRITER bird sings.</paragraph>",
+        "<paragraph>The goldWRITER bird sings.</paragraph>",
+      ],
+      "deletion gap": [
+        "<paragraph>The redWRITER bird sings.</paragraph>",
+        "<paragraph>The WRITER bird sings.</paragraph>",
+      ],
+      "inserted paragraph": [
+        "<paragraph>The red bird sings.</paragraph><paragraph>WRITER</paragraph>",
         "<paragraph>The red bird sings.</paragraph><paragraph>goWRITERld</paragraph>",
-      "full-span": "<paragraph>The goWRITERld bird sings.</paragraph>",
-      "format extension": "<paragraph>The <bold>red bird</bold> sings.</paragraph>",
-    }[scenario];
+      ],
+      "full-span": [
+        "<paragraph>The red bird sings.WRITER</paragraph>",
+        "<paragraph>The goWRITERld bird sings.</paragraph>",
+      ],
+      // The writer's bold added no format item inside the AI's range, so Undo takes both.
+      "format extension": [
+        "<paragraph>The red bird sings.</paragraph>",
+        "<paragraph>The <bold>red bird</bold> sings.</paragraph>",
+      ],
+    }[scenario] as [string, string];
     cold(v);
-    expect(states(v, e)).toEqual(["changed"]);
-    expect(inverse(v, e, "invert")).toBe(0);
-    expect(xml(v)).toBe(expected);
-    expect(inverse(v, e, "reapply")).toBe(0);
-    expect(xml(v)).toBe(expected);
+    expect(states(v, e)).toEqual(["active"]);
+    expect(inverse(v, e, "invert")).toBe(1);
+    expect(xml(v)).toBe(undone);
+    expect(states(v, e)).toEqual(["undone"]);
+    expect(inverse(v, e, "reapply")).toBe(1);
+    expect(xml(v)).toBe(redone);
     v.doc.destroy();
   });
   it("a word restores inside its independently restored paragraph", () => {
@@ -426,6 +445,22 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(xml(v)).toBe("");
     v.doc.destroy();
   });
+  it("a paragraph kept for the writer's typing keeps its id when the AI's insert is undone", () => {
+    const v = base(["Alpha."]);
+    const added = write(v, [
+      (v) => {
+        const p = paragraph("He waited.");
+        p.setAttribute("id", "q");
+        v.doc.getXmlFragment("prosemirror").insert(1, [p]);
+      },
+    ]);
+    write(v, [(v) => text(v, 1).insert(10, " STAY")]);
+    inverse(v, added, "invert");
+    expect(content(v)).toEqual(["Alpha.", " STAY"]);
+    expect(ps(v)[1].getAttribute("id")).toBe("q");
+    v.doc.destroy();
+  });
+
   it("lists, atoms, hard breaks, links, move and copy use new identities", () => {
     const v = base(["abc", "def"]);
     write(v, [
@@ -484,7 +519,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(xml(v)).toBe(movedXml + ps(v)[0].toString());
     v.doc.destroy();
   });
-  it("frontiers distinguish byte-identical histories, including adjacent typing", () => {
+  it("adjacent typing does not stop the restore", () => {
     const a = base(["abc"]),
       b = base(["ab"]);
     const ea = write(a, [(v) => text(v).delete(1, 1)]),
@@ -502,11 +537,11 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(Y.encodeStateAsUpdate(a.doc)).toEqual(Y.encodeStateAsUpdate(b.doc));
     expect(ea[0].update).toEqual(eb[0].update);
     expect(states(a, ea)).toEqual(["active"]);
-    expect(states(b, eb)).toEqual(["changed"]);
+    expect(states(b, eb)).toEqual(["active"]);
     inverse(a, ea, "invert");
     inverse(b, eb, "invert");
     expect(content(a)).toEqual(["abc"]);
-    expect(content(b)).toEqual(["ac"]);
+    expect(content(b)).toEqual(["abc"]);
     a.doc.destroy();
     b.doc.destroy();
   });

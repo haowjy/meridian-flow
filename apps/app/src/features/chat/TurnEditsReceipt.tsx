@@ -38,7 +38,6 @@ import {
 } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
 import {
-  dependentChangeCopy,
   type ReversalRefusal,
   refusedReversalStatus,
   reversalRefusalCopy,
@@ -322,12 +321,6 @@ export function TurnEditsReceipt({
 }
 
 function undoGuardCopy(receipt: TurnReceiptChip | null, partsListed: boolean): string | undefined {
-  // Same fact as the refused-command copy, so it is the same sentence: a
-  // receipt that rests on `cant_undo_dependent` and a command refused with it
-  // are the writer's one situation.
-  if (receipt?.state === "cant_undo_dependent") {
-    return dependentChangeCopy();
-  }
   // Listed parts already say why nothing can be undone, part by part.
   if ((receipt?.control === "view_change" || receipt == null) && !partsListed) {
     return t`This change is no longer reversible.`;

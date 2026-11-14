@@ -7,7 +7,6 @@ export type WriteErrorStatus =
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
-  | "cant_undo_dependent"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
