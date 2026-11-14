@@ -92,6 +92,8 @@ the replay has a delete of its node in force. A folder entry has no page yet (op
 folder is the design's later step): its menu and a drag restore it. A deleted document has its own address,
 `/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
 row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
+An uploaded file shows its card (name, type, size from the replay's blob) instead of text: the
+server serves no file in Trash, so the card has no Download.
 The notice's place, author and the tab's name come from the replay, so they read offline; the
 date and retention come from the server's read of the document, else from the Trash list the
 browser holds.

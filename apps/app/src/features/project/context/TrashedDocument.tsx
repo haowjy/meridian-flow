@@ -1,6 +1,6 @@
 /**
- * Main's view of a deleted document: its text read-only, where it was deleted from and by whom,
- * and Restore. Whether it is in Trash or purged, its name, its place and who deleted it are the
+ * Main's view of a deleted document: its text read-only (an uploaded file: its card, since the
+ * server serves no file in Trash), where it was deleted from and by whom, and Restore. Whether it is in Trash or purged, its name, its place and who deleted it are the
  * list's answer, and the text is the document's own session, so all of it reads offline. When it
  * was deleted and how long Trash keeps it are the server's: its read of this document, else the
  * Trash list the browser holds.
@@ -23,6 +23,7 @@ import {
 } from "@/client/query/useContextSources";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
+import { FileCard } from "@/components/app/FileCard";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
@@ -52,10 +53,11 @@ export function TrashedDocument({
   const accountId = useAccountId();
   const standing = useDocumentStanding(projectId, documentId);
   const trashed = standing.kind === "in-trash";
+  const file = trashed && standing.node.kind === "file" ? standing.node : null;
   const details = useTrashedDetails(projectId, documentId, standing);
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId: trashed ? documentId : null,
+    documentId: trashed && !file ? documentId : null,
     owner: "trash-view",
     trashed: true,
   });
@@ -128,9 +130,19 @@ export function TrashedDocument({
           </DocumentNotice>
           {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
         </div>
-        <div className="min-h-0 flex-1">
-          <TextViewer source={{ content: text }} name={name} markdown />
-        </div>
+        {file ? (
+          <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
+            <FileCard
+              name={name}
+              mimeType={file.blob?.mime ?? ""}
+              sizeBytes={file.blob?.size ?? null}
+            />
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1">
+            <TextViewer source={{ content: text }} name={name} markdown />
+          </div>
+        )}
       </div>
     </ReadOnlyViewerFrame>
   );

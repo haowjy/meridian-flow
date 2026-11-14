@@ -23,7 +23,7 @@ import { type SourceDrop, SourcePane } from "./SourcePane";
 /**
  * Trash as a source: its entries, newest first, a deleted folder as one entry with what its
  * delete took. Rows dropped on it are deleted at once; its rows drag out to be restored where
- * they land. Picking a document shows it in main, read-only with Restore.
+ * they land. Picking a document or an uploaded file shows it in main, read-only with Restore.
  */
 export function TrashSource({
   projectId,
