@@ -17,10 +17,9 @@ import {
   GRAMMAR_VERSION,
   hasFrontmatter,
   MANIFEST_PATH,
+  type Prepared,
   projectRules,
-  readAgent,
-  readManifest,
-  readSkill,
+  readPackage,
   skillSlugOf,
   type ToolProjection,
 } from "./mars.js";
@@ -95,8 +94,9 @@ export function compilePackage(
 ): CompiledPackage {
   const files = validatedFiles(input);
   const problems = input.problems ?? {};
-  const packageErrors = manifestErrors(files, problems);
-  const skills = readSkills(files, problems);
+  const prepared = readPackage(files);
+  const packageErrors = manifestErrors(prepared, files, problems);
+  const skills = readSkills(prepared, problems);
 
   const drafts = new Map<string, Draft>();
   for (const path of [...Object.keys(files), ...Object.keys(problems)].sort()) {
@@ -106,7 +106,7 @@ export function compilePackage(
       slug,
       Object.hasOwn(problems, path)
         ? problemAgent(slug, path, problems[path], packageErrors)
-        : draftAgent(slug, path, files[path], packageErrors, skills),
+        : draftAgent(slug, path, files[path], prepared, packageErrors, skills),
     );
   }
   rejectBrokenSubagents(drafts);
@@ -190,21 +190,34 @@ const flow = (
   path: (string | number)[] = [],
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
-/** Findings on `mars.toml` that make every Agent of the package unavailable. */
-function manifestErrors(files: SkillFiles, problems: Record<string, string>): PackageDiagnostic[] {
-  const text = files[MANIFEST_PATH];
+/**
+ * Findings on `mars.toml` that make every Agent of the package unavailable. `prepare` upgrades
+ * a pre-v1 package and translates a foreign one in memory, and says so only in its
+ * classification: Flow reads a package as authored, so anything but schema 1 is refused.
+ */
+function manifestErrors(
+  prepared: Prepared,
+  files: SkillFiles,
+  problems: Record<string, string>,
+): PackageDiagnostic[] {
   if (Object.hasOwn(problems, MANIFEST_PATH)) {
     return [flow(MANIFEST_PATH, "file-unreadable", problems[MANIFEST_PATH])];
   }
-  if (text === undefined) {
+  if (files[MANIFEST_PATH] === undefined) {
     return [flow(MANIFEST_PATH, "manifest-missing", "The package has no mars.toml")];
   }
-  const reading = readManifest(text);
-  const errors = reading.diagnostics.map((item) => fromMars(MANIFEST_PATH, item));
-  // Mars merges these into every Agent at sync but its reading does not (mars-agents#376).
-  if (reading.fields?.tools && Object.keys(reading.fields.tools).length) {
+  const errors = (prepared.manifest?.reading.diagnostics ?? []).map((item) =>
+    fromMars(MANIFEST_PATH, item),
+  );
+  const { classification } = prepared;
+  if (classification.kind !== "schema-1") {
+    const schema = classification.kind === "schema-newer" ? ` ${classification.schema}` : "";
     errors.push(
-      flow(MANIFEST_PATH, "package-tools-unsupported", "[package.tools] is not supported yet"),
+      flow(
+        MANIFEST_PATH,
+        "package-not-schema-1",
+        `Mars reads this package as ${classification.kind}${schema}, not schema 1; Flow reads only schema 1 packages as written`,
+      ),
     );
   }
   return errors;
@@ -212,7 +225,7 @@ function manifestErrors(files: SkillFiles, problems: Record<string, string>): Pa
 
 /** Skills of the package whose file reads with no diagnostic, by slug; the rest by their reasons. */
 function readSkills(
-  files: SkillFiles,
+  prepared: Prepared,
   problems: Record<string, string>,
 ): Map<string, PackageDiagnostic[]> {
   const skills = new Map<string, PackageDiagnostic[]>();
@@ -220,12 +233,14 @@ function readSkills(
     const slug = skillSlugOf(path);
     if (slug !== undefined) skills.set(slug, [flow(path, "file-unreadable", message)]);
   }
-  for (const [path, text] of Object.entries(files)) {
-    const slug = skillSlugOf(path);
-    if (slug === undefined) continue;
+  for (const definition of prepared.definitions) {
+    if (definition.kind !== "skill") continue;
     skills.set(
-      slug,
-      readSkill(slug, text).diagnostics.map((item) => fromMars(path, item)),
+      definition.slug,
+      [
+        ...definition.reading.diagnostics,
+        ...(prepared.changes?.[definition.source_path] ?? []),
+      ].map((item) => fromMars(definition.source_path, item)),
     );
   }
   return skills;
@@ -266,16 +281,28 @@ function draftAgent(
   slug: string,
   file: string,
   text: string,
+  prepared: Prepared,
   packageErrors: PackageDiagnostic[],
   skills: Map<string, PackageDiagnostic[]>,
 ): Draft {
-  const reading = readAgent(slug, text);
+  const definition = prepared.definitions.find((item) => item.source_path === file);
+  if (definition?.kind !== "agent") {
+    return problemAgent(slug, file, "Mars did not read this file as an Agent", packageErrors);
+  }
+  const { reading } = definition;
   const draft: Draft = {
     slug,
     file,
     fields: reading.fields,
     body: bodyOf(reading),
-    errors: [...packageErrors, ...reading.diagnostics.map((item) => fromMars(file, item))],
+    // A change `prepare` made to the file (a `field.restriction-lost` above all) means the Agent
+    // is less restricted than its file says.
+    errors: [
+      ...packageErrors,
+      ...[...reading.diagnostics, ...(prepared.changes?.[file] ?? [])].map((item) =>
+        fromMars(file, item),
+      ),
+    ],
     warnings: [],
     permission: undefined,
     tools: undefined,

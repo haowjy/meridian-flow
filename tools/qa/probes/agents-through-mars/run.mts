@@ -235,9 +235,9 @@ try {
       }),
     },
     {
-      name: "[package.tools] present",
+      name: "[package.tools] with an action Mars cannot read (package-tools.unreadable)",
       files: (slug) => ({
-        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "deny"\n`,
+        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "bogus"\n`,
         [`agents/${slug}.md`]: agent("A"),
       }),
     },
@@ -356,6 +356,21 @@ try {
         assert.equal(configuration["disallowed-tools"], undefined);
     });
   }
+
+  await check(
+    "never wider: [package.tools] reaches each Agent, an Agent's own key wins",
+    async () => {
+      publish({
+        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "deny"\nread = "allow"\n`,
+        "agents/pt1.md": agent("Plain"),
+        "agents/pt2.md": agent("Own", "tools: {write: allow}\n"),
+        "agents/pt3.md": agent("Other", "tools: {edit: deny}\n"),
+      });
+      assert.deepEqual((await resolved("pt1"))["disallowed-tools"], ["write"]);
+      assert.equal((await resolved("pt2"))["disallowed-tools"], undefined);
+      assert.deepEqual((await resolved("pt3"))["disallowed-tools"], ["write"]);
+    },
+  );
 
   await check("never wider: one bad Agent and one good one in a package", async () => {
     publish({

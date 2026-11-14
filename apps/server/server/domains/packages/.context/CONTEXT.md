@@ -8,8 +8,14 @@ is in the [Agent definition][definitions] and [package][packages] pages.
 ## Contracts
 
 - `domain/mars.ts` is the only module that imports `@meridian-flow/mars-schema`.
-  Every Agent file, skill file and `mars.toml` is read by its `read`, never
-  `prepare`, which upgrades an old file silently.
+  A package is read whole by `readPackage` (Mars's `prepare`, `migrate` off), the one reader path
+  for `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
+  the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a
+  foreign one in memory, so a package whose classification is not `schema-1` makes every Agent
+  unavailable (`flow.package-not-schema-1`), and so does any `changes` entry on an Agent's file
+  (`field.restriction-lost` above all). A manifest error reaches each Agent as Mars's
+  `package-tools.unreadable`. A lone file (a skill's listing, a package name) is still read with
+  `read`.
 - A file with a Mars diagnostic of any severity defines nothing: its Agent is
   unavailable, a skill file is not a skill, and a `mars.toml` with one makes
   every Agent of the package unavailable. Severity says whether `mars sync`
