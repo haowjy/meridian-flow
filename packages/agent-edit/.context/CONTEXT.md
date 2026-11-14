@@ -77,8 +77,8 @@ An inverse acts per item of the receipt, never on a dependency closure: each ins
 deleted if still visible, each deleted item is restored if its parent is live (or is restored
 with it) and, for a map entry, nothing newer has replaced it. Anything else is skipped as
 already gone, so another peer's typing never refuses it and is never removed. An AI element
-holding a live descendant outside the receipt stays (`delete-filter.ts`); only the AI's own
-items inside it go. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
+holding a live descendant outside the receipt stays (`delete-filter.ts`) with all its attributes
+(`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
 leaves a writer's later attribute value.
 
 A replacement is a deleted run with the part's insertion beside it. The deleted run stays gone
