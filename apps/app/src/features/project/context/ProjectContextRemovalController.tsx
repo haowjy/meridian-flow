@@ -2,6 +2,7 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useProjectContextSources } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
@@ -87,9 +88,20 @@ export function ProjectContextRemovalController({
     [],
   );
 
+  const sources = useProjectContextSources(projectId);
+  const sourceKey = sources ? sources.map((source) => source.id).join(",") : null;
   useEffect(
-    () => observeListRemovals({ projectId, standings, removal: coordinator, registry }),
-    [coordinator, projectId, registry, standings],
+    () =>
+      observeListRemovals({
+        projectId,
+        standings,
+        removal: coordinator,
+        registry,
+        showTrashed: (documentId) =>
+          void latest.current.openDocument({ documentId, replace: true }),
+        sourceIds: sourceKey === null ? null : new Set(sourceKey.split(",")),
+      }),
+    [coordinator, projectId, registry, standings, sourceKey],
   );
 
   useLayoutEffect(() => {

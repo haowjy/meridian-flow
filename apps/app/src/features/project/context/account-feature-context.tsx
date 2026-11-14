@@ -2,10 +2,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
   createContext,
+  useCallback,
   useContext,
-  useEffect,
   useInsertionEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -28,6 +27,7 @@ const PresentedContext = createContext<AccountFeatureLifetime["presented"] | nul
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
+const SignOutContext = createContext<(() => Promise<void>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
@@ -116,33 +116,41 @@ function AccountFeatureProviders({
     lifetime.resumeFeatureLease();
     return () => lifetime.suspendFeatureLease();
   }, [lifetime]);
+  const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
-        <TreeListsAccountContext.Provider value={lifetime.treeLists}>
-          <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-            <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
-              <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-                <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
-                  <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                    <LinkSettlementsProvider value={lifetime.linkSettlements}>
-                      <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                          <PresentedContext.Provider value={lifetime.presented}>
-                            {children}
-                          </PresentedContext.Provider>
-                        </DraftOnlyContext.Provider>
-                      </DraftCommandsContext.Provider>
-                    </LinkSettlementsProvider>
-                  </ProjectDocumentLiveOpenerContext.Provider>
-                </RemovedNoticesAccountContext.Provider>
-              </LiveDocumentRegistryAccountContext.Provider>
-            </ProjectStandingsAccountContext.Provider>
-          </ContextRemovalAccountContext.Provider>
-        </TreeListsAccountContext.Provider>
+        <SignOutContext.Provider value={signOut}>
+          <TreeListsAccountContext.Provider value={lifetime.treeLists}>
+            <ContextRemovalAccountContext.Provider value={lifetime.removal}>
+              <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
+                <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+                  <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
+                    <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                      <LinkSettlementsProvider value={lifetime.linkSettlements}>
+                        <DraftCommandsContext.Provider value={lifetime.draftCommands}>
+                          <DraftOnlyContext.Provider value={lifetime.draftOnly}>
+                            <PresentedContext.Provider value={lifetime.presented}>
+                              {children}
+                            </PresentedContext.Provider>
+                          </DraftOnlyContext.Provider>
+                        </DraftCommandsContext.Provider>
+                      </LinkSettlementsProvider>
+                    </ProjectDocumentLiveOpenerContext.Provider>
+                  </RemovedNoticesAccountContext.Provider>
+                </LiveDocumentRegistryAccountContext.Provider>
+              </ProjectStandingsAccountContext.Provider>
+            </ContextRemovalAccountContext.Provider>
+          </TreeListsAccountContext.Provider>
+        </SignOutContext.Provider>
       </AccountIdContext.Provider>
     </AccountEpochContext.Provider>
   );
+}
+
+/** Closes the account's sessions and deletes its local copies before sign-out; null outside the authenticated shell. */
+export function useOptionalSignOutCleanup(): (() => Promise<void>) | null {
+  return useContext(SignOutContext);
 }
 
 /** The account's open tree lists; null outside the authenticated shell. */

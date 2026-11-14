@@ -7,6 +7,8 @@
  * One Web Lock per copy keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive and gives up when a hold exists.
  * A copy a crashed tab left behind is found by `list` and cleared against the list at next start.
+ * Sign-out clears every copy of the account, and finding another account's copies at load clears
+ * those: a copy never outlives its account's session on this browser.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -87,4 +89,30 @@ export class LocalDocumentCopies {
       request.onerror = () => reject(request.error ?? new Error("IndexedDB delete failed"));
     });
   }
+}
+
+/** The accounts that have a copy in this browser. */
+async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
+  const names = (await idb.databases?.()) ?? [];
+  const accounts = new Set<AccountId>();
+  for (const { name } of names) {
+    if (!name?.startsWith(PREFIX)) continue;
+    const account = name.slice(PREFIX.length).split("/")[0];
+    if (account) accounts.add(decodeURIComponent(account) as AccountId);
+  }
+  return [...accounts];
+}
+
+/** Deletes every copy of an account that no tab holds open; returns whether none was left. */
+export async function clearAccountCopies(accountId: AccountId): Promise<boolean> {
+  const copies = new LocalDocumentCopies(accountId);
+  const cleared = await Promise.all((await copies.list()).map((id) => copies.clear(id)));
+  return cleared.every(Boolean);
+}
+
+/** Deletes the copies of every account but this one: the browser's last user was someone else. */
+export async function clearCopiesOfOtherAccounts(current: AccountId): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  const others = (await accountsWithCopies(indexedDB)).filter((account) => account !== current);
+  await Promise.all(others.map(clearAccountCopies));
 }

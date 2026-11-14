@@ -2,16 +2,11 @@
 
 import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
-import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
+import type { ContextRouteIdentity } from "./context-removal-planner";
 import { openDocumentMatchesRoute } from "./open-document-identity";
 
 export type WorkspaceRouteResolution =
   | { kind: "owner"; document: OpenDocument; identity: ContextRouteIdentity }
-  | {
-      kind: "materialized-local";
-      document: Extract<OpenDocument, { kind: "tracked" }>;
-      target: ContextRouteRequest;
-    }
   | { kind: "unowned" };
 
 /**
@@ -36,7 +31,5 @@ export function resolveWorkspaceRoute(
       document: document,
       identity: { kind: "local", documentId: document.documentId },
     };
-  if (document.kind === "tracked" && document.origin === "local-resource")
-    return { kind: "materialized-local", document: document, target: routeTargetForTab(document) };
   return { kind: "unowned" };
 }

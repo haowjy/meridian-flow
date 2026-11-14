@@ -84,23 +84,6 @@ export function sameContextTarget(a: ContextRouteRequest, b: ContextRouteRequest
   );
 }
 
-export type ContextRouteRepair = {
-  expectedSearch: {
-    work: string | undefined;
-    chat?: string | undefined;
-    scheme: ProjectContextTreeScheme;
-    path: string;
-  };
-  expectedSelection: { kind: "materialized-local"; revision: number; documentId: string };
-  next: ContextRouteRequest | { kind: "clear" };
-};
-
-function isClearContextRouteTarget(
-  target: ContextRouteRepair["next"],
-): target is { kind: "clear" } {
-  return "kind" in target && target.kind === "clear";
-}
-
 export function openContextRouteSearch(
   search: ProjectSearch,
   target: ContextRouteRequest,
@@ -139,29 +122,4 @@ function stripEmptySearch(search: ProjectSearch): ProjectSearch {
       ([key, value]) => value !== undefined && (key === "path" || key === "work" || value !== ""),
     ),
   ) as ProjectSearch;
-}
-
-/** Latest-search compare-and-swap for a removal planned against a bound route. */
-export function applyContextRepairIfCurrent(
-  repair: ContextRouteRepair,
-  latest: ProjectSearch,
-): ProjectSearch {
-  const expected = repair.expectedSearch;
-  if (
-    latest.work !== expected.work ||
-    latest.chat !== expected.chat ||
-    latest.scheme !== expected.scheme ||
-    latest.path !== expected.path
-  ) {
-    return latest;
-  }
-  if (isClearContextRouteTarget(repair.next)) {
-    return stripEmptySearch({
-      ...latest,
-      chat: undefined,
-      scheme: undefined,
-      path: undefined,
-    });
-  }
-  return openContextRouteSearch(latest, repair.next);
 }

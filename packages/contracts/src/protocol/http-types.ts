@@ -341,9 +341,6 @@ export type MoveContextEntryRequest = {
   name?: string;
 };
 
-/** The route's answer; where the entry landed is in the operation's receipt. */
-export type MoveContextEntryResult = { status: "moved" };
-
 /** Which version of a source Copy reads: what the writer's surface shows. */
 export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */

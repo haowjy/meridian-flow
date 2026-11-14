@@ -12,11 +12,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
+import { useOptionalSignOutCleanup } from "@/features/project/context/account-feature-context";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();
   const { open } = useSettingsNavigation();
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
+  const clearBeforeSignOut = useOptionalSignOutCleanup();
 
   const email = user?.email ?? null;
   const label = email ?? t`Signed in`;
@@ -49,7 +51,17 @@ export function AccountMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}
-          <a href="/logout">{t`Log out`}</a>
+          <a
+            href="/logout"
+            onClick={(event) => {
+              if (!clearBeforeSignOut) return;
+              // The account's local copies go before the browser leaves for the sign-out.
+              event.preventDefault();
+              void clearBeforeSignOut()
+                .catch(reportError)
+                .finally(() => window.location.assign("/logout"));
+            }}
+          >{t`Log out`}</a>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

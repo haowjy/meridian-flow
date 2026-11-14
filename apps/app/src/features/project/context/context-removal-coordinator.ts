@@ -16,8 +16,6 @@ import type {
   PreparedWorkspaceNavigation,
 } from "../routing/project-navigation";
 import {
-  applyContextRepairIfCurrent,
-  type ContextRouteRepair,
   type ContextRouteRequest,
   contextRouteMatchesSearch,
   type ProjectSearch,
@@ -154,7 +152,10 @@ export type ContextRouteActivation = {
 };
 
 /** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
-export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
+export type RemovedPresentationPort = Pick<
+  RemovedNoticeStore,
+  "presentedRemoved" | "markOwnRemoval"
+>;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -391,59 +392,6 @@ export class ContextRemovalCoordinator {
     return true;
   }
 
-  /** Guarded route repair for a selected local Untitled whose server locator arrived. */
-  redirectMaterializedLocal(
-    projectId: string,
-    selectionRevision: number,
-    documentId: string,
-    target: ContextRouteRequest,
-  ): boolean {
-    if (this.unavailable()) return false;
-    const state = this.project(projectId);
-    const selection = state.selection;
-    const workId = state.activeWorkId;
-    const tab = this.presented
-      .documents(projectId)
-      .find((candidate) => candidate.documentId === documentId);
-    if (
-      !workId ||
-      !state.live ||
-      selection.status === "none" ||
-      selection.revision !== selectionRevision ||
-      selection.locator.scheme !== "unfiled" ||
-      selection.locator.path !== "" ||
-      selection.locator.workId !== workId ||
-      this.presented.mainDocumentId(projectId) !== documentId ||
-      tab?.kind !== "tracked" ||
-      tab.origin !== "local-resource" ||
-      !sameLocator(routeTargetForTab(tab), target)
-    ) {
-      return false;
-    }
-    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    const search = route?.readSearch(projectId);
-    if (!route || !search?.scheme) return false;
-    const repair: ContextRouteRepair = {
-      expectedSearch: {
-        work: search.work,
-        chat: search.chat,
-        scheme: "unfiled",
-        path: "",
-      },
-      expectedSelection: { kind: "materialized-local", revision: selectionRevision, documentId },
-      next: target,
-    };
-    route.updateSearch(projectId, (latest) => {
-      const current = this.project(projectId);
-      return current.selection.status !== "none" &&
-        current.selection.revision === selectionRevision &&
-        this.presented.mainDocumentId(projectId) === documentId
-        ? applyContextRepairIfCurrent(repair, latest)
-        : latest;
-    });
-    return true;
-  }
-
   registerRoutePort(
     projectId: string,
     port: ContextRemovalRoutePort,
@@ -575,6 +523,19 @@ export class ContextRemovalCoordinator {
     for (const item of readAccountRecents(projectId))
       if (item.address.kind === "document") ids.add(item.documentId);
     return [...ids];
+  }
+
+  /**
+   * The document main shows, when it is among `documentIds` and this tab is not already taking
+   * main off it (the writer's own removal goes back by itself).
+   */
+  shownAmong(projectId: string, documentIds: readonly string[]): string | null {
+    const shown = this.presented.mainDocumentId(projectId);
+    return shown &&
+      documentIds.includes(shown) &&
+      !this.projects.get(projectId)?.goingBack.has(shown)
+      ? shown
+      : null;
   }
 
   /**
@@ -748,6 +709,7 @@ export class ContextRemovalCoordinator {
     documentIds: readonly string[],
     landed?: (landing: MainLanding | null) => void,
   ): void {
+    this.notices?.markOwnRemoval(projectId, documentIds);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return;

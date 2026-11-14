@@ -1,12 +1,16 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
-import type { DocumentAddressResult } from "@meridian/contracts/protocol";
+import type { AccountId, DocumentAddressResult } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
+import {
+  clearAccountCopies,
+  clearCopiesOfOtherAccounts,
+} from "@/core/editor/local-document-copies";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
@@ -47,7 +51,7 @@ export class AccountFeatureLifetime {
   constructor(
     readonly accountId: string,
     queryClient: QueryClient,
-    onInvalidated: (error: Error) => void = () => undefined,
+    _onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
@@ -69,7 +73,7 @@ export class AccountFeatureLifetime {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
     });
-    this.notices = new RemovedNoticeStore(accountId, this.standings);
+    this.notices = new RemovedNoticeStore(this.standings);
     this.removal = new ContextRemovalCoordinator(accountId, {
       presented: this.presented,
       copies: this.registry,
@@ -119,6 +123,8 @@ export class AccountFeatureLifetime {
       },
     });
     dropRetiredTabSession(accountId);
+    // The browser last held someone else's documents: nothing of theirs stays for this account.
+    void clearCopiesOfOtherAccounts(accountId as AccountId).catch(reportError);
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,
@@ -143,6 +149,12 @@ export class AccountFeatureLifetime {
     this.draftCommands.close();
     this.runtime.beginClose();
     this.featureLease.suspend();
+  }
+
+  /** Sign-out: the sessions close, then every copy this account has on this browser is deleted. */
+  async clearForSignOut(): Promise<void> {
+    await this.finishClose();
+    await clearAccountCopies(this.accountId as AccountId);
   }
 
   finishClose(): Promise<void> {

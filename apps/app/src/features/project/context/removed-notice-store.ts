@@ -1,7 +1,8 @@
 /**
  * The notice for documents that vanished from under the writer, one per project. A view pushes a
  * document it presented when it vanished; the list says whether it was removed and by whom, and
- * only a removal the list shows is shown. A delete the writer's own account made says nothing.
+ * only a removal the list shows is shown. A delete this tab's writer just made says nothing: the
+ * view left on its own. The same account deleting from another tab or device does.
  */
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
@@ -31,6 +32,8 @@ export type RemovedNoticeSnapshot = Readonly<{
   version: number;
 }>;
 
+const OWN_REMOVAL_MS = 15_000;
+
 const EMPTY: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 
 type Entries = { removals: Map<string, PresentedRemoval>; stop: () => void };
@@ -40,11 +43,16 @@ export class RemovedNoticeStore {
   private readonly snapshots = new Map<string, RemovedNoticeSnapshot>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
+  /** Documents this tab is deleting, until when: their notice is not shown. */
+  private readonly own = new Map<string, number>();
 
-  constructor(
-    private readonly accountId: string,
-    private readonly standings: Pick<ProjectStandings, "watch" | "standing">,
-  ) {}
+  constructor(private readonly standings: Pick<ProjectStandings, "watch" | "standing">) {}
+
+  /** The writer is deleting these documents here: the list's answer about them is not news. */
+  markOwnRemoval(projectId: string, documentIds: readonly string[]): void {
+    const until = Date.now() + OWN_REMOVAL_MS;
+    for (const id of documentIds) this.own.set(`${projectId}/${id}`, until);
+  }
 
   /** Documents a view was presenting that vanished. */
   presentedRemoved(projectId: string, tabs: readonly OpenDocument[]): void {
@@ -88,10 +96,7 @@ export class RemovedNoticeStore {
       const answer = removalAnswer(this.standings.standing(projectId, removal.documentId));
       if (answer?.kind === "removed") {
         // The writer's own delete: the view left on its own, so there is nothing to explain.
-        if (
-          answer.record?.actor?.kind === "user" &&
-          answer.record.actor.userId === this.accountId
-        ) {
+        if ((this.own.get(`${projectId}/${removal.documentId}`) ?? 0) > Date.now()) {
           entries?.removals.delete(removal.documentId);
           continue;
         }

@@ -39,7 +39,6 @@ import {
 } from "../routing/ProjectNavigationContext";
 import { useProjectStandings } from "./account-feature-context";
 import { openDocumentFromFile } from "./open-document-from-file";
-import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
@@ -239,7 +238,6 @@ export class ProjectDocumentNavigationAdapter {
       const identified = await this.identify(projectId, {
         documentId,
         known,
-        workId,
         signal: controller.signal,
         isCurrent,
       });
@@ -284,10 +282,9 @@ export class ProjectDocumentNavigationAdapter {
     {
       documentId,
       known,
-      workId,
       signal,
       isCurrent,
-    }: Pick<OpenProjectDocumentRequest, "documentId" | "known" | "workId"> & {
+    }: Pick<OpenProjectDocumentRequest, "documentId" | "known"> & {
       signal: AbortSignal;
       isCurrent: () => boolean;
     },
@@ -297,9 +294,12 @@ export class ProjectDocumentNavigationAdapter {
     | { kind: "cancelled" }
     | { kind: "refused"; reason: "gone" | "lookup-failed" }
   > {
+    const { standings } = this.dependencies;
+    // The list's own answer first: a row the caller carries, or the views' last render, can
+    // predate a delete.
+    if (standings.standing(projectId, documentId).kind === "in-trash") return { kind: "trashed" };
     const placed = known ?? this.dependencies.locate(documentId);
     if (placed) return { kind: "identified", identity: placed };
-    const { standings } = this.dependencies;
     if (standings.standing(projectId, documentId).kind === "waiting") {
       try {
         await standings.whenReadable(projectId, signal);
@@ -333,7 +333,6 @@ export class ProjectDocumentNavigationAdapter {
   ): Promise<OpenDocument | null> {
     const identified = await this.identify(projectId, {
       documentId,
-      workId,
       signal: new AbortController().signal,
       isCurrent: () => true,
     });
