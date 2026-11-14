@@ -146,6 +146,7 @@ describe("inverse integration (postgres)", () => {
     ).branchId;
     if (!branchId) throw new Error("No active branch");
     await claimCreate(branchId, NEW_ID);
+    await fixture.provisionDraft(NEW_ID as never);
     const reply = await createResponse(db, 2);
     expect(
       await fixture.collab

@@ -39,6 +39,7 @@ it("a tombstoned draft document with released storage does not stop another docu
         BETA_ID,
       ),
     };
+    await view.provisionDraft(BETA_ID);
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },
       {

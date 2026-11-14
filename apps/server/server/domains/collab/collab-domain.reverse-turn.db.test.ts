@@ -144,6 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               providerResponseId: "response-reused-provider-tool-id-db-a",
             },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
 
@@ -166,6 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               providerResponseId: "response-reused-provider-tool-id-db-b",
             },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
 

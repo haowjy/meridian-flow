@@ -41,7 +41,7 @@ export async function stageDraft(
       },
       context,
     );
-    expect(outcome).toMatchObject({ status: "success", phase: "staged" });
+    expect(outcome).toMatchObject({ status: "success", phase: "committed" });
     identities.push(outcome.writeId);
   }
   const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);

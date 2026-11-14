@@ -32,17 +32,3 @@ stateDiagram-v2
   draft is refused at the [handshake](../../../lib/.context/state-machines.md).
 - A closed draft keeps `closedCause`, and a closed branch has `closedAt` and a pending document
   count of zero. Restoring a Work does not erase a draft's own cause.
-
-## Draft write journal row
-
-`draft_write_journal.status`: one part of a recorded write, kept so that the write can be undone.
-
-```mermaid
-stateDiagram-v2
-  [*] --> active: a write is journalled
-  active --> rollback_pending: an undo could not resolve this row's part
-```
-
-`adapters/drizzle-turn-inverse.ts` marks the rows whose parts a reversal left unresolved; the
-update is guarded on `active`. Reversal itself never rewrites history: an undo is a new forward
-update, as [reversal.md](reversal.md) explains.

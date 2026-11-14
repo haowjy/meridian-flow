@@ -11,13 +11,13 @@ export async function modelWrite(
   modelEdits: Pick<ModelEdits, "run" | "write">,
   command: WriteCommand,
   context: RoutedWriteContext,
-  who?: { accountId: string; projectId: string },
+  who: { accountId: string; projectId: string },
 ): Promise<RoutedWriteOutcome> {
   const key = {
     responseId: context.responseIdentity?.providerResponseId ?? randomUUID(),
     toolCallId: command.tool_use_id ?? randomUUID(),
-    accountId: (who?.accountId ?? context.grant.principal.accountId) as never,
-    projectId: (who?.projectId ?? context.grant.facts.projectId) as never,
+    accountId: who.accountId as never,
+    projectId: who.projectId as never,
   };
   let written: RoutedWriteOutcome | undefined;
   await modelEdits.run({

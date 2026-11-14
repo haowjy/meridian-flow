@@ -89,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             turnId: TURN_ID,
             grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
     }
@@ -251,6 +252,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
+      // The host's create materializes the document before the model's command runs.
+      await collab.ensureDocumentAuthority(CREATED_ID as never);
       const granted = testFileGrant(DRAFT_DESTINATION, DOC_ID);
       const grant = {
         ...granted,
@@ -275,6 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             responseIdentity: identity(RESPONSE_ID),
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
       const link = documentSchema.node("paragraph", null, [
@@ -300,6 +304,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             responseIdentity: identity(RESPONSE_ID),
             copiedNodes: [link],
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
 
@@ -353,6 +358,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           modelEdits,
           { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
           { ...ctx, turnId: TURN_2_ID },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "committed" });
       const draftRead = {
@@ -373,6 +379,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab.modelEdits(),
         { command: "undo", file: "chapter", documentId: DOC_ID },
         { ...ctx, turnId: TURN_2_ID },
+        { accountId: USER_ID, projectId: PROJECT_ID },
       );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
@@ -425,6 +432,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             responseIdentity: identity(LIVE_RESPONSE_ID),
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
       await links.within(

@@ -329,7 +329,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const displaced = await call("write", { command: "undo", path: "ch2" });
-      expect(text(displaced)).toContain("nothing_to_undo");
+      expect(displaced.isError).toBe(true);
+      expect(text(displaced)).toContain("cant_undo_changed");
     });
 
     it("walks text and tree edits on one stack across turns, and a card Undo dirties the move's turn", async () => {
