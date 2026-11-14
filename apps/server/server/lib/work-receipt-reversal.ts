@@ -1,4 +1,6 @@
 /** Plans and executes typed durable Work receipts through one ordered state machine. */
+
+import type { DocumentCommandId, UserId } from "@meridian/contracts";
 import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
@@ -22,6 +24,12 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../domains/threads/index.js";
+import {
+  isRetryableTransactionError,
+  runInDrizzleSavepoint,
+} from "../shared/drizzle-transaction.js";
+import type { AppServices } from "./compose.js";
+import { getDb } from "./db.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -42,6 +50,47 @@ type PlannedStep = {
   executable: boolean;
   message?: string;
 };
+
+/** A chat card's Undo or Redo: the turn's documents, then its Work receipts. */
+export function reverseTurnCard(
+  app: Pick<
+    AppServices,
+    "documentSync" | "threadRepos" | "works" | "workContextNotices" | "stopThreads"
+  >,
+  input: {
+    threadId: ThreadId;
+    turnId: TurnId;
+    userId: UserId;
+    direction: Direction;
+    commandId: DocumentCommandId;
+  },
+): Promise<ReversalOutcome> {
+  const alongside = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
+    const canReverseWorkReceipts =
+      outcome.status === "reversed" ||
+      outcome.status === "reconciled" ||
+      outcome.status === "nothing_to_undo" ||
+      outcome.status === "nothing_to_redo" ||
+      outcome.status === "partial" ||
+      outcome.status === "partial_failure";
+    if (!canReverseWorkReceipts) return outcome;
+    const workReceipts = await reverseWorkReceipts(
+      {
+        blocks: app.threadRepos.blocks,
+        turns: app.threadRepos.turns,
+        threads: app.threadRepos.threads,
+        works: app.works,
+        workContextNotices: app.workContextNotices,
+        stopThreads: app.stopThreads,
+        // A step's savepoint: a Work that fails leaves the others and the stored answer.
+        transaction: (operation) => runInDrizzleSavepoint(getDb(), operation),
+      },
+      input,
+    );
+    return combineWorkReversalOutcome(outcome, workReceipts, input.direction);
+  };
+  return app.documentSync.reverseThreadContext({ ...input, alongside });
+}
 
 export function combineWorkReversalOutcome(
   outcome: ReversalOutcome,
@@ -106,6 +155,8 @@ export async function reverseWorkReceipts(
       return applied;
     });
   } catch (error) {
+    // A deadlock or serialization failure is the server's to retry, never the click's answer.
+    if (isRetryableTransactionError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
       result(

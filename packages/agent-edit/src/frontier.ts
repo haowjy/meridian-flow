@@ -110,9 +110,8 @@ export interface FrontierLookups {
 }
 
 /**
- * One provider reply's own accepted mutations per document, in execution order: its writes
- * once their save's root commit settled them, its immediate writes and its undo, redo and
- * revert, each as the exact bytes it committed; and the documents it created (a create into
+ * One provider reply's own accepted mutations per document, in execution order: its writes,
+ * undo, redo and revert, each as the exact bytes its command committed; and the documents it created (a create into
  * a missing or empty document), which began empty for the model. The reply owns it from its
  * first tool call to its terminal boundary, which clears it; nothing caps or evicts it before.
  */

@@ -20,7 +20,7 @@ import type {
   SyncError,
   WorkDraftMissing,
 } from "../contracts.js";
-import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
+import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, readHashlines } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
@@ -34,7 +34,6 @@ import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
-  responseId?: string | null;
 } & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
@@ -42,7 +41,7 @@ export function createEffectiveDocumentReader(input: {
   draftCoordinator: Pick<DraftCoordinator, "copyDraft">;
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
-  agentEdit: ThreadPeerAgentEditCore;
+  agentEdit: AgentEditRouter;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
@@ -65,20 +64,18 @@ export function createEffectiveDocumentReader(input: {
 
   /**
    * Reads the document's effective Y.Doc for this command: the room copy a model call would
-   * read (the reply's pinned destination with its staged writes, the thread's Work draft, or
-   * live). Choosing the content source never chooses the view: every source renders through
+   * read (the thread's Work draft, or live). Choosing the content source never chooses the view: every source renders through
    * the same `read`, which spells in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, SyncError>> {
-    let room: Awaited<ReturnType<ThreadPeerAgentEditCore["readRoom"]>>;
+    let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
     try {
       room = await input.agentEdit.readRoom({
         documentId: command.documentId,
         threadId: command.threadId,
-        responseId: command.responseId ?? null,
         live: command.destination === "live",
       });
     } catch (cause) {
@@ -125,17 +122,10 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
-    async readStoredGrepTexts({ documentIds, responseId, ...version }) {
-      const texts = await input.blockText.grepTexts(documentIds, {
+    readStoredGrepTexts: ({ documentIds, ...version }) =>
+      input.blockText.grepTexts(documentIds, {
         draftOwner: version.destination === "draft" ? version.owner : null,
-      });
-      // A reply's writes to a document stay in its room until a commit and leave no draft row,
-      // so the stored text can lag the reply's own view.
-      if (responseId)
-        for (const id of texts.keys())
-          if (input.agentEdit.hasResponseDocument(responseId, id)) texts.delete(id);
-      return texts;
-    },
+      }),
     readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
@@ -178,9 +168,6 @@ export function createEffectiveDocumentReader(input: {
     },
     ensureCreatedDocumentDraft(command) {
       return input.drafts.ensureCreatedDocumentDraft(command);
-    },
-    retractCreatedDocumentDraft(command) {
-      return input.drafts.retractCreatedDocumentDraft(command);
     },
   };
 }

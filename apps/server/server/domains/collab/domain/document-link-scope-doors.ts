@@ -5,15 +5,15 @@
  * is about to spell, because only it has loaded them.
  *
  * Text crosses these doors: the Markdown engine (reads, the read API and
- * download, writer and import writes), the model's edit core, a
- * reply's save and draft-aware reads (Markdown, hashlines and revision).
+ * download, writer and import writes), the model's edit core and draft-aware reads (Markdown, hashlines and revision).
  * ContextFS.search scopes its source's chapters together. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
 
-import type { DraftPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
-import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
+import type { DraftPeerShadowAccess } from "../contracts.js";
+import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
+import type { ModelEdits } from "./model-edit.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function scopeMarkdownEngine(
@@ -57,56 +57,46 @@ export function scopeMarkdownEngine(
 }
 
 /**
- * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating, and read as the account it acts for; a
- * call by the thread it reads in.
+ * A model read is scoped by its grant's project, which exists even for a chapter the call is
+ * creating, and read as the account it acts for; a call by the thread it reads in.
  */
 export function scopeAgentEdit(
-  core: ThreadPeerAgentEditCore,
+  router: AgentEditRouter,
   scopes: DocumentLinkScopes,
-): ThreadPeerAgentEditCore {
-  const byGrant = (context: {
-    grant: { facts: { projectId: string }; principal: { accountId: string } };
-    threadId?: string;
-  }) => ({
-    projectId: context.grant.facts.projectId,
-    viewer: {
-      accountId: context.grant.principal.accountId,
-      ...(context.threadId ? { threadId: context.threadId } : {}),
-    },
-  });
-  return asThreadPeerAgentEditCore({
-    // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    // Saved and rolled back within the reply's thread, by the finalizer below.
-    rollbackResponse: core.rollbackResponse,
-    commitResponse: core.commitResponse,
-    hasResponseDocument: core.hasResponseDocument,
-    readRoom: core.readRoom,
-    refuseStaged: core.refuseStaged,
-    retirePeer: core.retirePeer,
-    dropStaged: core.dropStaged,
-    retireThreadPeers: core.retireThreadPeers,
-    read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
-    write: (command, context) =>
-      scopes.within(byGrant(context), () => core.write(command, context)),
-  });
-}
-
-/** A reply's save renders the receipts the model reads next, in its thread's project. */
-export function scopeResponseFinalizer(
-  finalizer: ResponseWriteFinalizer,
-  scopes: DocumentLinkScopes,
-): ResponseWriteFinalizer {
+): AgentEditRouter {
   return {
-    finalizeResponseCommit: (responseId, ctx, beforeTransactionCommit) =>
-      scopes.within({ threadId: ctx.threadId }, () =>
-        finalizer.finalizeResponseCommit(responseId, ctx, beforeTransactionCommit),
-      ),
-    finalizeResponseRollback: (responseId, ctx) =>
-      scopes.within({ threadId: ctx.threadId }, () =>
-        finalizer.finalizeResponseRollback(responseId, ctx),
+    // Passed through: no Markdown of their own, or it comes from the scoped engine.
+    readRoom: router.readRoom,
+    read: (command, context) =>
+      scopes.within(
+        {
+          projectId: context.grant.facts.projectId,
+          viewer: {
+            accountId: context.grant.principal.accountId,
+            ...(context.threadId ? { threadId: context.threadId } : {}),
+          },
+        },
+        () => router.read(command, context),
       ),
   };
+}
+
+/** A model edit's write is scoped by its grant's project and its thread. */
+export function scopeModelEditWrite(
+  write: ModelEdits["write"],
+  scopes: DocumentLinkScopes,
+): ModelEdits["write"] {
+  return (command, context) =>
+    scopes.within(
+      {
+        projectId: context.grant.facts.projectId,
+        viewer: {
+          accountId: context.grant.principal.accountId,
+          ...(context.threadId ? { threadId: context.threadId } : {}),
+        },
+      },
+      () => write(command, context),
+    );
 }
 
 /**
@@ -134,7 +124,6 @@ export function scopeDraftPeer(
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
-    retractCreatedDocumentDraft: access.retractCreatedDocumentDraft,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

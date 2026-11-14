@@ -284,6 +284,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const undone = await script.runtime.ports.documentSync.reverseThreadContext({
+        commandId: randomUUID(),
         threadId: THREAD.threadId as never,
         userId: USER_ID as never,
         direction: "undo",
@@ -302,48 +303,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
       expect(text(await call("read", { path: "ch2 (2)" }))).toContain("Chapter two.");
-    });
-
-    it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
-      const script = await start();
-      // w2's draft-mode chat drafts a change to ch2: a live delete leaves it alone.
-      await runtimes.script(script.runtime, OTHER).reply(async (call) => {
-        await call("write", { command: "replace", path: "ch2", find: "two", content: "2" });
-      });
-      await script.runtime.ports.documentSync.draftEffects.flush();
-      const { call, responseId } = await script.begin();
-      expect(
-        (await call("write", { command: "move", from: { path: "ch1" }, path: "ch9" })).isError,
-      ).toBeFalsy();
-      const deleted = await call("write", { command: "delete", path: "ch2" });
-      expect(text(deleted)).toContain(
-        `Work "Polish" still has changes to it; applying them brings it back.`,
-      );
-      // The writer makes a new ch2 before the reply fails: the restored document lands beside it.
-      await db.insert(schema.documents).values({
-        contextSourceId: SOURCE_ID,
-        name: "ch2",
-        extension: "",
-        fileType: "markdown",
-      });
-
-      const rolledBack = await script.runtime.ports.documentSync.finalizeResponseRollback(
-        { providerResponseId: responseId, editScopeId: responseId },
-        THREAD as never,
-      );
-      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
-      expect(await placement(CH2)).toMatchObject({ name: "ch2 (2)", deletedAt: null });
-      expect(rolledBack.skipped).toEqual([]);
-      const drafts = await db
-        .select({ status: schema.documentDrafts.status })
-        .from(schema.documentDrafts)
-        .where(
-          and(
-            eq(schema.documentDrafts.documentId, CH2),
-            eq(schema.documentDrafts.kind, "work_draft"),
-          ),
-        );
-      expect(drafts).toEqual([{ status: "active" }]);
     });
 
     it("refuses an undo the writer's later removal superseded even when the old path is occupied", async () => {
@@ -370,7 +329,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const displaced = await call("write", { command: "undo", path: "ch2" });
-      expect(text(displaced)).toContain("nothing_to_undo");
+      expect(displaced.isError).toBe(true);
+      expect(text(displaced)).toContain("cant_undo_changed");
     });
 
     it("walks text and tree edits on one stack across turns, and a card Undo dirties the move's turn", async () => {
@@ -380,7 +340,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await first.call("write", { command: "replace", path: "ch1", find: "one", content: "1" }))
           .isError,
       ).toBeFalsy();
-      await first.save();
       expect(
         (await first.call("write", { command: "move", from: { path: "ch1" }, path: "intro" }))
           .isError,
@@ -396,7 +355,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })
         ).isError,
       ).toBeFalsy();
-      await later.save();
       const textUndo = await later.call("write", { command: "undo", path: "intro" });
       expect(textUndo.isError, text(textUndo)).toBeFalsy();
       expect(await script.text("intro")).toContain("Chapter 1.");
@@ -421,6 +379,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // The writer's card Undo of the first turn moves it back.
       const reversed = await script.runtime.ports.documentSync.reverseThreadContext({
+        commandId: randomUUID(),
         threadId: THREAD.threadId as never,
         userId: USER_ID as never,
         direction: "undo",
@@ -443,7 +402,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })
         ).isError,
       ).toBeFalsy();
-      await compound.save();
       const deleting = await runtimes
         .script(script.runtime, { ...THREAD, turnId: NEXT_TURN })
         .begin();
@@ -578,6 +536,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await call("write", { command: "redo", path: "ch1" })).isError).toBeFalsy();
       const card = (direction: "undo" | "redo") =>
         script.runtime.ports.documentSync.reverseThreadContext({
+          commandId: randomUUID(),
           threadId: OTHER.threadId as never,
           userId: USER_ID as never,
           direction,
@@ -693,7 +652,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "manuscript://sect-notes",
       });
       expect(undone.isError, text(undone)).toBeFalsy();
-      await undoTurn.save();
       expect(await review(script).item(SCRATCH_NOTE)).toBeUndefined();
 
       const redoTurn = await drafting.begin();
@@ -702,7 +660,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "scratch://@w2/sect-notes",
       });
       expect(redone.isError, text(redone)).toBeFalsy();
-      await redoTurn.save();
 
       expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
       expect(await placement(SCRATCH_NOTE)).toMatchObject({

@@ -47,7 +47,6 @@ export type StoredInversePart = InversePart & {
   threadId: ThreadId | null;
   turnId: TurnId | null;
   responseId: string | null;
-  editScopeId: string | null;
   toolCallId: string | null;
   consumes: string[];
   actor: "agent" | "human" | "system";
@@ -58,7 +57,7 @@ export type StoredInversePart = InversePart & {
 export type TurnInverseQuery = {
   threadId: ThreadId;
   turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
   draftId?: string | null;
@@ -114,7 +113,7 @@ export interface TurnInverseStore {
   commit(input: {
     plans: PreparedDocumentInverse[];
     sequence: { plan: PreparedDocumentInverse; step: InverseStep }[];
-    kind: "undo" | "redo" | "revert" | "rollback";
+    kind: "undo" | "redo" | "revert";
     userId?: UserId;
     query: TurnInverseQuery;
   }): Promise<{
@@ -144,14 +143,11 @@ export interface TurnInverseStore {
     part: StoredInversePart,
   ): { before: string; after: string };
 }
-type TurnRow = Pick<StoredInversePart, "actor" | "kind" | "threadId" | "turnId" | "editScopeId">;
+type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
-  (query.responseIdentity
-    ? part.actor === "agent" && part.kind !== "rollback"
-    : part.kind === "write" || part.kind === "revert") &&
+  (part.kind === "write" || part.kind === "revert") &&
   part.threadId === query.threadId &&
-  part.turnId === query.turnId &&
-  (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);
+  part.turnId === query.turnId;
 
 /**
  * Each document's ordered steps, for both command and dry run; each text step lands where its
@@ -164,10 +160,10 @@ function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
-  kind: "undo" | "redo" | "rollback",
+  kind: "undo" | "redo",
   actionId: string,
 ): PreparedDocumentInverse[] {
-  const direction = kind === "redo" ? "redo" : "undo";
+  const direction = kind;
   const inTurn = (_document: InverseDocument, row: StoredInversePart | StoredTreeEntry) =>
     targetsTurn(row, query);
   const materialized = new Map(
@@ -178,10 +174,7 @@ function prepare(
       (row): row is TransitionEntry =>
         isTransitionEntry(row) &&
         inTurn(document, row) &&
-        !materialized.get(document.documentId)?.has(row.editId) &&
-        // Response rollback already owns create retraction: it preserves a creation another
-        // committed contribution made stand, then removes only the reply's use.
-        !(kind === "rollback" && row.tree.op === "create"),
+        !materialized.get(document.documentId)?.has(row.editId),
     );
   const keys = new Set([
     ...documents.flatMap((document) =>
@@ -217,21 +210,18 @@ function prepare(
       const destination = document.destinationOf(part.origin);
       return destination.kind !== "draft" || !hiddenCreateBranches.has(destination.branchId);
     });
-    const rolledBack = (part: StoredInversePart) => index.rolledBack.has(partKey(part));
     const reversals =
       direction === "undo"
-        ? targets.filter((part) => !rolledBack(part))
-        : document.history.filter((part) => part.actionId === selectedAction && !rolledBack(part));
+        ? targets
+        : document.history.filter((part) => part.actionId === selectedAction);
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
-      rolledBack: index.rolledBack,
       identity: {
         threadId: null,
         turnId: null,
         responseId: null,
-        editScopeId: null,
         toolCallId: null,
-        actor: kind === "rollback" ? "system" : "human",
+        actor: "human",
       },
     });
     const entryPlanner = createCapturedReversalPlanner(document, query);
@@ -268,17 +258,13 @@ function prepare(
           kind: "text";
           editId: string;
           destination: InverseDestination;
-          actionKind: "undo" | "redo" | "revert" | "rollback";
+          actionKind: "undo" | "redo" | "revert";
           at: number;
         }
     )[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
     for (const { at, row, parts } of originals) {
       if (row) {
-        if (simulation.rolledBack.has(treeKey(row.editId))) {
-          skipTree(row, "rolled_back");
-          continue;
-        }
         const planned = entryPlanner.treePlan(
           {
             id: row.editId,
@@ -289,7 +275,6 @@ function prepare(
           direction,
           simulation.tree,
           simulation.states,
-          simulation.rolledBack,
           simulation.nextStep,
         );
         if ("cause" in planned) {
@@ -317,7 +302,6 @@ function prepare(
       const planned = entryPlanner.turnTextPlan(
         entry,
         direction,
-        kind,
         query,
         simulation.liveRemoved(),
         inverseParts,
@@ -329,10 +313,6 @@ function prepare(
       }
       for (const { part, direction: partDirection } of planned.selection) {
         const selectedPart = part as StoredInversePart;
-        if (rolledBack(selectedPart)) {
-          skip(selectedPart, "rolled_back");
-          continue;
-        }
         selection.set(planned.destination, [
           ...(selection.get(planned.destination) ?? []),
           { part: selectedPart, direction: partDirection },
@@ -344,13 +324,13 @@ function prepare(
           kind: "text",
           editId: parts[0].editId,
           destination: planned.destination,
-          actionKind: planned.actionKind as "undo" | "redo" | "revert" | "rollback",
+          actionKind: planned.actionKind as "undo" | "redo" | "revert",
           at,
         });
     }
     // Text never moves or deletes a document, so each destination's parts compute as one
     // selection in step order over that destination's view; one edit lands in one
-    // destination. Review membership does not decide inverse eligibility, including rollback.
+    // destination. Review membership does not decide inverse eligibility.
     const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
         return [destination, entryPlanner.compute(destination, parts, actionId)];
@@ -539,24 +519,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
             : {}),
           acceptedParts: accepted,
         };
-      });
-    },
-    async rollbackResponse(
-      query: TurnInverseQuery & {
-        responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
-      },
-    ): Promise<TurnInverseSkip[]> {
-      return store.withCapturedDocuments(query, async (documents) => {
-        const plans = prepare(store, documents, query, "rollback", randomUUID());
-        // The store also marks only this response's remaining pending target rows. A step that
-        // can't run is reported and the rest still run.
-        const { skips } = await store.commit({
-          plans,
-          sequence: inSequence(plans, "undo"),
-          kind: "rollback",
-          query,
-        });
-        return [...plans.flatMap((plan) => plan.skips), ...skips];
       });
     },
   };

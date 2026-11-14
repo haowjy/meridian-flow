@@ -177,17 +177,17 @@ import {
   type HandoffBriefs,
 } from "../domains/runtime/handoff/brief-service.js";
 import {
+  type CommandResolver,
   createChildRunCoordinator,
   createChildRunDriver,
+  createCommandRecovery,
   createContextMediaResolver,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
-  createDrizzleObservationFrontiers,
   createDrizzlePermissionGrantStore,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
-  createDrizzleShownLinkStore,
   createDrizzleThreadLock,
   createInMemoryInbox,
   createInMemoryRunClaim,
@@ -211,7 +211,6 @@ import {
   createWriterTurnProducer,
   type DeliveryProducer,
   InvalidAdmissionError,
-  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -219,7 +218,6 @@ import {
   readChainPermission,
   readRunStateAtHead,
   requireWritableThread,
-  type ShownLinkStore,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -282,12 +280,7 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
-import {
-  type AgentEditResponseWriteLifecycle,
-  createAgentEditResponseWriteLifecycle,
-  createModelToolRegistrations,
-  createReferenceReader,
-} from "./model-tools/index.js";
+import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
@@ -326,8 +319,6 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextNotices: WorkContextNotices;
-  /** A reply's write lifecycle: its save, its rollback, and the staged creates they retract. */
-  responseWrites: AgentEditResponseWriteLifecycle;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -447,11 +438,9 @@ export type ProductionAppPorts = {
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
-  shownLinks: ShownLinkStore;
   /** The removal record behind a missing file the model asked for. */
   documentRemovals: DocumentRemovals;
   /** What each transcript block showed the model of a document, per room. */
-  observationFrontiers: ObservationFrontiers;
 };
 
 /** Max threads one wake sweep starts; the sweep repeats on its interval. */
@@ -778,9 +767,7 @@ export async function createProductionAppPorts(input: {
     notices,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
-    shownLinks: createDrizzleShownLinkStore(db),
     documentRemovals: createRemovalRecords(db),
-    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -870,9 +857,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
+  const commandResolver: CommandResolver = {
+    resolveCommand: (key) => ports.documentSync.modelEdits().resolve(key),
+  };
+  const recoverCommands = createCommandRecovery({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    toolRegistry,
+    commands: commandResolver,
+  });
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
     toolRegistry,
+    recoverCommands,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     runClaim: runClaim,
@@ -893,15 +890,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
-  const responseWrites = createAgentEditResponseWriteLifecycle({
-    documentSync: ports.documentSync,
-  });
   const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
-    responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     permissionGrants,
@@ -919,7 +912,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
-    shownLinks: ports.shownLinks,
+    shownLinks: ports.documentSync.modelEvidence(),
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
   };
@@ -956,7 +949,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
-  const toolExecutor = createToolExecutor(toolRegistry);
+  const toolExecutor = createToolExecutor(toolRegistry, commandResolver);
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
       {
@@ -990,6 +983,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -999,6 +993,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
+    recoverCommands,
     authority: runClaim,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
@@ -1162,8 +1157,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
-    shownLinks: ports.shownLinks,
-    observationFrontiers: ports.observationFrontiers,
+    documentEvidence: ports.documentSync.modelEvidence(),
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
@@ -1186,7 +1180,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
-    responseWrites,
     delivery,
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
@@ -1267,7 +1260,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
-    responseWrites,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1358,6 +1350,8 @@ export function createInMemoryAppServices(): AppServices {
   const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
+    // This composition has no document tools, so no call can leave a command open.
+    async recoverCommands() {},
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");
@@ -1484,6 +1478,7 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("Ahead registration requires Postgres");
     },
     register: async () => unsupported(),
+    registerInCommand: async () => unsupported(),
     settleArrivals: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };
@@ -1790,7 +1785,6 @@ export function createInMemoryAppServices(): AppServices {
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
     asks,
-    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({

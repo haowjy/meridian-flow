@@ -26,7 +26,7 @@ deliveries through the production admission path), `hocuspocus-persistence.test.
 Postgres.
 
 **Gaps.** The convergence test uses the in-memory journal, not Postgres. Nothing checks
-`gc: false`. Five write paths (live, draft, reply save, Apply, import) each have their
+`gc: false`. Five write paths (live, draft, model edit, Apply, import) each have their
 own tests; none spans them. Open: #691 and #680.
 
 Two paths change text on one copy with no edit the others receive:

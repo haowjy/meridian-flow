@@ -4,12 +4,11 @@ export type {
   MessageProvenance,
   OrchestratorEvent,
 } from "@meridian/contracts/threads";
+export type { ShownLinkShowing } from "../../shared/model-evidence.js";
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextMediaResolver } from "./adapters/context-media-resolver.js";
-export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
 export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
-export { createDrizzleShownLinkStore } from "./adapters/drizzle/shown-links.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
 export {
   createDrizzleRunClaim,
@@ -17,6 +16,7 @@ export {
 } from "./adapters/drizzle-run-claim.js";
 export { readRunStateAtHead } from "./adapters/drizzle-run-state.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
+export { createInMemoryDocumentEvidence } from "./adapters/in-memory/document-evidence.js";
 export {
   createInMemoryInbox,
   createInMemoryRunClaim,
@@ -26,8 +26,6 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
-export { createInMemoryObservationFrontiers } from "./adapters/in-memory/observation-frontiers.js";
-export { createInMemoryShownLinkStore } from "./adapters/in-memory/shown-links.js";
 export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
@@ -54,6 +52,7 @@ export {
   type BoundaryCompletion,
   beginPromptEpoch,
 } from "./loop/begin-prompt-epoch.js";
+export { createCommandRecovery } from "./loop/command-recovery.js";
 export type {
   CompactedThrough,
   CompactionBlockContent,
@@ -154,12 +153,12 @@ export {
   type WriteModeSwitchPort,
   writeModeSwitchNotice,
 } from "./loop/write-mode-switch.js";
+export type { CommandResolver } from "./ports/command-resolver.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
+export type { DocumentEvidence, FrontierLookups } from "./ports/document-evidence.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { MediaResolverPort } from "./ports/media-resolver.js";
 export { unavailableMediaResolver } from "./ports/media-resolver.js";
-export type { FrontierLookups, ObservationFrontiers } from "./ports/observation-frontiers.js";
-export type { ShownLink, ShownLinkShowing, ShownLinkStore } from "./ports/shown-links.js";
 export {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,

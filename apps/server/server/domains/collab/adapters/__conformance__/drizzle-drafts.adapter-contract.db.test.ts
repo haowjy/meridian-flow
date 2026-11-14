@@ -58,9 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000602";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000603";
     const WORK_ID = "00000000-0000-4000-8000-000000000604";
-    const NEXT_WORK_ID = "00000000-0000-4000-8000-000000000608";
     const BRANCH_ID = "00000000-0000-4000-8000-000000000609";
-    const NEXT_BRANCH_ID = "00000000-0000-4000-8000-000000000610";
     const DOC_ID = "00000000-0000-4000-8000-000000000605";
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
@@ -202,70 +200,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(Object.keys(left.seed?.origins ?? {})).toHaveLength(1);
     });
 
-    it("reseeds a clean thread peer under the reassigned primary Work's draft", async () => {
-      const live = docWithText("live prose");
-      const { documentDraft: oldPeer } = await store.ensureThreadPeerDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: async () => ({ doc: live, room: null }),
-      });
-      await db.insert(works).values({
-        id: NEXT_WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Next Work",
-        handle: "w2",
-      });
-      await db.insert(branches).values({
-        id: NEXT_BRANCH_ID,
-        projectId: PROJECT_ID,
-        originWorkId: NEXT_WORK_ID,
-        createdBy: USER_ID,
-      });
-      await db.transaction(async (tx) => {
-        await tx
-          .update(threadWorks)
-          .set({ isPrimary: false })
-          .where(eq(threadWorks.threadId, THREAD_ID));
-        await tx.insert(threadWorks).values({
-          threadId: THREAD_ID,
-          workId: NEXT_WORK_ID,
-          projectId: PROJECT_ID,
-          isPrimary: true,
-        });
-      });
-
-      await expect(
-        store.resolveThreadDraft(DOC_ID as never, THREAD_ID as never),
-      ).rejects.toMatchObject({ name: "DraftNotFoundError" });
-      const { documentDraft: nextPeer } = await store.ensureThreadPeerDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        branchId: NEXT_BRANCH_ID as never,
-        liveDoc: async () => ({ doc: live, room: null }),
-      });
-      const [oldRow, nextUpstream] = await Promise.all([
-        db
-          .select({ status: documentDrafts.status, revision: documentDrafts.revision })
-          .from(documentDrafts)
-          .where(eq(documentDrafts.id, oldPeer.draftId))
-          .then((rows) => rows[0]),
-        store.getDraft(nextPeer.upstreamDraftId ?? ""),
-      ]);
-
-      expect(nextPeer).toMatchObject({
-        branchId: NEXT_BRANCH_ID,
-        workId: NEXT_WORK_ID,
-        threadId: THREAD_ID,
-        status: "active",
-      });
-      expect(nextPeer.draftId).not.toBe(oldPeer.draftId);
-      // A close moves the revision, so an exact rewrite computed before it misses.
-      expect(oldRow).toMatchObject({ status: "closed", revision: oldPeer.revision + 1 });
-      expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
-    });
-
     it("bulk-appends forty segment rows with one journal insert and no pending scans", async () => {
       const { createWorkProjectionMutation } = await import(
         "../../../projects/adapters/work-projection-mutation.js"
@@ -391,9 +325,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: "draft_corrupt_review_entry",
         documentId: DOC_ID as never,
         kind: "work_draft",
-        upstreamDraftId: null,
         branchId: BRANCH_ID as never,
-        threadId: null,
         status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),

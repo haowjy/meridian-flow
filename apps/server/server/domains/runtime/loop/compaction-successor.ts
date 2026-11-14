@@ -1,6 +1,6 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import type { TokenizerFamily } from "@meridian-flow/gateway";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -116,7 +116,6 @@ function fittingEstimate(context: AssembledNextTurnContext) {
  */
 async function reshowImportantFiles(args: {
   deps: OrchestratorDeps;
-  assertNoResponseScope: () => void;
   input: RunLoopInput;
   placeholder: Turn;
   allTurns: Turn[];
@@ -155,7 +154,6 @@ async function reshowImportantFiles(args: {
     budgetTokens: args.budgetTokens,
     tokenizer: args.tokenizer,
     read: async (reference, readInput) => {
-      args.assertNoResponseScope();
       input.signal?.throwIfAborted();
       try {
         const read = await deps.referenceReader.read(reference, {
@@ -221,7 +219,6 @@ async function reshowImportantFiles(args: {
 
 export async function prepareCompactionSuccessor(args: {
   deps: OrchestratorDeps;
-  assertNoResponseScope: () => void;
   input: RunLoopInput;
   thread: Thread;
   placeholder: Turn;
@@ -264,7 +261,6 @@ export async function prepareCompactionSuccessor(args: {
       threadId: input.threadId,
       recorded,
       revisions: deps.documentRevisions,
-      assertNoResponseScope: args.assertNoResponseScope,
     });
     const contextInput = {
       thread,
@@ -356,7 +352,6 @@ export async function prepareCompactionSuccessor(args: {
             ),
             decidingTurnId: placeholder.id as TurnId,
           },
-          assertNoResponseScope: args.assertNoResponseScope,
           pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
           signal: input.signal,
           promptBakes: {
@@ -466,8 +461,15 @@ export async function completeCompactionCurrent(input: {
         blocks: persisted,
         compactionModel: prepared.model,
         metadata: { ...(settled.metadata as JsonObject), ...prepared.metadata },
-        afterEvents: () =>
-          recordReferenceEvidence(deps, threadId, placeholder.id, prepared.reshown.evidence),
+        afterEvents: async () => {
+          const thread = await deps.repos.threads.findById(threadId);
+          if (!thread) throw new Error("Compacted thread disappeared");
+          await recordReferenceEvidence(
+            deps,
+            { projectId: thread.projectId as ProjectId, threadId, turnId: placeholder.id },
+            prepared.reshown.evidence,
+          );
+        },
         events: (bakeId) => [
           {
             type: "context.compacted",

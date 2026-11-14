@@ -43,7 +43,7 @@ Repair runs only on an explicit touch: the occupant `create-placement` returns,
 a joined hidden candidate before its draft seeds, live overwrite and the held
 live lease, and Hocuspocus room admission before its first generation read.
 Everything else requires an existing head and creates nothing. Draft creation
-(a Work draft or a thread peer) passes `requireLivingDocument` under the same
+(a Work draft) passes `requireLivingDocument` under the same
 lock. A miss answers `DocumentNotFoundError`, carrying the removal record
 (`removal`) when the document was removed.
 
@@ -57,8 +57,8 @@ the seed checkpoint refuse a document that already has one. The state is encoded
 transaction commits.
 
 `allocateAdmission` is the one live-write boundary (journal): a
-removal that won the mutation lock refuses every later frame, staged save
-install and Apply member there.
+removal that won the mutation lock refuses every later frame, model write
+and Apply member there.
 
 A deleted document keeps its head and history for Restore, so an existing head
 is not a document that may change. Head reads say which they mean:
@@ -77,10 +77,9 @@ A removal refuses as a `DocumentNotFoundError` carrying the removal record, so
 every not-found mapping, including model tool results, answers a removal as
 `document_not_found` with who removed it (status and words once, agent-edit's
 `removedFile` in `removal-copy.ts`) until the model gets its own `document_deleted` answer. A
-reply's write the removal stopped, refused when staged or at the save, is one
-`invalid_write` with `rejected: "removed"` and the record in `removal`
-(agent-edit's `removedWriteRefusal`), which the chat's card words. Its sentence
-stands alone on both paths: the save path adds no "Write did not land." prefix.
+model's write the removal stopped is one `invalid_write` with `rejected: "removed"`
+and the record in `removal` (agent-edit's `removedWriteRefusal`), which the chat's
+card words.
 
 ## Schema-aware document engine
 

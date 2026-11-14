@@ -69,7 +69,6 @@ export function entries(document: InverseDocument, threadId: string): Entry[] {
       Number(entry.handle.slice(1)) !== Number(create.handle.slice(1)) + 1 ||
       entry.parts[0]?.turnId !== create.tree.turnId ||
       entry.parts[0]?.responseId !== create.tree.responseId ||
-      entry.parts[0]?.editScopeId !== create.tree.editScopeId ||
       !entry.parts[0]?.toolCallId ||
       entry.parts[0].toolCallId !== create.tree.toolCallId
     )
@@ -88,7 +87,6 @@ export function inspectionActions(
     [...history, ...tree],
     new Set(own.flatMap(entryKeys)),
   );
-  const rolledBack = (part: StoredInversePart) => actions.rolledBack.has(key(part));
   const modelConsumed = new Set(
     actions.actions.flatMap((action) =>
       action.parts.every((part) => part.actor === "agent") ? [...action.targets] : [],
@@ -97,22 +95,15 @@ export function inspectionActions(
   const stack = own.filter((entry) => {
     const keys = entryKeys(entry);
     return (
-      !keys.some((key) => modelConsumed.has(key)) &&
-      !keys.every((key) => actions.byPart.has(key) || actions.rolledBack.has(key))
+      !keys.some((key) => modelConsumed.has(key)) && !keys.every((key) => actions.byPart.has(key))
     );
   });
   return {
     actions,
-    rolledBack,
     stack,
     top: stack[0],
     candidate: actions.actions.find(
-      (action) =>
-        !own.some((entry) =>
-          entryRows(entry).some(
-            (row) => row.id > action.newest && !actions.rolledBack.has(row.key),
-          ),
-        ),
+      (action) => !own.some((entry) => entryRows(entry).some((row) => row.id > action.newest)),
     ),
   };
 }

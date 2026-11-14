@@ -405,6 +405,9 @@ if (!RUN) {
           async register(rows) {
             registered.push(...rows.map((row) => row.holderProjectId));
           },
+          async registerInCommand(rows) {
+            registered.push(...rows.map((row) => row.holderProjectId));
+          },
         },
         viewFor: liveViewFor,
       });

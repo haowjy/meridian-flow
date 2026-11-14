@@ -88,7 +88,6 @@ export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
   options: {
-    responseId?: string | null;
     version?: DocumentVersion;
     /** Write live whatever the chat's mode, as a binary copy does. */
     liveWrites?: boolean;
@@ -109,7 +108,6 @@ export function contextPortForThread(
       }),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
-      responseId: options.responseId,
       branchOwner: options.liveWrites ? null : resolution.primaryBranchOwner,
       ...(options.version ? { version: options.version } : {}),
     },

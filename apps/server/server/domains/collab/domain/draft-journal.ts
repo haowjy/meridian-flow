@@ -1,5 +1,5 @@
 /**
- * A draft's journal rows and ambient-transaction reads used by reply replay and attribution.
+ * A draft's journal rows and ambient-transaction reads used by attribution.
  */
 
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -17,10 +17,7 @@ export type DraftJournalRow = {
   turnId: TurnId | null;
   actorUserId: UserId | null;
   updateData: Uint8Array;
-  status: "active" | "rollback_pending";
   updateMeta?: unknown;
-  /** Immutable edit evidence, never inferred from actor or missing text. */
-  editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
 };
 
 export type DraftReplayJournalReads = {
@@ -28,8 +25,4 @@ export type DraftReplayJournalReads = {
     draftId: string,
     options: { documentId: DocumentId; after: number; through: number },
   ): Promise<DraftJournalRow[]>;
-  listJournalRowsForDraft(input: {
-    draftId: string;
-    throughJournalId?: number;
-  }): Promise<DraftJournalRow[]>;
 };

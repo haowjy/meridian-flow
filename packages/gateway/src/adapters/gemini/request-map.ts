@@ -36,6 +36,7 @@ import type {
   Tool,
 } from "../../domain/index.js";
 import { geminiMajorVersion, wireMediaSource } from "../../domain/media.js";
+import { ToolCallPairing } from "../../helpers/tool-call-pairing.js";
 
 /** Google's documented value that skips signature validation on a replayed function call. */
 const SKIP_SIGNATURE_VALIDATION = "skip_thought_signature_validator";
@@ -128,11 +129,11 @@ function modelParts(message: Message, target: Target): Part[] {
   return parts;
 }
 
-function toolResultParts(message: Message, names: Map<string, string>, target: Target): Part[] {
+function toolResultParts(message: Message, calls: ToolCallPairing<string>, target: Target): Part[] {
   const parts: Part[] = [];
   for (const result of message.content) {
     if (result.type !== "tool_result") continue;
-    const name = names.get(result.toolCallId);
+    const name = calls.answer(result.toolCallId);
     if (name === undefined) {
       throw new Error(`Tool result ${result.toolCallId} has no matching tool call to name`);
     }
@@ -155,19 +156,17 @@ function toolResultParts(message: Message, names: Map<string, string>, target: T
 }
 
 function mapContents(messages: Message[], target: Target): Content[] {
-  const names = new Map<string, string>();
-  for (const message of messages) {
-    for (const part of message.content) {
-      if (part.type === "tool_use") names.set(part.toolCallId, part.toolName);
-    }
-  }
+  const calls = new ToolCallPairing<string>();
   const contents: Content[] = [];
   for (const message of messages) {
     if (message.role === "system") continue;
+    for (const part of message.content) {
+      if (part.type === "tool_use") calls.call(part.toolCallId, part.toolName);
+    }
     const role = message.role === "assistant" ? "model" : "user";
     const parts =
       message.role === "tool"
-        ? toolResultParts(message, names, target)
+        ? toolResultParts(message, calls, target)
         : message.role === "assistant"
           ? modelParts(message, target)
           : userParts(message, target);
