@@ -1130,12 +1130,12 @@ msgstr "Another import in this project is organizing."
 #~ msgstr "Another Work already has this name. Choose a different name."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "Another Work is now named {name}. Rename that Work, then restore this one."
-msgstr "Another Work is now named {name}. Rename that Work, then restore this one."
+#~ msgid "Another Work is now named {name}. Rename that Work, then restore this one."
+#~ msgstr "Another Work is now named {name}. Rename that Work, then restore this one."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "Another Work now has this name. Rename that Work, then restore this one."
-msgstr "Another Work now has this name. Rename that Work, then restore this one."
+#~ msgid "Another Work now has this name. Rename that Work, then restore this one."
+#~ msgstr "Another Work now has this name. Rename that Work, then restore this one."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
@@ -6274,6 +6274,10 @@ msgstr "This Work no longer exists."
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+
+#: src/client/query/work-update-failure.ts
+msgid "This Work was deleted. Restore it to edit."
+msgstr "This Work was deleted. Restore it to edit."
 
 #: src/features/import/selection-limits.ts
 msgid "Those files can't be imported."

@@ -12,7 +12,7 @@ import {
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../../lib/command-route.js";
 import { parseOptionalRequestId, requireRequestId } from "../../../../../lib/request-id.js";
-import { runWorkCommand } from "../../../../../lib/work-command.js";
+import { runWorkCommand, workAnswer } from "../../../../../lib/work-command.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -50,5 +50,5 @@ export default defineEventHandler(async (event) => {
   });
 
   event.res.status = 201;
-  return serializeTransport(work);
+  return serializeTransport(workAnswer(work));
 });

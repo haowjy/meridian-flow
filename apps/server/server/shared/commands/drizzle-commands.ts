@@ -102,7 +102,10 @@ export async function runCommand<R>(
       settled = refused;
     }
     const outcome: CommandOutcome<R> = { status: settling.outcomeOf(settled), result: settled };
-    await tx.update(commands).set({ outcome }).where(eq(commands.id, envelope.commandId));
+    await tx
+      .update(commands)
+      .set({ outcome: outcome as CommandOutcome })
+      .where(eq(commands.id, envelope.commandId));
     await testHook("command.beforeCommit");
     return settled;
   });

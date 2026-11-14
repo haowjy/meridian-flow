@@ -1,5 +1,6 @@
 /** Route core for writer-owned Work metadata changes and their coded refusal envelopes. */
 import type { CommandId } from "@meridian/contracts";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -29,12 +30,12 @@ export async function updateWorkMetadataForWriter(
     name?: string;
     goal?: string;
   },
-): Promise<Work> {
+): Promise<{ work?: Work; settled?: Settlement[] }> {
   try {
     const work = await requireWorkOwner(deps, input.workId, input.userId, {
       includeSoftDeleted: true,
     });
-    const updated = await runWorkCommand(
+    return await runWorkCommand(
       deps.commands,
       {
         commandId: input.commandId,
@@ -53,7 +54,6 @@ export async function updateWorkMetadataForWriter(
           return { work: after };
         }),
     );
-    return updated as Work;
   } catch (error) {
     if (error instanceof WorkNameRequiredError) {
       throw createError({ statusCode: 400, message: error.message });

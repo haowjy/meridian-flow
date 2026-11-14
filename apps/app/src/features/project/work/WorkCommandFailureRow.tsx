@@ -57,12 +57,6 @@ export function workFailureLine(
 /** A restore the server will refuse again as it is: Retry can't help. A 404 is a Work the purge already took. */
 function restoreRefusal(error: Error, name?: string): ReactNode {
   const status = error instanceof HttpResponseError ? error.status : null;
-  if (status === 409)
-    return name ? (
-      <Trans>Another Work is now named {name}. Rename that Work, then restore this one.</Trans>
-    ) : (
-      <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
-    );
   if (status === 404)
     return name ? (
       <Trans>

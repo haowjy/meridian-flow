@@ -1,11 +1,12 @@
 /** Restores a soft-deleted Work without resurrecting any client working set. */
 import { serializeTransport } from "@meridian/contracts/protocol";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireWorkOwner, restoreWork } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
-import { already, runWorkCommand } from "../../../../lib/work-command.js";
+import { already, runWorkCommand, workAnswer } from "../../../../lib/work-command.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -17,7 +18,7 @@ export default defineEventHandler(async (event) => {
     user.userId,
     { includeSoftDeleted: true },
   );
-  const work = await runWorkCommand(
+  const answer = await runWorkCommand(
     app.commands,
     {
       commandId,
@@ -32,10 +33,13 @@ export default defineEventHandler(async (event) => {
         { works: app.workRepo, workContextNotices: app.workContextNotices },
         workId,
       );
-      return { work: after, ...(!changed && already("active")) };
+      return {
+        work: after,
+        ...(!changed && already(isWorkArchived(after) ? "archived" : "active")),
+      };
     },
   );
-  if (!work) throw new Error("A restore answers its Work");
-  app.projectWakeHub.publish({ type: "project-chats-hint", projectId: work.projectId });
-  return serializeTransport(work);
+  const restored = workAnswer(answer);
+  app.projectWakeHub.publish({ type: "project-chats-hint", projectId: restored.projectId });
+  return serializeTransport(restored);
 });

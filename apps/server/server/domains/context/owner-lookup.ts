@@ -114,6 +114,9 @@ export function workNameKey(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/** How many Works `worksNamed` returns at most. */
+export const NAMED_WORK_CANDIDATES = 5;
+
 /** The non-deleted Works a name stands for: the exact matches first, else the look-alikes. */
 export function worksNamedLike<T extends { name: string; state?: WorkOwnerState }>(
   works: readonly T[],
@@ -161,10 +164,16 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
 
   /** Names may repeat: a name shared by Works answers with every handle, and picks none. */
   async function sharedName(projectId: string, name: string): Promise<string | null> {
-    const matches = worksNamedLike(await deps.worksNamed(projectId, name), name);
+    const candidates = await deps.worksNamed(projectId, name);
+    const matches = worksNamedLike(candidates, name);
     if (matches.length < 2) return null;
     const handles = matches.map((work) => `${work.handle} "${work.name}"`).join(", ");
-    return `"${name}" names ${matches.length} Works: ${handles}. Use a handle.`;
+    // The lookup stops at its cap, so a full page may hide more Works.
+    const count =
+      candidates.length >= NAMED_WORK_CANDIDATES
+        ? `${NAMED_WORK_CANDIDATES} or more`
+        : String(matches.length);
+    return `"${name}" names ${count} Works: ${handles}. Use a handle.`;
   }
 
   async function unknownWork(projectId: string, handle: string): Promise<string> {

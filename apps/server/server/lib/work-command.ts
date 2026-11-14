@@ -35,7 +35,7 @@ export function already(state: string): { settled: Settlement[] } {
 
 /**
  * Runs `effect` as the Work command `kind`, in one transaction that starts with the claim.
- * Answers the Work the command made (none for a delete) or throws the domain error that refused
+ * Answers the Work the command made (none for a delete) and what settled, or throws the domain error that refused
  * it. The effect lists what settled differently from the ask.
  * `body` is the request's body without its `commandId`: a resend must carry the same one.
  */
@@ -50,7 +50,7 @@ export async function runWorkCommand(
     body: unknown;
   },
   effect: () => Promise<{ work?: Work; settled?: Settlement[] }>,
-): Promise<Work | undefined> {
+): Promise<{ work?: Work; settled?: Settlement[] }> {
   const result = await runRouteCommand<WorkCommandResult>(
     store,
     { ...input, selectors: { workId: input.workId ?? null } },
@@ -61,7 +61,13 @@ export async function runWorkCommand(
     refusalOf,
   );
   if (result.status === "refused") throw new WorkLockedError();
-  return result.work;
+  return { work: result.work, settled: result.settled };
+}
+
+/** A Work route's body: the Work, with what settled differently from the ask when anything did. */
+export function workAnswer({ work, settled }: { work?: Work; settled?: Settlement[] }) {
+  if (!work) throw new Error("A Work command answers its Work");
+  return settled ? { ...work, settled } : work;
 }
 
 /**

@@ -161,7 +161,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           accountId: USER_ID,
         });
         return {
-          name: answered.name,
+          name: answered.work?.name,
           settled:
             stored.kind === "stored"
               ? (stored.outcome as { result: { settled?: unknown } }).result.settled
@@ -235,7 +235,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const resent = await runWorkCommand(commands, input(raced, "work_create"), async () => ({
         work: await works.create({ projectId: PROJECT_ID, name: "Raced" }),
       }));
-      expect(resent?.name).toBe("Raced");
+      expect(resent.work?.name).toBe("Raced");
       expect(
         (await works.listByProject(PROJECT_ID, {})).filter((w) => w.name === "Raced"),
       ).toHaveLength(1);
