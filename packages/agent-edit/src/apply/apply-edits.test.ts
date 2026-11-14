@@ -215,6 +215,7 @@ function block(hash: string, body: string) {
     clock: Number.parseInt(hash, 36),
     body,
     serialized: `${hash}|${body}`,
+    node: schema.nodes.paragraph.create(null, body ? schema.text(body) : null),
   };
 }
 

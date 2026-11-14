@@ -1,6 +1,7 @@
 // Receipts project accepted evidence. Reporting failure never changes acceptance.
 
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
@@ -78,9 +79,7 @@ export function renderReceipt(
     deletedBlocks: before
       .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
       .map((block) => block.hash),
-    ...(after.length <= 1 && after.every((block) => !block.body.trim())
-      ? { documentEmpty: true }
-      : {}),
+    ...(isEmptyDocument(after.map((block) => block.node)) ? { documentEmpty: true } : {}),
     ...(edit.copied
       ? { copied: { summary: edit.copied, edges: copyEdgeLines(edit.copied, after) } }
       : {}),

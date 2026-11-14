@@ -5,12 +5,20 @@
  * editing. Construction repairs are unambiguous; live repairs are correlated
  * with ProseMirror transactions from every view bound to the session.
  */
+
+import { countSchemaRepair } from "@meridian/agent-edit";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import {
+  deletedClockCount,
+  extractEvidenceFromFragment,
+  extractSchemaRepairEvidence,
+  type SchemaRepairEvidence,
+} from "./schema-repair-evidence";
 
 export type SchemaRepairEvent = {
   phase: "open" | "live";
@@ -22,120 +30,6 @@ export type SchemaRepairEvent = {
   /** Present when the bind horizon or pre-GC live capture could not recover all evidence. */
   evidenceDegraded?: true;
 };
-
-export type SchemaRepairEvidence = Pick<
-  SchemaRepairEvent,
-  "deletedNodeTypes" | "deletedClockCount" | "removedText"
->;
-
-// Yjs exports DeleteSet's constructor only through internals; its typed shape
-// is reachable from the public Transaction.
-type DeleteSet = Y.Transaction["deleteSet"];
-type ExtractedEvidence = {
-  evidence: SchemaRepairEvidence;
-  resolvedClockCount: number;
-  contentUnavailable: boolean;
-};
-
-function deletedClockCount(deleteSet: DeleteSet): number {
-  let total = 0;
-  for (const ranges of deleteSet.clients.values()) {
-    for (const range of ranges) total += range.len;
-  }
-  return total;
-}
-
-function deletedSlices(item: Y.Item, deleteSet: DeleteSet): Array<{ from: number; to: number }> {
-  const ranges = deleteSet.clients.get(item.id.client);
-  if (!ranges) return [];
-  const itemStart = item.id.clock;
-  const itemEnd = itemStart + item.length;
-  const slices: Array<{ from: number; to: number }> = [];
-  for (const range of ranges) {
-    const from = Math.max(itemStart, range.clock);
-    const to = Math.min(itemEnd, range.clock + range.len);
-    if (from < to) slices.push({ from: from - itemStart, to: to - itemStart });
-  }
-  return slices;
-}
-
-/**
- * Resolve delete-set clocks against the pre-repair clone's item graph.
- *
- * Traversal follows Y item identity and logical XML order. It never compares
- * sibling positions between before and after documents, which would be
- * ambiguous when repeated or nested siblings have the same shape.
- */
-function extractEvidenceFromFragment(
-  fragment: Y.XmlFragment,
-  deleteSet: DeleteSet,
-): ExtractedEvidence {
-  const deletedNodeTypes: string[] = [];
-  let resolvedClockCount = 0;
-  let contentUnavailable = false;
-  type TextToken = { kind: "text"; text: string } | { kind: "boundary" };
-  const walk = (start: Y.Item | null): TextToken[] => {
-    const tokens: TextToken[] = [];
-    for (let item = start; item; item = item.right) {
-      const slices = deletedSlices(item, deleteSet);
-      const content = item.content;
-      resolvedClockCount += slices.reduce((total, slice) => total + slice.to - slice.from, 0);
-      if (content instanceof Y.ContentString) {
-        const text = slices.map((slice) => content.str.slice(slice.from, slice.to)).join("");
-        if (text) tokens.push({ kind: "text", text });
-      } else if (slices.length > 0 && content instanceof Y.ContentDeleted) {
-        contentUnavailable = true;
-      }
-      if (!(content instanceof Y.ContentType)) continue;
-      const child = content.type;
-      const nodeName = child instanceof Y.XmlElement ? child.nodeName : undefined;
-      if (slices.length > 0 && nodeName && !deletedNodeTypes.includes(nodeName)) {
-        deletedNodeTypes.push(nodeName);
-      }
-      if (nodeName) tokens.push({ kind: "boundary" });
-      tokens.push(...walk(child._start));
-      if (nodeName) tokens.push({ kind: "boundary" });
-    }
-    return tokens;
-  };
-
-  let text = "";
-  let boundary = false;
-  for (const token of walk(fragment._start)) {
-    if (token.kind === "boundary") {
-      if (text) boundary = true;
-      continue;
-    }
-    if (boundary) text += "\n";
-    text += token.text;
-    boundary = false;
-  }
-
-  return {
-    evidence: {
-      deletedNodeTypes,
-      deletedClockCount: deletedClockCount(deleteSet),
-      ...(text ? { removedText: text } : {}),
-    },
-    resolvedClockCount,
-    contentUnavailable,
-  };
-}
-
-export function extractSchemaRepairEvidence(
-  preRepairSnapshot: Uint8Array,
-  repairUpdate: Uint8Array,
-): SchemaRepairEvidence {
-  const deleteSet = Y.decodeUpdate(repairUpdate).ds;
-  const snapshot = new Y.Doc({ gc: false });
-  Y.applyUpdate(snapshot, preRepairSnapshot);
-  const { evidence } = extractEvidenceFromFragment(
-    snapshot.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    deleteSet,
-  );
-  snapshot.destroy();
-  return evidence;
-}
 
 type PendingLiveRepair = {
   evidence: SchemaRepairEvidence;
@@ -263,10 +157,15 @@ export function createSchemaRepairWitness({
   let batchToken = 0;
   let destroyed = false;
 
+  const report = (event: SchemaRepairEvent) => {
+    countSchemaRepair("editor");
+    onRepair(event);
+  };
+
   const reportLiveRepairs = (repairs: PendingLiveRepair[]) => {
     for (const repair of repairs) {
       latestPostRepairSnapshot = repair.postRepairSnapshot;
-      onRepair({
+      report({
         phase: "live",
         detectedAt: now(),
         ...repair.evidence,
@@ -459,7 +358,7 @@ export function createSchemaRepairWitness({
     // The update callback runs before control returns from construction, while
     // the repaired post-state and the pre-bind snapshot are both still exact.
     latestPostRepairSnapshot = Y.encodeStateAsUpdate(document);
-    onRepair({
+    report({
       phase,
       detectedAt: now(),
       ...extractSchemaRepairEvidence(preBindSnapshot, update),

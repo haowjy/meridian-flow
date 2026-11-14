@@ -124,7 +124,7 @@ export type CollabTransport = {
     documentId: DocumentId;
     document: Y.Doc;
     update: Uint8Array;
-    origin: Extract<UpdateOrigin, { type: "user" }>;
+    origin: Extract<UpdateOrigin, { type: "user" | "system" }>;
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;

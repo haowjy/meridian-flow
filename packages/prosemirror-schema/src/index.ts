@@ -251,6 +251,7 @@ const customMarks = {
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
+export * from "./empty-document.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
