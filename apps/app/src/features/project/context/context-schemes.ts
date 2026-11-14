@@ -54,6 +54,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
       return t`Scratch`;
     case "uploads":
       return t`Uploads`;
+    case "agents":
+      return t`Agents`;
   }
 }
 

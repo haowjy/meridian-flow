@@ -7,7 +7,7 @@
  *   pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
  *
  * `MF_SERVER_URL` and `DATABASE_URL` override the stack and database this checkout's `pnpm dev`
- * would use. Writes through `POST /api/agents` and chats in the stack's default project.
+ * would use. Writes an Agent file into the default project's Agents source and chats there.
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -72,18 +72,19 @@ const threadId = (created: string) => /([0-9a-f-]{36})/.exec(created)?.[1] as st
 try {
   await check("a file with a removed key is listed unavailable and no chat binds it", async () => {
     const slug = `gate-${Date.now().toString(36)}`;
-    const saved = http("POST", "/api/agents", {
-      slug,
-      content: "---\nname: Gate\npermission: read\n---\n\nBody.\n",
-    });
-    assert.equal(saved.status, 200, saved.body);
-    const item = value(saved.body);
-    assert.ok(item.unavailableReasons.length > 0, "saved Agent has no unavailable reason");
-    const listed = value(http("GET", "/api/agents?limit=100").body).agents.find(
+    const projectId = mf("project", "default").trim();
+    mf(
+      "doc",
+      "put",
+      `agents://agents/${slug}.md`,
+      "--text",
+      "---\nname: Gate\npermission: read\n---\n\nBody.\n",
+    );
+    const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
       (agent: { slug: string }) => agent.slug === slug,
     );
     assert.ok(listed?.unavailableReasons.length > 0, "Agent is not listed with reasons");
-    const projectId = mf("project", "default").trim();
+    assert.equal(listed.level, "project");
     const created = http("POST", "/api/threads", {
       id: randomUUID(),
       projectId,

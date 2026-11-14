@@ -8,7 +8,6 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import type { Gateway, GenerateResult, Message } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
-import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import {
   childCompletionMetadata,
   classifyHistoryItem,
@@ -132,7 +131,7 @@ async function setup(
   options: {
     onStream?: (call: number) => Promise<void>;
     results?: GenerateResult[];
-    /** Seeds an account-installed skill so `/skill` activation can resolve a body. */
+    /** Seeds a skill the catalog resolves so `/skill` activation can resolve a body. */
     skill?: { slug: string; name: string; description: string; body: string };
     referenceReader?: ReferenceReader;
     child?: boolean;
@@ -142,8 +141,20 @@ async function setup(
     notices?: ReturnType<typeof createTestNoticePort>;
   } = {},
 ) {
-  const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
-  if (options.skill) await accountSkillInstalls.insert({ ownerUserId: USER_ID, ...options.skill });
+  const agentCatalog = {
+    async resolveSkill(_userId: string, input: { slug: string }) {
+      const { skill } = options;
+      if (!skill || skill.slug !== input.slug) return undefined;
+      return {
+        skill: { ...skill, userInvocable: true, modelInvocable: true, level: "user" as const },
+        reference: {
+          packageRevisionId: "fixture-source",
+          path: `skills/${skill.slug}/SKILL.md`,
+          contentDigest: "fixture",
+        },
+      };
+    },
+  };
   const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;
   const toolRegistry = createToolRegistry();
@@ -171,7 +182,7 @@ async function setup(
         },
       ],
     } satisfies Gateway,
-    accountSkillInstalls,
+    agentCatalog,
     ...(options.realSpawnTools
       ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
       : {}),
@@ -354,7 +365,7 @@ describe("inbox drain", () => {
     for (const request of requests.slice(1)) {
       const renderedHistory = messageTexts(request.messages).join("\n");
       expect(renderedHistory).toContain("also tighten the dialogue");
-      expect(renderedHistory).toContain("skill invoked: writing-principles");
+      expect(renderedHistory).toContain("skills://writing-principles/SKILL");
       expect(renderedHistory).toContain("Show, do not tell.");
     }
 
@@ -391,7 +402,7 @@ describe("inbox drain", () => {
     const skillBodyBlocks = await repos.blocks.listByTurn(skillBodyTurn.id);
     expect(skillBodyBlocks).toHaveLength(1);
     expect(skillBodyBlocks[0]?.blockType).toBe("text");
-    expect(skillBodyBlocks[0]?.textContent ?? "").toContain("skill invoked: writing-principles");
+    expect(skillBodyBlocks[0]?.textContent ?? "").toContain("skills://writing-principles/SKILL");
   });
 
   it("fails retryably on a transient image resolve error without deciding the image", async () => {

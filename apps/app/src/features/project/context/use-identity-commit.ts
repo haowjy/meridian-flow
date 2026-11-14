@@ -13,7 +13,7 @@ import { type ContextRouteRequest, contextRouteRequest } from "../routing/projec
 import { documentRow } from "./context-entry-name";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
 
-const EDITOR_SCHEMES = ["manuscript", "kb", "user", "unfiled", "scratch"] as const;
+const EDITOR_SCHEMES = ["manuscript", "kb", "user", "unfiled", "agents", "scratch"] as const;
 
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";

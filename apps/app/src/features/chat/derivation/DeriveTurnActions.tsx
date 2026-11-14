@@ -12,7 +12,6 @@
  * brief reports it as the open request.
  */
 import { t } from "@lingui/core/macro";
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -23,7 +22,11 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
-import type { CreationAgent } from "@/features/agents/creation-agent";
+import {
+  type CreationAgent,
+  type PickableAgent,
+  pickableAgents,
+} from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
@@ -58,9 +61,9 @@ export function canDeriveFrom(input: {
 
 /** The picker's default: the source's own revision, else its Agent by name. */
 export function defaultHandoffAgent(
-  agents: readonly AgentCatalogItem[],
+  agents: readonly PickableAgent[],
   source: TurnDerivation["sourceAgent"],
-): AgentCatalogItem | null {
+): PickableAgent | null {
   return (
     agents.find(
       (agent) =>
@@ -122,10 +125,7 @@ function HandoffPicker({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const agents =
-    catalog.status === "ready"
-      ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
-      : [];
+  const agents = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
   const fallback = defaultHandoffAgent(agents, derivation.sourceAgent);
   const selected: CreationAgent | null = fallback
     ? { selection: fallback.selection, slug: fallback.slug, name: fallback.name }

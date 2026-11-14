@@ -6,6 +6,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createInMemoryLevelFiles } from "../../../test-support/in-memory-level-files.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { turnGraph } from "../ports/turn-graph.js";
 import {
@@ -71,15 +72,25 @@ else
           return projectId === ids.projectId ? project : null;
         },
       };
+      const levels = createInMemoryLevelFiles();
       const agentCatalog = createBoundAgentCatalog({
         store: revisions,
+        levelFiles: levels,
+        builtins: [],
         defaultModel: () => "gpt-5.6-luna",
         unavailableReasons: () => [],
       });
-      const agent = await agentCatalog.save(ids.userId, {
-        slug: `fork-agent-${crypto.randomUUID()}`,
-        content: "---\nname: Writer\nmode: primary\n---\n\nWriter prompt.",
-      });
+      const slug = `fork-agent-${crypto.randomUUID()}`;
+      levels.write(
+        "user",
+        `agents/${slug}.md`,
+        "---\nname: Writer\nmode: primary\n---\n\nWriter prompt.",
+      );
+      const listed = (await agentCatalog.list(ids.userId, {})).agents.find(
+        (item) => item.slug === slug,
+      );
+      if (!listed?.selection) throw new Error("Fixture Agent unavailable");
+      const agent = { slug, selection: listed.selection };
       const selection = await agentCatalog.resolvePrimary(
         ids.userId,
         agent.selection,
@@ -136,6 +147,7 @@ else
         source,
         deps,
         runtime,
+        levels,
         agentCatalog,
         agent,
         selection,
@@ -180,11 +192,11 @@ else
 
     it("keeps the source's retained binding and invoked skills after its catalog advances", async () => {
       const fixture = await setupSource();
-      await fixture.agentCatalog.save(ids.userId, {
-        slug: fixture.agent.slug,
-        content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced prompt.",
-        expectedRevisionId: fixture.agent.selection.definitionRevisionId,
-      });
+      fixture.levels.write(
+        "user",
+        `agents/${fixture.agent.slug}.md`,
+        "---\nname: Writer\nmode: primary\n---\n\nAdvanced prompt.",
+      );
       const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
       await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
       // A pending switch is the writer's mode: the fork starts in it, the source stays applied.

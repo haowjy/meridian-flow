@@ -12,15 +12,28 @@ export const CONTEXT_URI_SCHEMES = [
   "unfiled",
   "scratch",
   "uploads",
+  "agents",
 ] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
 /** Sources whose documents receive drafts in a draft-mode Work's branch. */
 export function isDraftedScheme(scheme: ContextUriScheme): boolean {
-  return scheme === "manuscript" || scheme === "kb" || scheme === "user" || scheme === "unfiled";
+  return (
+    scheme === "manuscript" ||
+    scheme === "kb" ||
+    scheme === "user" ||
+    scheme === "unfiled" ||
+    scheme === "agents"
+  );
 }
 
-export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "unfiled"] as const;
+export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = [
+  "manuscript",
+  "kb",
+  "user",
+  "unfiled",
+  "agents",
+] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
 /** Schemes whose address takes an owner authority (`@w3`, `@c12`): Scratch and chat uploads. */
@@ -183,7 +196,27 @@ function toParsedAuthority(authority: CanonicalContextAuthority): ParsedContextA
   return { kind: "work", workHandle };
 }
 
-/** Strict serializer, lenient parser; bare paths resolve to `manuscript://`. */
+/**
+ * The addresses models are trained on, read as the canonical one: `~/x` is `user://x` and a bare
+ * `.agents/x` is the project's `agents://x`. Both are read only when the parse accepts the scheme.
+ */
+const HOME_ALIAS = /^~(?:\/(.*))?$/;
+const PROJECT_AGENTS_ALIAS = /^\.agents(?:\/(.*))?$/;
+
+function aliasedScheme(
+  bare: string,
+  schemes: readonly ContextUriScheme[],
+): { scheme: ContextUriScheme; rawPath: string } | null {
+  const home = HOME_ALIAS.exec(bare);
+  if (home && isContextScheme("user", schemes)) return { scheme: "user", rawPath: home[1] ?? "" };
+  const agents = PROJECT_AGENTS_ALIAS.exec(bare);
+  if (agents && isContextScheme("agents", schemes)) {
+    return { scheme: "agents", rawPath: agents[1] ?? "" };
+  }
+  return null;
+}
+
+/** Strict serializer, lenient parser; bare paths resolve to `manuscript://`, bar the aliases above. */
 export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
@@ -213,8 +246,9 @@ export function parseContextUri(
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     return invalidContextUri(raw, 'Malformed URI: expected "scheme://path"');
   } else {
-    scheme = bareDefault;
-    rawPath = trimmed;
+    const alias = aliasedScheme(trimmed, schemes);
+    scheme = alias?.scheme ?? bareDefault;
+    rawPath = alias ? alias.rawPath : trimmed;
   }
 
   const authorityResult = parseAuthorityPrefix(scheme, rawPath, raw);

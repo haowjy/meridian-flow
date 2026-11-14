@@ -1,8 +1,8 @@
 /**
- * Postgres contracts for retained Agent identity, catalog ownership, and transactional binding.
+ * Postgres contracts for retained Agent identity and transactional binding.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - General seeding, agent-less binding overlays, and primary-agent revision eligibility
+ * - Agent-less binding overlays
  */
 import { createDb } from "@meridian/database";
 import {
@@ -18,11 +18,8 @@ import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lin
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
-import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
-import { seedGeneralAgent } from "../domain/default-package-seeding.js";
 
 const USER = "00000000-0000-4000-8000-000000000871";
-const OTHER = "00000000-0000-4000-8000-000000000872";
 const PROJECT = "00000000-0000-4000-8000-000000000873";
 const THREAD = "00000000-0000-4000-8000-000000000874";
 const url = process.env.DATABASE_URL;
@@ -46,12 +43,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     const store = createDrizzleAgentRevisionStore(db);
     beforeEach(async () => {
       await deleteDrizzleRows(db, [schema.users, schema.agentPackageRevisions]);
-      await db
-        .insert(schema.users)
-        .values([
-          conformanceUserValues(USER, "agent-owner"),
-          conformanceUserValues(OTHER, "agent-other"),
-        ]);
+      await db.insert(schema.users).values(conformanceUserValues(USER, "agent-owner"));
       await db
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Agents", slug: "agents" });
@@ -63,29 +55,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       });
     });
     afterAll(() => db.close());
-
-    it("seeds General idempotently and retains its configured model across updates", async () => {
-      await seedGeneralAgent(store, "first-model");
-      const first = await store.readCatalogEntry(null, "general");
-      if (!first) throw new Error("General was not seeded");
-      const revision = await store.readRevision(first.selectedRevisionId);
-      expect(revision?.definition).toMatchObject({
-        systemPrompt: "",
-        metadata: { name: "General", mode: "primary", model: "first-model" },
-      });
-      await seedGeneralAgent(store, "first-model");
-      expect(await store.readCatalogEntry(null, "general")).toEqual(first);
-      await seedGeneralAgent(store, "next-model");
-      const next = await store.readCatalogEntry(null, "general");
-      if (!next) throw new Error("General disappeared after reseeding");
-      expect(next.selectedRevisionId).not.toBe(first.selectedRevisionId);
-      expect((await store.readRevision(first.selectedRevisionId))?.definition.metadata.model).toBe(
-        "first-model",
-      );
-      expect((await store.readRevision(next.selectedRevisionId))?.definition.metadata.model).toBe(
-        "next-model",
-      );
-    });
 
     it("chooses one complete prompt-freeze winner across independent connections", async () => {
       const otherDb = createDb(url, { max: 2 });
@@ -145,62 +114,23 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       }
     });
 
-    it("deduplicates concurrent installs and creates one logical catalog entry", async () => {
+    it("deduplicates concurrent installs", async () => {
       const installs = await Promise.all([
         store.installSource(source()),
         store.installSource(source()),
       ]);
       expect(installs[0]).toEqual(installs[1]);
-      const select = {
-        ownerUserId: USER,
-        logicalKey: "general",
-        revisionId: installs[0].definitions[0].id,
-      };
-      const selections = await Promise.all([
-        store.selectRevision(select),
-        store.selectRevision(select),
-      ]);
-      expect(selections[0]).toEqual(selections[1]);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toHaveLength(1);
     });
 
-    it("keeps bindings through catalog advance and removal", async () => {
+    it("keeps a binding on its revision when the files move on", async () => {
       const first = (await store.installSource(source())).definitions[0];
       const second = (await store.installSource(source("New prompt."))).definitions[0];
-      const entry = await store.selectRevision({
-        ownerUserId: USER,
-        logicalKey: "general",
-        revisionId: first.id,
-      });
-      expect(entry.ok).toBe(true);
       expect(await store.bindThread(THREAD, first.id, bindingConfiguration, null)).toBe(true);
       expect(await store.bindThread(THREAD, first.id, bindingConfiguration, null)).toBe(true);
       expect(await store.bindThread(THREAD, second.id, bindingConfiguration, null)).toBe(false);
-      expect(
-        await store.selectRevision({
-          ownerUserId: USER,
-          logicalKey: "general",
-          revisionId: second.id,
-        }),
-      ).toEqual({ ok: false, reason: "conflict" });
-      expect(
-        (
-          await store.selectRevision({
-            ownerUserId: USER,
-            logicalKey: "general",
-            revisionId: second.id,
-            expectedRevisionId: first.id,
-          })
-        ).ok,
-      ).toBe(true);
-      if (!entry.ok) throw new Error("Catalog creation failed");
-      expect(await store.removeOwnedEntry(OTHER, entry.entry.id)).toBe(false);
-      expect(await store.removeOwnedEntry(USER, entry.entry.id)).toBe(true);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual([]);
-      const configuration = bindingConfiguration;
       expect(await store.readThreadBinding(THREAD)).toEqual({
         revision: await store.readRevision(first.id),
-        configuration,
+        configuration: bindingConfiguration,
         invocationOverlay: null,
         invokedSkills: {},
       });
@@ -208,7 +138,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         await store.bindThread(
           THREAD,
           first.id,
-          { ...configuration, model: "replacement-model" },
+          { ...bindingConfiguration, model: "replacement-model" },
           null,
         ),
       ).toBe(false);
@@ -217,19 +147,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           .delete(schema.agentDefinitionRevisions)
           .where(eq(schema.agentDefinitionRevisions.id, first.id)),
       ).rejects.toThrow();
-
-      const id = entry.entry.id;
-      expect(
-        (
-          await store.selectRevision({
-            ownerUserId: USER,
-            logicalKey: "general",
-            revisionId: first.id,
-            expectedRevisionId: second.id,
-          })
-        ).ok,
-      ).toBe(false);
-      expect(id).toBe(entry.entry.id);
     });
 
     it("round-trips an agent-less binding with a retained invocation overlay", async () => {
@@ -253,127 +170,15 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       });
     });
 
-    it("authorizes reserved historical revisions without granting unrelated content", async () => {
-      const first = (await store.installSource(source())).definitions[0];
-      const next = (await store.installSource(source("Next"))).definitions[0];
-      const secret = (await store.installSource(source("Private other-account content")))
-        .definitions[0];
-      const entry = await store.selectRevision({
-        ownerUserId: USER,
-        logicalKey: "general",
-        revisionId: first.id,
-      });
-      if (!entry.ok) throw new Error("Catalog creation failed");
-      expect((await store.readSelection(USER, entry.entry.id, first.id))?.revision.id).toBe(
-        first.id,
-      );
-      expect(await store.readSelection(USER, entry.entry.id, secret.id)).toBeUndefined();
-      expect(await store.readSelection(OTHER, entry.entry.id, first.id)).toBeUndefined();
-      await store.selectRevision({
-        ownerUserId: USER,
-        logicalKey: "general",
-        revisionId: next.id,
-        expectedRevisionId: first.id,
-      });
-      expect((await store.readSelection(USER, entry.entry.id, first.id))?.revision.id).toBe(
-        first.id,
-      );
-      expect((await store.readSelection(USER, entry.entry.id, next.id))?.revision.id).toBe(next.id);
-      expect(await store.readSelection(USER, entry.entry.id, secret.id)).toBeUndefined();
-      await store.removeOwnedEntry(USER, entry.entry.id);
-      expect(await store.readSelection(USER, entry.entry.id, first.id)).toBeUndefined();
-    });
-
-    it("publishes complete system sources under concurrent updates", async () => {
-      const catalog = createBoundAgentCatalog({
-        defaultModel: () => "test-model",
-        store,
-        unavailableReasons: () => [],
-      });
-      const publication = (version: number) => ({
-        coordinate: "concurrent-system",
-        files: {
-          "mars.toml": MANIFEST,
-          ...Object.fromEntries(
-            ["a", "b", "c"].map((slug) => [
-              `agents/${slug}.md`,
-              `---\nname: ${slug}\n---\nv${version}`,
-            ]),
-          ),
-        },
-      });
-      await catalog.installSystemSource(publication(0));
-      await Promise.all(
-        Array.from({ length: 12 }, (_, version) =>
-          catalog.installSystemSource(publication(version)),
-        ),
-      );
-      const entries = await store.listCatalog({ userId: USER, limit: 100 });
-      expect(entries).toHaveLength(3);
-      const revisions = await Promise.all(
-        entries.map((entry) => store.readRevision(entry.selectedRevisionId)),
-      );
-      expect(new Set(revisions.map((revision) => revision?.packageRevisionId)).size).toBe(1);
-    });
-
-    it("rejects child-only and unsupported revisions consistently in listing and resolution", async () => {
-      const catalog = createBoundAgentCatalog({
-        defaultModel: () => "test-model",
-        store,
-        unavailableReasons: () => ["Tools unsupported"],
-      });
-      await catalog.installSystemSource({
-        coordinate: "specialist",
-        files: {
-          "mars.toml": MANIFEST,
-          "agents/child.md": "---\nname: Child\nmode: subagent\n---\n",
-        },
-      });
-      const page = await catalog.list(USER, { limit: 100 });
-      expect(page.agents[0].unavailableReasons).toHaveLength(2);
-      expect(await catalog.resolvePrimary(USER, page.agents[0].selection)).toEqual({
-        ok: false,
-        reason: "unavailable",
-        details: page.agents[0].unavailableReasons,
-      });
-    });
-
-    it("fences ownership and paginates tied names without duplicates", async () => {
-      const id = (await store.installSource(source())).definitions[0].id;
-      for (const [ownerUserId, logicalKey] of [
-        [USER, "a"],
-        [USER, "b"],
-        [OTHER, "private"],
-        [null, "system"],
-      ] as const) {
-        await store.selectRevision({ ownerUserId, logicalKey, revisionId: id });
-      }
-      const all = await store.listCatalog({ userId: USER, limit: 100 });
-      expect(all).toHaveLength(3);
-      expect(all.map((entry) => entry.logicalKey)).not.toContain("private");
-      const page1 = await store.listCatalog({ userId: USER, limit: 1 });
-      const page2 = await store.listCatalog({ userId: USER, limit: 2, after: page1[0] });
-      expect([...page1, ...page2]).toEqual(all);
-      const system = all.find((entry) => entry.ownerUserId === null);
-      if (!system) throw new Error("System entry missing");
-      expect(await store.removeOwnedEntry(USER, system.id)).toBe(false);
-    });
-
-    it("rolls source, catalog, and binding back with the owning transaction", async () => {
+    it("rolls source and binding back with the owning transaction", async () => {
       await expect(
         runInDrizzleTransaction(db, async () => {
           const installed = await store.installSource(source());
-          await store.selectRevision({
-            ownerUserId: USER,
-            logicalKey: "general",
-            revisionId: installed.definitions[0].id,
-          });
           await store.bindThread(THREAD, installed.definitions[0].id, bindingConfiguration, null);
           throw new Error("Injected admission failure");
         }),
       ).rejects.toThrow("Injected admission failure");
       expect(await db.select().from(schema.agentPackageRevisions)).toEqual([]);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual([]);
       expect(await store.readThreadBinding(THREAD)).toBeUndefined();
     });
   });

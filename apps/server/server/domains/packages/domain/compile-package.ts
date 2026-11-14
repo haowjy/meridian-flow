@@ -30,6 +30,12 @@ export class AgentSourceError extends Error {}
 export interface AgentSourceSnapshot {
   coordinate: string;
   files: SkillFiles;
+  /**
+   * Package paths a file cannot be read from (a prose document, a stored file, two documents).
+   * The path still names its Agent, skill or manifest, which is unavailable for the reason. Not
+   * retained: a revision keeps only the files that were read.
+   */
+  problems?: Record<string, string>;
 }
 
 export interface PackageDiagnostic {
@@ -78,6 +84,8 @@ export interface CompiledPackage {
   contentDigest: string;
   files: SkillFiles;
   agents: CompiledAgent[];
+  /** Skills the package holds; one with a diagnostic of any severity is not offered. */
+  skills: Array<{ slug: string; diagnostics: PackageDiagnostic[] }>;
 }
 
 export function compilePackage(
@@ -85,30 +93,29 @@ export function compilePackage(
   grammarVersion: string = GRAMMAR_VERSION,
 ): CompiledPackage {
   const files = validatedFiles(input);
-  const packageErrors = manifestErrors(files);
-  const skills = readSkills(files);
+  const problems = input.problems ?? {};
+  const packageErrors = manifestErrors(files, problems);
+  const skills = readSkills(files, problems);
 
   const drafts = new Map<string, Draft>();
-  for (const path of Object.keys(files).sort()) {
+  for (const path of [...Object.keys(files), ...Object.keys(problems)].sort()) {
     const slug = agentSlugOf(path);
     if (slug === undefined) continue;
-    drafts.set(slug, draftAgent(slug, path, files[path], packageErrors, skills));
+    drafts.set(
+      slug,
+      Object.hasOwn(problems, path)
+        ? problemAgent(slug, path, problems[path], packageErrors)
+        : draftAgent(slug, path, files[path], packageErrors, skills),
+    );
   }
   rejectBrokenSubagents(drafts);
 
   return {
     coordinate: input.coordinate,
     grammarVersion,
-    contentDigest: sha256(
-      JSON.stringify(
-        canonicalizeJsonObject({
-          kind: "meridian.agent-source",
-          coordinate: input.coordinate,
-          files,
-        }),
-      ),
-    ),
+    contentDigest: sourceDigest(input),
     files,
+    skills: [...skills].map(([slug, diagnostics]) => ({ slug, diagnostics })),
     agents: [...drafts.values()].map((draft) => ({
       slug: draft.slug,
       name: draft.fields?.name ?? draft.slug,
@@ -117,6 +124,31 @@ export function compilePackage(
       definition: draft.errors.length === 0 ? definitionOf(draft) : null,
     })),
   };
+}
+
+/** What identifies a source: its coordinate, files and problems, in canonical form. */
+export function sourceDigest(input: AgentSourceSnapshot): string {
+  const problems = input.problems ?? {};
+  return sha256(
+    JSON.stringify(
+      canonicalizeJsonObject({
+        kind: "meridian.agent-source",
+        coordinate: input.coordinate,
+        files: input.files,
+        ...(Object.keys(problems).length ? { problems } : {}),
+      }),
+    ),
+  );
+}
+
+/** Whether a package-relative path can name a file of a package. */
+export function isPackagePath(name: string): boolean {
+  return !(
+    name.startsWith("/") ||
+    /^[a-z]:/i.test(name) ||
+    name.includes("\\") ||
+    name.split("/").some((part) => !part || part === "." || part === "..")
+  );
 }
 
 function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
@@ -128,12 +160,7 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
     throw new AgentSourceError("Agent source coordinate must be nonempty UTF-8 text without NUL");
   }
   for (const [name, text] of Object.entries(input.files)) {
-    if (
-      name.startsWith("/") ||
-      /^[a-z]:/i.test(name) ||
-      name.includes("\\") ||
-      name.split("/").some((part) => !part || part === "." || part === "..")
-    ) {
+    if (!isPackagePath(name)) {
       throw new AgentSourceError(`Invalid Agent source file path: ${name}`);
     }
     if (
@@ -163,8 +190,11 @@ const flow = (
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
 /** Findings on `mars.toml` that make every Agent of the package unavailable. */
-function manifestErrors(files: SkillFiles): PackageDiagnostic[] {
+function manifestErrors(files: SkillFiles, problems: Record<string, string>): PackageDiagnostic[] {
   const text = files[MANIFEST_PATH];
+  if (Object.hasOwn(problems, MANIFEST_PATH)) {
+    return [flow(MANIFEST_PATH, "file-unreadable", problems[MANIFEST_PATH])];
+  }
   if (text === undefined) {
     return [flow(MANIFEST_PATH, "manifest-missing", "The package has no mars.toml")];
   }
@@ -180,8 +210,15 @@ function manifestErrors(files: SkillFiles): PackageDiagnostic[] {
 }
 
 /** Skills of the package whose file reads with no diagnostic, by slug; the rest by their reasons. */
-function readSkills(files: SkillFiles): Map<string, PackageDiagnostic[]> {
+function readSkills(
+  files: SkillFiles,
+  problems: Record<string, string>,
+): Map<string, PackageDiagnostic[]> {
   const skills = new Map<string, PackageDiagnostic[]>();
+  for (const [path, message] of Object.entries(problems)) {
+    const slug = skillSlugOf(path);
+    if (slug !== undefined) skills.set(slug, [flow(path, "file-unreadable", message)]);
+  }
   for (const [path, text] of Object.entries(files)) {
     const slug = skillSlugOf(path);
     if (slug === undefined) continue;
@@ -203,6 +240,25 @@ interface Draft {
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;
+}
+
+/** An Agent path whose file cannot be read: the Agent is in the package, unavailable. */
+function problemAgent(
+  slug: string,
+  file: string,
+  message: string,
+  packageErrors: PackageDiagnostic[],
+): Draft {
+  return {
+    slug,
+    file,
+    fields: null,
+    body: "",
+    errors: [...packageErrors, flow(file, "file-unreadable", message)],
+    warnings: [],
+    permission: undefined,
+    tools: undefined,
+  };
 }
 
 function draftAgent(

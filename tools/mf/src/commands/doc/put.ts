@@ -1,7 +1,8 @@
 import {
   apiProjectDocumentReadPath,
   contextReadResponseSchema,
-  parseDocumentFilename,
+  documentFilenameAt,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import { type CreateRecord, LIVE, nameFault, newId } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
@@ -43,19 +44,20 @@ export async function putDocument(
 }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work, input.chat);
   const segments = target.path.split("/").filter(Boolean);
-  const parsedName = parseDocumentFilename(segments.at(-1) ?? "");
+  const parsedName = documentFilenameAt(target.scheme, target.path);
   if (!parsedName.ok) throw usageError(parsedName.error.message);
-  if (parsedName.value.extension)
+  const kept = parsedName.value.filetype === "source";
+  if (!kept && parsedName.value.extension)
     throw usageError(
       `doc put creates markdown documents: drop .${parsedName.value.extension} from ${target.uri}`,
     );
-  const stem = parsedName.value.name;
+  const stem = renderFilename(parsedName.value.name, parsedName.value.extension);
   const folders = segments.slice(0, -1);
   for (const [kind, name] of [
     ...folders.map((folder) => ["folder", folder] as const),
-    ["document", parsedName.value.name] as const,
+    ["document", stem] as const,
   ]) {
-    if (nameFault(kind, name) !== null)
+    if (nameFault(kind, name, kept ? "source" : undefined) !== null)
       throw usageError(`${name} is not a name a ${kind} may have in ${target.uri}`);
   }
 
@@ -89,7 +91,7 @@ export async function putDocument(
               name: stem,
               parent: at,
               kind: "document" as const,
-              filetype: "markdown",
+              filetype: kept ? "source" : "markdown",
             },
           ]);
         })
@@ -117,7 +119,13 @@ export async function putDocument(
         );
         return read.kind === "tracked" && read.content.trim() !== "";
       };
-      await writeMarkdown(session, created.node, input.content, stored);
+      await writeMarkdown(
+        session,
+        created.node,
+        input.content,
+        stored,
+        kept ? "source" : undefined,
+      );
     }
     return {
       uri: uriIn(opened.source, [...folders, created.name].join("/")),

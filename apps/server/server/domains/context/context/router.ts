@@ -11,9 +11,9 @@ import {
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import {
   type ContextEntryRef,
+  documentFilenameAt,
   filenameForBinary,
   type ParsedDocumentFilename,
-  parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
@@ -418,7 +418,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     dispatch: T,
     sourceExtension?: string,
   ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
-    const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "", { sourceExtension });
+    const parsed = documentFilenameAt(dispatch.scheme, dispatch.path, { sourceExtension });
     return parsed.ok
       ? Ok(withFilename(dispatch, parsed.value))
       : Err({ ...parsed.error, uri: dispatch.canonical });
@@ -431,7 +431,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   ): Result<T & { filename: { name: string; extension: string } }, ContextError> {
     let parts: { name: string; extension: string } | undefined = binary.filename;
     if (!parts) {
-      const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "");
+      const parsed = documentFilenameAt(dispatch.scheme, dispatch.path);
       if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
       parts = parsed.value;
     }

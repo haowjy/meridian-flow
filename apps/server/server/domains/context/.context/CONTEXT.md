@@ -5,11 +5,24 @@ tree views, arrivals, and the sources query. It deliberately omits adapter
 inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
 know before editing.
 
+## Agents locations
+
+Agent files are documents. `agents://` is a project source and the folder `user://.agents/` is the
+account's; `packages/contracts/src/agents/location.ts` is the one place that spells those
+addresses (`agentsLocationOf`, `agentsRootOf`), so a different layout changes it and provisioning.
+A file created there is a `source` document (code text, `x.md` keeps its suffix), chosen once at
+create by `documentFilenameAt`; every later naming path follows the stored kind (`storedFilename`,
+`nameFault` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
+states the kind in its create record. A prose document or a stored file at an Agent path is read
+as a problem, not as an Agent (`adapters/agent-level-files.ts`); Copy keeps the source's kind, so a
+prose document copied there reads as unavailable until phase 3 converts it.
+
 ## URI and ownership
 
 The unified `ContextPort` resolves `manuscript://`, `kb://`, `user://`,
-`unfiled://`, `scratch://`, and `uploads://`. Bare paths default to
-`manuscript://`. Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
+`unfiled://`, `scratch://`, `uploads://` and `agents://`. Bare paths default to
+`manuscript://`, bar two aliases models are trained on: `~/x` is `user://x` and `.agents/x` is
+`agents://x` (stored and shown addresses stay canonical). Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
 Scratch, `uploads://@c12/` a chat's uploads (bare `uploads://name` is the
 asking chat's; the Work owns none), and `scratch://@c12/` the No Work chat
 lineage rooted at its first chat. `owner-lookup.ts` is the one answer to who

@@ -8,7 +8,7 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextSources } from "../ports/context-sources.js";
 import { sourceAuthority } from "./context-file-entry.js";
 
-const PROJECT_SLUGS = ["manuscript", "kb", "unfiled"];
+const PROJECT_SLUGS = ["manuscript", "kb", "unfiled", "agents"];
 
 /**
  * The sources a project's owner reads. A Work's are listed until the Work is purged: an archived

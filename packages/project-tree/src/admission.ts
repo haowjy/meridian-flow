@@ -283,7 +283,15 @@ function judge(doc: Y.Doc, added: readonly Added[], connection: Connection) {
       reason = "a source you cannot change";
     else if (nameSet(record) !== undefined) {
       const kind = viewOf(draft).nodes.get(record.node)?.kind ?? created.get(record.node)?.kind;
-      if (kind === "document" && nameFault(kind, nameSet(record) as string) !== null)
+      if (
+        kind === "document" &&
+        nameFault(
+          kind,
+          nameSet(record) as string,
+          (record.type === "create" || record.type === "rename" ? record.filetype : undefined) ??
+            typeOf(record.node, draft),
+        ) !== null
+      )
         reason = "a name a document cannot have";
       else if (record.type === "rename" && record.filetype !== undefined) {
         const was = typeOf(record.node, draft);

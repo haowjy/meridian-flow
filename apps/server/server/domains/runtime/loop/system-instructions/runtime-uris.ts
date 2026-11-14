@@ -1,5 +1,7 @@
 /** System instruction for the context URI namespaces exposed to model tools. */
 
+import { agentsUriOf } from "@meridian/contracts/agents";
+
 export const RUNTIME_URI_SYSTEM_INSTRUCTION = [
   "# Context URIs",
   "",
@@ -9,6 +11,7 @@ export const RUNTIME_URI_SYSTEM_INSTRUCTION = [
   "- `unfiled://` holds project documents not yet filed anywhere; renaming one does not file it.",
   "- `scratch://` holds temporary notes and shared work in progress, never manuscript text or self-handoff summaries. Use `scratch://@w3/…` for another Work’s notes; `scratch://@c12/…` for another chat lineage’s notes. Move notes to `kb://` or `manuscript://` to keep them for the project.",
   "- `uploads://` holds this chat’s attachments. Read another chat’s at `uploads://@c12/…`; do not change them.",
-  "- `user://` is the user's personal files.",
+  "- `user://` is the user's personal files; `~/…` means `user://…`.",
+  `- \`${agentsUriOf("project", "")}\` holds this project's Agent files (\`${agentsUriOf("project", "agents/critic.md")}\`) and skills (\`${agentsUriOf("project", "skills/x/SKILL.md")}\`). The user's own are under \`${agentsUriOf("user", "")}\`. \`.agents/…\` means \`agents://…\`.`,
   "- File and folder names cannot start with `@`.",
 ].join("\n");

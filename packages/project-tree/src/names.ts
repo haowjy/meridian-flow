@@ -6,16 +6,16 @@ const MAX_NAME = 255;
 /**
  * Why a name is not one a node of this kind may have, or null. A document's name is what the
  * contracts codec stores (`parseDocumentFilename`), so `notes.md`, an alias of `notes`, is not a
- * stored name; a folder's is literal.
+ * stored name; a folder's is literal, and so is a `source` document's (`agents/critic.md`).
  */
-export function nameFault(kind: NodeKind, name: string): string | null {
+export function nameFault(kind: NodeKind, name: string, filetype?: string | null): string | null {
   if (name.length === 0 || name.length > MAX_NAME) return "its length";
   for (const char of name) {
     const code = char.codePointAt(0) as number;
     if (code < 0x20 || code === 0x7f || char === "/") return "a character a name cannot hold";
   }
   if (name !== name.trim() || name === "." || name === "..") return "its form";
-  if (kind === "document") {
+  if (kind === "document" && filetype !== "source") {
     const parsed = parseDocumentFilename(name);
     if (!parsed.ok || renderFilename(parsed.value.name, parsed.value.extension) !== name)
       return "a document name";

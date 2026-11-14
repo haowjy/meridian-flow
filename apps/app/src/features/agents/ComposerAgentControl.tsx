@@ -9,7 +9,7 @@ import {
 } from "@/components/app/composer-toolbar";
 import { AgentPickerPanel } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
-import type { CreationAgent } from "./creation-agent";
+import { type CreationAgent, pickableAgents } from "./creation-agent";
 
 export type ComposerAgentControlProps =
   | {
@@ -51,11 +51,8 @@ export function useComposerAgentToolbarControl(
         </ComposerCurrentValueStatus>
       ),
     };
-  const selectable =
-    catalog.status === "ready"
-      ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
-      : [];
-  const focusableIds = selectable.map((agent) => agent.selection.catalogEntryId);
+  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
+  const focusableIds = selectable.map((agent) => agent.selection.slug);
   const pageId =
     catalog.status === "error"
       ? "error"
@@ -85,7 +82,7 @@ export function useComposerAgentToolbarControl(
           pageId === "ready"
             ? [
                 {
-                  key: `selected:${selectedAgent?.selection.catalogEntryId ?? "none"}`,
+                  key: `selected:${selectedAgent?.selection.slug ?? "none"}`,
                   ref: selectedRef,
                 },
                 { key: `first:${focusableIds[0] ?? "none"}`, ref: firstRef },

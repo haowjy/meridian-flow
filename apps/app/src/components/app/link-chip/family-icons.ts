@@ -87,6 +87,15 @@ const UPLOAD: IconNode = [
   ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
 ];
 
+const BOT: IconNode = [
+  ["path", { d: "M12 8V4H8", key: "hb8ula" }],
+  ["rect", { width: "16", height: "12", x: "4", y: "8", rx: "2", key: "enze0r" }],
+  ["path", { d: "M2 14h2", key: "vft8re" }],
+  ["path", { d: "M20 14h2", key: "4cs60a" }],
+  ["path", { d: "M15 13v2", key: "1xurst" }],
+  ["path", { d: "M9 13v2", key: "rq6x2g" }],
+];
+
 const FILE: IconNode = [
   [
     "path",
@@ -116,6 +125,7 @@ const FAMILY_ICON_NODES: Record<LinkChipIcon, { name: string; node: IconNode }> 
   unfiled: { name: "Inbox", node: INBOX },
   scratch: { name: "NotebookPen", node: NOTEBOOK_PEN },
   uploads: { name: "Upload", node: UPLOAD },
+  agents: { name: "Bot", node: BOT },
   file: { name: "File", node: FILE },
   folder: { name: "Folder", node: FOLDER },
 };

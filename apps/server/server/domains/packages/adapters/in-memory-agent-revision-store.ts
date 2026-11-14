@@ -12,20 +12,14 @@ import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.
 import { type AgentSourceSnapshot, compilePackage } from "../domain/compile-package.js";
 import { GRAMMAR_VERSION } from "../domain/mars.js";
 import type {
-  AgentCatalogEntry,
-  AgentPackageInstallation,
   AgentRevision,
   AgentRevisionStore,
   CatalogRevision,
 } from "../ports/agent-revision-store.js";
 
 type State = {
-  projectRemovals: Map<string, boolean>;
-  installations: Map<string, AgentPackageInstallation>;
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
   revisions: Map<string, CatalogRevision>;
-  catalog: Map<string, AgentCatalogEntry>;
-  history: Map<string, Set<string>>;
   bindings: Map<
     string,
     {
@@ -50,12 +44,8 @@ export function createInMemoryAgentRevisionStore(input: {
 }): InMemoryAgentRevisionStore {
   const transactionOwner = input.transactionOwner ?? new InMemoryTransactionOwner();
   const current: State = {
-    projectRemovals: transactionOwner.map(),
-    installations: transactionOwner.map(),
     sources: transactionOwner.map(),
     revisions: transactionOwner.map(),
-    catalog: transactionOwner.map(),
-    history: transactionOwner.map(),
     bindings: transactionOwner.map(),
   };
   const state = () => current;
@@ -70,52 +60,7 @@ export function createInMemoryAgentRevisionStore(input: {
           definition: row.definition,
         }
       : undefined;
-  const findEntry = (ownerUserId: string | null, logicalKey: string) =>
-    [...state().catalog.values()].find(
-      (entry) => entry.ownerUserId === ownerUserId && entry.logicalKey === logicalKey,
-    );
-
   const store: InMemoryAgentRevisionStore = {
-    async listInstallations(owner) {
-      return copy(
-        [...state().installations.values()]
-          .filter((item) => item.ownerUserId === owner)
-          .sort((a, b) => a.coordinate.localeCompare(b.coordinate)),
-      );
-    },
-    async listInstallationsWithoutRows(grammarVersion) {
-      return copy(
-        [...state().installations.values()]
-          .filter(
-            (item) =>
-              ![...state().revisions.values()].some(
-                (row) =>
-                  row.packageRevisionId === item.currentRevisionId &&
-                  row.grammarVersion === grammarVersion,
-              ),
-          )
-          .sort((a, b) => a.coordinate.localeCompare(b.coordinate)),
-      );
-    },
-    async advanceInstallation(input) {
-      return store.transaction(async () => {
-        const { expectedRevisionId, ...values } = input;
-        const existing = [...state().installations.values()].find(
-          (item) => item.ownerUserId === input.ownerUserId && item.coordinate === input.coordinate,
-        );
-        if (
-          existing
-            ? existing.currentRevisionId !== expectedRevisionId
-            : expectedRevisionId !== undefined
-        )
-          return undefined;
-        if (!state().sources.has(input.currentRevisionId))
-          throw new Error("Installation references a missing source revision");
-        const row = { ...values, id: existing?.id ?? randomUUID() };
-        state().installations.set(row.id, copy(row));
-        return copy(row);
-      });
-    },
     boundAgent(id) {
       const binding = state().bindings.get(id);
       if (!binding) return null;
@@ -126,9 +71,6 @@ export function createInMemoryAgentRevisionStore(input: {
       return revision ? { agentDefinitionRevisionId: revision.id, agentName: revision.name } : null;
     },
     transaction: (operation) => transactionOwner.run(operation),
-    withCatalogTransaction(_ownerUserId, operation) {
-      return store.transaction(operation);
-    },
     installSource(source, grammarVersion = GRAMMAR_VERSION) {
       const compiled = compilePackage(source, grammarVersion);
       return store.transaction(async () => {
@@ -179,98 +121,6 @@ export function createInMemoryAgentRevisionStore(input: {
       return (await store.readPackageCatalogRevisions(id, grammarVersion)).flatMap(
         (row) => available(row) ?? [],
       );
-    },
-    selectRevision(selection) {
-      return store.transaction(async () => {
-        const target = state().revisions.get(selection.revisionId);
-        if (!target) return { ok: false, reason: "not-found" };
-        const existing = findEntry(selection.ownerUserId, selection.logicalKey);
-        if (selection.expectedRevisionId !== undefined) {
-          if (
-            !existing ||
-            existing.removed ||
-            existing.selectedRevisionId !== selection.expectedRevisionId
-          )
-            return { ok: false, reason: "conflict" };
-          const history = new Set(state().history.get(existing.id));
-          history.add(existing.selectedRevisionId);
-          state().history.set(existing.id, history);
-        } else if (existing) {
-          return !existing.removed && existing.selectedRevisionId === target.id
-            ? { ok: true, entry: copy(existing) }
-            : { ok: false, reason: "conflict" };
-        }
-        const { name } = target;
-        const entry: AgentCatalogEntry = {
-          id: existing?.id ?? randomUUID(),
-          ownerUserId: selection.ownerUserId,
-          logicalKey: selection.logicalKey,
-          selectedRevisionId: target.id,
-          name,
-          nameSortKey: name.normalize("NFC").toLowerCase(),
-          removed: false,
-        };
-        state().catalog.set(entry.id, entry);
-        return { ok: true, entry: copy(entry) };
-      });
-    },
-    async readCatalogEntry(owner, key) {
-      return copy(findEntry(owner, key));
-    },
-    async readSelection(user, entryId, revisionId, projectId) {
-      if (projectId && state().projectRemovals.has(`${projectId}:${entryId}`)) return undefined;
-      const entry = state().catalog.get(entryId);
-      if (!entry || entry.removed || (entry.ownerUserId !== null && entry.ownerUserId !== user))
-        return undefined;
-      if (entry.selectedRevisionId !== revisionId && !state().history.get(entryId)?.has(revisionId))
-        return undefined;
-      let revision = state().revisions.get(revisionId);
-      if (revision && revision.grammarVersion !== GRAMMAR_VERSION)
-        revision = state().revisions.get(entry.selectedRevisionId);
-      return revision && revision.grammarVersion === GRAMMAR_VERSION
-        ? copy({ entry, revision })
-        : undefined;
-    },
-    async listCatalog(input) {
-      if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)
-        throw new Error("Agent catalog limit must be between 1 and 100");
-      const compare = (
-        a: { nameSortKey: string; id: string },
-        b: { nameSortKey: string; id: string },
-      ) =>
-        a.nameSortKey < b.nameSortKey
-          ? -1
-          : a.nameSortKey > b.nameSortKey
-            ? 1
-            : a.id < b.id
-              ? -1
-              : a.id > b.id
-                ? 1
-                : 0;
-      return copy(
-        [...state().catalog.values()]
-          .filter(
-            (entry) =>
-              !entry.removed &&
-              (!input.projectId ||
-                !state().projectRemovals.has(`${input.projectId}:${entry.id}`)) &&
-              (entry.ownerUserId === null || entry.ownerUserId === input.userId) &&
-              (!input.after || compare(entry, input.after) > 0),
-          )
-          .sort(compare)
-          .slice(0, input.limit),
-      );
-    },
-    async removeFromProject(projectId, entryId) {
-      state().projectRemovals.set(`${projectId}:${entryId}`, true);
-    },
-    removeOwnedEntry(user, id) {
-      return store.transaction(async () => {
-        const entry = state().catalog.get(id);
-        if (!entry || entry.ownerUserId !== user || entry.removed) return false;
-        state().catalog.set(id, { ...entry, removed: true });
-        return true;
-      });
     },
     bindThread(threadId, revisionId, configuration, invocationOverlay) {
       return store.transaction(async () => {

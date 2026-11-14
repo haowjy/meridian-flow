@@ -123,7 +123,11 @@ function read(value: unknown, client: Actor | null): ReadRecord {
         return fail("filetype");
       if (provisional !== undefined && provisional !== true) return fail("provisional");
       if (typeof value.name !== "string") return fail("create");
-      const fault = nameFault(nodeKind, value.name);
+      const fault = nameFault(
+        nodeKind,
+        value.name,
+        typeof filetype === "string" ? filetype : undefined,
+      );
       if (fault) return fail(`a name with ${fault}`);
       if (!matches(parent, PLACE) || !matches(source, ID) || !isRank(rank)) return fail("create");
       if (parent.startsWith("source:") && parent !== `source:${source}`) return fail("create");

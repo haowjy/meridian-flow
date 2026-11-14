@@ -8,8 +8,8 @@
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   canonicalLeaf,
+  documentFilenameAt,
   type ParsedDocumentFilename,
-  parseDocumentFilename,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
@@ -82,11 +82,12 @@ import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./
  * the source root, or the `invalid_name` fault a leaf that can't name a document is.
  */
 function parseDocumentPath(
+  scheme: ContextScheme,
   path: string,
 ): Result<(ParsedDocumentFilename & { dir: string[] }) | null, AdapterFault> {
   const { dir, filename } = splitPath(path);
   if (!filename) return Ok(null);
-  const parsed = parseDocumentFilename(filename);
+  const parsed = documentFilenameAt(scheme, path);
   return parsed.ok ? Ok({ dir, ...parsed.value }) : Err(parsed.error);
 }
 
@@ -190,6 +191,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.holder = deps.holder;
     this.name = deps.scheme;
     this.boundWrites = new BoundWrites({
+      scheme: deps.scheme,
       documentSync: deps.documentSync,
       commandExecutor: this.commandExecutor,
       projectId: deps.holder.projectId,
@@ -197,6 +199,7 @@ export class ContextFS implements ContextSchemeAdapter {
       findDocument: (path) => this.findDocumentAt(LIVE_TREE, path),
     });
     this.liveCreate = new LiveCreate({
+      scheme: deps.scheme,
       tree: deps.writes,
       executor: this.commandExecutor,
       documentSync: deps.documentSync,
@@ -207,6 +210,7 @@ export class ContextFS implements ContextSchemeAdapter {
       syncFault: (error) => this.syncFault(error),
     });
     this.placement = createPlacement(deps.placement, {
+      scheme: deps.scheme,
       store: deps.store,
       tree: deps.writes,
       executor: this.commandExecutor,
@@ -259,7 +263,7 @@ export class ContextFS implements ContextSchemeAdapter {
     view: TreeView,
     path: string,
   ): Promise<Result<ContextDocument | null, AdapterFault>> {
-    const parsed = parseDocumentPath(path);
+    const parsed = parseDocumentPath(this.scheme, path);
     if (!parsed.ok || !parsed.value) return Ok(null);
     const found = await this.store.resolveDocumentAt(view, path);
     if (found.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
@@ -279,7 +283,7 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   async stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>> {
-    const parsed = parseDocumentPath(path);
+    const parsed = parseDocumentPath(this.scheme, path);
     if (!parsed.ok) return parsed;
     const view = await this.readTreeView();
     const found = await this.findAddressedDocument(view, path);
@@ -296,7 +300,7 @@ export class ContextFS implements ContextSchemeAdapter {
   async read(
     path: string,
   ): Promise<Result<{ content: string; documentId?: string } | null, AdapterFault>> {
-    const parsed = parseDocumentPath(path);
+    const parsed = parseDocumentPath(this.scheme, path);
     if (!parsed.ok) return parsed;
     const view = await this.readTreeView();
     const found = await this.findAddressedDocument(view, path);

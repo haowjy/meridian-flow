@@ -43,7 +43,7 @@ it("reads creation synchronously on reload and updates on local writes, storage 
       title: "Unsent words",
       workId: null,
       workAiWriteMode: "direct",
-      agentSelection: { catalogEntryId: "agent", definitionRevisionId: "revision" },
+      agentSelection: { slug: "agent", definitionRevisionId: "rev" },
       agentName: "Agent",
       agentSlug: "agent",
     },

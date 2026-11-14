@@ -1,25 +1,13 @@
-/** Retained Agent source/definition identity and account/system future-chat selection. */
+/** Retained Agent source and definition rows, and the thread binding that points at them. */
 import type {
   InvocationOverlay,
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  check,
-  index,
-  jsonb,
-  pgTable,
-  primaryKey,
-  text,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { createdAt, idColumn, updatedAt } from "./_shared";
+import { check, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { createdAt, idColumn } from "./_shared";
 import { threads } from "./agent-threads";
-import { projects } from "./content";
-import { users } from "./users";
 
 export const agentPackageRevisions = pgTable(
   "agent_package_revisions",
@@ -69,46 +57,6 @@ export const agentDefinitionRevisions = pgTable(
   ],
 );
 
-export const agentCatalogEntries = pgTable(
-  "agent_catalog_entries",
-  {
-    id: idColumn(),
-    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
-    logicalKey: text("logical_key").notNull(),
-    selectedRevisionId: uuid("selected_revision_id")
-      .notNull()
-      .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
-    name: text("name").notNull(),
-    nameSortKey: text("name_sort_key").notNull(),
-    removed: boolean("removed").notNull().default(false),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    uniqueIndex("agent_catalog_entries_personal_key")
-      .on(table.ownerUserId, table.logicalKey)
-      .where(sql`${table.ownerUserId} IS NOT NULL`),
-    uniqueIndex("agent_catalog_entries_system_key")
-      .on(table.logicalKey)
-      .where(sql`${table.ownerUserId} IS NULL`),
-    index("agent_catalog_entries_owner_name").on(table.ownerUserId, table.nameSortKey, table.id),
-  ],
-);
-
-/** Project availability never changes shared source or an existing conversation binding. */
-export const projectAgentRemovals = pgTable(
-  "project_agent_removals",
-  {
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    catalogEntryId: uuid("catalog_entry_id")
-      .notNull()
-      .references(() => agentCatalogEntries.id, { onDelete: "cascade" }),
-  },
-  (table) => [primaryKey({ columns: [table.projectId, table.catalogEntryId] })],
-);
-
 export const threadAgentBindings = pgTable("thread_agent_bindings", {
   threadId: uuid("thread_id")
     .primaryKey()
@@ -134,40 +82,3 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
     .default(sql`'{}'::jsonb`),
   createdAt: createdAt(),
 });
-
-/** Retains eligibility for revisions reserved before a future-chat pointer advances. */
-export const agentCatalogRevisions = pgTable(
-  "agent_catalog_revisions",
-  {
-    catalogEntryId: uuid("catalog_entry_id")
-      .notNull()
-      .references(() => agentCatalogEntries.id, { onDelete: "cascade" }),
-    definitionRevisionId: uuid("definition_revision_id")
-      .notNull()
-      .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
-  },
-  (table) => [primaryKey({ columns: [table.catalogEntryId, table.definitionRevisionId] })],
-);
-
-/** Account/system installation provenance; source snapshots remain the only definition content. */
-export const agentPackageInstallations = pgTable(
-  "agent_package_installations",
-  {
-    id: idColumn(),
-    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
-    coordinate: text("coordinate").notNull(),
-    currentRevisionId: uuid("current_revision_id")
-      .notNull()
-      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    uniqueIndex("agent_package_installations_personal_coordinate")
-      .on(table.ownerUserId, table.coordinate)
-      .where(sql`${table.ownerUserId} IS NOT NULL`),
-    uniqueIndex("agent_package_installations_system_coordinate")
-      .on(table.coordinate)
-      .where(sql`${table.ownerUserId} IS NULL`),
-  ],
-);

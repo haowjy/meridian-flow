@@ -2,18 +2,17 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { CreationAgent } from "./creation-agent";
+import type { CreationAgent, PickableAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
-  agents: AgentCatalogItem[];
+  agents: PickableAgent[];
   selectedAgent: CreationAgent | null;
   onSelect: (agent: CreationAgent) => void;
   focusRefs?: {
@@ -30,7 +29,7 @@ export function AgentPickerPanel({
   onSelect,
   focusRefs,
 }: AgentPickerPanelProps) {
-  const firstId = agents[0]?.selection.catalogEntryId;
+  const firstId = agents[0]?.selection.slug;
   // A row's tooltip waits until the writer moves through the list: the picker
   // focuses a row as it opens, and that tooltip would cover the rows below
   // before the writer has looked at them.
@@ -62,11 +61,8 @@ export function AgentPickerPanel({
             <div onPointerMove={engage} onKeyDown={engage}>
               <PickerSection>
                 {agents.map((agent) => {
-                  const rowId = agent.selection.catalogEntryId;
-                  const active =
-                    rowId === selectedAgent?.selection.catalogEntryId &&
-                    agent.selection.definitionRevisionId ===
-                      selectedAgent?.selection.definitionRevisionId;
+                  const rowId = agent.selection.slug;
+                  const active = rowId === selectedAgent?.selection.slug;
                   return (
                     <li key={rowId}>
                       <ListRow

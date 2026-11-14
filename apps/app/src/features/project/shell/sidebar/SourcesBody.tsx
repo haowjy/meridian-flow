@@ -186,6 +186,7 @@ const SOURCES: Record<SourceKey, Source> = {
   manuscript: treeSource("manuscript"),
   kb: treeSource("kb"),
   user: treeSource("user"),
+  agents: treeSource("agents"),
   scratch: treeSource("scratch"),
   unfiled: treeSource("unfiled"),
   trash: {

@@ -1,7 +1,8 @@
 # domains/packages
 
-This domain reads Mars packages, decides which Agents are available, publishes
-immutable definitions, and resolves skills and execution configuration. The model
+This domain reads Mars packages from the writer's Agent files, decides which Agents and skills
+are available, retains immutable definitions for the chats bound to them, and resolves execution
+configuration. The model
 is in the [Agent definition][definitions] and [package][packages] pages.
 
 ## Contracts
@@ -28,18 +29,36 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   `allow` with a warning.
 - A revision's key includes `GRAMMAR_VERSION` (the Mars version and Flow's
   `flow-N`). Whoever changes the availability table or the tool projection bumps
-  `flow-N`. Boot republishes every package with no rows at the running version.
-  A binding keeps its revision; a verdict is made once, at compile.
+  `flow-N`. A revision an older reader compiled is read again with the running reader
+  when something selects it; a binding keeps its revision, and a verdict is made once, at compile.
 - Package files are UTF-8 text only (`Record<string, string>`).
-- Catalog advancement requires an expected revision and retains old membership
-  so a reserved first Send keeps its exact revision.
+- The catalog is computed, never published. `bound-agent-catalog.ts` reads each level's files
+  (built-in, `user://.agents/`, `agents://`; `ports/agent-level-files.ts`), splits the level
+  into its root and `packages/<name>/` (`level-packages.ts`), compiles each with
+  `compilePackage`, and combines Agents and skills by name (`combine-agents.ts`): project over
+  user over built-in; within a level the root wins silently over its packages, and two packages
+  bringing one name are both renamed `name__package` while the bare name stays as an
+  unavailable item. A level owns every name it contains, readable or not: a broken, ambiguous or
+  non-text file leaves its Agent in the level, unavailable, and it still hides the same name
+  below (no fall-through; a prose document or two documents at one path is a `problems` entry
+  of the level read). Rename uses the name before any rename for shadowing.
+- Compile results are cached by content digest (bounded); a package is written to the store
+  (`installSource`, idempotent) when a catalog read first offers its Agents or a skill is
+  invoked, so a picker's selection (`{slug, definitionRevisionId}`) names a stored row. Rows are
+  immutable and shared by every account that has the same bytes; they grow with observed edits
+  and are not collected yet (they are small; a chat binding is the only reference).
+- A selection pins the revision it showed: a chat binds exactly that revision, whatever the
+  files say now. A skill invoked with `/` pins the files it was first read from; invoking it
+  again reads the pin.
+- A level root with no `mars.toml` is a package named for the level. When package-wide tool
+  rules are supported, deleting that manifest drops them.
+- The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's
+  access comes from its own file and the chain takes the minimum, so this never widens one.
 - Callers authorize source, Project, and thread access before selecting or
   binding. Root, child, fork, handoff, and derived-primary creation bind through
   the threads domain's atomic operation.
 - The store is an internal port, and app composition shares one transaction
   owner with thread repositories so a completed transaction cannot leak writes.
-- Project availability filters prospective selection only: bound execution and
-  same-ID creation recovery do not recheck it.
 
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).

@@ -16,7 +16,7 @@ import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
-import type { ContextWriteBinaryOptions } from "../../ports/context-port.js";
+import type { ContextScheme, ContextWriteBinaryOptions } from "../../ports/context-port.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { binaryTrackedWriteFault } from "./bound-writes.js";
@@ -75,6 +75,7 @@ export interface CreatePlacementDeps {
   documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces">;
   liveCreate: LiveCreate;
+  scheme: ContextScheme;
 }
 
 export function createPlacement(
@@ -108,7 +109,7 @@ async function createBinary(
   path: string,
   options: ContextWriteBinaryOptions,
 ): Promise<Result<{ documentId: string }, AdapterFault>> {
-  const resolved = resolveBinaryTarget(path, options);
+  const resolved = resolveBinaryTarget(deps.scheme, path, options);
   if (!resolved.ok) return resolved;
   const { dir, name, extension } = resolved.value;
   const created = await deps.tree.create(target, {
@@ -137,7 +138,7 @@ function livePlacement(
     refuse: () => null,
     ensureTracked(path, options) {
       return executor.run<{ documentId: string; created: boolean }>(async () => {
-        const resolved = resolveCreateTarget(path, options);
+        const resolved = resolveCreateTarget(deps.scheme, path, options);
         if (!resolved.ok) return resolved;
         const { dir, name, extension } = resolved.value;
         const target = { view: LIVE, actor: actorOf(options?.origin) };
@@ -200,7 +201,7 @@ function draftPlacement(
     }),
     ensureTracked(path, options) {
       return inBranch<{ documentId: string; created: boolean }>(async (branch) => {
-        const resolved = resolveCreateTarget(path, options);
+        const resolved = resolveCreateTarget(deps.scheme, path, options);
         if (!resolved.ok) return resolved;
         const { dir, name, extension, filetype } = resolved.value;
         const target = {

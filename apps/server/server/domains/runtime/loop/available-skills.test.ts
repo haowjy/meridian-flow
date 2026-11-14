@@ -5,10 +5,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  type AgentSourceSnapshot,
-  createInMemoryAccountSkillInstallStore,
+  createBoundAgentCatalog,
   createInMemoryAgentRevisionStore,
-  type InMemoryAgentRevisionStore,
+  noLevelFiles,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
@@ -32,21 +31,6 @@ const skillMd = (
   return `---\nname: ${slug}\ndescription: ${description}${extra ? `\n${extra}` : ""}\n---\n\n${slug} body.\n`;
 };
 
-async function publishSource(
-  store: InMemoryAgentRevisionStore,
-  source: AgentSourceSnapshot,
-  ownerUserId: string | null = null,
-) {
-  const installed = await store.installSource(source);
-  const installation = await store.advanceInstallation({
-    ownerUserId,
-    coordinate: source.coordinate,
-    currentRevisionId: installed.packageRevisionId,
-  });
-  if (!installation) throw new Error(`Failed to publish ${source.coordinate}`);
-  return installed;
-}
-
 describe("skill catalogs", () => {
   it("drops user-invocable false from slash and model-invocable false from the model catalog", async () => {
     const projects = createInMemoryProjectRepository();
@@ -55,7 +39,7 @@ describe("skill catalogs", () => {
     const agentRevisions = createInMemoryAgentRevisionStore({
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
-    const installed = await publishSource(agentRevisions, {
+    const launch = {
       coordinate: "meridian-launch-agents",
       files: {
         "mars.toml": '[package]\nname = "launch"\nversion = "0.1.0"\nschema = 1\n',
@@ -82,7 +66,8 @@ You are Writer.
           modelInvocable: false,
         }),
       },
-    });
+    };
+    const installed = await agentRevisions.installSource(launch);
     const writerRow = installed.definitions.find((definition) => definition.slug === "writer");
     const writer = writerRow && (await agentRevisions.readRevision(writerRow.id));
     if (!writer) throw new Error("Writer definition missing");
@@ -91,7 +76,13 @@ You are Writer.
       store: agentRevisions,
       defaultModel: "fixture-model",
     });
-    const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
+    const agentCatalog = createBoundAgentCatalog({
+      store: agentRevisions,
+      levelFiles: noLevelFiles,
+      builtins: [launch],
+      defaultModel: () => "fixture-model",
+      unavailableReasons: () => [],
+    });
     const thread = await repos.threads.create({
       aiWriteMode: "direct",
       userId: "user-1",
@@ -100,11 +91,7 @@ You are Writer.
     });
     await agentRevisions.bindThread(thread.id, writer.id, configuration, null);
 
-    const userCatalog = await resolveThreadUserInvocableSkills({
-      thread,
-      agentRevisions,
-      accountSkillInstalls,
-    });
+    const userCatalog = await resolveThreadUserInvocableSkills({ thread, agentCatalog });
     expect(userCatalog.map((skill) => skill.slug)).toEqual([
       "creative-writing-modes",
       "hidden-from-model",

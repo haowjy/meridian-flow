@@ -1,3 +1,4 @@
+export { createAgentLevelFiles } from "./adapters/agent-level-files.js";
 export { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";

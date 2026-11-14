@@ -1,4 +1,4 @@
-/** Immutable Agent content and future-chat catalog selection. Callers own resource authorization. */
+/** Immutable Agent content a chat is bound to. Callers own resource authorization. */
 import type {
   InvocationOverlay,
   ResolvedAgentConfiguration,
@@ -37,42 +37,12 @@ export interface AgentRevisionBinding {
   /** Packaged skills the user invoked in this thread, by slug, pinned as read. */
   invokedSkills: Readonly<Record<string, RetainedSkillReference>>;
 }
-export interface AgentCatalogEntry {
-  id: string;
-  ownerUserId: string | null;
-  logicalKey: string;
-  selectedRevisionId: string;
-  name: string;
-  nameSortKey: string;
-  removed: boolean;
-}
-export type AgentCatalogSelectionResult =
-  | { ok: true; entry: AgentCatalogEntry }
-  | { ok: false; reason: "conflict" | "not-found" };
-
-/** Mutable management head over immutable sources, never consulted by bound execution. */
-export interface AgentPackageInstallation {
-  id: string;
-  ownerUserId: string | null;
-  coordinate: string;
-  currentRevisionId: string;
-}
-
 export interface AgentRevisionStore {
-  listInstallations(ownerUserId: string | null): Promise<AgentPackageInstallation[]>;
   /**
-   * Installations of every owner whose current file set has no Agent rows at `grammarVersion`:
-   * what a reader change left behind.
+   * Compiles the files under `grammarVersion` (the running reader by default) and retains them
+   * with their Agent rows, once per (coordinate, content digest, reader version). Nothing else
+   * points at them but a chat's binding.
    */
-  listInstallationsWithoutRows(grammarVersion: string): Promise<AgentPackageInstallation[]>;
-  /** Exact head CAS, inside the owning publication transaction. */
-  advanceInstallation(
-    input: Omit<AgentPackageInstallation, "id"> & { expectedRevisionId?: string },
-  ): Promise<AgentPackageInstallation | undefined>;
-
-  /** Serialize complete owner-scoped catalog publications in one ambient transaction. */
-  withCatalogTransaction<T>(ownerUserId: string | null, operation: () => Promise<T>): Promise<T>;
-  /** Compiles the files under `grammarVersion` (the running reader by default) and retains them. */
   installSource(
     source: AgentSourceSnapshot,
     grammarVersion?: string,
@@ -92,32 +62,6 @@ export interface AgentRevisionStore {
     packageRevisionId: string,
     grammarVersion: string,
   ): Promise<CatalogRevision[]>;
-  /** Null ownership is reserved for trusted system seeding. Existing pointers require an exact CAS. */
-  selectRevision(input: {
-    ownerUserId: string | null;
-    logicalKey: string;
-    revisionId: string;
-    expectedRevisionId?: string;
-  }): Promise<AgentCatalogSelectionResult>;
-  readCatalogEntry(
-    ownerUserId: string | null,
-    logicalKey: string,
-  ): Promise<AgentCatalogEntry | undefined>;
-  /** Only a revision of the running reader's version: a stricter reader reaches held selections. */
-  readSelection(
-    userId: string,
-    catalogEntryId: string,
-    revisionId: string,
-    projectId?: string,
-  ): Promise<{ entry: AgentCatalogEntry; revision: CatalogRevision } | undefined>;
-  listCatalog(input: {
-    userId: string;
-    projectId?: string;
-    limit: number;
-    after?: { nameSortKey: string; id: string };
-  }): Promise<AgentCatalogEntry[]>;
-  removeFromProject(projectId: string, catalogEntryId: string): Promise<void>;
-  removeOwnedEntry(userId: string | null, entryId: string): Promise<boolean>;
   bindThread(
     threadId: string,
     revisionId: string | null,

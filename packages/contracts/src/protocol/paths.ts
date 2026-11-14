@@ -269,17 +269,11 @@ export function apiThreadSkillsPath(threadId: string): string {
 
 export const API_AVAILABLE_SKILLS_PATH = "/api/skills";
 
-export function apiAvailableSkillsPath(input: {
-  catalogEntryId: string;
-  definitionRevisionId: string;
-  projectId?: string | null;
-}): string {
-  const query = new URLSearchParams({
-    catalogEntryId: input.catalogEntryId,
-    definitionRevisionId: input.definitionRevisionId,
-  });
-  if (input.projectId) query.set("projectId", input.projectId);
-  return `${API_AVAILABLE_SKILLS_PATH}?${query}`;
+/** The `/` menu of a chat not yet created: built-in, user and (with a project) project skills. */
+export function apiAvailableSkillsPath(input: { projectId?: string | null }): string {
+  return input.projectId
+    ? `${API_AVAILABLE_SKILLS_PATH}?${new URLSearchParams({ projectId: input.projectId })}`
+    : API_AVAILABLE_SKILLS_PATH;
 }
 
 /** Durable identity used to reconcile or explicitly retire one message admission. */

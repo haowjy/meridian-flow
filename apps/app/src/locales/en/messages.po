@@ -1032,6 +1032,10 @@ msgstr "Agent:"
 msgid "Agent: {0}"
 msgstr "Agent: {0}"
 
+#: src/features/project/context/context-schemes.ts
+msgid "Agents"
+msgstr "Agents"
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
 msgstr "AI assistant"

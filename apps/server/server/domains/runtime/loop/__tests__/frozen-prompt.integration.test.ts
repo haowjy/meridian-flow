@@ -7,9 +7,9 @@
 import { createHash } from "node:crypto";
 import type { Gateway, Message, ModelInfo, Tool } from "@meridian-flow/gateway";
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryLevelFiles } from "../../../../test-support/in-memory-level-files.js";
 import {
   createBoundAgentCatalog,
-  createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
 } from "../../../packages/index.js";
 import {
@@ -57,15 +57,22 @@ async function fixture(
   const agentRevisions = createInMemoryAgentRevisionStore({
     threadExists: async (id) => Boolean(await repos.threads.findById(id)),
   });
+  const levels = createInMemoryLevelFiles();
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
+    levelFiles: levels,
+    builtins: [],
     defaultModel: () => "gpt-5.6-luna",
     unavailableReasons: () => [],
   });
-  const original = await agentCatalog.save("user-1", {
-    slug: "writer",
-    content: "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
-  });
+  levels.write(
+    "user",
+    "agents/writer.md",
+    "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
+  );
+  const original = (await agentCatalog.list("user-1", {})).agents.find(
+    (agent) => agent.slug === "writer",
+  ) as { selection: { slug: string; definitionRevisionId: string } };
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const noWork = await works.ensureNoWork(project.id);
   const thread = await repos.threads.create({
@@ -98,13 +105,12 @@ async function fixture(
     },
     readChainPermission: async () => "edit" as const,
   });
-  const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const rig = createRuntimeHarness({
     repos,
     agentRevisions,
     gateway,
     workContext,
-    accountSkillInstalls,
+    agentCatalog,
     ...(mediaResolver ? { mediaResolver } : {}),
   });
   await rig.creditLedger.grant({
@@ -144,7 +150,7 @@ async function fixture(
   }
   return {
     ...rig,
-    accountSkillInstalls,
+    levels,
     repos,
     thread,
     works,
@@ -492,13 +498,11 @@ describe("frozen prompt provider requests", () => {
         });
       }
     });
-    await rig.accountSkillInstalls.insert({
-      ownerUserId: rig.thread.userId,
-      slug: "craft",
-      name: "Craft",
-      description: "Dialogue craft",
-      body: "Use distinctive dialogue.",
-    });
+    rig.levels.write(
+      "user",
+      "skills/craft/SKILL.md",
+      "---\nname: Craft\ndescription: Dialogue craft\n---\n\nUse distinctive dialogue.",
+    );
     const first = await rig.run();
     expect(rig.requests).toHaveLength(2);
     const child = await rig.repos.threads.createSubagent({
@@ -569,11 +573,11 @@ describe("frozen prompt provider requests", () => {
     // The source's current Work differs from the Work captured by its first bake.
     const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Later Work" });
     await rig.repos.threadWorks.rebindPrimary(rig.thread.id, work.id);
-    await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "writer",
-      content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
-      expectedRevisionId: rig.original.selection.definitionRevisionId,
-    });
+    rig.levels.write(
+      "user",
+      "agents/writer.md",
+      "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
+    );
     const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     for (let index = 0; index < 2; index += 1) {
@@ -614,6 +618,7 @@ describe("frozen prompt provider requests", () => {
       userId: rig.thread.userId,
       agentSelection: rig.original.selection,
     });
+    // The picker's selection pins the revision the source runs, so the edit does not matter.
     expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     expect((await rig.repos.turns.listByThread(handoff.id))[0]).toMatchObject({
       role: "system",
@@ -624,10 +629,20 @@ describe("frozen prompt provider requests", () => {
   it("starts a different-Agent handoff without carrying the source bake", async () => {
     const rig = await fixture();
     await rig.run();
-    const nextAgent = await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "new-writer",
-      content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
-    });
+    rig.levels.write(
+      "user",
+      "agents/new-writer.md",
+      "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
+    );
+    const nextAgent = (await rig.derive.agentCatalog.list(rig.thread.userId, {})).agents.find(
+      (agent) => agent.slug === "new-writer",
+    );
+    if (!nextAgent?.selection) throw new Error("New writer unavailable");
+    const next = await rig.derive.agentCatalog.resolvePrimary(
+      rig.thread.userId,
+      nextAgent.selection,
+    );
+    if (!next.ok) throw new Error("New writer unavailable");
     const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
@@ -637,16 +652,21 @@ describe("frozen prompt provider requests", () => {
       userId: rig.thread.userId,
       agentSelection: nextAgent.selection,
     });
-    expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
+    expect(handoff.agentDefinitionRevisionId).toBe(next.revision.id);
     expect(handoff.initialPromptBakeId).toBeNull();
   });
 
   it("refuses forking or handing off a subagent thread", async () => {
     const rig = await fixture();
-    const agent = await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "helper",
-      content: "---\nname: Helper\nmode: subagent\n---\n\nHelper.",
-    });
+    const agent = (
+      await rig.derive.agentRevisions.installSource({
+        coordinate: "fixture/helper",
+        files: {
+          "mars.toml": '[package]\nname = "helper"\nversion = "0.1.0"\nschema = 1\n',
+          "agents/helper.md": "---\nname: Helper\nmode: subagent\n---\n\nHelper.",
+        },
+      })
+    ).definitions[0];
     const parentTurn = await rig.repos.turns.create({
       threadId: rig.thread.id,
       role: "assistant",
@@ -664,7 +684,7 @@ describe("frozen prompt provider requests", () => {
     });
     await rig.derive.agentRevisions.bindThread(
       child.id,
-      agent.selection.definitionRevisionId,
+      agent.id,
       {
         model: "gpt-5.6-luna",
         skills: { load: [], available: [] },

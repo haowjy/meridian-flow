@@ -4,49 +4,53 @@ import { isUuid } from "../request-id.js";
 import type { InvocationPatch } from "./execution-knobs.js";
 
 export * from "./execution-knobs.js";
+export * from "./location.js";
 
-/** Exact immutable revision selected from an authorized account/system catalog entry. */
-const selectionIdSchema = z
-  .string()
-  .refine((value): boolean => isUuid(value), "must be a canonical UUID")
-  .toLowerCase();
+/**
+ * The Agent a writer picked: the name the picker shows and the exact revision it showed. A chat
+ * binds that revision, so an Agent file edited after the picker loaded changes only later chats.
+ */
 export const agentSelectionSchema = z.strictObject({
-  catalogEntryId: selectionIdSchema,
-  definitionRevisionId: selectionIdSchema,
+  slug: z.string().min(1),
+  definitionRevisionId: z
+    .string()
+    .refine((value): boolean => isUuid(value), "must be a canonical UUID")
+    .toLowerCase(),
 });
 export type AgentSelection = z.infer<typeof agentSelectionSchema>;
+/** Which level an Agent came from. A higher level hides the same name below it. */
+export type AgentLevel = "builtin" | "user" | "project";
 export interface AgentCatalogItem {
-  selection: AgentSelection;
+  /** Null for a name two packages bring: it is held, unavailable, and nothing to pick. */
+  selection: AgentSelection | null;
   slug: string;
   name: string;
   description: string;
   model: string | null;
-  ownership: "system" | "personal";
+  level: AgentLevel;
+  /** Levels below this one that have an Agent of the same name, now hidden. */
+  shadows: AgentLevel[];
   unavailableReasons: string[];
 }
-export interface AgentCatalogCursor {
-  nameSortKey: string;
-  id: string;
-}
-export interface AgentCatalogPage {
+export interface AgentCatalog {
   agents: AgentCatalogItem[];
-  nextCursor: AgentCatalogCursor | null;
 }
 
-export const agentCatalogPageSchema = z.object({
+const agentLevelSchema = z.enum(["builtin", "user", "project"]);
+export const agentCatalogSchema = z.object({
   agents: z.array(
     z.object({
-      selection: agentSelectionSchema,
+      selection: agentSelectionSchema.nullable(),
       slug: z.string().min(1),
       name: z.string(),
       description: z.string(),
       model: z.string().nullable(),
-      ownership: z.enum(["system", "personal"]),
+      level: agentLevelSchema,
+      shadows: z.array(agentLevelSchema),
       unavailableReasons: z.array(z.string()),
     }),
   ),
-  nextCursor: z.object({ nameSortKey: z.string(), id: z.string().min(1) }).nullable(),
-}) satisfies z.ZodType<AgentCatalogPage>;
+}) satisfies z.ZodType<AgentCatalog>;
 
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {
