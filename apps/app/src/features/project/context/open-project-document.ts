@@ -1,4 +1,4 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -6,12 +6,6 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import {
-  type ResourcePlacement,
-  type ResourceProjectionSnapshot,
-  type ResourceRecord,
-  resourcePlacementForSnapshot,
-} from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -19,8 +13,8 @@ import { contextRouteRequest } from "../routing/project-route";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
- * Doors that already render a catalog row carry its identity; id-only doors
- * resolve one. Both commit main's address before the destination acquires its
+ * Doors that already render a tree row carry its identity; id-only doors
+ * read it from the replay of the list, and ask the server only for a document the list does not show. Both commit main's address before the destination acquires its
  * live session, so availability work cannot hold navigation hostage. Every
  * door opens the document in main.
  */
@@ -38,25 +32,19 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
 } from "react";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
-import {
-  accessibleResourceCatalogView,
-  aggregateCatalogScope,
-  projectCatalogFile,
-  projectCatalogView,
-} from "@/client/query/useContextCatalog";
+import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { isEditorScheme, type OpenDocument } from "@/client/stores";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
   useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
-import {
-  useOptionalAccountResourceReplica,
-  useOptionalPresentedDocuments,
-} from "./account-feature-context";
-import { openDocumentFromFile } from "./open-document-from-file";
+import { useWorkScopeState } from "../use-work-scope";
+import { useOptionalPresentedDocuments } from "./account-feature-context";
+import { openDocumentFromFile, treeFileFromCatalogEntry } from "./open-document-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -270,15 +258,13 @@ export type KnownDocumentIdentity = {
   workId?: string | null;
   rootThreadId?: string;
   chatId?: string;
-  file: CatalogFile;
+  file: TreeFile;
 };
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
   /** The caller has already resolved this identity as deleted. */
   trashed?: true;
-  /** Ignore a local identity projection known to predate a completed mutation. */
-  refreshIdentity?: true;
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
@@ -302,39 +288,9 @@ type NavigationAdapterDependencies = {
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
-  resources?: Pick<
-    import("@/core/resources/account-resource-replica").AccountResourceReplica,
-    "accountId" | "observeProjection" | "readProjectionState"
-  > | null;
+  /** Where the replay of the list shows a document, or null while it shows none. */
+  locate(documentId: string): KnownDocumentIdentity | null;
 };
-
-function identityForRecord(
-  projectId: string,
-  record: ResourceRecord,
-  placement: ResourcePlacement,
-): KnownDocumentIdentity | null {
-  const location = placement.resourceLocation(record);
-  if (!location) return null;
-  const scope = aggregateCatalogScope(projectId, location.scheme, location);
-  if (!scope) return null;
-  const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
-  const file = projectCatalogView(projectId, location.scheme, projected, placement, [
-    record,
-  ]).findDocument(record.resource.identity.documentId);
-  if (!file || projected.entries.get(record.resource.identity.documentId)?.kind !== "file")
-    return null;
-  if (location.chatId !== undefined) {
-    const spelled = parseContextUri(file.uri);
-    if (!spelled.ok || spelled.value.authority.kind !== "chat") return null;
-  }
-  return {
-    scheme: location.scheme,
-    workId: location.workId,
-    rootThreadId: location.rootThreadId,
-    chatId: location.chatId,
-    file,
-  };
-}
 
 type CommitResult =
   | { kind: "applied" }
@@ -359,16 +315,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    {
-      documentId,
-      trashed,
-      refreshIdentity,
-      known,
-      workId,
-      focus,
-      replace,
-      signal,
-    }: OpenProjectDocumentRequest,
+    { documentId, trashed, known, workId, focus, replace, signal }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
     const navigationIsCurrent = this.dependencies.captureNavigation?.();
     const token = ++this.attempt;
@@ -398,7 +345,6 @@ export class ProjectDocumentNavigationAdapter {
       }
       const identified = await this.identify(projectId, {
         documentId,
-        refreshIdentity,
         known,
         workId,
         isCurrent,
@@ -408,25 +354,6 @@ export class ProjectDocumentNavigationAdapter {
       if (identified.kind === "trashed")
         return this.openTrash(documentId, controller.signal, isCurrent, replace);
       const { identity, transfer } = identified;
-
-      if (refreshIdentity && this.dependencies.resources) {
-        // Restoring a deleted ancestor republishes the document through the catalog. Do not
-        // open it while the replica still holds the prior terminal record: that record would
-        // immediately read as its removal.
-        try {
-          await waitForLivingProjection(
-            this.dependencies.resources,
-            projectId,
-            documentId,
-            controller.signal,
-          );
-        } catch {
-          return controller.signal.aborted
-            ? { kind: "cancelled" }
-            : { kind: "refused", reason: "lookup-failed" };
-        }
-        if (!isCurrent()) return { kind: "cancelled" };
-      }
 
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
@@ -456,18 +383,17 @@ export class ProjectDocumentNavigationAdapter {
   }
 
   /**
-   * Where a document lives now: the caller's known row, the replica's record, or one lookup.
+   * Where a document lives now: the caller's known row, the replay of the list, or one lookup.
    * A lookup's answer rides along as the transfer the host's session takes.
    */
   private async identify(
     projectId: string,
     {
       documentId,
-      refreshIdentity,
       known,
       workId,
       isCurrent,
-    }: Pick<OpenProjectDocumentRequest, "documentId" | "refreshIdentity" | "known" | "workId"> & {
+    }: Pick<OpenProjectDocumentRequest, "documentId" | "known" | "workId"> & {
       isCurrent: () => boolean;
     },
   ): Promise<
@@ -476,52 +402,32 @@ export class ProjectDocumentNavigationAdapter {
     | { kind: "cancelled" }
     | { kind: "refused"; reason: "gone" | "lookup-failed" }
   > {
-    const projection = this.dependencies.resources?.readProjectionState(projectId);
-    const record =
-      projection?.kind === "ready"
-        ? projection.snapshot.records.find(
-            (candidate) => candidate.resource.identity.documentId === documentId,
-          )
-        : undefined;
-    if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
-      return { kind: "trashed" };
+    const identity = known ?? this.dependencies.locate(documentId) ?? undefined;
+    if (identity) return { kind: "identified", identity };
 
-    let identity = refreshIdentity ? undefined : known;
-    if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
-      identity =
-        identityForRecord(
-          projectId,
-          record,
-          resourcePlacementForSnapshot(projectId, projection.snapshot),
-        ) ?? undefined;
-    }
-
-    let transfer: AvailableOpenResolution | undefined;
-    if (!identity) {
-      const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
-      if (!isCurrent()) return { kind: "cancelled" };
-      if (resolution.kind === "deleted") return { kind: "trashed" };
-      if (resolution.kind !== "available") {
-        return {
-          kind: "refused",
-          reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
-        };
-      }
-      transfer = resolution;
-      const scheme = schemeForEntry(resolution.entry);
-      if (!scheme) return { kind: "refused", reason: "lookup-failed" };
-      identity = {
-        scheme,
-        file: projectCatalogFile(resolution.entry),
-        workId: resolution.entry.scope.kind === "work" ? resolution.entry.scope.workId : workId,
-        rootThreadId:
-          resolution.entry.scope.kind === "lineage"
-            ? resolution.entry.scope.rootThreadId
-            : undefined,
-        chatId: resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
+    const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+    if (!isCurrent()) return { kind: "cancelled" };
+    if (resolution.kind === "deleted") return { kind: "trashed" };
+    if (resolution.kind !== "available") {
+      return {
+        kind: "refused",
+        reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
       };
     }
-    return { kind: "identified", identity, ...(transfer ? { transfer } : {}) };
+    const scheme = schemeForEntry(resolution.entry);
+    if (!scheme) return { kind: "refused", reason: "lookup-failed" };
+    const { scope } = resolution.entry;
+    return {
+      kind: "identified",
+      transfer: resolution,
+      identity: {
+        scheme,
+        file: treeFileFromCatalogEntry(resolution.entry),
+        workId: scope.kind === "work" ? scope.workId : workId,
+        rootThreadId: scope.kind === "lineage" ? scope.rootThreadId : undefined,
+        chatId: scope.kind === "chat" ? scope.chatId : undefined,
+      },
+    };
   }
 
   /**
@@ -569,7 +475,7 @@ export class ProjectDocumentNavigationAdapter {
   private async commitFile(input: {
     projectId: string;
     scheme: ProjectContextTreeScheme;
-    file: CatalogFile;
+    file: TreeFile;
     workId: string | undefined;
     rootThreadId?: string;
     chatId?: string;
@@ -618,47 +524,13 @@ export class ProjectDocumentNavigationAdapter {
   }
 }
 
-function waitForLivingProjection(
-  resources: NonNullable<NavigationAdapterDependencies["resources"]>,
-  projectId: string,
-  documentId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const living = (snapshot: ResourceProjectionSnapshot) =>
-    snapshot.records.some(
-      (record) =>
-        record.resource.identity.documentId === documentId &&
-        record.resource.lifecycle.kind !== "terminal",
-    );
-  const state = resources.readProjectionState(projectId);
-  if (state.kind === "ready" && living(state.snapshot)) return Promise.resolve();
-  if (state.kind === "failed") return Promise.reject(state.error);
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
-    let stop: () => void = () => undefined;
-    const finish = (settle: () => void) => {
-      signal.removeEventListener("abort", abort);
-      stop();
-      settle();
-    };
-    const abort = () => finish(() => reject(signal.reason));
-    stop = resources.observeProjection(
-      projectId,
-      (snapshot) => {
-        if (living(snapshot)) finish(resolve);
-      },
-      (error) => finish(() => reject(error)),
-    );
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
-}
-
 function schemeForEntry(entry: CatalogFileEntry): ProjectContextTreeScheme | null {
   const separator = entry.uri.indexOf(":");
   const scheme = separator < 0 ? "" : entry.uri.slice(0, separator);
   return isProjectContextTreeScheme(scheme) ? scheme : null;
 }
+
+const EDITOR_SCHEMES = [...PROJECT_SCOPED_CONTEXT_URI_SCHEMES, "scratch"] as const;
 
 type ProjectDocumentNavigationOwner = {
   projectId: string;
@@ -679,17 +551,13 @@ export function ProjectDocumentNavigationProvider({
 }) {
   const { open: openTrash } = useTrashNavigation();
   const opener = useProjectDocumentLiveOpener();
-  const resources = useOptionalAccountResourceReplica();
+  const { workId: scopeWorkId } = useWorkScopeState(projectId);
+  const trees = useProjectTreeViews(projectId, EDITOR_SCHEMES, { workId: scopeWorkId });
+  // Read at each open, so a change of the list does not make a new adapter.
+  const treesRef = useRef(trees);
+  treesRef.current = trees;
   const presented = useOptionalPresentedDocuments();
   const openContextRoute = useOpenContextRoute();
-  useEffect(() => {
-    if (!resources) return;
-    return resources.observeProjection(
-      projectId,
-      () => undefined,
-      () => undefined,
-    );
-  }, [projectId, resources]);
   // A transfer is taken by the host that mounts its document; one whose document no view
   // presents is let go. Checked after the commit that ended a presentation, whose own new host
   // presents in the same commit.
@@ -717,10 +585,17 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         openTrash,
-        resources,
+        locate: (documentId) => {
+          for (const scheme of EDITOR_SCHEMES) {
+            const file = treesRef.current[scheme].tree?.findDocument(documentId);
+            if (file)
+              return { scheme, file, workId: scheme === "scratch" ? scopeWorkId : undefined };
+          }
+          return null;
+        },
       }),
     }),
-    [openContextRoute, openTrash, opener, projectId, captureNavigation, resources],
+    [openContextRoute, openTrash, opener, projectId, captureNavigation, scopeWorkId],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 

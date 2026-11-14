@@ -19,24 +19,21 @@ function setup(
   presented: readonly never[] = [],
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({
-        href: history.location.href,
-        key: history.location.state.__TSR_key ?? "",
-        state: { ...history.location.state },
-      }),
-      subscribe: (listener) => history.subscribe(listener),
-      flush: () => history.flush(),
-      settlePendingTraversal: () => undefined,
-      replaceEntry: (href, state) => history.replace(href, state),
-      navigate: async (href, options) => {
-        if (options.replace) history.replace(href, options.state);
-        else history.push(href, options.state);
-      },
+  const navigation = createProjectNavigation({
+    read: () => ({
+      href: history.location.href,
+      key: history.location.state.__TSR_key ?? "",
+      state: { ...history.location.state },
+    }),
+    subscribe: (listener) => history.subscribe(listener),
+    flush: () => history.flush(),
+    settlePendingTraversal: () => undefined,
+    replaceEntry: (href, state) => history.replace(href, state),
+    navigate: async (href, options) => {
+      if (options.replace) history.replace(href, options.state);
+      else history.push(href, options.state);
     },
-    () => ({}),
-  );
+  });
   const cut = path.indexOf("?");
   const parsed =
     cut < 0 ? parseProjectAddress(path) : parseProjectAddress(path.slice(0, cut), path.slice(cut));
@@ -48,7 +45,7 @@ function setup(
       navigation,
       address: parsed.address,
       editorWorkId: workId,
-      documentCatalog: null,
+      documentTree: null,
       addressDocumentId,
     }),
     presented: () => presented,

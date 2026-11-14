@@ -69,7 +69,6 @@ import { ReviewLaunchProvider } from "./review-launch";
 import type { ChatDisplay } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
-import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
@@ -99,9 +98,6 @@ export type ProjectViewProps = {
   project: Project;
   /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
-  activeLocalDocumentId?: string;
-  /** The untitled document the history entry names, as the replica holds it. */
-  activeLocalDocument?: LocalDocument;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
@@ -167,12 +163,7 @@ export function ProjectView(props: ProjectViewProps) {
   useContextCatalogWake(props.projectId, repairColdWork);
   // The removed-documents notice sits in main's band; a navigation in main ends it.
   useRemovedNoticeLifetime(props.projectId, {
-    key: JSON.stringify([
-      props.chatDisplay,
-      props.activeContextScheme,
-      props.activeContextPath,
-      props.activeLocalDocumentId,
-    ]),
+    key: JSON.stringify([props.chatDisplay, props.activeContextScheme, props.activeContextPath]),
     onScreen: true,
   });
   const presented = useOptionalPresentedDocuments();
@@ -314,7 +305,6 @@ export function ProjectView(props: ProjectViewProps) {
                     activeContextChat={props.activeContextChat}
                     editorWorkId={editorScope.workId}
                     activeContextWork={props.activeContextWork}
-                    localDocumentId={props.activeLocalDocumentId}
                     reviewDocumentId={props.reviewDocumentId}
                     route={props.contextRemovalRoute}
                   />
@@ -374,11 +364,7 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
 
 type MainPresentation = Pick<
   ResolvedProjectViewProps,
-  | "activeContextScheme"
-  | "activeContextPath"
-  | "activeContextChat"
-  | "activeLocalDocumentId"
-  | "activeLocalDocument"
+  "activeContextScheme" | "activeContextPath" | "activeContextChat"
 > & { main: MainView };
 
 /** Resolves main's document from the address, and keeps the last one painted while one loads. */
@@ -392,7 +378,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     path: props.activeContextPath,
     workId: props.activeContextWork,
     rootThreadId: props.activeContextChat,
-    local: props.activeLocalDocument ?? null,
     addressed: props.addressedDocument,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
@@ -437,8 +422,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
           activeContextChat: props.activeContextChat,
-          activeLocalDocumentId: props.activeLocalDocumentId,
-          activeLocalDocument: props.activeLocalDocument,
           main: requestedMain,
         },
       };

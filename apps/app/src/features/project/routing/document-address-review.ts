@@ -103,7 +103,7 @@ export function addressRouteBinding(
   };
 }
 
-/** The address read starts independently of list/catalog acquisition; its key owns the selector. */
+/** A review's address read: a plain address is the replay's, and the key owns the selector. */
 export function documentAddressQueryOptions(
   input: {
     projectId: string;
@@ -131,7 +131,7 @@ export function documentAddressQueryOptions(
         ...(review ? { review } : {}),
       });
     },
-    enabled: projectReadEnabled(!!input.destination && input.binding.kind !== "pending"),
+    enabled: projectReadEnabled(!!input.destination && input.binding.kind === "review"),
     staleTime: 0,
     // A review's answer names another key's path and is only true while the draft's move
     // stands. Kept past its key, two such answers point at each other and the URL loops.

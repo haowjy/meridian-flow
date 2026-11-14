@@ -206,16 +206,18 @@ binding ends with the item: Back onto the same path without it begins a candidat
 close keeps the document (`adoptReviewBinding` makes it a navigation's), because the drafted path
 still has to be repaired to the live one.
 
-A bound document the address catalog does not list holds (`holdsBoundDocument`): the answer naming
-another document is the path's occupant, so the route waits. The hold asks `resolveForOpen` once:
-`available` goes to that location; anything else, a rejected lookup included, drops the binding
-(`unbindRoute`, only while the selection is still bound to that document at this route) so the
-address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
-failed catalog during a hold shows the error with Retry. A draft-only document is not found by its
-cached path on either shell: its review binds on arrival, and a plain URL there waits for the
-address answer. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
-destination area's catalog lacks (a draft that creates it, or moves it to another area) comes from
-the address's answer (`addressedDocument`).
+A plain address resolves against the replay of the list (`resolveReplayAddress`): to a document,
+to "not there" once the list has synced, or to "waiting for the list" until it has. A bound
+document this source's tree does not list holds (`held`): the path's occupant is not the route's
+document, so the route waits until the list has synced. Then the replay says where the document
+is now: in another source, the route goes there; anywhere else it drops the binding (`unbindRoute`,
+only while the selection is still bound to that document at this route) so the address decides.
+The move takes a plain navigation ticket, never the writer's intent. A denied list shows the error
+with Retry. A draft-only document is not found by its path on either shell: its review binds on
+arrival. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
+destination source's tree lacks (a draft that creates it, or moves it to another area) comes from
+the address's answer (`addressedDocument`). Only a review address asks the server
+(`documentAddressQueryOptions`).
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.
@@ -301,8 +303,8 @@ not manage focus or copy.
 
 ## Document admission
 
-A bound document with no source is pending, never a cached occupant. Catalog errors and pending
-refreshes don't prove absence.
+A bound document with no source is pending, never a path's occupant. An unsynced list or an error
+doesn't prove absence.
 
 The opening record is taken from main's host, not an intent or create path. It updates
 locally before a server POST, and the POST waits for `whenOnServer`. The side and the kept host
