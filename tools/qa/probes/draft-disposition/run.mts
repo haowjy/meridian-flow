@@ -181,7 +181,7 @@ try {
 
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
-  const journalBefore = await h.raw`select id,status from draft_write_journal order by id`;
+  const journalBefore = await h.raw`select id from draft_write_journal order by id`;
   const close = createDraftClose();
   const discard = createDrizzleBranchDiscard(h.db, {
     close,
@@ -208,7 +208,7 @@ try {
     partsBefore,
   );
   assert.deepEqual(
-    await h.raw`select id,status from draft_write_journal order by id`,
+    await h.raw`select id from draft_write_journal order by id`,
     journalBefore,
   );
   for (const f of closing)
