@@ -642,8 +642,12 @@ msgid "{needsYou} waiting on you"
 msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "{pending, plural, one {# document to review} other {# documents to review}}"
+msgid "{pending, plural, one {# change to review} other {# changes to review}}"
 msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#~ msgid "{pending, plural, one {# document to review} other {# documents to review}}"
+#~ msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
@@ -688,6 +692,10 @@ msgstr ""
 
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
+msgstr ""
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
@@ -1516,6 +1524,10 @@ msgstr ""
 msgid "Changes in {name}"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Changes in {name} discarded."
+msgstr ""
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in this chat"
 msgstr ""
@@ -1926,6 +1938,11 @@ msgstr ""
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't bring back the change to {0}."
+msgstr ""
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back the changes in {0}."
 msgstr ""
 
 #. placeholder {0}: subject.name
@@ -6261,6 +6278,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
+msgstr ""
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "Undid applying {name}."
 msgstr ""
 
 #. placeholder {0}: work.name

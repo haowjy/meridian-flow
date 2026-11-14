@@ -642,8 +642,12 @@ msgid "{needsYou} waiting on you"
 msgstr "{needsYou} waiting on you"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "{pending, plural, one {# document to review} other {# documents to review}}"
-msgstr "{pending, plural, one {# document to review} other {# documents to review}}"
+msgid "{pending, plural, one {# change to review} other {# changes to review}}"
+msgstr "{pending, plural, one {# change to review} other {# changes to review}}"
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#~ msgid "{pending, plural, one {# document to review} other {# documents to review}}"
+#~ msgstr "{pending, plural, one {# document to review} other {# documents to review}}"
 
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
@@ -689,6 +693,10 @@ msgstr "{steps, plural, one {# step} other {# steps}}"
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+msgstr "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"
@@ -1516,6 +1524,10 @@ msgstr "Changes couldn’t load."
 msgid "Changes in {name}"
 msgstr "Changes in {name}"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Changes in {name} discarded."
+msgstr "Changes in {name} discarded."
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in this chat"
 msgstr "Changes in this chat"
@@ -1927,6 +1939,11 @@ msgstr "Couldn't bring back {0} drafts."
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't bring back the change to {0}."
 msgstr "Couldn't bring back the change to {0}."
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back the changes in {0}."
+msgstr "Couldn't bring back the changes in {0}."
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
@@ -6262,6 +6279,10 @@ msgstr "Unavailable Work"
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr "Undid"
+
+#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+msgid "Undid applying {name}."
+msgstr "Undid applying {name}."
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
