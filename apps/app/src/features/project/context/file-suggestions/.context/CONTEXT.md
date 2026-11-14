@@ -1,7 +1,9 @@
 # file suggestions — contracts
 
-`useFileSuggestions` reads one replayed tree per scheme the host asks for.
-Tree expansion doesn't affect picker completeness.
+`useFileSuggestions` reads one replayed tree per scheme the host asks for and lists every
+entry in tree order, so a browsed folder lists its children in the writer's order, as the
+tree panel does. Only a search ranks (`matchFileSuggestions`). Tree expansion doesn't affect
+picker completeness.
 
 ## Keyboard model
 

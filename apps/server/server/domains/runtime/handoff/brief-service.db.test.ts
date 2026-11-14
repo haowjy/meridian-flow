@@ -8,12 +8,12 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { registryTokenRateSource } from "../../../lib/gateway/registry.js";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
-import { processDetachedWork } from "../detached-work.js";
 import { decideForgetting, loadForgettingFacts } from "../loop/forget-failed-attempt.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
@@ -38,7 +38,7 @@ else
     );
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
     const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
-    const { createDetachedWorkTracker } = await import("../detached-work.js");
+    const { createDetachedWorkTracker } = await import("../../../shared/detached-work.js");
     const { createDrizzleCreditLedger } = await import("../../billing/index.js");
     const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"

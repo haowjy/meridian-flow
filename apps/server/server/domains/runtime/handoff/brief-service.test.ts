@@ -8,13 +8,13 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { registryTokenRateSource } from "../../../lib/gateway/registry.js";
+import { createDetachedWorkTracker } from "../../../shared/detached-work.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
   handoffSeedMetadata,
 } from "../../threads/index.js";
-import { createDetachedWorkTracker } from "../detached-work.js";
 import type { HeldRunClaim } from "../loop/ports.js";
 import { createHandoffBriefs } from "./brief-service.js";
 

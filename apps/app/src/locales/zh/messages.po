@@ -1046,7 +1046,11 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Agent: {0}"
+#~ msgid "Agent: {0}"
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Agent: {name}"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
@@ -1704,7 +1708,11 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Choose agent, currently {0}"
+#~ msgid "Choose agent, currently {0}"
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent, currently {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
@@ -3294,10 +3302,12 @@ msgstr ""
 msgid "Hand off from here"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
 msgstr ""
@@ -4032,6 +4042,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Moving to the top"
+msgstr ""
+
+#: src/features/project/context/IdentityPlacementField.tsx
+msgid "Name and location"
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -6110,7 +6124,11 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat uses {0}."
+#~ msgid "This chat uses {0}."
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name}."
 msgstr ""
 
 #: src/client/api/meridian-error.ts
