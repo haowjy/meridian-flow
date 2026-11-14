@@ -313,7 +313,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658
          if (!equalYTextPText(leftY, leftP)) {
            updateYText(leftY, leftP, meta);
          }
-@@ -1427,33 +1476,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1427,33 +1476,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -345,7 +345,8 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658
 -      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
 -      yDomFragment.delete(left, yDelLen);
 +      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
-+      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - gapBefore[left + yDelLen] - rawIndex(left));
++      // Delete the groups, not the span between them: an empty text there is kept for a peer to type into.
++      for (let g = left + yDelLen - 1; g >= left; g--) yDomFragment.delete(rawIndex(g), yGroupLength(yChildren[g]));
      }
      if (left + right < pChildCnt) {
        const ins = [];
@@ -357,7 +358,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658
      }
    }, ySyncPluginKey);
  };
-@@ -1797,6 +1847,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +1848,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -401,7 +402,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2438,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2439,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -451,7 +452,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..9a97eb33a92c3c9718c7023ebca3b658
        }
      }
    }
-@@ -2388,6 +2487,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2388,6 +2488,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -753,7 +754,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..5ab1f0c4e20b9e8a413f9db355b02f6a
          if (!equalYTextPText(leftY, leftP)) {
            updateYText(leftY, leftP, meta);
          }
-@@ -1393,33 +1442,34 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1393,33 +1442,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -785,7 +786,8 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..5ab1f0c4e20b9e8a413f9db355b02f6a
 -      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
 -      yDomFragment.delete(left, yDelLen);
 +      yChildren.slice(left, left + yDelLen).forEach(group => meta.mapping.delete(yGroupKey(group)));
-+      yDomFragment.delete(rawIndex(left), rawIndex(left + yDelLen) - gapBefore[left + yDelLen] - rawIndex(left));
++      // Delete the groups, not the span between them: an empty text there is kept for a peer to type into.
++      for (let g = left + yDelLen - 1; g >= left; g--) yDomFragment.delete(rawIndex(g), yGroupLength(yChildren[g]));
      }
      if (left + right < pChildCnt) {
        const ins = [];
@@ -797,7 +799,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..5ab1f0c4e20b9e8a413f9db355b02f6a
      }
    }, ySyncPluginKey);
  };
-@@ -1763,6 +1813,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +1814,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -841,7 +843,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..5ab1f0c4e20b9e8a413f9db355b02f6a
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2404,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2405,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
