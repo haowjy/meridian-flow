@@ -39,8 +39,9 @@ no foreign key), enforced by `branches_one_owner`.
 `branches.pending_document_count` is its own count;
 `works.pending_document_count` sums its active branches.
 `document_drafts` stores document versions, with writes in
-`draft_write_journal`; `branch_tree_changes` and `branch_commands` belong to
-the whole branch.
+`draft_write_journal`; `branch_tree_changes` belongs to the whole branch. `document_commands` holds one row
+per command sent as a request (Apply, Un-Apply, Discard), inserted first in the effect
+transaction with its final outcome.
 
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather

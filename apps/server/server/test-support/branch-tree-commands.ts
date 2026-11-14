@@ -14,11 +14,7 @@ import {
   draftOwnerKey,
   type WorkId,
 } from "@meridian/contracts";
-import type {
-  BranchCommandPendingResponse,
-  BranchCommandResult,
-  ThreadDraftListItem,
-} from "@meridian/contracts/branches";
+import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
@@ -141,11 +137,7 @@ export interface BranchTreeCommands {
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
     options?: { branchId?: string },
-  ): Promise<
-    | BranchCommandResult
-    | BranchCommandPendingResponse
-    | (BranchCommandResult | BranchCommandPendingResponse)[]
-  >;
+  ): Promise<DiscardCommandResult | DiscardCommandResult[]>;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -570,7 +562,7 @@ export function branchTreeCommands(
         })
       ).body;
     }
-    const results: (BranchCommandResult | BranchCommandPendingResponse)[] = [];
+    const results: DiscardCommandResult[] = [];
     await eachItem(work, items, "discard", async ({ documentId, branchId, itemKey }) => {
       results.push(
         (

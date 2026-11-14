@@ -1,5 +1,6 @@
 // Immutable document edit receipts, independent of compactable transport journals.
 import type {
+  DocumentCommandId,
   DocumentId,
   EditOrigin,
   ThreadId,
@@ -48,6 +49,8 @@ export const documentEdits = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
     editScopeId: text("edit_scope_id"),
+    /** The command that made this edit; no foreign key: the receipt outlives the command row. */
+    commandId: uuid("command_id").$type<DocumentCommandId>(),
     /** The model tool call that made this edit; scoped by its response identity. */
     toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
@@ -66,6 +69,7 @@ export const documentEdits = pgTable(
     index("document_edits_document_idx").on(t.documentId),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
+    index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
     check(
       "document_edits_kind_valid",

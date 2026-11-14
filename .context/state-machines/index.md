@@ -35,7 +35,6 @@ have it:
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |
 | Draft, branch | Whether a draft or branch still accepts writes | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
-| Branch command | One Apply or Discard, carried out once however often it is sent | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Draft write journal row | Whether an undo left part of a recorded write unresolved | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Draft room handshake | Whether a connection may send edits to a draft room | [lib](../../apps/server/server/lib/.context/state-machines.md) |

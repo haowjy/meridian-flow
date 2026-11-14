@@ -1,16 +1,15 @@
 import type {
-  BranchCommandId,
-  BranchCommandKind,
   BranchId,
   DocumentAuthorityId,
+  DocumentCommandId,
   DocumentId,
   ModelResponseId,
   ProjectId,
-  StoredBranchCommandResult,
   ThreadId,
   TurnId,
   UserId,
 } from "@meridian/contracts";
+import type { DocumentCommandKind, DocumentCommandOutcome } from "@meridian/contracts/branches";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
@@ -339,38 +338,30 @@ export const documentBlocks = pgTable(
 );
 
 /**
- * The record of one writer Apply or Discard, keyed by the client's command id so a resend
- * answers the first command's outcome.
+ * One row per command sent as a request, keyed by the sender's id, so a resend answers the
+ * first command's outcome. The row is the effect transaction's first write and holds its final
+ * outcome when it commits.
  */
-export const branchCommands = pgTable(
-  "branch_commands",
+export const documentCommands = pgTable(
+  "document_commands",
   {
-    id: uuid("id").$type<BranchCommandId>().primaryKey(),
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .references(() => branches.id, { onDelete: "cascade" }),
+    id: uuid("id").$type<DocumentCommandId>().primaryKey(),
+    kind: text("kind").$type<DocumentCommandKind>().notNull(),
     accountId: uuid("account_id")
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<BranchCommandKind>().notNull(),
-    /** Hash of the canonical command envelope; another digest under this id is a conflict. */
+    /** Null for a command on account-level documents. */
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Hash of the canonical request; another digest under this id is a conflict. */
     requestDigest: text("request_digest").notNull(),
-    state: text("state").$type<"pending" | "done">().notNull().default("pending"),
-    result: jsonb("result").$type<StoredBranchCommandResult>(),
+    outcome: jsonb("outcome").$type<DocumentCommandOutcome>().notNull(),
     createdAt: createdAt(),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    check(
-      "branch_commands_kind_valid",
-      sql`${table.kind} IN ('apply_click', 'unapply_click', 'discard_items', 'discard_branch')`,
-    ),
-    check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
-    check(
-      "branch_commands_done_shape",
-      sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
-    ),
+    check("document_commands_kind_valid", sql`${table.kind} IN ('apply', 'unapply', 'discard')`),
   ],
 );
 
@@ -379,9 +370,9 @@ export const applyCommandEffects = pgTable(
   "apply_command_effects",
   {
     commandId: uuid("command_id")
-      .$type<BranchCommandId>()
+      .$type<DocumentCommandId>()
       .notNull()
-      .references(() => branchCommands.id, { onDelete: "cascade" }),
+      .references(() => documentCommands.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     groupId: text("group_id").notNull(),
     documentId: uuid("document_id")
@@ -395,7 +386,7 @@ export const applyCommandEffects = pgTable(
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
-    unappliedBy: uuid("unapplied_by").$type<BranchCommandId>(),
+    unappliedBy: uuid("unapplied_by").$type<DocumentCommandId>(),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),

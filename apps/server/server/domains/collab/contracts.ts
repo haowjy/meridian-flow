@@ -6,7 +6,7 @@ import type {
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { BranchId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { BranchCommandResult } from "@meridian/contracts/branches";
+import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -26,15 +26,15 @@ import type {
 
 export type { RefusedResponseDocument };
 
-import type {
-  BranchCommandEnvelope,
-  CommandLookup,
-  CommandLookupKey,
-} from "./domain/branch-commands.js";
 import type { DiscardItem } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
+import type {
+  CommandLookup,
+  CommandLookupKey,
+  DocumentCommandEnvelope,
+} from "./domain/document-commands.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
@@ -392,12 +392,11 @@ export type DocumentCheckpoints = {
 };
 
 /**
- * A writer command's answer (§4.6): the stored wire body, still pending, blocked, or the id
- * belongs to a different command. The route maps these to HTTP.
+ * A writer command's answer: the stored wire body, or the id belongs to a different command.
+ * The route maps these to HTTP.
  */
 export type CommandOutcome =
-  | { kind: "result"; result: BranchCommandResult }
-  | { kind: "pending" }
+  | { kind: "result"; result: DiscardCommandResult }
   | { kind: "conflict" };
 
 /** The model-facing list row: which documents have a draft, nothing more. */
@@ -413,13 +412,13 @@ export type DraftReviewApi = {
     branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").ApplyClick;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   unapplyClick(input: {
     branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
@@ -460,12 +459,12 @@ export type DraftReviewApi = {
     ends: DiscardItem["ends"];
     draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
   discardAll(input: {
     branchId: BranchId;
     userId: UserId;
-    envelope: BranchCommandEnvelope;
+    envelope: DocumentCommandEnvelope;
   }): Promise<CommandOutcome>;
 };
 

@@ -33,22 +33,6 @@ stateDiagram-v2
 - A closed draft keeps `closedCause`, and a closed branch has `closedAt` and a pending document
   count of zero. Restoring a Work does not erase a draft's own cause.
 
-## Branch command
-
-`branch_commands.state`: one Apply or Discard, which takes effect once however many times its
-request is sent.
-
-```mermaid
-stateDiagram-v2
-  [*] --> pending: the command id is claimed
-  pending --> done: the effect transaction stores the result and completedAt
-  done --> [*]
-```
-
-A second request with the same command id finds the row and gets the stored result instead of
-running the effect again (`adapters/drizzle-branch-commands.ts`). `done` and a non-null
-`completedAt` always go together.
-
 ## Draft write journal row
 
 `draft_write_journal.status`: one part of a recorded write, kept so that the write can be undone.
