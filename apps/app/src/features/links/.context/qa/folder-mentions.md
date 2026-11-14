@@ -54,7 +54,7 @@ then a folder with one document and an empty subfolder:
 7. **Deleted folder in an open menu.** Mention a folder in the composer, delete
    the folder from the sidebar, then click the chip. The menu says "This folder
    is no longer available."
-8. **Folder outside the loaded catalogs.** Create another Work and put a note
+8. **Folder outside the Editor's link index.** Create another Work and put a note
    under a Scratch folder, then create a manuscript document containing a link
    to that qualified folder. This setup keeps the foreign Work's Scratch out of
    the Editor's local link index:

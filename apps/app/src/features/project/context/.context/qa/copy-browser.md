@@ -12,7 +12,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
 2. Seed with `./mf doc put --text`: `manuscript://Book/Act 1/Chapter 1`, `manuscript://Book/Act 1/Prologue`,
    `manuscript://Book/Act 2/Chapter 2`, `manuscript://Book/Notes/Ideas`,
    `kb://characters/Hero`, `user://Templates/Style guide`. Create a Work with
-   `./mf api POST /api/projects/<id>/works --data '{"name":"w","goal":"g"}'` and seed
+   `./mf api POST /api/projects/<id>/works --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"name\":\"w\",\"goal\":\"g\"}"` and seed
    `scratch://Scene notes` with `--work w1`.
 3. Drag with `agent-browser mouse move/down/up` in several moves; a native drag needs
    pointer events between press and release. The Files rail's User panel is short and
@@ -32,7 +32,12 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    to `/context/copy`: the server refuses it, the rows never appear, and a toast at the top right
    says "Couldn't copy Prologue to Templates." with the route's reason when it gave one. Retry
    sends the Copy again as a new Copy and the rows appear.
-5. **Unsynced edits.** Open a document, patch `WebSocket.prototype.send` to drop frames,
+5. **Unsynced edits. Blocked until Stage C fixes Copy.** The browser never sends
+   `sources[].stateVector` (`execute-copy.ts`), and the server checks for missing edits only when
+   that vector is present (`copy-command.ts`), so the `source_behind` refusal below can't happen
+   yet and the Copy lands without the unsynced edit. Run this step once Copy sends the vector.
+
+   Open a document, patch `WebSocket.prototype.send` to drop frames,
    type an edit, copy the document. The server answers `source_behind`: the toast says "The latest
    edits hadn't reached the server." with Retry. Restore the send and close the sockets, then
    Retry: the Copy lands and the server copy holds the edit.

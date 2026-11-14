@@ -30,6 +30,7 @@ import type * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
+import { trashActorsOf } from "../adapters/trash-removals.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
 import { releaseDocumentContent } from "./release-document-content.js";
@@ -90,6 +91,7 @@ export function createDrizzleDocumentTrash(deps: {
         name: treeNodes.name,
         trashedAt: sql<Date>`${treeNodes.trashedAt}`.mapWith(treeNodes.trashedAt),
         locationVersion: treeNodes.locationVersion,
+        trashedBy: treeNodes.trashedBy,
       })
       .from(treeNodes)
       .innerJoin(documents, eq(documents.id, treeNodes.id))
@@ -127,9 +129,10 @@ export function createDrizzleDocumentTrash(deps: {
       trash_record: string;
       trashed_at: Date | string;
       location_version: string;
+      trashed_by: string | null;
     }>(sql`
       SELECT t.id::text AS id, t.kind, t.name, t.trash_record,
-        t.trashed_at, t.location_version
+        t.trashed_at, t.location_version, t.trashed_by
       FROM ${treeNodes} t
         LEFT JOIN ${treeNodes} p ON p.id = t.parent_id
         LEFT JOIN ${documents} d ON d.id = t.id
@@ -186,6 +189,10 @@ export function createDrizzleDocumentTrash(deps: {
     const addresses = await loadDocumentAddresses(deps.db, { ids });
     const held = await holdsOf(ids);
     const addressesById = new Map(addresses.map((address) => [address.documentId, address]));
+    const actorOf = await trashActorsOf(
+      deps.db,
+      result.map((row) => row.trashedBy),
+    );
 
     return result.flatMap((row): DocumentTrashEntry[] => {
       const documentId = row.documentId as DocumentId;
@@ -201,8 +208,7 @@ export function createDrizzleDocumentTrash(deps: {
             time: row.trashedAt,
             locationVersion: row.locationVersion,
           }),
-          // The delete record's author lives in the list, which this reader does not open.
-          actor: null,
+          actor: actorOf(row.trashedBy),
           retention: retentionOf(row.trashedAt, held.get(documentId) ?? []),
         },
       ];
@@ -228,6 +234,10 @@ export function createDrizzleDocumentTrash(deps: {
         row.id as DocumentId,
       ]);
     const held = await holdsOf(taken.map((row) => row.id as DocumentId));
+    const actorOf = await trashActorsOf(
+      deps.db,
+      roots.map((root) => root.trashed_by),
+    );
     const documentAddresses = new Map(
       (
         await loadDocumentAddresses(deps.db, {
@@ -263,7 +273,7 @@ export function createDrizzleDocumentTrash(deps: {
             time: trashedAt,
             locationVersion: BigInt(root.location_version),
           }),
-          actor: null,
+          actor: actorOf(root.trashed_by),
           retention: retentionOf(trashedAt, [...works.values()]),
           documents: root.kind === "folder" ? took.length : 0,
         },

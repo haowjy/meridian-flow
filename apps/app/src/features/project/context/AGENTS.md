@@ -13,9 +13,9 @@ stay chat resources, not documents main opens.
   away. Shells own geometry, creation entry points, navigation and the notice surface.
 - A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`), for Move…
   and drops alike, with the one refusal `moveRefusal` in `move-plan.ts`. Order sends an index
-  among the destination's children, never a rank. Don't place entries anywhere else. Copy is
-  the one server route here (`execute-copy.ts`); a move between the account's files and a
-  project is a copy.
+  among the destination's children, never a rank. Don't place entries anywhere else. Two
+  server routes remain: Copy (`execute-copy.ts`) and the picker's move across lists
+  (`moveDocumentAcrossLists`), which writes both lists' records in one transaction.
 - Drags that name a document or folder start through `entry-drag/reference-source.ts` and
   nothing else. What a drag may do is judged in `resolveDrop`.
 - `tree-drop/` is the one drop scope that row moves and desktop import share: add a route,

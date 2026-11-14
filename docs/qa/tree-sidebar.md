@@ -12,7 +12,7 @@ recipe is not a current pass claim.
 2. Create an isolated project:
 
    ```bash
-   ./mf api POST /api/projects --data '{"title":"Tree sidebar probe"}' --json
+   ./mf api POST /api/projects --data "{\"commandId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"title\":\"Tree sidebar probe\"}" --json
    ```
 
    Save its `id` as `$PROJECT`.

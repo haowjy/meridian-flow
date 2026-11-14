@@ -6,16 +6,64 @@ import { and, inArray, isNotNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { DocumentRemovals } from "../ports/document-removal.js";
+import { parseActor } from "./context-fs/tree-writes.js";
 
 type Actor = DocumentRemovalRecord["actor"];
 
-const chatOf = (by: string) => by.slice("agent:".length).split("/")[0] ?? "";
+/**
+ * Names the authors of deletes (`trashed_by`: `user:<id>`, `agent:<chat>/<turn>`) in one read of
+ * the accounts and chats they name. An author whose account or chat is gone, or the server's own,
+ * has no actor.
+ */
+export async function trashActorsOf(
+  db: Database,
+  authors: Iterable<string | null>,
+): Promise<(by: string | null) => Actor> {
+  const tx = currentDrizzleDb(db);
+  const userIds = new Set<string>();
+  const chatIds = new Set<string>();
+  for (const by of authors) {
+    const who = parseActor(by);
+    if (who?.kind === "user" && isUuid(who.userId)) userIds.add(who.userId);
+    if (who?.kind === "agent" && isUuid(who.chatId)) chatIds.add(who.chatId);
+  }
+  const names = new Map(
+    userIds.size === 0
+      ? []
+      : (
+          await tx
+            .select({ id: users.id, name: users.name })
+            .from(users)
+            .where(inArray(users.id, [...userIds]))
+        ).map((row) => [row.id, row.name]),
+  );
+  const titles = new Map(
+    chatIds.size === 0
+      ? []
+      : (
+          await tx
+            .select({ id: threads.id, title: threads.title })
+            .from(threads)
+            .where(inArray(threads.id, [...chatIds]))
+        ).map((row) => [row.id, row.title]),
+  );
+  return (by) => {
+    const who = parseActor(by);
+    if (who?.kind === "user" && names.has(who.userId))
+      return {
+        kind: "user",
+        userId: who.userId as UserId,
+        displayName: names.get(who.userId) ?? null,
+      };
+    if (who?.kind === "agent" && titles.has(who.chatId))
+      return { kind: "agent", chatTitle: titles.get(who.chatId)?.trim() || null };
+    return null;
+  };
+}
 
 /**
- * A document is removed while its node is in Trash, or once its content is purged. The delete's
- * author is the actor the node's row kept from the delete record (`trashed_by`): `user:<id>`, or
- * `agent:<chat>/<turn>`. A node that kept none, or an author whose account or chat is gone,
- * leaves the record with no actor.
+ * A document is removed while its node is in Trash, or once its content is purged. A purged
+ * document's node is gone, so its record names no one.
  */
 export function createTrashRemovals(db: Database): DocumentRemovals {
   return {
@@ -31,54 +79,10 @@ export function createTrashRemovals(db: Database): DocumentRemovals {
         .select({ id: documents.id, purgedAt: documents.contentPurgedAt })
         .from(documents)
         .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.contentPurgedAt)));
-
-      const authors = new Map(rows.map((row) => [row.id, row.by]));
-      const userIds = new Set<string>();
-      const chatIds = new Set<string>();
-      for (const by of authors.values()) {
-        const id = by?.startsWith("user:")
-          ? by.slice(5)
-          : by?.startsWith("agent:")
-            ? chatOf(by)
-            : "";
-        if (!isUuid(id)) continue;
-        (by?.startsWith("user:") ? userIds : chatIds).add(id);
-      }
-      const names = new Map(
-        userIds.size === 0
-          ? []
-          : (
-              await tx
-                .select({ id: users.id, name: users.name })
-                .from(users)
-                .where(inArray(users.id, [...userIds]))
-            ).map((row) => [row.id, row.name]),
+      const actorOf = await trashActorsOf(
+        db,
+        rows.map((row) => row.by),
       );
-      const titles = new Map(
-        chatIds.size === 0
-          ? []
-          : (
-              await tx
-                .select({ id: threads.id, title: threads.title })
-                .from(threads)
-                .where(inArray(threads.id, [...chatIds]))
-            ).map((row) => [row.id, row.title]),
-      );
-      const actorOf = (by: string | null | undefined): Actor => {
-        if (by?.startsWith("user:")) {
-          const userId = by.slice("user:".length);
-          return names.has(userId)
-            ? { kind: "user", userId: userId as UserId, displayName: names.get(userId) ?? null }
-            : null;
-        }
-        if (by?.startsWith("agent:")) {
-          const chatId = chatOf(by);
-          return titles.has(chatId)
-            ? { kind: "agent", chatTitle: titles.get(chatId)?.trim() || null }
-            : null;
-        }
-        return null;
-      };
 
       for (const row of rows)
         out.set(row.id, {
@@ -89,7 +93,7 @@ export function createTrashRemovals(db: Database): DocumentRemovals {
       for (const row of purged)
         out.set(row.id, {
           reason: "deleted",
-          actor: actorOf(authors.get(row.id)),
+          actor: null,
           time: (row.purgedAt as Date).toISOString(),
         });
       return out;

@@ -8260,6 +8260,10 @@
         "tree_nodes_trash_shape": {
           "name": "tree_nodes_trash_shape",
           "value": "(\"tree_nodes\".\"trash_record\" IS NULL) = (\"tree_nodes\".\"trashed_at\" IS NULL)"
+        },
+        "tree_nodes_trashed_by_shape": {
+          "name": "tree_nodes_trashed_by_shape",
+          "value": "\"tree_nodes\".\"trashed_by\" IS NULL OR \"tree_nodes\".\"trash_record\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false

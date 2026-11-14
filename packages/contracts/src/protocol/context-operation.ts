@@ -50,11 +50,8 @@ export type ContextError =
       /**
        * `source_behind`: a Copy's source room has not received the edits the writer's client
        * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
-       * `namespace_changed`: the entry or its destination moved to another Work or area between
-       * the route's lookup and the locks. Nothing is recorded; a resend under the same operation
-       * id looks the entry up again.
        */
-      reason?: "source_behind" | "namespace_changed";
+      reason?: "source_behind";
     };
 
 export type ContextOperationCommand = {
@@ -75,18 +72,12 @@ export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" 
   expected: CopyContextEntrySource["expected"];
 };
 
-export type ContextOperationValue = {
-  copy: CopyContextEntriesResult;
-};
-
-export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =
-  | { ok: true; value: ContextOperationValue[K] }
+export type ContextOperationResult =
+  | { ok: true; value: CopyContextEntriesResult }
   | { ok: false; error: ContextError };
 
 export type ContextOperationReceipt = {
-  [K in ContextOperationCommand["kind"]]: {
-    operationId: string;
-    command: Extract<ContextOperationCommand, { kind: K }>;
-    result: ContextOperationResult<K>;
-  };
-}[ContextOperationCommand["kind"]];
+  operationId: string;
+  command: ContextOperationCommand;
+  result: ContextOperationResult;
+};

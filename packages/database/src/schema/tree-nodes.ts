@@ -72,7 +72,7 @@ export const treeNodes = pgTable(
     /** The `delete` record that put the node in Trash, and when the server admitted it. */
     trashRecord: text("trash_record"),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
-    /** Who made that delete (`user:<id>`, `agent:<chat>/<turn>`, `system`): the list holds it, the model's removal record reads it here. */
+    /** Who made that delete (`user:<id>`, `agent:<chat>/<turn>`, `system`): the list holds it; the Trash and the removal record read it here. */
     trashedBy: text("trashed_by"),
   },
   (table) => [
@@ -97,6 +97,10 @@ export const treeNodes = pgTable(
     check(
       "tree_nodes_trash_shape",
       sql`(${table.trashRecord} IS NULL) = (${table.trashedAt} IS NULL)`,
+    ),
+    check(
+      "tree_nodes_trashed_by_shape",
+      sql`${table.trashedBy} IS NULL OR ${table.trashRecord} IS NOT NULL`,
     ),
     index("tree_nodes_walk").on(table.contextSourceId, table.parentId, table.name),
     // The link-name lookup finds a document by its name or its stem in a project's sources: the

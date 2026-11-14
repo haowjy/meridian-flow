@@ -576,9 +576,7 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
   return { scheme: destination.scheme, workId: destination.workScopeId };
 }
 
-function receiptCommand(
-  input: ContextCopyInput,
-): Extract<ContextOperationCommand, { kind: "copy" }> {
+function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
   return {
     kind: "copy",
     sources: input.sources.map(

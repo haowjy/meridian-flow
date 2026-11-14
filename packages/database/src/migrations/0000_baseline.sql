@@ -796,7 +796,8 @@ CREATE TABLE "tree_nodes" (
 	CONSTRAINT "tree_nodes_kind_valid" CHECK ("tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "tree_nodes_file_type_of_document" CHECK (("tree_nodes"."kind" = 'folder') = ("tree_nodes"."file_type" IS NULL)),
 	CONSTRAINT "tree_nodes_rank_present" CHECK ("tree_nodes"."rank" <> ''),
-	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL))
+	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL)),
+	CONSTRAINT "tree_nodes_trashed_by_shape" CHECK ("tree_nodes"."trashed_by" IS NULL OR "tree_nodes"."trash_record" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "user_preferences" (
