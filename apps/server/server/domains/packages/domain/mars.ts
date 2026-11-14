@@ -24,7 +24,7 @@ export { rewriteBlock };
  * part of a revision's key, and without a bump the same bytes are never read twice, so the
  * change never reaches a stored Agent.
  */
-export const GRAMMAR_VERSION = `mars-${version()}+flow-2`;
+export const GRAMMAR_VERSION = `mars-${version()}+flow-3`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
 const SKILL_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
@@ -43,6 +43,9 @@ export const readAgent = (slug: string, text: string): DefinitionRead<AgentField
   read(agentPath(slug), text);
 export const readSkill = (slug: string, text: string): DefinitionRead<SkillFields> =>
   read(skillPath(slug), text);
+
+/** Mars reads a file with no opening `---` line as a body alone, with every default. */
+export const hasFrontmatter = (text: string): boolean => /^---\r?\n/.test(text);
 
 /** Mars keeps the blank line after the closing fence; a prompt starts at the line after it. */
 export const bodyOf = (reading: { body: string | null }): string =>

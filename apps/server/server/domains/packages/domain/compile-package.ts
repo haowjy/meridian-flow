@@ -15,6 +15,7 @@ import {
   bodyOf,
   type Diagnostic,
   GRAMMAR_VERSION,
+  hasFrontmatter,
   MANIFEST_PATH,
   projectRules,
   readAgent,
@@ -280,6 +281,16 @@ function draftAgent(
     tools: undefined,
   };
   const { fields } = reading;
+  // Mars gives a file with no frontmatter the defaults (permission edit, every tool), so a stray
+  // line above the opening `---` would widen a narrow Agent: Flow makes it unavailable instead.
+  if (!hasFrontmatter(text))
+    draft.errors.push(
+      flow(
+        file,
+        "frontmatter-missing",
+        "The file has no frontmatter. Its first line must be `---`, then the Agent's settings, then `---`.",
+      ),
+    );
   if (!fields) return draft;
 
   draft.permission = flowPermission(reading.frontmatter, file, draft.errors);
