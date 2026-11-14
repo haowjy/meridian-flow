@@ -128,7 +128,10 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
   return false;
 }
 
-/** In a list the key indents the item, and when `indentList` refuses (the first item) it does nothing rather than type a tab into the bullet. */
+/**
+ * In a list the key indents the item; when `indentList` refuses (the first item) it does
+ * nothing, rather than type a tab into the bullet.
+ */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
     editor.commands.indentList();
