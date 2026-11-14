@@ -1,7 +1,7 @@
 # The model's create, move and delete
 
 Browser checks for the model's `write` `create`, `copy`, `move` and `delete`: in an auto-apply chat, tool rows,
-the turn card, its Undo, and a stopped reply's rollback (steps 1 to 5); in a draft-mode chat,
+the turn card and its Undo (steps 1 to 5); in a draft-mode chat,
 the pending rows, the Work notice on the live document, Apply, Discard and the model's undo
 (steps 6 to 13). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
 model.
@@ -44,9 +44,8 @@ model.
 5. **Stop mid-step.** Script step 1 `move` ch4 → ch4-old; step 2 `move` ch5 → ch5-final,
    `delete` ch3, then thousands of `ls` calls to hold the step open. When ch5-final shows,
    `./mf thread stop` (the app's Stop operation; the browser struggles to render thousands of
-   live rows, so reload it afterwards). ch3 and ch5 are back, ch4-old stays, and the card
-   lists "Moved ch4 to ch4-old" with ch3 and ch5 "Rolled back" under "Undo leaves 2 parts as
-   they are".
+   live rows, so reload it afterwards). The writes that landed before Stop stay
+   landed (each one on the card), and Undo reverses them.
 
 Do not add `ask_user` to this fixture: it ends the reply and waits for an answer.
 
@@ -84,8 +83,7 @@ the text it found or a block hash from that read.
    leaves live unchanged. Script `undo` for the applied move: "Couldn't undo ch1-old"; the model
    reads `cant_undo_applied`. Script `undo` for the applied delete: it restores the same document.
    Redo deletes it again. Apply another drafted delete, then use the turn card's Undo; it restores
-   the document. Apply once more, stop the reply so rollback runs, and verify rollback restores it.
-   `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
+   the document.    `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
    undone.
 
 With more than one file, the dock's Apply asks the same question in its footer

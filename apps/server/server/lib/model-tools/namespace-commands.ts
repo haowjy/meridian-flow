@@ -150,7 +150,6 @@ async function commitLive(
   ctx: ToolHandlerContext,
 ): Promise<{ handle: string; uri: string } | WriteToolErrorOutput> {
   const port = contextPortForThread(deps.contextPorts, call.context.resolution, {
-    responseId: ctx.responseIdentity?.editScopeId ?? null,
     liveWrites: true,
   });
   const history = deps.documentSync.treeHistory();

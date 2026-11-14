@@ -207,13 +207,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           JSON.stringify({ output: toolContentText(result.content), events: eventSink.events }),
         );
       }
-      await runtime.ports.documentSync.finalizeResponseCommit(
-        { providerResponseId: responseId, editScopeId: responseId },
-        {
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-        },
-      );
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
       const drafts = await db

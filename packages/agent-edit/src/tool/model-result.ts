@@ -40,7 +40,7 @@ export type UndoRedoOutcome =
 
 // Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
-export type WriteSuccessPhase = "staged" | "committed";
+export type WriteSuccessPhase = "committed";
 
 export interface AgentEditBlockItem {
   hash: string;
@@ -82,9 +82,8 @@ export interface AgentEditConcurrentListing {
 }
 
 /**
- * A staged write the host refused: the writer discarded what it edited, its document was removed
- * before the reply saved (`removed`, with the record in `removal` when one exists), or it could
- * not integrate.
+ * A write the host refused: the writer discarded what it edited, its document was removed
+ * (`removed`, with the record in `removal` when one exists), or it could not integrate.
  */
 export type WriteRejection =
   | "removed"
@@ -118,7 +117,7 @@ export interface AgentEditModelPayload {
   notice?: string;
   /** The owner a named address reaches (`Work "Tea Arc"`), which the receipt puts after the path. */
   owner?: string;
-  /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
+  /** Why an `invalid_write` write was refused, when the host knows. */
   rejected?: WriteRejection;
   /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
   removal?: DocumentRemovalRecord;
@@ -236,7 +235,7 @@ export function isAgentEditResultEnvelope(input: unknown): input is AgentEditRes
     return false;
   }
   if (result.status === "success") {
-    return result.phase === "staged" || result.phase === "committed";
+    return result.phase === "committed";
   }
   return result.phase === undefined;
 }

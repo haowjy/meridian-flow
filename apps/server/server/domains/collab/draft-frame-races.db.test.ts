@@ -79,7 +79,7 @@ describe("writer frames racing rewrites (postgres)", () => {
 
   /** The draft holds one AI change: "Beta" became "Gamma". */
   async function draftWithChange(): Promise<string> {
-    const { harness, view, responseId, context } = fixture;
+    const { harness, view, context } = fixture;
     expect(
       await view.collab.agentEdit().write(
         {
@@ -93,7 +93,6 @@ describe("writer frames racing rewrites (postgres)", () => {
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     harness.cancelScheduledPulls();
     return readDraftId(db, ALPHA_ID);
   }
@@ -422,10 +421,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       { command: "undo", documentId: ALPHA_ID, file: "alpha.md" },
       {
         ...fixture.context,
-        responseIdentity: {
-          providerResponseId: fixture.responseId,
-          editScopeId: fixture.responseId,
-        },
+        responseIdentity: { providerResponseId: fixture.responseId },
       },
     );
   const cardUndo = () =>

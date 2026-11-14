@@ -147,7 +147,7 @@ async function harness(
     /** The blocks every document's grep read returns, with each block's facts. */
     grep?: { entries: string[]; links: SpelledLinkFact[][] };
     write?: (context: {
-      responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+      responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
     }) => Promise<WriteOutcome>;
   } = {},
 ) {
@@ -180,7 +180,7 @@ async function harness(
     },
     write: async (
       _command: unknown,
-      context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+      context: { responseIdentity?: import("@meridian/contracts").ResponseAuthorship },
     ) =>
       options.write ? options.write(context) : success("insert", [fact(92)], undefined, TARGET_URI),
   };

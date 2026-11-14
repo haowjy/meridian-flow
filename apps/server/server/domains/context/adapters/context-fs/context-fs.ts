@@ -810,12 +810,10 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView():
-    | ({ threadId: ThreadId; responseId?: string | null } & EffectiveReadVersion)
-    | null {
+  private threadView(): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
     const view = this.readView;
     if (!view) return null;
-    const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
+    const reader = { threadId: view.threadId as ThreadId };
     // Without a separate draft both versions are the same document.
     const drafted = sourceDestination(this.scheme, view.branchOwner).kind === "draft";
     return view.version !== "live" && drafted && view.branchOwner

@@ -30,7 +30,7 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it("a tombstoned draft document with released storage does not stop another document's receipt from offering Undo", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     const betaContext = {
       ...context,
@@ -39,6 +39,7 @@ it("a tombstoned draft document with released storage does not stop another docu
         BETA_ID,
       ),
     };
+    await view.provisionDraft(BETA_ID);
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },
       {
@@ -58,7 +59,6 @@ it("a tombstoned draft document with released storage does not stop another docu
             ctx,
           ),
       ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
     await runInDrizzleTransaction(db, async () => {
       await lockDocuments(db, [BETA_ID]);
@@ -77,7 +77,7 @@ it("a tombstoned draft document with released storage does not stop another docu
 });
 
 it("typing inside restored text leaves Redo unavailable and does not delete the writer's word", async () => {
-  const { harness, view, responseId, context } = await fixture();
+  const { harness, view, context } = await fixture();
   try {
     expect(
       await view.collab.agentEdit().write(
@@ -92,7 +92,6 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         context,
       ),
     ).toMatchObject({ status: "success" });
-    await harness.commit(responseId);
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,

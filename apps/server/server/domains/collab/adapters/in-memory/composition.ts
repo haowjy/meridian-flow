@@ -9,7 +9,6 @@ import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
-import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
@@ -18,6 +17,7 @@ import type {
   CommandOutcome,
   DraftPeerShadowAccess,
 } from "../../contracts.js";
+import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
@@ -31,19 +31,11 @@ import { isCodeDocument } from "../../domain/document-schema-type.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
-import { createReplySaveFences } from "../../domain/reply-save-fences.js";
-import {
-  enlistResponseParticipant,
-  runResponseTransaction,
-} from "../../domain/response-transaction.js";
-import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
-import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
   SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
-  SILENT_POST_DURABILITY_NOTICES,
   UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
@@ -108,42 +100,15 @@ export function createInMemoryCollabDomain(): CollabDomain {
     store: createInMemoryBranchStore(),
     boundary: createInMemoryBranchWriteBoundary(),
   });
-  // No Work branches exist in memory, so the pool routes both destinations to the live core.
-  const fileAccess = createAllowAllFileAccess();
-  // Nothing is removed in memory.
-  const removals = { lookup: async () => new Map() };
-  const agentEdit = createThreadPeerCorePool({
+  // No Work branches exist in memory, so the router sends every read to the live core.
+  const agentEdit = createAgentEditRouter({
     branches,
-    removals,
     drafts: {
-      getDraft: async () => null,
       resolveWorkDraftForThread: (documentId, threadId) =>
         Promise.reject(new DraftNotFoundError(documentId, threadId)),
     },
     liveUtilityCore: runtime.liveUtilityCore,
-    createThreadCore: () => runtime.liveUtilityCore,
-    // Thread cores are the live core here: no write asks for a thread peer.
-    ensureThreadPeer: () => Promise.reject(new Error("In-memory collab has no thread peers")),
-    // Thread cores are the live core here, so nothing is ever pinned to a branch.
-    fences: createReplySaveFences({
-      liveUtilityCore: runtime.liveUtilityCore,
-      drafts: { getDraft: async () => null },
-      branches,
-      fileAccess,
-      removals,
-      lockOwners: async () => {},
-      lockLiveDocuments: async () => {},
-    }),
-    commitThreadResponseAtomically: (operation) => operation(),
-    attemptScope: (operation) => operation(),
-    responseTransactionSettlement: {
-      deferUntilCommit: () => false,
-      deferUntilRollback: () => false,
-    },
-    responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
-    fileAccess,
-    lockOwners: async () => {},
-    lockLiveDocuments: async () => {},
+    threadCore: () => runtime.liveUtilityCore,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
@@ -156,16 +121,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     store: createInMemoryTurnLiveLineageStore(journal),
     resolveDocumentUri: async (documentId) => documentId,
     resolveLastDocumentUri: async (documentId) => documentId,
-  });
-  const responseFinalizer = createResponseWriteFinalizer({
-    agentEdit,
-    rollback: {
-      async rollbackResponse() {
-        throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
-      },
-    },
-    projections,
-    notices: SILENT_POST_DURABILITY_NOTICES,
   });
   const checkpoints = createCheckpointService({
     coordinator,
@@ -258,7 +213,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       },
     },
     lineage,
-    responses: responseFinalizer,
     checkpoints,
     draftAttribution: {
       async readDraftProvenance() {

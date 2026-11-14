@@ -141,7 +141,7 @@ the same shutdown hook sequence.
 - One response's tool calls run sequentially, in the model's order; timeout and
   abort races belong to the executor. `ToolExecutor.executeTools` (parallel
   unless a registration is sequential) is not used by the loop.
-- Response-write settlement is report-only: ordinary Yjs merge commits, and concurrent
-  attribution failure never changes acceptance.
+- A document write is a command: ordinary Yjs merge commits, and concurrent attribution
+  failure never changes acceptance.
 - Production runners hold the cross-process claim through completion delivery;
   process loss therefore leaves work for [recovery](recovery.md).

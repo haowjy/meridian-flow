@@ -39,7 +39,7 @@ Does: reads the reply as it streams.
 Sees: tool and helper (subagent) cards appear where the turn started them. A reply that only wrote drafts ends with "Drafted 1 document" (or "Drafted N documents").
 
 - Map: [server](../system.md#server), [threads](../server-conversation.md#threads), [runtime](../server-conversation.md#runtime), [thread-client](../code.md#thread-client)
-- Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md), [Response](../../../packages/agent-edit/.context/state-machines.md)
+- Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md)
 
 ## Find the changes
 

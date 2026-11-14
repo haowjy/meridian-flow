@@ -39,8 +39,6 @@ export interface EventCorrelation {
   batchId?: string;
   pushId?: string;
   branchId?: string;
-  peerDraftId?: string;
-  upstreamDraftId?: string;
   /** Comma-joined ids (at most three; see `joinIds`), like `yjsSpans`. */
   folderIds?: string;
   releasedDraftIds?: string;

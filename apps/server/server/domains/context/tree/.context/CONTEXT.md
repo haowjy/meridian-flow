@@ -41,9 +41,9 @@ close, purge) releases and prunes all of them, not only the row's current folder
 Every facts write also marks the document in `branch_tree_unsettled` until
 settlement, so terminal cleanup finds a document whose row an undo removed (a
 root-to-root rename has no folder to hold) and `readTreeScope` locks it.
-Settlement names stack entries only (moves, deletes, reverts; never the undo,
-redo or rollback rows): those in effect as the caller's applied or discarded,
-those undone as discarded, those rolled back not at all.
+Settlement names stack entries only (moves, deletes, reverts; never the undo
+or redo rows): those in effect as the caller's applied or discarded, those undone as
+discarded.
 Absorption rewrites the row's folder and repoints its holds; the tombstoned
 hidden folder records `absorbed_into`, and the inverse service reads recorded
 placements through `resolveAbsorbedFolders`, so an entry recorded against the
@@ -156,7 +156,7 @@ its existing classification). `ports/document-removal.ts` holds the kernel and t
 collab port, so collab need not import a context adapter. A removed document
 refuses as agent-edit's `DocumentNotFoundError` carrying its record in
 `removal`. A writer's Discard never sets the Work-cascade restore marker.
-Retractions name `reply_rolled_back` or `create_failed`; both repair paths name
+Retractions name `create_failed`; both repair paths name
 `repair` (one `DocumentRemovalCause`, from contracts). A model's delete names its
 chat (`deleted_by_thread_id`, actor `agent` with the chat's title) and keeps the
 chat's owner in `deleted_by_user_id`, who stands in once the chat is gone.

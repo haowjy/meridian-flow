@@ -39,8 +39,7 @@ handle (#914): the project shell supplies `OwnerNames` (`owner-names.tsx`,
 `ProjectOwnerNamesProvider`), and outside it a location reads "Scratch". The
 row is a record: it keeps its words after Undo, as text rows do. A deleted
 document's row is not a door, because its old address may hold another document
-now. A stopped reply's rolled-back moves and deletes get no line; the parts list
-says "Rolled back". The parts list's heading says which command leaves them as
+now. The parts list's heading says which command leaves them as
 they are: "Undo leaves 2 parts as they are" before a press, "Undo left 1 part as
 it was" after one.
 

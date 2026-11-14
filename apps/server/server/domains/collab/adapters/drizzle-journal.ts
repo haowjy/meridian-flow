@@ -1216,7 +1216,6 @@ async function captureLiveEdits(
           threadId: asThreadId(mutation.threadId),
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
           responseId: asModelResponseId(mutation.authoringResponseId),
-          editScopeId: mutation.editScopeId,
           toolCallId: mutation.toolCallId,
           actor: mutation.actorKind,
           wId: mutation.wId,

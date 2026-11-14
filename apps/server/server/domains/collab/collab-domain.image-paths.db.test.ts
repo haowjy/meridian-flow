@@ -18,6 +18,7 @@ import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/driz
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
+import { modelWrite } from "./test-support/model-write.js";
 import {
   createWorkBranchFixture,
   DOC_ID,
@@ -39,10 +40,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
-  const identity = (responseId: string) => ({
-    providerResponseId: responseId,
-    editScopeId: responseId,
-  });
+  const identity = (responseId: string) => ({ providerResponseId: responseId });
 
   describe("collab image paths (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -77,7 +75,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const grant = testFileGrant(DRAFT_DESTINATION, DOC_ID);
       await expect(
-        collab.agentEdit().write(
+        modelWrite(
+          collab.modelEdits(),
           {
             command: "insert",
             file: "chapter",
@@ -90,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             turnId: TURN_ID,
             grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
     }
@@ -252,6 +252,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
+      // The host's create materializes the document before the model's command runs.
+      await collab.ensureDocumentAuthority(CREATED_ID as never);
       const granted = testFileGrant(DRAFT_DESTINATION, DOC_ID);
       const grant = {
         ...granted,
@@ -260,8 +262,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const ctx = { sessionId: "session-create", threadId: THREAD_ID, turnId: TURN_ID, grant };
       const core = collab.agentEdit();
+      const modelEdits = collab.modelEdits();
       await expect(
-        core.write(
+        modelWrite(
+          modelEdits,
           { command: "create", file: "created", documentId: CREATED_ID, content: "New." },
           {
             ...ctx,
@@ -273,10 +277,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
             responseIdentity: identity(RESPONSE_ID),
-            createdDocument: true,
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      ).resolves.toMatchObject({ status: "success" });
       const link = documentSchema.node("paragraph", null, [
         documentSchema.text("See created", [
           documentSchema.marks.link.create({
@@ -286,7 +290,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]),
       ]);
       await expect(
-        core.write(
+        modelWrite(
+          modelEdits,
           {
             command: "copy",
             from: { path: "created" },
@@ -297,17 +302,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             ...ctx,
             responseIdentity: identity(RESPONSE_ID),
-            createdDocument: false,
             copiedNodes: [link],
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      ).resolves.toMatchObject({ status: "success" });
 
       const spelled = "[See created](created)";
       const view = {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
-        responseId: RESPONSE_ID,
         destination: "draft" as const,
         owner: { kind: "work", workId: WORK_ID as never } as const,
       };
@@ -328,7 +332,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         threadView: {
           threadId: THREAD_ID,
-          responseId: RESPONSE_ID,
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
         },
         documentSync: collab,
@@ -348,17 +351,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft([markdown.value.revision, hashlines.value.revision, hit?.revision], "one view")
         .toEqual([read.revision, read.revision, read.revision]);
 
-      // Saved, then written again; a fresh process undoes that write in the
-      // draft it landed in, so its echo spells there and its token is the
-      // draft read's.
-      await collab.finalizeResponseCommit(identity(RESPONSE_ID), {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      // Written again; a fresh process undoes that write in the draft it landed in, so its
+      // echo spells there and its token is the draft read's.
       await expect(
-        core.write(
+        modelWrite(
+          modelEdits,
           { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
           { ...ctx, turnId: TURN_2_ID },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "committed" });
       const draftRead = {
@@ -375,12 +375,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       await collab.dispose();
       collab = start();
-      const undone = await collab
-        .agentEdit()
-        .write(
-          { command: "undo", file: "chapter", documentId: DOC_ID },
-          { ...ctx, turnId: TURN_2_ID },
-        );
+      const undone = await modelWrite(
+        collab.modelEdits(),
+        { command: "undo", file: "chapter", documentId: DOC_ID },
+        { ...ctx, turnId: TURN_2_ID },
+        { accountId: USER_ID, projectId: PROJECT_ID },
+      );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
       expect(undone.status).toBe("success");
@@ -412,7 +412,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       await expect(
-        collab.agentEdit().write(
+        modelWrite(
+          collab.modelEdits(),
           {
             command: "create",
             file: "live-created",
@@ -430,10 +431,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
             responseIdentity: identity(LIVE_RESPONSE_ID),
-            createdDocument: true,
           },
+          { accountId: USER_ID, projectId: PROJECT_ID },
         ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      ).resolves.toMatchObject({ status: "success" });
       await links.within(
         { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
         async () => {
@@ -463,7 +464,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .toBe("created");
         },
       );
-      await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);
     });
   });
 }

@@ -123,8 +123,8 @@ export function useComposedRuntimes(db: () => Database) {
   }
 
   /**
-   * Model replies on one thread. Each `reply` records a response, runs its
-   * tool calls through the executor, then saves the reply.
+   * Model replies on one thread. Each `reply` records a response and runs its
+   * tool calls through the executor.
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
     const begin = async () => {
@@ -139,7 +139,7 @@ export function useComposedRuntimes(db: () => Database) {
           { id: randomUUID(), name, arguments: args },
           {
             ...thread,
-            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            responseIdentity: { providerResponseId: responseId },
             commandOwner: owner as never,
             agentSlug: null,
             // No one answers here: a `work` call the policy asks about gets the refusal.
@@ -149,22 +149,16 @@ export function useComposedRuntimes(db: () => Database) {
             }),
           },
         );
-      const save = () =>
-        runtime.ports.documentSync.finalizeResponseCommit(
-          { providerResponseId: responseId, editScopeId: responseId },
-          thread as never,
-        );
-      return { responseId, call, save };
+      return { responseId, call };
     };
     const reply = async (steps: (call: ToolCallText) => Promise<void>) => {
-      const { call, save } = await begin();
+      const { call } = await begin();
       await steps(async (name, args) => {
         const result = await call(name, args);
         const output = String(toolContentText(result.content));
         if (result.isError) throw new Error(`${name} failed:\n${output}`);
         return output;
       });
-      await save();
     };
     const text = async (path: string, version?: "live") => {
       let output = "";

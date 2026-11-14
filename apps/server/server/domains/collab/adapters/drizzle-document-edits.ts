@@ -29,7 +29,6 @@ export interface ReceiptWrite {
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
   responseId?: string | null;
-  editScopeId?: string | null;
   commandId?: string;
   toolCallId?: string | null;
   actor: "agent" | "human" | "system";
@@ -69,7 +68,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       threadId: input.threadId,
       turnId: input.turnId,
       responseId: input.responseId,
-      editScopeId: input.editScopeId,
       commandId: input.commandId ?? getDrizzleTransactionLocal<string>(modelEditCommand),
       toolCallId: input.toolCallId,
       actor: input.actor,

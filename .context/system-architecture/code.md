@@ -133,12 +133,11 @@ A change to a node, mark or attribute updates `meridian-extensions.ts` in the ap
 
 The Yjs editing core for the model's document `read` and `write`.
 
-Stages one reply's writes, saves them together and builds the inverses Undo applies. It owns no Postgres, routes or auth: the server supplies the journal and does the durable save.
+Plans, lowers and describes one model write on a document room, and builds the inverses Undo applies. It owns no Postgres, routes or auth: the server supplies the journal and does the durable save.
 
 - Kind: package
 - Paths: `packages/agent-edit/src`
 - Docs: [CONTEXT](../../packages/agent-edit/.context/CONTEXT.md), [AGENTS](../../packages/agent-edit/AGENTS.md)
-- Machines: [agent-edit](../../packages/agent-edit/.context/state-machines.md)
 
 ## resource-replica
 
