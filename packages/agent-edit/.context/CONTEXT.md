@@ -71,8 +71,13 @@ inside a text run copies the text after it into a new run, so those characters c
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
-## Forward-inverse dependency closure
+## Forward-inverse per-peer rule
 
-A forward inverse closes over one Yjs dependency predicate: the selected edit's
-retained structures and everything that depends on them. Review grouping and the
-model's text-derived status never use this predicate.
+An inverse acts per item of the receipt, never on a dependency closure: each inserted item is
+deleted if still visible, each deleted item is restored if its parent is live (or is restored
+with it) and, for a map entry, nothing newer has replaced it. Anything else is skipped as
+already gone, so another peer's typing never refuses it and is never removed. An AI element
+holding a live descendant outside the receipt stays (`delete-filter.ts`); only the AI's own
+items inside it go. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
+leaves a writer's later attribute value. The receipt's `frontier` no longer takes part.
+Review grouping and the model's text-derived status never use this rule.

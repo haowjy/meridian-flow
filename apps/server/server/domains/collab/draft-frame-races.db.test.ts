@@ -341,13 +341,6 @@ describe("writer frames racing rewrites (postgres)", () => {
     text.delete(0, 1);
   };
 
-  /** Replaces the first paragraph's text in one writer frame. */
-  const retype = (text: string) => (fragment: Y.XmlFragment) => {
-    const content = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
-    content.delete(0, content.length);
-    content.insert(0, text);
-  };
-
   /**
    * Every one of the inverse's four commit attempts meets a writer frame that moved the draft
    * after its capture; `last` is the frame before the fourth commit.
@@ -405,21 +398,5 @@ describe("writer frames racing rewrites (postgres)", () => {
     // Four commits, each unwound; the classification pass never writes.
     expect(frames.commits()).toBe(4);
     expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
-  });
-
-  it("an inverse whose last capture finds its part retyped answers with that plan's reasons", async () => {
-    const draftId = await draftWithChange();
-    const frames = await framesBeforeEveryCommit(draftId, retype("Alpha Delta."));
-    try {
-      expect(await cardUndo()).toMatchObject({
-        status: "expired",
-        acceptedParts: 0,
-        skips: [expect.objectContaining({ cause: "edited_since" })],
-      });
-    } finally {
-      frames.remove();
-    }
-    expect(frames.commits()).toBe(4);
-    expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Delta.\n\nBlue.\n");
   });
 });

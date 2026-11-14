@@ -7,7 +7,6 @@ import {
   subtractLineageRanges,
 } from "../lineage/range-set.js";
 import {
-  allItems,
   ancestorItems,
   changedRedone,
   executeUndo,
@@ -343,6 +342,88 @@ class Lineage {
   }
 }
 
+/**
+ * What Undo (`invert`) or Redo (`reapply`) of one part does now, item by item: remove the items
+ * it would take away, restore the ones it would bring back, leave everything else, including
+ * every other peer's typing. An item that is already gone, or whose parent or newer map value
+ * belongs to someone else, is skipped rather than refusing the part.
+ */
+interface InversePlan {
+  /** Every item the direction would remove, still visible or not: the stack item's insertions. */
+  removing: Key[];
+  /** Only the items that can come back now: Yjs copies an item it is told to restore. */
+  restoring: Key[];
+  acts: boolean;
+  /** A restore skipped because its parent is gone. */
+  blocked: boolean;
+}
+function planInverse(
+  index: Lineage,
+  part: InversePart,
+  direction: "invert" | "reapply",
+): InversePlan {
+  const forward = direction === "invert";
+  const pairs = (list: readonly EditRange[]) =>
+    clocks(list).map((original) => ({ original, effective: index.effective(original) }));
+  const removing = pairs(forward ? part.effect.inserted : part.effect.deleted);
+  const returning = pairs(forward ? part.effect.deleted : part.effect.inserted);
+  const removingKeys = removing.map((pair) => pair.effective);
+  const removingSet = new Set(removingKeys);
+  const insertions = deleteSet(removingKeys);
+  const authorized = (k: Key) => {
+    const owner = index.owners.get(k);
+    return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
+  };
+  const candidates = new Set(
+    returning
+      .map((pair) => pair.effective)
+      .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
+  );
+  const standing = new Map<Key, "ok" | "parent" | "superseded">();
+  const verdict = (k: Key): "ok" | "parent" | "superseded" => {
+    const known = standing.get(k);
+    if (known) return known;
+    standing.set(k, "parent");
+    const item = find(index.doc, k) as Y.Item;
+    // Yjs restores a map entry only while nothing newer than the undone edit has replaced it.
+    const superseded =
+      item.parentSub !== null &&
+      itemsRightOf(item).some((newer) => !removingSet.has(key(newer.id)));
+    const parent = ancestorItems(item)[0],
+      home = parent && index.effective(key(parent.id));
+    const result = superseded
+      ? "superseded"
+      : !home || index.isVisible(home) || (candidates.has(home) && verdict(home) === "ok")
+        ? "ok"
+        : "parent";
+    standing.set(k, result);
+    return result;
+  };
+  const verdicts = [...candidates].map((k) => ({ k, verdict: verdict(k) }));
+  const restoring = verdicts.filter((v) => v.verdict === "ok").map((v) => v.k);
+  const stackItem = { insertions, meta: new Map() };
+  const removable = removing.some(({ original, effective }) => {
+    const item = find(index.doc, effective);
+    return (
+      !!item &&
+      index.isVisible(effective) &&
+      (forward || index.restored(original)) &&
+      shouldDeleteUndoItem(item, stackItem)
+    );
+  });
+  return {
+    removing: removingKeys,
+    restoring,
+    acts: removable || restoring.length > 0,
+    blocked: verdicts.some((v) => v.verdict === "parent"),
+  };
+}
+function itemsRightOf(item: Y.Item): Y.Item[] {
+  const out: Y.Item[] = [];
+  for (let right = item.right; right; right = right.right) out.push(right);
+  return out;
+}
+
 function classify(index: Lineage, part: InversePart): PartClassification {
   const changed = (reason: string): PartClassification => ({
     part,
@@ -350,53 +431,13 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     reasons: [reason],
   });
   if (!part.frontier) return changed("missing frontier");
-  const ins = clocks(part.effect.inserted),
-    del = clocks(part.effect.deleted),
-    originals = [...ins, ...del];
-  if (!originals.length) return { part, state: "excluded", reasons: [] };
+  if (!part.effect.inserted.length && !part.effect.deleted.length)
+    return { part, state: "excluded", reasons: [] };
   try {
-    const members = new Set(originals.flatMap((k) => index.descendants(index.root(k))));
-    const effective = originals.map((k) => index.effective(k));
-    for (const k of effective) {
-      const item = find(index.doc, k);
-      for (const ancestorItem of item ? ancestorItems(item) : []) {
-        const ancestor = key(ancestorItem.id);
-        if (!index.isVisible(index.effective(ancestor)) && !members.has(ancestor))
-          return changed("inaccessible ancestor");
-      }
-    }
-    for (const item of allItems(index.doc)) {
-      if (!inFragment(index.doc, item) || !index.isVisible(key(item.id))) continue;
-      // The right origin only records what lay beside the item when it was created. An
-      // item placed ahead of this edit (as Apply places a concurrent draft's block or
-      // words) rests on nothing of it; its left neighbour and its parent do.
-      const refs = [item.origin, ancestorItems(item)[0]?.id ?? null]
-        .filter((id): id is Y.ID => !!id)
-        .map(key);
-      if (!refs.some((k) => members.has(k))) continue;
-      for (let n = 0; n < item.length; n++) {
-        const k = key({ client: item.id.client, clock: item.id.clock + n });
-        if (members.has(k)) continue;
-        const root = parse(index.root(k));
-        if (root.clock >= (part.frontier[root.client] ?? 0)) return changed("later dependency");
-      }
-    }
-    const isVisible = (k: Key) => index.isVisible(index.effective(k));
-    const authorized = (k: Key) => {
-      const owner = index.owners.get(index.effective(k));
-      return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
-    };
-    const active =
-      ins.every(isVisible) &&
-      del.every((k) => !!find(index.doc, index.effective(k)) && !isVisible(k) && authorized(k));
-    const undone =
-      ins.every((k) => !isVisible(k) && authorized(k)) &&
-      del.every((k) => isVisible(k) && index.restored(k));
-    if (active) return { part, state: "active", reasons: [] };
-    if (undone) {
-      return { part, state: "undone", reasons: [] };
-    }
-    return changed("items changed since");
+    const undo = planInverse(index, part, "invert");
+    if (undo.acts) return { part, state: "active", reasons: [] };
+    if (planInverse(index, part, "reapply").acts) return { part, state: "undone", reasons: [] };
+    return changed(undo.blocked ? "inaccessible ancestor" : "nothing left to undo");
   } catch (error) {
     return changed(error instanceof Error ? error.message : String(error));
   }
@@ -544,15 +585,10 @@ function computePreparedInverse(
         continue;
       }
       index.hydrate();
-      const inserted = clocks(
-        direction === "invert" ? part.effect.inserted : part.effect.deleted,
-      ).map((k) => index.effective(k));
-      const deleted = clocks(
-        direction === "invert" ? part.effect.deleted : part.effect.inserted,
-      ).map((k) => index.effective(k));
+      const plan = planInverse(index, part, direction);
       const stack = {
-        insertions: deleteSet(inserted),
-        deletions: deleteSet(deleted),
+        insertions: deleteSet(plan.removing),
+        deletions: deleteSet(plan.restoring),
         meta: new Map(),
       };
       const frontier = captureEditFrontier(scratch),

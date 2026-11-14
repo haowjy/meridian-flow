@@ -429,7 +429,7 @@ describe("model document stack", () => {
 it.each([
   "undo",
   "redo",
-] as const)("model %s follows its edit to the draft and refuses only after none remains", async (direction) => {
+] as const)("model %s follows its edit to the draft, keeps the writer's typing, and refuses only after none remains", async (direction) => {
   const { harness, view, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -482,14 +482,14 @@ it.each([
     } finally {
       doc.destroy();
     }
-    const expected = direction === "undo" ? "Alpha Ga!mma.\n\nBlue.\n" : "Alpha Be!ta.\n\nBlue.\n";
+    const expected = direction === "undo" ? "Alpha Beta!.\n\nBlue.\n" : "Alpha !Gamma.\n\nBlue.\n";
     expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-      status: `cant_${direction}_changed`,
-    });
-    expect(await core.write({ ...command, command: "revert", edit: "e1" }, context)).toMatchObject({
-      status: "nothing_to_revert",
+      status: "success",
     });
     expect(await view.draftMarkdown(draftId)).toBe(expected);
+    expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
+      status: `nothing_to_${direction}`,
+    });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     await harness.dispose();
