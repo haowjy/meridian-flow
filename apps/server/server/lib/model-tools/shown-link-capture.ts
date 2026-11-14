@@ -1,18 +1,16 @@
 /**
  * Result evidence (contract §7.2): what a tool result actually showed the
  * model, returned beside the result as host-only `evidence` (shown-link
- * candidates and the observation frontier). Dispatch records it only when it
- * persists the result, so a cancelled or timed-out call leaves none. Facts come
+ * candidates and the observation frontier). An edit's is recorded by the document side in the
+ * edit's transaction; a read's is handed over once its block is stored, so a cancelled or
+ * timed-out call leaves none. Facts come
  * from the handlers that return rendered text, never from `readDocument`, so a
  * copy's private source read shows nothing. Also hands the thread's evidence
  * to agent-edit writes (§7.4).
  */
 import type { LinkShowing, ObservationFrontier } from "@meridian/agent-edit/integration";
-import type {
-  ResultEvidence,
-  ShownLinkShowing,
-  ShownLinkStore,
-} from "../../domains/runtime/index.js";
+import type { ModelEvidence } from "../../domains/collab/index.js";
+import type { ResultEvidence, ShownLinkShowing } from "../../shared/model-evidence.js";
 
 /** What a rendered agent-edit outcome showed: its links and its frontier. */
 export function evidenceOf(
@@ -40,7 +38,7 @@ export function showingOf(
 
 /** `WriteContext.shownLinks` for a thread's agent writes. */
 export function threadShownLinks(
-  deps: { shownLinks: Pick<ShownLinkStore, "forDocument"> },
+  deps: { shownLinks: Pick<ModelEvidence, "forDocument"> },
   threadId: string,
 ) {
   return (documentId: string) => deps.shownLinks.forDocument(threadId, documentId);

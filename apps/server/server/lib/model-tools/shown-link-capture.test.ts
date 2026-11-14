@@ -27,11 +27,10 @@ import {
   getInMemoryProjectContextStore,
 } from "../../domains/context/support/in-memory-unified-context-stores.js";
 import {
-  createInMemoryShownLinkStore,
+  createInMemoryDocumentEvidence,
   createInspectionToolRegistrations,
   createToolExecutor,
   createToolRegistry,
-  type ShownLinkStore,
   type ToolRegistration,
   type ToolRegistry,
 } from "../../domains/runtime/index.js";
@@ -42,6 +41,7 @@ import type { ReferenceReader } from "../../domains/runtime/loop/reference-conte
 import { dispatchToolCall } from "../../domains/runtime/loop/tool-dispatch.js";
 import { createInMemoryRepositories } from "../../domains/threads/adapters/in-memory/index.js";
 import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
+import type { ResultEvidence } from "../../shared/model-evidence.js";
 import { createModelToolRegistrations, createReferenceReader } from "./index.js";
 import { showingOf } from "./shown-link-capture.js";
 import type { ResolvedModelContextPort, ToolWiringDeps } from "./tool-context.js";
@@ -152,7 +152,7 @@ async function harness(
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
-  const inner = createInMemoryShownLinkStore({
+  const inner = createInMemoryDocumentEvidence({
     transactionOwner,
     threads: { findByIdIncludingDeleted: async () => null },
     turns: { findById: async () => null },
@@ -160,10 +160,11 @@ async function harness(
   // Which turn each showing was recorded under, by document.
   const recordedTurns: Array<{ documentId: string; turnId: string }> = [];
   const store: ShownLinkStore = {
-    forDocument: inner.forDocument,
-    async record(input) {
-      await inner.record(input);
-      recordedTurns.push({ documentId: input.documentId, turnId: input.turnId });
+    ...inner,
+    async resultStored(evidence) {
+      await inner.resultStored(evidence);
+      for (const showing of evidence.shown)
+        recordedTurns.push({ documentId: showing.documentId, turnId: evidence.turnId });
     },
   };
   // Each plain read shows a fact of its own, so a retried read is told apart.
@@ -212,14 +213,24 @@ async function harness(
     modelEdits: () => ({
       ...agentEdit,
       catchUp: async () => {},
-      run: async (input: { effect(): Promise<{ toolResult: unknown; evidence?: unknown }> }) => {
+      // An edit's evidence is recorded in its own command, as the document side does.
+      run: async (input: {
+        owner: { threadId: string; turnId: string };
+        effect(): Promise<{ toolResult: unknown; evidence?: ResultEvidence }>;
+      }) => {
         const rendered = await input.effect();
+        if (rendered.evidence)
+          await store.resultStored({
+            projectId: PROJECT,
+            ...input.owner,
+            shown: rendered.evidence.shown,
+            frontiers: [],
+          });
         return {
           outcome: {
             status: "done",
             result: { status: "edited", toolResult: rendered.toolResult },
           },
-          evidence: rendered.evidence,
         };
       },
     }),
@@ -283,6 +294,9 @@ async function harness(
   };
 }
 
+/** The in-memory document evidence, read back through `forDocument`. */
+type ShownLinkStore = ReturnType<typeof createInMemoryDocumentEvidence>;
+
 type Harness = Awaited<ReturnType<typeof harness>>;
 
 type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
@@ -335,7 +349,7 @@ async function runTurn(
     toolExecutor: createToolExecutor(toolRegistry, {
       resolveCommand: async () => ({ status: "never" }),
     }),
-    shownLinks: h.store,
+    documentEvidence: h.store,
     transactionOwner: h.transactionOwner,
     referenceReader: control.referenceReader ?? h.referenceReader,
   });
@@ -641,7 +655,7 @@ const rows: Array<{
             }),
           },
           eventSink: { emit() {} },
-          shownLinks: h.store,
+          documentEvidence: h.store,
           delivery: {
             storeUnderLease: (_lease: unknown, persist: () => Promise<unknown>) => persist(),
           },
