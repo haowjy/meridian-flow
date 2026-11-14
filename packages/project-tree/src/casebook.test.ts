@@ -605,25 +605,24 @@ describe("found in the second review", () => {
     t.w.delete(LIVE, WRITER, k);
     const landed = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(landed.left).toEqual([]);
-    expect(t.at(k)).toMatchObject({ displayName: "K renamed", trashed: false, keptByChild: true });
+    // The landed rename acts on a node in Trash, which restores it (rule 9).
+    expect(t.at(k)).toMatchObject({ displayName: "K renamed", trashed: false, keptByChild: false });
     expect(t.at(y)?.parent).toBe(k);
     t.valid();
   });
 });
 
 describe("a purge empties one Trash entry", () => {
-  it("takes what the delete took, and is skipped while a node outside it stands in the folder", () => {
+  it("takes what the delete took, wherever the purge sits (rule 10)", () => {
     const t = start();
     const arc = t.folder("Arc");
     const ch = t.chapter("Chapter", arc);
     const removal = t.w.delete(LIVE, WRITER, arc);
     t.w.restore(LIVE, WRITER, ch);
     t.w.purge("system", removal);
-    const live = t.w.view(LIVE);
-    expect(live.skipped.map((s) => s.reason)).toEqual(["standing"]);
-    expect(live.nodes.get(arc)).toMatchObject({ purged: false });
-    expect(live.nodes.get(ch)).toMatchObject({ purged: false, trashed: false });
-    t.valid();
+    expect(t.w.view(LIVE).skipped).toEqual([]);
+    expect(t.w.view(LIVE).nodes.get(arc)).toMatchObject({ purged: true });
+    expect(t.w.view(LIVE).nodes.get(ch)).toMatchObject({ purged: true });
 
     const gone = start();
     const folder = gone.folder("Old");
@@ -1123,5 +1122,113 @@ describe("part 5: what a document is, and a move between two lists", () => {
     expect(t.at(ch)?.displayName).toBe("First");
     expect(undoChange(t.w, LIVE, WRITER, first.id)).toMatchObject({ type: "rename" });
     expect(t.at(ch)?.displayName).toBe("Original");
+  });
+});
+
+describe("replay rules 9 to 13", () => {
+  it("9. a move or rename of a node in Trash restores it; an Undo of it puts the delete back", () => {
+    const t = start();
+    const arc = t.folder("Arc");
+    const ch = t.chapter("Chapter");
+    const removed = t.chapter("Removed");
+    t.w.delete(LIVE, WRITER, ch);
+    t.w.delete(LIVE, WRITER, removed);
+    const move = t.w.move(LIVE, CHAT, ch, arc);
+    const rename = t.w.rename(LIVE, WRITER, removed, "Back");
+    expect(t.at(ch)).toMatchObject({ trashed: false, parent: arc });
+    expect(t.at(removed)).toMatchObject({ trashed: false, displayName: "Back" });
+    expect(undoChange(t.w, LIVE, WRITER, move.id)).not.toBe("superseded");
+    expect(t.at(ch)?.trashed).toBe(true);
+    expect(undoChange(t.w, LIVE, WRITER, rename.id)).not.toBe("superseded");
+    expect(t.at(removed)?.trashed).toBe(true);
+    t.valid();
+  });
+
+  it("9. a drafted record lifts only the Work's own deletes; a live record lifts live ones", () => {
+    const t = start();
+    const live = t.chapter("Live deleted");
+    const own = t.chapter("Drafted deleted");
+    t.w.delete(LIVE, WRITER, live);
+    t.w.rename(D, CHAT, live, "Renamed in the Work");
+    t.w.delete(D, CHAT, own);
+    t.w.rename(D, CHAT, own, "Renamed after its own delete");
+    expect(t.at(live)?.trashed).toBe(true);
+    // The Work's view keeps the live-deleted node standing while it has a pending change (rule 7).
+    expect(t.at(live, D)).toMatchObject({ trashed: false, keptByPending: true });
+    expect(t.at(own, D)).toMatchObject({
+      trashed: false,
+      displayName: "Renamed after its own delete",
+    });
+  });
+
+  it("10. a purge is final: a restore or move placed before it does not bring the node back", () => {
+    const t = start();
+    const ch = t.chapter("Chapter");
+    const removal = t.w.delete(LIVE, WRITER, ch);
+    t.w.restore(LIVE, WRITER, ch);
+    t.w.purge("system", removal);
+    t.w.rename(LIVE, WRITER, ch, "After the purge");
+    expect(t.at(ch)).toMatchObject({ purged: true });
+    expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual(["purged"]);
+  });
+
+  it("10b. a purge covers what its delete covers now: a node moved out before the delete is not purged", () => {
+    const t = start();
+    const folder = t.folder("F");
+    const child = t.chapter("C", folder);
+    // The move reaches the list before the delete, which was made by someone who still saw C in F.
+    t.w.move(LIVE, CHAT, child, ROOT);
+    const removal = t.w.author(LIVE, WRITER, { type: "delete", node: folder, cascade: [child] });
+    t.w.purge("system", removal);
+    expect(t.at(folder)).toMatchObject({ purged: true });
+    expect(t.at(child)).toMatchObject({ purged: false, trashed: false });
+    expect(t.w.view(LIVE).trash).toEqual([]);
+  });
+
+  it("11. a document create or rename to a type that is not tracked is skipped", () => {
+    const t = start();
+    const pdf = t.w.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "pdf",
+      name: "Scan",
+      parent: ROOT,
+    }).node;
+    const ch = t.chapter("Chapter");
+    t.w.rename(LIVE, WRITER, ch, "Scan.pdf", "pdf");
+    expect(t.at(pdf)).toBeUndefined();
+    expect(t.at(ch)).toMatchObject({ displayName: "Chapter", filetype: "markdown" });
+    expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual([
+      "type-not-editable",
+      "type-not-editable",
+    ]);
+  });
+
+  it("12. a rename to a type of another schema is skipped whole, name included", () => {
+    const t = start();
+    const ch = t.chapter("Chapter");
+    t.w.rename(LIVE, WRITER, ch, "Chapter.py", "python");
+    t.w.rename(LIVE, WRITER, ch, "Chapter.toml", "text");
+    expect(t.at(ch)).toMatchObject({ displayName: "Chapter.toml", filetype: "text" });
+    expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual(["type-across-schemas"]);
+  });
+
+  it("13. a record's name is shown as normalEntryName of it, whoever wrote it", () => {
+    const t = start();
+    const folder = t.folder("Arc");
+    const ch = t.chapter("Chapter");
+    t.w.author(LIVE, CHAT, { type: "rename", node: folder, name: "1/2", fromName: "Arc" });
+    t.w.author(LIVE, CHAT, { type: "rename", node: ch, name: "notes.md", fromName: "Chapter" });
+    expect(t.at(folder)?.displayName).toBe("1∕2");
+    expect(t.at(ch)?.displayName).toBe("notes");
+  });
+
+  it("a create the server stamped dropped is in no view and is listed", () => {
+    const t = start();
+    const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
+    t.w.settle("system", [made.id], "dropped", { reason: "Work was closed" });
+    expect(t.at(made.node)).toBeUndefined();
+    expect(replayView(t.doc, LIVE).dropped).toEqual([
+      { record: made.id, node: made.node, reason: "Work was closed", parent: ROOT, name: "Raced" },
+    ]);
   });
 });

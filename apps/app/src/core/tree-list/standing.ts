@@ -4,6 +4,7 @@
  * cannot disagree with the tree.
  */
 import {
+  deleteCovering,
   isSourceRoot,
   lastSettlements,
   listRecords,
@@ -63,9 +64,7 @@ export function standingIn(
   }
   if (node.purged) return { kind: "purged" };
   if (!node.trashed) return { kind: "in-tree", node };
-  const entry = projection.trash.find(
-    (each) => each.node === documentId || each.cascade.includes(documentId),
-  );
+  const entry = deleteCovering(projection, documentId);
   const deleted = entry && listRecords(snapshot.doc).find((record) => record.id === entry.id);
   return {
     kind: "in-trash",

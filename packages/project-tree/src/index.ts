@@ -42,6 +42,8 @@ export {
   type TreeRecordInput,
 } from "./record.js";
 export {
+  type DroppedCreate,
+  deleteCovering,
   type LabelBefore,
   type NodeSetters,
   type PlaceBefore,

@@ -134,7 +134,14 @@ export function nameSet(record: TreeRecord): string | undefined {
   return record.type === "rename" || record.type === "move" ? record.name : undefined;
 }
 
-export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "refused";
+export type Settlement =
+  | "applied"
+  | "discarded"
+  | "undone"
+  | "superseded"
+  | "refused"
+  /** A create the server stamped at admission: its Work or source was closed. In no view. */
+  | "dropped";
 
 /**
  * A settlement is a record too, appended and never changed. A record's state is its last

@@ -10,6 +10,7 @@ import { canonicalLeaf, type Filetype, storedFilename } from "@meridian/contract
 import {
   type Actor,
   childrenOf,
+  deleteCovering,
   descendantsOf,
   isSourceRoot,
   LIVE,
@@ -100,11 +101,6 @@ export type TouchedNode = {
 
 export type TreeResult = Refused | Done;
 
-function lastWhere<T>(items: readonly T[], test: (item: T) => boolean): T | undefined {
-  for (let at = items.length - 1; at >= 0; at -= 1) if (test(items[at] as T)) return items[at];
-  return undefined;
-}
-
 /** The words for who: every person is `the user` in v1, an agent is `agent`. */
 export function labelOf(actor: Actor): string {
   if (actor.startsWith("user:")) return "the user";
@@ -156,10 +152,7 @@ function noteConcurrent(cx: Context, actor: Actor | undefined, line: string) {
 
 /** Who deleted a node in Trash: the author of the delete in force that took it. */
 function deleterOf(cx: Context, projection: TreeProjection, node: TreeNode): Actor | undefined {
-  const entry = lastWhere(
-    projection.trash,
-    (candidate) => candidate.node === node.id || candidate.cascade.includes(node.id),
-  );
+  const entry = deleteCovering(projection, node.id);
   return actorOfRecord(cx, entry?.from ?? entry?.id);
 }
 

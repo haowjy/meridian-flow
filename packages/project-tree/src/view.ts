@@ -1,12 +1,14 @@
 import type * as Y from "yjs";
+import { shownName } from "./names.js";
 import {
+  type CreateRecord,
   recordsOf,
   type Settlement,
   type SettleRecord,
   settleLogOf,
   type TreeRecord,
 } from "./record.js";
-import { replay, type TreeProjection } from "./replay.js";
+import { type DroppedCreate, replay, type TreeProjection } from "./replay.js";
 import { readStored } from "./validate.js";
 
 /** Live (`draft: null`), or live and then one Work's pending records. */
@@ -68,7 +70,8 @@ export function viewValues(
       !isRecord(value) ||
       (value.draft === null &&
         settled.get(value.id) !== "undone" &&
-        settled.get(value.id) !== "refused"),
+        settled.get(value.id) !== "refused" &&
+        settled.get(value.id) !== "dropped"),
   );
   if (view.draft === null) return live;
   return [
@@ -108,11 +111,41 @@ export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
   return viewRecords(doc, { draft }).filter((record) => record.draft === draft);
 }
 
+/**
+ * The creates the server stamped `dropped` at admission, each with what the writer made, for a
+ * row that says "Work was closed" and hands back what they typed. The settle log and the records
+ * together say it: the replay never sees a dropped create.
+ */
+export function droppedCreates(doc: Y.Doc): DroppedCreate[] {
+  const dropped = [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped");
+  if (dropped.length === 0) return [];
+  const creates = new Map<string, CreateRecord>();
+  for (const record of listRecords(doc))
+    if (record.type === "create") creates.set(record.id, record);
+  return dropped.flatMap(([id, settle]) => {
+    const create = creates.get(id);
+    return create
+      ? [
+          {
+            record: id,
+            node: create.node,
+            reason: settle.reason ?? "",
+            parent: create.parent,
+            name: shownName(create.kind, create.name),
+          },
+        ]
+      : [];
+  });
+}
+
 /** `pendingText`: documents the Work holds a pending text draft of, which the list cannot see. */
 export function replayView(
   doc: Y.Doc,
   view: View,
   pendingText?: ReadonlySet<string>,
 ): TreeProjection {
-  return replay(viewValues(doc, view), { draft: view.draft, pendingText });
+  return {
+    ...replay(viewValues(doc, view), { draft: view.draft, pendingText }),
+    dropped: droppedCreates(doc),
+  };
 }

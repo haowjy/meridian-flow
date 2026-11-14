@@ -20,6 +20,7 @@ import {
   branchRows,
   type CreateRecord,
   changedRows,
+  deleteCovering,
   LIVE,
   type ProjectedRow,
   pendingRecords,
@@ -71,7 +72,10 @@ function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
 function trashRecords(projection: TreeProjection): Map<string, string> {
   const out = new Map<string, string>();
   for (const entry of projection.trash)
-    for (const id of [entry.node, ...entry.cascade]) if (!out.has(id)) out.set(id, entry.id);
+    for (const id of [entry.node, ...entry.cascade]) {
+      const covering = deleteCovering(projection, id);
+      if (covering === entry) out.set(id, entry.id);
+    }
   return out;
 }
 

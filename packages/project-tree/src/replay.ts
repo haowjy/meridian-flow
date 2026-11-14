@@ -1,3 +1,4 @@
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import { freeName, shownName } from "./names.js";
 import {
   type Actor,
@@ -54,8 +55,10 @@ export type SkipReason =
   | "parent-not-folder"
   | "duplicate"
   | "purged"
-  /** A purge of a delete's nodes while a node outside it stands inside one. */
-  | "standing"
+  /** Rule 11: a document create or rename to a type that is not a tracked document. */
+  | "type-not-editable"
+  /** Rule 12: a rename to a type of another Yjs schema. */
+  | "type-across-schemas"
   /** The value is not a record the server writes (decoded from a list that was changed outside the package). */
   | "unreadable";
 
@@ -106,6 +109,16 @@ export type TreeProjection = {
   standingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
+  /** Creates the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
+  dropped: DroppedCreate[];
+};
+
+export type DroppedCreate = {
+  record: string;
+  node: string;
+  reason: string;
+  parent: string;
+  name: string;
 };
 
 type Working = {
@@ -165,6 +178,15 @@ export function replay(
   const gone = new Set<string>();
   const ownDelete = (record: TreeRecord) =>
     record.draft !== null || (of.draft != null && record.fromDraft === of.draft);
+  // Rule 10: a purge is final wherever it sits. A Yjs-merged record placed before it in the list
+  // (an offline restore or move admitted later) never lifts the delete it empties.
+  const purgedDeletes = new Set<string>();
+  for (const value of values) {
+    const read = readStored(value);
+    if (read.ok && read.record.type === "purge") purgedDeletes.add(read.record.delete);
+  }
+  const isFinal = (entry: DeleteInForce) =>
+    purgedDeletes.has(entry.id) || (entry.from !== undefined && purgedDeletes.has(entry.from));
   let deletes: DeleteInForce[] = [];
   // What a restore lifted, and what a delete that took a restore back put in force again, by
   // the id an Undo of it names: taking either back undoes exactly that.
@@ -191,6 +213,65 @@ export function replay(
   // A node still in this list that something may be placed under or done to: purged nodes are in
   // no view, for placement as for display.
   const placeable = (id: string) => placeIn(nodes, id);
+
+  // Lifts the deletes a restore (or, by rule 9, a move or rename of a node in Trash) takes back.
+  // A touch by a drafted record lifts only the Work's own deletes: a live delete stays in force
+  // in the Work's view (rule 7), and is lifted when the Apply lands the record live.
+  const lift = (
+    record: TreeRecord,
+    node: Working,
+    how: { index: number } | { ownOnly: boolean },
+  ) => {
+    const touch = "ownOnly" in how;
+    const may = (entry: DeleteInForce) => !isFinal(entry) && (!touch || !how.ownOnly || entry.own);
+    // Rule 8. A restore that takes one delete back lifts that delete alone, so one
+    // author's Undo never reverses another's delete of the same node. A plain restore lifts
+    // every delete of the node. Out of a deleted folder either brings back only the node
+    // and what is inside it: they leave that folder's delete, and the folder stands holding
+    // them (rule 3) with the rest in Trash. A restore that takes back the Undo of a restore
+    // lifts again what that Undo put back.
+    const again = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+    const took: Lifted = {
+      entries: deletes.filter(
+        (entry) => may(entry) && (again ? again.entries.includes(entry) : lifts(record, entry)),
+      ),
+      members: [],
+    };
+    deletes = deletes.filter((entry) => !took.entries.includes(entry));
+    for (const entry of took.entries) entry.putBackBy.clear();
+    if (!touch) node.arrivedAt = how.index;
+    const takeOut = (entry: DeleteInForce, member: string) => {
+      entry.cascade.delete(member);
+      for (const nodes of entry.putBackBy.values()) nodes.delete(member);
+      took.members.push([entry, member]);
+    };
+    if (again) for (const [entry, member] of again.members) takeOut(entry, member);
+    else if (record.undoes === undefined)
+      for (const entry of deletes) {
+        if (!may(entry) || !isAncestor(entry.node, record.node)) continue;
+        for (const member of [...entry.cascade])
+          if (member === record.node || isAncestor(record.node, member)) takeOut(entry, member);
+      }
+    if (!touch || took.entries.length > 0 || took.members.length > 0)
+      lifted.set(record.carries ?? record.id, took);
+  };
+
+  // An Undo of a restore (or of a move or rename that lifted deletes, rule 9) takes it off: the
+  // deletes it lifted are in force again, each with what it took and its own Trash entry.
+  const putBack = (record: TreeRecord, back: Lifted) => {
+    const root = record.carries ?? record.id;
+    const put = (entry: DeleteInForce, node: string) =>
+      entry.putBackBy.set(root, (entry.putBackBy.get(root) ?? new Set()).add(node));
+    for (const entry of back.entries) {
+      put(entry, entry.node);
+      if (!deletes.includes(entry)) deletes.push(entry);
+    }
+    for (const [entry, member] of back.members) {
+      entry.cascade.add(member);
+      put(entry, member);
+    }
+    lifted.set(root, back);
+  };
 
   // A record sets a fact: it goes on the node's stack of setters, and an Undo's opposite record
   // takes its target off instead, putting back the arrival it moved (so an undone move or
@@ -235,6 +316,10 @@ export function replay(
     if (record.type === "create") {
       if (nodes.has(record.node)) {
         skip("duplicate");
+        continue;
+      }
+      if (record.kind === "document" && !isTracked(record.filetype)) {
+        skip("type-not-editable");
         continue;
       }
       let parentId = record.parent;
@@ -302,6 +387,11 @@ export function replay(
           skip("cycle");
           continue;
         }
+        // Rule 9: acting on a node in Trash brings it back (an Undo's opposite record never does).
+        const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        if (back) putBack(record, back);
+        else if (record.undoes === undefined)
+          lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
         // One arrival sets both facts, so both answer to the arrival before it.
         const arrivedBefore = node.arrivedAt;
@@ -331,7 +421,21 @@ export function replay(
         node.lastChangedBy = record.actor;
         break;
       }
-      case "rename":
+      case "rename": {
+        if (record.filetype !== undefined) {
+          if (!isTracked(record.filetype)) {
+            skip("type-not-editable");
+            continue;
+          }
+          if (!node.filetype || schemaOf(node.filetype) !== schemaOf(record.filetype)) {
+            skip("type-across-schemas");
+            continue;
+          }
+        }
+        const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        if (back) putBack(record, back);
+        else if (record.undoes === undefined)
+          lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
         setFact(
           node.label,
@@ -347,23 +451,11 @@ export function replay(
         if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
         break;
+      }
       case "delete": {
-        // An Undo of a restore takes it off, as an Undo of a move puts back the place: the
-        // deletes it lifted are in force again, each with what it took and its own Trash entry.
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
         if (back) {
-          const root = record.carries ?? record.id;
-          const putBack = (entry: DeleteInForce, node: string) =>
-            entry.putBackBy.set(root, (entry.putBackBy.get(root) ?? new Set()).add(node));
-          for (const entry of back.entries) {
-            putBack(entry, entry.node);
-            if (!deletes.includes(entry)) deletes.push(entry);
-          }
-          for (const [entry, member] of back.members) {
-            entry.cascade.add(member);
-            putBack(entry, member);
-          }
-          lifted.set(record.carries ?? record.id, back);
+          putBack(record, back);
           break;
         }
         // Two deletes of one node both count: each takes what its author saw.
@@ -377,57 +469,21 @@ export function replay(
         });
         break;
       }
-      case "restore": {
-        // Rule 8. A restore that takes one delete back lifts that delete alone, so one
-        // author's Undo never reverses another's delete of the same node. A plain restore lifts
-        // every delete of the node. Out of a deleted folder either brings back only the node
-        // and what is inside it: they leave that folder's delete, and the folder stands holding
-        // them (rule 3) with the rest in Trash. A restore that takes back the Undo of a restore
-        // lifts again what that Undo put back.
-        const again = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        const took: Lifted = {
-          entries: deletes.filter((entry) =>
-            again ? again.entries.includes(entry) : lifts(record, entry),
-          ),
-          members: [],
-        };
-        deletes = deletes.filter((entry) => !took.entries.includes(entry));
-        for (const entry of took.entries) entry.putBackBy.clear();
-        node.arrivedAt = index;
-        const takeOut = (entry: DeleteInForce, member: string) => {
-          entry.cascade.delete(member);
-          for (const nodes of entry.putBackBy.values()) nodes.delete(member);
-          took.members.push([entry, member]);
-        };
-        if (again) for (const [entry, member] of again.members) takeOut(entry, member);
-        else if (record.undoes === undefined)
-          for (const entry of deletes) {
-            if (!isAncestor(entry.node, record.node)) continue;
-            for (const member of [...entry.cascade])
-              if (member === record.node || isAncestor(record.node, member)) takeOut(entry, member);
-          }
-        lifted.set(record.carries ?? record.id, took);
+      case "restore":
+        lift(record, node, { index });
         break;
-      }
       case "purge": {
-        // Rule 3 keeps a folder standing while something stands in it, so what a delete took is
-        // purged only if nothing outside it still stands inside it.
+        // Rule 10: final. The server's `held` check ran before it wrote the purge.
         const entry = deletes.find((d) => d.id === record.delete || d.from === record.delete);
         if (!entry || entry.node !== record.node) {
           skip("missing-node");
           break;
         }
-        const taken = new Set([entry.node, ...entry.cascade]);
-        const standing = [...nodes.values()].some(
-          (other) =>
-            !other.purged &&
-            !taken.has(other.id) &&
-            [...taken].some((id) => other.id !== id && isAncestor(id, other.id)),
-        );
-        if (standing) {
-          skip("standing");
-          break;
-        }
+        // What the delete covers now: the nodes of its cascade that still sit under its node.
+        const taken = new Set([
+          entry.node,
+          ...[...entry.cascade].filter((id) => isAncestor(entry.node, id)),
+        ]);
         for (const id of taken) {
           const gone = nodes.get(id);
           if (gone) gone.purged = true;
@@ -438,7 +494,10 @@ export function replay(
     }
   }
 
-  return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone);
+  return {
+    ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
+    dropped: [],
+  };
 }
 
 /** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
@@ -477,7 +536,7 @@ function derive(
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
-): TreeProjection {
+): Omit<TreeProjection, "dropped"> {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
     const siblings = children.get(node.parent);
@@ -602,6 +661,14 @@ function derive(
   const inTrash = deletes.filter(
     (entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged,
   );
+  // A delete covers the nodes of its cascade whose ancestry still runs through its node: one
+  // moved out since (by a move placed before the delete, whose author did not see it) is not.
+  const covered = (entry: DeleteInForce) =>
+    [...entry.cascade].filter((member) => {
+      for (let at = nodes.get(member); at; at = nodes.get(at.parent))
+        if (at.id === entry.node) return true;
+      return false;
+    });
   return {
     nodes: out,
     setters,
@@ -613,7 +680,7 @@ function derive(
       id: entry.id,
       ...(entry.from ? { from: entry.from } : {}),
       node: entry.node,
-      cascade: [...entry.cascade],
+      cascade: covered(entry),
     })),
     standingDeletes: new Set(
       inTrash.flatMap((entry) => [
@@ -629,4 +696,27 @@ function derive(
 function byRankThenId(a: TreeNode, b: TreeNode): number {
   if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+const isTracked = (type: string | undefined): boolean =>
+  type !== undefined && classifyFiletype(type).kind === "tracked";
+
+function schemaOf(type: string): string | null {
+  const classification = classifyFiletype(type);
+  return classification.kind === "tracked" ? classification.schemaType : null;
+}
+
+/**
+ * The delete in force that covers a node: its own, else the nearest one above it whose cascade
+ * names it. The one reading of "who deleted this" for rows, Trash and the tools; the latest of
+ * two deletes of one node answers.
+ */
+export function deleteCovering(projection: TreeProjection, id: string): TrashEntry | undefined {
+  for (let at = projection.nodes.get(id); at; at = projection.nodes.get(at.parent)) {
+    const entry = projection.trash
+      .filter((each) => each.node === at?.id && (at.id === id || each.cascade.includes(id)))
+      .pop();
+    if (entry) return entry;
+  }
+  return undefined;
 }
