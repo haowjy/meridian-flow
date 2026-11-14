@@ -26,7 +26,6 @@ export {
 } from "./project.js";
 export type {
   CompactionTrigger,
-  CompactionTriggerSource,
   ResolveCompactionTriggerInput,
 } from "./trigger.js";
 export { FLOW_ABSOLUTE_CEILING, outputReserveTokens, resolveCompactionTrigger } from "./trigger.js";
