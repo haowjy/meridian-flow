@@ -12,6 +12,7 @@ import {
   resolveSearchScope,
   type ScopeResult,
 } from "../resolver/scope.js";
+import type { AgentEditBlockItem } from "./model-result.js";
 import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
@@ -47,7 +48,7 @@ export interface RenderedRead {
   /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
   /** An outline heading's `section` is the slug fragment that reads it, when one is safe. */
-  blocks: Array<{ hash: string; body: string; section?: string }>;
+  blocks: AgentEditBlockItem[];
   /** How many blocks the whole document has, so a narrowed read can say it is partial. */
   documentBlocks: number;
 }
@@ -112,14 +113,24 @@ export function createDocumentRenderer(deps: {
       format === "outline" ? selected.filter((block) => isHeading(model, block.ref)) : [];
     const outline = headingBlocks.length > 0;
     const shown = outline ? headingBlocks : selected;
-    const bodies = codec.serializeBlocks(
-      shown.map((block) => block.node),
-      shown.map((block) => block.hash),
+    const at = new Map(projected.map((block, index) => [block, index]));
+    const picked = shown.map((block) => at.get(block) as number);
+    const entries = codec.serializeSelection(
+      projected.map((block) => block.node),
+      projected.map((block) => block.hash),
+      picked,
     );
-    const items: RenderedRead["blocks"] = shown.map((block, index) => ({
-      hash: block.hash,
-      body: bodies[index],
-    }));
+    const items: RenderedRead["blocks"] = shown.map((block, index) => {
+      const { body, gap } = entries[index];
+      // Blank lines and bare `>`s between blocks that sit together in the document are part of
+      // its Markdown: without them the read is not the document.
+      const beside = !outline && index > 0 && picked[index] === picked[index - 1] + 1;
+      return {
+        hash: block.hash,
+        body,
+        ...(beside && gap.length > 1 ? { gapLine: gap.slice(1, -1) } : {}),
+      };
+    });
     if (outline) {
       const fragments = headingSectionFragments(hashLocateContext(model, projected));
       items.forEach((item, index) => {

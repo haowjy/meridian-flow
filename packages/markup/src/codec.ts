@@ -31,9 +31,13 @@ import type {
   MarkupPlugin,
   OccurrenceSpan,
   ParseContext,
+  ParseOptions,
   PresentationSourceRun,
   SerializeContext,
 } from "./types.js";
+
+/** Not a thematic break after any list marker, `*` included. */
+const STUB_RULE = "___";
 
 const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "table_row", "table_header", "table_cell"]);
 
@@ -192,6 +196,7 @@ function buildMarkupCodec(
     withSpans: boolean,
     withSourceMap = false,
     withRepairTail = false,
+    within: string | null = null,
   ) => {
     if (content.trim().length === 0)
       return {
@@ -200,6 +205,23 @@ function buildMarkupCodec(
         sourceMap: [],
         repairTail: null,
       };
+    if (within) {
+      // The stub opens the same containers as the block the content lands beside, holding one
+      // rule. Its blocks are the rule and, when the stub opens two lists at once, the empty
+      // paragraph that carries the outer item before it. Spans count from the end of the stub.
+      const stub = `${within}${STUB_RULE}\n`;
+      const parsed = parseTopLevel(stub + content, { schema }, withSpans);
+      return {
+        ...parsed,
+        blocks: parsed.blocks.slice(
+          parsed.blocks.findIndex((block) => block.type.name === "horizontal_rule") + 1,
+        ),
+        spans: parsed.spans.map((span) => ({
+          start: Math.max(0, span.start - stub.length),
+          end: Math.max(0, span.end - stub.length),
+        })),
+      };
+    }
     const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap, withRepairTail);
     return parsed.blocks.length > 0
       ? parsed
@@ -269,12 +291,12 @@ function buildMarkupCodec(
       return `${result}\n`;
     },
 
-    parse(content: string) {
-      return { blocks: parseDocument(content, false).blocks };
+    parse(content: string, parseOptions?: ParseOptions) {
+      return { blocks: parseDocument(content, false, false, false, parseOptions?.within).blocks };
     },
 
-    parseWithSpans(content: string) {
-      const { blocks, spans } = parseDocument(content, true);
+    parseWithSpans(content: string, parseOptions?: ParseOptions) {
+      const { blocks, spans } = parseDocument(content, true, false, false, parseOptions?.within);
       return { blocks, spans };
     },
 

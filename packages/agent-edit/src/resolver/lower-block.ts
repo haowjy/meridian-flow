@@ -18,10 +18,18 @@ interface Hunk {
 /** The pair has a shape the lowering cannot keep: a node was added, removed or retyped. */
 class Unsupported extends Error {}
 
+/** A block's Markdown as it sits in the document, with its `open` (see `ParseOptions`). */
+export interface Where {
+  body: string;
+  open: string;
+}
+
 interface Walk {
   codec: AgentEditCodec;
   /** The top-level block as the model saw it. */
   top: Block;
+  /** `top` as the document writes it, and the containers it sits in. */
+  place: () => Where;
   /** What the codec shows of `top`: the attributes the model could have seen. */
   shown?: Block;
   /** A find's windows as units, by the path of the textblock that holds them. */
@@ -42,11 +50,13 @@ export function lowerBlock(
   before: Block,
   after: Block,
   placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
+  place: () => Where,
 ): EditOp[] | null {
   if (!sameShape(before, after)) return null;
   const walk: Walk = {
     codec,
     top: before,
+    place,
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
   };
@@ -98,9 +108,16 @@ function changedAttrs(before: Block, after: Block, shownOf: () => Block): Record
   return changed;
 }
 
-/** The node at `path` in the codec's round trip of the top-level block. */
+/**
+ * The node at `path` in the codec's round trip of the top-level block, read where it sits: a
+ * further paragraph of an item read alone would start an item. A block that opens two lists at
+ * once parses after the empty paragraph that carries the outer item, so its block is the last.
+ */
 function shownNode(walk: Walk, path: readonly number[]): Block {
-  walk.shown ??= walk.codec.parse(walk.codec.serialize([walk.top])).blocks[0];
+  if (!walk.shown) {
+    const { body, open } = walk.place();
+    walk.shown = walk.codec.parse(body, { within: open }).blocks.at(-1);
+  }
   let node: Block | null | undefined = walk.shown;
   for (const index of path) node = node?.maybeChild(index);
   if (!node) throw new Unsupported();

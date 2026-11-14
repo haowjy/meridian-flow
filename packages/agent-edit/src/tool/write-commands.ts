@@ -17,6 +17,7 @@ import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
+import { landCopies } from "../resolver/land-copies.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
@@ -202,10 +203,14 @@ export function createWriteCommands(deps: {
     if (address.fragment) {
       return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
-    const copiedNodes = command.command === "copy" ? context.copiedNodes : undefined;
-    if (command.command === "copy" && !copiedNodes) {
+    if (command.command === "copy" && !context.copiedNodes) {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
+    // A new document starts at the top: the copies lose the containers they sat in.
+    const copiedNodes =
+      command.command === "copy" && context.copiedNodes
+        ? landCopies(context.copiedNodes, null)
+        : undefined;
     const content = command.command === "create" ? (command.content ?? "") : "";
     // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
     const boundNodes = command.command === "create" ? context.boundNodes : undefined;

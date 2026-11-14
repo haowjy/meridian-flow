@@ -94,7 +94,7 @@ describe("markdown codec round-trip corpus", () => {
     expect(codec.serialize([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
     expect(codec.serialize([emptyParagraph(), emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
     expect(codec.serializeBlocks([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toEqual([
-      { body: "", gap: "" },
+      { body: "", gap: "", open: "" },
     ]);
   });
 

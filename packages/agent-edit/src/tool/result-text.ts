@@ -190,7 +190,11 @@ function outlineFile(result: AgentEditResultV1): string | undefined {
 
 function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | undefined): string[] {
   const items = groups.flatMap((group) => group.items);
-  if (!outline) return items.map(blockLine);
+  if (!outline)
+    return items.flatMap((item) => [
+      ...(item.gapLine === undefined ? [] : [item.gapLine]),
+      blockLine(item),
+    ]);
   // A heading whose slug looks like a hash is read by its hash.
   return items.map((item) => `${blockLine(item)}  #${item.section ?? item.hash}`);
 }

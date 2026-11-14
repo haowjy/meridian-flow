@@ -45,6 +45,11 @@ export type WriteSuccessPhase = "committed";
 export interface AgentEditBlockItem {
   hash: string;
   body: string;
+  /**
+   * A read only: the line between this block and the one before it, when the document has one
+   * (empty for a blank line, `>` inside a quote). Absent when the two lines are adjacent.
+   */
+  gapLine?: string;
   /** Outline headings only: the `#heading-slug` that reads this heading's section. */
   section?: string;
 }
