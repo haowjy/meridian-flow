@@ -469,6 +469,12 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
                     ),
               );
             }
+            if (finalized?.recovered?.length)
+              input.diagnostics?.lateTypingRecovered({
+                draftId: snapshot.draftId,
+                paragraphs: finalized.recovered.length,
+                chars: finalized.recovered.reduce((n, text) => n + text.length, 0),
+              });
             input.onAppendCommitted(snapshot.draftId);
           }
           compactIfLong(snapshot.draftId);

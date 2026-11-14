@@ -197,8 +197,12 @@ made into its neighbour. It fires wherever ProseMirror nodes are built from Yjs.
 A rescue gives typed text back to its author after something else took it away. It never removes.
 
 - **Late typing**, on the server: `diff/late-peer.ts` finds typing a pull deleted or re-created
-  under it, and `diff/late-peer-recovery.ts` writes it back with the typist's byline or none.
-  `draft-runtime.ts` and `draft-receipts.ts` call them.
+  under it, and `diff/late-peer-recovery.ts` writes it back as paragraphs with the typist's byline
+  or none. `draft-runtime.ts` and `draft-receipts.ts` call them. The recovery returns only its own
+  transaction's update: it never carries the binding's repair of an element the schema cannot
+  build, which schema repair journals. Counted once per committed append that recovered something,
+  as the `late_typing.recovered` event (source `collab.draft`) with `paragraphs` and `chars`, never
+  the words.
 - **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
   witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
   bar's Details show it.

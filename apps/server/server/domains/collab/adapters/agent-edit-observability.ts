@@ -104,6 +104,16 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         payload: { clocks: clocks.slice(0, 16) },
       });
     },
+    lateTypingRecovered({ draftId, ...payload }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.draft",
+        name: "late_typing.recovered",
+        correlation: { draftId },
+        payload,
+      });
+    },
     roomReconciled({ draftId, trigger, ...payload }) {
       if (!eventSink) return;
       // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
