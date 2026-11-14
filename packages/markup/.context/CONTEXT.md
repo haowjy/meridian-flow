@@ -310,6 +310,12 @@ codec rules that are not obvious from the code:
   the next line and read the same (`joinsDirectly`): after a code block, heading or rule, or
   before a code block, heading, raw `<table>`, quote, or a list opening at a bullet or `1.`.
   Anything else gets a blank line, so a paragraph after a nested list does not join it.
+- `open` is the first line of a stub: every quote and list level around the block, each list
+  marker at the width it has there (`10. ` is four), no `|`. `parse(text, { within })` parses
+  the stub, a rule (`___`, which no marker turns into a break), then the text, and drops the
+  stub's blocks (the rule, and the empty paragraph a stub of two lists opens); link spans
+  count from the end of the stub. An empty text parses as the one empty paragraph, never
+  nested.
 - A quote step prefixes `> `. A quote right after a quote is marked `|` on its first block, so
   `> a` / blank / `> b` reads back as two quotes. A table cell's quotes are written as
   `<blockquote>` around the cell's blocks and flattened back the same way as its lists.
