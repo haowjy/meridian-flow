@@ -437,6 +437,9 @@ importers:
       '@meridian-flow/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway
+      '@meridian-flow/mars-schema':
+        specifier: 0.32.0
+        version: 0.32.0
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -539,9 +542,6 @@ importers:
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@26.0.1)
-      smol-toml:
-        specifier: ^1.7.0
-        version: 1.7.0
       stripe:
         specifier: ^22.3.0
         version: 22.3.0(@types/node@26.0.1)
@@ -2195,6 +2195,9 @@ packages:
         optional: true
       rolldown:
         optional: true
+
+  '@meridian-flow/mars-schema@0.32.0':
+    resolution: {integrity: sha512-sM25gPSETgIpjU9h0Aw5ZLc2yBE5PNcO/EGNSu5cJ2aw9xedyoHL15ZN+Q5yCNb9q8aqmGGWFgb1yesnO2qarw==}
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -6180,10 +6183,6 @@ packages:
     resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
     engines: {node: '>= 18'}
 
-  smol-toml@1.7.0:
-    resolution: {integrity: sha512-aqVvWoyO21L23mb+drl4RmMXbf6N7FdHjAhTRA9ZBL7apWBgfWC16KjrASI+1p9GAroljyMHj6fK67i0UiTNvQ==}
-    engines: {node: '>= 18'}
-
   sonner@2.0.8:
     resolution: {integrity: sha512-UM/ByIoFra8yzV75n1o0Puu0bw5U/9UNnDacrJNspekBewIfsQ3D6ez1nvlWpt7aTsO6rujQtifBpycwIivqlg==}
     peerDependencies:
@@ -8035,6 +8034,8 @@ snapshots:
     transitivePeerDependencies:
       - babel-plugin-macros
       - supports-color
+
+  '@meridian-flow/mars-schema@0.32.0': {}
 
   '@mermaid-js/parser@1.2.0':
     dependencies:
@@ -12737,8 +12738,6 @@ snapshots:
   signal-exit@4.1.0: {}
 
   smol-toml@1.6.1: {}
-
-  smol-toml@1.7.0: {}
 
   sonner@2.0.8(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:

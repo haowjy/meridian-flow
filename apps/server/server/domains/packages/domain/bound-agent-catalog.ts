@@ -9,10 +9,11 @@ import type {
   AgentCatalogEntry,
   AgentRevision,
   AgentRevisionStore,
+  CatalogRevision,
 } from "../ports/agent-revision-store.js";
 import { AgentConfigurationError, resolveAgentConfiguration } from "./agent-configuration.js";
-import type { CompiledAgentDefinition } from "./agent-definition-compiler.js";
-import type { AgentSourceSnapshot } from "./agent-source-revision.js";
+import type { AgentSourceSnapshot, CompiledAgentDefinition } from "./compile-package.js";
+import { agentPath, MANIFEST_PATH } from "./mars.js";
 import { AgentPublicationConflictError, publishAgentSource } from "./source-publication.js";
 
 export type {
@@ -67,28 +68,47 @@ export function createBoundAgentCatalog(input: {
     }
     return result;
   };
-  const prepare = async (revision: AgentRevision) => {
+  const prepare = async (revision: CatalogRevision) => {
+    const { definition } = revision;
+    if (!definition) {
+      return {
+        configuration: undefined,
+        unavailable: revision.diagnostics
+          .filter((item) => item.severity === "error" || !item.code.startsWith("flow."))
+          .map((item) => `${item.file}: ${item.message}`),
+        available: undefined,
+      };
+    }
+    const available: AgentRevision = {
+      id: revision.id,
+      packageRevisionId: revision.packageRevisionId,
+      slug: revision.slug,
+      grammarVersion: revision.grammarVersion,
+      definition,
+    };
     try {
       const configuration = await resolveAgentConfiguration({
-        revision,
+        revision: available,
         store,
         defaultModel: input.defaultModel(),
       });
-      return { configuration, unavailable: reasons(revision.definition, configuration.model) };
+      return { configuration, unavailable: reasons(definition, configuration.model), available };
     } catch (error) {
       if (!(error instanceof AgentConfigurationError)) throw error;
-      return { configuration: undefined, unavailable: [error.message] };
+      return { configuration: undefined, unavailable: [error.message], available };
     }
   };
   const summarize = async (entry: AgentCatalogEntry): Promise<BoundAgentCatalogItem> => {
-    const revision = await store.readRevision(entry.selectedRevisionId);
+    const revision = await store.readCatalogRevision(entry.selectedRevisionId);
     if (!revision) throw new Error("Agent catalog references a missing revision");
     return {
       selection: { catalogEntryId: entry.id, definitionRevisionId: revision.id },
       slug: revision.slug,
-      name: revision.definition.metadata.name ?? revision.slug,
-      description: revision.definition.metadata.description ?? "",
-      model: revision.definition.metadata.model ?? input.defaultModel() ?? null,
+      name: revision.name,
+      description: revision.description,
+      model: revision.definition
+        ? (revision.definition.metadata.model ?? input.defaultModel() ?? null)
+        : null,
       ownership: entry.ownerUserId === null ? "system" : "personal",
       unavailableReasons: (await prepare(revision)).unavailable,
     };
@@ -99,7 +119,7 @@ export function createBoundAgentCatalog(input: {
         const existing = await store.readCatalogEntry(userId, source.slug);
         const coordinate = `personal/${source.slug}`;
         if (existing) {
-          const previous = await store.readRevision(existing.selectedRevisionId);
+          const previous = await store.readCatalogRevision(existing.selectedRevisionId);
           const retained = previous && (await store.readSource(previous.packageRevisionId));
           if (retained?.coordinate !== coordinate || existing.removed) {
             throw new AgentPublicationConflictError(
@@ -119,7 +139,13 @@ export function createBoundAgentCatalog(input: {
         const head = (await store.listInstallations(userId)).find(
           (item) => item.coordinate === coordinate,
         );
-        const candidate = { coordinate, files: { [`agents/${source.slug}.md`]: source.content } };
+        const candidate = {
+          coordinate,
+          files: {
+            [MANIFEST_PATH]: `[package]\nname = "personal-${source.slug}"\nversion = "0.0.0"\nschema = 1\n`,
+            [agentPath(source.slug)]: source.content,
+          },
+        };
         const installed = await store.installSource(candidate);
         if (
           existing &&
@@ -177,14 +203,10 @@ export function createBoundAgentCatalog(input: {
         projectId,
       );
       if (!resolved) return { ok: false, reason: "not-found", details: [] };
-      const { configuration, unavailable } = await prepare(resolved.revision);
-      if (!configuration || unavailable.length)
+      const { configuration, unavailable, available } = await prepare(resolved.revision);
+      if (!configuration || !available || unavailable.length)
         return { ok: false, reason: "unavailable", details: unavailable };
-      return {
-        ok: true,
-        revision: resolved.revision,
-        configuration,
-      };
+      return { ok: true, revision: available, configuration };
     },
   };
 }
@@ -198,13 +220,11 @@ export async function installSystemAgentSource(
     const existing = (await store.listInstallations(null)).find(
       (item) => item.coordinate === source.coordinate,
     );
-    const installed = await store.installSource(source);
     await publishAgentSource({
       store,
       ownerUserId: null,
       source,
       expectedRevisionId: existing?.currentRevisionId,
-      upstreamRevisionId: installed.packageRevisionId,
     });
   });
 }

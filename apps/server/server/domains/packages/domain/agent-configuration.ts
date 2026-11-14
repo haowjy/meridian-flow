@@ -5,44 +5,48 @@ import {
   type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
-import { sha256 } from "./helpers.js";
-import { canonicalizeJsonObject } from "./mars-source.js";
+import { canonicalizeJsonObject, sha256 } from "./helpers.js";
+import { readSkill, skillPath, skillSlugOf } from "./mars.js";
+import type { SkillFiles } from "./types.js";
 
 export class AgentConfigurationError extends Error {}
 
-const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
+function skillReference(
+  packageRevisionId: string,
+  files: SkillFiles,
+  slug: string,
+): RetainedSkillReference {
+  const prefix = `skills/${slug}/`;
+  return {
+    packageRevisionId,
+    path: skillPath(slug),
+    contentDigest: sha256(
+      JSON.stringify(
+        canonicalizeJsonObject(
+          Object.fromEntries(Object.entries(files).filter(([name]) => name.startsWith(prefix))),
+        ),
+      ),
+    ),
+  };
+}
 
-/** Per-package `skills/<slug>/SKILL.md` maps for the retained dependency graph, root first. */
+/**
+ * The skills a file set offers now, by package revision. Read with the running reader: the
+ * question is about now, so a skill with a diagnostic is not offered.
+ */
 export async function retainedPackageSkillMaps(
   packageRevisionId: string,
   store: Pick<AgentRevisionStore, "readSource">,
 ): Promise<Map<string, Map<string, RetainedSkillReference>>> {
-  const packages = new Map<string, Map<string, RetainedSkillReference>>();
-  async function visit(id: string): Promise<void> {
-    if (packages.has(id)) return;
-    const source = await store.readSource(id);
-    if (!source) throw new AgentConfigurationError("A retained dependency source is missing.");
-    const skills = new Map<string, RetainedSkillReference>();
-    for (const path of Object.keys(source.files).sort()) {
-      const match = SKILL_MD_PATH.exec(path);
-      if (!match) continue;
-      const slug = match[1];
-      if (!slug) continue;
-      const prefix = `skills/${slug}/`;
-      const files = Object.fromEntries(
-        Object.entries(source.files).filter(([name]) => name.startsWith(prefix)),
-      );
-      skills.set(slug, {
-        packageRevisionId: id,
-        path,
-        contentDigest: sha256(JSON.stringify(canonicalizeJsonObject(files))),
-      });
-    }
-    packages.set(id, skills);
-    for (const dependency of Object.values(source.dependencies ?? {})) await visit(dependency);
+  const source = await store.readSource(packageRevisionId);
+  if (!source) throw new AgentConfigurationError("A retained package source is missing.");
+  const skills = new Map<string, RetainedSkillReference>();
+  for (const path of Object.keys(source.files).sort()) {
+    const slug = skillSlugOf(path);
+    if (slug === undefined || readSkill(slug, source.files[path]).diagnostics.length) continue;
+    skills.set(slug, skillReference(packageRevisionId, source.files, slug));
   }
-  await visit(packageRevisionId);
-  return packages;
+  return new Map([[packageRevisionId, skills]]);
 }
 
 export async function resolveAgentConfiguration(input: {
@@ -57,81 +61,61 @@ export async function resolveAgentConfiguration(input: {
   return { model, ...(await resolveAgentDependencies({ revision, store })) };
 }
 
-function uniqueReference<T>(reference: string, kind: string, candidates: T[]): T {
-  if (candidates.length !== 1) {
-    throw new AgentConfigurationError(
-      `${kind} "${reference}" is ${candidates.length ? "ambiguous" : "missing"} in the retained package dependencies.`,
-    );
-  }
-  return candidates[0];
-}
-
-function resolveSkillFromMaps(
-  skillMaps: Map<string, Map<string, RetainedSkillReference>>,
-  reference: string,
-): RetainedSkillReference {
-  return uniqueReference(
-    reference,
-    "Skill",
-    [...skillMaps.values()].flatMap((skills) => {
-      const skill = skills.get(reference);
-      return skill ? [skill] : [];
-    }),
-  );
-}
-
 export interface RetainedSkillResolver {
   resolve(reference: string): RetainedSkillReference;
 }
 
-/** Resolves retained skill names against one package root's dependency closure. */
+/** Resolves skill names against the skills one file set offers now. */
 export async function buildRetainedSkillResolver(input: {
   packageRevisionId: string;
   store: Pick<AgentRevisionStore, "readSource">;
 }): Promise<RetainedSkillResolver> {
-  const skillMaps = await retainedPackageSkillMaps(input.packageRevisionId, input.store);
-  return { resolve: (reference) => resolveSkillFromMaps(skillMaps, reference) };
+  const skills = (await retainedPackageSkillMaps(input.packageRevisionId, input.store)).get(
+    input.packageRevisionId,
+  );
+  return {
+    resolve(reference) {
+      const skill = skills?.get(reference);
+      if (!skill) {
+        throw new AgentConfigurationError(`Skill "${reference}" is missing in the package.`);
+      }
+      return skill;
+    },
+  };
 }
 
-/** Publication validates retained references without choosing a conversation's model default. */
+/**
+ * Turns an available revision's names into references, by path alone. The reader's verdict was
+ * made once, when the file set was compiled, and is not made again for a revision that is
+ * already bound: so this does not read a file with Mars and cannot fail for an available one,
+ * including for a chat bound before a reader bump.
+ */
 export async function resolveAgentDependencies(input: {
   revision: AgentRevision;
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
 }): Promise<Omit<ResolvedAgentConfiguration, "model">> {
   const { revision, store } = input;
-  const skillMaps = await retainedPackageSkillMaps(revision.packageRevisionId, store);
-  const packages = new Map<
-    string,
-    {
-      skills: Map<string, RetainedSkillReference>;
-      agents: AgentRevision[];
+  const source = await store.readSource(revision.packageRevisionId);
+  if (!source) throw new AgentConfigurationError("A retained package source is missing.");
+  const siblings = await store.readPackageDefinitions(
+    revision.packageRevisionId,
+    revision.grammarVersion,
+  );
+  const resolveSkill = (slug: string): RetainedSkillReference => {
+    if (!Object.hasOwn(source.files, skillPath(slug))) {
+      throw new AgentConfigurationError(`Skill "${slug}" is missing in the package.`);
     }
-  >();
-  for (const [id, skills] of skillMaps) {
-    packages.set(id, { skills, agents: await store.readPackageDefinitions(id) });
-  }
-
-  const resolveSkill = (reference: string): RetainedSkillReference =>
-    resolveSkillFromMaps(skillMaps, reference);
+    return skillReference(revision.packageRevisionId, source.files, slug);
+  };
   const meta = revision.definition.metadata;
   return {
     skills: {
       load: (meta.skills?.load ?? []).map(resolveSkill),
-      available: (meta.skills && "available" in meta.skills
-        ? (meta.skills.available ?? [])
-        : []
-      ).map(resolveSkill),
+      available: (meta.skills?.available ?? []).map(resolveSkill),
     },
     namedTargets: (meta.subagents ?? []).map((name) => {
-      const target = uniqueReference(
-        name,
-        "Agent",
-        [...packages.values()].flatMap((pkg) => pkg.agents.filter((agent) => agent.slug === name)),
-      );
-      // Child-invocability is model-invocable: false only. A pickable primary may also be a named spawn target.
-      if (target.definition.metadata["model-invocable"] === false) {
-        throw new AgentConfigurationError(`Agent "${name}" cannot be invoked as a child.`);
-      }
+      const target = siblings.find((agent) => agent.slug === name);
+      if (!target) throw new AgentConfigurationError(`Agent "${name}" is missing in the package.`);
       return { name, definitionRevisionId: target.id };
     }),
     ...(meta.tools !== undefined ? { tools: meta.tools } : {}),

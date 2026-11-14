@@ -344,15 +344,33 @@
           "primaryKey": false,
           "notNull": true
         },
+        "grammar_version": {
+          "name": "grammar_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "definition": {
           "name": "definition",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "definition_digest": {
-          "name": "definition_digest",
-          "type": "text",
+        "diagnostics": {
+          "name": "diagnostics",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -365,8 +383,8 @@
         }
       },
       "indexes": {
-        "agent_definition_revisions_package_slug": {
-          "name": "agent_definition_revisions_package_slug",
+        "agent_definition_revisions_package_slug_grammar": {
+          "name": "agent_definition_revisions_package_slug_grammar",
           "columns": [
             {
               "expression": "package_revision_id",
@@ -376,6 +394,12 @@
             },
             {
               "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "grammar_version",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -405,140 +429,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_package_dependencies": {
-      "name": "agent_package_dependencies",
-      "schema": "",
-      "columns": {
-        "package_revision_id": {
-          "name": "package_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dependency_revision_id": {
-          "name": "dependency_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
+      "checkConstraints": {
+        "agent_definition_revisions_unavailable_says_why": {
+          "name": "agent_definition_revisions_unavailable_says_why",
+          "value": "\"agent_definition_revisions\".\"definition\" IS NOT NULL OR jsonb_array_length(\"agent_definition_revisions\".\"diagnostics\") > 0"
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_package_dependencies_package_revision_id_agent_package_revisions_id_fk": {
-          "name": "agent_package_dependencies_package_revision_id_agent_package_revisions_id_fk",
-          "tableFrom": "agent_package_dependencies",
-          "tableTo": "agent_package_revisions",
-          "columnsFrom": [
-            "package_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_package_dependencies_dependency_revision_id_agent_package_revisions_id_fk": {
-          "name": "agent_package_dependencies_dependency_revision_id_agent_package_revisions_id_fk",
-          "tableFrom": "agent_package_dependencies",
-          "tableTo": "agent_package_revisions",
-          "columnsFrom": [
-            "dependency_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_package_dependencies_package_revision_id_name_pk": {
-          "name": "agent_package_dependencies_package_revision_id_name_pk",
-          "columns": [
-            "package_revision_id",
-            "name"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_package_installation_history": {
-      "name": "agent_package_installation_history",
-      "schema": "",
-      "columns": {
-        "installation_id": {
-          "name": "installation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "package_revision_id": {
-          "name": "package_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_package_installation_history_installation_id_agent_package_installations_id_fk": {
-          "name": "agent_package_installation_history_installation_id_agent_package_installations_id_fk",
-          "tableFrom": "agent_package_installation_history",
-          "tableTo": "agent_package_installations",
-          "columnsFrom": [
-            "installation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_package_installation_history_package_revision_id_agent_package_revisions_id_fk": {
-          "name": "agent_package_installation_history_package_revision_id_agent_package_revisions_id_fk",
-          "tableFrom": "agent_package_installation_history",
-          "tableTo": "agent_package_revisions",
-          "columnsFrom": [
-            "package_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_package_installation_history_installation_id_package_revision_id_pk": {
-          "name": "agent_package_installation_history_installation_id_package_revision_id_pk",
-          "columns": [
-            "installation_id",
-            "package_revision_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_package_installations": {
@@ -569,18 +465,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "upstream_revision_id": {
-          "name": "upstream_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin": {
-          "name": "origin",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -663,19 +547,6 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
-        },
-        "agent_package_installations_upstream_revision_id_agent_package_revisions_id_fk": {
-          "name": "agent_package_installations_upstream_revision_id_agent_package_revisions_id_fk",
-          "tableFrom": "agent_package_installations",
-          "tableTo": "agent_package_revisions",
-          "columnsFrom": [
-            "upstream_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -698,12 +569,6 @@
         "coordinate": {
           "name": "coordinate",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "schema_version": {
-          "name": "schema_version",
-          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },

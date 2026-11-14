@@ -44,14 +44,16 @@ function childBundle(): Promise<string> {
           setup(b) {
             b.onResolve({ filter: /^[^./]/ }, async (args) => {
               if (args.path.startsWith("#")) return { path: args.path, external: true };
-              if (/^@meridian(-flow)?\//.test(args.path) || args.pluginData === "inner")
-                return null;
+              if (args.pluginData === "inner") return null;
               const found = await b.resolve(args.path, {
                 resolveDir: args.resolveDir,
                 kind: args.kind,
                 pluginData: "inner",
               });
-              return found.errors.length ? null : { path: found.path, external: true };
+              // A published package under our scope (mars-schema's CommonJS WASM loader) must stay
+              // external too: only workspace source, which resolves outside node_modules, is inlined.
+              if (found.errors.length || !found.path.includes("/node_modules/")) return null;
+              return { path: found.path, external: true };
             });
           },
         },
