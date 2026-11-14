@@ -46,7 +46,9 @@ stateDiagram-v2
 - **An archived or deleted Work stays picked** (`use-work-scope.ts`): only the writer's pick
   changes the scope, here or on another device. The chip says Archived or Deleted with Unarchive
   or Restore in its menu; Changes and the Draft view show its draft read-only (`TreeVersion.ended`
-  refuses every tree action there with its reason).
+  refuses every tree action there with its reason). Its Scratch on Live reads and offers no
+  change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
+  server wakes the Works list with the Work's `draft-owner-hint`.
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
   showing (`core/project-tree/tree-undo.ts`). The stack is record ids per list copy, in memory;
   a reload empties it. A step `undoChange` refuses is dropped with a notice and the press goes

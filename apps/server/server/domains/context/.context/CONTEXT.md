@@ -287,12 +287,12 @@ say is the project's **sources** (`context_sources`): which node root is the man
 a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
 
 - `GET /api/projects/:projectId/context/sources` answers `ContextSourcesResult` for the project's
-  owner: the project's own, each Work's (not a deleted Work's: an archived Work's stay), each
-  lineage's and each chat's, while the source itself has not ended (a trashed chat's lineage or
-  uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
+  owner: the project's own, each Work's until the Work is purged (an archived or deleted Work's
+  read, and refuse writes), each lineage's and each chat's, while the source itself has not ended
+  (a trashed chat's lineage or uploads end with it, and come back on restore). `GET /api/account/context-sources` answers the
   account's own `user://`. Each source carries the `authority` its addresses are spelled with.
-- A source that begins (its first write provisions it), ends or comes back (a chat or Work
-  trashed or restored) publishes a truth-free `context-sources-hint` on the project's
+- A source that begins (its first write provisions it), ends or comes back (a chat trashed or
+  restored) publishes a truth-free `context-sources-hint` on the project's
   subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
   until its next read.
 - A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`

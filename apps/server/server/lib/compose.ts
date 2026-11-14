@@ -154,6 +154,7 @@ import {
   type ProjectWorkAuthorityResolver,
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
+  type WorkProjectionMutation,
 } from "../domains/projects/index.js";
 import {
   createDrizzleRecentDocumentsRepository,
@@ -403,6 +404,8 @@ export type ProductionAppPorts = {
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
+  /** The Works projection: counts, revisions, and the wake a Work's change sends. */
+  workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
   /**
    * Per-(project, reader) link snapshots: every serializing door spells
@@ -714,6 +717,7 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     projectWakeHub,
+    workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
       sources: contextSources,
       workAuthorityResolver,
@@ -971,6 +975,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
