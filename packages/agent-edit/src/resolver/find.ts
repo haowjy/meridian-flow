@@ -1,3 +1,4 @@
+import type { SerializedBlock } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import type { FindSplice } from "../links/find-splice.js";
@@ -86,10 +87,33 @@ function matchSerializedText(
   };
 }
 
+const documentEntriesCache = new WeakMap<readonly ProjectedBlock[], SerializedBlock[]>();
+
+/**
+ * Every block of the document as it sits there: the prefixes of its containers, the gap before
+ * it and the `open` its neighbours' content parses under. Whole, because a block's prefix
+ * depends on the blocks around it; once per projection, since the document is not changing.
+ */
+export function documentEntries(ctx: FindContext): readonly SerializedBlock[] {
+  let entries = documentEntriesCache.get(ctx.projected);
+  if (!entries) {
+    entries = ctx.codec.serializeBlockBodies(ctx.projected.map((block) => block.node));
+    documentEntriesCache.set(ctx.projected, entries);
+  }
+  return entries;
+}
+
+/** The blocks `from` to `to` (inclusive) as the document writes them, the first with no gap. */
+export function documentBodies(ctx: FindContext, from: number, to: number): SerializedBlock[] {
+  return documentEntries(ctx)
+    .slice(from, to + 1)
+    .map((entry, index) => (index === 0 ? { ...entry, gap: "" } : entry));
+}
+
 function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
   // A scope is a contiguous run of top-level blocks starting at `startIndex`.
   const selected = ctx.projected.slice(scope.startIndex, scope.startIndex + scope.blocks.length);
-  const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.node));
+  const bodies = documentBodies(ctx, scope.startIndex, scope.startIndex + scope.blocks.length - 1);
   let cursor = 0;
   return selected.map((block, bodyIndex) => {
     const { body, gap } = bodies[bodyIndex] ?? { body: "", gap: "" };
@@ -244,6 +268,7 @@ export function cutTextWindows(
   markdown: string,
   cuts: readonly { start: number; end: number }[],
   blocks: readonly Parameters<AgentEditCodec["serialize"]>[0][number][],
+  within: string | null,
 ): TextWindow[][] | null {
   let marked = "";
   let cursor = 0;
@@ -254,7 +279,7 @@ export function cutTextWindows(
   marked += markdown.slice(cursor);
   let parsed: ReturnType<AgentEditCodec["parse"]>["blocks"];
   try {
-    parsed = ctx.codec.parse(marked).blocks;
+    parsed = ctx.codec.parse(marked, { within }).blocks;
   } catch {
     return null;
   }

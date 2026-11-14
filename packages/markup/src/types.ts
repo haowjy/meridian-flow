@@ -34,6 +34,14 @@ export interface ParsedContent {
   blocks: PMNode[];
 }
 
+export interface ParseOptions {
+  /**
+   * Parse as if the content were spliced into a document where these containers are open:
+   * a block's `open` from `serializeBlocks`. The blocks carry the document's paths.
+   */
+  within?: string | null;
+}
+
 /** Where one link occurrence was written, as offsets into the parsed text. */
 export interface OccurrenceSpan {
   start: number;
@@ -114,8 +122,8 @@ export interface MarkupCodecBuilder {
 /** Assembled text ↔ ProseMirror codec. */
 export interface MarkupCodec {
   /** Pure syntax: every link `ref` is null and every href is as written. */
-  parse(content: string): ParsedContent;
-  parseWithSpans(content: string): ParsedContentWithSpans;
+  parse(content: string, options?: ParseOptions): ParsedContent;
+  parseWithSpans(content: string, options?: ParseOptions): ParsedContentWithSpans;
   parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;

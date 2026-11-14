@@ -24,6 +24,17 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   block group, reparses it, and replaces each match's text window whole at its
   position (`cutTextWindows`); a find whose windows can't be mapped is word-diffed, and a
   block the lowering does not keep (below) is block-diffed instead.
+- The model's text is parsed where it lands, never alone. Every parse of it (a write's
+  content, a find's spliced group and the windows cut in it, `shownNode`'s round trip) takes
+  `{ within: open }`, the `open` of the block it lands beside: the first block a replace or
+  find covers, the block an insert goes after or before, none for a whole-document write. The
+  codec parses a stub that opens the same containers, then drops the stub's blocks, so indenting
+  a line or writing `>` places it under the containers there. The block bodies a find
+  splices and `lowerBlock` compares come from one serialization of the whole document
+  (`documentEntries`), because a block's prefix depends on its neighbours. Copied blocks lose
+  the containers they shared in their source and take those of the block they land beside
+  (`landCopies`). A new quote written next to an existing quote joins it: only the editor
+  writes `|`.
 - A write is planned on the model's view and never reads the room. `lowerBlock`
   (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
   per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
@@ -49,7 +60,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   (a stale read, or a writer's delete that landed between the call's read and its append). The record
   and turn Undo therefore never claim the writer's deletion. An attribute the codec does
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
-  shows of the node it saw (a round trip of the top-level block), so a model edit to a
+  shows of the node it saw (a round trip of the top-level block, read where it sits), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
 - Block ids (`id` on every block): the model's Markdown has none, so `projectBlocks` hands the
   resolver nodes with ids removed, and a block it leaves alone still compares equal to its own

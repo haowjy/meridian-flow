@@ -11,7 +11,16 @@ import {
 } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 
-export type SerializedBlock = { body: string; gap: string };
+export type SerializedBlock = {
+  body: string;
+  gap: string;
+  /**
+   * The containers open at the block, as the first line of a stub: every quote and list level
+   * with its marker at the width it has here, then a rule. Parsing content after the stub
+   * reads it as if it sat where the block sits.
+   */
+  open: string;
+};
 
 /** `bodyOf` gives a block's own Markdown, with no trailing newline, from where `nest` reads it. */
 export function serializeNested(
@@ -54,13 +63,15 @@ export function serializeNested(
     return at.number === null ? `${delimiter} ` : `${at.number}${delimiter} `;
   };
 
-  const prefixOf = (index: number, upTo: number, first: boolean): string =>
+  const prefixOf = (index: number, upTo: number, first: boolean, every = false): string =>
     facts[index].steps
       .slice(0, upTo)
       .map((step, k) => {
         if (step.type === "quote") return "> ";
         const marker = markerOf(index, k);
-        return first && (step.opens || step.startsItem) ? marker : " ".repeat(marker.length);
+        return every || (first && (step.opens || step.startsItem))
+          ? marker
+          : " ".repeat(marker.length);
       })
       .join("");
 
@@ -80,17 +91,22 @@ export function serializeNested(
         return line === "" ? prefix.trimEnd() : prefix + line;
       })
       .join("\n");
-    if (index === 0) return { body, gap: "" };
+    const open = prefixOf(index, own.steps.length, true, true);
+    if (index === 0) return { body, gap: "", open };
 
     const shared = own.steps.filter((step) => !step.opens).length - 1;
-    if (shared < 0) return { body, gap: "\n\n" };
+    if (shared < 0) return { body, gap: "\n\n", open };
     const step = own.steps[shared];
     const tight =
       step.type === "list" &&
       (step.startsItem
         ? !(step.list as ListFacts).loose
         : joinsDirectly(blocks[index - 1], block, facts[index - 1], own, shared, bodies[index]));
-    return { body, gap: tight ? "\n" : `\n${prefixOf(index, shared + 1, false).trimEnd()}\n` };
+    return {
+      body,
+      gap: tight ? "\n" : `\n${prefixOf(index, shared + 1, false).trimEnd()}\n`,
+      open,
+    };
   });
 }
 
