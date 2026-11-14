@@ -2,13 +2,12 @@
  * The documents a command touched, from its own record: what a route must hold edit grants on
  * before Un-Apply or Undo of a Discard writes them. A folder has no document and no grant.
  */
-import type { BranchId, DocumentCommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
   applyCommandTrees,
-  discardCommandDrafts,
-  documentCommands,
+  commands,
   documentDrafts,
   documents,
 } from "@meridian/database/schema";
@@ -35,7 +34,7 @@ export function createDrizzleCommandDocuments(
   return {
     /** The documents an Apply command wrote text in or copied tree records of. */
     async ofApply(input: {
-      applyCommandId: DocumentCommandId;
+      applyCommandId: CommandId;
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]> {
@@ -43,43 +42,42 @@ export function createDrizzleCommandDocuments(
       const text = await tx
         .select({ id: applyCommandEffects.documentId })
         .from(applyCommandEffects)
-        .innerJoin(documentCommands, eq(documentCommands.id, applyCommandEffects.commandId))
+        .innerJoin(commands, eq(commands.id, applyCommandEffects.commandId))
         .where(
           and(
             eq(applyCommandEffects.commandId, input.applyCommandId),
-            eq(documentCommands.accountId, input.accountId),
+            eq(commands.accountId, input.accountId),
           ),
         );
       const trees = await tx
         .select({ nodes: applyCommandTrees.nodes })
         .from(applyCommandTrees)
-        .innerJoin(documentCommands, eq(documentCommands.id, applyCommandTrees.commandId))
+        .innerJoin(commands, eq(commands.id, applyCommandTrees.commandId))
         .where(
           and(
             eq(applyCommandTrees.commandId, input.applyCommandId),
             eq(applyCommandTrees.branchId, input.branchId),
-            eq(documentCommands.accountId, input.accountId),
+            eq(commands.accountId, input.accountId),
           ),
         );
       return documentsAmong([...text.map((row) => row.id), ...trees.flatMap((row) => row.nodes)]);
     },
 
-    /** The documents a Discard command settled records of or closed text drafts on. */
+    /** The documents a Discard command settled records of or closed text drafts on (the ones still closed by it). */
     async ofDiscard(input: {
-      discardCommandId: DocumentCommandId;
+      discardCommandId: CommandId;
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]> {
       const tx = currentDrizzleDb(db);
       const text = await tx
         .select({ id: documentDrafts.documentId })
-        .from(discardCommandDrafts)
-        .innerJoin(documentDrafts, eq(documentDrafts.id, discardCommandDrafts.draftId))
-        .innerJoin(documentCommands, eq(documentCommands.id, discardCommandDrafts.commandId))
+        .from(documentDrafts)
+        .innerJoin(commands, eq(commands.id, documentDrafts.closedBy))
         .where(
           and(
-            eq(discardCommandDrafts.commandId, input.discardCommandId),
-            eq(documentCommands.accountId, input.accountId),
+            eq(documentDrafts.closedBy, input.discardCommandId),
+            eq(commands.accountId, input.accountId),
             eq(documentDrafts.branchId, input.branchId),
           ),
         );

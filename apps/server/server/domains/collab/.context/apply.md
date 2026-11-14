@@ -32,7 +32,7 @@ a paragraph break, the next adds one nearby) would undo each other. Un-Apply inv
 group first, because a group's update builds on the earlier groups' items; an earlier group stays
 when a later one was edited in live.
 
-Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `document_commands` row (`adapters/drizzle-document-commands.ts`).
+Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
 enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
 append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
@@ -40,8 +40,10 @@ outcome, so a resend under the same id gets the same refusal and "Try again" nee
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
 turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
-reads only the effects whose draft's branch is the URL's. `GET /api/document-commands/:id` returns the stored outcome to the
-account that sent it.
+reads only the effects whose draft's branch is the URL's. `GET /api/commands/:id` returns the stored outcome to the
+account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
+answers the stored outcome, or stores `never` where there is no row (a late request under the id then
+answers `command_conflict` on an old-shape route).
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta
@@ -107,17 +109,30 @@ owner is its only writer, which the branch's identity step proved. A creation on
 showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
 the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
 
-`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) copies back both halves of a
-Discard on the Work's current branch (`ensureActiveForWrite`: a whole Discard closed the branch it
-ran on). The tree records the Discard settled come back as pending copies (`restoreDiscard`). The
-text drafts it closed (`discard_command_drafts`, written by the kernel) come back as new active
-drafts holding the closed ones' bytes: a closed draft keeps `state` and its journal until its
-document's content is purged. The next live pull catches a copy up to the live text that moved
-meanwhile. Each half is copied once. A document the Work has drafted again since keeps its newer
-draft, and the Discard's text for it is counted in `leftOut`. With nothing to copy, the answer is a
-refusal that says why: `already_restored`, or `nothing_to_restore` (the Discard settled and closed
-nothing that still exists). Lock order: the Work, the owner's active branch, the lists' keys, then
-the keys of the documents the copies act on.
+`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the
+notice right after it or from Trash; `discardCommandId` may also name an earlier restore (see
+below). The branch in the URL is the one the command ran on. The tree records the Discard settled
+come back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`:
+a whole Discard closed the branch it ran on, so a new one is made; a branch row never reopens). Each
+text draft with `closed_by` = the Discard is **reopened as the same row**, moved to that branch,
+`closed_by` and `closed_cause` cleared: its receipts' origin, authorship and seeds stay keyed to
+the draft id, and the model's next write finds an active draft, not a closed one. If the Work has
+a newer active draft of the document, the restore closes it first with `closed_by` = the restore's
+own command id (`swapped` in the answer): that draft is a member of the restore's entry, and
+restoring that entry swaps it back. Nothing is refused because a newer draft exists. The restore marks the owner's
+current drafts changed (`draftMembershipChanged`), so the Work's revision moves and its owner hint
+goes out even when the pending count stays the same (a swap). A second restore finds no member:
+`already_restored` (the tree took its records, or a stored restore named this command). Other
+refusals: `expired` (the command is older than `DELETION_RETENTION_DAYS`), `document_purged`
+(what the entry held was purged: a node, or text drafts a document purge deleted),
+`nothing_to_restore` (its tree records belong to another Work), `work_purged` (the Work and its
+branches are gone; the route lets the command through instead of answering 404 so the refusal is
+stored). A branch of another project is a 404 at the route and `not_found` in the store. A Work or
+chat that cannot take the restore (archived, deleted, frozen) is a stored refusal too:
+`asLifecycleRefusal` runs inside each command's refusal mapper, before the claim settles. `listDiscards(projectId)` is the document half of Trash's Discard entries.
+Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
+the copies act on, then the draft rows. The browser rejoining a restored draft's room is the
+client's.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

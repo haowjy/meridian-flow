@@ -1,16 +1,28 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
-import type { BranchId, DocumentCommandId, DraftOwner, LinkView } from "@meridian/contracts";
+import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import type {
+  CommandEnvelope,
+  CommandLookup,
+  CommandLookupKey,
+} from "../../shared/commands/command-record.js";
 import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
@@ -19,11 +31,6 @@ import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
-import type {
-  CommandLookup,
-  CommandLookupKey,
-  DocumentCommandEnvelope,
-} from "./domain/document-commands.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
@@ -283,13 +290,18 @@ export type ReverseThreadContextInput = {
   direction: "undo" | "redo";
   turnId: TurnId;
   /** Minted by the browser for each click; a resend under it answers the stored outcome. */
-  commandId: DocumentCommandId;
+  commandId: CommandId;
   /**
-   * The click's second part (the Work receipts a turn made), on the documents' outcome: its
-   * own command, under an id derived from `commandId`, once the documents' committed. Its
-   * stored outcome is the click's answer.
+   * The click's second part (the Work receipts a turn made): run on the documents' outcome in
+   * the same command, so the click holds both parts or neither. The Works its receipts name
+   * are locked with the documents', before any document lock.
    */
-  alongside?: (outcome: ReversalOutcome) => Promise<ReversalOutcome>;
+  alongside?: {
+    workIds: readonly WorkId[];
+    /** Takes the namespace keys the Work step needs, after the tree lists and before any document key. */
+    lockNamespaces(): Promise<void>;
+    run(outcome: ReversalOutcome): Promise<ReversalOutcome>;
+  };
   /** How a move between lists is taken back; without it, such a step is refused. */
   moveBackAcrossLists?: MoveBackAcrossLists;
 };
@@ -432,34 +444,38 @@ export type DraftReviewApi = {
   apply(input: {
     branchId: BranchId;
     request: import("@meridian/contracts/branches").ApplyItemsClick;
-    envelope: DocumentCommandEnvelope;
+    envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
     request: import("@meridian/contracts/branches").UnapplyClick;
-    envelope: DocumentCommandEnvelope;
+    envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   /** The documents a command touched, from its own record: what its routes authorize. */
   commandDocuments: {
     ofApply(input: {
-      applyCommandId: DocumentCommandId;
+      applyCommandId: CommandId;
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]>;
     ofDiscard(input: {
-      discardCommandId: DocumentCommandId;
+      discardCommandId: CommandId;
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]>;
   };
-  /** Fresh pending copies of what a Discard settled and closed, on the Work's current branch. */
+  /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
+  listDiscards(
+    projectId: ProjectId,
+  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
+  /** Restores what a Discard settled and closed: the Work's current branch holds it afterwards. */
   undoDiscard(input: {
     /** The branch the Discard ran on; it may have closed with it. */
     branchId: BranchId;
     userId: UserId;
     request: import("@meridian/contracts/branches").UndoDiscardClick;
-    envelope: DocumentCommandEnvelope;
+    envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UndoDiscardAnswer>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
@@ -502,14 +518,14 @@ export type DraftReviewApi = {
     ends: DiscardItem["ends"];
     draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
-    envelope: DocumentCommandEnvelope;
+    envelope: CommandEnvelope;
   }): Promise<CommandOutcome>;
   /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
   discardBranch(input: {
     branchId: BranchId;
     selection: DiscardSelection;
     userId: UserId;
-    envelope: DocumentCommandEnvelope;
+    envelope: CommandEnvelope;
   }): Promise<CommandOutcome>;
 };
 

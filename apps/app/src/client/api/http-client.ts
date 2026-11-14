@@ -128,8 +128,6 @@ export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T>
 export type PostJsonOptions<T = unknown> = JsonOptions<T> & {
   /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
-  /** Accept only recognized domain outcomes carried by non-2xx responses. */
-  acceptErrorResponse?: (status: number, payload: unknown) => boolean;
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
   /** Drop the request when the caller that wanted it is gone. */
@@ -149,10 +147,8 @@ export async function postJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
@@ -172,10 +168,8 @@ export async function putJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
@@ -195,18 +189,25 @@ export async function patchJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
   return decodeResponse(payload, response, options?.schema);
 }
 
-export async function deleteRequest(url: string, init?: { signal?: AbortSignal }): Promise<void> {
-  const response = await fetch(url, { method: "DELETE", signal: init?.signal });
+export async function deleteRequest(
+  url: string,
+  init?: { body?: unknown; signal?: AbortSignal },
+): Promise<void> {
+  const response = await fetch(url, {
+    method: "DELETE",
+    ...(init?.body === undefined
+      ? {}
+      : { headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) }),
+    signal: init?.signal,
+  });
   if (response.status === 204) return;
 
   const payload = await readResponsePayload(response);

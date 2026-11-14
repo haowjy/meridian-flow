@@ -7,7 +7,7 @@ files move while it streams. Mechanism, routes and preview:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
 - Documents stream in tree order (project sibling order, `compareCatalogSiblings`
-  from `@meridian/resource-replica`, applied in
+  from `@meridian/project-tree`, applied in
   `../context/tree/export-inventory.ts`). `buildExportLayout` does not sort: the
   first sibling to claim a name keeps it.
 - The snapshot adapter takes a short repeatable-read snapshot, never a transaction

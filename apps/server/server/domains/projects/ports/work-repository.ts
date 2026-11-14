@@ -120,6 +120,11 @@ export interface WorkRepository {
   ): Promise<WorkDeletion>;
   /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
   restore(id: WorkId): Promise<WorkRestoration>;
+  /**
+   * The namespace keys `restore` takes for these deleted Works, for a caller that holds document
+   * keys before it restores: they come first in the lock order, so it takes them up front.
+   */
+  lockRestoreNamespaces(ids: readonly WorkId[]): Promise<void>;
   touch(id: WorkId): Promise<void>;
   /** Sets the mode a new chat in this Work starts with; a no-op when it already holds it. */
   setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void>;

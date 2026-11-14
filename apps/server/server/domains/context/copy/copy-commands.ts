@@ -1,4 +1,4 @@
-/** Copy's command record: one `copy` row in `document_commands`, claimed before its effect. */
+/** Copy's command record: one `copy` row in `commands`, claimed before its effect. */
 
 import type { ProjectId, UserId } from "@meridian/contracts";
 import type { CopyCommandResult } from "@meridian/contracts/branches";
@@ -8,25 +8,21 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
+import { CommandExistsError, commandDigest } from "../../../shared/commands/command-record.js";
+import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
 import { runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
-import { lookupCommand, runCommand } from "../../collab/adapters/drizzle-document-commands.js";
-import {
-  commandDigest,
-  DocumentCommandExistsError,
-} from "../../collab/domain/document-commands.js";
-
-type CopyCommand = Extract<ContextOperationCommand, { kind: "copy" }>;
+import { runDocumentCommand } from "../../collab/adapters/drizzle-document-commands.js";
 
 /** The effect answered a refusal: its savepoint rolls back, and the refusal is stored. */
 class RejectedCopy extends Error {
-  constructor(readonly result: Extract<ContextOperationResult<"copy">, { ok: false }>) {
+  constructor(readonly result: Extract<ContextOperationResult, { ok: false }>) {
     super("Copy rejected");
   }
 }
 
 /** A transient failure: nothing is stored, so the same id stays retryable. */
 class RetryableCopy extends Error {
-  constructor(readonly result: Extract<ContextOperationResult<"copy">, { ok: false }>) {
+  constructor(readonly result: Extract<ContextOperationResult, { ok: false }>) {
     super("Copy failed transiently");
   }
 }
@@ -36,9 +32,9 @@ export type CopyCommands = ReturnType<typeof createCopyCommands>;
 export function createCopyCommands(db: Database, owner: { userId: string; projectId: string }) {
   const accountId = owner.userId as UserId;
   const projectId = owner.projectId as ProjectId;
-  const digestOf = (command: CopyCommand) =>
+  const digestOf = (command: ContextOperationCommand) =>
     commandDigest({ accountId, projectId, kind: "copy", selectors: {}, body: command });
-  const mismatch = (address: string): ContextOperationResult<"copy"> => ({
+  const mismatch = (address: string): ContextOperationResult => ({
     ok: false,
     error: { code: "command_conflict", uri: address },
   });
@@ -54,9 +50,9 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
   /** A resend answers the stored result; another request under the id is `command_conflict`. */
   async function stored(
     operationId: string,
-    command: CopyCommand,
+    command: ContextOperationCommand,
     address: string,
-  ): Promise<ContextOperationResult<"copy"> | null> {
+  ): Promise<ContextOperationResult | null> {
     const found = await lookupCommand(db, {
       commandId: operationId,
       accountId,
@@ -64,8 +60,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     });
     if (found.kind === "none") return null;
     if (found.kind === "conflict" || found.outcome.status === "never") return mismatch(address);
-    return (found.outcome.result as CopyCommandResult).receipt
-      .result as ContextOperationResult<"copy">;
+    return (found.outcome.result as CopyCommandResult).receipt.result as ContextOperationResult;
   }
 
   return {
@@ -74,14 +69,14 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     /** `address` is where the Copy was aimed, which a `command_conflict` names. */
     async execute(
       operationId: string,
-      command: CopyCommand,
+      command: ContextOperationCommand,
       address: string,
-      operation: () => Promise<ContextOperationResult<"copy">>,
-    ): Promise<ContextOperationResult<"copy">> {
+      operation: () => Promise<ContextOperationResult>,
+    ): Promise<ContextOperationResult> {
       const replay = await stored(operationId, command, address);
       if (replay) return replay;
       try {
-        const settled = await runCommand<CopyCommandResult>(
+        const settled = await runDocumentCommand<CopyCommandResult>(
           db,
           {
             commandId: operationId,
@@ -91,7 +86,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
             digest: digestOf(command),
           },
           async () => {
-            let result: ContextOperationResult<"copy">;
+            let result: ContextOperationResult;
             try {
               result = await runInDrizzleSavepoint(db, async () => {
                 const done = await operation();
@@ -104,19 +99,15 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
               result = cause.result;
             }
             if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
-            const receipt = {
-              operationId,
-              command,
-              result,
-            } as ContextOperationReceipt;
+            const receipt: ContextOperationReceipt = { operationId, command, result };
             return { status: result.ok ? "copied" : "refused", receipt };
           },
           () => undefined,
         );
-        return settled.receipt.result as ContextOperationResult<"copy">;
+        return settled.receipt.result as ContextOperationResult;
       } catch (cause) {
         if (cause instanceof RetryableCopy) return cause.result;
-        if (cause instanceof DocumentCommandExistsError)
+        if (cause instanceof CommandExistsError)
           return (await stored(operationId, command, address)) ?? mismatch(address);
         throw cause;
       }

@@ -8,22 +8,17 @@ export type RemovalAnswer =
   | { kind: "available" };
 
 /**
- * The removing record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the notice's sentence reads
- * it. A Discard is said as one even when the list doesn't name who made it.
+ * The removing record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the editor's notice reads
+ * it: the replay names no account or chat title, so only a chat's AI is told apart. A Discard is
+ * said as one even when the list doesn't name who made it.
  */
 export function removalRecordOf(
   actor: string | null,
   reason: DocumentRemovalRecord["reason"] = "deleted",
 ): DocumentRemovalRecord | null {
-  if (actor?.startsWith("user:"))
-    return {
-      reason,
-      actor: { kind: "user", userId: actor.slice(5) as never, displayName: null },
-      time: "",
-    };
   if (actor?.startsWith("agent:"))
     return { reason, actor: { kind: "agent", chatTitle: null }, time: "" };
-  return reason === "discarded" ? { reason, actor: null, time: "" } : null;
+  return actor || reason === "discarded" ? { reason, actor: null, time: "" } : null;
 }
 
 const AVAILABLE: RemovalAnswer = { kind: "available" };

@@ -22,6 +22,7 @@ import type {
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
@@ -42,6 +43,8 @@ export type StoredInversePart = InversePart & {
   wId: number | null;
   origin: EditOrigin;
   disposition: PartDisposition;
+  /** A change waits in an open draft at this part's text, or the writer typed over it (read from the capture; the stored `has_effect` lags a Discard). */
+  waiting?: boolean;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -57,6 +60,11 @@ export type TurnInverseQuery = {
   principal?: Principal;
   /** A card's way of taking back a move between lists (`MoveBackAcrossLists`). */
   moveBackAcrossLists?: import("../contracts.js").MoveBackAcrossLists;
+  /**
+   * The owners the caller already locked (`ownersOf`): a commit that would lock any other
+   * throws `ReversalOwnersMoved` before taking a lock.
+   */
+  declared?: OwnerLocks;
 };
 export type InverseDocument = {
   documentId: DocumentId;
@@ -69,7 +77,14 @@ export type InverseDocument = {
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,
-    { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
+    {
+      documentDraft: DraftSnapshot;
+      doc: Y.Doc;
+      name: string;
+      frozen: boolean;
+      /** The base text each waiting change in the draft removes, read from the capture. */
+      waitingRemoved: readonly string[];
+    }
   >;
   /** Per-source scratch views reused while this capture describes history and skip excerpts. */
   excerptViews: Map<Y.Doc, Y.Doc>;
@@ -93,6 +108,17 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /**
+   * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
+   * documents' drafts, the reply's tree receipts and the grants of every document it writes.
+   * Read with no lock, for the caller to lock them first and declare them in the query.
+   * Throws `ReversalOwnersMoved` when the documents move under the read.
+   */
+  ownersOf(
+    query: TurnInverseQuery,
+    direction: "undo" | "redo",
+    userId: UserId | undefined,
+  ): Promise<OwnerLocks>;
   /** How many tree receipts of the reply this card reversal would take back. */
   treeStepCount(query: TurnInverseQuery, direction: "undo" | "redo"): Promise<number>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
@@ -294,6 +320,43 @@ const countAccepted = (plans: PreparedDocumentInverse[]) =>
     0,
   );
 
+/**
+ * What became of this reply's text in each drafted document: still a draft while a waiting
+ * change holds a part of it or the writer typed over it, else applied if any part was, else
+ * discarded. Another reply's waiting change in the same draft does not count.
+ */
+function draftStates(
+  documents: readonly InverseDocument[],
+  query: TurnInverseQuery,
+  describe: TurnInverseStore["describePart"],
+): TurnReceiptChip["drafts"] {
+  const states: NonNullable<TurnReceiptChip["drafts"]> = {};
+  for (const document of documents) {
+    const drafted = document.history.filter(
+      (part) => targetsTurn(part, query) && part.origin.kind === "pending",
+    );
+    if (!drafted.length) continue;
+    // A part's change is gone from the review when the writer typed over it; it still waits if
+    // a waiting change removes the base text the part replaced.
+    const retyped = (part: StoredInversePart) => {
+      const draft =
+        part.origin.kind === "pending" ? document.drafts.get(part.origin.draftId) : null;
+      const removed = describe(document, part).before.trim();
+      return (
+        draft?.documentDraft.status === "active" &&
+        removed !== "" &&
+        draft.waitingRemoved.some((text) => text.includes(removed))
+      );
+    };
+    states[document.documentId] = drafted.some((part) => part.waiting || retyped(part))
+      ? "pending"
+      : drafted.some((part) => part.disposition === "applied")
+        ? "applied"
+        : "discarded";
+  }
+  return Object.keys(states).length ? states : undefined;
+}
+
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
@@ -304,6 +367,9 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const treeRedo = await store.treeStepCount(query, "redo");
         const treeUndo = await store.treeStepCount(query, "undo");
         if (!documents.length && !treeRedo && !treeUndo) return null;
+        const drafts = draftStates(documents, query, (document, part) =>
+          store.describePart(document, part),
+        );
         const redo = prepare(store, documents, query, "redo", randomUUID());
         if (countAccepted(redo) || treeRedo)
           return {
@@ -312,18 +378,38 @@ export function createTurnInverseService(store: TurnInverseStore) {
             skips: redo.flatMap((plan) => plan.skips),
           };
         const undo = prepare(store, documents, query, "undo", randomUUID());
-        if (countAccepted(undo) || treeUndo)
+        // Text the writer discarded is gone: an Undo has nothing to take out, and its Redo
+        // would bring the discarded text back.
+        const allDiscarded =
+          drafts !== undefined &&
+          documents.every(({ documentId }) => drafts[documentId] === "discarded");
+        if ((countAccepted(undo) && !allDiscarded) || treeUndo)
           return {
             state: "live-active",
             control: "undo",
+            drafts,
             skips: undo.flatMap((plan) => plan.skips),
           };
         return {
           state: "expired",
           control: "view_change",
+          drafts,
           skips: undo.flatMap((plan) => plan.skips),
         };
       });
+    },
+    /** What a card reversal of this query locks, for its caller to hold first (`ownersOf`). */
+    reversalOwners(
+      query: TurnInverseQuery & {
+        direction: "undo" | "redo";
+        actor: { type: "user"; userId: string } | { type: "agent" };
+      },
+    ): Promise<OwnerLocks> {
+      return store.ownersOf(
+        query,
+        query.direction,
+        query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
+      );
     },
     async reverseTurn(
       query: TurnInverseQuery & {

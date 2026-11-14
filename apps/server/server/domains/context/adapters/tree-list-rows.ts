@@ -22,6 +22,7 @@ import {
   changedFolders,
   changedRows,
   LIVE,
+  listRecords,
   type ProjectedRow,
   pendingRecords,
   projectedRows,
@@ -68,11 +69,16 @@ function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   return rows;
 }
 
-/** The delete that put each trashed node in Trash: the first in force that took it. */
-function trashRecords(projection: TreeProjection): Map<string, string> {
-  const out = new Map<string, string>();
+/** The delete that put each trashed node in Trash, the first in force that took it, and who made it. */
+function trashRecords(
+  projection: TreeProjection,
+  actors: ReadonlyMap<string, string>,
+): Map<string, { record: string; by: string | null }> {
+  const out = new Map<string, { record: string; by: string | null }>();
   for (const entry of projection.trash)
-    for (const id of [entry.node, ...entry.cascade]) if (!out.has(id)) out.set(id, entry.id);
+    for (const id of [entry.node, ...entry.cascade])
+      if (!out.has(id))
+        out.set(id, { record: entry.id, by: actors.get(entry.from ?? entry.id) ?? null });
   return out;
 }
 
@@ -285,11 +291,12 @@ async function writeLive(
   tx: DrizzleDb,
   listId: string,
   next: ReadonlyMap<string, ProjectedRow>,
-  trash: ReadonlyMap<string, string>,
+  trash: ReadonlyMap<string, { record: string; by: string | null }>,
 ): Promise<string[]> {
   const prev = await loadLive(tx, listId);
   // The delete in force of each node the replay shows in Trash.
-  const trashOf = (id: string) => (next.get(id)?.deleted ? (trash.get(id) ?? null) : null);
+  const trashed = (id: string) => (next.get(id)?.deleted ? (trash.get(id) ?? null) : null);
+  const trashOf = (id: string) => trashed(id)?.record ?? null;
   const { upserts, gone } = changedRows(prev, next);
   const retrashed = [...next.keys()].filter(
     (id) => prev.has(id) && (prev.get(id)?.trashRecord ?? null) !== trashOf(id),
@@ -321,6 +328,7 @@ async function writeLive(
       listId,
       locationVersion: (before?.version ?? 0n) + (bumpedIds.has(row.id) ? 1n : 0n),
       trashRecord,
+      trashedBy: trashed(row.id)?.by ?? null,
       // When the server admitted that delete: kept while the same delete is in force.
       trashedAt:
         trashRecord === null
@@ -347,6 +355,7 @@ async function writeLive(
           locationVersion: sql`excluded.location_version`,
           trashRecord: sql`excluded.trash_record`,
           trashedAt: sql`excluded.trashed_at`,
+          trashedBy: sql`excluded.trashed_by`,
         },
       });
   for (const batch of chunks(gone))
@@ -519,7 +528,8 @@ export async function syncRows(
           (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
         )
       : [];
-  const changed = await writeLive(tx, listId, liveRows, trashRecords(live));
+  const actors = new Map(listRecords(doc).map((record) => [record.id, record.actor]));
+  const changed = await writeLive(tx, listId, liveRows, trashRecords(live, actors));
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);

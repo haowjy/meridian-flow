@@ -93,10 +93,11 @@ all closes the branch. Edited-text Discard closes no draft. A thread core holds 
 so a close needs no invalidation.
 
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
-cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
+cause, by?)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
-`closed_cause` (`document_removed` for a removal, else `discarded`), and joins the root transaction's
+`closed_cause` (`document_removed` for a removal, else `discarded`) and, when a Discard or restore
+command closes it, `closed_by` (that command's id), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
@@ -105,7 +106,9 @@ closes a created document's drafts closes their rooms stale, and one that Apply 
 live closes them `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
-closes their drafts. A live delete closes no draft: the drafts stay
+closes their drafts. A draft a Discard or restore closed retires only while its `closed_by`
+still names that command (`DraftRetirement.stillClosedBy`): a restore that reopened it first makes
+the late retirement leave its room alone. A live delete closes no draft: the drafts stay
 ordinary active drafts and their rooms stay open. A removed document's live
 rooms close `4208`, but only while the
 removal still stands: after every matching room load settles, one batched record
@@ -520,12 +523,25 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 
 1. Live `withDocument` mutexes (sorted), before any transaction.
 2. In the database, the command's claim row (`runCommand`).
-3. Work rows (only through the Works mutation boundary, in ID order, with the lifecycle and
-   grant locks `lockSeamWorks` takes), then the branch row.
+3. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
+   reverses a card's Work receipts (`lockWorkThreadTrees`: all the threads, then all the Works
+   and lineages, so several Works never interleave their phases). A card's reversal locks only
+   its receipt Works' threads and the chat's own, and each as the runtime's thread lock does
+   (`lockThreadAsRuntime`: the thread's asks, the inbox advisory lock, the row), since its Work
+   step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
+   the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
+   takes), then the branch row.
 4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
    a document key. A list's key sorts before every document key, not among them by ID.
+   Then the namespace keys the command knows before it writes (`lockDocumentNamespaces`: a Work
+   restore's, which a card reversal takes here, ahead of its documents, through
+   `works.lockRestoreNamespaces`). One exception: a model edit's `registerInCommand` takes the
+   namespace keys of the ahead refs it mints, which exist only as the edit plans under its document
+   key, so they follow the document keys there. A path that takes namespace keys first and then a
+   document key can therefore cross with it; none does today (Apply's and a restore's settle
+   under the keys they hold).
 5. The sorted document advisory keys (`lockDocumentMutation`, in ID order).
 6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
    `branch_tree_nodes`, `tree_node_ids`, `documents`), then the draft rows, in ID order. Derivation
@@ -548,7 +564,7 @@ none takes a list's key while holding a document key. No writer-ingress epoch ba
 
 A document command (a model edit, a tree tool call, `reverse_turn`, Apply, Un-Apply, Discard,
 Copy, the server's move between a project's list and the account's) runs in
-`runCommand` (`adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
+`runCommand` (`shared/commands/drizzle-commands.ts`, through `adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
 whose first write is the claim, then the list above from the Work rows on. It takes no
 `withDocument` mutex: a command that needs a live room reads its journal in the transaction
 under the document key (`ensureLiveDocumentDraft`, `committedCopy` under `inLockedWrite()`). A
@@ -561,9 +577,9 @@ transaction is open throws (`assertOutsideCommandTransaction`): a wait on either
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction
 reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's
-transaction. A card Undo's Work receipts are a second command
-after the documents' commits (`reversal.md`), so their Work and thread locks never wait under a
-document key.
+transaction. A card Undo's Work receipts run in the same command as its documents
+(`reversal.md`): the command declares every Work and thread it will lock and takes them before
+its first document key, and reruns when its commit finds a Work it did not declare.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. Background timers remain armed across failed
 pulls; only a committed run with no newer work may clear them.

@@ -13,7 +13,7 @@ import {
   treeEditReceiptNodes,
   treeEditReceipts,
 } from "@meridian/database";
-import { branches, documentCommands, documentDrafts, works } from "@meridian/database/schema";
+import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
@@ -123,20 +123,15 @@ export function createDrizzleTreeHistory(
       } else {
         // What the card's Undo took back and nothing redid since. The model's own undo of one of
         // the reply's changes is part of what the reply did: the card offers no Redo for it.
-        const commands = undoneBy.flatMap((row) => (row.commandId ? [row.commandId] : []));
+        const commandIds = undoneBy.flatMap((row) => (row.commandId ? [row.commandId] : []));
         const byCard = new Set(
-          commands.length === 0
+          commandIds.length === 0
             ? []
             : (
                 await tx()
-                  .select({ id: documentCommands.id })
-                  .from(documentCommands)
-                  .where(
-                    and(
-                      inArray(documentCommands.id, commands),
-                      eq(documentCommands.kind, "reverse_turn"),
-                    ),
-                  )
+                  .select({ id: commands.id })
+                  .from(commands)
+                  .where(and(inArray(commands.id, commandIds), eq(commands.kind, "reverse_turn")))
               ).map((row) => row.id as string),
         );
         const undos = undoneBy.filter(

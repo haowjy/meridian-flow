@@ -115,8 +115,8 @@ identity it expects and an optional read view, plus one destination. `lib/contex
 resolves the locators, requires read on every source root and edit on the destination (a
 folder-identity destination is rechecked under the command's locks), and hands the port
 canonical addresses; `domains/context/copy/` owns everything that writes. Like move, the route
-runs inside `withDurableIntentInterruptBoundary`, because the app's durable queue replays a
-copy under its operation ID and must settle a deterministic refusal from the typed envelope.
+runs inside `withDurableIntentInterruptBoundary`, because a client must tell a
+deterministic refusal from the typed envelope.
 
 The viewer read (`lib/context-read-route.ts`, `GET /documents/:documentId/read`) takes an id and
 nothing else. It checks, in order: the project is the user's, `availability.held` finds the row in
@@ -125,37 +125,23 @@ the user's projects), and the user holds a read grant on the row `held` names, w
 join's forward. It answers from that row (`fileRefOfVisible`, the mapping `ContextFS.stat`
 shares), so it never resolves a path and never sees a draft.
 
-Move and delete are `POST /api/projects/:projectId/context/entries/:entryId/{move,delete}`
-(`context-move-route.ts`, `context-delete-route.ts`, with `context-entry-route.ts`). Neither
-request names a path or an owner. After the project check, a recorded outcome for the same
-operation and command answers first, so a resend of a committed move or delete is not refused for
-the row having moved on. `locateEntry` then finds the row through `availability.held` (another
-project's row, hidden and deleted rows are 404; a User-area file is reachable from any of the
-user's projects). Edit is granted on the row `held` names, never on the id the request carried (a
-join forwards), and for a folder on its area's container; uploads are refused. A move also needs
-edit on the destination area unless the destination is a folder, which is rechecked under the move
-locks (`canEditContextUri`, passed as the folder destination's `authorize`). The two routes share
-`runEntryCommand` (`context-entry-route.ts`); owner resolution and the edit recheck are
-`context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy and create, and the
-destination parsers are in `context-destination.ts`. `destination_missing` stays non-retryable repair. The request
-sends `name` and `destinationParent` only when the writer chose them (see
-`MoveContextEntryRequest`); `locateEntry` supplies the rest. The model goes through the port with the
+A move inside one list, and every rename, delete and create in it, is a record the browser
+writes in the tree's room (`yjs-tree-room.ts`); no route takes those. The one move route is
+`POST /api/projects/:projectId/context/move` (`context-move-route.ts`), for a document crossing
+between a project's files and the account's: edit is granted on both ends, and the port writes
+both lists' records in one transaction. Owner resolution and the edit recheck are
+`context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy, and the
+destination parsers are in `context-destination.ts`. The model goes through the port with the
 same node and an `at` destination: the folder it typed, validated by the mover with the reasons
 `resolveMutation` gives.
 
-The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
-has not settled, and it settles a refusal only from a typed non-retryable 4xx (the
-interrupt envelope, `retryable: false`) or a receipt. Those routes must therefore
-answer a deterministic refusal typed. Each route body runs inside
-`withDurableIntentInterruptBoundary` (`shared/interrupt-boundary.ts`), which turns
-any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse or
-ownership `createError`) into a typed, non-retryable envelope with the same status,
-message and `data`. It leaves 401, 408 and 429 bare, so they stay
-uncertain and the client retries. A new route that queue replays needs the same wrapper.
-A request parser must refuse a malformed identifier itself: a non-UUID Work id, No Work's
-id as a Scratch owner, or a chat owner on a scheme that has none is a 400 (`parseWorkId`,
-`destinationRootUri`), because a value that reaches the domain or the database fails as an
-untyped 500, which the queue retries forever.
+Move and Copy run inside `withDurableIntentInterruptBoundary` (`shared/interrupt-boundary.ts`),
+which turns any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse or
+ownership `createError`) into a typed, non-retryable envelope with the same status, message and
+`data`. It leaves 401, 408 and 429 bare, so a client retries them. A request parser must refuse
+a malformed identifier itself: a non-UUID Work id, No Work's id as a Scratch owner, or a chat
+owner on a scheme that has none is a 400 (`parseWorkId`, `destinationRootUri`), because a value
+that reaches the domain or the database fails as an untyped 500.
 
 Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather

@@ -44,7 +44,6 @@ No instance follows every rule. Before copying one, check what it does:
 | Apply click command | No, memory only | Yes: 1, 2, 4 seconds, then `stalled` | None: a final refusal settles it |
 | Queued control | No, memory only | No | Same id; a refusal and no answer are both `failed` |
 | Hand-back and Stop | Yes, in the host's command store | No; Retry or resume | None: a refusal drops the command |
-| Server hold | Yes, in the replica | Yes, by the namespace runner | Same id after a refused create; a new id once `spent` |
 
 Four keep the command in memory only, so a reload forgets it while the server may keep its
 effect. Two also break the second rule. A creation record that gets no answer and whose one
@@ -63,4 +62,4 @@ id.
 | [Queued control](../../apps/app/src/features/chat/.context/state-machines.md) | App | `failed`, retried under the same id |
 | [Hand-back and Stop](../../packages/thread-client/.context/state-machines.md) | thread-client | `ambiguous` |
 | [User-turn admission](../../apps/server/server/domains/runtime/.context/state-machines.md) | Server | the server half: `pending` until the turn commits |
-| Document command | Server | no machine: one `document_commands` row, written first in the effect transaction with its final outcome |
+| Command (every kind) | Server | no machine: one `commands` row, written first in the effect transaction with its final outcome; `POST /api/commands/:id/resolve` settles an id the sender cannot account for |

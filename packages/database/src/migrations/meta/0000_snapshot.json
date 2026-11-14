@@ -926,6 +926,94 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.host_effects": {
+      "name": "host_effects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "host_effects_thread_idx": {
+          "name": "host_effects_thread_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "host_effects_thread_id_threads_id_fk": {
+          "name": "host_effects_thread_id_threads_id_fk",
+          "tableFrom": "host_effects",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.model_responses": {
       "name": "model_responses",
       "schema": "",
@@ -8042,6 +8130,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "trashed_by": {
+          "name": "trashed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8268,6 +8362,10 @@
         "tree_nodes_trash_shape": {
           "name": "tree_nodes_trash_shape",
           "value": "(\"tree_nodes\".\"trash_record\" IS NULL) = (\"tree_nodes\".\"trashed_at\" IS NULL)"
+        },
+        "tree_nodes_trashed_by_shape": {
+          "name": "tree_nodes_trashed_by_shape",
+          "value": "\"tree_nodes\".\"trashed_by\" IS NULL OR \"tree_nodes\".\"trash_record\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false
@@ -8742,10 +8840,10 @@
         }
       },
       "foreignKeys": {
-        "apply_command_effects_command_id_document_commands_id_fk": {
-          "name": "apply_command_effects_command_id_document_commands_id_fk",
+        "apply_command_effects_command_id_commands_id_fk": {
+          "name": "apply_command_effects_command_id_commands_id_fk",
           "tableFrom": "apply_command_effects",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "command_id"
           ],
@@ -8832,10 +8930,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "apply_command_trees_command_id_document_commands_id_fk": {
-          "name": "apply_command_trees_command_id_document_commands_id_fk",
+        "apply_command_trees_command_id_commands_id_fk": {
+          "name": "apply_command_trees_command_id_commands_id_fk",
           "tableFrom": "apply_command_trees",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "command_id"
           ],
@@ -8873,83 +8971,123 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.discard_command_drafts": {
-      "name": "discard_command_drafts",
+    "public.commands": {
+      "name": "commands",
       "schema": "",
       "columns": {
-        "command_id": {
-          "name": "command_id",
+        "id": {
+          "name": "id",
           "type": "uuid",
-          "primaryKey": false,
+          "primaryKey": true,
           "notNull": true
         },
-        "draft_id": {
-          "name": "draft_id",
+        "kind": {
+          "name": "kind",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "restored_by": {
-          "name": "restored_by",
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_digest": {
+          "name": "request_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "discard_command_drafts_command_id_document_commands_id_fk": {
-          "name": "discard_command_drafts_command_id_document_commands_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "document_commands",
-          "columnsFrom": [
-            "command_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discard_command_drafts_draft_id_document_drafts_id_fk": {
-          "name": "discard_command_drafts_draft_id_document_drafts_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "document_drafts",
-          "columnsFrom": [
-            "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discard_command_drafts_restored_by_document_commands_id_fk": {
-          "name": "discard_command_drafts_restored_by_document_commands_id_fk",
-          "tableFrom": "discard_command_drafts",
-          "tableTo": "document_commands",
-          "columnsFrom": [
-            "restored_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "discard_command_drafts_command_id_draft_id_pk": {
-          "name": "discard_command_drafts_command_id_draft_id_pk",
+      "indexes": {
+        "commands_thread": {
+          "name": "commands_thread",
           "columns": [
-            "command_id",
-            "draft_id"
-          ]
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "commands_discard_project": {
+          "name": "commands_discard_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"commands\".\"kind\" IN ('discard', 'undo_discard')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
+      "foreignKeys": {
+        "commands_account_id_users_id_fk": {
+          "name": "commands_account_id_users_id_fk",
+          "tableFrom": "commands",
+          "tableTo": "users",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "commands_kind_valid": {
+          "name": "commands_kind_valid",
+          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.document_block_rooms": {
@@ -9131,116 +9269,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.document_commands": {
-      "name": "document_commands",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_digest": {
-          "name": "request_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_commands_thread": {
-          "name": "document_commands_thread",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_commands_account_id_users_id_fk": {
-          "name": "document_commands_account_id_users_id_fk",
-          "tableFrom": "document_commands",
-          "tableTo": "users",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_commands_project_id_projects_id_fk": {
-          "name": "document_commands_project_id_projects_id_fk",
-          "tableFrom": "document_commands",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_commands_kind_valid": {
-          "name": "document_commands_kind_valid",
-          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.document_drafts": {
       "name": "document_drafts",
       "schema": "",
@@ -9279,6 +9307,12 @@
         "closed_cause": {
           "name": "closed_cause",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_by": {
+          "name": "closed_by",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -9410,6 +9444,22 @@
           "method": "btree",
           "with": {}
         },
+        "document_drafts_closed_by": {
+          "name": "document_drafts_closed_by",
+          "columns": [
+            {
+              "expression": "closed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_drafts\".\"closed_by\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "document_drafts_active_work_draft_by_branch": {
           "name": "document_drafts_active_work_draft_by_branch",
           "columns": [
@@ -9472,6 +9522,10 @@
         "document_drafts_closed_cause_presence": {
           "name": "document_drafts_closed_cause_presence",
           "value": "(\"document_drafts\".\"status\" = 'closed') = (\"document_drafts\".\"closed_cause\" IS NOT NULL)"
+        },
+        "document_drafts_closed_by_closed": {
+          "name": "document_drafts_closed_by_closed",
+          "value": "\"document_drafts\".\"closed_by\" IS NULL OR \"document_drafts\".\"status\" = 'closed'"
         },
         "document_drafts_closed_cause_valid": {
           "name": "document_drafts_closed_cause_valid",

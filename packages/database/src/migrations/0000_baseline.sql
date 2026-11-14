@@ -85,6 +85,16 @@ CREATE TABLE "event_journal" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "host_effects" (
+	"id" bigserial PRIMARY KEY NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"payload" jsonb NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "model_responses" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"turn_id" uuid NOT NULL,
@@ -793,11 +803,13 @@ CREATE TABLE "tree_nodes" (
 	"location_version" bigint DEFAULT 0 NOT NULL,
 	"trash_record" text,
 	"trashed_at" timestamp with time zone,
+	"trashed_by" text,
 	CONSTRAINT "tree_nodes_id_source" UNIQUE("id","context_source_id"),
 	CONSTRAINT "tree_nodes_kind_valid" CHECK ("tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "tree_nodes_file_type_of_document" CHECK (("tree_nodes"."kind" = 'folder') = ("tree_nodes"."file_type" IS NULL)),
 	CONSTRAINT "tree_nodes_rank_present" CHECK ("tree_nodes"."rank" <> ''),
-	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL))
+	CONSTRAINT "tree_nodes_trash_shape" CHECK (("tree_nodes"."trash_record" IS NULL) = ("tree_nodes"."trashed_at" IS NULL)),
+	CONSTRAINT "tree_nodes_trashed_by_shape" CHECK ("tree_nodes"."trashed_by" IS NULL OR "tree_nodes"."trash_record" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "user_preferences" (
@@ -877,11 +889,16 @@ CREATE TABLE "apply_command_trees" (
 	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
 );
 --> statement-breakpoint
-CREATE TABLE "discard_command_drafts" (
-	"command_id" uuid NOT NULL,
-	"draft_id" text NOT NULL,
-	"restored_by" uuid,
-	CONSTRAINT "discard_command_drafts_command_id_draft_id_pk" PRIMARY KEY("command_id","draft_id")
+CREATE TABLE "commands" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"kind" text NOT NULL,
+	"account_id" uuid NOT NULL,
+	"project_id" uuid,
+	"thread_id" uuid,
+	"request_digest" text,
+	"outcome" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create'))
 );
 --> statement-breakpoint
 CREATE TABLE "document_block_rooms" (
@@ -906,18 +923,6 @@ CREATE TABLE "document_blocks" (
 	CONSTRAINT "document_blocks_room_id_block_id_pk" PRIMARY KEY("room_id","block_id")
 );
 --> statement-breakpoint
-CREATE TABLE "document_commands" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"kind" text NOT NULL,
-	"account_id" uuid NOT NULL,
-	"project_id" uuid,
-	"thread_id" uuid,
-	"request_digest" text NOT NULL,
-	"outcome" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy'))
-);
---> statement-breakpoint
 CREATE TABLE "document_drafts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"document_id" uuid NOT NULL,
@@ -925,6 +930,7 @@ CREATE TABLE "document_drafts" (
 	"branch_id" uuid NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"closed_cause" text,
+	"closed_by" uuid,
 	"state" "bytea" NOT NULL,
 	"state_vector" "bytea" NOT NULL,
 	"seed_origins" jsonb,
@@ -943,6 +949,7 @@ CREATE TABLE "document_drafts" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_drafts_kind_valid" CHECK ("document_drafts"."kind" = 'work_draft'),
 	CONSTRAINT "document_drafts_closed_cause_presence" CHECK (("document_drafts"."status" = 'closed') = ("document_drafts"."closed_cause" IS NOT NULL)),
+	CONSTRAINT "document_drafts_closed_by_closed" CHECK ("document_drafts"."closed_by" IS NULL OR "document_drafts"."status" = 'closed'),
 	CONSTRAINT "document_drafts_closed_cause_valid" CHECK ("document_drafts"."closed_cause" IN ('discarded', 'document_removed')),
 	CONSTRAINT "document_drafts_status_valid" CHECK ("document_drafts"."status" IN ('active', 'closed')),
 	CONSTRAINT "document_drafts_seed_record_shape" CHECK ((("document_drafts"."seed_origins" IS NULL AND "document_drafts"."seed_live_room" IS NULL AND "document_drafts"."seed_live_snapshot" IS NULL AND "document_drafts"."seed_draft_snapshot" IS NULL) OR ("document_drafts"."kind" = 'work_draft' AND "document_drafts"."seed_origins" IS NOT NULL AND "document_drafts"."seed_live_room" IS NOT NULL AND "document_drafts"."seed_live_snapshot" IS NOT NULL AND "document_drafts"."seed_draft_snapshot" IS NOT NULL)) AND (("document_drafts"."seed_live_state" IS NULL AND "document_drafts"."seed_live_position" IS NULL) OR ("document_drafts"."seed_live_state" IS NOT NULL AND "document_drafts"."seed_live_position" IS NOT NULL)))
@@ -1035,6 +1042,7 @@ ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_thread
 ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_definition_revision_id_agent_definition_revisions_id_fk" FOREIGN KEY ("definition_revision_id") REFERENCES "public"."agent_definition_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "event_journal" ADD CONSTRAINT "event_journal_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "event_journal" ADD CONSTRAINT "event_journal_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "host_effects" ADD CONSTRAINT "host_effects_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "model_responses" ADD CONSTRAINT "model_responses_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_handle_counters" ADD CONSTRAINT "project_handle_counters_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "prompt_bakes" ADD CONSTRAINT "prompt_bakes_owner_thread_id_threads_id_fk" FOREIGN KEY ("owner_thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1128,17 +1136,13 @@ ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_user
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_command_id_document_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."document_commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_draft_id_document_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."document_drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "discard_command_drafts" ADD CONSTRAINT "discard_command_drafts_restored_by_document_commands_id_fk" FOREIGN KEY ("restored_by") REFERENCES "public"."document_commands"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "commands" ADD CONSTRAINT "commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_block_rooms" ADD CONSTRAINT "document_block_rooms_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_blocks" ADD CONSTRAINT "document_blocks_room_id_document_block_rooms_room_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."document_block_rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_commands" ADD CONSTRAINT "document_commands_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_drafts" ADD CONSTRAINT "document_drafts_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_checkpoints" ADD CONSTRAINT "document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1165,6 +1169,7 @@ CREATE UNIQUE INDEX "event_journal_thread_seq_unique" ON "event_journal" USING b
 CREATE UNIQUE INDEX "event_journal_event_id_unique" ON "event_journal" USING btree (("payload"->>'eventId')) WHERE "event_journal"."payload"->>'eventId' IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "event_journal_thread_seq" ON "event_journal" USING btree ("thread_id","seq");--> statement-breakpoint
 CREATE INDEX "event_journal_turn_id" ON "event_journal" USING btree ("turn_id","created_at") WHERE "event_journal"."turn_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "host_effects_thread_idx" ON "host_effects" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "model_responses_turn_sequence" ON "model_responses" USING btree ("turn_id","sequence");--> statement-breakpoint
 CREATE INDEX "model_responses_provider_model_created" ON "model_responses" USING btree ("provider","model","created_at");--> statement-breakpoint
 CREATE INDEX "prompt_bakes_owner_created" ON "prompt_bakes" USING btree ("owner_thread_id","created_at");--> statement-breakpoint
@@ -1266,9 +1271,11 @@ CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> s
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","document_id","group_id");--> statement-breakpoint
+CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
+CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard');--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX "document_commands_thread" ON "document_commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
+CREATE INDEX "document_drafts_closed_by" ON "document_drafts" USING btree ("closed_by") WHERE "document_drafts"."closed_by" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "document_drafts_active_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "document_yjs_checkpoints_initial" ON "document_yjs_checkpoints" USING btree ("document_id") WHERE "document_yjs_checkpoints"."up_to_seq" = 0;--> statement-breakpoint

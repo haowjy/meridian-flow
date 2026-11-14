@@ -8,7 +8,7 @@
  * drafts' resync) that touch the rows derivation locks under those document keys.
  */
 
-import type { BranchId, DocumentCommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
 import type { AppliedReviewItem } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
@@ -73,7 +73,7 @@ export function createApplyTreeOperations(input: {
   async function apply(click: {
     branchId: BranchId;
     userId: UserId;
-    commandId: DocumentCommandId;
+    commandId: CommandId;
     restore: boolean;
     items: readonly TreeApplyItem[];
   }): Promise<TreeApplyOutcome> {
@@ -248,7 +248,7 @@ export function createApplyTreeOperations(input: {
    * The journal rows each created document has once the command's text is in: Un-Apply refuses
    * as `gone` when one has more (`textWrittenSince`).
    */
-  async function recordCreatedHeads(commandId: DocumentCommandId): Promise<void> {
+  async function recordCreatedHeads(commandId: CommandId): Promise<void> {
     const tx = currentDrizzleDb(input.db);
     const rows = await tx
       .select({ scope: applyCommandTrees.scope, heads: applyCommandTrees.createdHeads })

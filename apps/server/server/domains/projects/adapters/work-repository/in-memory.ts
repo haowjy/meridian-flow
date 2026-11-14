@@ -266,6 +266,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       });
     },
 
+    async lockRestoreNamespaces(): Promise<void> {},
     async restore(id: WorkId): Promise<WorkRestoration> {
       return repo.transaction(async () => {
         const row = rows.get(id);

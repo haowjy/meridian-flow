@@ -149,9 +149,9 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
     case "discarded":
       return t`Discarded`;
     case "already_undone":
-      return t`Already undone`;
+      return t`Taken out`;
     case "already_redone":
-      return t`Already redone`;
+      return t`Put back`;
     case "deleted_since":
       return t`Deleted since`;
     case "moved_since":

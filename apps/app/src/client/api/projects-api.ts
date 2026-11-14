@@ -8,6 +8,7 @@
  * state (that's React Query).
  */
 
+import type { CommandBody } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ContextSourcesResult,
@@ -20,9 +21,6 @@ import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
   apiProjectContextCopyPath,
-  apiProjectContextCreateFolderPath,
-  apiProjectContextCreateUntitledPath,
-  apiProjectContextEntryDeletePath,
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextSourcesPath,
@@ -34,24 +32,15 @@ import {
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
-  type CreateContextFolderRequest,
-  type CreateContextFolderResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
-  type CreateUntitledContextDocumentAnswer,
-  type CreateUntitledContextDocumentRequest,
   contextReadResponseSchema,
-  type DeleteContextEntryRequest,
-  type DeleteContextEntryResult,
-  deleteContextEntryResultSchema,
   type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ProjectContextRequestOptions,
-  type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
@@ -70,6 +59,11 @@ type RequestInitOptions = {
   keepalive?: boolean;
   signal?: AbortSignal;
 };
+
+/** A command's body carries a fresh id per request, minted here once the caller has decided to send. */
+function withCommandId<T extends object>(data: T): CommandBody<T> {
+  return { ...data, commandId: crypto.randomUUID() };
+}
 
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
@@ -134,7 +128,7 @@ export function createProjectWork(
   data: CreateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
+  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), withCommandId(data), {
     headers: init?.headers,
     schema: workSchema,
     signal: init?.signal,
@@ -146,7 +140,7 @@ export function updateWork(
   data: UpdateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, {
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), withCommandId(data), {
     headers: init?.headers,
     schema: workSchema,
     signal: init?.signal,
@@ -154,31 +148,34 @@ export function updateWork(
 }
 
 export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/archive`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/archive`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 export function unarchiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/unarchive`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/unarchive`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 export function deleteWork(workId: string, init?: RequestInitOptions): Promise<void> {
-  return deleteRequest(urlFor(`/api/works/${workId}`, init), { signal: init?.signal });
+  return deleteRequest(urlFor(`/api/works/${workId}`, init), {
+    body: withCommandId({}),
+    signal: init?.signal,
+  });
 }
 
 export function restoreWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(
-    urlFor(`/api/works/${workId}/restore`, init),
-    {},
-    { headers: init?.headers, schema: workSchema, signal: init?.signal },
-  );
+  return postJson<Work>(urlFor(`/api/works/${workId}/restore`, init), withCommandId({}), {
+    headers: init?.headers,
+    schema: workSchema,
+    signal: init?.signal,
+  });
 }
 
 /** Reading an owned project also completes idempotent default-package seeding. */
@@ -246,7 +243,7 @@ export async function createProject(
   data: CreateProjectRequest,
   init?: RequestInitOptions,
 ): Promise<CreateProjectResponse> {
-  return postJson<CreateProjectResponse>(urlFor(API_PROJECTS_PATH, init), data, {
+  return postJson<CreateProjectResponse>(urlFor(API_PROJECTS_PATH, init), withCommandId(data), {
     headers: init?.headers,
   });
 }
@@ -258,62 +255,6 @@ export async function createProjectThread(
 ): Promise<CreateThreadResponse> {
   return postJson<CreateThreadResponse>(urlFor(apiProjectThreadsPath(projectId), init), data, {
     schema: threadSchema,
-    headers: init?.headers,
-    signal: init?.signal,
-  });
-}
-
-function acceptsContextConflict(status: number, payload: unknown): boolean {
-  return (
-    status === 409 &&
-    payload !== null &&
-    typeof payload === "object" &&
-    "status" in payload &&
-    payload.status === "conflict"
-  );
-}
-
-export async function createUntitledContextDocument(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: CreateUntitledContextDocumentRequest,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateUntitledContextDocumentAnswer> {
-  const response = await postJson<CreateUntitledContextDocumentAnswer>(
-    urlFor(apiProjectContextCreateUntitledPath(projectId, scheme, opts), init),
-    body,
-    {
-      acceptErrorResponse: acceptsContextConflict,
-      headers: init?.headers,
-      signal: init?.signal,
-    },
-  );
-  if (response.status === "conflict") return response;
-  if (response.status === "joined")
-    return {
-      ...response,
-      address: {
-        ...response.address,
-        path: response.address.path.startsWith("/")
-          ? response.address.path
-          : `/${response.address.path}`,
-      },
-    };
-  return {
-    ...response,
-    path: response.path.startsWith("/") ? response.path : `/${response.path}`,
-  };
-}
-export async function createContextFolder(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: CreateContextFolderRequest,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateContextFolderResponse> {
-  return postJson(urlFor(apiProjectContextCreateFolderPath(projectId, scheme, opts), init), body, {
-    acceptErrorResponse: acceptsContextConflict,
     headers: init?.headers,
     signal: init?.signal,
   });
@@ -372,23 +313,6 @@ export function getTrashedDocument(
       init,
     ),
     { headers: init?.headers, signal: init?.signal },
-  );
-}
-
-export async function deleteContextEntry(
-  projectId: string,
-  entryId: string,
-  body: DeleteContextEntryRequest,
-  init?: RequestInitOptions,
-): Promise<DeleteContextEntryResult> {
-  return postJson<DeleteContextEntryResult>(
-    urlFor(apiProjectContextEntryDeletePath(projectId, entryId), init),
-    body,
-    {
-      headers: init?.headers,
-      schema: deleteContextEntryResultSchema,
-      signal: init?.signal,
-    },
   );
 }
 

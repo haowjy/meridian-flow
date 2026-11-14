@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { BranchId, DocumentCommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -33,8 +33,8 @@ import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
+import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import { createDrizzleApplyClick } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./adapters/drizzle-branch-discard.js";
 import {
@@ -46,11 +46,13 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
+import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createApplyClickService } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
+import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createUndoDiscardService } from "./domain/undo-discard.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -72,7 +74,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     /** A Discard is a command: its claim, and the answer it stores. */
     const asCommand = () => ({
       envelope: {
-        commandId: randomUUID() as DocumentCommandId,
+        commandId: randomUUID() as CommandId,
         accountId: USER,
         projectId: PROJECT as never,
         kind: "discard" as const,
@@ -80,7 +82,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       },
       result: () => ({ status: "discarded", branchId }) as DiscardCommandResult,
     });
-    const workProjection = createTestWorkProjectionMutation(db);
+    /** The owners the boundary woke at commit: what another tab's list is told to read again. */
+    const woken: string[] = [];
+    const workProjection = createWorkProjectionMutation({
+      db,
+      draftOwnerHints: {
+        publishDraftOwnerHints: (hints) => woken.push(...hints.map((hint) => hint.owner)),
+      },
+      pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    });
     const workBranches = createBranches({
       store: createDrizzleBranchStore(db),
       boundary: createDrizzleBranchWriteBoundary(db, workProjection),
@@ -127,18 +137,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         branches: workBranches,
         treeLists,
-        // A closed draft's committed state, which is all a copy of it reads.
-        coordinator: { loadBase: loadDraftState },
+        close: draftClose,
       }),
     });
 
     const viewOf = () => ({ draft: branchId as string });
-    async function loadDraftState(draftId: string) {
-      const [row] = await db.select().from(documentDrafts).where(eq(documentDrafts.id, draftId));
-      const doc = new Y.Doc({ gc: false });
-      Y.applyUpdate(doc, new Uint8Array(row?.state ?? []));
-      return { replica: { doc } } as never;
-    }
     // The account's list sorts before the project's: a path that takes the project's key first
     // and the account's later is the one that can deadlock.
     let ACCOUNT_LIST = "";
@@ -213,7 +216,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelope(commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
+            commandId: commandId as CommandId,
             items: nodes.map(([node, revision]) => ({ node, tree: { revision } })),
             ...(restore ? { restore: true as const } : {}),
           },
@@ -512,7 +515,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     describe("commands over the tree half", () => {
       const envelopeOf = (kind: "apply" | "unapply" | "undo_discard", commandId: string) => ({
-        commandId: commandId as DocumentCommandId,
+        commandId: commandId as CommandId,
         accountId: USER,
         projectId: PROJECT as never,
         kind,
@@ -525,7 +528,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelopeOf("apply", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
+            commandId: commandId as CommandId,
             items: nodes.map((node) => ({ node, tree: { revision: revisions.get(node) ?? null } })),
           },
         });
@@ -536,8 +539,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           userId: USER,
           envelope: envelopeOf("undo_discard", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
-            discardCommandId: discardCommandId as DocumentCommandId,
+            commandId: commandId as CommandId,
+            discardCommandId: discardCommandId as CommandId,
           },
         });
       /** A Work draft of the document holding `text`: what a closed draft keeps after a Discard. */
@@ -555,6 +558,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         });
         return id;
       }
+      const workRow = async () => {
+        const [row] = await db.select().from(works).where(eq(works.id, WORK));
+        return {
+          pendingDocumentCount: row?.pendingDocumentCount,
+          entityRevision: Number(row?.entityRevision),
+        };
+      };
       const draftsOn = (documentId: DocumentId, on: string, status: "active" | "closed") =>
         db
           .select()
@@ -571,8 +581,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelopeOf("unapply", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
-            applyCommandId: applyCommandId as DocumentCommandId,
+            commandId: commandId as CommandId,
+            applyCommandId: applyCommandId as CommandId,
           },
         });
       }
@@ -685,10 +695,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       // Guards: a Discard's Undo that restored the tree records and left the closed drafts'
       // text behind (a restored chapter applied empty; a text-only Discard answered
       // `superseded`).
-      it("Undo of a Discard copies the closed text drafts back too, once, text-only or whole", async () => {
+      it("Restore reopens the closed draft as the same row, swaps a newer one in, and a late retirement leaves it alone", async () => {
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
         const kept = await draftOf(a, "the writer's paragraph");
-        const [before] = await db.select().from(documentDrafts).where(eq(documentDrafts.id, kept));
         const part = asCommand();
         await discard.discardItems({
           branchId,
@@ -698,25 +707,87 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         });
         expect(await draftsOn(a, branchId, "active")).toHaveLength(0);
 
-        // A text-only Discard has no tree records; its Undo brings the text back.
-        expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "restored",
-          branchId,
-          restored: 1,
-          leftOut: 0,
+        // The Work drafts the document again; the restore closes that draft under itself.
+        const newer = await draftOf(a, "typed after the discard");
+        // It counts as pending, as the effect projection would judge it.
+        await db
+          .update(documentDrafts)
+          .set({ hasEffect: true })
+          .where(eq(documentDrafts.id, newer));
+        await workProjection.mutate({ works: [WORK as never] }, async () => undefined);
+        const beforeSwap = await workRow();
+        woken.length = 0;
+        const first = await undo(part.envelope.commandId);
+        expect(first).toMatchObject({ status: "restored", branchId, restored: 1, swapped: 1 });
+        // One draft closed and one reopened: the count stays, the current draft changed.
+        const afterSwap = await workRow();
+        expect(afterSwap.pendingDocumentCount).toBe(beforeSwap.pendingDocumentCount);
+        expect(afterSwap.entityRevision).toBe(beforeSwap.entityRevision + 1);
+        expect(woken).toContain(`work:${WORK}`);
+        const [reopened] = await draftsOn(a, branchId, "active");
+        expect(reopened).toMatchObject({ id: kept, closedBy: null, closedCause: null });
+        const [swappedOut] = await db
+          .select()
+          .from(documentDrafts)
+          .where(eq(documentDrafts.id, newer));
+        expect(swappedOut).toMatchObject({
+          status: "closed",
+          closedBy: (first as { commandId: string }).commandId,
         });
-        const [copy] = await draftsOn(a, branchId, "active");
-        expect(copy?.id).not.toBe(kept);
-        expect(copy?.state.equals(before?.state ?? Buffer.alloc(0))).toBe(true);
+
+        // Nothing is left to take from the entry, and a retirement of the Discard that runs now
+        // finds the draft reopened and closes no room.
         expect(await undo(part.envelope.commandId)).toMatchObject({
           status: "refused",
           reason: "already_restored",
+        });
+        const closedRooms: string[] = [];
+        await createDraftRetirement({
+          closeDraftRoom: (draftId) => closedRooms.push(draftId),
+          closeRemovedRooms: async () => {},
+          stillClosedBy: (drafts) => draftsStillClosedBy(db, drafts),
+        })({
+          closed: [
+            {
+              draftId: kept,
+              documentId: a,
+              cause: "edit_discarded",
+              by: part.envelope.commandId,
+            },
+            {
+              draftId: newer,
+              documentId: a,
+              cause: "edit_discarded",
+              by: (first as { commandId: string }).commandId,
+            },
+          ],
+          removed: new Map(),
+        });
+        expect(closedRooms).toEqual([newer]);
+
+        // Restoring the restore's own entry swaps the text back.
+        const back = await undo((first as { commandId: string }).commandId);
+        expect(back).toMatchObject({ status: "restored", restored: 1, swapped: 1 });
+        expect((await draftsOn(a, branchId, "active")).map((row) => row.id)).toEqual([newer]);
+
+        // A restore turned away by the Work's state is a final answer: stored, and replayed
+        // after the Work is unarchived.
+        await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
+        const turnedAway = randomUUID();
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject({
+          status: "refused",
+          reason: "work_archived",
+        });
+        await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
+        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject({
+          status: "refused",
+          reason: "work_archived",
         });
 
         // A whole Discard with a tree record and a text draft: both come back on the new branch.
         const b = (await seed.document(SOURCE, "beta.md")) as DocumentId;
         await submit((writer) => writer.rename(viewOf(), AGENT, b, "beta two"));
-        await draftOf(b, "beta text");
+        const betaDraft = await draftOf(b, "beta text");
         const whole = asCommand();
         await discard.discardItems({
           branchId,
@@ -728,8 +799,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(restored).toMatchObject({ status: "restored", restored: 3 });
         if (restored.status !== "restored") return;
         expect(restored.branchId).not.toBe(branchId);
-        expect(await draftsOn(a, restored.branchId, "active")).toHaveLength(1);
-        expect(await draftsOn(b, restored.branchId, "active")).toHaveLength(1);
+        expect((await draftsOn(a, restored.branchId, "active")).map((row) => row.id)).toEqual([
+          newer,
+        ]);
+        expect((await draftsOn(b, restored.branchId, "active")).map((row) => row.id)).toEqual([
+          betaDraft,
+        ]);
         expect(
           (
             await db

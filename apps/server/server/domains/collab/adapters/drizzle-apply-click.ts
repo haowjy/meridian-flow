@@ -63,7 +63,7 @@ import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
-import { runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -283,17 +283,19 @@ export function createDrizzleApplyClick(
       const applyCommandId = command.request.applyCommandId;
       const by = `user:${command.envelope.accountId}`;
       const closed = (): UnapplyClickResult => ({ status: "closed", commandId });
-      const unapplyRefusal = (cause: unknown): UnapplyClickResult | undefined =>
-        cause instanceof TreeRefusal
+      const unapplyRefusal = (raised: unknown): UnapplyClickResult | undefined => {
+        const cause = asLifecycleRefusal(raised);
+        return cause instanceof TreeRefusal
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof ApplyClickRefused
             ? { status: "refused", commandId }
             : cause instanceof DraftStaleUpdateError
               ? closed()
               : undefined;
+      };
       const lives: Y.Doc[] = [];
       try {
-        return await runCommand(
+        return await runDocumentCommand(
           db,
           command.envelope,
           () =>
@@ -548,8 +550,6 @@ export function createDrizzleApplyClick(
             ),
           unapplyRefusal,
         );
-      } catch (cause) {
-        throw asLifecycleRefusal(cause);
       } finally {
         for (const live of lives) live.destroy();
       }
@@ -560,18 +560,20 @@ export function createDrizzleApplyClick(
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
       const closed = (): ApplyClickResult => ({ status: "closed", commandId });
-      const applyRefusal = (cause: unknown): ApplyClickResult | undefined =>
-        cause instanceof ApplyClickRefused
+      const applyRefusal = (raised: unknown): ApplyClickResult | undefined => {
+        const cause = asLifecycleRefusal(raised);
+        return cause instanceof ApplyClickRefused
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof DraftStaleUpdateError
             ? closed()
             : undefined;
+      };
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
       try {
         return await applyTiming.run({ commandId, measured: deps.measured }, () =>
-          runCommand(
+          runDocumentCommand(
             db,
             envelope,
             async (): Promise<ApplyClickResult> => {
@@ -644,8 +646,6 @@ export function createDrizzleApplyClick(
             applyRefusal,
           ),
         );
-      } catch (cause) {
-        throw asLifecycleRefusal(cause);
       } finally {
         deps.measured({
           commandId,
