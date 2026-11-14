@@ -215,7 +215,9 @@ try {
     await live(s, [quote("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     const result = await read(s);
-    assert.equal(result.length, 1);
+    // Live wrapped the paragraph in a quote with a new id, so the quote and the draft's paragraph are
+    // two blocks until a quote is an attribute of its paragraph (flat PR 3). Neither loses typing.
+    assert.equal(result.length, 2);
     once(result, "writerPending");
     once(result, "agentPending");
   });
