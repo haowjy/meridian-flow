@@ -444,6 +444,15 @@ try {
     },
   );
 
+  await check("a stray line above the frontmatter makes the Agent unavailable", async () => {
+    levels.write("user", "agents/critic.md", `stray\n${agent("Critic", "permission: read\n")}`);
+    const item = await listed("critic");
+    assert.equal(item.level, "user");
+    assert.deepEqual(item.shadows, ["builtin"]);
+    assert.match(item.unavailableReasons.join("\n"), /no frontmatter/);
+    levels.remove("user", "agents/critic.md");
+  });
+
   await check("two packages bringing one name rename both and hold the bare name", async () => {
     for (const pkg of ["pa", "pb"]) {
       levels.write("user", `packages/${pkg}/mars.toml`, MANIFEST);
