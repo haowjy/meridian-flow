@@ -138,7 +138,7 @@ export interface AgentEditModel extends DocumentModel {
    * Apply operations to one top-level block, addressed on its state before any of them.
    * Every path and offset is checked before anything changes; a write that does not fit
    * the block fails and leaves it as it was. An edited block keeps its element and its id;
-   * an inserted node takes a new id.
+   * an inserted node keeps an id it already has and takes a new one otherwise.
    */
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
 

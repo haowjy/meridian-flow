@@ -2,9 +2,9 @@
  * Block correspondence: for two versions of a sequence of blocks (top-level blocks, a quote's
  * paragraphs, a table's rows, the atoms of a paragraph), which old block each new block is.
  *
- * Two ways to answer. The content merge asks by id (`byId`): blocks carry a permanent `id`, so a block
- * is the block with the same id, whatever was done to its text. The rest ask without: the model's
- * write (its Markdown has no ids), the Yjs writer, review, and a block with no id. That is guess
+ * Two ways to answer. The content merge, the Yjs writer and review ask by id (`byId`): blocks carry a
+ * permanent `id`, so a block is the block with the same id, whatever was done to its text. The rest
+ * ask without: the model's write (its Markdown has no ids) and a block with no id. That is guess
  * mode: an unmade pairing costs the writer a deleted and an inserted block, and a wrong one costs a
  * block edited into another. Guess-mode pairs are in order, and only blocks of one type pair,
  * because one element cannot change its type.

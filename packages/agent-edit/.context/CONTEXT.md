@@ -63,8 +63,8 @@ still too large pairs nothing new: never by position, never by weak overlap, and
 budget remove a pair the cut found. An unpaired block is deleted or inserted, and nothing else
 rebuilds an element. Inside a block the model's write and the Yjs writer share one lowering
 (`resolver/lower-block.ts`) and one adapter (`applyOps`): a container's children pair here
-too (by id where they have ids), and text is word-diffed as units. The write path has no ids for the blocks it writes (the model writes text), so
-pairing is by content only.
+too (by id where they have ids), and text is word-diffed as units. The model's write carries no ids (it writes text), so its pairing is by
+content only; the Yjs writer and review pair by id.
 
 What this keeps is the element, not every character's author: an image or break inserted
 inside a text run copies the text after it into a new run, so those characters change
