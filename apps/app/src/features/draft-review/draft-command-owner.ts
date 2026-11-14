@@ -525,19 +525,9 @@ export class DraftCommandOwner {
       void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
   }
 
-  /**
-   * A room nothing shows still holds typing the server hasn't taken: keep observing it, so a
-   * close that ends it (another device's Discard) still leaves the writer the text.
-   */
-  private holdsUnsentEdits(entry: Entry): boolean {
-    const session = entry.binding?.session;
-    return !!session && session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
-  }
-
   private releaseIdle(entry: Entry) {
     if (
       entry.users ||
-      this.holdsUnsentEdits(entry) ||
       this.textClicks(entry).length ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId) ||
       this.entries.get(entry.draftId) !== entry
