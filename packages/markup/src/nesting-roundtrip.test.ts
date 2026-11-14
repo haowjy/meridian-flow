@@ -4,8 +4,7 @@
  * cannot be written or read back.
  *
  * A block that opens two lists at once (`- - text`) has no block for the outer item, so the
- * first read adds an empty paragraph for it; the check starts from the first read. Quote steps
- * (`>`) join the generator when `blockquote` stops being a node.
+ * first read adds an empty paragraph for it; the check starts from the first read.
  */
 import { describe, expect, it } from "vitest";
 import { components, schema, t } from "./codec-test-support.js";
@@ -28,7 +27,7 @@ function randomBlocks(random: () => number) {
   return Array.from({ length: count }, (_, index) => {
     let path = "";
     for (let depth = Math.floor(random() * 4); depth > 0; depth--) {
-      path += (random() < 0.15 ? "|" : "") + "-";
+      path += (random() < 0.15 ? "|" : "") + (random() < 0.3 ? ">" : "-");
     }
     const nesting = {
       path: path || null,

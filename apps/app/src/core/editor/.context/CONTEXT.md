@@ -383,9 +383,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   textblock, a node move and a `CellSelection` still use `deleteSelection`.
   Several carried lines land at a gap: before the landing textblock at its start,
   after it at its end, or at a split inside it. The slice closes into blocks and
-  ProseMirror fits those blocks where the schema requires it. List items are sibling
-  blocks and keep their order and their depth relative to each other; a partly dropped item
-  stays an item, and the run is nested where it lands like a paste (below). A whole top-level textblock keeps its type; a top-level
+  ProseMirror fits those blocks where the schema requires it. List items and quoted blocks are
+  sibling blocks and keep their order and their depth relative to each other; a partly dropped
+  item stays an item, a partly dropped quote stays quoted, and the run is nested where it lands
+  like a paste (below). A whole top-level textblock keeps its type; a top-level
   textblock cut by the source selection takes the landing's type, and a cut last
   block joins the landing's tail. This applies to copies because the door reads
   their source selection too. A slice from outside has no source selection and
@@ -407,7 +408,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   description (a hidden element named by `aria-describedby`) says so; there is
   no visible hint.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
-- **Lists are attributes** (`extensions/nesting/`, rules in the flat model design section 4).
+- **Lists and quotes are attributes** (`extensions/nesting/`, rules in the flat model design
+  section 4). A quote is a `>` step in a block's `path`: `toggleQuote` (toolbar, block menu, slash
+  menu, Mod-Shift-b) puts the selected blocks in a quote of their own inside the containers they
+  share (`sharedSteps`), and writes `|` so a quote just above or below stays separate; off takes
+  them out of the innermost quote they share. `> ` quotes one level deeper each time, as Markdown
+  reads it. The draw plugin gives each nested block its indent, its marker's offset and one bar
+  per quote; blocks of one quote meet through padding, so a bar runs unbroken.
   Enter, Backspace and Mod-Enter register on the kernel at `document` scope, narrowed to
   prose in the document or a cell, and decline wherever ProseMirror's own key is right; an
   open menu's Enter outranks them. Enter splits with the block's nesting (no `|`, no
@@ -418,8 +425,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   kind and task state. A copy detaches its blocks (`copiedSlice`), and words from inside one
   block carry no list. Clipboard HTML is nested on the way out (`NestingDOMSerializer`, the
   serializer the link clipboard plugin owns) and flattened on the way in (`flattenDom`,
-  inside the paste sanitizer, before it drops list elements; only the `data-` values it
-  writes survive). A pasted item replaces an empty line instead of merging into it.
+  inside the paste sanitizer, before it drops list and quote elements; only the `data-`
+  values it writes survive). Pasted lists merge with a list beside them; two pasted quotes in a
+  row stay two (`|>`). A pasted item replaces an empty line instead of merging into it.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

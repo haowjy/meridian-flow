@@ -28,11 +28,7 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
     const text = i < 0 ? "" : part.slice(i + 1);
     if (kind === "hr") return schema.nodes.horizontal_rule.create();
     if (kind === "fig") return schema.nodes.figure.create({ src: `asset:${text}`, alt: text });
-    if (kind === "quote")
-      return schema.nodes.blockquote.create(
-        null,
-        schema.nodes.paragraph.create(null, inline(schema, text)),
-      );
+    if (kind === "quote") return schema.nodes.paragraph.create({ path: ">" }, inline(schema, text));
     if (kind === "list")
       return text
         .split(";")
@@ -84,7 +80,7 @@ export function render(blocks: readonly PMNode[]): string {
 function renderBlock(b: PMNode): string {
   if (b.type.name === "horizontal_rule") return "hr";
   if (b.type.name === "figure") return `fig:${b.attrs.alt}`;
-  if (b.type.name === "blockquote") return `quote:${b.textContent}`;
+  if (b.type.name === "paragraph" && b.attrs.path === ">") return `quote:${b.textContent}`;
   let t = "";
   b.forEach((n) => {
     const em = n.marks.some((m) => m.type.name === "em");

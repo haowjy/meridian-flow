@@ -1,7 +1,7 @@
 /**
- * Lists on the way out: each block's own Markdown, prefixed line by line with the quotes
- * and list levels `nest` reads for it, and the gap that separates it from the block before.
- * The marker and spacing rules are the ones `mdast-util-to-markdown` applies to lists.
+ * Quotes and lists on the way out: each block's own Markdown, prefixed line by line with the
+ * quotes and list levels `nest` reads for it, and the gap that separates it from the block
+ * before. The marker and spacing rules are the ones `mdast-util-to-markdown` applies to lists.
  */
 import {
   type BlockFacts,
@@ -13,12 +13,13 @@ import type { Node as PMNode } from "prosemirror-model";
 
 export type SerializedBlock = { body: string; gap: string };
 
-/** `bodies[i]` is `blocks[i]` on its own, with no trailing newline. */
+/** `bodyOf` gives a block's own Markdown, with no trailing newline, from where `nest` reads it. */
 export function serializeNested(
   blocks: readonly PMNode[],
-  bodies: readonly string[],
+  bodyOf: (block: PMNode, facts: BlockFacts) => string,
 ): SerializedBlock[] {
   const facts = nestNodes(blocks);
+  const bodies = blocks.map((block, index) => bodyOf(block, facts[index]));
   const delimiters = new Map<ListFacts, string>();
   const ruleLists = new Set<ListFacts>();
   facts.forEach((block, index) => {
@@ -123,6 +124,5 @@ function joinsDirectly(
   const name = block.type.name;
   if (name === "code_block") return true;
   if (name === "paragraph" && block.attrs.level != null) return true;
-  if (name === "blockquote") return type !== "blockquote";
   return body.startsWith("<table>");
 }

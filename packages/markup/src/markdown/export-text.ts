@@ -6,24 +6,20 @@ import { defaultHandlers, type Handle } from "mdast-util-to-markdown";
 import type { MdastText } from "../ast.js";
 
 type Span = { start: number; end: number };
-type Parent = { type: string; children?: readonly { type: string }[] };
 
 const WIKILINK = /!?\[\[([^[\]\r\n]+)\]\]/g;
 const FOOTNOTE = /\[\^[^[\]\s\\]+\]/g;
 const CALLOUT = /^\[![\w-]+\]/;
 
 /**
- * Text nodes that open a blockquote's first line. The text handler has no
- * ancestor chain, so the blockquote handler records them on the way down.
+ * Text nodes that open a quote's first line. The text handler has no ancestor chain, and a
+ * quote is a step in its blocks' nesting, so the paragraph codec records them.
  */
 const calloutLeads = new WeakSet<object>();
 
-export const exportBlockquote: Handle = (node, parent, state, info) => {
-  const first = (node as Parent).children?.[0] as Parent | undefined;
-  const lead = first?.type === "paragraph" ? first.children?.[0] : undefined;
-  if (lead?.type === "text") calloutLeads.add(lead);
-  return defaultHandlers.blockquote(node, parent, state, info);
-};
+export function markQuoteLead(node: object | undefined): void {
+  if ((node as { type?: string } | undefined)?.type === "text") calloutLeads.add(node as object);
+}
 
 export const exportText: Handle = (node, parent, state, info) => {
   const value = (node as MdastText).value;

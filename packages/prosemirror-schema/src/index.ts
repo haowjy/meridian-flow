@@ -81,7 +81,6 @@ const blockAttrs = { id: idAttr, ...nestingAttrs };
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
-  blockquote: { ...specOnly(basicNodes.blockquote), attrs: blockAttrs },
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;

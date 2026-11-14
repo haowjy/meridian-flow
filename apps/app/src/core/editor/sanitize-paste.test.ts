@@ -36,7 +36,7 @@ describe("sanitizePastedHTML", () => {
     `);
 
     expect(sanitized).toContain("<h2><strong>Heading</strong> <em>emphasis</em></h2>");
-    expect(sanitized).toContain("<blockquote><p>Quote</p></blockquote>");
+    expect(sanitized).toContain('<p data-path=">">Quote</p>');
     expect(sanitized).toContain(
       '<p data-path="-" data-marker="item">one</p><p data-path="-" data-kind="ordered" data-marker="item">two</p>',
     );

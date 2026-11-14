@@ -23,12 +23,7 @@ const ALIGNMENTS = new Set(["left", "center", "right"]);
 const DELEGATED_BLOCK_ELEMENT = "meridian-block";
 const DELEGATED_BLOCK_KIND_ATTRIBUTE = "kind";
 const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
-const NATIVE_CELL_BLOCK_KINDS = new Set([
-  "paragraph",
-  "blockquote",
-  "code_block",
-  "horizontal_rule",
-]);
+const NATIVE_CELL_BLOCK_KINDS = new Set(["paragraph", "code_block", "horizontal_rule"]);
 const NOT_NESTED: FlatBlock<null> = {
   value: null,
   path: null,
@@ -103,7 +98,7 @@ function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): strin
   return lines;
 }
 
-/** A cell's (or quote's) blocks, grouped back into `ul`, `ol` and `li` by where each sits. */
+/** A cell's blocks, grouped back into `blockquote`, `ul`, `ol` and `li` by where each sits. */
 function serializeCellBlocks(parent: PMNode, ctx: SerializeContext, indent: string): string[] {
   const blocks: PMNode[] = [];
   parent.forEach((block) => {
@@ -147,12 +142,6 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
         )}</${tag}>`,
       ];
     }
-    case "blockquote":
-      return [
-        `${indent}<blockquote>`,
-        ...serializeCellBlocks(block, ctx, `${indent}  `),
-        `${indent}</blockquote>`,
-      ];
     case "code_block": {
       const language = block.attrs.language;
       if (language !== null && typeof language !== "string") {
@@ -237,6 +226,11 @@ function parseTableElement(table: HtmlElement, ctx: ParseContext): PMNode | null
 
 function parseCellSource(element: HtmlElement, ctx: ParseContext): Source<PMNode> | null {
   if (element.name === "ul" || element.name === "ol") return parseList(element, ctx);
+  if (element.name === "blockquote") {
+    if (element.attributes.size !== 0) return null;
+    const children = parseContainerSources(element, ctx);
+    return children && { type: "quote", children };
+  }
   const block = parseCellBlock(element, ctx);
   return block && { type: "leaf", value: block };
 }
@@ -248,11 +242,6 @@ function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null 
     const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
     const level = element.name === "p" ? null : Number(element.name[1]);
     return inline ? ctx.schema.node("paragraph", { align, level }, inline) : null;
-  }
-  if (element.name === "blockquote") {
-    if (element.attributes.size !== 0) return null;
-    const children = parseBlockContainer(element, ctx);
-    return children ? ctx.schema.node("blockquote", null, children) : null;
   }
   if (element.name === "pre") return parseCodeBlock(element, ctx);
   if (element.name === "hr") {
@@ -290,7 +279,7 @@ function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNod
   return block?.isBlock && block.type.name === kind ? block : null;
 }
 
-/** The blocks of a cell, quote or item, with any lists inside flattened onto the blocks. */
+/** The blocks of a cell, with any quotes and lists inside flattened onto the blocks. */
 function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
   const sources = parseContainerSources(element, ctx);
   return sources && flattenBlocks(sources, ctx);

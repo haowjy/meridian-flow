@@ -29,7 +29,9 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 const schema = buildDocumentSchema();
 const paragraph = (text: string) =>
   schema.nodes.paragraph.create({ id: "p" }, text ? schema.text(text) : null);
-const quote = (text: string) => schema.nodes.blockquote.create({ id: "q" }, paragraph(text));
+// A quote is the same block with a `>` step: wrapping keeps its element and its id.
+const quote = (text: string) =>
+  schema.nodes.paragraph.create({ id: "p", path: ">" }, text ? schema.text(text) : null);
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
 const docs: Y.Doc[] = [];
@@ -231,7 +233,7 @@ try {
     const result = await read(s);
     assert.equal(result.length, 2);
     once(result, "lateAB");
-    assert.equal(result.filter((node) => node.type.name === "blockquote").length, 1);
+    assert.equal(result.filter((node) => node.attrs.path === ">").length, 1);
     assert.equal((await writer(s, Y.encodeStateAsUpdate(stale))).admitted, false);
   });
   await row("deletion-only-late-frame-advances-span-memory", async () => {

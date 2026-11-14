@@ -278,7 +278,7 @@ function blocksAtLanding(
     const { $from, $to } = selection;
     if ($from.depth === 1 && $from.parent.isTextblock) {
       if ($from.parentOffset === $from.parent.content.size) nodes.shift();
-      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock && !isListed(nodes[0]))
+      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock && !isNested(nodes[0]))
         nodes[0] = retype(nodes[0], landingBlock);
     }
     if ($to.depth === 1 && $to.parent.isTextblock) {
@@ -286,7 +286,7 @@ function blocksAtLanding(
       else if (
         $to.parentOffset < $to.parent.content.size &&
         nodes.at(-1)?.isTextblock &&
-        !isListed(nodes.at(-1) as PMNode)
+        !isNested(nodes.at(-1) as PMNode)
       ) {
         nodes[nodes.length - 1] = retype(nodes.at(-1) as PMNode, landingBlock);
         joinsTail = true;
@@ -311,9 +311,9 @@ function blocksAtLanding(
   return { slice: new Slice(content, 0, 0), joinsTail };
 }
 
-/** A list item keeps being one when part of it is dropped; only plain text takes the landing block's type. */
-function isListed(node: PMNode): boolean {
-  return typeof node.attrs.path === "string" && node.attrs.path.includes("-");
+/** A list item or quoted block keeps its place when part of it is dropped; only plain text takes the landing block's type. */
+function isNested(node: PMNode): boolean {
+  return typeof node.attrs.path === "string" && /[->]/.test(node.attrs.path);
 }
 
 function retype(node: PMNode, landingBlock: PMNode): PMNode {

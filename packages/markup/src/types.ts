@@ -54,6 +54,8 @@ export interface ParsedContentWithSpans extends ParsedContent {
 export interface SerializeContext {
   schema: Schema;
   links: DocumentLinkScope;
+  /** The block is the first of a quote, where export keeps a callout's `[!type]` literal. */
+  leadsQuote?: boolean;
 }
 
 /** Context threaded through block/mark parse calls. */

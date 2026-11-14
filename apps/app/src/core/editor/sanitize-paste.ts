@@ -32,7 +32,6 @@ const ELEMENT_NAMES = new Map<string, string>([
   ["h4", "h4"],
   ["h5", "h5"],
   ["h6", "h6"],
-  ["blockquote", "blockquote"],
   ["pre", "pre"],
   ["code", "code"],
   ["table", "table"],
@@ -62,8 +61,8 @@ export function sanitizePastedHTML(html: string): string {
   const source = parser.parseFromString(html, "text/html");
   const output = document.implementation.createHTMLDocument("");
 
-  // Lists become blocks that carry their nesting before anything is dropped: the depth,
-  // numbering and task state live on the list elements and attributes this pass removes.
+  // Lists and quotes become blocks that carry their nesting before anything is dropped: the
+  // depth, quotes, numbering and task state live on the elements and attributes this pass removes.
   flattenDom(source.body);
   appendSanitizedChildren(source.body, output.body, output);
   return output.body.innerHTML;
@@ -114,7 +113,7 @@ function declaresNormalWeight(element: Element): boolean {
 
 /** Values `flattenDom` writes, and nothing else. */
 const NESTING_VALUES: Record<string, RegExp> = {
-  "data-path": /^-{1,64}$/,
+  "data-path": /^[-|>]{1,64}$/,
   "data-kind": /^ordered$/,
   "data-marker": /^(item|todo|done)$/,
   "data-start": /^\d{1,9}$/,

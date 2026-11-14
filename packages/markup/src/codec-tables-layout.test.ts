@@ -69,9 +69,7 @@ describe("tables and Layout round-trip corpus", () => {
 
   it("round-trips styled blocks through nested block serializers", () => {
     const originals = [
-      schema.node("blockquote", null, [
-        schema.node("paragraph", { align: "right" }, [t("inside quote")]),
-      ]),
+      schema.node("paragraph", { align: "right", path: ">" }, [t("inside quote")]),
       schema.node("paragraph", { align: "center", path: "-", marker: "item" }, [t("inside list")]),
     ];
 
@@ -257,9 +255,9 @@ describe("tables and Layout round-trip corpus", () => {
       node: listItem({ kind: "ordered", start: 3, loose: true }, t("Third")),
     },
     {
-      block: "blockquote",
+      block: "quote",
       tag: "blockquote",
-      node: schema.node("blockquote", null, [paragraph(t("Quoted"))]),
+      node: schema.node("paragraph", { path: ">" }, [t("Quoted")]),
     },
     {
       block: "code block",
@@ -622,16 +620,17 @@ describe("tables and Layout round-trip corpus", () => {
     return table.type.create(table.attrs, rows);
   }
 
-  const quote = (block: PMNode): PMNode[] => [schema.node("blockquote", null, [block])];
+  const at = (block: PMNode, path: string): PMNode =>
+    block.type.create({ ...block.attrs, path }, block.content);
 
   it.each([
-    { container: "a blockquote", wrap: quote },
+    { container: "a quote", wrap: (table: PMNode): PMNode[] => [at(table, ">")] },
     {
-      container: "a blockquote under an ordered list",
+      container: "a quote under an ordered list",
       wrap: (table: PMNode): PMNode[] => [
         listItem({ kind: "ordered" }, t("outer")),
         schema.node("paragraph", { path: "--", marker: "item" }, [t("inner")]),
-        schema.node("blockquote", { path: "--" }, [table]),
+        at(table, "-->"),
       ],
     },
   ])("keeps HTML cell hard breaks canonical inside $container", ({ wrap }) => {

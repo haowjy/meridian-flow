@@ -190,7 +190,7 @@ function turnIntoIcon(id: BlockTypeId): ReactNode {
       return <List aria-hidden />;
     case "orderedList":
       return <ListOrdered aria-hidden />;
-    case "blockquote":
+    case "quote":
       return <TextQuote aria-hidden />;
     case "codeBlock":
       return <Code aria-hidden />;

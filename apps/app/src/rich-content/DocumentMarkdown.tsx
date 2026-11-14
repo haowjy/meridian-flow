@@ -268,8 +268,6 @@ function renderDocumentNode(
         { style: alignment },
         content,
       );
-    case "blockquote":
-      return <blockquote>{content}</blockquote>;
     case "hard_break":
       return <br />;
     case "horizontal_rule":

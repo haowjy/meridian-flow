@@ -17,14 +17,16 @@ one side and fail on the other, so this package follows the editor's structural 
 
 ## Surface decisions
 
-- Lists are not nodes. Every block in the `block` group carries `path`, `kind`, `marker`,
+- Lists and quotes are not nodes. Every block in the `block` group carries `path`, `kind`, `marker`,
   `start` and `loose` (all default `null`, none validated: the binding deletes an element
   the schema cannot build, so any value must read as something). `nesting.ts` is the one
   reader, `nest`, and is total: it never throws and nothing writes an attribute to repair a
   document. `numberOf` is the one ordered-number rule (0 to 999,999,999, held at the last
   number Markdown can write). `detach` and `landingBase` are the rules for blocks that
   leave their place: a copied or moved run drops the levels outside it, and a moved run
-  keeps its depth, at most one level under the block it lands below.
+  keeps its depth, at most one level under the block it lands below. `sharedSteps` is how many
+  leading steps a run of blocks sits in together, which is where a quote around them goes.
+  Removing the `blockquote` node was collab schema 5.0.0.
 
 - Every block node (the nine that carry nesting, plus `table_row`) has `id`, a permanent
   identity the merge, review and the Yjs writer pair blocks by. It is set once where a block

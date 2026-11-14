@@ -13,7 +13,11 @@ import {
   undoEditorHistory,
 } from "@/core/editor/editor-history";
 import type { HeadingLevel } from "@/core/editor/extensions/meridian-extensions";
-import { selectedSequence, selectionListKind } from "@/core/editor/extensions/nesting";
+import {
+  selectedSequence,
+  selectionIsQuoted,
+  selectionListKind,
+} from "@/core/editor/extensions/nesting";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -77,7 +81,7 @@ export type BlockTypeId =
   | "heading3"
   | "bulletList"
   | "orderedList"
-  | "blockquote"
+  | "quote"
   | "codeBlock";
 
 export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
@@ -87,7 +91,7 @@ export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
   "heading3",
   "bulletList",
   "orderedList",
-  "blockquote",
+  "quote",
   "codeBlock",
 ];
 
@@ -211,7 +215,7 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   const listKind = activeListKind(editor);
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
-  if (editor.isActive("blockquote")) return "blockquote";
+  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
   for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
     if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
   }
@@ -245,8 +249,8 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
       return editor.chain().focus().toggleListKind("bullet").run();
     case "orderedList":
       return editor.chain().focus().toggleListKind("ordered").run();
-    case "blockquote":
-      return editor.chain().focus().toggleBlockquote().run();
+    case "quote":
+      return editor.chain().focus().toggleQuote().run();
     default:
       return editor.chain().focus().toggleCodeBlock().run();
   }

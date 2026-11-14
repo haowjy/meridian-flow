@@ -1,8 +1,9 @@
 /**
- * Lists on the clipboard. Other apps read and write lists as `ul`, `ol` and `li` around
- * blocks; here a list is blocks that carry their nesting. `nestDom` wraps copied blocks in the
- * lists `nestTree` reads from them, and `flattenDom` unwraps pasted lists into blocks that
- * carry `data-` nesting attributes, which the blocks' parse rules read.
+ * Lists and quotes on the clipboard. Other apps read and write them as `ul`, `ol`, `li` and
+ * `blockquote` around blocks; here they are blocks that carry their nesting. `nestDom` wraps
+ * copied blocks in the containers `nestTree` reads from them, and `flattenDom` unwraps pasted
+ * containers into blocks that carry `data-` nesting attributes, which the blocks' parse rules
+ * read.
  */
 import { type NestedNode, nestNodes, nestTree, readPath } from "@meridian/prosemirror-schema";
 import { DOMSerializer, type Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -19,29 +20,39 @@ const BLOCK_ELEMENTS = new Set([
   "h5",
   "h6",
   "pre",
-  "blockquote",
   "table",
   "hr",
   "figure",
   "div",
 ]);
 const LIST_ELEMENTS = new Set(["ul", "ol"]);
-/** Containers whose blocks are a sequence of their own: a path never crosses into them. */
-const SEQUENCE_BOUNDARIES = "blockquote, td, th";
+const CONTAINERS = "ul, ol, blockquote";
+/** Cells hold blocks that are a sequence of their own: a path never crosses into them. */
+const SEQUENCE_BOUNDARIES = "td, th";
 
 type ItemFacts = { ordered: boolean; start: number | null };
+/** Hands a block on with the path it sits at, outermost container first. */
+type Emit = (block: Element, path: string) => void;
 
 function isElement(node: Node, names: ReadonlySet<string>): node is Element {
   return node.nodeType === Node.ELEMENT_NODE && names.has((node as Element).localName);
 }
 
+function isQuote(node: Node): node is Element {
+  return node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === "blockquote";
+}
+
 function isBlank(node: Node): boolean {
-  return node.nodeType === Node.TEXT_NODE && !node.textContent?.trim();
+  return (
+    (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) ||
+    node.nodeType === Node.COMMENT_NODE
+  );
 }
 
 function holdsBlocks(element: Element): boolean {
   return [...element.children].some(
-    (child) => BLOCK_ELEMENTS.has(child.localName) || LIST_ELEMENTS.has(child.localName),
+    (child) =>
+      BLOCK_ELEMENTS.has(child.localName) || LIST_ELEMENTS.has(child.localName) || isQuote(child),
   );
 }
 
@@ -65,14 +76,59 @@ function taskMarker(item: Element): "todo" | "done" | null {
   return null;
 }
 
-function walkList(list: Element, depth: number, out: Element[]): void {
+/**
+ * The blocks among `nodes`, at `path`. Loose words between blocks become a paragraph. A quote
+ * right after a quote starts a new one (`|`), so two quotes stay two.
+ */
+function walkBlocks(nodes: readonly Node[], path: string, emit: Emit, document: Document): void {
+  let inline: Node[] = [];
+  let previous: Node | null = null;
+  const flush = () => {
+    if (inline.some((node) => !isBlank(node))) {
+      const paragraph = document.createElement("p");
+      for (const node of inline) paragraph.appendChild(node);
+      emit(paragraph, path);
+      previous = paragraph;
+    }
+    inline = [];
+  };
+  for (const node of nodes) {
+    if (isCheckbox(node)) continue;
+    if (isElement(node, LIST_ELEMENTS)) {
+      flush();
+      walkList(node, path, emit, document);
+      previous = node;
+    } else if (isQuote(node)) {
+      flush();
+      const fresh = previous !== null && isQuote(previous);
+      let first = true;
+      const quoted: Emit = (block, at) => {
+        emit(block, first && fresh ? `${at.slice(0, path.length)}|${at.slice(path.length)}` : at);
+        first = false;
+      };
+      walkBlocks([...node.childNodes], `${path}>`, quoted, document);
+      // An empty quote still holds a line.
+      if (first) quoted(document.createElement("p"), `${path}>`);
+      previous = node;
+    } else if (isElement(node, BLOCK_ELEMENTS)) {
+      flush();
+      if (node.localName === "div" && holdsBlocks(node)) {
+        walkBlocks([...node.childNodes], path, emit, document);
+      } else emit(node, path);
+      previous = node;
+    } else if (!isBlank(node) || inline.length > 0) inline.push(node);
+  }
+  flush();
+}
+
+function walkList(list: Element, path: string, emit: Emit, document: Document): void {
   const ordered = list.localName === "ol";
   const start = Number(list.getAttribute("start") ?? 1);
   let first = true;
   for (const child of [...list.childNodes]) {
     // `ul > ul`, which some apps write, nests under the item before it.
     if (isElement(child, LIST_ELEMENTS)) {
-      walkList(child, depth + 1, out);
+      walkList(child, `${path}-`, emit, document);
       continue;
     }
     if (isBlank(child)) continue;
@@ -84,7 +140,7 @@ function walkList(list: Element, depth: number, out: Element[]): void {
       ordered,
       start: first && ordered && Number.isInteger(start) && start !== 1 ? start : null,
     };
-    walkItem(item, depth + 1, facts, out);
+    walkItem(item, path, facts, emit, document);
     first = false;
   }
 }
@@ -95,65 +151,49 @@ function wrapIn(node: Node, name: string): Element {
   return wrapper;
 }
 
-function walkItem(item: Element, depth: number, facts: ItemFacts, out: Element[]): void {
-  const document = item.ownerDocument;
+function walkItem(
+  item: Element,
+  path: string,
+  facts: ItemFacts,
+  emit: Emit,
+  document: Document,
+): void {
   // Google Docs writes each item's depth on it, whatever the nesting of the lists around it.
   const level = Number(item.getAttribute("aria-level"));
-  const itemDepth = Number.isInteger(level) && level > 0 ? level : depth;
+  const itemPath =
+    Number.isInteger(level) && level > 0 ? path.replace(/-+$/, "") + "-".repeat(level) : `${path}-`;
   const marker = taskMarker(item) ?? "item";
   let opened = false;
-  let inline: Node[] = [];
-
-  const emit = (block: Element) => {
-    block.setAttribute("data-path", "-".repeat(itemDepth));
+  const own: Emit = (block, at) => {
     if (!opened) {
-      block.setAttribute("data-marker", marker);
-      if (facts.ordered) block.setAttribute("data-kind", "ordered");
-      if (facts.start !== null) block.setAttribute("data-start", String(facts.start));
+      // The item's marker speaks for its own list, so an item whose first block sits in a
+      // deeper list gets an empty paragraph of its own first.
+      const target = at.replaceAll("|", "").slice(itemPath.length).includes("-")
+        ? document.createElement("p")
+        : block;
+      target.setAttribute("data-marker", marker);
+      if (facts.ordered) target.setAttribute("data-kind", "ordered");
+      if (facts.start !== null) target.setAttribute("data-start", String(facts.start));
+      opened = true;
+      if (target !== block) emit(target, itemPath);
     }
-    opened = true;
-    out.push(block);
+    emit(block, at);
   };
-  const flush = () => {
-    if (inline.some((node) => !isBlank(node))) {
-      const paragraph = document.createElement("p");
-      for (const node of inline) paragraph.appendChild(node);
-      emit(paragraph);
-    }
-    inline = [];
-  };
-  const walk = (nodes: Node[]) => {
-    for (const node of nodes) {
-      if (isCheckbox(node)) continue;
-      if (isElement(node, LIST_ELEMENTS)) {
-        flush();
-        // The item's own block comes first, even when it has no words before its children.
-        if (!opened) emit(document.createElement("p"));
-        walkList(node, itemDepth, out);
-      } else if (isElement(node, BLOCK_ELEMENTS)) {
-        flush();
-        if (node.localName === "div" && holdsBlocks(node)) walk([...node.childNodes]);
-        else emit(node);
-      } else inline.push(node);
-    }
-  };
-  walk([...item.childNodes]);
-  flush();
-  if (!opened) emit(document.createElement("p"));
+  walkBlocks([...item.childNodes], itemPath, own, document);
+  if (!opened) own(document.createElement("p"), itemPath);
 }
 
-/** The outermost list in its sequence, or null when none is left. */
-function outermostList(root: Element): Element | null {
-  for (const list of root.querySelectorAll("ul, ol")) {
-    const around = list.parentElement?.closest(`ul, ol, li, ${SEQUENCE_BOUNDARIES}`);
-    if (!around || !root.contains(around) || around.matches(SEQUENCE_BOUNDARIES)) return list;
-  }
-  return null;
+/** The outermost lists and quotes in their sequences, in document order. */
+function outermostContainers(root: Element): Element[] {
+  return [...root.querySelectorAll(CONTAINERS)].filter((container) => {
+    const around = container.parentElement?.closest(`${CONTAINERS}, li, ${SEQUENCE_BOUNDARIES}`);
+    return !around || !root.contains(around) || around.matches(SEQUENCE_BOUNDARIES);
+  });
 }
 
 /**
- * Unwraps every list under `root` into its blocks, each carrying `data-path`, and on an
- * item's first block `data-marker`, `data-kind` and `data-start`. Nesting attributes the
+ * Unwraps every list and quote under `root` into its blocks, each carrying `data-path`, and
+ * on an item's first block `data-marker`, `data-kind` and `data-start`. Nesting attributes the
  * source wrote itself are dropped first, so only what this pass read reaches the parser.
  */
 export function flattenDom(root: Element): void {
@@ -162,11 +202,35 @@ export function flattenDom(root: Element): void {
   )) {
     for (const name of NESTING_DATA_ATTRIBUTES) element.removeAttribute(name);
   }
-  // Lists inside a quote or a cell of an item are a sequence of their own, reached on a later pass.
-  for (let list = outermostList(root); list; list = outermostList(root)) {
-    const blocks: Element[] = [];
-    walkList(list, 0, blocks);
-    list.replaceWith(...blocks);
+  const document = root.ownerDocument;
+  // Containers inside a cell are a sequence of their own, reached on a later pass.
+  for (let batch = outermostContainers(root); batch.length > 0; batch = outermostContainers(root)) {
+    // Each run of adjacent containers is walked together, so a quote after a quote stays apart.
+    const runs: Element[][] = [];
+    for (const container of batch) {
+      const run = runs.at(-1);
+      const last = run?.at(-1);
+      let sibling = last?.nextSibling ?? null;
+      while (sibling && isBlank(sibling)) sibling = sibling.nextSibling;
+      if (run && sibling === container) run.push(container);
+      else runs.push([container]);
+    }
+    for (const run of runs) {
+      const blocks: Element[] = [];
+      walkBlocks(
+        run,
+        "",
+        (block, path) => {
+          if (path) block.setAttribute("data-path", path);
+          blocks.push(block);
+        },
+        document,
+      );
+      run.slice(1).forEach((container) => {
+        container.remove();
+      });
+      run[0].replaceWith(...blocks);
+    }
   }
 }
 
