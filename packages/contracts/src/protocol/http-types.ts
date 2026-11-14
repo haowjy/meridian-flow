@@ -34,7 +34,7 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
-import { type RemovalIdentity, removalIdentitySchema } from "../tree-change.js";
+import type { RemovalIdentity } from "../tree-change.js";
 import type { AiWriteMode, Work, WorksSnapshot } from "../works/index.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
@@ -96,132 +96,6 @@ export type ListWorksResponse = WorksSnapshot;
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
 export type ProjectContextTreeScheme = ContextUriScheme;
-
-/**
- * Where the writer's create lands (a document or a folder), the same identity-based address a
- * move carries. For a document the server joins a branch's hidden document waiting there;
- * omitted, a document create is nameless and lands in `folderPath` as `Untitled N`.
- */
-export type ContextCreateDestination = {
-  parent: ContextDestinationParent;
-  /** The leaf name as the writer typed it. */
-  name: string;
-  /**
-   * Where among the parent's children the new document goes; the server resolves it under the
-   * namespace lock a move uses. An anchor it can't find leaves the document at the parent's end.
-   */
-  position?: ContextSiblingPosition;
-};
-
-/**
- * A folder under an id the device minted, so the writer's next command can name it before the
- * server has answered. A visible name taken at the destination leaves the folder at the first
- * free name; a hidden folder a branch holds there is absorbed into it.
- */
-export type CreateContextFolderRequest = {
-  folderId: string;
-  destination: ContextCreateDestination;
-};
-
-/**
- * The folder at its address. `already-exists` answers a replay: the id is the identity.
- * `conflict` means the id is held where this create cannot use it (deleted, hidden, foreign,
- * or a document's): the device's folder stays local and needs repair.
- */
-export type CreateContextFolderResponse =
-  | {
-      status: "created" | "already-exists";
-      folderId: string;
-      scheme: ProjectContextTreeScheme;
-      path: string;
-      name: string;
-      /** Present only when the canonical location is Work-scoped. */
-      workId?: string | null;
-    }
-  | { status: "conflict" };
-
-export type CreateUntitledContextDocumentRequest = {
-  documentId: string;
-  folderPath?: string;
-  destination?: ContextCreateDestination;
-};
-
-/** A document's current canonical address. */
-export type ContextDocumentAddress = {
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-  /** Present only when the canonical location is Work-scoped. */
-  workId?: string | null;
-};
-
-export type CreateUntitledContextDocumentResponse = {
-  status: "created" | "already-materialized";
-  documentId: string;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-  /** Present only when the canonical location is Work-scoped. */
-  workId?: string | null;
-};
-
-/**
- * The create became an existing document: a branch's hidden one at the destination.
- * `documentId` is the joined document, not the submitted id, which now forwards to it.
- */
-export type CreateUntitledContextDocumentJoined = {
-  status: "joined";
-  documentId: string;
-  address: ContextDocumentAddress;
-};
-
-/** One create route: file success carries identity, folder success carries no file identity. */
-export const createContextEntryResultSchema = z.union([
-  z.object({ status: z.literal("created"), documentId: z.string().min(1), uri: z.string().min(1) }),
-  z.object({
-    status: z.literal("created"),
-    documentId: z.never().optional(),
-    uri: z.never().optional(),
-  }),
-  z.object({
-    status: z.literal("conflict"),
-    uri: z.string().min(1),
-    occupantKind: z.enum(["file", "folder"]).optional(),
-  }),
-]);
-export type CreateContextEntryResult = z.infer<typeof createContextEntryResultSchema>;
-
-/** A file-only caller derives its success proof from the route's canonical variants. */
-export const createContextFileResponseSchema = createContextEntryResultSchema.options[0];
-export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
-
-export type CreateUntitledContextDocumentResult =
-  | CreateUntitledContextDocumentResponse
-  | { status: "conflict" };
-
-/**
- * Everything the create endpoint can answer. A client that sends a `destination` must
- * handle `joined`; one that doesn't never receives it.
- */
-export type CreateUntitledContextDocumentAnswer =
-  | CreateUntitledContextDocumentResult
-  | CreateUntitledContextDocumentJoined;
-
-/** Exact identities committed by one successful context-tree deletion. */
-export const deleteContextEntryResultSchema = z.object({
-  status: z.literal("deleted"),
-  /** Where the entry stood when it was deleted: the address a receipt's refresh fences on. */
-  uri: z.string().min(1),
-  removed: z.array(z.object({ documentId: z.string().min(1), removal: removalIdentitySchema })),
-  availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
-});
-export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
-
-/** Delete the entry in the URL; the server finds the row by id. */
-export type DeleteContextEntryRequest = {
-  operationId: string;
-  kind: "file" | "folder";
-};
 
 /** How long Trash keeps an entry: until a date, or while Works have changes to it. */
 export type TrashRetention =
@@ -285,22 +159,6 @@ export type ContextSiblingPosition =
 /** One file or folder by its id. */
 export type ContextEntryRef = { kind: "file" | "folder"; nodeId: string };
 
-/**
- * A move or rename of the entry in the URL. The server finds the row by id, so no path or owner
- * travels. `name` is sent only when the writer typed one, and `destinationParent` only when the
- * writer chose a parent: an omitted field keeps the row's current value, so a device that has
- * not yet seen another device's rename or move cannot undo it. `position` alone reorders in the
- * row's current parent.
- */
-export type MoveContextEntryRequest = {
-  operationId: string;
-  kind: "file" | "folder";
-  destinationParent?: ContextDestinationParent;
-  position?: ContextSiblingPosition;
-  name?: string;
-};
-
-/** Which version of a source Copy reads: what the writer's surface shows. */
 export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }

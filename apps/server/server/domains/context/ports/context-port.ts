@@ -35,7 +35,7 @@ import type { TreeCommandInput, TreeReadInput } from "./context-adapter.js";
  * Owned: `scratch` (a Work's, `scratch://@w3/...`, or a lineage's, `scratch://@c12/...`)
  * and `uploads` (a chat's, `uploads://@c15/...`). Only Scratch belongs to a Work.
  */
-export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
+export type { ContextError } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
 
 /**

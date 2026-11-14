@@ -128,8 +128,6 @@ export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T>
 export type PostJsonOptions<T = unknown> = JsonOptions<T> & {
   /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
-  /** Accept only recognized domain outcomes carried by non-2xx responses. */
-  acceptErrorResponse?: (status: number, payload: unknown) => boolean;
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
   /** Drop the request when the caller that wanted it is gone. */
@@ -149,10 +147,8 @@ export async function postJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
@@ -172,10 +168,8 @@ export async function putJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
@@ -195,10 +189,8 @@ export async function patchJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted =
-    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
-  if (!accepted) {
+  if (!response.ok) {
     throw errorFromResponse(payload, response);
   }
 
