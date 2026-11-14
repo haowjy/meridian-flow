@@ -223,57 +223,6 @@ export type DeleteContextEntryRequest = {
   kind: "file" | "folder";
 };
 
-/** Where a restore lands instead of the original path: a parent, and where among its children. */
-const restoreDestinationSchema = z.object({
-  parent: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("folder"), folderId: z.string().uuid() }),
-    z.object({ kind: z.literal("root"), scheme: z.enum(["manuscript", "kb", "user"]) }),
-  ]),
-  /** The first restored document goes here, the rest follow it in request order. */
-  position: z
-    .discriminatedUnion("kind", [
-      z.object({ kind: z.enum(["before", "after"]), siblingId: z.string().uuid() }),
-      z.object({ kind: z.enum(["start", "end"]) }),
-    ])
-    .optional(),
-});
-
-export const restoreContextDocumentsRequestSchema = z.object({
-  documents: z
-    .array(
-      z.object({
-        documentId: z.string().uuid(),
-        removal: removalIdentitySchema,
-      }),
-    )
-    .min(1)
-    .refine(
-      (documents) =>
-        new Set(documents.map(({ documentId }) => documentId)).size === documents.length,
-      "Each document may be restored once per request",
-    ),
-  /** Omitted: each document returns to its original path. */
-  destination: restoreDestinationSchema.optional(),
-});
-export type RestoreContextDocumentsRequest = z.infer<typeof restoreContextDocumentsRequestSchema>;
-
-export type RestoreContextDocumentResult =
-  | { documentId: string; outcome: "restored"; landedAt?: string }
-  | {
-      documentId: string;
-      outcome:
-        | "superseded"
-        | "already_living"
-        | "ancestor_taken"
-        | "refused"
-        /** The destination is gone, in Trash, in another system than the document, or not the writer's to edit. */
-        | "destination_unavailable";
-    };
-
-export type RestoreContextDocumentsResponse = {
-  documents: RestoreContextDocumentResult[];
-};
-
 /** How long Trash keeps an entry: until a date, or while Works have changes to it. */
 export type TrashRetention =
   | { kind: "scheduled"; purgeAt: string }

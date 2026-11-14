@@ -113,6 +113,11 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: entry.documents
+#: src/features/project/shell/sidebar/TrashSource.tsx
+msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
+msgstr "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
+
 #. placeholder {0}: counted(false)
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
@@ -185,8 +190,8 @@ msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't mov
 
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
-msgid "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
-msgstr "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
+#~ msgid "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
+#~ msgstr "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
 
 #. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
