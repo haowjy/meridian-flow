@@ -3431,8 +3431,8 @@ msgid "Last name"
 msgstr "Last name"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Later edits build on this change, so it can't be reversed. View the change instead."
-msgstr "Later edits build on this change, so it can't be reversed. View the change instead."
+#~ msgid "Later edits build on this change, so it can't be reversed. View the change instead."
+#~ msgstr "Later edits build on this change, so it can't be reversed. View the change instead."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
@@ -5351,8 +5351,8 @@ msgid "That change can't be undone because it was discarded."
 msgstr "That change can't be undone because it was discarded."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone because later edits depend on it."
-msgstr "That change can't be undone because later edits depend on it."
+#~ msgid "That change can't be undone because later edits depend on it."
+#~ msgstr "That change can't be undone because later edits depend on it."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because the text changed afterwards."

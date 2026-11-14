@@ -374,8 +374,37 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
+  // A replacement is a deletion and an insertion side by side in one part. When the inserted side is
+  // gone for good, bringing the deleted side back alone would double whatever now stands there.
+  const removingBy = new Map<Y.Item, Key[]>();
+  for (const { original, effective } of removing) {
+    const item = find(index.doc, original);
+    if (item) removingBy.set(item, [...(removingBy.get(item) ?? []), effective]);
+  }
+  const pairedRemovals = new Map<Y.Item, boolean>();
+  const strandedByRemoval = (original: Key): boolean => {
+    const item = find(index.doc, original);
+    if (!item) return false;
+    const known = pairedRemovals.get(item);
+    if (known !== undefined) return known;
+    let paired = false,
+      standing = false;
+    for (const step of ["left", "right"] as const) {
+      for (let near = item[step]; near; near = near[step]) {
+        const owners = removingBy.get(near);
+        if (owners) {
+          paired = true;
+          standing ||= owners.some((owner) => index.isVisible(owner));
+        } else if (!near.deleted) break;
+      }
+    }
+    const stranded = paired && !standing;
+    pairedRemovals.set(item, stranded);
+    return stranded;
+  };
   const candidates = new Set(
     returning
+      .filter(({ original }) => !strandedByRemoval(original))
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );

@@ -336,7 +336,36 @@ function wordHunks(a: string, b: string): Hunk[] {
       open.end = model;
     }
   }
-  return hunks;
+  return hunks.map((hunk) => retainContained(a, b, hunk));
+}
+
+/**
+ * A changed run that holds the other side whole (`dog` to `dogXX`, `dXXog`) is the insertion or deletion
+ * of the difference, so the retained text keeps its items and whoever wrote them keeps their Undo.
+ * Runs sharing only some letters (`blue` to `blur`) stay whole: reusing those would garble a peer's
+ * concurrent delete of the old word.
+ */
+function retainContained(a: string, b: string, hunk: Hunk): Hunk {
+  const before = a.slice(hunk.from, hunk.to);
+  const after = b.slice(hunk.at, hunk.end);
+  const shorter = Math.min(before.length, after.length);
+  if (!shorter) return hunk;
+  let head = 0;
+  while (head < shorter && before[head] === after[head]) head++;
+  let tail = 0;
+  while (
+    head + tail < shorter &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+  )
+    tail++;
+  if (head + tail < shorter) return hunk;
+  return {
+    ...hunk,
+    from: hunk.from + head,
+    to: hunk.to - tail,
+    at: hunk.at + head,
+    end: hunk.end - tail,
+  };
 }
 
 /**

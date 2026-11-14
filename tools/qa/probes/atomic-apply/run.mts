@@ -1041,28 +1041,31 @@ try {
     ]);
     f.close();
   });
-  await row("Un-Apply reverses an edited group around the writer's typing and an intact peer whole", async () => {
-    const f = await fixture(
-      ["The cat sat.", "The dog slept."],
-      ["The big cat sat.", "The small dog slept."],
-    );
-    const click = f.click();
-    assert.equal(click.request.groupIds.length, 2);
-    await applied(f, click);
-    // The writer's word inside the applied text stays; Un-Apply takes only the Apply's own words.
-    await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
-    const answer = await f.unapply(click);
-    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    if (answer.status === "unapplied") {
-      assert.equal(answer.reversedGroupIds.length, 2);
-      assert.equal(answer.skippedGroupIds.length, 0);
-    }
-    assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
-    const durable = await f.durable();
-    assert.equal(readApplyRecord(durable).length, 0);
-    durable.destroy();
-    f.close();
-  });
+  await row(
+    "Un-Apply reverses an edited group around the writer's typing and an intact peer whole",
+    async () => {
+      const f = await fixture(
+        ["The cat sat.", "The dog slept."],
+        ["The big cat sat.", "The small dog slept."],
+      );
+      const click = f.click();
+      assert.equal(click.request.groupIds.length, 2);
+      await applied(f, click);
+      // The writer's word inside the applied text stays; Un-Apply takes only the Apply's own words.
+      await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
+      const answer = await f.unapply(click);
+      assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+      if (answer.status === "unapplied") {
+        assert.equal(answer.reversedGroupIds.length, 2);
+        assert.equal(answer.skippedGroupIds.length, 0);
+      }
+      assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
+      const durable = await f.durable();
+      assert.equal(readApplyRecord(durable).length, 0);
+      durable.destroy();
+      f.close();
+    },
+  );
   await row("Un-Apply removes a null-live receipt without reopening a diff", async () => {
     const f = await fixture(["The cat sat."], ["The big cat sat."]);
     const click = f.click();
