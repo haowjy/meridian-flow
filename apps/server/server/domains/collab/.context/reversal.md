@@ -113,10 +113,13 @@ chooses from the same receipts and `reverses` links the model's `undo` does (`tu
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
 (a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
-goes back by the same `moveBetweenLists` the other way, locking both lists, and is `superseded`
-once a later record moved or renamed the node. A reply that only changed the tree has a card:
-its documents are listed from the turn's tree receipts too (`readTurnTreeTargets`), and the
-receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
+goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
+`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
+`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
+renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
+a folder has no document, so the item carries the node id with `folder: true` and no door), and
+the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call

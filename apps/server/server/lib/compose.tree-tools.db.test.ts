@@ -15,6 +15,7 @@ import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { discardedTree } from "../domains/context/tree/trash-entries.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
+import { reverseTurnCard } from "./work-receipt-reversal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -744,13 +745,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(chip).toMatchObject({ control: "undo" });
         const card = (direction: "undo" | "redo", commandId = randomUUID()) =>
-          sync.reverseThreadContext({
-            threadId: THREAD.threadId as never,
-            turnId: THREAD.turnId as never,
-            userId: USER_ID as never,
-            direction,
-            commandId: commandId as never,
-          });
+          reverseTurnCard(
+            {
+              ...composed.ports,
+              workContextNotices: { workChanged: async () => {} },
+              stopThreads: async () => {},
+            },
+            {
+              threadId: THREAD.threadId as never,
+              turnId: THREAD.turnId as never,
+              userId: USER_ID as never,
+              direction,
+              commandId: commandId as never,
+            },
+          );
         const clicked = randomUUID();
         const undone = await card("undo", clicked);
         expect(undone.status, JSON.stringify(undone)).toBe("reversed");

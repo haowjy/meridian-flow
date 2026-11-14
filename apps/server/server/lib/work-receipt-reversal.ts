@@ -61,12 +61,11 @@ export function reverseTurnCard(
     | "documentSync"
     | "threadRepos"
     | "works"
-    | "workContextNotices"
     | "stopThreads"
     | "contextPorts"
     | "fileAccess"
     | "workAuthorityResolver"
-  >,
+  > & { workContextNotices: Pick<WorkContextNotices, "workChanged"> },
   input: {
     threadId: ThreadId;
     turnId: TurnId;

@@ -28,7 +28,8 @@ stateDiagram-v2
 ```
 
 - **Closed never reopens.** No production code moves a draft or a branch back to `active`; a
-  new branch is a new row. Only an `active` draft accepts writes, and a draft room for a closed
+  new branch is a new row, and an Undo of a Discard copies a closed draft's bytes into a new
+  `active` draft (`discard_command_drafts`), leaving the closed one as it was. Only an `active` draft accepts writes, and a draft room for a closed
   draft is refused at the [handshake](../../../lib/.context/state-machines.md).
 - A closed draft keeps `closedCause`, and a closed branch has `closedAt` and a pending document
   count of zero. Restoring a Work does not erase a draft's own cause.

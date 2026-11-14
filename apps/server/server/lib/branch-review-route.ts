@@ -837,9 +837,12 @@ export function handleApplyItemsRequest(
 }
 
 /**
- * The edit grant on a document a command writes back: its live grant, or the restore grant when
- * live has deleted it. Un-Apply and Undo of a Discard take it on every document the command's
- * own record names (`commandDocuments`).
+ * The edit grant on a document a command writes back: Un-Apply and Undo of a Discard take it on
+ * every document the command's own record names (`commandDocuments`). With a draft `owner` (Undo
+ * of a Discard), the document is written in that owner's draft: through the draft itself, else
+ * through the restore seam at the draft's destination, where a creation only the Work shows has
+ * its identity once its draft closed. Else, and as the last resort, its live grant, or the
+ * restore grant when live has deleted it.
  */
 async function documentGrant(
   deps: BranchRouteServices,
@@ -848,7 +851,6 @@ async function documentGrant(
   owner: DraftOwner | null,
 ): Promise<FileGrant<"edit"> | FileAccessDenied> {
   const principal = { accountId: input.userId };
-  // A document only the Work shows (a drafted creation) is authorized through its draft.
   if (owner) {
     const draft = await deps.fileAccess.authorize(
       principal,
@@ -856,11 +858,26 @@ async function documentGrant(
       "edit",
     );
     if (!isFileAccessDenied(draft)) return draft;
+    const restored = await deps.fileAccess.authorizeAt(
+      principal,
+      { kind: "restore", documentId },
+      { kind: "draft", owner, ownerHandle: null },
+      "edit",
+    );
+    if (!isFileAccessDenied(restored)) return restored;
   }
   const live = await deps.fileAccess.authorize(principal, documentTarget(documentId), "edit");
   if (!isFileAccessDenied(live) || !live.facts?.deleted) return live;
   return deps.fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
 }
+
+/**
+ * Undo of a Discard names a creation only the Work showed: no tree row exists for it until the
+ * command's own copy brings it back, so no target resolves it. The Work's lifecycle, which the
+ * command's Work lock checks, is the only authority over it.
+ */
+const unseen = (grant: FileGrant<"edit"> | FileAccessDenied) =>
+  isFileAccessDenied(grant) && grant.reason === "not_found" && grant.facts === null;
 
 /** Take back one Apply command: its text groups and everything it settled in the tree. */
 export function handleUnapplyClickRequest(
@@ -927,6 +944,7 @@ export function handleUndoDiscardRequest(
         branchId: input.branchId,
       })) {
         const grant = await documentGrant(deps, input, documentId, access.owner);
+        if (unseen(grant)) continue;
         if (isFileAccessDenied(grant))
           return (await lookup()) ?? { status: "refused", commandId, reason: denialReason(grant) };
         grants.push(grant);
