@@ -71,9 +71,10 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   struct with Yjs's offset, so an update that overlaps the held prefix, or carries two client
   ids, is admitted; a gap, or content outside `ops`, is not.
 - **Undo is by history.** The replay keeps, per node, the record that last set its name and
-  type and the record that last set its place, with the values just before it. Undo of a rename
-  or move is allowed only while that record is still the last, and the opposite record carries
-  those values. Apply's copies take their `from` against the copies before them.
+  type and the record that last set its place, with the values just before it. A move that
+  arrives under a numbered name (`name`) is the last setter of both facts, and its Undo needs both:
+  the opposite move carries the place and the name before it. Undo of a rename or move is allowed
+  only while that record is still the last, and the opposite record carries those values. Apply's copies take their `from` against the copies before them.
 - **`carries` says which record a record stands for.** An Apply's live copy and a restored
   Discard's pending copy each carry the root original's id, flattened (a copy of a copy names the
   same root). Undo of R takes back the last record in the view that is R or carries R, and writes
@@ -82,7 +83,8 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   superseded), Undo answers `superseded`. Undo of an Apply and `restoreEntry` use the same match.
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
-  numbers only the clashes nobody saw.
+  numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
+  not a paired `rename`.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
 - **A chat's uploads** are a source the account never writes: leave it out of

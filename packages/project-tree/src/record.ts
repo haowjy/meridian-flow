@@ -90,6 +90,11 @@ export type MoveRecord = RecordBase & {
   rank: string;
   /** Where the author saw it, for the Undo. */
   from: { parent: string; rank: string };
+  /**
+   * The name it arrives under, when that is not the one it had (numbered because the folder
+   * already shows it). Replay sets it as a rename would, and Undo takes it back with the place.
+   */
+  name?: string;
 };
 export type RenameRecord = RecordBase & {
   type: "rename";
@@ -123,6 +128,11 @@ export type TreeRecordInput =
   | WithoutBase<DeleteRecord>
   | WithoutBase<RestoreRecord>
   | WithoutBase<PurgeRecord>;
+
+/** The name a record gives its node: a rename's, or a move's when it arrives under another one. */
+export function nameSet(record: TreeRecord): string | undefined {
+  return record.type === "rename" || record.type === "move" ? record.name : undefined;
+}
 
 export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "refused";
 

@@ -162,9 +162,9 @@ export class TreeWriter {
 
   /**
    * Moves, in order, against one replay of the view: a rank is placed among the siblings as the
-   * earlier moves left them, and a name taken there is numbered and recorded with the move, as
-   * a `rename` in the same update, so the number stays when the other node is renamed. A move
-   * record carries no name. Two nodes moved into one folder under one name are numbered in turn.
+   * earlier moves left them, and a name taken there is numbered and carried by the move itself,
+   * so the number stays when the other node is renamed. Two nodes moved into one folder under
+   * one name are numbered in turn.
    */
   moveAll(
     view: View,
@@ -214,10 +214,9 @@ export class TreeWriter {
             parent,
             rank,
             from: { parent: current?.parent ?? parent, rank: current?.rank ?? "" },
+            ...(current && name !== current.name ? { name } : {}),
           }) as MoveRecord,
         );
-        if (current && name !== current.name)
-          this.author(view, actor, { type: "rename", node, name, fromName: current.name });
       }
     });
     return out;

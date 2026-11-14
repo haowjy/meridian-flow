@@ -4,6 +4,7 @@ import { nameFault } from "./names.js";
 import {
   type CreateRecord,
   isSourceRoot,
+  nameSet,
   newId,
   recordsOf,
   sourceIdOf,
@@ -280,11 +281,11 @@ function judge(doc: Y.Doc, added: readonly Added[], connection: Connection) {
       record.cascade.some((member) => known(member, draft) && !mayWrite(member, draft))
     )
       reason = "a source you cannot change";
-    else if (record.type === "rename") {
+    else if (nameSet(record) !== undefined) {
       const kind = viewOf(draft).nodes.get(record.node)?.kind ?? created.get(record.node)?.kind;
-      if (kind === "document" && nameFault(kind, record.name) !== null)
+      if (kind === "document" && nameFault(kind, nameSet(record) as string) !== null)
         reason = "a name a document cannot have";
-      else if (record.filetype !== undefined) {
+      else if (record.type === "rename" && record.filetype !== undefined) {
         const was = typeOf(record.node, draft);
         if (was === undefined || !connection.sameSchema(was, record.filetype))
           reason = "a type across schemas";
