@@ -1,6 +1,6 @@
 /**
  * What a drag knows of a row: its identity, never where it sits. Placement is
- * read from the replica when a drop is planned, so a row that moved (or that a
+ * read from the replay when a drop is planned, so a row that moved (or that a
  * peer moved) is still the same row.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
@@ -9,11 +9,10 @@ import type {
   DocumentTrashEntry,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import type { CatalogNode } from "@/client/query/context-catalog-projection";
-import type { LinkNoteSubject } from "../rename-operation-lifecycle";
+import type { TreeEntry } from "@/core/project-tree/tree-view";
 
-/** A document by its ID, or a folder by its entry ID. */
-export type EntryRef = LinkNoteSubject;
+/** A document or a folder, by its node id. */
+export type EntryRef = { kind: "file" | "folder"; id: string };
 
 /** A row's selection key. It has no scheme, so it survives a move. */
 export const entryKey = (ref: EntryRef): string => `${ref.kind}:${ref.id}`;
@@ -42,7 +41,7 @@ export function trashDragEntry(entry: Pick<DocumentTrashEntry, "documentId" | "n
 
 export const LIVE_VIEW: CopyContextEntryView = { kind: "live" };
 
-export function dragEntry(node: CatalogNode): DragEntry {
+export function dragEntry(node: TreeEntry): DragEntry {
   return {
     ref:
       node.kind === "file"

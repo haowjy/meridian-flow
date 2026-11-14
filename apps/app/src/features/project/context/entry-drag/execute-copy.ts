@@ -1,37 +1,71 @@
 /**
- * Copying planned rows through the replica's one Copy path. A Copy is optimistic like a Move: it
- * resolves once the replica admits the operation, the copies are listed under predicted names at
- * once, and the server's answer places them or refuses the whole Copy. Results are data; selection
- * belongs to the caller.
+ * Copying planned rows. A Copy stays a server route (the server seeds each copy's text from its
+ * source): the browser makes the copies' ids and the command's id, sends them once, and the copies
+ * arrive through the list like anyone's records. A refusal is a typed answer to the request, so
+ * it is the caller's to show; nothing is kept to send again.
  */
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type {
+  ContextDestinationParent,
+  CopyContextEntriesRequest,
+} from "@meridian/contracts/protocol";
+import { copyContextEntries } from "@/client/api/projects-api";
 import type { EntryRef } from "./entry";
-import { arrivals, currentView, type ReplicaContext } from "./execute-move";
-import type { ReadyCopy } from "./move-plan";
+import type { MoveArea, ReadyCopy } from "./move-plan";
+
+const withoutLeadingSlash = (path: string) => path.replace(/^\/+/, "");
+
+/** The destination as the route names it: a folder by id, or the top of a tree with its owner. */
+function destinationOf(copy: ReadyCopy): ContextDestinationParent {
+  const { area, into, scheme } = copy;
+  if (into !== area.tree.root.entryId) return { kind: "folder", folderId: into };
+  return {
+    kind: "root",
+    scheme,
+    owner: isWorkScopedScheme(scheme)
+      ? { workId: area.owner.workId ?? null, rootThreadId: area.owner.rootThreadId ?? null }
+      : { workId: null },
+  };
+}
+
+function ownerFields(area: Pick<MoveArea, "owner">) {
+  const { owner } = area;
+  return {
+    workId: owner.workId ?? null,
+    rootThreadId: owner.rootThreadId ?? null,
+    ...(owner.chatThreadId ? { chatRef: owner.chatRef ?? null } : {}),
+  };
+}
 
 /**
- * Admits one Copy of the plan's rows, each under its predicted free name (two copies of `Notes`
- * become `Notes (2)` and `Notes (3)`). A document the device holds open sends its pending edits
- * with the Copy. Returns the copies' identities, or null when the replica would not admit it.
+ * Sends one Copy of the plan's rows. Returns the copies' identities; a refusal throws the route's
+ * error.
  */
-export async function copyRows(
-  copy: ReadyCopy,
-  context: ReplicaContext,
-): Promise<readonly EntryRef[] | null> {
-  const rows = copy.copies.map((row) => ({ ...row, after: copy.into }));
-  const names = arrivals(await currentView(context), rows);
-  const sources = rows.map((row) => {
-    const predictedName = names.name(row);
-    names.reserve(row, predictedName);
-    return { kind: row.entry.kind, id: row.entry.id, predictedName, view: row.view };
-  });
-  try {
-    const { roots } = await context.resources.copyEntries(context.projectId, {
-      sources,
-      scheme: copy.scheme,
-      destination: { parent: copy.into, ...(copy.position ? { position: copy.position } : {}) },
-    });
-    return roots.map((root) => ({ kind: root.kind, id: root.copyId }));
-  } catch {
-    return null;
-  }
+export async function copyRows(projectId: string, copy: ReadyCopy): Promise<readonly EntryRef[]> {
+  const copyIds: string[] = copy.copies.map(() => crypto.randomUUID());
+  const destination = destinationOf(copy);
+  const folder = copy.into === copy.area.tree.root.entryId ? null : copy.area.tree.entry(copy.into);
+  const body: CopyContextEntriesRequest = {
+    operationId: crypto.randomUUID(),
+    sources: copy.copies.map((row, index) => ({
+      scheme: row.place.scheme,
+      path: withoutLeadingSlash(row.place.path),
+      expected: { kind: row.entry.kind, nodeId: row.entry.id },
+      ...ownerFields({ owner: row.place.owner }),
+      view: row.view,
+      copyId: copyIds[index],
+    })),
+    destinationScheme: copy.scheme,
+    destinationFolderPath: folder ? withoutLeadingSlash(folder.path) : "",
+    destinationWorkId: isWorkScopedScheme(copy.scheme) ? (copy.area.owner.workId ?? null) : null,
+    destinationRootThreadId: isWorkScopedScheme(copy.scheme)
+      ? (copy.area.owner.rootThreadId ?? null)
+      : null,
+    destinationParent: destination,
+    ...(copy.position ? { position: copy.position } : {}),
+  };
+  const { entries } = await copyContextEntries(projectId, body);
+  return entries
+    .filter((entry) => copyIds.includes(entry.id))
+    .map((entry) => ({ kind: entry.kind, id: entry.id }));
 }

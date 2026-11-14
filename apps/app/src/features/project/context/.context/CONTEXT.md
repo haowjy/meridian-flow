@@ -90,7 +90,7 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
           validateContextEntryName (pure)
 ```
 
-Document trash is a server snapshot separate from the live catalog projection.
+Document trash is a server snapshot separate from the replay of the project's list.
 The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
 listing it newest first on `ListRow`s that select and drag like the trees'. A deleted document has its own address,
 `/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
@@ -99,10 +99,10 @@ It takes no tab; the strip shows it as an untabbed chip, as it does an address t
 Restore brought it back, by opening it in place. The record reads the server's Markdown,
 serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;
 it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
-that endpoint before opening it. Every restore goes through one command using the exact
-serialized removal identity. Committed catalog wake hints invalidate the
-snapshot after deletes and restores, while the catalog stream remains the owner
-of a restored document's return to the live tree.
+that endpoint before opening it. Every restore is a `restore` record appended to the list
+(`DocumentTrashRestoreProvider`); the entry leaves the Trash snapshot at once, the replay owns the
+document's return to the live tree, and a restore the server refuses puts the entry back with
+the server's reason.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
@@ -186,6 +186,6 @@ not claim a placement.
 
 ## External-file drops and pending imports
 
-A context tree mounts one drop scope for both catalog-entry moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
+A context tree mounts one drop scope for both row moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
 
-Imports add only a temporary root row until reveal. Pending roots have no catalog identity or URI and reserve no namespace names; every revealed node comes from the catalog.
+Imports add only a temporary root row until reveal. Pending roots have no node id or URI and reserve no names; every revealed node comes from the replay.

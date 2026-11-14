@@ -6,12 +6,12 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import type { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { SettledSearchField } from "@/components/ui/search-field";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -34,14 +34,12 @@ import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 import { useTreeExpansion } from "./use-tree-expansion";
 
-export type CatalogState = ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
-
 /**
  * An area's rows under its name, with New file, New folder and Import in the
  * heading. Creation requests come from the shell's `TreeCreationProvider`.
  */
 export function ContextTreePanel({
-  catalogState,
+  treeState,
   projectId,
   editorWorkId,
   scheme,
@@ -50,7 +48,7 @@ export function ContextTreePanel({
   onSelectFile,
   drop,
 }: {
-  catalogState: CatalogState;
+  treeState: TreeViewResult;
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
@@ -59,7 +57,7 @@ export function ContextTreePanel({
   activePath: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
-    file: ContextFile,
+    file: TreeFile,
     options?: { focus?: true },
   ) => void;
   drop: SourceDrop;
@@ -73,9 +71,9 @@ export function ContextTreePanel({
     [request, scheme],
   );
   const { requestCreate: requestTreeCreate, completeCreate: onCreateDone } = controller;
-  const { catalog, isComplete, isError, refetch } = catalogState;
+  const { tree, isComplete, isError } = treeState;
   const imports = useOptionalImports();
-  const importedTree = useImportedTree(catalog, scheme, projectId);
+  const importedTree = useImportedTree(tree, scheme, projectId);
   const folderIds = useMemo(() => {
     if (!importedTree || !isComplete) return null;
     return treeFolderIds((parentId) =>
@@ -97,7 +95,7 @@ export function ContextTreePanel({
 
   const revealPath = useCallback(
     (path: string) => {
-      if (!catalog) return;
+      if (!tree) return;
       const segments = path.split("/").filter(Boolean);
       if (segments.length === 0) return;
       setExpandedEntryIds((current) => {
@@ -105,23 +103,23 @@ export function ContextTreePanel({
         let ancestor = "";
         for (const segment of segments) {
           ancestor += `/${segment}`;
-          const entry = catalog.findPath(ancestor);
+          const entry = tree.findPath(ancestor);
           if (entry?.kind === "dir") next[entry.entryId] = true;
         }
         return next;
       });
     },
-    [catalog, setExpandedEntryIds],
+    [tree, setExpandedEntryIds],
   );
 
   const openFolder = useCallback(
     (folderId: string) => {
-      const entry = catalog?.normalized.entries.get(folderId);
-      if (entry?.kind !== "folder") return;
-      revealPath(`/${entry.path.join("/")}`);
+      const entry = tree?.entry(folderId);
+      if (entry?.kind !== "dir") return;
+      revealPath(entry.path);
       setExpandedEntryIds((current) => ({ ...current, [entry.entryId]: true }));
     },
-    [catalog, revealPath, setExpandedEntryIds],
+    [tree, revealPath, setExpandedEntryIds],
   );
 
   useEffect(() => subscribeFolderReveal(openFolder), [openFolder]);
@@ -147,10 +145,10 @@ export function ContextTreePanel({
       revealed.current = null;
       return;
     }
-    if (!catalog?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
+    if (!tree?.findPath(activeLocationPath) || revealed.current === activeLocationPath) return;
     revealed.current = activeLocationPath;
     revealPath(parentContextPath(activeLocationPath));
-  }, [activeLocationPath, catalog, revealPath]);
+  }, [activeLocationPath, tree, revealPath]);
 
   const creatingParent = creating?.parentPath;
   useEffect(() => {
@@ -163,14 +161,14 @@ export function ContextTreePanel({
     [requestTreeCreate, scheme],
   );
 
-  // A created file opens once its row resolves in the catalog.
+  // A created file opens once its row shows in the tree.
   useEffect(() => {
-    if (!pendingOpenPath || !catalog) return;
-    const entry = catalog.findPath(pendingOpenPath);
+    if (!pendingOpenPath || !tree) return;
+    const entry = tree.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     onSelectFile(scheme, entry, { focus: true });
     setPendingOpenPath(null);
-  }, [pendingOpenPath, catalog, onSelectFile, scheme]);
+  }, [pendingOpenPath, tree, onSelectFile, scheme]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
@@ -179,7 +177,7 @@ export function ContextTreePanel({
   const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
     () =>
-      catalog && importedTree
+      tree && importedTree
         ? ({
             projectId,
             owner,
@@ -213,8 +211,8 @@ export function ContextTreePanel({
                   },
                 }
               : undefined,
-            catalog,
-            tree: importedTree,
+            tree,
+            rows: importedTree,
             isExpanded,
             toggleEntry,
           } satisfies TreeEnv)
@@ -233,7 +231,7 @@ export function ContextTreePanel({
       onCreateDone,
       isExpanded,
       toggleEntry,
-      catalog,
+      tree,
       importedTree,
       importable,
       pickImport,
@@ -282,24 +280,24 @@ export function ContextTreePanel({
         />
       }
     >
-      {search && catalog ? (
+      {search && tree ? (
         <FoundFiles
-          files={catalog.files()}
+          files={tree.files()}
           scheme={scheme}
           search={search}
           activePath={activeScheme === scheme ? activePath : null}
           onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
         />
-      ) : env && catalog ? (
+      ) : env && tree ? (
         <TreeEnvProvider value={env}>
           <div className="px-2">
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+            <TreeChildren parentId={tree.root.entryId} parentPath="" depth={0} />
           </div>
         </TreeEnvProvider>
       ) : null}
-      {/* A load still running and a load that failed both leave the list empty; this line says which. */}
-      {search && catalog ? null : isError ? (
-        <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+      {/* A load still running and a list the account cannot read both leave the list empty; this line says which. */}
+      {search && tree ? null : isError ? (
+        <InlineErrorRow message={t`You can't open these files.`} />
       ) : !isComplete || !importedTree ? (
         <div className="px-2">
           <ListLine iconSlot status>
@@ -325,11 +323,11 @@ function FoundFiles({
   activePath,
   onOpen,
 }: {
-  files: readonly ContextFile[];
+  files: readonly TreeFile[];
   scheme: ProjectContextTreeScheme;
   search: string;
   activePath: string | null;
-  onOpen: (file: ContextFile) => void;
+  onOpen: (file: TreeFile) => void;
 }) {
   const byId = new Map(files.map((file) => [file.documentId, file]));
   const found = matchFileSuggestions(

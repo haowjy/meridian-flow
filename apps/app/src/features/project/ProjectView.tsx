@@ -51,7 +51,6 @@ import {
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
-import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
@@ -293,7 +292,6 @@ export function ProjectView(props: ProjectViewProps) {
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
       <ChatDeleteProvider key={props.projectId} projectId={props.projectId}>
         <ManageWorksProvider>
-          <RefusalToasts projectId={props.projectId} />
           <div className="flex h-full min-h-0 w-full bg-background text-foreground">
             {hydrated ? (
               <>
