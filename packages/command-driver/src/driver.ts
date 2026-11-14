@@ -512,6 +512,8 @@ export class CommandDriver {
       const stored = records.find((candidate) => candidate.id === record.id);
       if (stored?.state !== "sending" || stored.sendId !== record.sendId)
         return { change: {}, result: null };
+      // Another tab may have put an earlier record of a lane back since this one was chosen.
+      if (!headsItsLanes(records, stored)) return { change: {}, result: null };
       if (stored.sent) {
         const again = { ...stored, attempts: stored.attempts + 1 };
         return { change: { put: [again] }, result: again };
@@ -548,6 +550,16 @@ export class CommandDriver {
     });
     this.retryAt.delete(record.id);
   }
+}
+
+/** Whether no earlier `sending` record shares a lane with this one. */
+function headsItsLanes(records: readonly CommandRecord[], record: CommandRecord): boolean {
+  return !records.some(
+    (other) =>
+      other.state === "sending" &&
+      other.seq < record.seq &&
+      other.lanes.some((lane) => record.lanes.includes(lane)),
+  );
 }
 
 /** When a settled record may go: observed `done` after a minute, a `never` after thirty days. */

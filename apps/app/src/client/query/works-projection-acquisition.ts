@@ -47,11 +47,14 @@ type ProjectState = {
 const states = new WeakMap<QueryClient, Map<string, ProjectState>>();
 const nextStartedByProject = new Map<string, number>();
 
+/** When a read began: its order among this project's reads, and the clock time. */
+export type WorksRequestStart = { order: number; at: number };
+
 /** Registers request start before any loader or live network work begins. */
-export function beginWorksSnapshotRequest(projectId: string): number {
-  const started = (nextStartedByProject.get(projectId) ?? 0) + 1;
-  nextStartedByProject.set(projectId, started);
-  return started;
+export function beginWorksSnapshotRequest(projectId: string): WorksRequestStart {
+  const order = (nextStartedByProject.get(projectId) ?? 0) + 1;
+  nextStartedByProject.set(projectId, order);
+  return { order, at: Date.now() };
 }
 
 function stateFor(client: QueryClient, projectId: string): ProjectState {
@@ -78,12 +81,16 @@ function currentSnapshot(client: QueryClient, projectId: string): WorksSnapshot 
   return client.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
 }
 
-function installResponse(
+/**
+ * The one way a Works snapshot enters the cache, for a read and for route data alike: it keeps
+ * the newest by revision and, when the read began later, installs it and tells the driver which
+ * Work outcomes this tab's data now includes.
+ */
+function installSnapshot(
   client: QueryClient,
   projectId: string,
   response: WorksSnapshot,
-  started: number,
-  startedAt: number,
+  start: WorksRequestStart,
 ): WorksSnapshot {
   if (response.projectId !== projectId) {
     throw new Error(`Works snapshot project mismatch: expected ${projectId}`);
@@ -93,10 +100,10 @@ function installResponse(
   const ordering = current
     ? compareRevision(response.authorityRevision, current.authorityRevision)
     : 1;
-  if (ordering > 0 || (ordering === 0 && started >= state.installedStart)) {
+  if (ordering > 0 || (ordering === 0 && start.order >= state.installedStart)) {
     client.setQueryData(projectQueryKeys.works(projectId), response);
-    state.installedStart = started;
-    readObservers.get(client)?.(projectId, startedAt);
+    state.installedStart = start.order;
+    readObservers.get(client)?.(projectId, start.at);
     return response;
   }
   return current ?? response;
@@ -110,10 +117,9 @@ function startAcquisition(
 ): Promise<WorksSnapshot> {
   const state = stateFor(client, projectId);
   if (!supersede && state.inFlight) return state.inFlight;
-  const started = beginWorksSnapshotRequest(projectId);
-  const startedAt = Date.now();
+  const start = beginWorksSnapshotRequest(projectId);
   const acquisition = request().then((response) =>
-    installResponse(client, projectId, response, started, startedAt),
+    installSnapshot(client, projectId, response, start),
   );
   state.inFlight = acquisition;
   void acquisition
@@ -163,31 +169,19 @@ export async function repairWorksSnapshot(
 export function seedWorksSnapshot(
   client: QueryClient,
   snapshot: WorksSnapshot,
-  started?: number,
+  started?: WorksRequestStart,
 ): WorksSnapshot {
   const current = currentSnapshot(client, snapshot.projectId);
-  const state = stateFor(client, snapshot.projectId);
   if (
     current &&
     started === undefined &&
     compareRevision(snapshot.authorityRevision, current.authorityRevision) <= 0
   )
     return current;
-  const requestStarted = started ?? beginWorksSnapshotRequest(snapshot.projectId);
+  const start = started ?? beginWorksSnapshotRequest(snapshot.projectId);
   nextStartedByProject.set(
     snapshot.projectId,
-    Math.max(nextStartedByProject.get(snapshot.projectId) ?? 0, requestStarted),
+    Math.max(nextStartedByProject.get(snapshot.projectId) ?? 0, start.order),
   );
-  if (current && compareRevision(snapshot.authorityRevision, current.authorityRevision) < 0) {
-    return current;
-  }
-  if (
-    current &&
-    compareRevision(snapshot.authorityRevision, current.authorityRevision) === 0 &&
-    requestStarted < state.installedStart
-  )
-    return current;
-  client.setQueryData(projectQueryKeys.works(snapshot.projectId), snapshot);
-  state.installedStart = requestStarted;
-  return snapshot;
+  return installSnapshot(client, snapshot.projectId, snapshot, start);
 }

@@ -7,7 +7,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandDriver, NOT_SENT_AFTER_MS } from "./driver.js";
 import { createMemoryJournal } from "./memory-journal.js";
-import type { CommandKind, CommandRecord, TransportAnswer, TransportRequest } from "./types.js";
+import type {
+  CommandKind,
+  CommandRecord,
+  Journal,
+  TransportAnswer,
+  TransportRequest,
+} from "./types.js";
 
 type Fault = "drop_request" | "drop_response" | { status: number; code?: string };
 
@@ -22,7 +28,30 @@ class Server {
   /** commands refused the first time only. */
   refuseOnce = new Set<string>();
 
+  /** Posts of one lane being answered now: a lane must never have two. */
+  active = new Map<string, number>();
+  overlaps: string[] = [];
+  latency = 0;
+
   handle = async (request: TransportRequest, signal: AbortSignal): Promise<TransportAnswer> => {
+    const posted = request.method !== "GET" && !request.path.endsWith("/resolve");
+    const lane = posted ? (request.body as { label?: string }).label?.[0] : undefined;
+    if (lane) {
+      if ((this.active.get(lane) ?? 0) > 0) this.overlaps.push(lane);
+      this.active.set(lane, (this.active.get(lane) ?? 0) + 1);
+    }
+    try {
+      if (this.latency > 0) await new Promise((resolve) => setTimeout(resolve, this.latency));
+      return await this.serve(request, signal);
+    } finally {
+      if (lane) this.active.set(lane, (this.active.get(lane) ?? 1) - 1);
+    }
+  };
+
+  private serve = async (
+    request: TransportRequest,
+    signal: AbortSignal,
+  ): Promise<TransportAnswer> => {
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
     const body = (request.body ?? {}) as { commandId?: string; label?: string; kind?: string };
     this.requests.push({ path: request.path, commandId: body.commandId });
@@ -66,7 +95,24 @@ class Server {
 
 class World {
   server = new Server();
-  journal = createMemoryJournal();
+  private readonly store = createMemoryJournal();
+  /** Delays the n-th journal transaction (counted from `transactions`), as a slow disk would. */
+  holdTransaction: { at: number; ms: number } | null = null;
+  /** Delays a random share of transactions, so the tabs' steps interleave. */
+  jitter: (() => number) | null = null;
+  transactions = 0;
+  journal: Journal & { failNext(error: Error): void } = {
+    failNext: (error) => this.store.failNext(error),
+    read: () => this.store.read(),
+    close: () => this.store.close(),
+    transact: async (decide) => {
+      const n = ++this.transactions;
+      const wait =
+        this.holdTransaction?.at === n ? this.holdTransaction.ms : (this.jitter?.() ?? 0);
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      return this.store.transact(decide);
+    },
+  };
   online = true;
   logs: unknown[] = [];
   settledSeen: string[] = [];
@@ -273,6 +319,23 @@ describe("one delivery, whatever goes wrong on the way", () => {
     expect(world.server.effects).toEqual(["two", "one"]);
   });
 
+  it("does not send a command whose lane gained an earlier one after it was chosen", async () => {
+    const world = new World();
+    const tab = await world.tab();
+    const other = await world.tab({ silent: true });
+    world.server.refuseOnce.add("one");
+    const one = await submit(tab, "one");
+    await settle(0);
+    // The next submit's mark-sent is its third transaction; it is slow, and in that time the
+    // refused command is put back ahead of it.
+    world.holdTransaction = { at: world.transactions + 2, ms: 500 };
+    await submit(tab, "two");
+    await other.retry(one.id);
+    await settle(5_000);
+    expect(world.server.overlaps).toEqual([]);
+    expect(world.server.effects).toEqual(["one", "two"]);
+  });
+
   it("does not prune a record that another tab retried after this tab last read", async () => {
     const world = new World();
     const holder = await world.tab();
@@ -396,6 +459,8 @@ describe("schedules of tabs, outages and reloads", () => {
     it(`applies every command once and in lane order (seed ${seed})`, async () => {
       const next = random(seed);
       const world = new World();
+      world.server.latency = 200;
+      world.jitter = () => (next() < 0.3 ? Math.floor(next() * 1_500) : 0);
       const tabs: CommandDriver[] = [await world.tab(), await world.tab()];
       let n = 0;
       for (let step = 0; step < 40; step++) {
@@ -437,6 +502,7 @@ describe("schedules of tabs, outages and reloads", () => {
           if (record.state === "never") await tabs[0]?.retry(record.id);
         await settle(120_000);
       }
+      expect(world.server.overlaps).toEqual([]);
       const duplicated = world.server.effects.filter((l, i, all) => all.indexOf(l) !== i);
       expect(duplicated).toEqual([]);
       const records = tabs[0]?.getSnapshot().records ?? [];
