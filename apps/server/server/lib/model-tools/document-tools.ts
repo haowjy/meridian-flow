@@ -362,15 +362,13 @@ export async function readTrackedDocument(
       ),
       revision: null,
     };
-  const kept = version === "draft" ? await keptDraft(deps, address, call.execution) : null;
-  const grant = await documentGrant(
-    deps,
-    call.principal,
-    "read",
-    address,
-    "read",
-    kept ?? undefined,
-  );
+  const decided = await documentGrant(deps, call.principal, "read", address, "read");
+  if (isToolError(decided)) return { ...decided, revision: null };
+  const kept =
+    version === "draft" ? await keptDraft(deps, decided, address.documentId, call.execution) : null;
+  const grant = kept
+    ? await documentGrant(deps, call.principal, "read", address, "read", kept)
+    : decided;
   if (isToolError(grant)) return { ...grant, revision: null };
   const outcome = await readDocument(
     deps,

@@ -8,7 +8,6 @@ import {
   documentNotFoundMessage,
   modelResult,
 } from "@meridian/agent-edit/integration";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
@@ -60,19 +59,20 @@ export async function agentPrincipal(
 
 /**
  * Where an explicit `version: "draft"` read goes: the draft the Work kept of the document, so the
- * result says `draft`. A source that can't hold a draft, or a document with none kept, reads
- * where its access sends it, as `draft` always did there.
+ * result says `draft`. A document whose content source can't hold a draft (its `contentScheme`
+ * from the grant's facts, which a move keeps apart from its address), or one with none kept,
+ * reads where its access sends it, as `draft` always did there.
  */
 export async function keptDraft(
   deps: Pick<ToolWiringDeps, "branches">,
-  address: Pick<ResolvedDocumentAddress, "documentId" | "uri">,
+  grant: Pick<FileGrant, "facts">,
+  documentId: string,
   execution: ThreadExecutionContext,
 ): Promise<FileDestination | null> {
-  const parsed = parseUnifiedContextUri(address.uri);
-  if (!parsed.ok || !isDrafted(parsed.value.scheme)) return null;
+  if (!isDrafted(grant.facts.contentScheme)) return null;
   const owner = execution.branchOwner;
   const drafts = await deps.branches.draftReview.list({ owner });
-  return drafts.some((draft) => draft.documentId === address.documentId)
+  return drafts.some((draft) => draft.documentId === documentId)
     ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
     : null;
 }

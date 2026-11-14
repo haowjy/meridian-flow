@@ -68,8 +68,8 @@ export function createGrepHandler(deps: ToolWiringDeps) {
           ...(at ? { destination: at } : {}),
         });
         return new Map(
-          [...access].flatMap(([id, { level }]) =>
-            level === "none" ? [] : [[id, level] as const],
+          [...access].flatMap(([id, { level, destination }]) =>
+            level === "none" ? [] : [[id, { level, destination }] as const],
           ),
         );
       },

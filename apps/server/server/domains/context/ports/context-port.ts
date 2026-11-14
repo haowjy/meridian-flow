@@ -263,8 +263,14 @@ export interface GrepQuery {
   headLimit: number;
   /** Stops the scan early; the result is then not exact. */
   signal: AbortSignal;
-  /** The documents the caller may read, asked before anything is matched or counted. */
-  readable(ids: readonly string[]): Promise<ReadonlyMap<string, "read" | "edit">>;
+  /**
+   * The documents the caller may read, asked before anything is matched or counted, each with
+   * the destination its access reads from: the text is read there, not where its source's
+   * scheme would send it (a moved document's content source is not its address's).
+   */
+  readable(
+    ids: readonly string[],
+  ): Promise<ReadonlyMap<string, { level: "read" | "edit"; destination: FileDestination }>>;
 }
 
 export interface GrepResult {

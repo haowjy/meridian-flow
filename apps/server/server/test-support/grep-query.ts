@@ -13,6 +13,9 @@ export function grepQuery(
     signal: AbortSignal.timeout(20_000),
     mode: "content",
     headLimit: 50,
-    readable: async (ids) => new Map(ids.map((id) => [id, "edit" as const])),
+    readable: async (ids) =>
+      new Map(
+        ids.map((id) => [id, { level: "edit" as const, destination: { kind: "live" as const } }]),
+      ),
   };
 }
