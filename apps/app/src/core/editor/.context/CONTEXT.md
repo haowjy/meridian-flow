@@ -88,7 +88,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   occurrence was deleted and did not come back in place) always loses to one left
   in place, however many moved, so a dragged run is what is re-created and the
   blocks it passed keep their elements and a peer's concurrent typing. A block
-  only retyped, or replaced in place by a copy with its id, stays in place. Stock y-tiptap pairs by position and
+  only retyped, or replaced in place by a copy with its id, stays in place, and
+  nothing inside a block replaced in place counts as moved. So a command that
+  moves blocks writes the move as a delete and an insert of the moved nodes
+  (`moveTableRow` in `table-operations.ts`), never as a rebuilt parent: a
+  rebuilt table tells the binding nothing about which row moved, and a tie can
+  re-create the row a collaborator is typing in. Stock y-tiptap pairs by position and
   child equality: Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
