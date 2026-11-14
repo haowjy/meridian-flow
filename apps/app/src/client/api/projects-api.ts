@@ -22,7 +22,6 @@ import {
   API_ACCOUNT_CONTEXT_SOURCES_PATH,
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
-  apiProjectContextCatalogPath,
   apiProjectContextCopyPath,
   apiProjectContextCreateFolderPath,
   apiProjectContextCreatePath,
@@ -38,9 +37,7 @@ import {
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
-  type CatalogChanges,
   type CatalogScope,
-  type CatalogSnapshot,
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
@@ -239,14 +236,6 @@ export async function updateProjectWorkingSet(
   );
 }
 
-function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
-  const query = new URLSearchParams({ scope: scope.kind, ...extra });
-  if (scope.kind === "work") query.set("workId", scope.workId);
-  if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
-  if (scope.kind === "chat") query.set("chatId", scope.chatId);
-  return query.toString();
-}
-
 export async function getProjectContextSources(
   projectId: string,
   signal?: AbortSignal,
@@ -277,28 +266,6 @@ export async function getAccountContextSources(
   signal?: AbortSignal,
 ): Promise<ContextSourcesResult> {
   return getJson(API_ACCOUNT_CONTEXT_SOURCES_PATH, { signal });
-}
-
-export async function getContextCatalogSnapshot(
-  projectId: string,
-  scope: CatalogScope,
-  signal?: AbortSignal,
-): Promise<CatalogSnapshot> {
-  return getJson(`${apiProjectContextCatalogPath(projectId, "snapshot")}?${catalogQuery(scope)}`, {
-    signal,
-  });
-}
-
-export async function getContextCatalogChanges(
-  projectId: string,
-  scope: CatalogScope,
-  cursor: string,
-  signal?: AbortSignal,
-): Promise<CatalogChanges> {
-  return getJson(
-    `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
-    { signal },
-  );
 }
 
 export async function getProjectContextAvailability(
