@@ -22,6 +22,10 @@
   restored document atoms whose documents it no longer shows; one that has not
   synced doesn't, and folder atoms stay so a deleted folder shows on its chip's
   menu. Confirmed uploads retain ownership; in-memory bytes don't persist.
+- A reference atom follows the project's list (`useLiveReferences`): a rename or move
+  anywhere respells its name and address at once, outside Undo, so the chip shows the
+  current name and admission, which drops a reference whose address is stale, admits it.
+  An atom that owns an upload keeps its intake's spelling.
 - An upload chip isn't part of the message, so Send (button and Enter) waits while one
   sends and refuses while one has failed or stopped; the chip says to retry or remove it.
   Unmounting discards the Composer's uploads: its holder dies with it and a restored draft

@@ -1,4 +1,4 @@
-/** Pure projection of the replay's trees and ranking for file suggestion hosts. */
+/** Pure projection of the replay's trees, and ranking, for file suggestion hosts. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 
@@ -57,23 +57,19 @@ export function fileSuggestion(scheme: ProjectContextTreeScheme, file: TreeFile)
 }
 
 /**
- * Direct children of one folder, directories first — the browse view of a
- * navigable destination picker. `path` is the folder's own path (`/` for a
- * scheme root); scheme-root entries themselves (`path === "/"`) are never
- * children.
+ * Direct children of one folder in `entries`' order, which for
+ * `treeFileSuggestions` is the writer's order in the tree. `path` is the
+ * folder's own path (`/` for a scheme root); scheme-root entries themselves
+ * (`path === "/"`) are never children.
  */
 export function folderChildren(
   entries: readonly FileSuggestion[],
   scheme: ProjectContextTreeScheme,
   path: string,
 ): FileSuggestion[] {
-  const children = entries.filter(
+  return entries.filter(
     (entry) => entry.scheme === scheme && entry.path !== "/" && parentPath(entry.path) === path,
   );
-  return [
-    ...children.filter((c) => c.kind === "dir"),
-    ...children.filter((c) => c.kind === "file"),
-  ];
 }
 
 /** Parent folder path of an entry path: `/a/b` → `/a`, `/a` → `/`. */
@@ -82,11 +78,6 @@ export function parentPath(path: string): string {
   return index <= 0 ? "/" : path.slice(0, index);
 }
 
-type MatchOptions = {
-  kinds?: readonly FileSuggestionKind[];
-  schemes?: readonly ProjectContextTreeScheme[];
-};
-
 /**
  * Rank matches by the part a writer is most likely recalling: the beginning
  * of a leaf name, then a word within it, then anywhere in its full path.
@@ -94,20 +85,9 @@ type MatchOptions = {
 export function matchFileSuggestions(
   entries: readonly FileSuggestion[],
   query: string,
-  options: MatchOptions = {},
 ): FileSuggestion[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const kinds = options.kinds ? new Set(options.kinds) : null;
-  const schemes = options.schemes ? new Set(options.schemes) : null;
-  const filtered = entries.filter(
-    (entry) => (!kinds || kinds.has(entry.kind)) && (!schemes || schemes.has(entry.scheme)),
-  );
-
-  // Empty query: every entry ranks 0, so the pipeline reduces to the depth
-  // sort (stable ties keep tree order) — skip the rank/map/filter ritual.
-  if (!normalizedQuery) return filtered.sort((a, b) => a.parents.length - b.parents.length);
-
-  return filtered
+  return entries
     .map((entry, order) => ({ entry, order, rank: matchRank(entry, normalizedQuery) }))
     .filter((match) => match.rank !== null)
     .sort(
@@ -120,7 +100,6 @@ export function matchFileSuggestions(
 }
 
 function matchRank(entry: FileSuggestion, query: string): number | null {
-  if (!query) return 0;
   const name = entry.name.toLocaleLowerCase();
   if (name.startsWith(query)) return 0;
   if (nameBoundaryIndexes(name).some((index) => name.startsWith(query, index))) return 1;

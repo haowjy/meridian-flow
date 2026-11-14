@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { integer, pgSchema } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import { processDetachedWork } from "../shared/detached-work.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;

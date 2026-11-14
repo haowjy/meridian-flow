@@ -1029,8 +1029,12 @@ msgstr "Agent:"
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Agent: {0}"
-msgstr "Agent: {0}"
+#~ msgid "Agent: {0}"
+#~ msgstr "Agent: {0}"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Agent: {name}"
+msgstr "Agent: {name}"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
@@ -1667,8 +1671,12 @@ msgstr "Choose agent"
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Choose agent, currently {0}"
-msgstr "Choose agent, currently {0}"
+#~ msgid "Choose agent, currently {0}"
+#~ msgstr "Choose agent, currently {0}"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent, currently {name}"
+msgstr "Choose agent, currently {name}"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Choose tabs"
@@ -3221,10 +3229,12 @@ msgstr "grid"
 msgid "Hand off from here"
 msgstr "Hand off from here"
 
+#: src/features/agents/ComposerAgentControl.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
 msgstr "Hand off to"
 
+#: src/features/agents/ComposerAgentControl.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
 msgstr "Hand off to an Agent"
@@ -3944,6 +3954,10 @@ msgstr "Moving to {0}"
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Moving to the top"
 msgstr "Moving to the top"
+
+#: src/features/project/context/IdentityPlacementField.tsx
+msgid "Name and location"
+msgstr "Name and location"
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -5951,8 +5965,12 @@ msgstr "This chat now uses {0}."
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat uses {0}."
-msgstr "This chat uses {0}."
+#~ msgid "This chat uses {0}."
+#~ msgstr "This chat uses {0}."
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name}."
+msgstr "This chat uses {name}."
 
 #: src/client/api/meridian-error.ts
 msgid "This chat was deleted."
