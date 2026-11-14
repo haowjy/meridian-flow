@@ -172,7 +172,12 @@ export function TurnEditsReceipt({
       const refusal = status && !documentHalfEmpty ? status : null;
       setCommandRefusal(
         refusal
-          ? { direction, status: refusal, at: treeFaultLocation(refusal, outcome.skips) }
+          ? {
+              direction,
+              status: refusal,
+              at: treeFaultLocation(refusal, outcome.skips),
+              denial: outcome.denial,
+            }
           : null,
       );
       const notices = [

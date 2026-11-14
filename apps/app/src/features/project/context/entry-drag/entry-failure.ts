@@ -255,9 +255,20 @@ function showDeleteNotice(
       answer: taken.map(({ list, step }) => list.undo(step)).some(Boolean) ? "ok" : "gone",
       landed: Promise.resolve(),
     }),
-    end: () => {},
+    end: () => {
+      for (const stop of stops) stop();
+    },
   };
-  for (const { step } of taken) step.ended = () => notices.partEnded(handle);
+  // The notice's one Undo covers every list's step: it ends with the last of them.
+  const standing = new Set(taken.map(({ step }) => step));
+  for (const { step } of taken)
+    step.ended = () => {
+      standing.delete(step);
+      if (standing.size > 0) return;
+      handle.end();
+      notices.partEnded(handle);
+    };
+  const stops = taken.map(({ list, step }) => list.endWhenRestored(step));
   const id = notices.showDiscard({
     projectId,
     ownerKey: deleteNoticeKey(projectId),

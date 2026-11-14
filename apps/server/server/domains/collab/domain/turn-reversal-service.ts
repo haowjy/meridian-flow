@@ -85,7 +85,11 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           status: "permission_denied" as const,
         })),
       );
-      return { status: "permission_denied", documents } satisfies ReversalOutcome;
+      return {
+        status: "permission_denied",
+        denial: cause.refused[0]?.reason,
+        documents,
+      } satisfies ReversalOutcome;
     }
   }
 

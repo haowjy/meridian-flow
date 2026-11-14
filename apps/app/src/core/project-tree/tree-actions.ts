@@ -18,7 +18,7 @@ import {
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import { pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
+import { endWhenRestored, pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
 /**
@@ -96,6 +96,12 @@ export class TreeActions {
     if (!session) return false;
     const { view, pendingText } = this.version();
     return undoStep(session, step, this.actor, view.draft === step.draft ? pendingText : undefined);
+  }
+
+  /** Ends `step` once its deleted nodes are out of Trash; the returned stop ends the watch. */
+  endWhenRestored(step: TreeStep): () => void {
+    const session = this.session();
+    return session ? endWhenRestored(session, step) : () => {};
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */

@@ -1,5 +1,7 @@
 // Shared write reversal response contracts for context undo/redo APIs.
 
+import type { FileAccessDenial } from "./file-access.js";
+
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
@@ -104,6 +106,8 @@ export interface ReversalOutcome {
   landings?: TreeReversalLanding[];
   acceptedParts?: number;
   status: WriteStatus | TreeReversalFault;
+  /** Why the file policy refused a `permission_denied` reversal, for the app to word. */
+  denial?: FileAccessDenial;
   documents: DocumentReversalResult[];
   workReceipts?: WorkReversalResult[];
   workError?: "execution_failed";
