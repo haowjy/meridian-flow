@@ -23,9 +23,10 @@ import type {
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+import { CommandExistsError, replay } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
-import { DocumentCommandExistsError, type DocumentCommands, replay } from "./document-commands.js";
+import type { DocumentCommands } from "./document-commands.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -244,7 +245,7 @@ export function createApplyClickService(input: {
       }
       return await input.store.apply(command, prepared);
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }
@@ -264,7 +265,7 @@ export function createApplyClickService(input: {
       if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
       return await input.store.unapply(command, prepared);
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }

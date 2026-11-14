@@ -1,7 +1,7 @@
 # Crash test of the model's edits
 
 The model's document edits must survive a process death at any step: the document text, the
-`document_edits.command_id` receipts, the stored result blocks, the `document_commands` rows and
+`document_edits.command_id` receipts, the stored result blocks, the `commands` rows and
 the evidence rows (observation frontiers) each end up exactly once ([design][design],
 [model edits](../model-edits.md), [recovery](../../../runtime/.context/recovery.md)).
 

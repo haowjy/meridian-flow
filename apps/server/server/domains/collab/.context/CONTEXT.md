@@ -534,7 +534,7 @@ none takes a list's key while holding a document key. No writer-ingress epoch ba
 
 A document command (a model edit, a tree tool call, `reverse_turn`, Apply, Un-Apply, Discard,
 Copy, the server's move between a project's list and the account's) runs in
-`runCommand` (`adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
+`runCommand` (`shared/commands/drizzle-commands.ts`, through `adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
 whose first write is the claim, then the list above from the Work rows on. It takes no
 `withDocument` mutex: a command that needs a live room reads its journal in the transaction
 under the document key (`ensureLiveDocumentDraft`, `committedCopy` under `inLockedWrite()`). A

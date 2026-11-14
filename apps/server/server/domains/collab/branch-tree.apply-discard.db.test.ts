@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { BranchId, DocumentCommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -72,7 +72,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     /** A Discard is a command: its claim, and the answer it stores. */
     const asCommand = () => ({
       envelope: {
-        commandId: randomUUID() as DocumentCommandId,
+        commandId: randomUUID() as CommandId,
         accountId: USER,
         projectId: PROJECT as never,
         kind: "discard" as const,
@@ -212,7 +212,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelope(commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
+            commandId: commandId as CommandId,
             items: nodes.map(([node, revision]) => ({ node, tree: { revision } })),
             ...(restore ? { restore: true as const } : {}),
           },
@@ -511,7 +511,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     describe("commands over the tree half", () => {
       const envelopeOf = (kind: "apply" | "unapply" | "undo_discard", commandId: string) => ({
-        commandId: commandId as DocumentCommandId,
+        commandId: commandId as CommandId,
         accountId: USER,
         projectId: PROJECT as never,
         kind,
@@ -524,7 +524,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelopeOf("apply", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
+            commandId: commandId as CommandId,
             items: nodes.map((node) => ({ node, tree: { revision: revisions.get(node) ?? null } })),
           },
         });
@@ -535,8 +535,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           userId: USER,
           envelope: envelopeOf("undo_discard", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
-            discardCommandId: discardCommandId as DocumentCommandId,
+            commandId: commandId as CommandId,
+            discardCommandId: discardCommandId as CommandId,
           },
         });
       /** A Work draft of the document holding `text`: what a closed draft keeps after a Discard. */
@@ -570,8 +570,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           envelope: envelopeOf("unapply", commandId),
           request: {
-            commandId: commandId as DocumentCommandId,
-            applyCommandId: applyCommandId as DocumentCommandId,
+            commandId: commandId as CommandId,
+            applyCommandId: applyCommandId as CommandId,
           },
         });
       }

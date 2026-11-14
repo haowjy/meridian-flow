@@ -8898,10 +8898,10 @@
         }
       },
       "foreignKeys": {
-        "apply_command_effects_command_id_document_commands_id_fk": {
-          "name": "apply_command_effects_command_id_document_commands_id_fk",
+        "apply_command_effects_command_id_commands_id_fk": {
+          "name": "apply_command_effects_command_id_commands_id_fk",
           "tableFrom": "apply_command_effects",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "command_id"
           ],
@@ -8988,10 +8988,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "apply_command_trees_command_id_document_commands_id_fk": {
-          "name": "apply_command_trees_command_id_document_commands_id_fk",
+        "apply_command_trees_command_id_commands_id_fk": {
+          "name": "apply_command_trees_command_id_commands_id_fk",
           "tableFrom": "apply_command_trees",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "command_id"
           ],
@@ -9029,6 +9029,103 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.commands": {
+      "name": "commands",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_digest": {
+          "name": "request_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "commands_thread": {
+          "name": "commands_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "commands_account_id_users_id_fk": {
+          "name": "commands_account_id_users_id_fk",
+          "tableFrom": "commands",
+          "tableTo": "users",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "commands_kind_valid": {
+          "name": "commands_kind_valid",
+          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.discard_command_drafts": {
       "name": "discard_command_drafts",
       "schema": "",
@@ -9054,10 +9151,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "discard_command_drafts_command_id_document_commands_id_fk": {
-          "name": "discard_command_drafts_command_id_document_commands_id_fk",
+        "discard_command_drafts_command_id_commands_id_fk": {
+          "name": "discard_command_drafts_command_id_commands_id_fk",
           "tableFrom": "discard_command_drafts",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "command_id"
           ],
@@ -9080,10 +9177,10 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "discard_command_drafts_restored_by_document_commands_id_fk": {
-          "name": "discard_command_drafts_restored_by_document_commands_id_fk",
+        "discard_command_drafts_restored_by_commands_id_fk": {
+          "name": "discard_command_drafts_restored_by_commands_id_fk",
           "tableFrom": "discard_command_drafts",
-          "tableTo": "document_commands",
+          "tableTo": "commands",
           "columnsFrom": [
             "restored_by"
           ],
@@ -9285,116 +9382,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.document_commands": {
-      "name": "document_commands",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_digest": {
-          "name": "request_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_commands_thread": {
-          "name": "document_commands_thread",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_commands_account_id_users_id_fk": {
-          "name": "document_commands_account_id_users_id_fk",
-          "tableFrom": "document_commands",
-          "tableTo": "users",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_commands_project_id_projects_id_fk": {
-          "name": "document_commands_project_id_projects_id_fk",
-          "tableFrom": "document_commands",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_commands_kind_valid": {
-          "name": "document_commands_kind_valid",
-          "value": "\"document_commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.document_drafts": {

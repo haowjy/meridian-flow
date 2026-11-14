@@ -2,17 +2,17 @@
 import { randomUUID } from "node:crypto";
 import type {
   BranchId,
-  DocumentCommandId,
+  CommandId,
   DraftOwner,
   ProjectId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { DocumentCommandKind } from "@meridian/contracts/branches";
+import type { CommandKind } from "@meridian/contracts/commands";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { type CommandEnvelope, commandDigest } from "../../../shared/commands/command-record.js";
 import type { DraftReviewApi } from "../contracts.js";
-import { commandDigest, type DocumentCommandEnvelope } from "../domain/document-commands.js";
 import {
   type createHarness,
   PROJECT_ID,
@@ -72,15 +72,15 @@ export async function commitDraftEdit(
 
 /** A fresh command envelope for facade-level suites; the route builds its own from the body. */
 export function testEnvelope(input: {
-  kind: DocumentCommandKind;
+  kind: CommandKind;
   branchId: BranchId;
   userId?: UserId;
-  commandId?: DocumentCommandId;
+  commandId?: CommandId;
   body?: unknown;
-}): DocumentCommandEnvelope {
+}): CommandEnvelope {
   const accountId = input.userId ?? (USER_ID as UserId);
   return {
-    commandId: input.commandId ?? (randomUUID() as DocumentCommandId),
+    commandId: input.commandId ?? (randomUUID() as CommandId),
     accountId,
     projectId: PROJECT_ID as ProjectId,
     kind: input.kind,

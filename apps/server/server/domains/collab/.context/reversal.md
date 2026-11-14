@@ -8,7 +8,7 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
 accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
-`commandId` for each click and each Try again. It is a `reverse_turn` row in `document_commands`:
+`commandId` for each click and each Try again. It is a `reverse_turn` row in `commands`:
 `DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
 its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired`,
 `permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,

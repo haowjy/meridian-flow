@@ -185,7 +185,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
 - **Edit history.** The model's tree entry (`recordAgentTreeChange`) is written in the same
   transaction through `inTransaction` / `afterWrite`.
 
-- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the
+- Copy's `commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the
   receipt) owns the transaction: the claim is its first write, a refusal after it is stored, a
   transient `io_error` rolls the claim back so the id stays retryable, and another request under
   the id answers `command_conflict`. Inside it the command transaction

@@ -1,4 +1,4 @@
-/** Copy's command record: one `copy` row in `document_commands`, claimed before its effect. */
+/** Copy's command record: one `copy` row in `commands`, claimed before its effect. */
 
 import type { ProjectId, UserId } from "@meridian/contracts";
 import type { CopyCommandResult } from "@meridian/contracts/branches";
@@ -8,12 +8,10 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
-import { lookupCommand, runCommand } from "../../collab/adapters/drizzle-document-commands.js";
-import {
-  commandDigest,
-  DocumentCommandExistsError,
-} from "../../collab/domain/document-commands.js";
+import { CommandExistsError, commandDigest } from "../../../shared/commands/command-record.js";
+import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
+import { runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
+import { runDocumentCommand } from "../../collab/adapters/drizzle-document-commands.js";
 
 type CopyCommand = Extract<ContextOperationCommand, { kind: "copy" }>;
 
@@ -81,7 +79,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
       const replay = await stored(operationId, command, address);
       if (replay) return replay;
       try {
-        const settled = await runCommand<CopyCommandResult>(
+        const settled = await runDocumentCommand<CopyCommandResult>(
           db,
           {
             commandId: operationId,
@@ -116,7 +114,7 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
         return settled.receipt.result as ContextOperationResult<"copy">;
       } catch (cause) {
         if (cause instanceof RetryableCopy) return cause.result;
-        if (cause instanceof DocumentCommandExistsError)
+        if (cause instanceof CommandExistsError)
           return (await stored(operationId, command, address)) ?? mismatch(address);
         throw cause;
       }

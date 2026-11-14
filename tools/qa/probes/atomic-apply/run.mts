@@ -25,7 +25,6 @@ import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/ser
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
-import type { CommandLookupKey } from "../../../../apps/server/server/domains/collab/domain/document-commands.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createTreeReader } from "../../../../apps/server/server/domains/context/tree/tree-view.ts";
 import {
@@ -38,6 +37,7 @@ import {
   handleApplyItemsRequest,
   handleUnapplyClickRequest,
 } from "../../../../apps/server/server/lib/branch-review-route.ts";
+import type { CommandLookupKey } from "../../../../apps/server/server/shared/commands/command-record.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import { treeListOfSource } from "../../../../apps/server/server/test-support/tree-seed.ts";
@@ -384,9 +384,7 @@ try {
     d.destroy();
     await applied(f, c);
     assert.equal(
-      (
-        await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
-      )[0].n,
+      (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
       1,
     );
     f.close();
@@ -406,7 +404,7 @@ try {
       assert.equal((await f.send(overlap)).status, "refused");
       assert.equal(
         (
-          await h.raw`select count(*)::int as n from document_commands where id in (${bad.request.commandId},${overlap.request.commandId})`
+          await h.raw`select count(*)::int as n from commands where id in (${bad.request.commandId},${overlap.request.commandId})`
         )[0].n,
         0,
       );
@@ -433,9 +431,7 @@ try {
       assert.deepEqual(await f.liveText(), ["Base."]);
       assert.equal(recovered, beforeRecover);
       assert.equal(
-        (
-          await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
-        )[0].n,
+        (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
         0,
       );
       const doc = await f.durable();
@@ -470,9 +466,7 @@ try {
       remove();
     }
     assert.equal(
-      (
-        await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
-      )[0].n,
+      (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
       1,
     );
     f.close();

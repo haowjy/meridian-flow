@@ -6,18 +6,18 @@ import type {
   UndoDiscardResult,
 } from "@meridian/contracts/branches";
 import {
-  type DocumentCommandEnvelope,
-  DocumentCommandExistsError,
-  type DocumentCommands,
+  type CommandEnvelope,
+  CommandExistsError,
   replay,
-} from "./document-commands.js";
+} from "../../../shared/commands/command-record.js";
+import type { DocumentCommands } from "./document-commands.js";
 
 export type UndoDiscardCommand = {
   /** The branch the Discard ran on; it may have closed with it. */
   branchId: BranchId;
   userId: UserId;
   request: UndoDiscardClick;
-  envelope: DocumentCommandEnvelope;
+  envelope: CommandEnvelope;
 };
 
 export interface UndoDiscardStore {
@@ -39,7 +39,7 @@ export function createUndoDiscardService(input: {
     try {
       return await input.store.run(command);
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }

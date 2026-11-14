@@ -1,20 +1,20 @@
 /** Admits the user's whole turn-card inverse at its resolved destinations. */
 
-import type { DocumentCommandId } from "@meridian/contracts";
+import type { CommandId } from "@meridian/contracts";
 import type { ReverseTurnCommandResult } from "@meridian/contracts/branches";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import {
+  CommandConflictError,
+  type CommandEnvelope,
+  CommandExistsError,
+  commandDigest,
+  replay,
+} from "../../../shared/commands/command-record.js";
 import { uuidV5 } from "../../../shared/model-edit-ids.js";
 import { FileEditRefusedError, targetDocumentId } from "../../file-policy/index.js";
 import type { ReverseThreadContextInput, TurnReversalAccess } from "../contracts.js";
-import {
-  commandDigest,
-  DocumentCommandConflictError,
-  type DocumentCommandEnvelope,
-  DocumentCommandExistsError,
-  type DocumentCommands,
-  replay,
-} from "./document-commands.js";
+import type { DocumentCommands } from "./document-commands.js";
 import type { TurnEditedDocumentId } from "./turn-live-lineage.js";
 
 export type ThreadContextReversalResolver = {
@@ -36,8 +36,8 @@ export type TurnReversalServiceDeps = {
 const ALONGSIDE_NAMESPACE = "3d0f6b52-9c7e-4a1b-b8e2-5f4a6c9d1e07";
 
 /** The id of a card command's second part, the same on every resend of the click. */
-function alongsideCommandId(commandId: DocumentCommandId): DocumentCommandId {
-  return uuidV5(ALONGSIDE_NAMESPACE, commandId) as DocumentCommandId;
+function alongsideCommandId(commandId: CommandId): CommandId {
+  return uuidV5(ALONGSIDE_NAMESPACE, commandId) as CommandId;
 }
 
 /** Whether the reversal changed anything: a document's parts, or a Work the caller put back. */
@@ -91,7 +91,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
 
   /** One `reverse_turn` command: its stored outcome, or `effect` run under its claim. */
   async function settle(
-    envelope: DocumentCommandEnvelope,
+    envelope: CommandEnvelope,
     effect: () => Promise<ReversalOutcome>,
   ): Promise<ReversalOutcome> {
     const stored = async (): Promise<ReversalOutcome | null> => {
@@ -100,7 +100,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         envelope.commandId,
       );
       if (!found) return null;
-      if (found.status === "conflict") throw new DocumentCommandConflictError(envelope.commandId);
+      if (found.status === "conflict") throw new CommandConflictError(envelope.commandId);
       return found.outcome;
     };
     const first = await stored();
@@ -115,7 +115,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       );
       return result.outcome;
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await stored();
         if (winner) return winner;
       }
@@ -127,7 +127,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     reverseTurn,
     async reverseThreadContext(command) {
       const { projectId } = await input.threadContext.requireThreadOwner(command);
-      const envelope = (commandId: DocumentCommandId, part?: "alongside") => ({
+      const envelope = (commandId: CommandId, part?: "alongside") => ({
         commandId,
         accountId: command.userId,
         projectId,

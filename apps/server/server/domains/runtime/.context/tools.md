@@ -138,7 +138,7 @@ Document inverse commands use `write undo/redo` and `write revert`; model-only
 handles select edits, and the command is all-or-nothing. The tree commands
 (`write move`, `delete`, `restore`, and `create` of a folder) are host commands
 (`lib/model-tools/tree-commands.ts`, the core in `domains/context/tree/tree-commands.ts`).
-Each call is one document command (`document_commands`, `collab/.context/model-edits.md`) with
+Each call is one document command (`commands`, `collab/.context/model-edits.md`) with
 its records admitted at the call; nothing waits for the reply's save, and a failed reply leaves
 what its calls did. A path resolves through the
 names the model was shown: `ls` and every tree result record, per chat, which name meant

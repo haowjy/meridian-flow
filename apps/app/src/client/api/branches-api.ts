@@ -7,7 +7,6 @@ import type {
   ApplyClickResult,
   BranchDiscardAllRequest,
   BranchDiscardAllResponse,
-  DocumentCommandLookupResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
   DraftDiscardResponse,
@@ -16,8 +15,9 @@ import type {
   UnapplyClick,
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
+import type { CommandLookupResponse } from "@meridian/contracts/commands";
 import {
-  apiDocumentCommandPath,
+  apiCommandPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
   apiProjectBranchDocumentDraftDiscardPath,
@@ -68,10 +68,9 @@ export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
 }
 export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObservation> {
   // Only the typed `none` answer proves absence. A 404 may be a stale route, not an unclaimed id.
-  const found = await getJson<DocumentCommandLookupResponse>(
-    apiDocumentCommandPath(body.commandId),
-    { signal: AbortSignal.timeout(10_000) },
-  );
+  const found = await getJson<CommandLookupResponse>(apiCommandPath(body.commandId), {
+    signal: AbortSignal.timeout(10_000),
+  });
   if (found.status === "none" || found.outcome.status === "never")
     return { status: "none", commandId: body.commandId };
   return found.outcome.result as ApplyClickResult;

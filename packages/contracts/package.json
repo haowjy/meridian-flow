@@ -23,6 +23,7 @@
     "./agents": "./src/agents/index.ts",
     "./preferences": "./src/preferences/index.ts",
     "./branches": "./src/branches/index.ts",
+    "./commands": "./src/commands/index.ts",
     "./failures": "./src/failures/index.ts",
     "./errors": "./src/errors/index.ts",
     "./artifacts": "./src/artifacts/index.ts"

@@ -58,7 +58,7 @@ import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
-import { runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -282,7 +282,7 @@ export function createDrizzleApplyClick(
               : undefined;
       const lives: Y.Doc[] = [];
       try {
-        return await runCommand(
+        return await runDocumentCommand(
           db,
           command.envelope,
           () =>
@@ -547,7 +547,7 @@ export function createDrizzleApplyClick(
       let committedAt: number | undefined;
       try {
         return await applyTiming.run({ commandId, measured: deps.measured }, () =>
-          runCommand(
+          runDocumentCommand(
             db,
             envelope,
             async (): Promise<ApplyClickResult> => {

@@ -1,6 +1,6 @@
 /** Plans and executes typed durable Work receipts through one ordered state machine. */
 
-import type { DocumentCommandId, UserId } from "@meridian/contracts";
+import type { CommandId, UserId } from "@meridian/contracts";
 import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
@@ -71,7 +71,7 @@ export function reverseTurnCard(
     turnId: TurnId;
     userId: UserId;
     direction: Direction;
-    commandId: DocumentCommandId;
+    commandId: CommandId;
   },
 ): Promise<ReversalOutcome> {
   const alongside = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {

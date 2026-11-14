@@ -3,17 +3,17 @@ import type { BranchId, DraftOwner } from "@meridian/contracts";
 import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  type CommandEnvelope,
+  CommandExistsError,
+  replay,
+} from "../../../shared/commands/command-record.js";
 import type { CollabBranches, CommandOutcome, ModelDraftRow } from "../contracts.js";
 import type { BranchDiscard, DiscardResult } from "./branch-discard.js";
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
 import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.js";
 import type { Branches } from "./branches.js";
-import {
-  type DocumentCommandEnvelope,
-  DocumentCommandExistsError,
-  type DocumentCommands,
-  replay,
-} from "./document-commands.js";
+import type { DocumentCommands } from "./document-commands.js";
 import type { WorkBranchPendingStore } from "./ports/work-branch-pending-store.js";
 
 export function createWorkBranchReviewService(input: {
@@ -37,7 +37,7 @@ export function createWorkBranchReviewService(input: {
     return { branchId: branch.id, items: await input.reviewItems.list(branch.id) };
   }
 
-  async function known(envelope: DocumentCommandEnvelope): Promise<CommandOutcome | null> {
+  async function known(envelope: CommandEnvelope): Promise<CommandOutcome | null> {
     const stored = replay<DiscardCommandResult>(
       await input.commands.lookup(envelope),
       envelope.commandId,
@@ -52,7 +52,7 @@ export function createWorkBranchReviewService(input: {
    * refusal comes through here, so an id that committed meanwhile answers its own outcome.
    */
   async function answer(
-    envelope: DocumentCommandEnvelope,
+    envelope: CommandEnvelope,
     computed: DiscardCommandResult,
   ): Promise<CommandOutcome> {
     return (await known(envelope)) ?? { kind: "result", result: computed };
@@ -60,13 +60,13 @@ export function createWorkBranchReviewService(input: {
 
   /** Runs an effect that may lose the id to another request. */
   async function effect(
-    envelope: DocumentCommandEnvelope,
+    envelope: CommandEnvelope,
     run: () => Promise<DiscardCommandResult>,
   ): Promise<CommandOutcome> {
     try {
       return await answer(envelope, await run());
     } catch (cause) {
-      if (cause instanceof DocumentCommandExistsError) {
+      if (cause instanceof CommandExistsError) {
         const winner = await known(envelope);
         if (winner) return winner;
       }

@@ -5,14 +5,14 @@ import type {
   ModelEditOutcome,
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { documentCommands } from "@meridian/database/schema";
+import { CommandExistsError } from "../../../shared/commands/command-record.js";
+import { lookupCommand, resolveCommand } from "../../../shared/commands/drizzle-commands.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
 import { evidenceFrontiers } from "../../../shared/model-evidence.js";
-import { DocumentCommandExistsError } from "../domain/document-commands.js";
 import { ModelEditRefusal, type ModelEdits } from "../domain/model-edit.js";
 import type { ModelEvidence } from "../domain/model-evidence.js";
-import { lookupCommand, runCommand } from "./drizzle-document-commands.js";
+import { runDocumentCommand } from "./drizzle-document-commands.js";
 
 export function createDrizzleModelEdits(
   db: Database,
@@ -38,7 +38,7 @@ export function createDrizzleModelEdits(
       const ids = modelEditIds(key);
       let refusedEvidence: Awaited<ReturnType<typeof effect>>["evidence"];
       try {
-        const result = await runCommand<ModelEditCommandResult>(
+        const result = await runDocumentCommand<ModelEditCommandResult>(
           db,
           {
             commandId: ids.commandId,
@@ -73,29 +73,21 @@ export function createDrizzleModelEdits(
           ...(refusedEvidence === undefined ? {} : { evidence: refusedEvidence }),
         };
       } catch (cause) {
-        if (cause instanceof DocumentCommandExistsError) return { outcome: await stored(key) };
+        if (cause instanceof CommandExistsError) return { outcome: await stored(key) };
         throw cause;
       }
     },
 
     async resolve(key) {
       const ids = modelEditIds(key);
-      // Recovery calls this inside the finalizer's thread-lock transaction, so it joins the
-      // ambient one: a transaction of its own would need a second connection while the first
-      // holds the lock. The insert waits on a transaction still holding the key, then
-      // conflicts with its row.
-      await currentDrizzleDb(db)
-        .insert(documentCommands)
-        .values({
-          id: ids.commandId,
-          kind: "model_edit",
-          accountId: key.accountId,
-          projectId: key.projectId,
-          threadId: key.threadId,
-          requestDigest: ids.digest,
-          outcome: { status: "never" },
-        })
-        .onConflictDoNothing();
+      await resolveCommand(db, {
+        commandId: ids.commandId,
+        accountId: key.accountId,
+        kind: "model_edit",
+        projectId: key.projectId,
+        threadId: key.threadId,
+        digest: ids.digest,
+      });
       return stored(key);
     },
   };

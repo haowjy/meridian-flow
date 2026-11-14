@@ -2,9 +2,9 @@
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { Branches } from "./branches.js";
-import type { DocumentCommandEnvelope } from "./document-commands.js";
 import { type Attempt, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
 import { DraftCasConflictError } from "./draft-store.js";
 
@@ -29,7 +29,7 @@ export interface BranchDiscard {
     userId?: UserId;
     /** The writer's command, settled in the kernel's transaction with what it ended. */
     command: {
-      envelope: DocumentCommandEnvelope;
+      envelope: CommandEnvelope;
       result(ended: DiscardResult): DiscardCommandResult;
     };
   }): Promise<DiscardResult>;
@@ -86,7 +86,7 @@ export type DiscardRefusal = { refused: "stale" | "draft_changed" };
 
 /** The writer's command, settled in the kernel's transaction; null: the branch is not active. */
 export type DiscardCommandClaim = {
-  envelope: DocumentCommandEnvelope;
+  envelope: CommandEnvelope;
   result(ended: DiscardKernelResult | DiscardRefusal | null): DiscardCommandResult;
 };
 
