@@ -80,7 +80,6 @@ export function referenceKey(kind: "document" | "folder", id: string): string {
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
-  canOpen?: (uri: string) => boolean;
   /**
    * The transcript's own chat handle. A message sent from a New chat names an upload bare until
    * the server names the chat and rewrites the stored text; the referenced href is qualified here
@@ -104,7 +103,7 @@ export function TranscriptReference({
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
-  const { resolutions, onOpen, canOpen, uploadsChat } = useContext(TranscriptReferenceContext);
+  const { resolutions, onOpen, uploadsChat } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
   const folderHost = useFolderMenuHost();
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
@@ -151,7 +150,7 @@ export function TranscriptReference({
   const folderMenu = menuFolderId && folderHost && !gone ? menuFolderId : null;
   const follow =
     exact?.kind === "document"
-      ? resolution?.available && onOpen && (canOpen?.(resolution.uri) ?? true)
+      ? resolution?.available && onOpen
         ? () => onOpen(resolution.id)
         : undefined
       : navigation && syntax && syntaxFollowable && !folderMenu

@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
         turns: app.threadRepos.turns,
         promptBakes: app.threadRepos.promptBakes,
         blocks: app.threadRepos.blocks,
-        imageInclusions: app.threadRepos.imageInclusions,
+        mediaInclusions: app.threadRepos.mediaInclusions,
         threadDocuments: app.threadRepos.threadDocuments,
         transaction: app.threadRepos.transaction,
         projects: app.projectRepo,

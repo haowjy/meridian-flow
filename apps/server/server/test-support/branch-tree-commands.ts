@@ -255,7 +255,7 @@ export function branchTreeCommands(
       };
     }
     async function succeed(result: ToolExecutionResult) {
-      if (result.isError) throw new Error(`model call failed: ${JSON.stringify(result.output)}`);
+      if (result.isError) throw new Error(`model call failed: ${JSON.stringify(result.content)}`);
       return result;
     }
     return {

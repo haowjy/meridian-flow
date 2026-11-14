@@ -26,8 +26,8 @@ The caller knows the tool, so it calls that tool's normalizer.
 | Intent | What did it look at, or mean to write? | Row expands | Tool input and the typed read result |
 | Outcome | What changed in my manuscript? | Turn edits receipt | Lineage and inverse receipts |
 
-A write expand reads `tool.input.content`, never the output: the output is the model's
-text, the typed result is a receipt, and a write can succeed as a tool call and still be
+A write expand reads `tool.input.content`, never the content: the content is what the model
+saw, the typed result is a receipt, and a write can succeed as a tool call and still be
 superseded downstream. Rendering its output as a change would assert something that may
 not have landed.
 

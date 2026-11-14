@@ -17,7 +17,7 @@ export type DirectInvocationResult = {
   reason: string | null;
 };
 
-/** The tool's typed `result`; `output` is the model's text and is never parsed. */
+/** The tool's typed `result`; `content` is what the model saw and is never parsed. */
 type SettledResult = { result: JsonValue | null; isError: boolean; message: string | null };
 
 /** The complete parent turn is one identity scope; presentation runs are not protocol boundaries. */

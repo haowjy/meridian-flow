@@ -23,7 +23,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
-import { pausedAppend, rebaseLive } from "./phase4.mts";
+import { pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
 
 const KEYS = 20;
 
@@ -43,13 +43,14 @@ function openProcess(harness: Harness, label: string, store: DraftStore = harnes
 
 /**
  * A draft over "Base" with a room loaded in each process, the second process on its own
- * connections. `storeA` lets a probe pause process A's store.
+ * connections. `storeA` lets a probe pause process A's store; `wrap` wraps each process's store,
+ * given its label.
  */
 async function twoProcesses(
   harness: Harness,
   label: string,
   storeA?: DraftStore,
-  wrap: (store: DraftStore) => DraftStore = (store) => store,
+  wrap: (store: DraftStore, label: "A" | "B") => DraftStore = (store) => store,
 ) {
   const { branchId } = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
@@ -60,8 +61,8 @@ async function twoProcesses(
     liveRoom: null,
   });
   const other = await openHarness(harness.url);
-  const a = openProcess(harness, "A", wrap(storeA ?? harness.store));
-  const b = openProcess(other, "B", wrap(other.store));
+  const a = openProcess(harness, "A", wrap(storeA ?? harness.store, "A"));
+  const b = openProcess(other, "B", wrap(other.store, "B"));
   for (const process of [a, b]) {
     await process.coordinator.readDraft(documentDraft.draftId, async (doc) => {
       Y.applyUpdate(process.room, Y.encodeStateAsUpdate(doc));
@@ -110,7 +111,7 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no DraftCasConflictError, one appendRows per frame`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no DraftCasConflictError, one appendRows per frame`,
   async run(harness) {
     // One sequence point per frame (design §9): today's revision miss, retried inside the frame
     // as `DraftCasConflictError`, would show as a second `appendRows` call.
@@ -159,6 +160,8 @@ export const twoProcessFrames: Probe = {
     observe("frames", { admitted, failures });
     observe("tokens", { durable, rooms });
     // `lock_timeout` plays no part here: an append waits for the row as long as a holder holds it.
+    // Wall time is reported, not asserted: it tracks the machine. The structural claim, one
+    // sequence point per frame, is the `appendRowsCalls` check below.
     observe("latency", {
       wallMs: latency(wall),
       waitMs: latency(appends.map((append) => append.waitMs)),
@@ -168,7 +171,6 @@ export const twoProcessFrames: Probe = {
     });
     assert.equal(appendRowsCalls, 2 * KEYS, "a frame retried its sequence point");
     assert.ok(!Object.keys(failures).some((name) => name.startsWith("DraftCasConflictError")));
-    assert.ok(Math.max(...wall) < 1_000, "a frame took a second or more");
     assert.equal(admitted, 2 * KEYS);
     assert.deepEqual(
       { durable, rooms },
@@ -236,37 +238,55 @@ export const twoProcessFold: Probe = {
 
 const COMPACT_TAIL_ROWS = 512;
 
+/** A tail one row short of the bound; the next frame triggers the background fold. */
+async function seedCompactTail(f: { draftId: string; a: Process }) {
+  const source = new Y.Doc({ gc: false });
+  Y.applyUpdate(source, Y.encodeStateAsUpdate(f.a.room));
+  const rows = Array.from({ length: COMPACT_TAIL_ROWS - 1 }, () => ({
+    draftId: f.draftId,
+    source: "writer" as const,
+    updateData: appendToFirstParagraph(source, "x"),
+  }));
+  await commitDraftRows(f.a.coordinator, {
+    draftId: f.draftId,
+    sourceDoc: source,
+    rows,
+  });
+  source.destroy();
+  await f.a.coordinator.readDraft(f.draftId, async () => {});
+}
+
 export const twoProcessCompaction: Probe = {
   name: "two-process-compaction",
   decision: "D25",
   expected: `tail 0 and room A holds FOREIGN after the compaction; next: {"ok":true,"value":{"admitted":true}}`,
   async run(harness) {
     const pause = pausedCompaction(harness.store);
-    const f = await twoProcesses(harness, "two-process-compaction", pause.paused);
+    // B's append carries the same long tail, so B would start a compaction of its own. Two folds
+    // then race for the draft's row, and when B's wins, A's finds the checkpoint moved and is
+    // dropped: another process's commit then reaches room A on its next exchange, not by push.
+    // B's compaction is stopped so the case tests A's pushed delivery after its own fold.
+    const noCompaction = (store: DraftStore, label: "A" | "B"): DraftStore =>
+      label === "A"
+        ? store
+        : {
+            ...store,
+            commitRewrite: (input) =>
+              input.operation.kind === "compact"
+                ? Promise.resolve({ status: "moved" })
+                : store.commitRewrite(input),
+          };
+    const f = await twoProcesses(harness, "two-process-compaction", pause.paused, noCompaction);
     try {
       f.live.destroy();
-      // A tail one row short of the bound; the next frame triggers the background fold.
-      const source = new Y.Doc({ gc: false });
-      Y.applyUpdate(source, Y.encodeStateAsUpdate(f.a.room));
-      const rows = Array.from({ length: COMPACT_TAIL_ROWS - 1 }, () => ({
-        draftId: f.draftId,
-        source: "writer" as const,
-        updateData: appendToFirstParagraph(source, "x"),
-      }));
-      await commitDraftRows(f.a.coordinator, {
-        draftId: f.draftId,
-        sourceDoc: source,
-        rows,
-      });
-      source.destroy();
-      await f.a.coordinator.readDraft(f.draftId, async () => {});
+      await seedCompactTail(f);
       await type(f.a, f.draftId, " TRIGGER");
       await pause.entered.wait;
       const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release.open();
       await pause.done.wait;
-      // The compaction delivers after its own commit returns.
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      // The compaction delivers after its own commit returns, so wait for the room, not a sleep.
+      const deliveredMs = await roomHolds(f.a.room, "FOREIGN", 10_000, "room A, FOREIGN");
       const durable = await harness.readDraft(f.draftId);
       const room = roomText(f.a);
       const next = await type(f.a, f.draftId, " NEXT");
@@ -275,12 +295,62 @@ export const twoProcessCompaction: Probe = {
         tail: durable.tail,
         durableHasForeign: durable.text.includes("FOREIGN"),
         roomHasForeign: room.includes("FOREIGN"),
+        deliveredMs,
       });
       observe("next", next);
       assert.equal(durable.tail, 0);
       assert.match(durable.text, /FOREIGN/);
       assert.match(room, /FOREIGN/);
       assert.deepEqual(next, { ok: true, value: { admitted: true } });
+    } finally {
+      await f.other.close();
+    }
+  },
+};
+
+/**
+ * B's fold wins the row, so A's is dropped as designed and room A gets nothing pushed:
+ * another process's commit reaches an open room on its next exchange.
+ */
+export const twoProcessCompactionMoved: Probe = {
+  name: "two-process-compaction-moved",
+  decision: "D25",
+  expected: `room A lacks FOREIGN after its dropped compaction; next: {"ok":true,"value":{"admitted":true}} and room A holds FOREIGN`,
+  async run(harness) {
+    const pause = pausedCompaction(harness.store);
+    const bFolded = gate();
+    const watchB = (store: DraftStore, label: "A" | "B"): DraftStore =>
+      label === "A"
+        ? store
+        : {
+            ...store,
+            async commitRewrite(input) {
+              const result = await store.commitRewrite(input);
+              if (input.operation.kind === "compact") bFolded.open();
+              return result;
+            },
+          };
+    const f = await twoProcesses(harness, "two-process-compaction-moved", pause.paused, watchB);
+    try {
+      f.live.destroy();
+      await seedCompactTail(f);
+      await type(f.a, f.draftId, " TRIGGER");
+      await pause.entered.wait;
+      await type(f.b, f.draftId, " FOREIGN");
+      await bFolded.wait;
+      pause.release.open();
+      await pause.done.wait;
+      const before = roomText(f.a);
+      const next = await type(f.a, f.draftId, " NEXT");
+      const after = roomText(f.a);
+      observe("moved", {
+        roomHadForeign: before.includes("FOREIGN"),
+        roomHasForeign: after.includes("FOREIGN"),
+      });
+      observe("next", next);
+      assert.ok(!before.includes("FOREIGN"));
+      assert.deepEqual(next, { ok: true, value: { admitted: true } });
+      assert.match(after, /FOREIGN/);
     } finally {
       await f.other.close();
     }

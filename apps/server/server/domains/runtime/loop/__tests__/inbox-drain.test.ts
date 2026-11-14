@@ -12,11 +12,11 @@ import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.
 import {
   childCompletionMetadata,
   classifyHistoryItem,
-  decodeImageInclusionMetadata,
+  decodeMediaInclusionMetadata,
   skillBodyMetadata,
 } from "../../../threads/index.js";
 import { createInMemoryRunClaim } from "../../adapters/in-memory/loop-ports.js";
-import { ImageAssetResolutionError } from "../../ports/image-asset.js";
+import { MediaResolutionError } from "../../ports/media-resolver.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
@@ -26,6 +26,7 @@ import {
 import { failCompactionSuccessor } from "../compaction-successor.js";
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
+import { bytesMedia } from "./media-test-support.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
@@ -137,7 +138,7 @@ async function setup(
     child?: boolean;
     realSpawnTools?: boolean;
     supportsImageInput?: boolean;
-    imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
+    mediaResolver?: import("../../ports/media-resolver.js").MediaResolverPort;
     notices?: ReturnType<typeof createTestNoticePort>;
   } = {},
 ) {
@@ -162,7 +163,11 @@ async function setup(
           maxOutputTokens: 16_384,
           promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
           reasoning: { efforts: ["low", "medium", "high", "max"] },
-          capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
+          wire: "openai" as const,
+          inputModalities:
+            options.supportsImageInput === false
+              ? ["text" as const]
+              : ["text" as const, "image" as const],
         },
       ],
     } satisfies Gateway,
@@ -171,7 +176,7 @@ async function setup(
       ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
       : {}),
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
-    ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
+    ...(options.mediaResolver ? { mediaResolver: options.mediaResolver } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
     agentRevisions: createTestAgentBinding("gpt-5.6-luna", "", () => [
       thread.id,
@@ -318,7 +323,11 @@ describe("inbox drain", () => {
       (block) => block.blockType === "tool_result",
     );
     expect(toolResults).toHaveLength(1);
-    expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
+    expect(toolResults[0]?.content).toMatchObject({
+      content: [{ type: "text", text: '{"ok":true}' }],
+      result: { ok: true },
+      isError: false,
+    });
   });
 
   it("keeps a mid-run writer-activated skill body on its adopted message across iterations", async () => {
@@ -393,12 +402,11 @@ describe("inbox drain", () => {
     };
     let resolutions = 0;
     const { thread, requests, orchestrator, repos, send, inbox, journal } = await setup({
-      imageAssets: {
+      mediaResolver: {
         async resolve() {
           resolutions += 1;
-          if (resolutions === 1)
-            throw new ImageAssetResolutionError("temporary object-store timeout");
-          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+          if (resolutions === 1) throw new MediaResolutionError("temporary object-store timeout");
+          return bytesMedia({ data: "aW1hZ2U=", sizeBytes: 5 });
         },
       },
     });
@@ -419,10 +427,10 @@ describe("inbox drain", () => {
       status: "error",
       finishReason: "error",
     });
-    expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
+    expect(await repos.mediaInclusions.findByThread(thread.id)).toEqual([]);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        (turn) => decodeMediaInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(0);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -434,7 +442,7 @@ describe("inbox drain", () => {
     ).toMatchObject({
       error: {
         message: "temporary object-store timeout",
-        details: { reason: "image_resolution_failed" },
+        details: { reason: "media_resolution_failed" },
       },
     });
 
@@ -444,13 +452,13 @@ describe("inbox drain", () => {
     expect(
       required(requests[0])
         .messages.flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
+        .some((part) => part.type === "media"),
     ).toBe(true);
     const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
-      (block) => block.blockType === "image",
+      (block) => block.blockType === "media",
     );
     expect(
-      (await repos.imageInclusions.findByThread(thread.id)).find(
+      (await repos.mediaInclusions.findByThread(thread.id)).find(
         (decision) => decision.blockId === imageBlock?.id,
       )?.included,
     ).toBe(true);
@@ -465,14 +473,14 @@ describe("inbox drain", () => {
     let blockFirstResolution = true;
     let rig: Awaited<ReturnType<typeof setup>>;
     rig = await setup({
-      imageAssets: {
+      mediaResolver: {
         async resolve(_context, reference) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
             await release.promise;
           }
-          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
         },
       },
       onStream: async (call) => {
@@ -534,9 +542,9 @@ describe("inbox drain", () => {
     let steerTurnId: string | undefined;
     rig = await setup({
       notices,
-      imageAssets: {
+      mediaResolver: {
         async resolve() {
-          throw new ImageAssetResolutionError("temporary object-store timeout");
+          throw new MediaResolutionError("temporary object-store timeout");
         },
       },
       onStream: async (call) => {
@@ -598,14 +606,14 @@ describe("inbox drain", () => {
     let rig: Awaited<ReturnType<typeof setup>>;
     rig = await setup({
       notices,
-      imageAssets: {
+      mediaResolver: {
         async resolve(_context, reference) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
             await release.promise;
           }
-          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
         },
       },
       onStream: async (call) => {

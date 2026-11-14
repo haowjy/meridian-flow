@@ -308,11 +308,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/adapters/context-image-assets.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/runtime/adapters/drizzle-session-lock.ts",
         "line": "} catch {",
         "count": 1
@@ -370,11 +365,6 @@
       {
         "path": "packages/gateway/src/attempt-stream.ts",
         "line": "void Promise.resolve()",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/helpers/serialize.ts",
-        "line": "} catch {",
         "count": 1
       },
       {

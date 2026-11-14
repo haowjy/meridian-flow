@@ -8,6 +8,7 @@
  * single source of the orchestrator->AG-UI mapping; depends only on the protocol
  * contracts.
  */
+
 import {
   type AGUIEvent,
   EventSchemas,
@@ -25,6 +26,7 @@ import {
   ASK_UPDATED_EVENT,
   type BlockUpsertedRow,
   type OrchestratorEvent,
+  toolContentText,
 } from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
@@ -352,7 +354,7 @@ export function createOrchestratorEventProjector() {
             type: EventType.TOOL_CALL_RESULT,
             messageId,
             toolCallId: event.toolCallId,
-            content: typeof event.output === "string" ? event.output : JSON.stringify(event.output),
+            content: toolContentText(event.content),
             // AG-UI's event schema is passthrough: `result` and `metadata`
             // survive the protocol parse and the client reads them directly
             // off this event.

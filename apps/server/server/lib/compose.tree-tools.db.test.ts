@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -172,8 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return runtimes.script(runtime, THREAD);
     }
 
-    const text = (result: { output: unknown }) =>
-      typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+    const text = (result: { content: ToolContentPart[] }) => toolContentText(result.content);
     const placement = async (id: string) =>
       (
         await db

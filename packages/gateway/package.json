@@ -2,7 +2,7 @@
   "name": "@meridian-flow/gateway",
   "version": "0.0.0",
   "private": true,
-  "description": "Provider-neutral streaming model gateway: Anthropic, OpenAI and OpenAI-compatible adapters with retry, deadlines and usage normalization.",
+  "description": "Provider-neutral streaming model gateway: Anthropic, OpenAI, Gemini and OpenAI-compatible adapters with retry, deadlines and usage normalization.",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "catalog:",
+    "@google/genai": "catalog:",
     "jsonrepair": "catalog:",
     "openai": "^6.45.0",
     "zod": "^4.4.3"

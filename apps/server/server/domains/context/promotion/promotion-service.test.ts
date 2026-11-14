@@ -9,7 +9,11 @@ import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { createInMemoryEventSink, createNoopEventSink } from "../../observability/index.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
-import { createInMemoryObjectStore, createObjectRelease } from "../../storage/index.js";
+import {
+  createInMemoryObjectStore,
+  createObjectRelease,
+  derivedObjectKeys,
+} from "../../storage/index.js";
 import {
   type createInMemoryResultRepository,
   InMemoryResultRepository,
@@ -82,9 +86,10 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         error: { code: "repository_error" },
       });
       expect(test.put).toHaveBeenCalledOnce();
-      // The stored object once (plus its preview key, which the release always pairs with it).
+      // The stored object once (plus its derived keys, which the release always pairs with it).
       const deleted = test.remove.mock.calls.map(([key]) => key);
-      expect(deleted.filter((key) => !key.endsWith(".preview"))).toHaveLength(1);
+      const derived = deleted.flatMap(derivedObjectKeys);
+      expect(deleted.filter((key) => !derived.includes(key))).toHaveLength(1);
     });
     it("retains bytes and diagnoses an unknown commit outcome", async () => {
       const test = harness({ kind: "unknown", error: "commit uncertain" });

@@ -54,7 +54,10 @@ and remain quarantined until their retryable destroy ledger succeeds.
   an empty block at once create several. One rule reads and writes them
   everywhere: diff the run as one string, send each change to the `XmlText`
   that owns the offset (a boundary insert goes left), and empty a text, never
-  delete it, so a peer's concurrent insert and its byline survive. The browser
+  delete it, so a peer's concurrent insert and its byline survive. A run of
+  texts that are all empty (a writer emptied a run beside an image or a break)
+  is not a child the editor compares: without that, the next local edit in the
+  block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
   `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
   is not a dependency); `agent-edit`'s own writers restate the rule in

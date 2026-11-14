@@ -96,7 +96,7 @@ export function collectToolCalls(result: GenerateResult): ToolCall[] {
 // Projects a fully assembled ContentPart into a block create input.
 // `sequence` is the turn-scoped monotonic counter allocated by the
 // orchestrator.  Returns `null` for content types that don't map to blocks
-// (e.g. image/file/custom — these need a content-serialization layer before
+// (e.g. media/custom — these need a content-serialization layer before
 // they can become blocks).  reasoning parts store both `textContent` (for
 // simple text display) and `content` (a JSON value with providerOptions
 // preserved).
@@ -147,7 +147,7 @@ export function contentPartToBlockInput(
         status: "complete",
       };
     default:
-      // image, file, custom — need a content-serialization layer.
+      // media, custom — need a content-serialization layer.
       return null;
   }
 }

@@ -130,6 +130,20 @@ export interface AgentEditModelPayload {
   };
   /** What a tree command did beyond landing its node: each fact differs from what the call said. */
   tree?: AgentEditTreeFacts;
+  /**
+   * A read of a file that is not a tracked document: which file it was and what the model was
+   * given of it (`media` to look at, `text` extracted from it, or only a `description`).
+   */
+  file?: {
+    documentId: string;
+    uri: string;
+    name: string;
+    mediaType: string;
+    sizeBytes: number;
+    /** A PDF's page count, set when it is given as media. */
+    pageCount?: number;
+    given: "media" | "text" | "description";
+  };
   read?: {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */

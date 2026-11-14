@@ -120,15 +120,13 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
       content: [
         { type: "text", text: corpus.request },
         ...Array.from({ length: corpus.imageCount ?? 0 }, () => ({
-          type: "image" as const,
-          data: imageData,
+          type: "media" as const,
           mediaType: "image/png",
+          source: { data: imageData },
         })),
         {
-          type: "file",
-          data: repeat(corpus.fileText ?? "", corpus.fileTextCopies ?? 1),
-          mediaType: "text/plain",
-          filename: corpus.fileName ?? "chapter.txt",
+          type: "text",
+          text: `${corpus.fileName ?? "chapter.txt"}:\n${repeat(corpus.fileText ?? "", corpus.fileTextCopies ?? 1)}`,
         },
       ],
     });
@@ -227,10 +225,15 @@ async function completeToolTranscript(
           {
             type: "tool_result",
             toolCallId: call.id,
-            output: {
-              uri: "scratch://drafts/chapter-47.md",
-              excerpt: repeat(corpus.prose ?? "", corpus.toolResultCopies ?? 1),
-            },
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  uri: "scratch://drafts/chapter-47.md",
+                  excerpt: repeat(corpus.prose ?? "", corpus.toolResultCopies ?? 1),
+                }),
+              },
+            ],
           },
         ],
       },
@@ -319,7 +322,8 @@ for (const [provider, key] of providerKeys) {
   };
   const { gateway, cleanup } = await createGatewayFromEnv(env);
   const models = gateway.listModels();
-  const model = models.find((candidate) => candidate.capabilities.has("image_input")) ?? models[0];
+  const model =
+    models.find((candidate) => candidate.inputModalities.includes("image")) ?? models[0];
   if (!model) {
     for (const { corpus } of requests)
       console.log(`${provider} | — | ${corpus.id} | — | — | — | no registered model`);

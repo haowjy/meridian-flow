@@ -47,6 +47,7 @@ import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createWakeIfRunnable } from "../wake-if-runnable.js";
 import { writeModeSwitchNotice } from "../write-mode-switch.js";
+import { admitted } from "./media-test-support.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
@@ -218,7 +219,7 @@ export function createRuntimeHarness(
             wakes.push(task);
           }),
       }),
-    imageAssets: overrides.imageAssets ?? {
+    mediaResolver: overrides.mediaResolver ?? {
       async resolve() {
         return null;
       },
@@ -317,7 +318,7 @@ export function createRuntimeHarness(
           activatedSkillSlugs: options.activatedSkillSlugs,
         },
         fingerprint: "fixture-fingerprint",
-        blocks,
+        blocks: admitted(blocks),
         references: [],
       });
       await flushWakes();

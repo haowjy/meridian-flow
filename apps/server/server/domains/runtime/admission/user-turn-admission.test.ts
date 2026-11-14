@@ -144,6 +144,7 @@ function harness(
     },
     availability,
     threadProject,
+    describeImage: async () => IMAGE_FACTS,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     authorizeActivatedSkills,
     producer: { enqueue: producer },
@@ -159,6 +160,8 @@ function harness(
     captured: () => capturedStart,
   };
 }
+
+const IMAGE_FACTS = { mediaType: "image/png", sizeBytes: 5, name: "image.png" };
 
 describe("UserTurnAdmission", () => {
   it("parses exact ordered occurrences and proves text equivalence", () => {
@@ -410,8 +413,15 @@ describe("UserTurnAdmission", () => {
     ],
     ["upload identity mismatch", [availableResolution()], false],
   ])("degrades %s identity in place without veto or retargeting", async (_label, resolutions, draftUploadMatches) => {
+    // A picture that can't be admitted fails the send, in the app's words for a failed upload.
+    await expect(
+      harness(null, resolutions, draftUploadMatches).service.admit(input()),
+    ).rejects.toThrow("The upload failed.");
     const h = harness(null, resolutions, draftUploadMatches);
-    await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
+    const mentionsOnly = input({
+      blocks: (input().blocks as { type: string }[]).filter((block) => block.type !== "image"),
+    });
+    await expect(h.service.admit(mentionsOnly)).resolves.toMatchObject({ kind: "accepted" });
     expect(h.captured()?.blocks).toEqual([
       { type: "text", text: "see " },
       { type: "text", text: occurrenceText },
@@ -442,7 +452,7 @@ describe("UserTurnAdmission", () => {
         documentId,
         uri: "uploads://@c1/moved.png",
       },
-      { type: "image", documentId, uri: "uploads://@c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@c1/moved.png", ...IMAGE_FACTS },
       {
         type: "reference",
         kind: "document",
@@ -450,7 +460,7 @@ describe("UserTurnAdmission", () => {
         documentId,
         uri: "uploads://@c1/moved.png",
       },
-      { type: "image", documentId, uri: "uploads://@c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@c1/moved.png", ...IMAGE_FACTS },
     ]);
     expect(h.captured()?.admission.text).toBe(`see ${moved}${moved}`);
     expect(h.captured()?.references).toEqual([

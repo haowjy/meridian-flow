@@ -3,6 +3,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Warm and rolling summary strategy (kb/wiki/architecture/compaction-memory.md#two-summary-paths)
  */
+
 import type { Block, Turn } from "@meridian/contracts/threads";
 import type {
   Gateway,
@@ -17,6 +18,7 @@ import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
 import { createToolRegistry } from "../tools/index.js";
+import { jsonContent } from "../tools/tool-content.js";
 import { createConversationSummarizer } from "./conversation-summarizer.js";
 
 const threadModel: ModelInfo = {
@@ -28,7 +30,8 @@ const threadModel: ModelInfo = {
   maxOutputTokens: 1000,
   promptCache: { kind: "explicit", shortTtlSeconds: 60 * 60, longTtlSeconds: 60 * 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  wire: "openai",
+  inputModalities: ["text"],
 };
 const cheapModel = {
   ...threadModel,
@@ -206,7 +209,7 @@ describe("conversation summarizer", () => {
           sequence: i * 2 + 1,
           content: {
             toolCallId: `read${i}`,
-            output: {
+            content: jsonContent({
               schema: "meridian.agent-edit.v1",
               command: "read",
               status: "success",
@@ -219,7 +222,7 @@ describe("conversation summarizer", () => {
                   items: [{ hash: "abc", body: "jade ".repeat(20_000) }],
                 },
               ],
-            },
+            }),
           },
         },
       ]).flat(),

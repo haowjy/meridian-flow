@@ -2,8 +2,22 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { ContentPart, Message, Tool, ToolUsePart } from "@meridian-flow/gateway";
+import type {
+  Block,
+  StoredMediaPart,
+  StoredTextPart,
+  Thread,
+  ToolContentPart,
+  Turn,
+} from "@meridian/contracts/threads";
+import type {
+  ContentPart,
+  MediaPart,
+  Message,
+  TextPart,
+  Tool,
+  ToolUsePart,
+} from "@meridian-flow/gateway";
 import { assistant, system, text, toolResult } from "@meridian-flow/gateway";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -14,6 +28,7 @@ import {
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
+import { describeMedia } from "./media-context.js";
 import { referenceReadText } from "./reference-context.js";
 
 export interface BuildContextInput {
@@ -110,14 +125,17 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
           messages.push(message);
           assistantParts.length = 0;
         }
-        const content = block.content as {
+        const content = block.content as unknown as {
           toolCallId?: string;
-          output?: JsonValue;
+          content: (ToolContentPart | MediaPart)[];
           isError?: boolean;
-        } | null;
-        const toolCallId = content?.toolCallId ?? "";
+        };
         messages.push(
-          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+          toolResult(
+            content.toolCallId ?? "",
+            storedContentParts(content.content),
+            content.isError,
+          ),
         );
         continue;
       }
@@ -224,11 +242,30 @@ function completeToolResultGroups(
         ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
         : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
     for (const toolCallId of missingResultIds) {
-      completed.push(toolResult(toolCallId, missingResultMessage, true));
+      completed.push(toolResult(toolCallId, [text(missingResultMessage)], true));
     }
   }
 
   return completed;
+}
+
+/**
+ * A tool result's parts as the gateway's. Request preparation has already turned each stored media
+ * part into the gateway's part or into text; one it never saw (an estimate before projection)
+ * is described as text.
+ */
+function storedContentParts(
+  parts: readonly (ToolContentPart | MediaPart)[],
+): (TextPart | MediaPart)[] {
+  return parts.map((part) =>
+    part.type === "media" && "source" in part
+      ? part
+      : text(
+          part.type === "media"
+            ? describeMedia(part as StoredMediaPart)
+            : (part as StoredTextPart).text,
+        ),
+  );
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
@@ -243,7 +280,7 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
 
 /** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
 function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
+  const parts = turnBlocksToContentParts([...blocks], ["text", "media"]);
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -263,6 +300,9 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
         `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
       ),
     );
+    const media = reference.read.media;
+    if (typeof media === "string") parts.push(text(`\n${media}`));
+    else if (media) parts.push(media as unknown as MediaPart);
   }
   return parts;
 }
@@ -313,12 +353,11 @@ function blockToContentPart(block: Block): ContentPart | null {
         input: content?.input ?? {},
       } satisfies ToolUsePart;
     }
-    case "image":
-    case "file":
-      if (block.content && typeof block.content === "object") {
-        return block.content as unknown as ContentPart;
-      }
-      return null;
+    case "media": {
+      // Only a projected picture carries a source; the stored part holds identity alone.
+      const image = block.content as Partial<MediaPart> | null;
+      return image?.type === "media" && image.source ? (image as MediaPart) : null;
+    }
     case "custom":
       // Interrupt content stays in its tool input/result to preserve provider ordering.
       return null;

@@ -31,7 +31,7 @@
  *
  * A refusal (`MeridianError`) reaches the model as its message and code, never
  * as JSON; the typed error stays on `result`. Any other result is the
- * registration's `renderResult` text, or the value itself.
+ * registration's `renderResult` parts, or the value itself as one text part.
  *
  * Either return shape may carry `shown`, the host-only shown-link candidates
  * of what the result renders. Only a handler result the executor accepts
@@ -74,6 +74,7 @@ import {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
+import { jsonContent, textContent } from "./tool-content.js";
 import type {
   RequestToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -105,7 +106,7 @@ export function toolFailureResult(result: { ok: false; error: MeridianError }) {
  */
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
   const value = meridianErrorToJson(error);
-  return { toolCallId, output: renderRefusal(value), result: value, isError: true };
+  return { toolCallId, content: textContent(renderRefusal(value)), result: value, isError: true };
 }
 
 /**
@@ -263,11 +264,11 @@ function modelOutput(
   registration: ToolRegistration,
   value: JsonValue,
   input: JsonObject,
-): Pick<ToolExecutionResult, "output" | "result"> {
-  const output = isMeridianErrorValue(value)
-    ? renderRefusal(value)
-    : (registration.renderResult?.(value, input) ?? value);
-  return { output, result: value };
+): Pick<ToolExecutionResult, "content" | "result"> {
+  const content = isMeridianErrorValue(value)
+    ? textContent(renderRefusal(value))
+    : (registration.renderResult?.(value, input) ?? jsonContent(value));
+  return { content, result: value };
 }
 
 /** The call's input as a renderer reads it; `{}` when it isn't an object. */
@@ -421,7 +422,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         if (!parsed.ok) {
           return {
             toolCallId: call.id,
-            output: renderInvalidArguments(call.name, parsed.issues),
+            content: textContent(renderInvalidArguments(call.name, parsed.issues)),
             result: toJsonValue(invalidArgumentsResult(parsed.issues)),
             isError: true,
           };
@@ -451,6 +452,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         agentSlug: ctx.agentSlug,
         ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         ...(ctx.shownNames ? { shownNames: ctx.shownNames } : {}),
+        ...(ctx.model ? { model: ctx.model } : {}),
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
           : undefined,

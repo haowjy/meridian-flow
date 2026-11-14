@@ -14,7 +14,7 @@
 import type {
   AcceptedAdmission,
   AdmissionFingerprint,
-  UserMessageBlock,
+  AdmittedMessageBlock,
   UserTurnAdmissionInput,
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
@@ -81,7 +81,7 @@ export function createWriterTurnProducer(deps: {
     async enqueue(input: {
       admission: UserTurnAdmissionInput;
       fingerprint: AdmissionFingerprint;
-      blocks: readonly UserMessageBlock[];
+      blocks: readonly AdmittedMessageBlock[];
       references: readonly AuthorizedReference[];
       userTurnMetadata?: JsonValue | null;
     }) {

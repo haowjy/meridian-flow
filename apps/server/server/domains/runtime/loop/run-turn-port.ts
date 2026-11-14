@@ -3,7 +3,7 @@
  * Preparation owns setup and returns a one-shot execution, not an event stream.
  */
 
-import type { UserMessageBlock } from "@meridian/contracts/protocol";
+import type { AdmittedMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, JsonValue, Turn } from "@meridian/contracts/threads";
@@ -35,7 +35,7 @@ interface RunTurnBase {
 /** A run born from a direct writer message: setup persists the user turn before preparation. */
 export interface WriterRunTurnInput extends RunTurnBase {
   userText: string;
-  userBlocks?: readonly UserMessageBlock[];
+  userBlocks?: readonly AdmittedMessageBlock[];
   /** Runtime-only context appended after user blocks; persistence assigns turn and sequence. */
   seedBlocks?: BlockUpsertedRow[];
   activatedSkillSlugs?: readonly string[];

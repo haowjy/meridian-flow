@@ -5,6 +5,7 @@
  * - typed removed-model failure and locked No Work ownership of drafts
  */
 
+import { toolContentText } from "@meridian/contracts/threads";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -125,7 +126,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           isError: true,
           result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
         });
-        expect(result.output).toBe("Model not found: removed-history-model (model_unavailable)");
+        expect(toolContentText(result.content)).toBe(
+          "Model not found: removed-history-model (model_unavailable)",
+        );
       } finally {
         await unloadHocuspocus(runtime.hocuspocus);
       }
@@ -176,7 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         toolContext,
       );
-      if (read.isError) throw new Error(JSON.stringify(read.output));
+      if (read.isError) throw new Error(JSON.stringify(read.content));
 
       const result = await runtime.app.toolExecutor.executeTool(
         {
@@ -194,7 +197,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       if (result.isError) {
-        throw new Error(JSON.stringify({ output: result.output, events: eventSink.events }));
+        throw new Error(
+          JSON.stringify({ output: toolContentText(result.content), events: eventSink.events }),
+        );
       }
       await runtime.ports.documentSync.finalizeResponseCommit(
         { providerResponseId: responseId, editScopeId: responseId },

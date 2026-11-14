@@ -22,6 +22,8 @@ export async function* streamProvider<Frame>(spec: {
   start: Extract<StreamEvent, { type: "start" }>;
   signal: AbortSignal | undefined;
   errorPatterns?: Partial<ProviderErrorPatterns>;
+  /** Reshapes an SDK error whose status, message or headers `mapProviderHttpError` can't read as is. */
+  normalizeError?: (err: unknown) => unknown;
   open: () => Promise<AsyncIterable<Frame>>;
   events: (frame: Frame) => Iterable<StreamEvent>;
   result: () => GenerateResult;
@@ -56,7 +58,10 @@ export async function* streamProvider<Frame>(spec: {
     }
   } catch (err) {
     if (!signal?.aborted) {
-      yield { type: "error", ...mapProviderHttpError(err, spec.errorPatterns) };
+      yield {
+        type: "error",
+        ...mapProviderHttpError(spec.normalizeError?.(err) ?? err, spec.errorPatterns),
+      };
       return;
     }
   } finally {

@@ -17,7 +17,8 @@ Context files still open a viewer without live Yjs admission. Closing or replaci
 destination discards its unconsumed answer.
 Scratch documents open in main owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
-Uploads have no editor address and open nowhere. The resolved file's
+Uploads have no editor address: the adapter opens one in `UploadViewerDialog` (the read-only
+viewers), whichever pane the door is in. The resolved file's
 Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 

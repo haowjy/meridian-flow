@@ -6,6 +6,7 @@
  */
 
 import type { DocumentId, WorkId } from "@meridian/contracts";
+import { toolContentText } from "@meridian/contracts/threads";
 import { createDb } from "@meridian/database";
 import { branches, documentDrafts, draftWriteJournal, users } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -93,7 +94,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Writer opening.",
         content: "Staged draft.",
       });
-      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
+      expect(write.isError, JSON.stringify(write.content)).toBeFalsy();
       return reply;
     }
 
@@ -143,7 +144,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(read.result, "it names the version it asked for")
         .toMatchObject({ read: { version: "draft" } });
-      expect.soft(String(read.output), "its content is the live base").toContain("Writer opening.");
+      expect
+        .soft(String(toolContentText(read.content)), "its content is the live base")
+        .toContain("Writer opening.");
       expect.soft(await branchesOf(work), "the read made no branch").toEqual([]);
       expect.soft(await draftsOf(chapter), "and no draft or peer").toEqual([]);
 
@@ -153,7 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Writer opening.",
         content: "Model draft.",
       });
-      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
+      expect(write.isError, JSON.stringify(write.content)).toBeFalsy();
       const made = await branchesOf(work);
       expect
         .soft(made, "the first write made the branch")
@@ -180,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "scratch://notes.md",
         content: "Scratch notes.",
       });
-      expect(notes.isError, JSON.stringify(notes.output)).toBeFalsy();
+      expect(notes.isError, JSON.stringify(notes.content)).toBeFalsy();
       await scenario.discard(closedFirst, "all");
       const saved = await reply.save();
       expect.soft(refusedIn(saved), "the drafted document refuses stale").toEqual([chapter]);
