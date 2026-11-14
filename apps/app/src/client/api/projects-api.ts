@@ -21,9 +21,6 @@ import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
   apiProjectContextCopyPath,
-  apiProjectContextCreateFolderPath,
-  apiProjectContextCreateUntitledPath,
-  apiProjectContextEntryDeletePath,
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextSourcesPath,
@@ -35,24 +32,15 @@ import {
   type ContextReadResponse,
   type CopyContextEntriesRequest,
   type CopyContextEntriesResult,
-  type CreateContextFolderRequest,
-  type CreateContextFolderResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
-  type CreateUntitledContextDocumentAnswer,
-  type CreateUntitledContextDocumentRequest,
   contextReadResponseSchema,
-  type DeleteContextEntryRequest,
-  type DeleteContextEntryResult,
-  deleteContextEntryResultSchema,
   type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ProjectContextRequestOptions,
-  type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
@@ -272,62 +260,6 @@ export async function createProjectThread(
   });
 }
 
-function acceptsContextConflict(status: number, payload: unknown): boolean {
-  return (
-    status === 409 &&
-    payload !== null &&
-    typeof payload === "object" &&
-    "status" in payload &&
-    payload.status === "conflict"
-  );
-}
-
-export async function createUntitledContextDocument(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: CreateUntitledContextDocumentRequest,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateUntitledContextDocumentAnswer> {
-  const response = await postJson<CreateUntitledContextDocumentAnswer>(
-    urlFor(apiProjectContextCreateUntitledPath(projectId, scheme, opts), init),
-    body,
-    {
-      acceptErrorResponse: acceptsContextConflict,
-      headers: init?.headers,
-      signal: init?.signal,
-    },
-  );
-  if (response.status === "conflict") return response;
-  if (response.status === "joined")
-    return {
-      ...response,
-      address: {
-        ...response.address,
-        path: response.address.path.startsWith("/")
-          ? response.address.path
-          : `/${response.address.path}`,
-      },
-    };
-  return {
-    ...response,
-    path: response.path.startsWith("/") ? response.path : `/${response.path}`,
-  };
-}
-export async function createContextFolder(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: CreateContextFolderRequest,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<CreateContextFolderResponse> {
-  return postJson(urlFor(apiProjectContextCreateFolderPath(projectId, scheme, opts), init), body, {
-    acceptErrorResponse: acceptsContextConflict,
-    headers: init?.headers,
-    signal: init?.signal,
-  });
-}
-
 /**
  * Moves one document between the project's files and the account's (`user://`), the one move the
  * browser cannot write as records because it spans two lists. `from` is the root URI of the source
@@ -381,23 +313,6 @@ export function getTrashedDocument(
       init,
     ),
     { headers: init?.headers, signal: init?.signal },
-  );
-}
-
-export async function deleteContextEntry(
-  projectId: string,
-  entryId: string,
-  body: DeleteContextEntryRequest,
-  init?: RequestInitOptions,
-): Promise<DeleteContextEntryResult> {
-  return postJson<DeleteContextEntryResult>(
-    urlFor(apiProjectContextEntryDeletePath(projectId, entryId), init),
-    body,
-    {
-      headers: init?.headers,
-      schema: deleteContextEntryResultSchema,
-      signal: init?.signal,
-    },
   );
 }
 

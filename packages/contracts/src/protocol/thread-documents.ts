@@ -42,7 +42,12 @@ export type TurnReceiptState =
 
 export type TurnReceiptControl = "undo" | "redo" | "view_change";
 
+/** What became of a document's draft text from a turn: still waiting, applied, or discarded. */
+export type TurnDraftState = "pending" | "applied" | "discarded";
+
 export interface TurnReceiptChip {
+  /** Each drafted document's current state, by document id; absent for documents the turn wrote live. */
+  drafts?: Record<string, TurnDraftState>;
   skips?: import("./write-reversal.js").TurnInverseSkip[];
   state: TurnReceiptState;
   control: TurnReceiptControl;

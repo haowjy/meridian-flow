@@ -1,6 +1,7 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
+import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -356,11 +357,11 @@ function documentFailureRejected(tool: ToolView): string | null {
 
 /**
  * Who removed a refused write's document and how, when the host sent the
- * record with a `removed` rejection. A named person or Work is named; anyone
+ * record with a `removed` rejection. A named person is named; anyone
  * else reads passively.
  */
 function documentFailureRemoval(tool: ToolView): {
-  by: { kind: "person" | "work"; name: string } | { kind: "agent"; chat: string | null } | null;
+  by: { kind: "person"; name: string } | { kind: "agent"; chat: string | null } | null;
   reason: "deleted" | "discarded";
 } {
   const result = tool.result;
@@ -372,15 +373,12 @@ function documentFailureRemoval(tool: ToolView): {
   const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
   const name = (value: unknown) => (typeof value === "string" && value ? value : null);
   const person = record?.kind === "user" ? name(record.displayName) : null;
-  const work = record?.kind === "work" ? name(record.name) : null;
   return {
     by: person
       ? { kind: "person", name: person }
-      : work
-        ? { kind: "work", name: work }
-        : record?.kind === "agent"
-          ? { kind: "agent", chat: name(record.chatTitle) }
-          : null,
+      : record?.kind === "agent"
+        ? { kind: "agent", chat: name(record.chatTitle) }
+        : null,
     reason: removal.reason === "discarded" ? "discarded" : "deleted",
   };
 }
@@ -400,12 +398,6 @@ function removedWriteCopy(
       : name
         ? t`${who} deleted ${name} before this change could be made.`
         : t`${who} deleted this document before this change could be made.`;
-  }
-  if (by?.kind === "work") {
-    const work = by.name;
-    return name
-      ? t`${name} was deleted with the Work ${work} before this change could be made.`
-      : t`This document was deleted with the Work ${work} before this change could be made.`;
   }
   if (by?.kind === "agent") {
     const chat = by.chat;
@@ -449,6 +441,12 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const path = settledDocumentPath(tool, asString(input.path));
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
+
+  // A call the run ended never failed: it reads as what it was going to do.
+  if (isToolNotRunResult(tool.result)) {
+    const { verb, parameter } = descriptor.phrases(tool, names).active;
+    return <PhraseTitle phrase={{ verb, parameter: parameter?.replace(/…$/, "") }} />;
+  }
 
   if (documentToolFailed(tool)) {
     const verb = descriptor.failureVerb();

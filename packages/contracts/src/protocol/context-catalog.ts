@@ -1,8 +1,7 @@
-/** JSON-natural protocol for the authoritative context metadata catalog. */
+/** The server's listing of a project's sources and files (what availability answers with), and the hints on a project's subscription. */
 import type { DraftOwnerKey } from "../branches/owner.js";
-import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
+import type { CanonicalContextUri } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
-import type { WorkAuthorityDto } from "../works/work-authority.js";
 import type { ContextSourcesHint } from "./context-sources.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
@@ -92,13 +91,11 @@ export type CatalogFileClassification = { extension: string } & (
 
 export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 
-export type CatalogEntry = CatalogFolderEntry | CatalogFileEntry;
-
 /**
  * A draft owner's list is stale: its pending draft count moved, or the owner's lifecycle changed
  * (a Work archived, unarchived, deleted, restored or purged; a lineage that lost or regained its
- * last live chat). For a Work, its row in the Works list is stale with it. Truth-free, like the
- * catalog hint; it rides the same per-project subscription.
+ * last live chat). For a Work, its row in the Works list is stale with it. Truth-free: it says to
+ * ask again, never what the answer is. It rides the per-project subscription.
  */
 export type DraftOwnerHint = {
   type: "draft-owner-hint";
@@ -109,7 +106,7 @@ export type DraftOwnerHint = {
 /**
  * A chat in the project started or ended a reply, or asked the writer or was answered, from any
  * client: the project's chat list (its Working and Waiting marks) is stale. Truth-free, like the
- * hints above. A removal names what it removed so open windows close those chats' tabs without
+ * hint above. A removal names what it removed so open windows close those chats' tabs without
  * a probe: `removedChatIds` for a deleted chat, `recheckTabs` when the removed set is not known
  * (a deleted Work, or the socket client after a reconnect, when hints were lost).
  */

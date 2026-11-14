@@ -16,6 +16,7 @@ import {
   relistedOwnerDraft,
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
+import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
 import { pushUndoStep, shownSourceOf } from "@/core/project-tree/tree-undo";
@@ -78,6 +79,7 @@ export function useWorkBranchCommands({
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
+      refreshTurnCards(queryClient);
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
       });

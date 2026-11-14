@@ -62,3 +62,9 @@ copy there.
 ## A rename-only live turn's card reads "Edited N documents"
 
 A turn whose tree changes landed live (renames, moves) lists its documents in the card without the `tree` marker, so `documentCountLabel` in `TurnEditsReceipt.tsx` counts them as text edits ("Edited 60 documents"). Seen after Apply all, then the card's Undo and Redo, on `fix/project-tree-probe2-fixes`. The item rows need the marker from the receipt that made them; then the label says "Changed".
+
+## A receipt disappears when its document is deleted
+
+A successful write's receipt ("Edited 1 document / Undo") from an earlier turn vanishes after the
+writer deletes that document, instead of staying as a record of what the turn did. Found in the
+#1530 browser check. The receipt should stay, with its Undo replaced by the document's removal.

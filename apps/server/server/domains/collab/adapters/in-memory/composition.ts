@@ -305,6 +305,9 @@ function createInMemoryBranchStub(): CollabBranches {
           return [];
         },
       },
+      async listDiscards() {
+        return [];
+      },
       async undoDiscard({ request }) {
         return { status: "refused", commandId: request.commandId, reason: "not_found" };
       },

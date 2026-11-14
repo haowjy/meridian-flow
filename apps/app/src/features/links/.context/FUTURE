@@ -9,3 +9,7 @@
   click. Mount the host there, or render those chips as plain links.
 - A transcript folder chip's context menu shows only its title and address, with no action. Add
   "Open folder" so the keyboard path matches clicking (`rich-content/TranscriptReference.tsx`).
+- A mention chip of a Work's Scratch folder still fills and opens the folder after the Work is
+  deleted, until a reload. The chip should turn dashed on the Work's deletion (step 8 of
+  [folder-mentions](qa/folder-mentions.md) fails here: the Work has `deletedAt`, the folder's
+  answer stays live).
