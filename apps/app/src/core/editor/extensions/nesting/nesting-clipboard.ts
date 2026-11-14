@@ -5,7 +5,7 @@
  * containers into blocks that carry `data-` nesting attributes, which the blocks' parse rules
  * read.
  */
-import { type NestedNode, nestNodes, nestTree, readPath } from "@meridian/prosemirror-schema";
+import { isNested, type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import { DOMSerializer, type Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 export const NESTING_DATA_ATTRIBUTES = ["data-path", "data-kind", "data-marker", "data-start"];
@@ -275,8 +275,8 @@ export class NestingDOMSerializer extends DOMSerializer {
     });
     const document = options.document ?? window.document;
     const into = target ?? document.createDocumentFragment();
-    const listed = nodes.some((node) => readPath(node.attrs.path).length > 0);
-    if (!listed || serialized.childNodes.length !== nodes.length) {
+    const nested = nodes.some((node) => isNested(node.attrs.path));
+    if (!nested || serialized.childNodes.length !== nodes.length) {
       into.appendChild(serialized);
       return into;
     }

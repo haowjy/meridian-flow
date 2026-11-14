@@ -6,14 +6,8 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import {
-  isiOS,
-  isMacOS,
-  type KeyboardShortcutCommand,
-  mergeAttributes,
-  Node,
-  textblockTypeInputRule,
-} from "@tiptap/core";
+import { isNested } from "@meridian/prosemirror-schema";
+import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -33,7 +27,7 @@ import {
   type ResolvedPos,
   Slice,
 } from "@tiptap/pm/model";
-import { Plugin, Selection } from "@tiptap/pm/state";
+import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -56,7 +50,8 @@ import {
 } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
-import { landSlice } from "./nesting";
+import { blockTypeInputRule, setBlockType } from "./block-type";
+import { landAt, landSlice } from "./nesting";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -172,7 +167,7 @@ function closeShapedSlice(slice: Slice, $dest: ResolvedPos): Slice {
   const first = slice.content.firstChild;
   const replaces =
     first?.attrs.level != null ||
-    (first?.attrs.path != null && $dest.parent.isTextblock && $dest.parent.content.size === 0);
+    (isNested(first?.attrs.path) && $dest.parent.isTextblock && $dest.parent.content.size === 0);
   if (
     slice.openStart !== 1 ||
     first?.type.name !== "paragraph" ||
@@ -226,11 +221,10 @@ export const MeridianParagraph = Paragraph.extend({
 
   addCommands() {
     return {
-      // The stock command keeps the block's current attrs, level included.
       setParagraph:
         () =>
-        ({ commands }) =>
-          commands.setNode(this.name, { level: null }),
+        ({ tr }) =>
+          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, { level: null }),
       setHeading:
         ({ level }) =>
         ({ commands }) =>
@@ -297,7 +291,7 @@ export const MeridianParagraph = Paragraph.extend({
 
   addInputRules() {
     return [
-      textblockTypeInputRule({
+      blockTypeInputRule({
         find: /^(#{1,6})\s$/,
         type: this.type,
         getAttributes: (match) => ({ level: match[1]?.length }),
@@ -319,6 +313,56 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
     return ReactNodeViewRenderer(CodeBlockNodeView);
   },
 
+  addCommands() {
+    return {
+      setCodeBlock:
+        (attributes) =>
+        ({ tr }) =>
+          setBlockType(tr, tr.selection.from, tr.selection.to, this.type, attributes),
+      toggleCodeBlock:
+        (attributes) =>
+        ({ tr, editor }) =>
+          editor.isActive(this.name)
+            ? setBlockType(tr, tr.selection.from, tr.selection.to, editor.schema.nodes.paragraph)
+            : setBlockType(tr, tr.selection.from, tr.selection.to, this.type, attributes),
+    };
+  },
+
+  // TipTap's own bindings clear a fence with `clearNodes` and leave it with `exitCode`, and
+  // both make their block from defaults: the fence's id and its place in a list or quote go.
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      Backspace: ({ editor }) => {
+        const { empty, $anchor } = editor.state.selection;
+        if (!empty || $anchor.parent.type !== this.type) return false;
+        if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
+        return editor.commands.setParagraph();
+      },
+      Enter: ({ editor }) => {
+        const { empty, $from } = editor.state.selection;
+        if (!empty || $from.parent.type !== this.type) return false;
+        const atEnd = $from.parentOffset === $from.parent.content.size;
+        if (!atEnd || !$from.parent.textContent.endsWith("\n\n")) return false;
+        return editor.commands.command(({ tr }) => {
+          tr.delete($from.pos - 2, $from.pos);
+          return exitFence(tr);
+        });
+      },
+      ArrowDown: ({ editor }) => {
+        const { empty, $from } = editor.state.selection;
+        if (!empty || $from.parent.type !== this.type) return false;
+        if ($from.parentOffset !== $from.parent.content.size) return false;
+        const after = editor.state.doc.nodeAt($from.after());
+        return editor.commands.command(({ tr }) => {
+          if (!after) return exitFence(tr);
+          tr.setSelection(Selection.near(tr.doc.resolve($from.after())));
+          return true;
+        });
+      },
+    };
+  },
+
   // The fence trigger belongs to `MarkdownAutoformatExtension`, which accepts
   // the whole GFM info string and completes on Enter. Keeping TipTap's narrower
   // rules here would leave two rules racing for the same keystrokes.
@@ -326,6 +370,20 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
     return [];
   },
 });
+
+/** A new line after the fence the caret is in, where Enter would put one beside it. */
+function exitFence(tr: Transaction): boolean {
+  const { $head } = tr.selection;
+  const fence = $head.parent;
+  const above = $head.node(-1);
+  const after = $head.indexAfter(-1);
+  const line = above.contentMatchAt(after).defaultType?.createAndFill();
+  if (!line || !above.canReplaceWith(after, after, line.type)) return false;
+  const pos = $head.after();
+  tr.insert(pos, landAt([line], fence));
+  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1))).scrollIntoView();
+  return true;
+}
 
 /** Keeps block alignment live when the resize plugin takes over table rendering. */
 class MeridianTableView extends TableView {

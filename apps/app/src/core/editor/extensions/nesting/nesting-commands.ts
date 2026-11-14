@@ -8,6 +8,7 @@ import {
   type BlockFacts,
   extentOf,
   innermostListStep,
+  itemStart,
   nestNodes,
   pathOf,
   readPath,
@@ -63,18 +64,6 @@ export function selectedSequence(selection: Transaction["selection"]): Sequence 
 function write(tr: Transaction, sequence: Sequence, index: number, attrs: Record<string, unknown>) {
   const block = sequence.blocks[index];
   tr.setNodeMarkup(sequence.positions[index], undefined, { ...block.attrs, ...attrs });
-}
-
-/** Where the item that block `index` belongs to starts, at that block's innermost list level. */
-function itemStart(facts: readonly BlockFacts[], index: number): number {
-  const level = innermostListStep(facts[index].steps);
-  let start = index;
-  while (start > 0) {
-    const step = facts[start].steps[level];
-    if (!step || step.startsItem || step.opens) break;
-    start--;
-  }
-  return start;
 }
 
 /** Item starts of the selected blocks, each once, with blocks outside any list left out. */

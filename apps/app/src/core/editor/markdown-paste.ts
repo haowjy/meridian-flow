@@ -23,6 +23,7 @@
  */
 
 import { markdownCodec, mdxCodec, type SerializedBlock } from "@meridian/markup";
+import { isBodyText } from "@meridian/prosemirror-schema";
 import {
   Fragment,
   type Node as PMNode,
@@ -89,11 +90,6 @@ export function markdownClipboardParser(
 
     return new Slice(Fragment.fromArray([...meaningful]), 0, 0);
   };
-}
-
-/** A paragraph without a level or a place in a list: a heading or an item is the same node with one. */
-function isBodyText(block: PMNode): boolean {
-  return block.type.name === "paragraph" && block.attrs.level == null && block.attrs.path == null;
 }
 
 /** A link, an emphasis, an image: structure the literal characters spelled. */

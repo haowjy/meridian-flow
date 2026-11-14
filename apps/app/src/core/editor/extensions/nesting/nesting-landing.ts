@@ -5,6 +5,7 @@
  * keeps its depth under the block above it (`landingBase`).
  */
 import {
+  type BlockFacts,
   detach,
   innermostListStep,
   landingBase,
@@ -49,11 +50,14 @@ export function moveUnder(
 }
 
 /**
- * Blocks pasted or dropped into `caret`'s block. A block with a list level of its own lands
+ * Blocks pasted, dropped or made into `caret`'s block. A block with a list level of its own lands
  * beside the caret's item; a block without one becomes what Enter would make there: the
  * caret's item kind and task state, a new task open.
  */
-function landAt(nodes: readonly ProseMirrorNode[], caret: ProseMirrorNode): ProseMirrorNode[] {
+export function landAt(
+  nodes: readonly ProseMirrorNode[],
+  caret: ProseMirrorNode,
+): ProseMirrorNode[] {
   const caretSteps = readPath(caret.attrs.path).map((step) => ({ ...step, fresh: false }));
   const caretList = innermostListStep(caretSteps);
   const beside = caretList < 0 ? caretSteps : caretSteps.slice(0, caretList);
@@ -67,6 +71,33 @@ function landAt(nodes: readonly ProseMirrorNode[], caret: ProseMirrorNode): Pros
       start: null,
     });
   });
+}
+
+/**
+ * A block made after the caret's block (a divider, a fence or a table from the slash menu), among
+ * the siblings `facts` reads: it goes after the list the caret's block sits in, so the list stays
+ * whole, inside the quotes around that list. `last` is the index of the block it goes after.
+ */
+export function afterList(
+  facts: readonly BlockFacts[],
+  index: number,
+  node: ProseMirrorNode,
+): { last: number; node: ProseMirrorNode } {
+  const own = facts[index].steps;
+  const list = own.findIndex((step) => step.type === "list");
+  const steps = own
+    .slice(0, list < 0 ? own.length : list)
+    .map((step) => ({ type: step.type, fresh: false }));
+  let last = index;
+  if (list >= 0) {
+    for (;;) {
+      const next = facts[last + 1]?.steps;
+      if (next?.[list]?.type !== "list" || next.slice(0, list + 1).some((step) => step.opens))
+        break;
+      last++;
+    }
+  }
+  return { last, node: carriesNesting(node) ? withPath(node, steps) : node };
 }
 
 function carriesNesting(node: ProseMirrorNode): boolean {
