@@ -21,7 +21,7 @@ commits after the route resolved the item, its authorization or the transaction'
 grant confirmation refuses the live grant, nothing is claimed, and the route runs the
 click once more, which resolves the item as deleted.
 
-Editor Undo sends an `unapply` command for the original Apply command. This path
+Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its document, the URL names no document). This path
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
 
@@ -68,6 +68,27 @@ mutex, then the writes: the list's records and rows (`submit`), the closed draft
 rows. The rows are written under the document's key because derivation certification takes that
 key and then the document's `tree_nodes` row. Nothing takes a document mutex before the list's
 lock.
+
+### Apply of several nodes, Un-Apply, Undo of a Discard
+
+`POST .../branches/:branchId/apply` (`ApplyTreeClick`) is the tree half alone for any set of
+nodes, folders included, as one command: `applyDraft` over all the chosen records in each list,
+one `apply_command_trees` row per list (the list's state vector right after, and the created
+documents' journal heads once the command's text is in). Each item carries the revision it saw;
+any other answers `changed` and nothing lands. An item that cannot land stays pending; none
+landing is `refused` `ancestor_taken`. The per-document click is the same code with one item.
+
+Un-Apply runs the tree half through `undoApply` in each list the command has a row for, before the
+text writes and after every check that can end the command quietly, so a refusal (`gone`: the
+list moved, or a created document has text past its heads; `superseded`) stores nothing of
+either half. Lock order: the lists' keys, then the keys of the text document and the
+documents the Apply created.
+
+`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores the tree half of
+a Discard command through `restoreDiscard` on the Work's current branch (`ensureActiveForWrite`:
+a whole Discard closed the branch it ran on). The server keeps no closed text drafts to restore,
+so a discarded document's text stays as the Discard left it. The Discard kernel tags its
+settlements with the command's own id; that is how both find them.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins
