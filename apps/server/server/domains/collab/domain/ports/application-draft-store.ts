@@ -33,7 +33,10 @@ export type ApplicationDraftStore = DraftStore & {
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<DraftSnapshot>;
-  /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
+  /**
+   * The branch's draft on the document its admitted create just made, from its durable live
+   * state, in the admitting transaction under the branch's tree list key (no Work lock).
+   */
   ensureCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;

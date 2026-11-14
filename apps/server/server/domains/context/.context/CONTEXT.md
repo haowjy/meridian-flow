@@ -169,8 +169,10 @@ document keys; a caller holds no document or namespace key when it submits. `con
   seeds live Yjs: whole-file seed is a live-only command.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit
   (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
-  `conflict`; a create never replaces or joins another document. A draft create also makes the
-  document's draft (`ensureCreatedDocumentDraft`).
+  `conflict`; a create never replaces or joins another document. A text document created in a
+  Work's version gets its Yjs authority and its Work text draft from the list store, in the
+  transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
+  writer's records through the list's room and the AI's through `submit` take the same path.
 - **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
   (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
   bytes. A move between a project and the account (`user://`) crosses two lists:

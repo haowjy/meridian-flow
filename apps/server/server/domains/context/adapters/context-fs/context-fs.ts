@@ -100,7 +100,6 @@ export interface ContextFSDeps {
   actor: string;
   /** Settles ahead refs when a document arrives; absent in a composition without them. */
   arrivals?: DocumentArrivals;
-  drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft">;
   documentSync: MarkdownDocumentStore &
     Pick<
       DraftPeerShadowAccess,
@@ -212,7 +211,6 @@ export class ContextFS implements ContextSchemeAdapter {
       tree: deps.writes,
       executor: this.commandExecutor,
       documentSync: deps.documentSync,
-      drafts: deps.drafts,
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
       liveCreate: this.liveCreate,
     });

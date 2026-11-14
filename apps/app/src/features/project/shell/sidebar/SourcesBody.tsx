@@ -151,6 +151,7 @@ function treeSource(scheme: TreeKey): Source {
           editorWorkId={sources.editorWorkId}
           activeDocumentId={sources.activeDocumentId}
           onSelectFile={sources.onSelectFile}
+          onPicked={sources.onPicked}
           drop={drop}
         />
       );
