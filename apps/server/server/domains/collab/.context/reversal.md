@@ -108,7 +108,10 @@ A tree change (create, move, rename, delete, restore, folders included) is its o
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
 A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
-steps, newest receipt first; a Redo takes the receipts an Undo reversed, oldest first). It
+steps, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
+receipt the model's own `undo` reversed in the reply is part of what the reply did, and gives the
+card no Redo). The receipts one list holds go back in one update of that list, so a browser showing
+it redraws once for the whole Undo, not once a receipt. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
