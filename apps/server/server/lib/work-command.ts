@@ -7,8 +7,13 @@
  */
 import type { CommandId, ProjectId, UserId } from "@meridian/contracts";
 import type { CommandKind, Settlement } from "@meridian/contracts/commands";
+import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
-import { WorkLockedError } from "../domains/projects/index.js";
+import {
+  WorkLifecycleUnavailableError,
+  WorkLockedError,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import type { CommandStore } from "../shared/commands/drizzle-commands.js";
 import { runRouteCommand } from "./command-route.js";
 
@@ -57,4 +62,35 @@ export async function runWorkCommand(
   );
   if (result.status === "refused") throw new WorkLockedError();
   return result.work;
+}
+
+/**
+ * A command on a closed Work changes nothing: it is done, and the result is the Work as it stands
+ * with a `returned` settlement, so the client keeps what the writer typed or clicked. A purged
+ * Work still throws.
+ */
+export async function orReturnedWhenClosed(
+  works: WorkRepository,
+  workId: WorkId,
+  effect: () => Promise<{ work?: Work; settled?: Settlement[] }>,
+): Promise<{ work?: Work; settled?: Settlement[] }> {
+  try {
+    return await effect();
+  } catch (cause) {
+    if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing") {
+      const work = await works.findById(workId);
+      if (work) {
+        return {
+          work,
+          settled: [
+            {
+              rule: "returned",
+              why: cause.state === "archived" ? "work_archived" : "work_deleted",
+            },
+          ],
+        };
+      }
+    }
+    throw cause;
+  }
 }
