@@ -48,13 +48,12 @@ export function createDocumentRevisions(deps: {
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
-        const { resolutions } = await deps.availability.lookup(
+        const { documents } = await deps.availability.placed(
           { projectId: thread.projectId, documentIds: [documentId], view },
           { userId: thread.userId },
         );
-        const source = resolutions[0];
-        const parsed =
-          source?.kind === "available" ? parseUnifiedContextUri(source.entry.uri) : null;
+        const source = documents.get(documentId);
+        const parsed = source ? parseUnifiedContextUri(source.entry.uri) : null;
         if (parsed?.ok) {
           // The revision of the version this thread's writes change, per document.
           const drafted =

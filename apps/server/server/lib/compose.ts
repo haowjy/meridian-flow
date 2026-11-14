@@ -1623,16 +1623,8 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     projectContextAvailability: {
-      async lookup(input) {
-        return {
-          projectId: input.projectId,
-          resolutionId: crypto.randomUUID(),
-          resolutions: [...new Set(input.documentIds)].map((documentId) => ({
-            kind: "not-visible" as const,
-            documentId,
-            checkedGeneration: "0",
-          })),
-        };
+      async placed() {
+        return { documents: new Map(), folders: new Map(), inconsistent: new Set() };
       },
       async held() {
         // The in-memory app has no rows; its creates answer replays from their own store.

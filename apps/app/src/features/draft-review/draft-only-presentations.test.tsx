@@ -78,7 +78,7 @@ vi.mock("@/features/project/use-work-scope", () => ({
 beforeEach(() => {
   registry = new DraftOnlyPresentations();
   removedNotices = [];
-  removal = new ContextRemovalCoordinator("account-a", {
+  removal = new ContextRemovalCoordinator({
     presented: {
       documents: () => [presentedTab],
       mainDocumentId: () => documentId,

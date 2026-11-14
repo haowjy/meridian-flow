@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from "vitest";
 import type { ControlBody } from "../threads/index.js";
-import { assertAvailabilityGeneration } from "./context-availability.js";
 import { apiProjectDocumentAddressPath } from "./paths.js";
 import { referenceOccurrenceContent, skillOccurrenceContent } from "./user-turn-admission.js";
 import { encodeWsServerMessage, parseWsServerMessage } from "./ws-protocol.js";
@@ -305,17 +304,6 @@ describe("thread socket frames", () => {
     ).toBeNull();
   });
 }
-
-describe("live document session authority contracts", () => {
-  it("accepts only canonical nonnegative decimal generations", () => {
-    for (const generation of ["0", "1", "10", "99999999999999999999"]) {
-      expect(() => assertAvailabilityGeneration(generation)).not.toThrow();
-    }
-    for (const generation of ["", "+1", "-1", " 1", "1 ", "0x10", "01", "00"]) {
-      expect(() => assertAvailabilityGeneration(generation)).toThrow(TypeError);
-    }
-  });
-});
 
 it("serializes the Work and item selector without changing the manuscript owner", () => {
   const address = apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", {

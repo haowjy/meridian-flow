@@ -4,7 +4,6 @@ export * from "./agent-threads";
 export * from "./billing";
 export * from "./branches";
 export * from "./content";
-export * from "./context-availability";
 export * from "./imports";
 export * from "./model-evidence";
 export * from "./recent-documents";
@@ -23,7 +22,6 @@ import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
 import * as branches from "./branches";
 import * as content from "./content";
-import * as contextAvailability from "./context-availability";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
 import * as modelEvidence from "./model-evidence";
@@ -44,7 +42,6 @@ export const schema = {
   ...billing,
   ...content,
   ...imports,
-  ...contextAvailability,
   ...branches,
   ...agentThreads,
   ...threadAsks,

@@ -82,17 +82,11 @@ export async function handlePutWorkingSetRequest(
 
   if (input.body.recentRoutes.length > 0) {
     const documentIds = input.body.recentRoutes.map((route) => route.documentId);
-    const availability = await deps.projectContextAvailability.lookup(
+    const { documents } = await deps.projectContextAvailability.placed(
       { projectId: input.projectId, documentIds },
       { userId: input.userId },
     );
-    if (
-      availability.resolutions.length !== documentIds.length ||
-      availability.resolutions.some(
-        (resolution, index) =>
-          resolution.documentId !== documentIds[index] || resolution.kind !== "available",
-      )
-    ) {
+    if (documentIds.some((id) => !documents.has(id))) {
       throw createError({ statusCode: 400, message: "Invalid working-set route" });
     }
   }

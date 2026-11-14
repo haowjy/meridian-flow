@@ -2,7 +2,6 @@ import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches"
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
-import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { openDocumentMatchesRoute } from "../context/open-document-identity";
 import { addressReviewOwner } from "./document-address-review";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -33,8 +32,6 @@ export function createEditorDocumentCommand({
   read,
   presented,
   isDraftOnly,
-  admitDraftReview,
-  enterRoute,
 }: {
   projectId: string;
   accountId: string;
@@ -43,9 +40,6 @@ export function createEditorDocumentCommand({
   presented: () => readonly OpenDocument[];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
-  admitDraftReview: (tab: Extract<OpenDocument, { kind: "tracked" }>) => void;
-  /** Binds the route about to be shown to the document the navigation named. */
-  enterRoute: (locator: ContextRouteRequest, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -112,18 +106,8 @@ export function createEditorDocumentCommand({
       );
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
-        if (preparedTab?.kind === "tracked" && itemKey) admitDraftReview(preparedTab);
         const focused = target.documentId ?? preparedTab?.documentId;
         if (options?.focus && focused) armEditorFocus(focused);
-        // The writer opened this document: the route is its own from the first frame, whatever
-        // another document holds at its cached path. A pasted or reloaded URL names none.
-        if (target.documentId && target.path && scope)
-          enterRoute(
-            contextRouteRequest({ ...target, path: `/${canonicalDocumentPath(target.path)}` }),
-            target.documentId,
-            // An address that carries an item is a review: the item owns its path.
-            itemKey ? "review" : "navigation",
-          );
       };
       if (
         options?.replace === undefined &&

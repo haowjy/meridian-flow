@@ -1,8 +1,9 @@
-/** Ports for project-final identity reads and ambient availability ordering. */
+/** Ports for where a project holds its documents and folders now. */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
-  ProjectContextIdentityLookupRequest,
-  ProjectContextIdentityLookupResult,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+  ProjectContextAuthority,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
@@ -26,13 +27,26 @@ export type HeldContextNode =
   /** The project holds a node that no live address can name: in Trash, or inconsistent. */
   | { kind: "unreachable" };
 
+/** What a view shows of the nodes asked about, held by the project or the writer's User area. */
+export type PlacedNodes = {
+  /** Documents the view shows, in a live source: absent from the map when in Trash or hidden. */
+  documents: Map<string, { authority: ProjectContextAuthority; entry: CatalogFileEntry }>;
+  folders: Map<string, { entry: CatalogFolderEntry }>;
+  /** Documents whose source identity is inconsistent: shown by the view, yet not placeable. */
+  inconsistent: Set<string>;
+};
+
 export interface ProjectContextAvailabilityPort {
-  lookup(
-    input: ProjectContextIdentityLookupRequest & {
+  /** Throws when the project is not the actor's. */
+  placed(
+    input: {
+      projectId: ProjectId;
+      documentIds?: readonly string[];
+      folderIds?: readonly string[];
       view?: TreeView;
     },
     actor: { userId: string },
-  ): Promise<ProjectContextIdentityLookupResult>;
+  ): Promise<PlacedNodes>;
   /**
    * The address this project holds a node under in live, Trash included, read from the node and
    * its source rather than through a Work authority. Null when the project holds no such node (a

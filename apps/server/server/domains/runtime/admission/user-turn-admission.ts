@@ -534,19 +534,9 @@ export function createUserTurnAdmission(deps: {
           ),
         ]),
       ];
-      const resolved = await deps.availability.lookup(
+      const { documents: available, folders: availableFolders } = await deps.availability.placed(
         { projectId: projectId as never, documentIds, folderIds },
         { userId: input.actorUserId },
-      );
-      const available = new Map(
-        resolved.resolutions
-          .filter((item) => item.kind === "available")
-          .map((item) => [item.documentId, item]),
-      );
-      const availableFolders = new Map(
-        (resolved.folderResolutions ?? [])
-          .filter((item) => item.kind === "available")
-          .map((item) => [item.folderId, item]),
       );
       const admittedReferences: AuthorizedReference[] = [];
       const admittedUris = new Map<string, string>();

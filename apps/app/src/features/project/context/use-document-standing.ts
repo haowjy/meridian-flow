@@ -1,14 +1,24 @@
 /** Where a document stands in its project's list, as a hook: re-read whenever the list changes. */
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { DocumentStanding } from "@/core/tree-list/standing";
 import { useProjectStandings } from "./account-feature-context";
 
-export function useDocumentStanding(projectId: string, documentId: string): DocumentStanding {
+const WAITING: DocumentStanding = { kind: "waiting" };
+const unwatched = () => undefined;
+
+/** `waiting` for no document: a route that remembers none has nothing to ask. */
+export function useDocumentStanding(
+  projectId: string,
+  documentId: string | null,
+): DocumentStanding {
   const standings = useProjectStandings();
-  const [standing, setStanding] = useState(() => standings.standing(projectId, documentId));
-  useEffect(
-    () => standings.watch(projectId, () => setStanding(standings.standing(projectId, documentId))),
+  const subscribe = useCallback(
+    (listener: () => void) => (documentId ? standings.watch(projectId, listener) : unwatched),
     [standings, projectId, documentId],
   );
-  return standing;
+  const read = useCallback(
+    () => (documentId ? standings.standing(projectId, documentId) : WAITING),
+    [standings, projectId, documentId],
+  );
+  return useSyncExternalStore(subscribe, read, () => WAITING);
 }

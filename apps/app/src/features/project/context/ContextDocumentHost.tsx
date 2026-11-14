@@ -184,11 +184,7 @@ export function ContextDocumentHost({
               <EditorView
                 draftOnly={draftOnly}
                 onCloseDraftOnly={
-                  onCloseDraftOnly ??
-                  (() => {
-                    const closing = removal.writerClose(projectId, document);
-                    if (closing instanceof Promise) closing.catch(reportError);
-                  })
+                  onCloseDraftOnly ?? (() => removal.writerClose(projectId, document))
                 }
                 projectId={projectId}
                 documentId={document.documentId}

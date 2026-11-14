@@ -8,8 +8,6 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextAvailabilityHeads } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
 import { lookupCommand, runCommand } from "../../collab/adapters/drizzle-document-commands.js";
 import {
@@ -44,16 +42,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     ok: false,
     error: { code: "command_conflict", uri: address },
   });
-
-  /** The namespace's version the receipt was made at, for the writer's replica to compare. */
-  async function observationVersion(uri: string): Promise<string> {
-    const key = uri.startsWith("user://") ? `user:${owner.userId}` : `project:${owner.projectId}`;
-    const [head] = await currentDrizzleDb(db)
-      .select({ version: contextAvailabilityHeads.namespaceGeneration })
-      .from(contextAvailabilityHeads)
-      .where(eq(contextAvailabilityHeads.authorityKey, key));
-    return String(head?.version ?? 0n);
-  }
 
   /** The stored receipt, for the writer's client to resolve an ambiguous attempt. */
   async function lookup(operationId: string): Promise<ContextOperationReceipt | null> {
@@ -118,9 +106,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
             if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
             const receipt = {
               operationId,
-              observationVersion: await observationVersion(
-                result.ok ? command.destinationUri : result.error.uri,
-              ),
               command,
               result,
             } as ContextOperationReceipt;

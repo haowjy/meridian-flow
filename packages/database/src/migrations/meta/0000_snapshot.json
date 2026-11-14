@@ -5809,45 +5809,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.context_availability_heads": {
-      "name": "context_availability_heads",
-      "schema": "",
-      "columns": {
-        "authority_key": {
-          "name": "authority_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace_generation": {
-          "name": "namespace_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.document_edit_parts": {
       "name": "document_edit_parts",
       "schema": "",
@@ -10266,28 +10227,7 @@
   },
   "enums": {},
   "schemas": {},
-  "sequences": {
-    "public.context_availability_generation_seq": {
-      "name": "context_availability_generation_seq",
-      "schema": "public",
-      "increment": "1",
-      "startWith": "1",
-      "minValue": "1",
-      "maxValue": "9223372036854775807",
-      "cache": "1",
-      "cycle": false
-    },
-    "public.context_namespace_observation_version_seq": {
-      "name": "context_namespace_observation_version_seq",
-      "schema": "public",
-      "increment": "1",
-      "startWith": "1",
-      "minValue": "1",
-      "maxValue": "9223372036854775807",
-      "cache": "1",
-      "cycle": false
-    }
-  },
+  "sequences": {},
   "roles": {},
   "policies": {},
   "views": {},

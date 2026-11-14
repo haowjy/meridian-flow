@@ -16,8 +16,6 @@ export type CatalogScope =
 
 export type CatalogFolderEntry = {
   kind: "folder";
-  /** Globally ordered namespace observation, independent of catalog replay cursors. */
-  observationVersion: string;
   /** Per-entry namespace mutation revision. */
   locationVersion?: string;
   entryId: FolderId;
@@ -35,7 +33,6 @@ export type CatalogFolderEntry = {
 
 type CatalogFileEntryBase = {
   kind: "file";
-  observationVersion: string;
   /** Per-entry namespace mutation revision. */
   locationVersion?: string;
   entryId: DocumentId;

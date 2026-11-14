@@ -1,28 +1,6 @@
-/** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
+/** Stable-ID navigation commands, not browser grammar. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { NavigationSettlement } from "./project-navigation";
-
-/**
- * Main's document as the removal coordinator compares it: its locator, absent when main holds no
- * document. A snapshot for compare-and-swap repairs, not an address grammar (`project-address`).
- */
-export type ProjectSearch = {
-  scheme?: ProjectContextTreeScheme;
-  path?: string;
-  /** A Work's Scratch note: its owning Work. Absent for every other document. */
-  work?: string;
-  /** A chat's Scratch note: its lineage, by the first chat's id. */
-  chat?: string;
-};
-
-export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
-  return (
-    left.scheme === right.scheme &&
-    left.path === right.path &&
-    left.work === right.work &&
-    left.chat === right.chat
-  );
-}
 
 export type NavigationOptions = {
   afterCommit?: () => void;
@@ -74,52 +52,7 @@ export function contextRouteRequest(parts: {
   return { ...base, scheme };
 }
 
-/** Whether two targets name one locator: scheme and path, within the same owner. */
-export function sameContextTarget(a: ContextRouteRequest, b: ContextRouteRequest): boolean {
-  return (
-    a.scheme === b.scheme &&
-    a.path === b.path &&
-    a.workId === b.workId &&
-    a.rootThreadId === b.rootThreadId
-  );
-}
-
-export function openContextRouteSearch(
-  search: ProjectSearch,
-  target: ContextRouteRequest,
-): ProjectSearch {
-  return stripEmptySearch({
-    ...search,
-    work: target.workId,
-    chat: target.rootThreadId,
-    scheme: target.scheme,
-    path: target.path,
-  });
-}
-
-/** Compare raw route state with a resolved target. */
-export function contextRouteMatchesSearch(
-  search: ProjectSearch | null | undefined,
-  target: ContextRouteRequest,
-): boolean {
-  if (!search) return false;
-  return (
-    search.scheme === target.scheme &&
-    search.path === target.path &&
-    search.chat === target.rootThreadId &&
-    search.work === target.workId
-  );
-}
-
 export type ProjectRouteCommands = {
   /** Editor destination with no document and no local history pointer. */
   showEditorRecents: (options: NavigationOptions) => Promise<NavigationSettlement>;
 };
-
-function stripEmptySearch(search: ProjectSearch): ProjectSearch {
-  return Object.fromEntries(
-    Object.entries(search).filter(
-      ([key, value]) => value !== undefined && (key === "path" || key === "work" || value !== ""),
-    ),
-  ) as ProjectSearch;
-}
