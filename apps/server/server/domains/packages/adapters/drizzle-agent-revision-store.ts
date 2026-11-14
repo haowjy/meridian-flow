@@ -5,8 +5,6 @@ import {
   agentCatalogEntries,
   agentCatalogRevisions,
   agentDefinitionRevisions,
-  agentPackageDependencies,
-  agentPackageInstallationHistory,
   agentPackageInstallations,
   agentPackageRevisions,
   projectAgentRemovals,
@@ -14,10 +12,18 @@ import {
 } from "@meridian/database/schema";
 import { and, asc, eq, gt, isNotNull, isNull, notExists, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
-import { prepareAgentSourceRevision } from "../domain/agent-source-revision.js";
-import type { SkillFiles } from "../domain/skill-files.js";
-import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
+import {
+  type CompiledAgentDefinition,
+  compilePackage,
+  type PackageDiagnostic,
+} from "../domain/compile-package.js";
+import { GRAMMAR_VERSION } from "../domain/mars.js";
+import type { SkillFiles } from "../domain/types.js";
+import type {
+  AgentRevision,
+  AgentRevisionStore,
+  CatalogRevision,
+} from "../ports/agent-revision-store.js";
 
 export function createDrizzleAgentRevisionStore(database: Database): AgentRevisionStore {
   const db = () => currentDrizzleDb(database);
@@ -39,13 +45,28 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
             ),
         )
       : undefined;
-  const revision = (row: typeof agentDefinitionRevisions.$inferSelect): AgentRevision => ({
+  const catalogRevision = (row: typeof agentDefinitionRevisions.$inferSelect): CatalogRevision => ({
     id: row.id,
     packageRevisionId: row.packageRevisionId,
     slug: row.slug,
-    definition: row.definition as CompiledAgentDefinition,
-    definitionDigest: row.definitionDigest,
+    grammarVersion: row.grammarVersion,
+    name: row.name,
+    description: row.description,
+    diagnostics: row.diagnostics as PackageDiagnostic[],
+    definition: row.definition as CompiledAgentDefinition | null,
   });
+  const available = (row: CatalogRevision): AgentRevision[] =>
+    row.definition
+      ? [
+          {
+            id: row.id,
+            packageRevisionId: row.packageRevisionId,
+            slug: row.slug,
+            grammarVersion: row.grammarVersion,
+            definition: row.definition,
+          },
+        ]
+      : [];
 
   const installationOwner = (owner: string | null) =>
     owner === null
@@ -59,23 +80,27 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(installationOwner(owner))
         .orderBy(asc(agentPackageInstallations.coordinate));
     },
-    async readInstallationHistory(owner, installationId) {
-      const rows = await db()
-        .select({
-          packageRevisionId: agentPackageInstallationHistory.packageRevisionId,
-          createdAt: agentPackageInstallationHistory.createdAt,
-        })
-        .from(agentPackageInstallationHistory)
-        .innerJoin(
-          agentPackageInstallations,
-          eq(agentPackageInstallations.id, agentPackageInstallationHistory.installationId),
+    async listInstallationsWithoutRows(grammarVersion) {
+      return db()
+        .select()
+        .from(agentPackageInstallations)
+        .where(
+          notExists(
+            db()
+              .select()
+              .from(agentDefinitionRevisions)
+              .where(
+                and(
+                  eq(
+                    agentDefinitionRevisions.packageRevisionId,
+                    agentPackageInstallations.currentRevisionId,
+                  ),
+                  eq(agentDefinitionRevisions.grammarVersion, grammarVersion),
+                ),
+              ),
+          ),
         )
-        .where(and(installationOwner(owner), eq(agentPackageInstallations.id, installationId)))
-        .orderBy(
-          asc(agentPackageInstallationHistory.createdAt),
-          asc(agentPackageInstallationHistory.packageRevisionId),
-        );
-      return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
+        .orderBy(asc(agentPackageInstallations.coordinate));
     },
     async advanceInstallation(input) {
       return store.withCatalogTransaction(input.ownerUserId, async () => {
@@ -98,14 +123,6 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
               .where(eq(agentPackageInstallations.id, existing.id))
               .returning()
           : await db().insert(agentPackageInstallations).values(values).returning();
-        await db()
-          .insert(agentPackageInstallationHistory)
-          .values(
-            [...new Set([input.currentRevisionId, input.upstreamRevisionId])].map(
-              (packageRevisionId) => ({ installationId: row.id, packageRevisionId }),
-            ),
-          )
-          .onConflictDoNothing();
         return row;
       });
     },
@@ -118,56 +135,65 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         return operation();
       });
     },
-    async installSource(input) {
-      const prepared = prepareAgentSourceRevision(input);
+    async installSource(input, grammarVersion = GRAMMAR_VERSION) {
+      const compiled = compilePackage(input, grammarVersion);
       return runInDrizzleTransaction(database, async () => {
-        const { definitions, dependencies, ...sourceRow } = prepared;
-        await db().insert(agentPackageRevisions).values(sourceRow).onConflictDoNothing();
+        await db()
+          .insert(agentPackageRevisions)
+          .values({
+            coordinate: compiled.coordinate,
+            contentDigest: compiled.contentDigest,
+            source: { files: compiled.files },
+          })
+          .onConflictDoNothing();
         const [source] = await db()
           .select()
           .from(agentPackageRevisions)
           .where(
             and(
-              eq(agentPackageRevisions.coordinate, prepared.coordinate),
-              eq(agentPackageRevisions.contentDigest, prepared.contentDigest),
+              eq(agentPackageRevisions.coordinate, compiled.coordinate),
+              eq(agentPackageRevisions.contentDigest, compiled.contentDigest),
             ),
           );
-        if (Object.keys(dependencies).length) {
-          await db()
-            .insert(agentPackageDependencies)
-            .values(
-              Object.entries(dependencies).map(([name, dependencyRevisionId]) => ({
-                packageRevisionId: source.id,
-                name,
-                dependencyRevisionId,
-              })),
-            )
-            .onConflictDoNothing();
-        }
-        if (definitions.length) {
+        if (compiled.agents.length) {
           await db()
             .insert(agentDefinitionRevisions)
             .values(
-              definitions.map((item) => ({
-                ...item,
+              compiled.agents.map((agent) => ({
                 packageRevisionId: source.id,
+                slug: agent.slug,
+                grammarVersion,
+                name: agent.name,
+                description: agent.description,
+                definition: agent.definition,
+                diagnostics: agent.diagnostics,
               })),
             )
             .onConflictDoNothing();
         }
         return {
           packageRevisionId: source.id,
-          definitions: await store.readPackageDefinitions(source.id),
+          definitions: await store.readPackageCatalogRevisions(source.id, grammarVersion),
         };
       });
     },
-    async readPackageDefinitions(packageRevisionId) {
+    async readPackageCatalogRevisions(packageRevisionId, grammarVersion) {
       const rows = await db()
         .select()
         .from(agentDefinitionRevisions)
-        .where(eq(agentDefinitionRevisions.packageRevisionId, packageRevisionId))
+        .where(
+          and(
+            eq(agentDefinitionRevisions.packageRevisionId, packageRevisionId),
+            eq(agentDefinitionRevisions.grammarVersion, grammarVersion),
+          ),
+        )
         .orderBy(asc(agentDefinitionRevisions.slug));
-      return rows.map(revision);
+      return rows.map(catalogRevision);
+    },
+    async readPackageDefinitions(packageRevisionId, grammarVersion) {
+      return (await store.readPackageCatalogRevisions(packageRevisionId, grammarVersion)).flatMap(
+        available,
+      );
     },
     async readSource(id) {
       const [row] = await db()
@@ -175,30 +201,24 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .from(agentPackageRevisions)
         .where(eq(agentPackageRevisions.id, id));
       if (!row) return undefined;
-      const dependencies = await db()
-        .select()
-        .from(agentPackageDependencies)
-        .where(eq(agentPackageDependencies.packageRevisionId, id));
-      return {
-        coordinate: row.coordinate,
-        files: (row.source as { files: SkillFiles }).files,
-        dependencies: Object.fromEntries(
-          dependencies.map((item) => [item.name, item.dependencyRevisionId]),
-        ),
-      };
+      return { coordinate: row.coordinate, files: (row.source as { files: SkillFiles }).files };
     },
-    async readRevision(id) {
+    async readCatalogRevision(id) {
       const [row] = await db()
         .select()
         .from(agentDefinitionRevisions)
         .where(eq(agentDefinitionRevisions.id, id));
-      return row ? revision(row) : undefined;
+      return row ? catalogRevision(row) : undefined;
+    },
+    async readRevision(id) {
+      const row = await store.readCatalogRevision(id);
+      return row ? available(row)[0] : undefined;
     },
     async selectRevision(input) {
       return runInDrizzleTransaction(database, async () => {
-        const target = await store.readRevision(input.revisionId);
+        const target = await store.readCatalogRevision(input.revisionId);
         if (!target) return { ok: false, reason: "not-found" };
-        const name = target.definition.metadata.name ?? target.slug;
+        const name = target.name;
         const selection = {
           selectedRevisionId: target.id,
           name,
@@ -277,7 +297,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
             ),
           ),
         );
-      return row ? { entry: row.entry, revision: revision(row.revision) } : undefined;
+      if (!row) return undefined;
+      // A revision compiled by an older reader is stale: serve the entry's current one.
+      let revision = row.revision;
+      if (revision.grammarVersion !== GRAMMAR_VERSION) {
+        [revision] = await db()
+          .select()
+          .from(agentDefinitionRevisions)
+          .where(eq(agentDefinitionRevisions.id, row.entry.selectedRevisionId));
+      }
+      return revision?.grammarVersion === GRAMMAR_VERSION
+        ? { entry: row.entry, revision: catalogRevision(revision) }
+        : undefined;
     },
     async listCatalog(input) {
       if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
@@ -325,21 +356,6 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .returning({ id: agentCatalogEntries.id });
       return rows.length === 1;
     },
-    async restoreOwnedEntry(userId, id, expectedRevisionId) {
-      const rows = await db()
-        .update(agentCatalogEntries)
-        .set({ removed: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(agentCatalogEntries.id, id),
-            ownerFilter(userId),
-            eq(agentCatalogEntries.removed, true),
-            eq(agentCatalogEntries.selectedRevisionId, expectedRevisionId),
-          ),
-        )
-        .returning({ id: agentCatalogEntries.id });
-      return rows.length === 1;
-    },
     async bindThread(threadId, definitionRevisionId, configuration, invocationOverlay) {
       await db()
         .insert(threadAgentBindings)
@@ -370,8 +386,12 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         )
         .where(eq(threadAgentBindings.threadId, threadId));
       if (!row) return undefined;
+      const bound = row.revision?.id ? available(catalogRevision(row.revision))[0] : undefined;
+      if (row.revision?.id && !bound) {
+        throw new Error(`Thread ${threadId} is bound to an Agent revision with no definition`);
+      }
       return {
-        revision: row.revision?.id ? revision(row.revision) : null,
+        revision: bound ?? null,
         configuration: row.configuration,
         invocationOverlay: row.invocationOverlay,
         invokedSkills: row.invokedSkills,

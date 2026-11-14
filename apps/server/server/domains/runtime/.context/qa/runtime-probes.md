@@ -12,7 +12,7 @@ same checkout for every command. Publish a private probe Agent and create a
 thread:
 
 ```bash
-./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\nautocompact: 100000\n---\nFollow the writer."}' --json > "$E/agent.json"
+./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\n---\nFollow the writer."}' --json > "$E/agent.json"
 ./mf thread create --agent runtime-probe --title 'Runtime probe' --json > "$E/thread.json"
 T=$(jq -r .threadId "$E/thread.json")
 compact() { K=$(node -p 'crypto.randomUUID()'); ./mf api POST "/api/threads/$T/controls" --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json; }
@@ -83,24 +83,27 @@ compaction continues normally.
 
 ## RP-4: Proactive autocompaction and byte-stable continuation
 
-Publish a second Agent with a small `autocompact` value, create its thread, and
-send enough text to cross the threshold:
+An Agent file has no compaction field, so the trigger is the default: 90% of the model's
+usable input window (`loop/compaction/trigger.ts`; for `mock-llm-v1`, about 111,000 of its
+128,000-token window). Cross it with history on the setup thread, then send two more
+messages. An argument over about 128 KB fails (`Argument list too long`), so send the
+history as several messages:
 
 ```bash
-./mf api POST /api/agents --data '{"slug":"runtime-probe-auto","content":"---\nname: Runtime Probe Auto\nmode: primary\nmodel: mock-llm-v1\nautocompact: 12000\n---\nFollow the writer."}' --json > "$E/auto-agent.json"
-AUTO=$(./mf thread create --agent runtime-probe-auto --title 'Auto probe' --json | jq -r .threadId)
-./mf thread send "$AUTO" "$(python3 -c 'print("A planning sentence. " * 1500)')" --mock '[{"text":"Short earlier context."}]' --json
-./mf thread context "$AUTO" --all --view raw --json > "$E/before.json"
-./mf thread send "$AUTO" 'Continue the story' --mock '[{"text":"Continue after C."}]' --json > "$E/trigger.ndjson"
-./mf thread context "$AUTO" --all --view raw --json > "$E/after.json"
-./mf thread send "$AUTO" 'And then?' --mock '[{"text":"Next beat."}]' --json
-./mf thread context "$AUTO" --all --view raw --json > "$E/following.json"
+BIG=$(python3 -c 'print("A planning sentence. " * 5500)')
+for i in 1 2 3 4 5 6; do ./mf thread send "$T" "$BIG" --mock '[{"text":"Short earlier context."}]' --json > /dev/null; done
+./mf thread context "$T" --all --view raw --json > "$E/before.json"
+./mf thread send "$T" 'Continue the story' --mock '[{"text":"Continue after C."}]' --json > "$E/trigger.ndjson"
+./mf thread context "$T" --all --view raw --json > "$E/after.json"
+./mf thread send "$T" 'And then?' --mock '[{"text":"Next beat."}]' --json
+./mf thread context "$T" --all --view raw --json > "$E/following.json"
 ```
 
-Expect C then B in the same run, a summary plus retained tail in the next
-request, and an identical serialized prefix in the following request. The mock
-run proves structure; cache-read and spend claims require a separate real-model
-run.
+Expect `thread view --json` to show completed `compaction` rows by the third send, a summary
+plus retained tail in the next request, and an identical serialized prefix between the last two
+requests in `following.json` (every message of the earlier request is the start of the later
+one). The mock run proves structure; cache-read and spend claims require a separate
+real-model run.
 
 ## RP-5: Kill the server mid-summary
 

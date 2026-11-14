@@ -24,12 +24,13 @@ interface ItemLike {
   length: number;
   deleted?: boolean;
   parent?: unknown;
+  parentSub?: string | null;
   content?: { type?: unknown };
 }
 
 interface TypeLike {
   doc?: { store?: { clients?: Map<number, unknown[]> } };
-  _item?: { parent?: unknown } | null;
+  _item?: ItemLike | null;
 }
 
 /**
@@ -40,8 +41,15 @@ interface TypeLike {
 export type UndoStackItemLike = StackItemLike & { meta: Map<unknown, unknown> };
 
 export function shouldDeleteUndoItem(item: unknown, stackItem: UndoStackItemLike | null): boolean {
-  const contentType = itemLike(item).content?.type;
-  if (!isUndoContainer(contentType) || stackItem === null) return true;
+  if (stackItem === null) return true;
+  const entry = itemLike(item);
+  // An attribute (`id`, `level`, ...) belongs to its element, not to whoever wrote it: it stays
+  // with a kept element that this stack item created, or the survivor is a block with no id.
+  const owner = entry.parentSub != null ? typeLike(entry.parent)._item : null;
+  if (owner && isFullyInsideInsertions(itemLike(owner), stackItem.insertions))
+    return shouldDeleteUndoItem(owner, stackItem);
+  const contentType = entry.content?.type;
+  if (!isUndoContainer(contentType)) return true;
   return !hasLiveDescendantOutsideInsertions(contentType, stackItem);
 }
 

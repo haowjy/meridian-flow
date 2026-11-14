@@ -60,7 +60,6 @@ export type {
   CompactionPlan,
   CompactionProps,
   CompactionTrigger,
-  CompactionTriggerSource,
   PlanCompactionInput,
   ProjectedActiveHistory,
   ResolveCompactionTriggerInput,

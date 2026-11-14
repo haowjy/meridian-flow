@@ -37,7 +37,7 @@ export type FormattingMenuModel = {
   turnInto: Record<BlockTypeId, FormattingItemState>;
   /**
    * Set when every block type refuses for one reason, which is the ordinary
-   * case: the submenu then greys as a whole and never opens onto eight dead
+   * case: the submenu then greys as a whole and never opens onto dead
    * rows. Null means the list is worth opening.
    */
   turnIntoBlockedBy: FormattingBlockedReason | null;

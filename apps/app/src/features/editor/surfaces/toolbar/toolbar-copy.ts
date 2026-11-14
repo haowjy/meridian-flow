@@ -6,11 +6,12 @@
  */
 import { t } from "@lingui/core/macro";
 
-import type {
-  BlockTypeId,
-  BlockTypeRefusalReason,
-  ToolbarBlockedReason,
-  ToolbarControlId,
+import {
+  type BlockTypeId,
+  type BlockTypeRefusalReason,
+  headingLevelOf,
+  type ToolbarBlockedReason,
+  type ToolbarControlId,
 } from "./toolbar-commands";
 
 /**
@@ -57,12 +58,6 @@ export function blockTypeLabel(id: BlockTypeId): string {
   switch (id) {
     case "paragraph":
       return t`Paragraph`;
-    case "heading1":
-      return t`Heading 1`;
-    case "heading2":
-      return t`Heading 2`;
-    case "heading3":
-      return t`Heading 3`;
     case "bulletList":
       return t`Bulleted list`;
     case "orderedList":
@@ -71,6 +66,10 @@ export function blockTypeLabel(id: BlockTypeId): string {
       return t`Quote`;
     case "codeBlock":
       return t`Code block`;
+    default: {
+      const level = headingLevelOf(id);
+      return t`Heading ${level}`;
+    }
   }
 }
 

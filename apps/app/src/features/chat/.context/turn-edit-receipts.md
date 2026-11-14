@@ -67,9 +67,7 @@ for example "Restored as ch2 (2)." from the committed transition.
 Copy covers the whole wire status union through an exhaustive switch that fails
 the build when a status is added, and a command that never reached a status at
 all — rejected fetch, HTTP error envelope — gets its own retry line naming the
-command the writer pressed. `cant_undo_dependent` reads the same sentence
-whether it arrives as receipt state or as a refused command, and points at
-viewing the change, which is what expansion puts on screen. A refused command
+command the writer pressed. A refused command
 never leaves the card unchanged.
 
 Undo reverses the turn's remaining edits where they are now: pending in the

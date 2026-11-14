@@ -4,15 +4,30 @@ import type {
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
-import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
-import type { AgentSourceSnapshot } from "../domain/agent-source-revision.js";
+import type {
+  AgentSourceSnapshot,
+  CompiledAgentDefinition,
+  PackageDiagnostic,
+} from "../domain/compile-package.js";
 
+/** An available Agent as one reader version read it. The runtime never sees an unavailable one. */
 export interface AgentRevision {
   id: string;
   packageRevisionId: string;
   slug: string;
+  grammarVersion: string;
   definition: CompiledAgentDefinition;
-  definitionDigest: string;
+}
+/** One Agent file as one reader version read it: available (a definition) or unavailable (reasons). */
+export interface CatalogRevision {
+  id: string;
+  packageRevisionId: string;
+  slug: string;
+  grammarVersion: string;
+  name: string;
+  description: string;
+  diagnostics: PackageDiagnostic[];
+  definition: CompiledAgentDefinition | null;
 }
 /** Retained per-thread binding; `revision` is null for an agent-less generic subagent. */
 export interface AgentRevisionBinding {
@@ -41,33 +56,42 @@ export interface AgentPackageInstallation {
   ownerUserId: string | null;
   coordinate: string;
   currentRevisionId: string;
-  upstreamRevisionId: string;
-  origin: { url: string; ref: string; commitSha: string | null } | null;
-}
-export interface AgentPackageHistoryEntry {
-  packageRevisionId: string;
-  createdAt: string;
 }
 
 export interface AgentRevisionStore {
   listInstallations(ownerUserId: string | null): Promise<AgentPackageInstallation[]>;
-  readInstallationHistory(
-    ownerUserId: string | null,
-    installationId: string,
-  ): Promise<AgentPackageHistoryEntry[]>;
-  /** Exact head CAS plus retained history, inside the owning publication transaction. */
+  /**
+   * Installations of every owner whose current file set has no Agent rows at `grammarVersion`:
+   * what a reader change left behind.
+   */
+  listInstallationsWithoutRows(grammarVersion: string): Promise<AgentPackageInstallation[]>;
+  /** Exact head CAS, inside the owning publication transaction. */
   advanceInstallation(
     input: Omit<AgentPackageInstallation, "id"> & { expectedRevisionId?: string },
   ): Promise<AgentPackageInstallation | undefined>;
 
   /** Serialize complete owner-scoped catalog publications in one ambient transaction. */
   withCatalogTransaction<T>(ownerUserId: string | null, operation: () => Promise<T>): Promise<T>;
+  /** Compiles the files under `grammarVersion` (the running reader by default) and retains them. */
   installSource(
     source: AgentSourceSnapshot,
-  ): Promise<{ packageRevisionId: string; definitions: AgentRevision[] }>;
+    grammarVersion?: string,
+  ): Promise<{ packageRevisionId: string; definitions: CatalogRevision[] }>;
   readSource(packageRevisionId: string): Promise<AgentSourceSnapshot | undefined>;
+  /** By id, any reader version. Undefined for an unavailable Agent. */
   readRevision(id: string): Promise<AgentRevision | undefined>;
-  readPackageDefinitions(packageRevisionId: string): Promise<AgentRevision[]>;
+  /** By id, any reader version, available or not. */
+  readCatalogRevision(id: string): Promise<CatalogRevision | undefined>;
+  /** The available Agents of one file set, as read by `grammarVersion`. */
+  readPackageDefinitions(
+    packageRevisionId: string,
+    grammarVersion: string,
+  ): Promise<AgentRevision[]>;
+  /** Every Agent of one file set, as read by `grammarVersion`. */
+  readPackageCatalogRevisions(
+    packageRevisionId: string,
+    grammarVersion: string,
+  ): Promise<CatalogRevision[]>;
   /** Null ownership is reserved for trusted system seeding. Existing pointers require an exact CAS. */
   selectRevision(input: {
     ownerUserId: string | null;
@@ -79,12 +103,13 @@ export interface AgentRevisionStore {
     ownerUserId: string | null,
     logicalKey: string,
   ): Promise<AgentCatalogEntry | undefined>;
+  /** Only a revision of the running reader's version: a stricter reader reaches held selections. */
   readSelection(
     userId: string,
     catalogEntryId: string,
     revisionId: string,
     projectId?: string,
-  ): Promise<{ entry: AgentCatalogEntry; revision: AgentRevision } | undefined>;
+  ): Promise<{ entry: AgentCatalogEntry; revision: CatalogRevision } | undefined>;
   listCatalog(input: {
     userId: string;
     projectId?: string;
@@ -93,13 +118,13 @@ export interface AgentRevisionStore {
   }): Promise<AgentCatalogEntry[]>;
   removeFromProject(projectId: string, catalogEntryId: string): Promise<void>;
   removeOwnedEntry(userId: string | null, entryId: string): Promise<boolean>;
-  restoreOwnedEntry(userId: string, entryId: string, expectedRevisionId: string): Promise<boolean>;
   bindThread(
     threadId: string,
     revisionId: string | null,
     configuration: ResolvedAgentConfiguration,
     invocationOverlay: InvocationOverlay | null,
   ): Promise<boolean>;
+  /** Throws when the bound revision has no definition: null `revision` means the generic subagent. */
   readThreadBinding(threadId: string): Promise<AgentRevisionBinding | undefined>;
   /**
    * Pins a user-invoked skill on the thread's binding, replacing an earlier

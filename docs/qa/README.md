@@ -21,6 +21,7 @@ probe the integration worktree's: a checkout that moves under a watching dev
 server, or a reused database, produces regressions that vanish on a clean
 stack.
 
+- [Agents through Mars](../../apps/server/server/domains/packages/.context/qa/agents-through-mars.md): an Agent file Mars or Flow reports on is unavailable and never widened; a database probe and a server gate on the mock provider.
 - [Signed-out redirects](../../apps/www/.context/qa/signed-out-redirects.md): the circle between the landing page, sign-in, sign-up and log out, with the auth bypass off.
 - [Rich mock provider](../../packages/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.

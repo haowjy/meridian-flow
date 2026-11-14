@@ -72,7 +72,7 @@ it("a document in no view (deleted after its edit) does not stop another documen
   }
 });
 
-it("typing inside restored text leaves Redo unavailable and does not delete the writer's word", async () => {
+it("Redo after the writer typed inside restored text deletes only the model's letters", async () => {
   const { harness, view, context } = await fixture();
   try {
     expect(
@@ -139,10 +139,6 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
     } finally {
       doc.destroy();
     }
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-      control: "view_change",
-      skips: [{ before: "Beta", cause: "edited_since" }],
-    });
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -150,8 +146,8 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         direction: "redo",
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "expired", acceptedParts: 0 });
-    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
+    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha !.\n\nBlue.\n");
   } finally {
     await harness.dispose();
   }

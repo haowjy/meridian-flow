@@ -15,28 +15,10 @@
  * the reason with them.
  */
 
-import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  Code,
-  CopyPlus,
-  Heading1,
-  Heading2,
-  Heading3,
-  List,
-  ListOrdered,
-  Pilcrow,
-  TextQuote,
-  Trash2,
-  Type,
-} from "lucide-react";
-import type { ReactNode } from "react";
+import { ArrowDown, ArrowUp, CopyPlus, Trash2, Type } from "lucide-react";
 
 import { isEditorObject } from "@/core/editor/objects";
-import { cn } from "@/lib/utils";
 
 // Straight at the primitive, not through `chrome/index.ts`: that barrel also
 // carries the surface registry this lane is listed in, and the round trip is a
@@ -52,11 +34,9 @@ import {
 } from "../../chrome/EditorMenu";
 import {
   BLOCK_TYPE_IDS,
-  type BlockTypeId,
-  blockTypeLabel,
+  BlockTypeMenuItem,
   blockTypeReasonMessage,
   blockTypeStates,
-  turnIntoBlockType,
 } from "../toolbar";
 import { blockMenuLabel, blockMoveShortcut } from "./block-copy";
 import type { BlockTarget } from "./block-targets";
@@ -140,8 +120,8 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
   const refused = targets.filter((option) => option.blockedBy);
   const reason = refused[0]?.blockedBy ? blockTypeReasonMessage(refused[0].blockedBy) : null;
 
-  // Nothing here can run: one row carrying the answer beats a submenu of eight
-  // dead ones.
+  // Nothing here can run: one row carrying the answer beats a submenu of dead
+  // ones.
   if (refused.length === targets.length) {
     return (
       <EditorMenuItem blockedReason={reason}>
@@ -159,40 +139,15 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
       </EditorMenuSubTrigger>
       <EditorMenuSubContent className="min-w-48">
         {targets.map((option) => (
-          <EditorMenuItem
+          <BlockTypeMenuItem
             key={option.id}
+            editor={editor}
+            id={option.id}
+            active={option.active}
             blockedReason={option.blockedBy ? blockTypeReasonMessage(option.blockedBy) : null}
-            onSelect={() => turnIntoBlockType(editor, option.id)}
-          >
-            {turnIntoIcon(option.id)}
-            <span className={cn(option.active && "font-medium")}>{blockTypeLabel(option.id)}</span>
-            {option.active ? (
-              <Check className="ml-auto text-foreground" aria-label={t`Current block type`} />
-            ) : null}
-          </EditorMenuItem>
+          />
         ))}
       </EditorMenuSubContent>
     </EditorMenuSub>
   );
-}
-
-function turnIntoIcon(id: BlockTypeId): ReactNode {
-  switch (id) {
-    case "paragraph":
-      return <Pilcrow aria-hidden />;
-    case "heading1":
-      return <Heading1 aria-hidden />;
-    case "heading2":
-      return <Heading2 aria-hidden />;
-    case "heading3":
-      return <Heading3 aria-hidden />;
-    case "bulletList":
-      return <List aria-hidden />;
-    case "orderedList":
-      return <ListOrdered aria-hidden />;
-    case "quote":
-      return <TextQuote aria-hidden />;
-    case "codeBlock":
-      return <Code aria-hidden />;
-  }
 }

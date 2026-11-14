@@ -1,7 +1,7 @@
 /** Inserts a selected slash-command result into the document. */
 
-import { nestNodes } from "@meridian/prosemirror-schema";
-import type { Editor, JSONContent, Range } from "@tiptap/core";
+import { HEADING_LEVELS, type HeadingLevel, nestNodes } from "@meridian/prosemirror-schema";
+import type { ChainedCommands, Editor, JSONContent, Range } from "@tiptap/core";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
@@ -28,12 +28,12 @@ type SlashBlock = {
 /** What an entry lands, which is the question availability has to ask. */
 type SlashInsertion =
   | ({ strategy: "block" } & SlashBlock)
-  /** The block the trigger is in is listed or quoted, or leaves the list or quote: the toolbar's toggle. */
-  | { strategy: "toggle"; kind: SlashToggleKind }
+  /** The block the trigger is in is retyped in place, or returns to body text: the toolbar's toggle. */
+  | { strategy: "toggle"; toggle: SlashToggle }
   /** A picture, inline where the trigger was. */
   | { strategy: "image" };
 
-type SlashToggleKind = "bullet" | "ordered" | "task" | "quote";
+type SlashToggle = (chain: ChainedCommands) => ChainedCommands;
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
 
@@ -51,19 +51,22 @@ function block(node: JSONContent, caret: "inside" | "after" = "inside"): SlashIn
   return { strategy: "block", node, caret };
 }
 
-function heading(level: 1 | 2 | 3): SlashInsertion {
-  return block({ type: "paragraph", attrs: { level } });
+function toggle(apply: SlashToggle): SlashInsertion {
+  return { strategy: "toggle", toggle: apply };
 }
 
 /** One row per catalog id, `image` included. */
 const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
-  "heading-1": heading(1),
-  "heading-2": heading(2),
-  "heading-3": heading(3),
-  "bullet-list": { strategy: "toggle", kind: "bullet" },
-  "numbered-list": { strategy: "toggle", kind: "ordered" },
-  "task-list": { strategy: "toggle", kind: "task" },
-  quote: { strategy: "toggle", kind: "quote" },
+  ...(Object.fromEntries(
+    HEADING_LEVELS.map((level) => [
+      `heading-${level}`,
+      toggle((chain) => chain.toggleHeadingLevel({ level })),
+    ]),
+  ) as Record<`heading-${HeadingLevel}`, SlashInsertion>),
+  "bullet-list": toggle((chain) => chain.toggleListKind("bullet")),
+  "numbered-list": toggle((chain) => chain.toggleListKind("ordered")),
+  "task-list": toggle((chain) => chain.toggleTaskList()),
+  quote: toggle((chain) => chain.toggleQuote()),
   divider: block({ type: "horizontal_rule" }, "after"),
   table: block({
     type: "table",
@@ -97,15 +100,15 @@ type SlashTarget =
   | { mode: "insert-after"; pos: number; node: PMNode; block: SlashBlock }
   /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number }
-  /** The trigger's own block is listed, quoted, or taken out of either in place. */
-  | { mode: "toggle"; kind: SlashToggleKind };
+  /** The trigger's own block is retyped in place, or returns to body text. */
+  | { mode: "toggle"; toggle: SlashToggle };
 
 /** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
   if (insertion.strategy === "image") return inlineImageTarget(doc, pos);
   if (insertion.strategy === "toggle") {
     return doc.resolve(pos).parent.type.name === "paragraph"
-      ? { mode: "toggle", kind: insertion.kind }
+      ? { mode: "toggle", toggle: insertion.toggle }
       : null;
   }
   return blockTarget(doc, pos, insertion);
@@ -182,15 +185,7 @@ export function applySlashCommand(
   if (!target) return false;
 
   if (target.mode === "toggle") {
-    const chain = editor.chain().focus().deleteRange(range);
-    const { kind } = target;
-    return (
-      kind === "task"
-        ? chain.toggleTaskList()
-        : kind === "quote"
-          ? chain.toggleQuote()
-          : chain.toggleListKind(kind)
-    ).run();
+    return target.toggle(editor.chain().focus().deleteRange(range)).run();
   }
 
   if (target.mode === "inline") {
@@ -214,8 +209,8 @@ export function applySlashCommand(
       if (!dispatch) return true;
       const made =
         target.mode === "convert" ? editor.schema.nodeFromJSON(target.block.node) : target.node;
-      // The entry's own attributes (a heading's level, a fence's language) are the writer's
-      // choice; the block keeps the rest, its id and its place among them.
+      // The entry's own attributes (a fence's language) are the writer's choice; the block
+      // keeps the rest, its id and its place among them.
       if (target.mode === "convert") replaceBlock(tr, start, made, target.block.node.attrs ?? {});
       else tr.insert(start, made);
       landCaret(tr, start, tr.doc.nodeAt(start)?.nodeSize ?? made.nodeSize, target.block.caret);

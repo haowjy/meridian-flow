@@ -71,8 +71,25 @@ inside a text run copies the text after it into a new run, so those characters c
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
-## Forward-inverse dependency closure
+## Forward-inverse per-peer rule
 
-A forward inverse closes over one Yjs dependency predicate: the selected edit's
-retained structures and everything that depends on them. Review grouping and the
-model's text-derived status never use this predicate.
+An inverse acts per item of the receipt, never on a dependency closure: each inserted item is
+deleted if still visible, each deleted item is restored if its parent is live (or is restored
+with it) and, for a map entry, nothing newer has replaced it. Anything else is skipped as
+already gone, so another peer's typing never refuses it and is never removed. An AI element
+holding a live descendant outside the receipt stays (`delete-filter.ts`) with all its attributes
+(`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
+leaves a writer's later attribute value.
+
+A replacement is a deleted run with the part's insertion beside it. The deleted run stays gone
+only when the part's inserted side is no longer visible beside it *and* an item written after
+the part (a clock at or past the part's `frontier`, read on the original of an Undo- or
+Redo-restored copy) bounds the gap: the writer or a pull replaced the text, and restoring would
+double it. A plain deletion of the insertion leaves nothing there, so the original comes back.
+A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
+(`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
+insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
+Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
+word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
+therefore lands as a replacement, and Undo leaves it as the writer edited it (`changed`).
+Review grouping and the model's text-derived status never use this rule.
