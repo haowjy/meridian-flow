@@ -168,7 +168,6 @@ export { createDrizzleContextImportRead } from "./tree/import-read.js";
 export {
   type DiscardedTree,
   discardedTree,
-  restoreDiscardedTree,
 } from "./tree/trash-entries.js";
 export * from "./tree/tree-view.js";
 export {

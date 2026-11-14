@@ -360,6 +360,10 @@ msgstr "{all} is now in {place}."
 msgid "{answered, plural, one {# answered} other {# answered}}"
 msgstr "{answered, plural, one {# answered} other {# answered}}"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{applied} applied"
+#~ msgstr "{applied} applied"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
@@ -442,8 +446,8 @@ msgid "{count} documents were deleted ({names})."
 msgstr "{count} documents were deleted ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were deleted with the Work {name} ({names})."
-msgstr "{count} documents were deleted with the Work {name} ({names})."
+#~ msgid "{count} documents were deleted with the Work {name} ({names})."
+#~ msgstr "{count} documents were deleted with the Work {name} ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{count} documents were discarded from the draft ({names})."
@@ -472,6 +476,10 @@ msgstr "{days, plural, one {Gone for good in # day.} other {Gone for good in # d
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{discarded} discarded"
+#~ msgstr "{discarded} discarded"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {# document} other {# documents}}"
@@ -643,8 +651,8 @@ msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and ca
 msgstr "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted with the Work {work} before this change could be made."
-msgstr "{name} was deleted with the Work {work} before this change could be made."
+#~ msgid "{name} was deleted with the Work {work} before this change could be made."
+#~ msgstr "{name} was deleted with the Work {work} before this change could be made."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was discarded from the draft before this change could be made."
@@ -679,6 +687,10 @@ msgstr "{name}: moving to {0}"
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: renaming to {0}"
 msgstr "{name}: renaming to {0}"
+
+#: src/features/chat/TurnStoppedLine.tsx
+msgid "{named} and {more} more"
+msgstr "{named} and {more} more"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} are back in the manuscript."
@@ -762,8 +774,8 @@ msgid "{title} was deleted from the manuscript. Applying brings it back."
 msgstr "{title} was deleted from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted with the Work {name}."
-msgstr "{title} was deleted with the Work {name}."
+#~ msgid "{title} was deleted with the Work {name}."
+#~ msgstr "{title} was deleted with the Work {name}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
@@ -780,6 +792,10 @@ msgstr "{toReview} to review"
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{waiting} still a draft"
+#~ msgstr "{waiting} still a draft"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this change could be made."
@@ -1119,16 +1135,16 @@ msgid "Already in {0}"
 msgstr "Already in {0}"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Already redone"
-msgstr "Already redone"
+#~ msgid "Already redone"
+#~ msgstr "Already redone"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Already there"
 msgstr "Already there"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Already undone"
-msgstr "Already undone"
+#~ msgid "Already undone"
+#~ msgstr "Already undone"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Also applied {others}."
@@ -1162,9 +1178,14 @@ msgstr "Another Work now has this name. Rename that Work, then restore this one.
 msgid "Appearance and behavior settings."
 msgstr "Appearance and behavior settings."
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied"
 msgstr "Applied"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Applied {what}"
+msgstr "Applied {what}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied as {name}: the name was taken."
@@ -1461,8 +1482,8 @@ msgid "Can't restore into {destinationName}"
 msgstr "Can't restore into {destinationName}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Can't undo"
-msgstr "Can't undo"
+#~ msgid "Can't undo"
+#~ msgstr "Can't undo"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't undo: {place} was moved or deleted after this change."
@@ -2703,12 +2724,12 @@ msgid "Deleted from {place} on {deleted}."
 msgstr "Deleted from {place} on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Deleted from {place} with the Work {name} on {deleted}."
-msgstr "Deleted from {place} with the Work {name} on {deleted}."
+#~ msgid "Deleted from {place} with the Work {name} on {deleted}."
+#~ msgstr "Deleted from {place} with the Work {name} on {deleted}."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Deleted from {place} with the Work {name}."
-msgstr "Deleted from {place} with the Work {name}."
+#~ msgid "Deleted from {place} with the Work {name}."
+#~ msgstr "Deleted from {place} with the Work {name}."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Deleted from {place}."
@@ -2794,6 +2815,10 @@ msgstr "Details about removed text"
 msgid "Diagram"
 msgstr "Diagram"
 
+#: src/features/chat/TurnStoppedLine.tsx
+msgid "Didn't run: {calls}."
+msgstr "Didn't run: {calls}."
+
 #: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -2842,12 +2867,17 @@ msgid "Discard this draft? This can't be undone."
 msgstr "Discard this draft? This can't be undone."
 
 #: src/features/chat/turn-receipt-copy.ts
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Discarded"
 msgstr "Discarded"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Discarded {count} changes just now. Undo brings them all back."
 msgstr "Discarded {count} changes just now. Undo brings them all back."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Discarded {what}"
+msgstr "Discarded {what}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Discarded just now. Undo brings it back."
@@ -2954,6 +2984,27 @@ msgstr "Draft: {owner}"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted {what}"
 msgstr "Drafted {what}"
+
+#. placeholder {0}: parts.join(", ")
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Drafted {what}: {0}"
+#~ msgstr "Drafted {what}: {0}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {discarded} discarded"
+msgstr "Drafted {what}: {applied} applied, {discarded} discarded"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
+msgstr "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
+msgstr "Drafted {what}: {applied} applied, {waiting} still a draft"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
+msgstr "Drafted {what}: {discarded} discarded, {waiting} still a draft"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "Drafted 1 document"
@@ -4692,6 +4743,10 @@ msgstr "Properties"
 msgid "Purchase confirmed."
 msgstr "Purchase confirmed."
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Put back"
+msgstr "Put back"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
@@ -5522,6 +5577,14 @@ msgstr "stopped"
 msgid "Stopped"
 msgstr "Stopped"
 
+#: src/features/chat/TurnStoppedLine.tsx
+msgid "Stopped."
+msgstr "Stopped."
+
+#: src/features/chat/TurnStoppedLine.tsx
+msgid "Stopped. Didn't run: {calls}."
+msgstr "Stopped. Didn't run: {calls}."
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/subagent/useSubagentStop.ts
@@ -5647,6 +5710,10 @@ msgstr "Table placement"
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Tabs"
 msgstr "Tabs"
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Taken out"
+msgstr "Taken out"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
@@ -6091,7 +6158,6 @@ msgid "This change belongs with others. Select all of them and try again."
 msgstr "This change belongs with others. Select all of them and try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
 
@@ -6228,12 +6294,12 @@ msgid "This document was deleted from the manuscript. Apply again to bring it ba
 msgstr "This document was deleted from the manuscript. Apply again to bring it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted with the Work {name}."
-msgstr "This document was deleted with the Work {name}."
+#~ msgid "This document was deleted with the Work {name}."
+#~ msgstr "This document was deleted with the Work {name}."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted with the Work {work} before this change could be made."
-msgstr "This document was deleted with the Work {work} before this change could be made."
+#~ msgid "This document was deleted with the Work {work} before this change could be made."
+#~ msgstr "This document was deleted with the Work {work} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."

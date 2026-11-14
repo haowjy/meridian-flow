@@ -1,7 +1,9 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
@@ -58,6 +60,18 @@ export function useDraftDock({
       ),
     [listedFiles, threadId],
   );
+  // A peer's Apply or Discard reaches this chat only as a change in which drafts wait here.
+  const queryClient = useQueryClient();
+  const waiting = candidates
+    .filter((row) => row.draft.hasDraft)
+    .map((row) => row.draft.itemKey)
+    .join();
+  const seenWaiting = useRef(waiting);
+  useEffect(() => {
+    if (seenWaiting.current === waiting) return;
+    seenWaiting.current = waiting;
+    refreshTurnCards(queryClient);
+  }, [queryClient, waiting]);
   const targets = useMemo(
     () =>
       candidates

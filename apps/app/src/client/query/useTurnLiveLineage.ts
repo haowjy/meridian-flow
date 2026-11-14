@@ -4,13 +4,28 @@ import type {
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 
 import { listTurnLiveLineage } from "@/client/api/live-lineage-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
 
 import type { ListQueryStatus } from "./list-query";
 import { threadQueryKeys } from "./thread-query-keys";
+
+/**
+ * The turn cards read what became of their drafted documents, and nothing pushes that to them:
+ * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
+ * in flight is the one the writer waits on, so it is not restarted.
+ */
+export function refreshTurnCards(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries(
+    {
+      predicate: ({ queryKey }) =>
+        queryKey[0] === threadQueryKeys.all[0] && queryKey[2] === "live-lineage",
+    },
+    { cancelRefetch: false },
+  );
+}
 
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {
   documents: TurnLiveLineageDocumentItem[] | null;

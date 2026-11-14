@@ -755,7 +755,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             writer.transact(() => writer.settle(WRITER, ids, "discarded", { command }));
           },
         });
-        const entry = await discardedTree(store(), list, command);
+        const [entry] = await discardedTree(store(), list, [command]);
+        if (!entry) throw new Error("no entry");
         expect(entry.created).toMatchObject([
           { kind: "folder", name: "inner", path: ["part1", "inner"] },
         ]);
