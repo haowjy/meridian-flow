@@ -276,7 +276,7 @@ export function createRuntimeHarness(
         return { kind: "accepted", response: input.response };
       },
     },
-    async consumeUploads() {},
+    async uploadsUsed() {},
     async attachDocument() {},
   });
   return {

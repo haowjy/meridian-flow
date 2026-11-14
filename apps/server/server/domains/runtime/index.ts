@@ -7,6 +7,7 @@ export type {
 export type { ShownLinkShowing } from "../../shared/model-evidence.js";
 export { TREE_NAMES_ROOM } from "../../shared/model-evidence.js";
 export type { WorkContextNotices } from "../projects/index.js";
+export { createHostEffectOutbox } from "./adapters/drizzle/host-effects.js";
 export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
@@ -156,6 +157,7 @@ export type { CommandResolver } from "./ports/command-resolver.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { DocumentEvidence, FrontierLookups } from "./ports/document-evidence.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
+export type { HostEffect, HostEffects } from "./ports/host-effects.js";
 export type { LinkWindow, MediaResolverPort, ResolvedMedia } from "./ports/media-resolver.js";
 export { MediaResolutionError, unavailableMediaResolver } from "./ports/media-resolver.js";
 export {

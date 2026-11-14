@@ -777,5 +777,25 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
+/**
+ * Writes the host owes after a runtime commit, inserted in that commit and delivered after it.
+ * A row goes when its handler returns; `attempts` counts the deliveries that threw.
+ */
+export const hostEffects = pgTable(
+  "host_effects",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<JsonValue>().notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (table) => [index("host_effects_thread_idx").on(table.threadId)],
+);
+
 // The origin-turn FK is NO ACTION DEFERRABLE INITIALLY IMMEDIATE in migration
 // 0006; deleting a referenced turn fails unless a coordinated delete defers it.

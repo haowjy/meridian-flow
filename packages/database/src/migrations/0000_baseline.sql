@@ -98,6 +98,15 @@ CREATE TABLE "event_journal" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "host_effects" (
+	"id" bigserial PRIMARY KEY NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"payload" jsonb NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "model_responses" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"turn_id" uuid NOT NULL,
@@ -1052,6 +1061,7 @@ ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_thread
 ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_definition_revision_id_agent_definition_revisions_id_fk" FOREIGN KEY ("definition_revision_id") REFERENCES "public"."agent_definition_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "event_journal" ADD CONSTRAINT "event_journal_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "event_journal" ADD CONSTRAINT "event_journal_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "host_effects" ADD CONSTRAINT "host_effects_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "model_responses" ADD CONSTRAINT "model_responses_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_handle_counters" ADD CONSTRAINT "project_handle_counters_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "prompt_bakes" ADD CONSTRAINT "prompt_bakes_owner_thread_id_threads_id_fk" FOREIGN KEY ("owner_thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1183,6 +1193,7 @@ CREATE UNIQUE INDEX "event_journal_thread_seq_unique" ON "event_journal" USING b
 CREATE UNIQUE INDEX "event_journal_event_id_unique" ON "event_journal" USING btree (("payload"->>'eventId')) WHERE "event_journal"."payload"->>'eventId' IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "event_journal_thread_seq" ON "event_journal" USING btree ("thread_id","seq");--> statement-breakpoint
 CREATE INDEX "event_journal_turn_id" ON "event_journal" USING btree ("turn_id","created_at") WHERE "event_journal"."turn_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "host_effects_thread_idx" ON "host_effects" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "model_responses_turn_sequence" ON "model_responses" USING btree ("turn_id","sequence");--> statement-breakpoint
 CREATE INDEX "model_responses_provider_model_created" ON "model_responses" USING btree ("provider","model","created_at");--> statement-breakpoint
 CREATE INDEX "prompt_bakes_owner_created" ON "prompt_bakes" USING btree ("owner_thread_id","created_at");--> statement-breakpoint

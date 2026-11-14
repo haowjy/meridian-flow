@@ -63,6 +63,11 @@ async function createAppServices(): Promise<AppServices> {
         delayMs: WAKE_SWEEP_INTERVAL_MS,
         run: app.importOrganizer.runPass,
       },
+      {
+        name: "host-effects",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: app.recovery.deliverHostEffects,
+      },
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "ask-expiry", delayMs: ASK_EXPIRY_SWEEP_MS, run: app.recovery.expireAsks },

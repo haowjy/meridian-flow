@@ -202,7 +202,7 @@ if (!RUN) {
           turns: repos.turns,
           delivery,
           records,
-          async consumeUploads(documentIds) {
+          async uploadsUsed(documentIds) {
             await uploadIntake.consume(documentIds, THREAD);
           },
           async attachDocument(threadId, documentId, relationship) {
