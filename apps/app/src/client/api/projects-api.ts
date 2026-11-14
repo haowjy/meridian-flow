@@ -48,8 +48,8 @@ import {
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import { threadSchema } from "@meridian/contracts/threads";
-import type { CreateWorkRequest, UpdateWorkRequest } from "@meridian/contracts/works";
-import { workSchema, worksSnapshotSchema } from "@meridian/contracts/works";
+import type { CreateWorkRequest, UpdateWorkRequest, WorkAnswer } from "@meridian/contracts/works";
+import { workAnswerSchema, workSchema, worksSnapshotSchema } from "@meridian/contracts/works";
 
 import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
@@ -139,10 +139,10 @@ export function updateWork(
   workId: string,
   data: UpdateWorkRequest,
   init?: RequestInitOptions,
-): Promise<Work> {
-  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), withCommandId(data), {
+): Promise<WorkAnswer> {
+  return patchJson<WorkAnswer>(urlFor(`/api/works/${workId}`, init), withCommandId(data), {
     headers: init?.headers,
-    schema: workSchema,
+    schema: workAnswerSchema,
     signal: init?.signal,
   });
 }

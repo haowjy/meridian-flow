@@ -119,6 +119,8 @@ describe("Work receipt reversal", () => {
     Object.assign(h.deps.blocks, {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
     });
+    // Names may repeat: another Work holding the old name doesn't block the rename's Undo.
+    await h.works.create({ projectId: "project-1", name: "Arc" });
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" });
     await expect(h.works.findById(work.id)).resolves.toMatchObject(persistedState("Arc"));
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "redo" });
@@ -170,7 +172,7 @@ describe("Work receipt reversal", () => {
     expect(result[0]?.status).toBe("reversed");
   });
 
-  it("restores delete and reports reclaimed name as an explicit failure", async () => {
+  it("restores a delete although another Work now has the name", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     await h.works.softDelete(work.id);
@@ -188,15 +190,13 @@ describe("Work receipt reversal", () => {
     });
     await h.works.create({ projectId: "project-1", name: "Arc" });
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, redo: false });
-    await expect(
       reverseWorkReceipts(h.deps, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
         direction: "undo",
       }),
-    ).resolves.toEqual([expect.objectContaining({ status: "unavailable" })]);
+    ).resolves.toEqual([expect.objectContaining({ status: "reversed" })]);
+    await expect(h.works.findById(work.id)).resolves.toMatchObject({ deletedAt: null });
   });
 
   it("deletes a created Work even while it remains the conversation binding", async () => {

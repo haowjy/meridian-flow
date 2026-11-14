@@ -7,6 +7,7 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { splitCommandBody } from "../../../../lib/command-route.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
+import { workAnswer } from "../../../../lib/work-command.js";
 import { updateWorkMetadataForWriter } from "../../../../lib/work-metadata-route.js";
 
 export default defineEventHandler(async (event) => {
@@ -26,7 +27,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "status is managed by the AI" });
   }
 
-  const work = await updateWorkMetadataForWriter(
+  const answer = await updateWorkMetadataForWriter(
     {
       commands: app.commands,
       works: app.workRepo,
@@ -41,5 +42,5 @@ export default defineEventHandler(async (event) => {
       goal: body.goal as string | undefined,
     },
   );
-  return serializeTransport(work);
+  return serializeTransport(workAnswer(answer));
 });

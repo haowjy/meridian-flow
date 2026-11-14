@@ -323,10 +323,6 @@ async function planReceipts(
         unavailable("Work state diverged from the receipt");
         continue;
       }
-      if (hasNameConflict(works, work.id, target.name)) {
-        unavailable("Work name is no longer available");
-        continue;
-      }
       Object.assign(work, target);
     } else if (receipt.operation === "create") {
       if (!work || !sameState(work, receipt.after)) {
@@ -471,22 +467,10 @@ function sameState(
   );
 }
 
-function hasNameConflict(works: Map<WorkId, ShadowWork>, workId: WorkId, name: string) {
-  return [...works.values()].some(
-    (candidate) =>
-      candidate.id !== workId &&
-      !candidate.deleted &&
-      candidate.name.toLowerCase() === name.toLowerCase(),
-  );
-}
-
 function hasIdentityConflict(works: Map<WorkId, ShadowWork>, work: ShadowWork) {
   return [...works.values()].some(
     (candidate) =>
-      candidate.id !== work.id &&
-      !candidate.deleted &&
-      (candidate.name.toLowerCase() === work.name.toLowerCase() ||
-        candidate.handle === work.handle),
+      candidate.id !== work.id && !candidate.deleted && candidate.handle === work.handle,
   );
 }
 

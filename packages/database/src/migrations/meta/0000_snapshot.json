@@ -5598,28 +5598,6 @@
           "method": "btree",
           "with": {}
         },
-        "works_project_name_active": {
-          "name": "works_project_name_active",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"works\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "works_project_handle": {
           "name": "works_project_handle",
           "columns": [

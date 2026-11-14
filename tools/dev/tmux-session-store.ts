@@ -126,4 +126,19 @@ export class TmuxSessionStore {
   sendKeys(sessionName: string, command: string): CommandResult {
     return this.tmux(["send-keys", "-t", `${sessionName}:0`, command, "C-m"]);
   }
+
+  /** Runs `command` in a second window, beside the stack's window 0. */
+  startWindow(sessionName: string, name: string, command: string): CommandResult {
+    return this.tmux([
+      "new-window",
+      "-d",
+      "-t",
+      `${sessionName}:`,
+      "-n",
+      name,
+      "-c",
+      this.repoRoot,
+      command,
+    ]);
+  }
 }
