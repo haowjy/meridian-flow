@@ -199,8 +199,9 @@ A rescue gives typed text back to its author after something else took it away. 
 - **Late typing**, on the server: `diff/late-peer.ts` finds a writer's typing that a deletion
   removed without the deleter having seen it, whoever deleted (a pull, a peer's Discard revert, another
   writer, the model), whether the typing arrives after the deletion or the deletion after the typing
-  (the deleter's delete set lists what it deleted, so an unlisted writer item was typed unseen), and `diff/late-peer-recovery.ts` writes it back as paragraphs with the typist's byline
-  or none. `draft-runtime.ts` and `draft-receipts.ts` call them. The recovery returns only its own
+  (the deleter's delete set lists what it deleted, so an unlisted item was typed unseen). Whose text it
+  is comes from the journal: a `writer` row, or an earlier recovery row. And `diff/late-peer-recovery.ts`
+  writes it back as paragraphs, with the typist's byline or none. `draft-runtime.ts` and `draft-receipts.ts` call them. The recovery returns only its own
   transaction's update: it never carries the binding's repair of an element the schema cannot
   build, which schema repair journals. Counted once per committed append that recovered something,
   as the `late_typing.recovered` event (source `collab.draft`) with `paragraphs` and `chars`, never
@@ -254,11 +255,22 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
   person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
   text under the splitter's byline.
-- Late typing recovery (Work drafts): a typist's backspace of text that arrived hidden, in a frame after
-  the one that recovered it, is not applied, so the words stay in the recovered paragraph (a reconnect's
-  resent delete set looks the same). A peer's deletion of the typist's original, seen before the
-  recovery, likewise. Randomised runs (3 clients, 4,000 sequences) lost no word and brought back no
-  word a peer deleted after seeing it, apart from these; they can fuse a kept word onto a neighbour.
+- Late typing recovery (Work drafts), what stays lost or doubled:
+  - Typing sent after the typist's own client already held the deletion: the client collected the
+    text (a browser doc collects deleted content), so the update carries no characters. The browser's
+    handback is the only rescue.
+  - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
+    applied, and neither is a peer's deletion of the typist's original that it saw before the recovery:
+    a reconnect's resent delete set looks the same. The words stay and the writer deletes them again.
+  - A typist who backspaced hidden typing and then received the deletion before resending a whole delete
+    set gets that typing back with it: the set lists the block, which explains every deleted character.
+  - After a restart in the middle of one burst of keystrokes, the word being typed splits across
+    paragraphs, since the memory that extends a paragraph is not durable.
+  - Two writers' words typed with no separator between them fuse in the recovered paragraph.
+  Randomised runs (3 clients typing, deleting words and paragraphs, per-keystroke, merged and
+  whole-state frames, a model client, memory loss between bursts; 500 sequences each of 25 and 70 steps
+  per setting) lost no word beyond these, brought back no word a peer deleted after seeing it, and
+  recovered no model word.
 - Typing into a live document's block that a peer or the model deletes, from a tab that was offline, is
   swallowed (collab TODO); the Work draft case is recovered.
 - Unsent typing in a room this tab has no session for: a document or draft not open in any tab

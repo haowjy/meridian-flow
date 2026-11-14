@@ -345,6 +345,60 @@ try {
       captured(seen, () => fragment(seen).delete(0, 1)),
     );
     assert.ok(!(await read(third)).some((b) => b.textContent.includes("seenThenDeleted")));
+    // Two insertions the deleter never saw stay two paragraphs, never one fused word.
+    const fourth = await seed("r-writer-delete-two");
+    const two = clone(fourth.room),
+      peer = clone(fourth.room);
+    await writer(
+      fourth,
+      captured(two, () => {
+        textAt(two).insert(0, "Foo ");
+        textAt(two).insert(textAt(two).length, " Bar");
+      }),
+    );
+    await writer(
+      fourth,
+      captured(peer, () => fragment(peer).delete(0, 1)),
+    );
+    assert.deepEqual(
+      (await read(fourth)).map((b) => b.textContent),
+      ["Foo", "Bar"],
+    );
+    // A typist's whole state carries the deleted block again, apparently alive.
+    const fifth = await seed("r-writer-delete-full-state");
+    const full = clone(fifth.room),
+      fullDeleter = clone(fifth.room);
+    textAt(full).insert(4, "fullState");
+    await writer(
+      fifth,
+      captured(fullDeleter, () => fragment(fullDeleter).delete(0, 1)),
+    );
+    await writer(fifth, Y.encodeStateAsUpdate(full));
+    once(await read(fifth), "fullState");
+    // A keystroke that extends a recovered paragraph leaves the characters a peer saw in place, so
+    // that peer's delete of the paragraph removes them and recovers only what it never saw.
+    const sixth = await seed("r-writer-delete-extend");
+    const lateTypist = clone(sixth.room),
+      remover = clone(sixth.room);
+    await writer(
+      sixth,
+      captured(remover, () => fragment(remover).delete(0, 1)),
+    );
+    await writer(
+      sixth,
+      captured(lateTypist, () => textAt(lateTypist).insert(4, "XYZ")),
+    );
+    const sees = await coordinator.readDraft(sixth.draftId, async (doc) => clone(doc));
+    await writer(
+      sixth,
+      captured(lateTypist, () => textAt(lateTypist).insert(7, "W")),
+    );
+    await writer(
+      sixth,
+      captured(sees, () => fragment(sees).delete(0, 1)),
+    );
+    const extended = (await read(sixth)).map((b) => b.textContent);
+    assert.deepEqual(extended, ["W"]);
   });
   await row("effect-drops-after-live-matches-no-key", async () => {
     const s = await seed("r-effect");

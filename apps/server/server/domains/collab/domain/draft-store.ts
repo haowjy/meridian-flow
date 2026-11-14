@@ -211,6 +211,14 @@ export type DraftStore = {
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /**
+   * Which of these text ids a writer's journal row or a late-typing recovery row inserted
+   * (`client:clock`): the text that stays a writer's own however later rows moved it.
+   */
+  writerText(
+    draftId: string,
+    ids: readonly { client: number; clock: number }[],
+  ): Promise<ReadonlySet<string>>;
+  /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
    * rolled back the revision bump and everything registered inside it before it returns.
    */
