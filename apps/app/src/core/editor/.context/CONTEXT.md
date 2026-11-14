@@ -56,7 +56,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
   paste or drop keeps it. The id rides the clipboard as `data-block-id`. Transactions from the
   Yjs binding (a peer's change, undo, redo, the first load) are left alone: their blocks
-  already have ids, and undo restores what was there.
+  already have ids. Undo never takes an id away: the document's `UndoManager`
+  (`editor-history.ts`) refuses to delete an `id` attribute, because a paragraph survives its
+  creator's undo and would keep a peer's text with no id. A pure keystroke is repaired only in
+  the block typed in; a stored block with no id (written before ids were assigned on every path)
+  gets its id when someone types in it or edits its structure, and a Draft cannot be seeded from
+  the document until then. There is no migration; nothing deployed holds one.
 - A block's adjacent `Y.XmlText` children are one run of text: peers typing into
   an empty block at once create several. One rule reads and writes them
   everywhere: diff the run as one string, send each change to the `XmlText`
