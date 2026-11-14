@@ -2,7 +2,7 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
-import type { Block, Span } from "../codec-types.js";
+import type { Block } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 
 export interface CanonicalBlockIdentity {
@@ -18,8 +18,8 @@ export interface ContentLineage {
 
 /**
  * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
- * `content` may hold inline atoms (a line break, an image) only where it lands between
- * runs of text, never inside one.
+ * `content` may hold inline atoms (a line break, an image); one that lands inside a run of
+ * text splits the run.
  */
 export interface TextSplice {
   from: number;
@@ -42,6 +42,15 @@ export interface FormatRange {
  */
 export type EditOp =
   | { kind: "text"; path: readonly number[]; splices: TextSplice[]; formats: FormatRange[] }
+  | {
+      /** `nodes` go into the container at `path`, after its child `after` (-1: first). */
+      kind: "insert";
+      path: readonly number[];
+      after: number;
+      nodes: readonly Block[];
+    }
+  /** The node at `path` goes, with everything in it. */
+  | { kind: "delete"; path: readonly number[] }
   | {
       kind: "attrs";
       path: readonly number[];
@@ -84,9 +93,6 @@ export interface DocumentModel {
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
 
-  /** Immutable CRDT identities for the currently visible prose units in this block. */
-  getVisibleContentLineage(block: BlockRef): ContentLineage[];
-
   /**
    * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
    * the model's view; an inline atom is a unit with no identity.
@@ -98,6 +104,9 @@ export interface DocumentModel {
     to: number,
   ): ContentLineage[];
 
+  /** Immutable CRDT identities of the visible text under the node at `path` under `block`. */
+  nodeLineage(block: BlockRef, path: readonly number[]): ContentLineage[];
+
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
 
@@ -106,13 +115,6 @@ export interface DocumentModel {
 
   /** Apply a concurrent CRDT update with its persisted origin metadata. */
   applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
-
-  /**
-   * Replace plain text within a block, keeping unchanged text at the span's edges.
-   * Undo repair's verb; agent writes go through `applyOps`.
-   * Mutates doc in place; span must refer to valid offsets in getText(block).
-   */
-  applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
 
   /**
    * Insert new blocks after a reference block.
@@ -135,12 +137,10 @@ export interface AgentEditModel extends DocumentModel {
   /**
    * Apply operations to one top-level block, addressed on its state before any of them.
    * Every path and offset is checked before anything changes; a write that does not fit
-   * the block fails and leaves it as it was.
+   * the block fails and leaves it as it was. An edited block keeps its element and its id;
+   * an inserted node keeps an id it already has and takes a new one otherwise.
    */
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
-
-  /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
-  applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

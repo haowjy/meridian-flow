@@ -1,13 +1,13 @@
 /**
- * Hunk-level rules of the content rebase: when a live hunk and a draft hunk touch the same text,
+ * Hunk-level rules of the content merge: when a live hunk and a draft hunk touch the same text,
  * how a window of base tokens is rebuilt from one side's hunks, and the special cases where two
  * overlapping changes are really one (a shared insertion, the same edit made twice, a mark merge, a
  * cut-and-paste that the other side edited at its source). Tokens, hunks and base positions only;
  * no blocks and no Yjs.
  */
 import { Mark } from "prosemirror-model";
-import type { Hunk } from "./hunks.js";
-import { coreKey, isBlockTok, isWordTok, type Tok } from "./tokens.js";
+import type { Hunk } from "../diff/hunks.js";
+import { coreKey, isBlockTok, isWordTok, type Tok } from "../diff/tokens.js";
 
 /** Which document a merged token came from. */
 export const BASE = 0;
@@ -24,99 +24,35 @@ export interface MergedTok {
 
 type TextTok = Extract<Tok, { kind: "text" }>;
 
-/**
- * Whether two hunks from different sides touch the same text. New paragraphs inserted between
- * paragraphs the other side deleted don't: they stay, standing where the deleted ones were.
- */
-export function overlaps(x: Hunk, y: Hunk, baseToks: Tok[]): boolean {
+/** Why two hunks touch: the same base tokens, or the rule that makes neighbours touch. */
+export type Touch = "overlap" | "typed-at-end-of-deleted";
+
+/** Whether two hunks from different sides touch the same text, and which rule says so. Null: they do not. */
+export function touch(x: Hunk, y: Hunk, baseToks: Tok[]): Touch | null {
   const xIsInsert = x.from === x.to;
   const yIsInsert = y.from === y.to;
-  const isNewParagraphBetween = (insert: Hunk, deletion: Hunk) =>
-    !deletion.ins.length &&
-    isBlockTok(baseToks[insert.from]) &&
-    insert.ins.length > 0 &&
-    isBlockTok(insert.ins[0]) &&
-    isBlockTok(baseToks[deletion.from]);
-  // One side deleted a paragraph and the other joined the next paragraph onto it: the join has
-  // nothing left to join to, so the two touch.
-  const joinsOnto = (first: Hunk, second: Hunk) => {
-    if (
-      first.to !== second.from ||
-      second.to === second.from ||
-      baseToks[second.from].kind !== "block"
-    )
-      return false;
-    if (second.ins.length && isBlockTok(second.ins[0])) return false; // a new start replaces it: not a join
-    let end = second.from + 1;
-    while (end < baseToks.length && !isBlockTok(baseToks[end])) end++;
-    if (second.to >= end) return false; // the whole paragraph went, not just its start
-    for (let i = first.from; i < first.to; i++) if (isBlockTok(baseToks[i])) return true;
-    return false;
-  };
-  if (joinsOnto(x, y) || joinsOnto(y, x)) return true;
-  // Words typed at the end of a paragraph the other side deleted whole have nowhere to stand.
-  const typedAtEndOfDeleted = (insert: Hunk, deletion: Hunk) => {
-    if (
-      insert.from !== insert.to ||
-      insert.from !== deletion.to ||
-      deletion.to === deletion.from ||
-      !insert.ins.length ||
-      isBlockTok(insert.ins[0])
-    )
-      return false;
-    let host = insert.from - 1;
-    while (host > 0 && !isBlockTok(baseToks[host])) host--;
-    return deletion.from <= host && !deletion.ins.some(isBlockTok);
-  };
-  if (typedAtEndOfDeleted(x, y) || typedAtEndOfDeleted(y, x)) return true;
-  if (xIsInsert && yIsInsert) return x.from === y.from;
-  if (xIsInsert) return y.from < x.from && x.from < y.to && !isNewParagraphBetween(x, y);
-  if (yIsInsert) return x.from < y.from && y.from < x.to && !isNewParagraphBetween(y, x);
-  return x.from < y.to && y.from < x.to;
+  if (xIsInsert && yIsInsert ? x.from === y.from : false) return "overlap";
+  if (xIsInsert && !yIsInsert && y.from < x.from && x.from < y.to) return "overlap";
+  if (yIsInsert && !xIsInsert && x.from < y.from && y.from < x.to) return "overlap";
+  if (!xIsInsert && !yIsInsert && x.from < y.to && y.from < x.to) return "overlap";
+  if (typedAtEndOfDeleted(x, y, baseToks) || typedAtEndOfDeleted(y, x, baseToks))
+    return "typed-at-end-of-deleted";
+  return null;
 }
 
-/**
- * A pure insertion of repeated text can sit at several equivalent positions. If the canonical one
- * touches the other side's change, move it to an equivalent one that doesn't (block boundary first).
- * Returns whether any hunk moved.
- */
-export function reslide(baseToks: Tok[], sideToks: Tok[], own: Hunk[], other: Hunk[]): boolean {
-  let moved = false;
-  const isBoundary = (p: number) => p === baseToks.length || isBlockTok(baseToks[p]);
-  // Insertions at one point are merged (collapsed or unioned), not conflicted: only removals count.
-  const clear = (h: Hunk) => !other.some((o) => o.to > o.from && overlaps(h, o, baseToks));
-  for (let i = 0; i < own.length; i++) {
-    const hunk = own[i];
-    if (hunk.from !== hunk.to || !hunk.ins.length || clear(hunk)) continue;
-    const lowest = i > 0 ? own[i - 1].to : 0;
-    const highest = i + 1 < own.length ? own[i + 1].from : baseToks.length;
-    const len = hunk.ins.length;
-    let at = hunk.from;
-    let sideAt = hunk.sfrom;
-    while (at - 1 >= lowest && sideToks[sideAt + len - 1].key === baseToks[at - 1].key) {
-      at--;
-      sideAt--;
-    }
-    const candidates: Hunk[] = [];
-    for (;;) {
-      candidates.push({
-        from: at,
-        to: at,
-        sfrom: sideAt,
-        ins: sideToks.slice(sideAt, sideAt + len),
-      });
-      if (!(at < highest && sideToks[sideAt].key === baseToks[at].key)) break;
-      at++;
-      sideAt++;
-    }
-    const usable = candidates.filter(clear);
-    const best = usable.find((c) => isBoundary(c.from) && isBlockTok(c.ins[0])) ?? usable[0];
-    if (best) {
-      own[i] = best;
-      moved = true;
-    }
-  }
-  return moved;
+/** `typed-at-end-of-deleted`: words typed at the end of a paragraph the other side deleted whole have nowhere to stand. */
+function typedAtEndOfDeleted(insert: Hunk, deletion: Hunk, baseToks: Tok[]): boolean {
+  if (
+    insert.from !== insert.to ||
+    insert.from !== deletion.to ||
+    deletion.to === deletion.from ||
+    !insert.ins.length ||
+    isBlockTok(insert.ins[0])
+  )
+    return false;
+  let host = insert.from - 1;
+  while (host > 0 && !isBlockTok(baseToks[host])) host--;
+  return deletion.from <= host && !deletion.ins.some(isBlockTok);
 }
 
 /** Base tokens `from..to` with `hunks` (all inside the window) applied, tagged with their origin. */
@@ -209,18 +145,32 @@ export function draftAbsorbsLive(
 /**
  * Where one side inserts text at a boundary of the other side's replacement, and the
  * replacement's new text shares that edge, split that shared part off as a plain insertion, so
- * it merges as one insertion and only the rest can conflict.
+ * it merges as one insertion and only the rest can conflict (`shared-edge-kept-once`). Returns how
+ * many hunks it split.
  */
-export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
+export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
+  let peeled = 0;
+  // The two halves partition the hunk's side range; a filtered hunk is cut at its kept token's own index.
+  const part = (h: Hunk, a: number, b: number, from: number, to: number): Hunk => ({
+    ...h,
+    from,
+    to,
+    sfrom: a === 0 ? h.sfrom : (h.sidx?.[a] ?? h.sfrom + a),
+    sto: b === h.ins.length ? h.sto : (h.sidx?.[b] ?? h.sfrom + b),
+    ins: h.ins.slice(a, b),
+    ...(h.sidx ? { sidx: h.sidx.slice(a, b) } : {}),
+  });
+  const withinBlock = (y: Hunk) => y.ins.length > 0 && !y.ins.some(isBlockTok);
   for (const [own, other] of [
     [liveHunks, draftHunks],
     [draftHunks, liveHunks],
   ] as const) {
     for (let i = 0; i < own.length; i++) {
       const hunk = own[i];
-      if (hunk.from === hunk.to || !hunk.ins.length) continue;
+      // A shared edge is one text only inside one block: two paragraphs that end in the same word do not share it.
+      if (hunk.from === hunk.to || !withinBlock(hunk)) continue;
       const insertion = other.find(
-        (y) => y.from === hunk.from && y.to === hunk.from && y.ins.length,
+        (y) => y.from === hunk.from && y.to === hunk.from && withinBlock(y),
       );
       if (insertion && !own.some((x) => x !== hunk && x.from === hunk.from && x.to === hunk.from)) {
         let shared = 0;
@@ -234,19 +184,15 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
           own.splice(
             i,
             1,
-            { from: hunk.from, to: hunk.from, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, shared) },
-            {
-              from: hunk.from,
-              to: hunk.to,
-              sfrom: hunk.sfrom + shared,
-              ins: hunk.ins.slice(shared),
-            },
+            part(hunk, 0, shared, hunk.from, hunk.from),
+            part(hunk, shared, hunk.ins.length, hunk.from, hunk.to),
           );
+          peeled++;
           continue;
         }
       }
       // An adjacent replacement can absorb an insertion at its end too ("The" → "A big black").
-      const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && y.ins.length);
+      const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && withinBlock(y));
       if (!suffix || own.some((x) => x !== hunk && x.from === hunk.to && x.to === hunk.to))
         continue;
       let shared = 0;
@@ -262,12 +208,14 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
         own.splice(
           i,
           1,
-          { from: hunk.from, to: hunk.to, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, cut) },
-          { from: hunk.to, to: hunk.to, sfrom: hunk.sfrom + cut, ins: hunk.ins.slice(cut) },
+          part(hunk, 0, cut, hunk.from, hunk.to),
+          part(hunk, cut, hunk.ins.length, hunk.to, hunk.to),
         );
+        peeled++;
       }
     }
   }
+  return peeled;
 }
 
 /**
@@ -423,7 +371,7 @@ export function dropMovedText(
     // Keep any paragraph start that only held the pasted text from becoming an empty paragraph.
     const keep = h.ins.map((_, k) => k).filter((k) => !droppedAt.has(k));
     const empty = keep.length === 1 && h.ins[keep[0]].kind === "block" && wholeInsert;
-    h.sidx = empty ? [] : keep.map((k) => h.sfrom + k);
+    h.sidx = empty ? [] : keep.map((k) => h.sidx?.[k] ?? h.sfrom + k);
     h.ins = empty ? [] : keep.map((k) => h.ins[k]);
   }
   return out;

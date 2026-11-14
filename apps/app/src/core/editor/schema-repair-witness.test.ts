@@ -140,6 +140,7 @@ describe("schema repair witness", () => {
     expect(editor.getText()).toContain("kept prose");
     expect(events).toEqual([
       {
+        id: expect.any(String),
         phase: "open",
         detectedAt: "2026-07-28T12:00:00.000Z",
         deletedNodeTypes: ["sidebar"],

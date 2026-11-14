@@ -30,7 +30,7 @@ const cases: Array<[name: string, markdown: string, target: string, inBody?: str
 describe("bodyRange", () => {
   it.each(cases)("%s", (_name, markdown, target, inBody = target) => {
     const blocks = codec.parse(markdown).blocks;
-    const body = codec.serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS)[0] as string;
+    const body = codec.serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS)[0]?.body as string;
     const free = destinationFreeBlocks(codec, blocks)[0] as string;
     const view = markdownTextView(free);
     // The last occurrence, so a link comes before it.

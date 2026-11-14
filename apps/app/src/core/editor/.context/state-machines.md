@@ -72,14 +72,17 @@ stateDiagram-v2
   rebuilding --> usable: the room is rebuilt and bound
   rebuilding --> error: the rebuild threw
   usable --> fenced: this tab's document schema no longer fits the room
+  usable --> fenced: the server refused its updates three times in a row
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
+  fenced --> rebuilding: retry, for a room whose updates were refused
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
 
-- **Commands act only on `usable`** (`usable()`). The editor may still show a `fenced` room,
-  with a notice, but a command on it would write with a schema the server has refused.
+- **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
+  read-only with its notice: a schema fence, or "Couldn't save your latest changes" with Try
+  again. A command on it would write what the server has refused.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
   `usable`; the server's new scope only makes it read-only or writable again.
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool

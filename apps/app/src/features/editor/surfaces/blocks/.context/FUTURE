@@ -1,8 +1,8 @@
 # Future work — surfaces/blocks
 
-- Nested reordering. List items have no design yet; rows and columns belong to the table
-  surface. Whatever lands keeps the property that makes the current drop model safe: every
-  seam resolves at a depth where the schema allows the moved node.
+- Choosing a list depth while dragging. A dropped item keeps its own depth, clamped under
+  the block above; the pointer's x does not choose a level. Rows and columns belong to the
+  table surface.
 
 - Drag-scroll at the viewport edges. A drag that reaches the top or bottom of the scroll area
   stops there. Alt+↑/↓ is the keyboard answer meanwhile.

@@ -318,7 +318,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         description:
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
-          "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly.",
+          "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly. A list item is a block, and its indentation in the content places it.",
         inputSchema: modelToolSchema(WriteToolInputSchema),
       },
       input: WriteToolInputSchema,

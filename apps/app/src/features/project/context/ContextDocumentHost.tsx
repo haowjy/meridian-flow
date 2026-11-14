@@ -10,6 +10,7 @@
  */
 
 import { Trans } from "@lingui/react/macro";
+import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -38,7 +39,7 @@ import {
 } from "./account-feature-context";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
-import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
+
 import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
@@ -317,7 +318,7 @@ function UntitledLifecycle({
     let pending = false;
     let retryTimer: number | null = null;
     const observe = () => {
-      if (!armed || pending || resourceDocumentIsEmpty(fragment)) return;
+      if (!armed || pending || isEmptyDocument(fragment)) return;
       pending = true;
       void resources.markCreateEligible({ handle: resourceHandle }).then(
         () => {
@@ -345,8 +346,7 @@ function UntitledLifecycle({
     const fragment = session.document.getXmlFragment(session.fragmentName);
     return () => {
       // Only a replayed fragment that is empty means no words were written.
-      if (!session.getSnapshot().localPersistenceSynced || !resourceDocumentIsEmpty(fragment))
-        return;
+      if (!session.getSnapshot().localPersistenceSynced || !isEmptyDocument(fragment)) return;
       // A move between main and the side, or a remount, mounts it again before this runs.
       window.setTimeout(() => {
         if (presented?.isMounted(projectId, documentId)) return;

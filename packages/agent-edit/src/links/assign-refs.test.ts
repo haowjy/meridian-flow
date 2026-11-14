@@ -8,6 +8,7 @@ import { documentRef, storedHref } from "@meridian/contracts";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import {
@@ -921,10 +922,8 @@ const doors: DoorCase[] = [
           // The same mark on both sides of a paragraph boundary is two runs.
           paragraph(docLink("Target", D, target)),
           schema.node("paragraph", { level: 2 }, [schema.text("Head", [linkMark(documentRef(D))])]),
-          schema.node("bullet_list", { tight: true }, [
-            schema.node("list_item", null, [
-              paragraph({ text: "Web", ref: null, href: "https://example.com" }),
-            ]),
+          schema.node("paragraph", { path: "-", marker: "item" }, [
+            paragraph({ text: "Web", ref: null, href: "https://example.com" }).firstChild as PMNode,
           ]),
           schema.node("figure", { src: `asset:${M}`, alt: "Fig", caption: "", ref: null }),
           schema.node("table", null, [

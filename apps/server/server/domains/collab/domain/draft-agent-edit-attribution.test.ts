@@ -123,7 +123,7 @@ describe("draft concurrent attribution", () => {
     expect(blockTexts(f.upstream)).toEqual(["Alpha AI edit. WRITER", "Beta para."]);
     const rendered = renderAgentEditResult(written.result);
     expect(rendered).toContain("Alpha AI edit. WRITER");
-    expect(rendered).toContain("concurrent edits by the user:");
+    expect(rendered).toMatch(/the user changed \w+ \(in the echo\) after you last read it/);
   });
 
   it("skips retained journal rows the baseline already contains", async () => {

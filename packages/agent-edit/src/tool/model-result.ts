@@ -45,6 +45,11 @@ export type WriteSuccessPhase = "committed";
 export interface AgentEditBlockItem {
   hash: string;
   body: string;
+  /**
+   * A read only: the line between this block and the one before it, when the document has one
+   * (empty for a blank line, `>` inside a quote). Absent when the two lines are adjacent.
+   */
+  gapLine?: string;
   /** Outline headings only: the `#heading-slug` that reads this heading's section. */
   section?: string;
 }
@@ -62,23 +67,26 @@ export type AgentEditBlockGroup =
       items: AgentEditBlockItem[];
     };
 
-/**
- * Changes since the model's prior frontier, grouped by author. A receipt that already echoes a
- * block names only its hash; otherwise the listing includes its current text within the byte cap.
- */
+/** What one author changed since the model's prior frontier, by block hash. */
 export interface AgentEditConcurrentGroup {
-  /** `the user` for a person, otherwise the model chat's permanent handle. */
+  /** `the user` for any person, `agent (<chat ref>)` for a traced chat. */
   author: string;
-  /** Current text not already rendered by the result. */
-  blocks: AgentEditBlockItem[];
-  /** Changed blocks whose resulting text the normal receipt already renders. */
+  /** Changed blocks the result's echo renders, after the merge. */
   shown?: string[];
+  /** Changed blocks the result does not render. */
+  other?: string[];
   removed?: string[];
-  more?: number;
+  /** Blocks this author changed that the write then removed (deleted or joined). */
+  overwritten?: string[];
 }
 
+/**
+ * Past `CONCURRENT_REREAD_BLOCKS` the groups are empty, `reread` counts the blocks others changed,
+ * and the result carries no echo.
+ */
 export interface AgentEditConcurrentListing {
   groups: AgentEditConcurrentGroup[];
+  reread?: number;
 }
 
 /**

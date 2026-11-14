@@ -269,6 +269,7 @@ export async function openHarness(
 export function paragraphDoc(text: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   const paragraph = new Y.XmlElement("paragraph");
+  paragraph.setAttribute("id", "p");
   paragraph.insert(0, [new Y.XmlText(text)]);
   doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
   return doc;

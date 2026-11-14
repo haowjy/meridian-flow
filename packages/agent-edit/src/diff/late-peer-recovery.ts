@@ -23,6 +23,7 @@
  *
  * Pure: it needs the doc with the update applied, the update, and the memory from earlier frames.
  */
+import { newBlockId } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { blocksEqual } from "./equal.js";
@@ -76,6 +77,7 @@ export function retainLateTypingDeletions(memory: LateTyping, observed: LateTypi
   return size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans: memory.spans, deleted };
 }
 
+const LATE_PEER_ORIGIN = "late-peer";
 const keyOf = (id: Y.ID) => `${id.client}:${id.clock}`;
 const elementOf = (item: Y.Item) => (item.content as Y.ContentType).type as Y.XmlElement;
 
@@ -193,7 +195,8 @@ export function recoverLatePeerEdits(input: {
     return at >= 0 && current[at] && blocksEqual([current[at]], [span.written]) ? at : null;
   };
 
-  const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const para = (text: string, id = newBlockId()) =>
+    schema.nodes.paragraph.create({ id }, schema.text(text));
   interface Pending {
     text: string;
     span: Omit<WrittenSpan, "paragraph"> | null;
@@ -253,23 +256,37 @@ export function recoverLatePeerEdits(input: {
 
   const target: PMNode[] = [];
   const placed: Array<[number, Omit<WrittenSpan, "paragraph">]> = [];
-  const push = (pending: Pending) => {
-    if (pending.span) placed.push([target.length, pending.span]);
-    target.push(pending.span?.written ?? para(pending.text));
+  /** A rewritten paragraph keeps the id of the one it replaces. */
+  const push = (pending: Pending, id?: string) => {
+    const written = pending.span?.written;
+    const node = written
+      ? written.type.create({ ...written.attrs, id: id ?? written.attrs.id }, written.content)
+      : para(pending.text, id);
+    if (pending.span) placed.push([target.length, { ...pending.span, written: node }]);
+    target.push(node);
   };
   for (const pending of insertAfter.get(-1) ?? []) push(pending);
   current.forEach((block, i) => {
     const change = rewrite.get(i);
     if (!change) target.push(block);
-    else if (change.text) push(change);
+    else if (change.text) push(change, block.attrs.id);
     if (aligned) for (const pending of insertAfter.get(i) ?? []) push(pending);
   });
   if (!aligned)
     for (const [anchor, added] of insertAfter) if (anchor >= 0) for (const p of added) push(p);
-  const before = Y.encodeStateVector(doc);
   doc.clientID = input.clientId;
-  doc.transact(() => writeBlocks(fragment, schema, target), "late-peer");
-  out.update = Y.encodeStateAsUpdate(doc, before);
+  // Only this transaction's update: `encodeStateAsUpdate` always carries the whole delete set,
+  // which holds the binding's repair of an element the schema cannot build (`readBlocks` above).
+  // That repair is schema repair's to journal, never the recovery's.
+  const onUpdate = (update: Uint8Array, origin: unknown) => {
+    if (origin === LATE_PEER_ORIGIN) out.update = update;
+  };
+  doc.on("update", onUpdate);
+  try {
+    doc.transact(() => writeBlocks(fragment, schema, target), LATE_PEER_ORIGIN);
+  } finally {
+    doc.off("update", onUpdate);
+  }
   const after = fragment.toArray();
   if (after.length === target.length)
     for (const [at, span] of placed) {

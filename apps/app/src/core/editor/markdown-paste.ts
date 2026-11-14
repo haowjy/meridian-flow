@@ -22,7 +22,8 @@
  * parsed blocks rather than on a guess about the raw text.
  */
 
-import { markdownCodec, mdxCodec } from "@meridian/markup";
+import { markdownCodec, mdxCodec, type SerializedBlock } from "@meridian/markup";
+import { isBodyText } from "@meridian/prosemirror-schema";
 import {
   Fragment,
   type Node as PMNode,
@@ -91,11 +92,6 @@ export function markdownClipboardParser(
   };
 }
 
-/** A paragraph without a level: a heading is the same node with one. */
-function isBodyText(block: PMNode): boolean {
-  return block.type.name === "paragraph" && block.attrs.level == null;
-}
-
 /** A link, an emphasis, an image: structure the literal characters spelled. */
 function carriesInlineStructure(block: PMNode): boolean {
   let found = false;
@@ -152,17 +148,14 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
   }
   const links = clipboardLinkScope(view.state);
   const markdown = markdownCodec({ schema });
-  let mdx: ReturnType<typeof mdxCodec> | null = null;
-  return blocks
-    .map((block) => {
-      // A figure or a component has no Markdown form, and a copy that throws
-      // here loses the whole clipboard, the HTML a rich paste reads included.
-      try {
-        return markdown.serializeBlock(block, links);
-      } catch {
-        mdx ??= mdxCodec({ schema });
-        return mdx.serializeBlock(block, links);
-      }
-    })
-    .join("\n\n");
+  // A figure or a component has no Markdown form, and a copy that throws
+  // here loses the whole clipboard, the HTML a rich paste reads included.
+  let entries: SerializedBlock[];
+  try {
+    entries = markdown.serializeBlocks(blocks, links);
+  } catch {
+    entries = mdxCodec({ schema }).serializeBlocks(blocks, links);
+  }
+  // Joined by the document's own gaps, so tight items stay tight.
+  return entries.map((entry) => entry.gap + entry.body).join("");
 };

@@ -22,11 +22,11 @@ import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collab
 import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
+import { BlockIdExtension } from "./extensions/block-id";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
-  MeridianBulletList,
   MeridianCode,
   MeridianCodeBlockLowlight,
   MeridianEm,
@@ -37,8 +37,6 @@ import {
   MeridianJsxContainer,
   MeridianJsxLeaf,
   MeridianLink,
-  MeridianListItem,
-  MeridianOrderedList,
   MeridianParagraph,
   MeridianStrong,
   MeridianTable,
@@ -46,6 +44,7 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { NestingExtension } from "./extensions/nesting";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { PeerCarets } from "./extensions/peer-carets";
@@ -197,7 +196,9 @@ const STARTER_KIT_YJS_SAFETY_OPTIONS = {
 const DOCUMENT_STARTER_KIT_OPTIONS = {
   ...STARTER_KIT_YJS_SAFETY_OPTIONS,
   // Schema names diverge from the server for these built-ins, so Meridian
-  // installs snake_case/parity wrappers below instead.
+  // installs snake_case/parity wrappers below instead. A quote is not a node:
+  // `NestingExtension` owns it.
+  blockquote: false,
   bold: false,
   bulletList: false,
   code: false,
@@ -213,7 +214,6 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
-  blockquote: false,
   document: false,
 } as const;
 
@@ -342,6 +342,7 @@ export function createStandaloneEditorExtensions({
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
+      BlockIdExtension,
       MeridianCodeBlockLowlight.configure({ lowlight }),
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
@@ -356,9 +357,8 @@ export function createStandaloneEditorExtensions({
     MeridianEm,
     MeridianCode,
     MeridianLink,
-    MeridianBulletList,
-    MeridianOrderedList,
-    MeridianListItem,
+    BlockIdExtension,
+    NestingExtension,
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianParagraph,
