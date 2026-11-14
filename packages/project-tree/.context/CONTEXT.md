@@ -75,6 +75,13 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   arrives under a numbered name (`name`) is the last setter of both facts, and its Undo needs both:
   the opposite move carries the place and the name before it. Undo of a rename or move is allowed
   only while that record is still the last, and the opposite record carries those values. Apply's copies take their `from` against the copies before them.
+  Undo of a delete is allowed while that delete is a Trash entry in force. The opposite record of a
+  restore puts back the deletes that restore lifted, under their own ids, with what each took (the
+  replay keeps what each restore lifted): the entry is the original delete again, so its Undo and
+  `restoreEntry` reach it, and a restore that takes that Undo back lifts them again.
+- **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
+  record in force there is live (a drafted change an Apply landed), the opposite record goes to
+  live. Its `draft` says which. No caller retries in another view.
 - **`carries` says which record a record stands for.** An Apply's live copy and a restored
   Discard's pending copy each carry the root original's id, flattened (a copy of a copy names the
   same root). Undo of R takes back the last record in the view that is R or carries R, and writes

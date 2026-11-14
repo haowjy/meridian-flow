@@ -125,6 +125,9 @@ type Working = {
   place: Array<Setter<PlaceBefore>>;
 };
 
+/** The deletes a restore lifted, and the members it took out of the deletes of folders above it. */
+type Lifted = { entries: DeleteInForce[]; members: Array<[DeleteInForce, string]> };
+
 type DeleteInForce = {
   id: string;
   from?: string;
@@ -152,6 +155,9 @@ export function replay(
   const ownDelete = (record: TreeRecord) =>
     record.draft !== null || (of.draft != null && record.fromDraft === of.draft);
   let deletes: DeleteInForce[] = [];
+  // What a restore lifted, and what a delete that took a restore back put in force again, by
+  // the id an Undo of it names: taking either back undoes exactly that.
+  const lifted = new Map<string, Lifted>();
   const pendingOn = new Map<string, Set<string>>();
   // A drafted change and the drafted record that takes it back leave nothing pending.
   const pend = (record: TreeRecord) => {
@@ -330,7 +336,16 @@ export function replay(
         if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
         break;
-      case "delete":
+      case "delete": {
+        // An Undo of a restore takes it off, as an Undo of a move puts back the place: the
+        // deletes it lifted are in force again, each with what it took and its own Trash entry.
+        const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        if (back) {
+          for (const entry of back.entries) if (!deletes.includes(entry)) deletes.push(entry);
+          for (const [entry, member] of back.members) entry.cascade.add(member);
+          lifted.set(record.carries ?? record.id, back);
+          break;
+        }
         // Two deletes of one node both count: each takes what its author saw.
         deletes.push({
           id: record.id,
@@ -340,21 +355,38 @@ export function replay(
           own: ownDelete(record),
         });
         break;
+      }
       case "restore": {
         // Rule 8. A restore that takes one delete back lifts that delete alone, so one
         // author's Undo never reverses another's delete of the same node. A plain restore lifts
         // every delete of the node. Out of a deleted folder either brings back only the node
         // and what is inside it: they leave that folder's delete, and the folder stands holding
-        // them (rule 3) with the rest in Trash.
-        deletes = deletes.filter((entry) => !lifts(record, entry));
+        // them (rule 3) with the rest in Trash. A restore that takes back the Undo of a restore
+        // lifts again what that Undo put back.
+        const again = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        const took: Lifted = {
+          entries: deletes.filter((entry) =>
+            again ? again.entries.includes(entry) : lifts(record, entry),
+          ),
+          members: [],
+        };
+        deletes = deletes.filter((entry) => !took.entries.includes(entry));
         node.arrivedAt = index;
-        if (record.undoes === undefined)
+        if (again)
+          for (const [entry, member] of again.members) {
+            entry.cascade.delete(member);
+            took.members.push([entry, member]);
+          }
+        else if (record.undoes === undefined)
           for (const entry of deletes) {
             if (!isAncestor(entry.node, record.node)) continue;
             for (const member of [...entry.cascade])
-              if (member === record.node || isAncestor(record.node, member))
+              if (member === record.node || isAncestor(record.node, member)) {
                 entry.cascade.delete(member);
+                took.members.push([entry, member]);
+              }
           }
+        lifted.set(record.carries ?? record.id, took);
         break;
       }
       case "purge": {
