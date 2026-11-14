@@ -7,8 +7,8 @@ import { useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-command-store";
-import { ActionNotice } from "@/components/app/ActionNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { RowWord, useHeldRows } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
@@ -112,13 +112,29 @@ export function WorkCollection({
         );
       case "undo": {
         const { name } = work;
+        const line = failure ? workFailureLine(failure, { name }) : null;
         return (
-          <ActionNotice
-            sentence={(name) => t`Deleted ${name}`}
-            name={name}
-            action={{ label: <Trans>Undo</Trans>, onClick: () => deletion.undo(work.id) }}
-            onDismiss={() => deletion.dismiss(work.id)}
-            failure={failure ? workFailureLine(failure, { name }) : null}
+          <WorkRow
+            {...shared}
+            gone
+            notice={
+              line ? (
+                <RowWord
+                  tone="warning"
+                  word={line.onRetry ? <Trans>Retry</Trans> : <Trans>Not restored</Trans>}
+                  label={line.onRetry ? t`Retry restoring ${name}` : undefined}
+                  sentence={line.message}
+                  onAction={line.onRetry}
+                />
+              ) : (
+                <RowWord
+                  word={<Trans>Undo</Trans>}
+                  label={t`Undo delete of ${name}`}
+                  sentence={t`Deleted just now. Undo puts it back.`}
+                  onAction={() => deletion.undo(work.id)}
+                />
+              )
+            }
           />
         );
       }
@@ -183,6 +199,7 @@ export function WorkCollection({
           />
         ) : view === "archived" ? (
           <WorkRows
+            list={`works:${projectId}:archived`}
             entries={entries.archived}
             row={row}
             empty={
@@ -194,24 +211,50 @@ export function WorkCollection({
             }
           />
         ) : (
-          <WorkRows entries={entries.active} row={row} empty={<StartWork onNew={onNew} />} />
+          <WorkRows
+            list={`works:${projectId}:active`}
+            entries={entries.active}
+            row={row}
+            empty={<StartWork onNew={onNew} />}
+          />
         )}
       </div>
     </section>
   );
 }
 
+/**
+ * A tab's rows. A Work deleted from this list keeps its place, struck through with its Undo; one
+ * deleted elsewhere (its own page) shows its Undo at the top.
+ */
 function WorkRows({
+  list,
   entries,
   row,
   empty,
 }: {
+  /** Which tab's list, so a Work's place outlives the dialog's remounts. */
+  list: string;
   entries: readonly WorkListEntry[];
   row: (entry: WorkListEntry) => ReactNode;
   empty: ReactNode;
 }) {
-  if (!entries.length) return empty;
-  return <RuledList rows={entries.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
+  const undo = new Map<string, WorkListEntry>(
+    entries.flatMap((entry) => (entry.state === "undo" ? [[entry.work.id, entry] as const] : [])),
+  );
+  const held = useHeldRows(
+    list,
+    entries.filter((entry) => entry.state !== "undo"),
+    (entry) => entry.work.id,
+    (id) => undo.has(id),
+  );
+  const placed = new Set(held.flatMap(({ key, gone }) => (gone ? [key] : [])));
+  const rows = [
+    ...[...undo].flatMap(([id, entry]) => (placed.has(id) ? [] : [entry])),
+    ...held.map(({ key, row: entry, gone }) => (gone ? (undo.get(key) ?? entry) : entry)),
+  ];
+  if (!rows.length) return empty;
+  return <RuledList rows={rows.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
 }
 
 function NewWorkButton({ onNew, variant }: { onNew: () => void; variant?: "outline" }) {

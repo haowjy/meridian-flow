@@ -17,7 +17,6 @@ export type WorkDeletion = {
   windows: readonly WorkDeleteWindow[];
   remove: (work: Work) => void;
   undo: (workId: string) => void;
-  dismiss: (workId: string) => void;
   /** Ends every Undo window: opening a Work, starting one, or closing the dialog. */
   dismissAll: () => void;
 };
@@ -40,5 +39,5 @@ export function useWorkDeletion(projectId: string): WorkDeletion {
     [deleteCommand],
   );
   const undo = useCallback((workId: string) => void restore({ workId }), [restore]);
-  return { windows, remove, undo, dismiss: close, dismissAll };
+  return { windows, remove, undo, dismissAll };
 }

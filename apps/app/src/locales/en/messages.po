@@ -148,6 +148,11 @@ msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}
 msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
 msgstr "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
 
+#. placeholder {0}: said.textLeft
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+msgstr "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
@@ -205,18 +210,18 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
-msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
+#~ msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
+#~ msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
 
 #. placeholder {0}: entries.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "{0, plural, one {Restored # item.} other {Restored # items.}}"
-msgstr "{0, plural, one {Restored # item.} other {Restored # items.}}"
+#~ msgid "{0, plural, one {Restored # item.} other {Restored # items.}}"
+#~ msgstr "{0, plural, one {Restored # item.} other {Restored # items.}}"
 
 #. placeholder {0}: skipped.length
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
-msgstr "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
+#~ msgid "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
+#~ msgstr "{0, plural, one {Skipped # change that was changed again since.} other {Skipped # changes that were changed again since.}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -525,6 +530,10 @@ msgstr "{label}…"
 #~ msgid "{landedName} is now in {0}."
 #~ msgstr "{landedName} is now in {0}."
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{left, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+msgstr "{left, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
@@ -645,6 +654,14 @@ msgstr "{name} was discarded from the draft before this change could be made."
 msgid "{name}, {count} to review"
 msgstr "{name}, {count} to review"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name}, applied"
+msgstr "{name}, applied"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name}, renamed"
+msgstr "{name}, renamed"
+
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
 msgstr "{name}: changing position"
@@ -733,8 +750,8 @@ msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-msgstr "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgstr "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"
@@ -1141,9 +1158,29 @@ msgstr "Another Work now has this name. Rename that Work, then restore this one.
 msgid "Appearance and behavior settings."
 msgstr "Appearance and behavior settings."
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied"
+msgstr "Applied"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied as {name}: the name was taken."
+msgstr "Applied as {name}: the name was taken."
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Applied to the manuscript"
 msgstr "Applied to the manuscript"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied with the others: {from} → {to}."
+msgstr "Applied with the others: {from} → {to}."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied. It is back in the manuscript."
+msgstr "Applied. It is back in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied. Now in {place}."
+msgstr "Applied. Now in {place}."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
@@ -2014,6 +2051,10 @@ msgstr "Couldn't bring back the changes in {0}."
 msgid "Couldn't bring back the draft of {0}."
 msgstr "Couldn't bring back the draft of {0}."
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring it back. Retry tries again."
+msgstr "Couldn't bring it back. Retry tries again."
+
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't check how this question ended."
 msgstr "Couldn't check how this question ended."
@@ -2321,9 +2362,12 @@ msgid "Couldn’t restore {name}"
 msgstr "Couldn’t restore {name}"
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't restore {title}"
 msgstr "Couldn't restore {title}"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Couldn't restore {title}. Retry tries again."
+msgstr "Couldn't restore {title}. Retry tries again."
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 msgid "Couldn't restore the chat. Try again."
@@ -2435,9 +2479,13 @@ msgstr "Couldn't turn this into a document. Kept as a file."
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Couldn't undo applying {name}. Retry tries again."
+msgstr "Couldn't undo applying {name}. Retry tries again."
+
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "Couldn't undo applying {name}. Try again."
-msgstr "Couldn't undo applying {name}. Try again."
+#~ msgid "Couldn't undo applying {name}. Try again."
+#~ msgstr "Couldn't undo applying {name}. Try again."
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't undo the switch."
@@ -2578,14 +2626,17 @@ msgstr "Delete Work"
 msgid "Deleted"
 msgstr "Deleted"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Deleted {count} items just now. Undo puts them back."
+msgstr "Deleted {count} items just now. Undo puts them back."
+
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
 msgstr "Deleted {name}"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Deleted {title}"
-msgstr "Deleted {title}"
+#~ msgid "Deleted {title}"
+#~ msgstr "Deleted {title}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a document"
@@ -2662,6 +2713,12 @@ msgstr "Deleted in live. Restore it to keep this change."
 #: src/features/draft-review/DraftedDeleteNotice.tsx
 msgid "Deleted in this draft"
 msgstr "Deleted in this draft"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Deleted just now. Undo puts it back."
+msgstr "Deleted just now. Undo puts it back."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Deleted since"
@@ -2771,6 +2828,18 @@ msgstr "Discard this draft? This can't be undone."
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Discarded"
 msgstr "Discarded"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Discarded {count} changes just now. Undo brings them all back."
+msgstr "Discarded {count} changes just now. Undo brings them all back."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Discarded just now. Undo brings it back."
+msgstr "Discarded just now. Undo brings it back."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Discarded the changes in {name} just now. Undo brings them back."
+msgstr "Discarded the changes in {name} just now. Undo brings them back."
 
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
@@ -3886,6 +3955,10 @@ msgstr "Move…"
 msgid "Moved"
 msgstr "Moved"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Moved {count} items just now. Undo puts them back."
+msgstr "Moved {count} items just now. Undo puts them back."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Moved {source} to"
 msgstr "Moved {source} to"
@@ -3897,6 +3970,14 @@ msgstr "Moved {source} to {place}"
 #: src/features/chat/command-descriptor.ts
 msgid "Moved a document"
 msgstr "Moved a document"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Moved from {folder} just now. Undo puts it back."
+msgstr "Moved from {folder} just now. Undo puts it back."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Moved just now. Undo puts it back."
+msgstr "Moved just now. Undo puts it back."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Moved or deleted after this change"
@@ -4191,6 +4272,11 @@ msgstr "Not in the folder you picked."
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/project/shell/sidebar/TrashSource.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Not restored"
+msgstr "Not restored"
+
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
 msgstr "Not run before compaction"
@@ -4450,6 +4536,14 @@ msgstr "Paragraph"
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
 msgstr "Partial result"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Partly back"
+msgstr "Partly back"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Partly undone"
+msgstr "Partly undone"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -4747,6 +4841,14 @@ msgstr "Rename Work"
 msgid "Rename Work: {0}"
 msgstr "Rename Work: {0}"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Renamed"
+msgstr "Renamed"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Renamed from {name} just now. Undo puts the old name back."
+msgstr "Renamed from {name} just now. Undo puts the old name back."
+
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Renamed to {confirmed}"
@@ -4821,13 +4923,17 @@ msgstr "Restore to {destinationName}"
 
 #. placeholder {0}: only.name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0} to {destinationName}."
-msgstr "Restored {0} to {destinationName}."
+#~ msgid "Restored {0} to {destinationName}."
+#~ msgstr "Restored {0} to {destinationName}."
 
 #. placeholder {0}: entries[0].name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0}."
-msgstr "Restored {0}."
+#~ msgid "Restored {0}."
+#~ msgstr "Restored {0}."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Restored {count} items from Trash just now. Undo puts them back in Trash."
+msgstr "Restored {count} items from Trash just now. Undo puts them back in Trash."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Restored {name}, but couldn't open it. Try again from the file list."
@@ -4837,6 +4943,10 @@ msgstr "Restored {name}, but couldn't open it. Try again from the file list."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Restored as {0}."
 msgstr "Restored as {0}."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Restored from Trash just now. Undo puts it back in Trash."
+msgstr "Restored from Trash just now. Undo puts it back in Trash."
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
@@ -4860,18 +4970,30 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
 msgstr "Retry"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Retry bringing back {count} changes"
+msgstr "Retry bringing back {count} changes"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Retry bringing back {name}"
+msgstr "Retry bringing back {name}"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -4882,6 +5004,14 @@ msgstr "Retry changes"
 msgid "Retry loading"
 msgstr "Retry loading"
 
+#: src/features/project/work/WorkCollection.tsx
+msgid "Retry restoring {name}"
+msgstr "Retry restoring {name}"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Retry restoring {title}"
+msgstr "Retry restoring {title}"
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
 msgstr "Retry save"
@@ -4889,6 +5019,10 @@ msgstr "Retry save"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
 msgstr "Retry the handoff brief"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Retry undoing applying {name}"
+msgstr "Retry undoing applying {name}"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Retry Work"
@@ -5193,18 +5327,19 @@ msgid "Skip"
 msgstr "Skip"
 
 #: src/features/chat/ask/AskReceipt.tsx
+#: src/features/project/context/use-tree-notice-words.tsx
 msgid "Skipped"
 msgstr "Skipped"
 
 #. placeholder {0}: only.name
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "Skipped applying {0}: the tree changed since."
-msgstr "Skipped applying {0}: the tree changed since."
+#~ msgid "Skipped applying {0}: the tree changed since."
+#~ msgstr "Skipped applying {0}: the tree changed since."
 
 #. placeholder {0}: only.name
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
-msgid "Skipped your change to {0}: it was changed again since."
-msgstr "Skipped your change to {0}: it was changed again since."
+#~ msgid "Skipped your change to {0}: it was changed again since."
+#~ msgstr "Skipped your change to {0}: it was changed again since."
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 #~ msgid "Skipped your change to {only}: it was changed again since."
@@ -6416,7 +6551,7 @@ msgstr "Unavailable Work"
 msgid "Undid"
 msgstr "Undid"
 
-#: src/features/project/shell/sidebar/use-sidebar-undo.ts
+#: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undid applying {name}."
 msgstr "Undid applying {name}."
 
@@ -6425,19 +6560,36 @@ msgstr "Undid applying {name}."
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
-#: src/components/app/StatusToast.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Undo delete of {name}"
+msgstr "Undo delete of {name}"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Undo delete of {title}"
+msgstr "Undo delete of {title}"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo didn't go through. Try again."
 msgstr "Undo didn't go through. Try again."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo discard of {count} changes"
+msgstr "Undo discard of {count} changes"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo discard of {name}"
+msgstr "Undo discard of {name}"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
@@ -6446,6 +6598,26 @@ msgstr "Undo is no longer available."
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undo is waiting for confirmation."
 msgstr "Undo is waiting for confirmation."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undo move of {name}"
+msgstr "Undo move of {name}"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undo rename of {name}"
+msgstr "Undo rename of {name}"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undo restore of {name}"
+msgstr "Undo restore of {name}"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undo skipped applying {name}: the tree changed since."
+msgstr "Undo skipped applying {name}: the tree changed since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undo skipped your change to {name}: it was changed again since."
+msgstr "Undo skipped your change to {name}: it was changed again since."
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to auto-apply"

@@ -115,10 +115,11 @@ entry inside another entry's folder goes with that folder, never on its own. A l
 take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
 comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
 delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
-Writer deletion has no confirmation step. Its notice ("Chapter 2 deleted.", Undo) is the Discard
-notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the sidebar for a
-delete made there, on Recently opened for one made there, and on the page main goes back to when
-the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
+Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
+struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`) until
+the writer's next gesture there. Its notice is also held in `DraftNotices` under
+`deleteNoticeKey(projectId)`, shown as the Discard notice line on Recently opened for a delete
+made there and on the page main goes back to when the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
 (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
 applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
 a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
@@ -452,16 +453,18 @@ A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, sou
 the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
 `restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
-`move` to the destination (`TreeActions.restore`, `TreeActions.move`).
+`move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
 destination at once from the replay. A restore the server refuses comes back as a settlement on its
-record: the entry goes back to Trash with the server's reason; the notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
+record: the entry goes back to Trash with the server's reason. Until the writer's next gesture,
+the restored rows say "Undo" in the tree and stay struck through in Trash with the same Undo, the
+step Ctrl+Z takes, which puts them back in Trash. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
 Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` appends the `restore` records as one update per
-list; a refused one shows on its Trash row ("Couldn't restore … " and the reason), and one notice
-counts the ones that came back ("Restored 3 items.").
+list as one Undo step; a refused one says "Not restored" on its Trash row, the reason in its
+sentence, and the restored rows carry the step's Undo as a drag's do.
 There is no Delete forever: permanent removal is only the scheduled purge.

@@ -182,7 +182,10 @@ deletes use the same line under a per-project key (`deleteNoticeKey`, surfaces `
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
-there; a band notice shows on that document's review line (above the toolbar, in place of the
+there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
+`RowWord`): every row a Discard took stays struck through with Undo, and each Apply fact (where a
+document landed, the name a clash gave it, that it came back to the manuscript) sits on its
+document's row as "Applied" or "Renamed" with the sentence. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo

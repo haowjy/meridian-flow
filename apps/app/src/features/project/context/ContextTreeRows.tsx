@@ -13,9 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { GoneTitle, useHeldRows } from "@/components/app/RowWord";
 import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
-import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
+import type { TreeDirectory, TreeEntry, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
   type ImportedTree,
@@ -43,6 +44,7 @@ import {
   useEntryInteraction,
 } from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
+import type { TreeNoticeWords } from "./use-tree-notice-words";
 
 export type TreeEnv = {
   projectId: string;
@@ -65,6 +67,8 @@ export type TreeEnv = {
     placeAt: (folderPath: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
+  /** What the lists say on their rows: the latest gesture's Undo, or what a press skipped. */
+  notices: TreeNoticeWords;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   importHere?: {
     folders: boolean;
@@ -128,34 +132,39 @@ export function TreeChildren({
   const rows = useMemo(() => env.rows ?? plainTree(env.tree), [env.rows, env.tree]);
   const children = rows.rows(parentId);
   const siblings = useMemo(() => siblingsOf(children), [children]);
+  const shown = children.filter(
+    (child) =>
+      child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
+  );
+  // A row the writer just deleted stays, struck through, until its notice ends.
+  const held = useHeldRows(`tree:${env.projectId}:${parentId}`, shown, rowId, (id) =>
+    env.notices.held(id, "delete"),
+  );
   return (
     <>
-      {children
-        .filter(
-          (child) =>
-            child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
-        )
-        .map((child) =>
-          child.origin === "import" ? (
-            <PendingTreeRow key={child.id} row={child} depth={depth} />
-          ) : child.node.kind === "dir" ? (
-            <DirRow
-              key={rowId(child)}
-              dir={child.node}
-              depth={depth}
-              siblings={siblings}
-              parent={parent}
-            />
-          ) : (
-            <FileRow
-              key={rowId(child)}
-              file={child.node}
-              depth={depth}
-              siblings={siblings}
-              parent={parent}
-            />
-          ),
-        )}
+      {held.map(({ row: child, gone }) =>
+        gone && child.origin !== "import" ? (
+          <GoneRow key={rowId(child)} entry={child.node} depth={depth} />
+        ) : child.origin === "import" ? (
+          <PendingTreeRow key={child.id} row={child} depth={depth} />
+        ) : child.node.kind === "dir" ? (
+          <DirRow
+            key={rowId(child)}
+            dir={child.node}
+            depth={depth}
+            siblings={siblings}
+            parent={parent}
+          />
+        ) : (
+          <FileRow
+            key={rowId(child)}
+            file={child.node}
+            depth={depth}
+            siblings={siblings}
+            parent={parent}
+          />
+        ),
+      )}
       {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
@@ -251,6 +260,7 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
+          notice={env.notices.word(dir.entryId)}
           trailing={
             dir.namespaceFailure && !env.refusalNotice ? (
               <NamespaceFailureMark
@@ -366,6 +376,7 @@ function FileRow({
         frameProps={drop.dropProps}
         menu={interaction.menu}
         revealActions
+        notice={env.notices.word(file.entryId)}
         trailing={
           file.namespaceFailure && !env.refusalNotice ? (
             <NamespaceFailureMark
@@ -392,6 +403,21 @@ function FileRow({
         }
       />
     </EntryDestinationPicker>
+  );
+}
+
+/** A row the writer just deleted, struck through in its place, with its Undo. */
+function GoneRow({ entry, depth }: { entry: TreeEntry; depth: number }) {
+  const env = useTreeEnv();
+  return (
+    <ListRow
+      depth={depth}
+      disabled
+      onOpen={() => {}}
+      icon={entry.kind === "dir" ? Folder : fileKindIcon(entry)}
+      title={<GoneTitle>{entry.name}</GoneTitle>}
+      notice={env.notices.word(entry.entryId)}
+    />
   );
 }
 

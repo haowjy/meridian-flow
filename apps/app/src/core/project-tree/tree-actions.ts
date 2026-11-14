@@ -18,7 +18,15 @@ import {
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import { endWhenRestored, pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
+import {
+  endWhenRestored,
+  pushUndoStep,
+  shownSourceOf,
+  type TreeGesture,
+  type TreeStep,
+  type UndoStep,
+  undoStep,
+} from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
 /**
@@ -75,12 +83,24 @@ export class TreeActions {
   /** The gesture's records go on the list's Undo stack, under the sources its nodes show in. */
   private remember(
     made: { session: TreeListSession; view: View; replay: () => TreeProjection },
+    gesture: TreeGesture,
+    before: TreeProjection,
     records: readonly TreeRecord[],
   ) {
     const projection = made.replay();
     const nodes = [...new Set(records.map((record) => record.node))];
+    const was = new Map(
+      nodes.flatMap((node) => {
+        const at = before.nodes.get(node);
+        if (!at) return [];
+        const folder = isSourceRoot(at.parent) ? null : (before.nodes.get(at.parent)?.name ?? null);
+        return [[node, { name: at.name, folder }] as const];
+      }),
+    );
     const step: TreeStep = {
       kind: "tree",
+      gesture,
+      was,
       records: records.map((record) => record.id),
       draft: made.view.draft,
       sources: [...new Set(nodes.flatMap((node) => shownSourceOf(projection, node) ?? []))],
@@ -90,12 +110,13 @@ export class TreeActions {
     return step;
   }
 
-  /** A notice's Undo of a gesture made here: the step the sidebar's Ctrl+Z would take. */
-  undo(step: TreeStep): boolean {
+  /** A notice's Undo of a step made here: the step the sidebar's Ctrl+Z would take. */
+  undo(step: UndoStep): Promise<boolean> {
     const session = this.session();
-    if (!session) return false;
+    if (!session) return Promise.resolve(false);
     const { view, pendingText } = this.version();
-    return undoStep(session, step, this.actor, view.draft === step.draft ? pendingText : undefined);
+    const same = step.kind === "tree" && view.draft === step.draft;
+    return undoStep(session, step, this.actor, same ? pendingText : undefined);
   }
 
   /** Ends `step` once its deleted nodes are out of Trash; the returned stop ends the watch. */
@@ -125,6 +146,7 @@ export class TreeActions {
     const replay = made.replay();
     const parent = this.parentOf(replay, input.parentId);
     if (!holds(replay, parent)) return { ok: false, reason: "missing" };
+    const before = replay;
     const record = made.writer.create(made.view, this.actor, {
       name: input.name,
       parent,
@@ -135,18 +157,19 @@ export class TreeActions {
         ? { kind: "folder" as const }
         : { kind: "document" as const, filetype: input.filetype ?? "markdown" }),
     });
-    this.remember(made, [record]);
+    this.remember(made, "create", before, [record]);
     return { ok: true, node: record.node, name: record.name };
   }
 
   rename(node: string, name: string, filetype?: string): TreeActionResult<{ name: string }> {
     const made = this.writable();
     if (!made.ok) return made;
-    const current = made.replay().nodes.get(node);
+    const before = made.replay();
+    const current = before.nodes.get(node);
     if (!current) return { ok: false, reason: "missing" };
     if (nameFault(current.kind, name) !== null) return { ok: false, reason: "name" };
     const record = made.writer.rename(made.view, this.actor, node, name, filetype);
-    this.remember(made, [record]);
+    this.remember(made, "rename", before, [record]);
     return { ok: true, name: record.name };
   }
 
@@ -170,7 +193,7 @@ export class TreeActions {
       this.actor,
       moves.map((move, at) => ({ ...move, parent: parents[at] as string })),
     );
-    this.remember(made, records);
+    this.remember(made, "move", replay, records);
     return { ok: true };
   }
 
@@ -182,19 +205,46 @@ export class TreeActions {
     if (nodes.some((node) => !replay.nodes.has(node))) return { ok: false, reason: "missing" };
     return {
       ok: true,
-      step: this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes)),
+      step: this.remember(
+        made,
+        "delete",
+        replay,
+        made.writer.deleteAll(made.view, this.actor, nodes),
+      ),
     };
   }
 
-  restore(nodes: readonly string[]): TreeActionResult {
+  /**
+   * Brings nodes back from Trash, where they were or, dragged out, into `into` (a folder's or a
+   * source's id) from `index` on: one gesture, one Undo.
+   */
+  restore(
+    nodes: readonly string[],
+    into?: { parentId: string; index?: number },
+  ): TreeActionResult<{ records: readonly TreeRecord[] }> {
     const made = this.writable();
     if (!made.ok) return made;
+    const before = made.replay();
     const records: TreeRecord[] = [];
     made.writer.transact(() => {
       for (const node of nodes) records.push(made.writer.restore(made.view, this.actor, node));
     });
-    this.remember(made, records);
-    return { ok: true };
+    if (into) {
+      const parent = this.parentOf(made.replay(), into.parentId);
+      records.push(
+        ...made.writer.moveAll(
+          made.view,
+          this.actor,
+          nodes.map((node, at) => ({
+            node,
+            parent,
+            ...(into.index === undefined ? {} : { index: into.index + at }),
+          })),
+        ),
+      );
+    }
+    this.remember(made, "restore", before, records);
+    return { ok: true, records };
   }
 }
 

@@ -8,9 +8,9 @@ import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce, announceError } from "@/client/stores";
-import { ActionNotice } from "@/components/app/ActionNotice";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { GoneTitle, RowWord, useHeldRows } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -88,7 +88,11 @@ export function ChatsBody({
       deletes,
       refused,
       touch,
-      onOpenChat: (id) => openChat.current(id),
+      // Opening a chat is the writer's next action here: a delete's Undo ends with it.
+      onOpenChat: (id) => {
+        deletes.dismiss();
+        openChat.current(id);
+      },
       onMoved: (id, pinned) => {
         const active = document.activeElement;
         if (active === document.body || active?.closest(chatSelector(id))) {
@@ -98,6 +102,26 @@ export function ChatsBody({
     }),
     [projectId, deletes, refused, touch],
   );
+  const undo = () => {
+    if (!notice) return;
+    void deletes.undo().then((restored) => {
+      if (restored) setFocusRow({ id: notice.threadId });
+    });
+  };
+  // The chat just deleted stays in its place, struck through, with its Undo.
+  const deleted = notice
+    ? {
+        held: notice.threadId,
+        row: () => (
+          <DeletedRow
+            key={notice.id}
+            notice={notice}
+            takeFocus={() => deletes.takeFocus(notice.id)}
+            onUndo={undo}
+          />
+        ),
+      }
+    : null;
   const row = (chat: RowChat, nested = false) => (
     <ChatRow
       key={chat.id}
@@ -165,27 +189,21 @@ export function ChatsBody({
           <SettledSearchField quiet label={t`Find a chat`} value={search} onSettle={setSearch} />
         }
         actions={
-          <Button variant="quiet" size="xs" onClick={onNewChat}>
+          <Button
+            variant="quiet"
+            size="xs"
+            onClick={() => {
+              deletes.dismiss();
+              onNewChat();
+            }}
+          >
             <Trans>New chat</Trans>
           </Button>
         }
       >
-        {notice ? (
-          <DeletedLine
-            key={notice.id}
-            notice={notice}
-            takeFocus={() => deletes.takeFocus(notice.id)}
-            onUndo={() =>
-              void deletes.undo().then((restored) => {
-                if (restored) setFocusRow({ id: notice.threadId });
-              })
-            }
-            onDismiss={deletes.dismiss}
-          />
-        ) : null}
         {search ? (
           <section aria-label={t`Results`} className="px-2 pt-2">
-            <SearchResults projectId={projectId} search={search} row={row} />
+            <SearchResults projectId={projectId} search={search} row={row} deleted={deleted} />
           </section>
         ) : threads === null ? (
           <div className="px-2">
@@ -202,6 +220,8 @@ export function ChatsBody({
                 chats={groups.scoped}
                 openId={currentThreadId}
                 render={withHelpers}
+                deleted={deleted}
+                list={`${projectId}:scoped`}
               />
               {scopeEmpty ? (
                 <ListLine>
@@ -223,6 +243,8 @@ export function ChatsBody({
                   chats={groups.others}
                   openId={currentThreadId}
                   render={withHelpers}
+                  deleted={deleted}
+                  list={`${projectId}:others`}
                 />
               </ListSection>
             ) : null}
@@ -236,20 +258,42 @@ export function ChatsBody({
   );
 }
 
+/** The chat whose delete is showing: its row stays where it was, struck through. */
+type DeletedChat = { held: string; row: () => ReactNode } | null;
+
+/** A list's chats with the deleted one kept in its place. */
+function useWithDeleted<T extends RowChat>(
+  list: string,
+  chats: readonly T[],
+  deleted: DeletedChat,
+  render: (chat: T) => ReactNode,
+): ReactNode[] {
+  return useHeldRows(list, chats, chatKey, (key) => key === deleted?.held).map(({ row, gone }) =>
+    gone && deleted ? deleted.row() : render(row),
+  );
+}
+
+const chatKey = (chat: RowChat) => chat.id;
+
 /**
  * A list's pinned chats, then its other chats a page at a time with Show more; the open chat
  * shows even past the page. Show more moves focus to the first chat it adds.
  */
 function PagedChats({
+  list: listKey,
   pinned,
   chats,
   openId,
   render,
+  deleted,
 }: {
   pinned: readonly ThreadListItem[];
   chats: readonly ThreadListItem[];
   openId: string | null;
   render: (chat: ThreadListItem) => ReactNode;
+  deleted: DeletedChat;
+  /** Which list (this Work's or Other chats), so a deleted chat keeps its place there. */
+  list: string;
 }) {
   const [shown, setShown] = useState(PAGE);
   const list = useRef<HTMLDivElement>(null);
@@ -265,15 +309,17 @@ function PagedChats({
   const page = chats.slice(0, shown);
   const open = chats.find((chat) => chat.id === openId);
   const openPastPage = open !== undefined && !page.includes(open);
+  const pinnedRows = useWithDeleted(`chats:${listKey}:pinned`, pinned, deleted, render);
+  const pageRows = useWithDeleted(`chats:${listKey}`, page, deleted, (chat) => (
+    <div key={chat.id} data-paged-chat>
+      {render(chat)}
+    </div>
+  ));
   return (
     <>
-      {pinned.length > 0 ? <div data-pinned-list>{pinned.map(render)}</div> : null}
+      {pinnedRows.length > 0 ? <div data-pinned-list>{pinnedRows}</div> : null}
       <div ref={list}>
-        {page.map((chat) => (
-          <div key={chat.id} data-paged-chat>
-            {render(chat)}
-          </div>
-        ))}
+        {pageRows}
         {openPastPage ? render(open) : null}
       </div>
       {chats.length > shown ? (
@@ -298,25 +344,37 @@ function SearchResults({
   projectId,
   search,
   row,
+  deleted,
 }: {
   projectId: string;
   search: string;
   row: (chat: RowChat) => ReactNode;
+  deleted: DeletedChat;
 }) {
   const feed = useProjectChatFeed(projectId, false, search);
-  return <FeedRows feed={feed} row={row} empty={<Trans>No chats match “{search}”.</Trans>} />;
+  return (
+    <FeedRows
+      feed={feed}
+      row={row}
+      deleted={deleted}
+      empty={<Trans>No chats match “{search}”.</Trans>}
+    />
+  );
 }
 
 /** A paged feed's rows, its Show more row, and its quiet failures. */
 function FeedRows({
   feed,
   row,
+  deleted,
   empty,
 }: {
   feed: Feed;
   row: (chat: RowChat) => ReactNode;
+  deleted: DeletedChat;
   empty: ReactNode;
 }) {
+  const rows = useWithDeleted("chats:search", feed.items, deleted, row);
   if (feed.isPending)
     return (
       <ListLine status>
@@ -330,11 +388,11 @@ function FeedRows({
         onRetry={() => void feed.refetch()}
       />
     );
-  if (!feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData)
+  if (!rows.length && !feed.hasNextPage && !feed.isPlaceholderData)
     return empty ? <ListLine>{empty}</ListLine> : null;
   return (
     <div aria-busy={feed.isFetching || undefined}>
-      {feed.items.map((item) => row(item))}
+      {rows}
       {feed.isFetchNextPageError ? (
         <InlineErrorRow
           message={<Trans>More chats couldn't load.</Trans>}
@@ -356,20 +414,18 @@ function FeedRows({
 }
 
 /**
- * The chat the writer just deleted, with its Undo. Focus moves to Undo when the delete makes it,
- * not when the list remounts with it already showing.
+ * The chat the writer just deleted, struck through in its place with its Undo. Focus moves to
+ * Undo when the delete makes it, not when the list remounts with it already showing.
  */
-function DeletedLine({
+function DeletedRow({
   notice,
   takeFocus,
   onUndo,
-  onDismiss,
 }: {
   notice: ChatDeleteNotice;
   /** True once per notice: the delete just made it. */
   takeFocus: () => boolean;
   onUndo: () => void;
-  onDismiss: () => void;
 }) {
   const undo = useRef<HTMLButtonElement>(null);
   const latest = useRef(takeFocus);
@@ -377,25 +433,30 @@ function DeletedLine({
     if (latest.current() && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
   }, []);
   const { title } = notice;
+  const failed = notice.status === "failed";
   return (
-    <ActionNotice
-      data-chat-delete-notice
-      sentence={(title) => t`Deleted ${title}`}
-      name={title}
-      action={{
-        label: <Trans>Undo</Trans>,
-        onClick: onUndo,
-        pending: notice.status === "restoring",
-        ref: undo,
-      }}
-      onDismiss={onDismiss}
-      failure={
-        notice.status === "failed"
-          ? { message: t`Couldn't restore ${title}`, onRetry: onUndo, onDismiss }
-          : null
-      }
-      className="pl-3.5"
-    />
+    <div data-chat-delete-notice={notice.threadId}>
+      <ListRow
+        disabled
+        onOpen={() => {}}
+        title={<GoneTitle>{title}</GoneTitle>}
+        notice={
+          <RowWord
+            ref={undo}
+            word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
+            tone={failed ? "warning" : "action"}
+            label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
+            sentence={
+              failed
+                ? t`Couldn't restore ${title}. Retry tries again.`
+                : t`Deleted just now. Undo puts it back.`
+            }
+            pending={notice.status === "restoring"}
+            onAction={onUndo}
+          />
+        }
+      />
+    </div>
   );
 }
 

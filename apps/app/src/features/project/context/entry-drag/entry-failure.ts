@@ -251,8 +251,10 @@ function showDeleteNotice(
     ? { kind: "band", documentId: leaving }
     : { kind: at === "main" ? "landing" : "tree" };
   const handle: DiscardUndo = {
-    undo: () => ({
-      answer: taken.map(({ list, step }) => list.undo(step)).some(Boolean) ? "ok" : "gone",
+    undo: async () => ({
+      answer: (await Promise.all(taken.map(({ list, step }) => list.undo(step)))).some(Boolean)
+        ? "ok"
+        : "gone",
       landed: Promise.resolve(),
     }),
     end: () => {

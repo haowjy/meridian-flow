@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
+import { GoneTitle } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
@@ -16,6 +17,8 @@ export function WorkRow({
   onOpen,
   actions,
   liveState,
+  gone = false,
+  notice,
 }: {
   /** A Work still being created has no status yet. */
   work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status">>;
@@ -25,18 +28,30 @@ export function WorkRow({
   actions?: ReactNode;
   /** Replaces the age with a live state such as Creating. */
   liveState?: ReactNode;
+  /** Deleted, while its Undo shows (`notice`): struck through, and it opens nothing. */
+  gone?: boolean;
+  /** What just happened to the Work (`RowWord`), in the age's place. */
+  notice?: ReactNode;
 }) {
   return (
     // The row's inset hangs in the list's gutter, so names stay on the page's edge.
     <div className="px-0.5">
       <ListRow
         onOpen={onOpen}
+        disabled={gone}
+        notice={notice}
         controlProps={{
           "aria-label": work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`,
         }}
         title={
           <WorkTitleLine
-            title={<span className="truncate">{work.name}</span>}
+            title={
+              gone ? (
+                <GoneTitle>{work.name}</GoneTitle>
+              ) : (
+                <span className="truncate">{work.name}</span>
+              )
+            }
             status={work.status}
           />
         }

@@ -51,6 +51,8 @@ export type DiscardPart = {
   scope: "draft" | "change" | "folder" | "deleted";
   /** What it stands for: a whole branch's Discard is one share for all its drafts, a delete for all it took. */
   count?: number;
+  /** Every document and folder the share brings back, when more than `documentId`. */
+  covers?: readonly string[];
   handle: DiscardUndo;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
@@ -81,13 +83,22 @@ export type DraftNotice =
     })
   | (Base & {
       kind: "applied";
-      restored: readonly string[];
-      renamed: readonly string[];
-      alsoApplied: readonly string[];
-      /** Documents the Apply put in a new place, a new one included: where each went now. */
-      landed: readonly { documentId: string; uri: string }[];
+      /** What the Apply did that the writer can't see from the rows alone, each on its document. */
+      facts: readonly AppliedFact[];
       dismiss(): void;
     });
+
+/**
+ * One fact an Apply brought, about one document: it landed somewhere new (`uri`), was added under
+ * another name than the one asked for, came back to the manuscript, or was applied along with
+ * the documents picked (`also`: its old and new names).
+ */
+export type AppliedFact = { documentId: string } & (
+  | { kind: "landed"; uri: string; name: string }
+  | { kind: "renamed"; name: string }
+  | { kind: "restored"; name: string }
+  | { kind: "also"; from: string; to: string }
+);
 
 export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();
@@ -281,7 +292,7 @@ export class DraftNotices {
           : only?.scope === "deleted"
             ? { kind: "deletes" as const, count }
             : { kind: "drafts" as const, count },
-      documentIds: parts.map((part) => part.documentId),
+      documentIds: parts.flatMap((part) => part.covers ?? [part.documentId]),
       review: (count === 1 && only?.review) || null,
     };
   }
