@@ -323,8 +323,17 @@
 
 /* Both strokes of this corner are the cell's own, so the table's clip would cut them: the
    cell rounds them itself. */
-.document-prose tr:last-child > :last-child {
+.document-prose :is(tbody, tfoot):last-child > tr:last-child > :last-child {
   border-bottom-right-radius: var(--radius-md);
+}
+
+/* A cell spanning rows can hold that corner from an earlier row, where no selector finds it,
+   and the last row's last cell is then an inner one: keep the corner square instead. */
+.document-prose table:has([rowspan]:not([rowspan="1"])) {
+  border-bottom-right-radius: 0;
+  & :is(tbody, tfoot):last-child > tr:last-child > :last-child {
+    border-bottom-right-radius: 0;
+  }
 }
 
 .document-prose th {
