@@ -37,15 +37,13 @@ import type {
 /** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
 export type ContextEnsureTrackedOptions = ContextWriteOptions & {
   parsedFilename?: ParsedDocumentFilename;
-  /** Records a newly created document in the same transaction as its tree placement. */
+  /** Keeps a newly created document's receipt in the same transaction as its tree placement. */
   recordCreate?: (created: {
     documentId: import("@meridian/contracts").DocumentId;
-    change:
-      | { destination: "live"; before: null }
-      | ({ destination: "draft"; branchId: import("@meridian/contracts").BranchId } & Pick<
-          import("@meridian/contracts").BranchTreeTransition,
-          "before" | "after"
-        >);
+    /** The create record, which the receipt names for Undo. */
+    record: string;
+    /** The Work's branch it was drafted in; absent for a live create. */
+    draftBranchId?: import("@meridian/contracts").BranchId;
   }) => Promise<void>;
 };
 
@@ -122,6 +120,26 @@ export type AdapterDraftedChange = {
   after: BranchTreeFacts;
 };
 
+/** One list's copy handed to a tree command: the writer on it, the view it acts in, and the source's top. */
+export type TreeScope = {
+  writer: import("@meridian/project-tree").TreeWriter;
+  view: import("@meridian/project-tree").View;
+  actor: import("@meridian/project-tree").Actor;
+  root: string;
+};
+
+export type TreeCommandInput<T> = {
+  origin?: WriteProvenance;
+  drafted?: boolean;
+  make: (scope: TreeScope) => { result: T; arrived?: readonly string[] };
+  afterWrite?: (result: T, scope: Pick<TreeScope, "view">) => Promise<void>;
+};
+
+export type TreeReadInput<T> = {
+  version?: "draft" | "live";
+  read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T;
+};
+
 export type AdapterMoved = {
   /** False when the node already stood there: nothing was written. */
   moved: boolean;
@@ -146,6 +164,16 @@ export type AdapterDeleted = {
 export interface ContextTreeAdapter {
   /** This adapter's source, provisioned. */
   sourceId(): Promise<string>;
+  /**
+   * One command on this source's tree, in the command transaction: live, or (`drafted`) in the
+   * Work's branch, which the transaction ensures and locks. `make` decides under the list's lock
+   * and returns what it made; `afterWrite` runs inside the transaction once the records exist,
+   * so the model's receipt commits with them. `arrived` names the documents the command put
+   * at a live address, which settle ahead links.
+   */
+  command<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>>;
+  /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
+  read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
   /** Moves and renames into `dir` of this adapter's source; null keeps the node's own folder. */
   move(input: {
     node: ContextEntryRef;

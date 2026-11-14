@@ -118,7 +118,8 @@ const OVERWRITE = z.boolean().optional().describe("Replace an existing document'
 
 const MUTATION_BRANCHES = {
   create: {
-    description: "Create a document.",
+    description:
+      "Create a document, or a folder when `path` ends in `/`. A folder takes no `content`.",
     fields: {
       content: z.string().optional(),
       overwrite: OVERWRITE,
@@ -187,13 +188,22 @@ const MUTATION_BRANCHES = {
   },
 } as const;
 
-/** The host's whole-document commands: `path` is what the command changes. */
+/** The host's tree commands: `path` is what the command changes. */
 const NAMESPACE_BRANCHES = {
   move: {
     description:
-      "Move or rename the whole document at `from.path` to `path`. Its identity, content and history stay the same. Links to it follow the move, so don't edit them.",
+      "Move or rename a document or folder: from `from.path` to `path` (a folder ends in `/`). Its identity, content and history stay the same, and links to it follow, so don't edit them. To reorder, give the same `path` with `position`. To move several into one folder, give `from.paths` and that folder as `path`. A drafted move waits for the user's review.",
     fields: {
-      from: z.object({ path: SOURCE_PATH }).strict().describe("The document to move."),
+      from: z
+        .object({
+          path: SOURCE_PATH.optional().describe("The document or folder to move."),
+          paths: z
+            .array(SOURCE_PATH)
+            .min(1)
+            .optional()
+            .describe("Several to move into the folder `path`; each is decided on its own."),
+        })
+        .strict(),
       position: z
         .discriminatedUnion("kind", [
           z.object({ kind: z.literal("start") }).strict(),
@@ -208,38 +218,52 @@ const NAMESPACE_BRANCHES = {
   },
   delete: {
     description:
-      "Delete the whole document at `path`; to remove part of a document, use `remove`. `undo` with this path restores it. Links to it keep pointing at this document and work again only when it is restored, not when a new document takes the path.",
+      "Delete the document or folder at `path` (a folder ends in `/`, and goes with what is in it); to remove part of a document, use `remove`. `undo` with the handle restores it. Links to it keep pointing at it and work again only when it is restored, not when a new document takes the path.",
+    fields: {},
+  },
+  restore: {
+    description:
+      "Bring back a document or folder from Trash, named by the path it had when it was deleted. Use it for what someone else deleted; `undo` takes back your own.",
     fields: {},
   },
 } as const;
 
 type TargetKey = "file" | "path";
 
-/** A whole-document command names whole documents, so neither of its paths takes a `#fragment`. */
+/** A tree command names whole documents or folders, so none of its paths takes a `#fragment`. */
 function addNamespaceIssues(
   ctx: z.RefinementCtx,
-  value: { command: string; path?: string; from?: { path: string } },
+  value: { command: string; path?: string; from?: { path?: string; paths?: string[] } },
 ): void {
   const fragment = (path: string | undefined) =>
     path === undefined ? undefined : splitDocumentFile(path).fragment;
   const issue = (path: (string | number)[], message: string) =>
     ctx.addIssue({ code: "custom", path, message, input: value });
-  if (value.command === "delete" && fragment(value.path) !== undefined)
+  if (
+    (value.command === "delete" || value.command === "restore") &&
+    fragment(value.path) !== undefined
+  )
     issue(
       ["path"],
-      "Can't delete a section: `delete` takes a whole document. Use `remove` for the section, or drop the `#fragment` to delete the document.",
+      `Can't ${value.command} a section: \`${value.command}\` takes a whole document. Drop the \`#fragment\`.`,
     );
   if (value.command !== "move") return;
-  if (fragment(value.from?.path) !== undefined)
-    issue(
-      ["from", "path"],
-      "Can't move a section: `move` takes a whole document. Drop the `#fragment` from `from.path` to move the document.",
-    );
+  const { path, paths } = value.from ?? {};
+  if ((path === undefined) === (paths === undefined))
+    issue(["from"], "Give exactly one of `from.path` or `from.paths`.");
+  for (const item of path === undefined ? (paths ?? []) : [path])
+    if (fragment(item) !== undefined)
+      issue(
+        ["from"],
+        "Can't move a section: `move` takes a whole document. Drop the `#fragment` from the path.",
+      );
   if (fragment(value.path) !== undefined)
     issue(
       ["path"],
       "Can't move to a section: `path` must name a whole document. Drop the `#fragment` from `path`.",
     );
+  if (paths !== undefined && value.path !== undefined && !value.path.endsWith("/"))
+    issue(["path"], "With `from.paths`, `path` is the folder they go into: end it with `/`.");
 }
 
 /** Reports the selector rule's issues on the argument each one names. */
@@ -321,7 +345,7 @@ function namespaceBranches<Target extends z.ZodRawShape>(target: Target) {
         fields: (typeof NAMESPACE_BRANCHES)[Command]["fields"];
       },
     );
-  return [of("move"), of("delete")] as const;
+  return [of("move"), of("delete"), of("restore")] as const;
 }
 
 function refineMutation(value: unknown, ctx: z.RefinementCtx, targetKey: TargetKey): void {
@@ -335,7 +359,7 @@ function refineMutation(value: unknown, ctx: z.RefinementCtx, targetKey: TargetK
       ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
     }
   }
-  if (command === "move" || command === "delete")
+  if (command === "move" || command === "delete" || command === "restore")
     addNamespaceIssues(ctx, value as Parameters<typeof addNamespaceIssues>[1]);
 }
 
@@ -374,7 +398,7 @@ export const WriteCommandSchema = z
 
 /** The `read` tool's published input. */
 export const ReadToolInputSchema = readInput(READ_TARGET, "path");
-/** The `write` tool's input: the engine's commands plus the host's `move` and `delete`. */
+/** The `write` tool's input: the engine's commands plus the host's tree commands. */
 export const WriteToolInputSchema = z
   .discriminatedUnion("command", [
     ...mutationBranches(WRITE_TARGET),
@@ -388,7 +412,7 @@ export type WriteCommandName = WriteCommand["command"];
 export type ReadToolInput = z.output<typeof ReadToolInputSchema>;
 export type WriteToolInput = z.output<typeof WriteToolInputSchema>;
 
-/** `write`'s commands the host runs itself: they move or delete a whole document. */
+/** `write`'s commands the host runs itself: they change the tree. */
 export type NamespaceCommandName = Exclude<WriteToolInput["command"], WriteCommandName>;
 
 /** Every operation a `read` or `write` result reports. */
@@ -408,6 +432,7 @@ export function writeCommandName(input: unknown): WriteToolInput["command"] | un
     case "revert":
     case "move":
     case "delete":
+    case "restore":
       return command;
     default:
       return undefined;

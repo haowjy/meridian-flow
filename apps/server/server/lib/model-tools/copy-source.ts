@@ -24,7 +24,7 @@ import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
-import { removedPathError } from "./removed-path.js";
+import { reachShown } from "./shown-paths.js";
 import {
   contextErrorMessage,
   isToolError,
@@ -83,25 +83,24 @@ export async function resolveCopySource(
   deps: ToolWiringDeps,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity" | "frontiers">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
   const call = await resolveToolCall(deps, ctx, source.version);
   if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
   const { context } = call;
-  const { filePath: basePath, fragment } = splitDocumentFile(source.path);
+  const reached = await reachShown(call, ctx, command, source.path, {
+    ...(source.version ? { version: source.version } : {}),
+  });
+  if (isToolError(reached))
+    return {
+      ...reached,
+      output: { ...reached.output, message: fromMessage(source, reached.output.message ?? "") },
+    };
+  const { filePath: basePath, fragment } = splitDocumentFile(reached.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
-      const removed = await removedPathError(deps, call, command, source.path, ctx.threadId);
-      if (removed)
-        return {
-          ...removed,
-          output: {
-            ...removed.output,
-            message: fromMessage(source, removed.output.message ?? "File not found."),
-          },
-        };
       return writeToolError(
         command,
         fromMessage(source, documentNotFoundMessage(command)),

@@ -8,7 +8,7 @@
 import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { TurnBlockId } from "@meridian/contracts";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
+import { type ObservationFrontiers, TREE_NAMES_ROOM } from "../ports/observation-frontiers.js";
 
 export interface FrontierRecordingDeps {
   observationFrontiers: ObservationFrontiers;
@@ -25,11 +25,12 @@ export async function recordFrontier(
   sourceBlockId: TurnBlockId,
   frontier: ObservationFrontier | undefined,
   correlation: { threadId: string; turnId: string },
+  names?: ObservationFrontier,
 ): Promise<void> {
   await deps.observationFrontiers.remove(sourceBlockId);
-  if (!frontier) return;
   try {
-    await deps.observationFrontiers.insert(sourceBlockId, frontier);
+    if (frontier) await deps.observationFrontiers.insert(sourceBlockId, frontier);
+    if (names) await deps.observationFrontiers.insert(sourceBlockId, names);
   } catch (error) {
     emitEvent(deps.eventSink, {
       level: "warn",
@@ -64,6 +65,31 @@ export class CreditedBlocks {
   ids(): string[] {
     return [...this.#ids];
   }
+}
+
+/**
+ * What the blocks the run carries showed of the tree: each row's added names, oldest first. A
+ * failed lookup is logged and answers nothing shown, which guards nothing.
+ */
+export function shownNamesLookup(
+  deps: FrontierRecordingDeps,
+  blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
+  correlation: { threadId: string; turnId: string },
+): () => Promise<Uint8Array[]> {
+  return async () => {
+    try {
+      return await deps.observationFrontiers.all(TREE_NAMES_ROOM, await blockIds());
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "observation_frontier.lookup_failed",
+        correlation,
+        payload: unknownToEventPayload(error),
+      });
+      return [];
+    }
+  };
 }
 
 /**

@@ -249,7 +249,9 @@ function withoutHostOnly(value: unknown): unknown {
 function hostEvidence(output: unknown): Pick<ToolExecutionResult, "evidence"> {
   if (typeof output !== "object" || output === null || !("evidence" in output)) return {};
   const evidence = (output as Pick<ToolExecutionResult, "evidence">).evidence;
-  return evidence && (evidence.shown.length > 0 || evidence.frontier) ? { evidence } : {};
+  return evidence && (evidence.shown.length > 0 || evidence.frontier || evidence.names)
+    ? { evidence }
+    : {};
 }
 
 /**

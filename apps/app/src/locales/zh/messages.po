@@ -648,8 +648,8 @@ msgid "{skipped, plural, one {# skipped} other {# skipped}}"
 msgstr "{skipped, plural, other {# 个已跳过}}"
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "{source} is a folder. Only documents can be moved or deleted."
-msgstr ""
+#~ msgid "{source} is a folder. Only documents can be moved or deleted."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is already at {place}."
@@ -657,6 +657,10 @@ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is already there."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "{source} was deleted after the AI last listed it."
 msgstr ""
 
 #: src/features/chat/thinking-digest.ts
@@ -1243,12 +1247,12 @@ msgid "Can't copy these"
 msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't delete {source} from this location."
-msgstr ""
+#~ msgid "Can't delete {source} from this location."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't delete {source}: it changed during the delete."
-msgstr ""
+#~ msgid "Can't delete {source}: it changed during the delete."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't go inside itself"
@@ -1264,36 +1268,40 @@ msgid "Can’t mention that here"
 msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source} to that location."
+#~ msgid "Can't move {source} to that location."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: {place} is already taken."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+#~ msgid "Can't move {source}: it or its destination changed during the move."
+#~ msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't move {source}: it would go inside itself."
 msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: {place} is already taken."
-msgstr ""
+#~ msgid "Can't move {source}: renaming it can't change its file type."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: it or its destination changed during the move."
-msgstr ""
+#~ msgid "Can't move {source}: that extension needs a different kind of document."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: renaming it can't change its file type."
-msgstr ""
+#~ msgid "Can't move {source}: that folder doesn't exist."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that extension needs a different kind of document."
-msgstr ""
+#~ msgid "Can't move {source}: that location is already taken."
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that folder doesn't exist."
-msgstr ""
-
-#: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: that location is already taken."
-msgstr ""
-
-#: src/features/chat/namespace-refusal-copy.ts
-msgid "Can't move {source}: the folder for {place} doesn't exist."
-msgstr ""
+#~ msgid "Can't move {source}: the folder for {place} doesn't exist."
+#~ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Can't move or delete all of these"
@@ -2018,7 +2026,6 @@ msgstr ""
 msgid "Couldn't find {source} or {destination}."
 msgstr ""
 
-#: src/features/chat/namespace-refusal-copy.ts
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {source}."
 msgstr ""
@@ -5469,6 +5476,10 @@ msgstr "某个对话中的 AI 删除了这份文档。"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "The AI's path for {source} now names a different document, so nothing was done."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx

@@ -28,6 +28,22 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
           }),
       );
     },
+    async all(room, sourceBlockIds) {
+      if (sourceBlockIds.length === 0) return [];
+      const rows = await runIsolatedFromAmbientTransaction(db, () =>
+        db_()
+          .select({ snapshot: table.snapshot })
+          .from(table)
+          .where(
+            and(
+              eq(table.roomKey, room),
+              sql`${table.sourceBlockId}::text = ANY(string_to_array(${sourceBlockIds.join(",")}, ','))`,
+            ),
+          )
+          .orderBy(table.recordedSeq),
+      );
+      return rows.map((row) => new Uint8Array(row.snapshot));
+    },
     async latest(room, sourceBlockIds) {
       if (sourceBlockIds.length === 0) return null;
       // One text parameter, not one per block: a long conversation has thousands. Compared as

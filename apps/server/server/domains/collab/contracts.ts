@@ -169,46 +169,53 @@ export type AgentEditAccess = {
   treeHistory(): AgentTreeHistory;
 };
 
-type AgentTreeChange = {
-  documentId: DocumentId;
-  change: /** Live: the placement read before the mutation; the entry reads its `after` itself. */
-    | {
-        destination: "live";
-        before: import("@meridian/contracts").LiveTreeState | null;
-      }
-    /** Drafted: the branch row's facts on either side, as the branch write returned them. */
-    | ({ destination: "draft" } & Omit<
-        import("@meridian/contracts").BranchTreeTransition,
-        "destination"
-      > & { branchId: import("@meridian/contracts").BranchId });
-} & (
-  | { op: "create" | "delete"; landedAt?: never }
-  | {
-      op: "move";
-      /** The canonical destination committed by the tree write, never the requested path. */
-      landedAt: string;
-    }
-) & {
-    threadId: ThreadId;
-    turnId?: TurnId;
-    responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
-    toolCallId?: string;
-    /** Where the model saw the document: the path it moved or deleted it from. */
-    shownAt: string;
-  };
+/** One record a model's tree call admitted, as its receipt keeps it. */
+export type TreeReceiptInput = {
+  /** The node the handle hangs on: the one acted on, or the folder several were moved into. */
+  nodeId: string;
+  /** The records the call admitted, in order. */
+  records: Array<{ record: string; node: string }>;
+  op: "create" | "move" | "delete" | "restore";
+  threadId: ThreadId;
+  turnId?: TurnId;
+  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  toolCallId?: string;
+  /** The Work's branch the record was drafted in; absent when it is live. */
+  draftBranchId?: import("@meridian/contracts").BranchId;
+  /** The path the model gave. */
+  shownAt: string;
+  /** Where the node landed, for a move or rename. */
+  landedAt?: string;
+  /** An undo or redo names the receipt it reverses. */
+  reverses?: { kind: "undo" | "redo"; receipt: string };
+};
+
+export type TreeReceipt = {
+  id: string;
+  nodeId: string;
+  records: TreeReceiptInput["records"];
+  op: TreeReceiptInput["op"];
+  kind: "write" | "undo" | "redo";
+  reverses: string | null;
+  wId: number;
+  draftBranchId: string | null;
+  createdAt: Date;
+};
 
 export type AgentTreeHistory = {
   /**
-   * Records a model's create, move or delete as a tree entry, in the tree mutation's own transaction,
-   * and returns its handle on the document's counter for this chat.
+   * Keeps a model's tree record as a receipt, in the tool call's own transaction, and returns its
+   * handle on the node's counter for this chat.
    */
-  recordAgentTreeChange(input: AgentTreeChange): Promise<{ handle: string }>;
-  /** The document's live state now, as a tree entry records it; null while no live row has it (a creation only a Work shows). */
-  liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
+  recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
+  /** Whether a reply already made a drafted tree change (the first says drafted changes wait). */
+  draftedInReply(editScopeId: string): Promise<boolean>;
+  /** This chat's receipts for a node, newest first. */
+  receiptsFor(threadId: ThreadId, nodeId: string): Promise<TreeReceipt[]>;
+  /** When this chat last edited the document's text, or null: a tree receipt older than it is not the newest edit. */
+  latestTextEditAt(threadId: ThreadId, documentId: string): Promise<Date | null>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
-  /** The document this chat's latest move or delete took away from `path`, if any. */
-  movedAwayFrom(threadId: ThreadId, path: string): Promise<DocumentId | null>;
 };
 
 export type ReverseThreadContextInput = {

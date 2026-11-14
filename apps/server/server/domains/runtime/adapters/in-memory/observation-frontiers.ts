@@ -16,14 +16,16 @@ export function createInMemoryObservationFrontiers(deps: {
   /** The owner the thread repositories commit through. */
   transactionOwner: InMemoryTransactionOwner;
 }): ObservationFrontiers {
+  // One row per block and room, as the table's key.
   const rows = deps.transactionOwner.map<string, Row>();
+  const key = (blockId: string, room: string) => `${blockId}|${room}`;
   let seq = 0;
   return {
     async remove(sourceBlockId) {
-      rows.delete(sourceBlockId);
+      for (const k of [...rows.keys()]) if (k.startsWith(`${sourceBlockId}|`)) rows.delete(k);
     },
     async insert(sourceBlockId, frontier) {
-      rows.set(sourceBlockId, {
+      rows.set(key(sourceBlockId, frontier.room), {
         room: frontier.room,
         snapshot: frontier.snapshot.slice(),
         ...(frontier.position === undefined ? {} : { position: frontier.position }),
@@ -33,8 +35,8 @@ export function createInMemoryObservationFrontiers(deps: {
     async latest(room, sourceBlockIds) {
       let latest: Row | undefined;
       for (const id of sourceBlockIds) {
-        const row = rows.get(id);
-        if (row?.room === room && (!latest || row.recordedSeq > latest.recordedSeq)) latest = row;
+        const row = rows.get(key(id, room));
+        if (row && (!latest || row.recordedSeq > latest.recordedSeq)) latest = row;
       }
       return latest
         ? {
@@ -43,6 +45,15 @@ export function createInMemoryObservationFrontiers(deps: {
             ...(latest.position === undefined ? {} : { position: latest.position }),
           }
         : null;
+    },
+    async all(room, sourceBlockIds) {
+      return sourceBlockIds
+        .flatMap((id) => {
+          const row = rows.get(key(id, room));
+          return row ? [row] : [];
+        })
+        .sort((a, b) => a.recordedSeq - b.recordedSeq)
+        .map((row) => row.snapshot.slice());
     },
   };
 }

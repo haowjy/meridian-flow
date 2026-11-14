@@ -131,6 +131,8 @@ export interface ToolExecutionResult {
 export interface ResultEvidence {
   shown: readonly ShownLinkShowing[];
   frontier?: ObservationFrontier;
+  /** What the result showed of the tree, in the room `tree`: the names it added to the map. */
+  names?: ObservationFrontier;
 }
 
 /**

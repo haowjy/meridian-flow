@@ -6,6 +6,7 @@
  */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { childrenOf } from "@meridian/project-tree";
 import type { ContextFileEntry } from "../../domains/context/index.js";
 import {
   isSkillsUri,
@@ -18,6 +19,13 @@ import {
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { containerReadonly, withBranchOwner } from "./file-access.js";
+import {
+  areaOfPath,
+  namesEvidence,
+  type Reached,
+  reachShown,
+  wrongKindMessage,
+} from "./shown-paths.js";
 import {
   contextToolError,
   isToolError,
@@ -58,7 +66,16 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const call = await listingCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
-    const result = await context.port.list(path, { wordCounts: verbose });
+    // The folder as the model meant it: a renamed or moved folder is found, and a path that is
+    // a document says so.
+    const reached = path
+      ? await reachShown(call, ctx, "ls", path, { ...(version ? { version } : {}) })
+      : null;
+    if (reached && isToolError(reached))
+      return toolError({ message: reached.output.message ?? "" });
+    const wrongKind = reached?.node ? wrongKindMessage(reached.path, reached.node, "ls") : null;
+    if (wrongKind) return toolError({ message: wrongKind });
+    const result = await context.port.list(reached?.path ?? path, { wordCounts: verbose });
     if (!result.ok) {
       if (result.error.code === "not_found") {
         return toolError({
@@ -96,9 +113,50 @@ export function createLsHandler(deps: ToolWiringDeps) {
       }),
     );
     const listing = entries.flat();
-    if (path) return { uri: result.value.uri, entries: listing };
+    if (path) {
+      const names = await listedNames(call, path, reached, version, listing);
+      return {
+        uri: result.value.uri,
+        entries: listing,
+        ...(names ? { evidence: { shown: [], ...names } } : {}),
+      };
+    }
     return { uri: null, entries: [...listing, ...(await skillsRootEntries(deps, ctx.threadId))] };
   };
+}
+
+/**
+ * What a listing showed of the tree: the folder as listed whole, and the node each listed name
+ * means, so a name a listing did not have is known to be absent.
+ */
+async function listedNames(
+  call: ToolCall,
+  path: string,
+  reached: Reached | null,
+  version: LsToolInput["version"],
+  listing: readonly LsEntry[],
+) {
+  const parts = areaOfPath(path);
+  if (!parts) return null;
+  const read = await call.context.port.readTree(parts.area, {
+    ...(version ? { version } : {}),
+    read: (scope) => {
+      const projection = scope.writer.view(scope.view);
+      const folder = reached?.node?.id ?? scope.root;
+      const listed = new Set(
+        listing.map((entry) =>
+          entry.uri.replace(/\/$/, "").slice(entry.uri.replace(/\/$/, "").lastIndexOf("/") + 1),
+        ),
+      );
+      return {
+        whole: [folder],
+        names: childrenOf(projection, folder)
+          .filter((node) => listed.has(node.displayName))
+          .map((node): [string, string, string] => [folder, node.displayName, node.id]),
+      };
+    },
+  });
+  return read.ok ? namesEvidence(read.value) : null;
 }
 
 /** A file row's model-facing fields; IDs and schema details stay behind. */

@@ -15,6 +15,9 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { TurnBlockId } from "@meridian/contracts";
 
+/** The room of the names a result showed of the tree; its rows are not Yjs snapshots. */
+export const TREE_NAMES_ROOM = "tree";
+
 export interface ObservationFrontiers {
   /**
    * Delete the row a block holds. Part of the caller's block write, in its
@@ -31,6 +34,8 @@ export interface ObservationFrontiers {
    * savepoint inside a transaction, so a failure leaves the caller's usable.
    */
   latest(room: string, sourceBlockIds: readonly TurnBlockId[]): Promise<ObservationFrontier | null>;
+  /** Every row for `room` among `sourceBlockIds`, oldest recorded first: the names shown. */
+  all(room: string, sourceBlockIds: readonly TurnBlockId[]): Promise<Uint8Array[]>;
 }
 
 /**
@@ -45,4 +50,6 @@ export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
   reply: ReplyMutations;
+  /** What the blocks the run carries showed of the tree (the names added by each result). */
+  shownNames: () => Promise<Uint8Array[]>;
 }

@@ -696,6 +696,25 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       });
     },
 
+    async treeCommand(area, input) {
+      const r = await resolve(area);
+      if (!r.ok) return r;
+      const { adapter, canonical } = r.value;
+      if (!adapter.capabilities.writable || !adapter.tree)
+        return Err({ code: "permission_denied", uri: canonical });
+      const tree = adapter.tree;
+      return callAdapter(canonical, () => tree.command(input));
+    },
+
+    async readTree(area, input) {
+      const r = await resolve(area);
+      if (!r.ok) return r;
+      const { adapter, canonical } = r.value;
+      if (!adapter.tree) return Err({ code: "permission_denied", uri: canonical });
+      const tree = adapter.tree;
+      return callAdapter(canonical, () => tree.read(input));
+    },
+
     async list(
       uri?: string,
       options?: ContextListOptions,

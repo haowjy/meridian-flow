@@ -39,7 +39,7 @@ import { generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { DocumentCreationMetadata } from "../../document-metadata.js";
-import type { AdapterFault } from "../../ports/context-adapter.js";
+import type { AdapterFault, TreeScope } from "../../ports/context-adapter.js";
 import type { WriteProvenance } from "../../ports/context-port.js";
 import {
   type ListWriter,
@@ -224,7 +224,8 @@ function typeConversion(
   return null;
 }
 
-export type CreatedNode = { id: string; name: string; path: string[] };
+/** `record` is the create record, which a receipt names for Undo. */
+export type CreatedNode = { id: string; record: string; name: string; path: string[] };
 
 export type MovedNode = {
   moved: boolean;
@@ -328,6 +329,14 @@ export interface SourceTree {
       position?: ContextSiblingPosition;
     },
   ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
+  /**
+   * One tree command on this source's list: `make` runs under the list's lock on the copy at the
+   * journal's head, makes whatever records it decides on and returns what it made. It decides
+   * before it writes: a throw stores nothing.
+   */
+  run<T>(target: TreeWriteTarget, make: (scope: TreeScope) => T): Promise<T>;
+  /** What this source's tree shows in `view`, at the journal's head. */
+  read<T>(view: View, read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T): Promise<T>;
   /** Ends a drafted create's pending records, for a create whose write failed. */
   discardDraftedCreate(
     target: TreeWriteTarget & { view: { draft: string } },
@@ -411,6 +420,7 @@ export function createSourceTree(deps: {
         const shown = writer.view(target.view);
         return Ok({
           id: created.node,
+          record: created.id,
           name: shown.nodes.get(created.node)?.displayName ?? input.filename,
           path: pathOf(shown, created.node),
         });
@@ -612,6 +622,23 @@ export function createSourceTree(deps: {
       );
       if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
       return result;
+    },
+
+    async run(target, make) {
+      const root = sourceRoot(await deps.sourceId());
+      const { result } = await deps.store.submit({
+        lists: [await list()],
+        make: ([{ writer }]) => make({ writer, view: target.view, actor: target.actor, root }),
+      });
+      return result;
+    },
+
+    async read(view, read) {
+      const root = sourceRoot(await deps.sourceId());
+      return deps.store.read({
+        lists: [await list()],
+        view: ([{ writer }]) => read({ writer, view, root }),
+      });
     },
 
     async discardDraftedCreate(target, node) {

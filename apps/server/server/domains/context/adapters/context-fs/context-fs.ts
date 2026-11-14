@@ -37,7 +37,6 @@ import {
 } from "../../context/result-aware-command-executor.js";
 import type {
   AdapterDeleted,
-  AdapterDraftedChange,
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
@@ -48,6 +47,8 @@ import type {
   ContextSchemeAdapter,
   ContextTreeAdapter,
   SchemeCapabilities,
+  TreeCommandInput,
+  TreeReadInput,
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
@@ -155,6 +156,8 @@ export class ContextFS implements ContextSchemeAdapter {
     sourceId: () => this.store.contextSourceId(),
     move: (input) => this.moveNode(input),
     delete: (input) => this.deleteNode(input),
+    command: (input) => this.treeCommand(input),
+    read: (input) => this.treeRead(input),
   };
   /** Copy's read and insert halves (`context/copy/` decides what to copy). */
   readonly copy: ContextCopyAdapter;
@@ -678,7 +681,7 @@ export class ContextFS implements ContextSchemeAdapter {
    * record of the Work's branch, which the transaction makes and locks; a live one is live.
    * `afterWrite` runs inside it once the records are made.
    */
-  private async inTreeCommand<T extends { drafted?: AdapterDraftedChange }>(
+  private async inTreeCommand<T>(
     input: { origin?: WriteProvenance; drafted?: boolean; fromSourceId: string },
     write: (target: TreeWriteTarget) => Promise<Result<T, AdapterFault>>,
   ): Promise<Result<T, AdapterFault>> {
@@ -693,6 +696,33 @@ export class ContextFS implements ContextSchemeAdapter {
       { ...owner, mode: "ensure" },
       (branch) => write({ view: viewOfBranch(branch.id), actor }),
       [input.fromSourceId],
+    );
+  }
+
+  private async treeCommand<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>> {
+    const fromSourceId = await this.store.contextSourceId();
+    return this.inTreeCommand({ ...input, fromSourceId }, async (target) => {
+      let arrived: readonly string[] = [];
+      const result = await this.writes.run(target, (scope) => {
+        const made = input.make(scope);
+        arrived = made.arrived ?? [];
+        return made.result;
+      });
+      await input.afterWrite?.(result, { view: target.view });
+      // Only live documents arrive at a live address; a drafted one has none.
+      if (!target.view.draft && arrived.length > 0)
+        await this.liveCreate.arrive(arrived as DocumentId[]);
+      return Ok(result);
+    });
+  }
+
+  private async treeRead<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>> {
+    const shown = await this.placement.readView(input.version ?? this.readView?.version);
+    return Ok(
+      await this.writes.read(
+        shown.kind === "live" ? LIVE : viewOfBranch(shown.branchId),
+        input.read,
+      ),
     );
   }
 

@@ -1,126 +1,97 @@
 /**
- * The model's moves and deletes in a document's edit history, live or drafted: the row its call
- * records in the tree mutation's own transaction (a handle on the per-document, per-chat counter), the
- * Works whose drafts outlive a delete, and the document a chat's own tree entry moved or
- * deleted away from a path, so `undo`, `redo` and `revert` can still name it there.
+ * The model's tree changes as receipts: the row its call keeps in the tool call's own transaction
+ * (a handle on the node's per-chat counter, which `undo`, `redo` and `revert` name), and the
+ * Works whose drafts outlive a delete.
  */
-import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import {
-  type DocumentId,
-  type LiveTreeState,
-  matchDocumentPath,
-  type TreeTransition,
-} from "@meridian/contracts";
-import { type Database, documentEdits } from "@meridian/database";
-import { branches, documentDrafts, treeNodes, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import { editHandle } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts";
+import { type Database, documentEdits, treeEditReceipts } from "@meridian/database";
+import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { and, desc, eq, isNotNull, max } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { nextEditSeq } from "../../../shared/edit-history-seq.js";
 import type { AgentTreeHistory } from "../contracts.js";
-import { recordDocumentEdit } from "./drizzle-document-edits.js";
-
-type DirectTreeChange = Parameters<AgentTreeHistory["recordAgentTreeChange"]>[0];
-
-/**
- * Live's state of each document as a tree entry records it: living at a placement, or in Trash
- * with the delete that put it there; absent while no list shows it (a drafted create).
- */
-async function readLiveStates(
-  tx: ReturnType<typeof currentDrizzleDb>,
-  ids: readonly DocumentId[],
-): Promise<Map<DocumentId, LiveTreeState>> {
-  const states = new Map<DocumentId, LiveTreeState>();
-  if (!ids.length) return states;
-  const rows = await tx
-    .select()
-    .from(treeNodes)
-    .where(inArray(treeNodes.id, [...ids]));
-  for (const row of rows)
-    states.set(
-      row.id,
-      row.trashedAt
-        ? {
-            living: false,
-            removal: {
-              time: row.trashedAt.toISOString(),
-              locationVersion: row.locationVersion.toString(),
-            },
-          }
-        : {
-            living: true,
-            at: {
-              folderId: row.parentId,
-              rootSourceId: row.parentId ? null : row.contextSourceId,
-              name: row.name,
-              extension: row.extension,
-              rank: row.rank,
-            },
-          },
-    );
-  return states;
-}
-
-function directProvenance(input: DirectTreeChange) {
-  return {
-    threadId: input.threadId,
-    turnId: input.turnId ?? null,
-    responseId: input.responseIdentity?.providerResponseId ?? null,
-    editScopeId: input.responseIdentity?.editScopeId ?? null,
-    toolCallId: input.toolCallId ?? null,
-    shownAt: input.shownAt,
-  };
-}
 
 export function createDrizzleTreeHistory(
   db: Database,
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
-  async function liveAfter(input: { documentId: DocumentId; op: string }) {
-    const after = (await readLiveStates(tx(), [input.documentId])).get(input.documentId);
-    if (!after) throw new Error(`A ${input.op} left ${input.documentId} with no live row`);
-    return after;
-  }
   return {
-    async liveState(documentId) {
-      return (await readLiveStates(tx(), [documentId])).get(documentId) ?? null;
+    async recordAgentTreeChange(input) {
+      // A node's counter is the document's own for a document, so a handle names one edit of
+      // either kind; a folder has no document, and the counter takes any node id.
+      const wId = await journal.reserveWriteOrdinal(
+        input.nodeId as Parameters<typeof journal.reserveWriteOrdinal>[0],
+        input.threadId,
+      );
+      const [row] = await tx()
+        .insert(treeEditReceipts)
+        .values({
+          threadId: input.threadId,
+          turnId: input.turnId ?? null,
+          responseId: input.responseIdentity?.providerResponseId ?? null,
+          editScopeId: input.responseIdentity?.editScopeId ?? null,
+          toolCallId: input.toolCallId ?? null,
+          nodeId: input.nodeId,
+          records: input.records,
+          op: input.op,
+          kind: input.reverses?.kind ?? "write",
+          reverses: input.reverses?.receipt ?? null,
+          wId,
+          draftBranchId: input.draftBranchId ?? null,
+          shownAt: input.shownAt,
+          landedAt: input.landedAt ?? null,
+        })
+        .returning({ id: treeEditReceipts.id });
+      if (!row) throw new Error("A tree receipt was not inserted");
+      return { handle: editHandle(wId), id: row.id };
     },
 
-    async recordAgentTreeChange(input) {
-      if (input.op === "move" && !input.landedAt)
-        throw new Error("A recorded move requires its committed destination");
-      const { change } = input;
-      const provenance = directProvenance(input);
-      const transition: TreeTransition =
-        change.destination === "draft"
-          ? {
-              destination: { kind: "draft", branchId: change.branchId },
-              before: change.before,
-              after: change.after,
-            }
-          : { destination: { kind: "live" }, before: change.before, after: await liveAfter(input) };
-      const wId = await journal.reserveWriteOrdinal(input.documentId, provenance.threadId);
-      await recordDocumentEdit(tx(), {
-        documentId: input.documentId,
-        actor: "agent",
-        wId,
-        threadId: provenance.threadId,
-        turnId: provenance.turnId,
-        responseId: provenance.responseId,
-        editScopeId: provenance.editScopeId,
-        toolCallId: provenance.toolCallId,
-        kind: "write",
-        receipts: [],
-        treeChange: {
-          op: input.op,
-          ...transition,
-          shownAt: provenance.shownAt,
-          ...(input.landedAt ? { landedAt: input.landedAt } : {}),
-          seq: await nextEditSeq(tx()),
-          targets: [],
-        },
-      });
-      return { handle: editHandle(wId) };
+    async draftedInReply(editScopeId) {
+      const [row] = await tx()
+        .select({ id: treeEditReceipts.id })
+        .from(treeEditReceipts)
+        .where(
+          and(
+            eq(treeEditReceipts.editScopeId, editScopeId),
+            isNotNull(treeEditReceipts.draftBranchId),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
+    },
+
+    async receiptsFor(threadId, nodeId) {
+      const rows = await tx()
+        .select()
+        .from(treeEditReceipts)
+        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.nodeId, nodeId)))
+        .orderBy(desc(treeEditReceipts.seq));
+      return rows.map((row) => ({
+        id: row.id,
+        nodeId: row.nodeId,
+        records: row.records,
+        op: row.op,
+        kind: row.kind,
+        reverses: row.reverses,
+        wId: row.wId,
+        draftBranchId: row.draftBranchId,
+        createdAt: row.createdAt,
+      }));
+    },
+
+    async latestTextEditAt(threadId, documentId) {
+      const [row] = await tx()
+        .select({ at: max(documentEdits.createdAt) })
+        .from(documentEdits)
+        .where(
+          and(
+            eq(documentEdits.threadId, threadId),
+            eq(documentEdits.documentId, documentId as DocumentId),
+          ),
+        );
+      return row?.at ?? null;
     },
 
     async survivingDraftWorks(documentId) {
@@ -142,36 +113,6 @@ export function createDrizzleTreeHistory(
         );
       // By name, as the model repeats it to the writer, who never sees handles (#914).
       return rows.map((row) => `Work "${row.name}"`).sort();
-    },
-
-    async movedAwayFrom(threadId, path) {
-      const rows = await tx()
-        .select({
-          documentId: documentEdits.documentId,
-          shownAt: sql<string | null>`${documentEdits.treeChange}->>'shownAt'`,
-        })
-        .from(documentEdits)
-        .where(
-          and(
-            eq(documentEdits.threadId, threadId),
-            eq(documentEdits.actor, "agent"),
-            inArray(sql`${documentEdits.treeChange}->>'op'`, ["move", "delete"]),
-          ),
-        )
-        .orderBy(desc(sql`(${documentEdits.treeChange}->>'seq')::bigint`));
-      const away = rows.filter(
-        (row) => row.shownAt && matchDocumentPath([row.shownAt], path, (at) => at),
-      );
-      // A document still deleted wins over one only moved away: restoring it can allocate a free
-      // leaf name, while undoing the newer move first would target a different history entry.
-      const states = await readLiveStates(tx(), [
-        ...new Set(away.map((row) => row.documentId as DocumentId)),
-      ]);
-      const deleted = new Set([...states].flatMap(([id, state]) => (state.living ? [] : [id])));
-      return (
-        (away.find((row) => deleted.has(row.documentId as DocumentId)) ?? away[0])?.documentId ??
-        null
-      );
     },
   };
 }

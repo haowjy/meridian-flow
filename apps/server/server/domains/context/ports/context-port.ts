@@ -28,7 +28,7 @@ import type { BranchOwnerRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
-import type { AdapterDraftedChange } from "./context-adapter.js";
+import type { AdapterDraftedChange, TreeCommandInput, TreeReadInput } from "./context-adapter.js";
 
 /**
  * Registered context URI schemes.
@@ -494,6 +494,15 @@ export interface ContextPort {
     area: string,
     options?: ContextDeleteOptions,
   ): Promise<Result<ContextDeleted, ContextError>>;
+
+  /**
+   * One command on the tree of `area` (a source's top address): `make` decides under the
+   * list's lock and the records it makes join the caller's command transaction.
+   */
+  treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
+
+  /** The tree of `area` as this port's reader sees it, at the journal's head. */
+  readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 
