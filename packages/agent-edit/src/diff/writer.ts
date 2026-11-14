@@ -10,6 +10,8 @@
  * `updateYFragment` here: its one prefix/suffix diff per text retypes everything between two edits, so a
  * peer's deletion in the middle would be undone.
  */
+
+import { assertBlockIds } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -150,6 +152,8 @@ export function writeBlocks(
   target: readonly PMNode[],
   copies?: RestorationLink[],
 ): WriteStats {
+  // Every door that makes blocks gives them ids first, so one without is a bug at that door.
+  for (const block of target) assertBlockIds(block);
   const stats: WriteStats = { kept: 0, edited: 0, replaced: 0, inserted: 0, deleted: 0 };
   writeChildren(frag, readBlocks(frag, schema), target, stats, copies, true);
   return stats;

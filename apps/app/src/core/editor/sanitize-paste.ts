@@ -95,6 +95,7 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
     if (outputName === "img" && !copyImageAttributes(child, clean)) continue;
     if (outputName === "figure") copyFigureAttributes(child, clean);
     copyNesting(child, clean);
+    copyBlockId(child, clean);
 
     appendSanitizedChildren(child, clean, output);
     target.appendChild(clean);
@@ -124,6 +125,12 @@ function copyNesting(source: Element, target: Element): void {
     const value = source.getAttribute(name);
     if (value !== null && NESTING_VALUES[name]?.test(value)) target.setAttribute(name, value);
   }
+}
+
+/** The id this editor's clipboard HTML carries on a block (`extensions/block-id`). */
+function copyBlockId(source: Element, target: Element): void {
+  const id = source.getAttribute("data-block-id");
+  if (id !== null && /^[0-9A-Za-z]{10}$/.test(id)) target.setAttribute("data-block-id", id);
 }
 
 function copyLinkHref(source: Element, target: Element): void {

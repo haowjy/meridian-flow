@@ -23,6 +23,7 @@
  *
  * Pure: it needs the doc with the update applied, the update, and the memory from earlier frames.
  */
+import { newBlockId } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { blocksEqual } from "./equal.js";
@@ -193,7 +194,8 @@ export function recoverLatePeerEdits(input: {
     return at >= 0 && current[at] && blocksEqual([current[at]], [span.written]) ? at : null;
   };
 
-  const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const para = (text: string, id = newBlockId()) =>
+    schema.nodes.paragraph.create({ id }, schema.text(text));
   interface Pending {
     text: string;
     span: Omit<WrittenSpan, "paragraph"> | null;
@@ -253,15 +255,20 @@ export function recoverLatePeerEdits(input: {
 
   const target: PMNode[] = [];
   const placed: Array<[number, Omit<WrittenSpan, "paragraph">]> = [];
-  const push = (pending: Pending) => {
-    if (pending.span) placed.push([target.length, pending.span]);
-    target.push(pending.span?.written ?? para(pending.text));
+  /** A rewritten paragraph keeps the id of the one it replaces. */
+  const push = (pending: Pending, id?: string) => {
+    const written = pending.span?.written;
+    const node = written
+      ? written.type.create({ ...written.attrs, id: id ?? written.attrs.id }, written.content)
+      : para(pending.text, id);
+    if (pending.span) placed.push([target.length, { ...pending.span, written: node }]);
+    target.push(node);
   };
   for (const pending of insertAfter.get(-1) ?? []) push(pending);
   current.forEach((block, i) => {
     const change = rewrite.get(i);
     if (!change) target.push(block);
-    else if (change.text) push(change);
+    else if (change.text) push(change, block.attrs.id);
     if (aligned) for (const pending of insertAfter.get(i) ?? []) push(pending);
   });
   if (!aligned)

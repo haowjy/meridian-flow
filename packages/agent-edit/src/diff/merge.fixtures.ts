@@ -8,6 +8,19 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { Conflict } from "./merge.js";
 import type { Tok } from "./tokens.js";
 
+/** The blocks with one shared id on each block that carries one: the merge reads ids as attributes only. */
+export function tagged(blocks: readonly PMNode[]): PMNode[] {
+  const tag = (node: PMNode): PMNode => {
+    const children: PMNode[] = [];
+    node.forEach((child) => {
+      children.push(tag(child));
+    });
+    const attrs = node.type.spec.attrs?.id ? { ...node.attrs, id: "t" } : node.attrs;
+    return node.isText ? node : node.type.create(attrs, children, node.marks);
+  };
+  return blocks.map(tag);
+}
+
 export function parseDoc(schema: Schema, src: string): PMNode[] {
   return src.split(" | ").flatMap((part) => {
     const i = part.indexOf(":");

@@ -69,10 +69,19 @@ const nestingAttrs = {
   loose: { default: null },
 };
 
+/**
+ * A block's permanent identity (`block-id.ts`): set once where the block is made, copied with
+ * its other attributes everywhere, and never shown in Markdown. Null means none recorded.
+ */
+const idAttr = { default: null };
+
+/** The attributes of a node that is a block: its identity and its nesting. */
+const blockAttrs = { id: idAttr, ...nestingAttrs };
+
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
-  blockquote: { ...specOnly(basicNodes.blockquote), attrs: nestingAttrs },
+  blockquote: { ...specOnly(basicNodes.blockquote), attrs: blockAttrs },
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
@@ -93,13 +102,13 @@ const basicNodeOverrides = {
   // authorship and anchors in it survive; a separate node name would rebuild it.
   paragraph: {
     ...specOnly(basicNodes.paragraph),
-    attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...nestingAttrs },
+    attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...blockAttrs },
   },
 
   // basic's code_block lacks language attr — spread and add it
   code_block: {
     ...specOnly(basicNodes.code_block),
-    attrs: { language: { default: null }, ...nestingAttrs },
+    attrs: { language: { default: null }, ...blockAttrs },
   },
 
   // basic's image uses `validate: "string"` on src — we need `default: ""`.
@@ -126,7 +135,7 @@ const basicNodeOverrides = {
   },
 
   // Scene breaks / thematic breaks — round-trip as markdown `---`
-  horizontal_rule: { ...specOnly(basicNodes.horizontal_rule), attrs: nestingAttrs },
+  horizontal_rule: { ...specOnly(basicNodes.horizontal_rule), attrs: blockAttrs },
 } satisfies Record<string, NodeSpec>;
 
 // ─── Nodes NOT in basic (defined from scratch) ──────────────────────
@@ -136,7 +145,7 @@ const customNodes = {
   // can also belong in a cell. colspan/rowspan/colwidth stay because
   // prosemirror-tables editing commands use them internally.
   table: {
-    attrs: { align: layoutAlignAttr, ...nestingAttrs },
+    attrs: { align: layoutAlignAttr, ...blockAttrs },
     content: "table_row+",
     group: "block",
     tableRole: "table",
@@ -144,6 +153,7 @@ const customNodes = {
   },
 
   table_row: {
+    attrs: { id: idAttr },
     content: "(table_header | table_cell)+",
     tableRole: "row",
   },
@@ -173,14 +183,14 @@ const customNodes = {
   },
 
   jsx_leaf: {
-    attrs: { name: {}, props: { default: {} }, ...nestingAttrs },
+    attrs: { name: {}, props: { default: {} }, ...blockAttrs },
     content: "text*",
     group: "block",
     code: true,
   },
 
   jsx_container: {
-    attrs: { name: {}, props: { default: {} }, ...nestingAttrs },
+    attrs: { name: {}, props: { default: {} }, ...blockAttrs },
     content: "block+",
     group: "block",
   },
@@ -196,7 +206,7 @@ const customNodes = {
       // in-flight slot identity as an `image`.
       uploadToken: { default: null },
       ref: linkRefAttr,
-      ...nestingAttrs,
+      ...blockAttrs,
     },
     atom: true,
     defining: true,
@@ -238,6 +248,7 @@ const customMarks = {
 
 // ─── Exports ────────────────────────────────────────────────────────
 
+export * from "./block-id.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 

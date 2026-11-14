@@ -69,7 +69,7 @@ type FrozenClick = {
 };
 const schema = buildDocumentSchema();
 const paragraph = (text: string) =>
-  schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
+  schema.nodes.paragraph.create({ id: "p" }, text ? schema.text(text) : undefined);
 const blocks = (texts: string[]) => texts.map(paragraph);
 const clone = (doc: Y.Doc, id = Math.floor(Math.random() * 1e9) + 100) => {
   const out = new Y.Doc({ gc: false });

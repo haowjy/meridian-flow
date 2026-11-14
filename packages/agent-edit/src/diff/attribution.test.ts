@@ -23,6 +23,7 @@ import {
 } from "./attribution.js";
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
+import { tagged } from "./merge.fixtures.js";
 import { rebase } from "./merge.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
@@ -31,7 +32,7 @@ import { writeBlocks, writeDiscardBlocks } from "./writer.js";
 const schema = buildDocumentSchema();
 const frag = (d: Y.Doc) => d.getXmlFragment("prosemirror");
 const textOf = (d: Y.Doc, block = 0) => (frag(d).get(block) as Y.XmlElement).get(0) as Y.XmlText;
-const para = (s: string) => schema.nodes.paragraph.create(null, s ? schema.text(s) : null);
+const para = (s: string) => schema.nodes.paragraph.create({ id: "t" }, s ? schema.text(s) : null);
 
 function peer(from: Y.Doc, clientID: number, gc = false) {
   const doc = new Y.Doc({ gc });
@@ -123,7 +124,7 @@ function room(blocks: Array<string | PMNode>) {
     rebase(live: PMNode[]) {
       const result = rebase(schema, base, live, readBlocks(frag(draft), schema));
       draft.clientID = 1;
-      draft.transact(() => writeBlocks(frag(draft), schema, result.blocks));
+      draft.transact(() => writeBlocks(frag(draft), schema, tagged(result.blocks)));
       draft.clientID = 9;
       base = live;
     },
@@ -168,15 +169,17 @@ interface Row {
 const T = (n = 0) => `chat${n}`;
 const paragraphXml = (s: string) => {
   const p = new Y.XmlElement("paragraph");
+  p.setAttribute("id", "t");
   const t = new Y.XmlText();
   t.insert(0, s);
   p.insert(0, [t]);
   return p;
 };
 const image = schema.nodes.image.create({ src: "foo.png" });
-const withImage = (s: string) => schema.nodes.paragraph.create(null, [image, schema.text(s)]);
+const withImage = (s: string) =>
+  schema.nodes.paragraph.create({ id: "t" }, [image, schema.text(s)]);
 const list = schema.nodes.paragraph.create(
-  { path: "-", marker: "item" },
+  { id: "t", path: "-", marker: "item" },
   para("alpha beta gamma delta epsilon").content,
 );
 const listText = (d: Y.Doc) => (frag(d).get(0) as Y.XmlElement).get(0) as Y.XmlText;

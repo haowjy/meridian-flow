@@ -28,8 +28,8 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 
 const schema = buildDocumentSchema();
 const paragraph = (text: string) =>
-  schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
-const quote = (text: string) => schema.nodes.blockquote.create(null, paragraph(text));
+  schema.nodes.paragraph.create({ id: "p" }, text ? schema.text(text) : null);
+const quote = (text: string) => schema.nodes.blockquote.create({ id: "q" }, paragraph(text));
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
 const docs: Y.Doc[] = [];

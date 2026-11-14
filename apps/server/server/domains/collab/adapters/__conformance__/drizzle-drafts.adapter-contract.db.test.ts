@@ -168,7 +168,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function docWithParagraph(clientID: number): Y.Doc {
       const doc = new Y.Doc({ gc: false });
       doc.clientID = clientID;
-      doc.getXmlFragment("prosemirror").insert(0, [new Y.XmlElement("paragraph")]);
+      const paragraph = new Y.XmlElement("paragraph");
+      paragraph.setAttribute("id", "p");
+      doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
       return doc;
     }
 

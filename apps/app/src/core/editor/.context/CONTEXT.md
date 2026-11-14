@@ -61,6 +61,13 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
+- Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
+  not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
+  undo of the rule). The block the old document had at that place keeps its id; a split's other
+  half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
+  paste or drop keeps it. The id rides the clipboard as `data-block-id`. Transactions from the
+  Yjs binding (a peer's change, undo, redo, the first load) are left alone: their blocks
+  already have ids, and undo restores what was there.
 - A block's adjacent `Y.XmlText` children are one run of text: peers typing into
   an empty block at once create several. One rule reads and writes them
   everywhere: diff the run as one string, send each change to the `XmlText`
