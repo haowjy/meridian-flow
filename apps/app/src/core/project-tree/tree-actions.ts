@@ -2,7 +2,7 @@
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
  * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
  * when the clash is visible in the copy (`TreeWriter`). There is no request to wait on and none
- * to replay: a refusal comes back as a `refused` settlement on the record (`tree-failures.ts`).
+ * to replay: a dropped create comes back as a `dropped` settlement on the record (`tree-failures.ts`).
  * Copy and a move between two lists stay server routes. Each acts in the version the writer is
  * looking at: live, or on Draft the Work's tree, whose records carry the Work's `draft`. Each
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).

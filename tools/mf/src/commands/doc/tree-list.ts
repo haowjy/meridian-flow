@@ -133,7 +133,7 @@ export class TreeList {
 
   /**
    * Makes records with the package's writer on the copy, then waits until the server holds them:
-   * a second copy, synced after the append, must have each one and none refused. A refusal is the
+   * a second copy, synced after the append, must have each one and none dropped. A drop is the
    * server's whole answer for that record, with its reason.
    */
   async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
@@ -160,7 +160,7 @@ export class TreeList {
         );
         for (const record of records) {
           const answer = settled.get(record.id);
-          if (answer?.to === "refused") throw refusal(record, answer.reason ?? "no reason given");
+          if (answer?.to === "dropped") throw refusal(record, answer.reason ?? "no reason given");
         }
         if (records.every((record) => held.has(record.id))) return;
         if (Date.now() > deadline)

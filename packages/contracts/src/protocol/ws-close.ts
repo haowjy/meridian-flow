@@ -27,6 +27,19 @@ export const WS_CLOSE = {
    * client gives that record up. A reason is at most 123 bytes; a record id is at most 64.
    */
   LIST_REBUILD: { code: 4210, reason: "list-rebuild" },
+  /**
+   * Terminal: a tree list's room found this client's copy does something an honest client's
+   * never does (a deletion, a struct that can't be placed, a server-only kind). Never reconnect:
+   * the same bytes would be sent again. The client keeps the broken copy and loads a fresh one.
+   */
+  COPY_BROKEN: { code: 4212, reason: "copy-broken" },
+  /**
+   * The stored copy is of another list than the one the room serves (a reset database, a
+   * recreated account list): the reason is `list-changed:<list id>`. The client loads from
+   * nothing and connects again; it carries nothing, for its records name nodes of a list that is
+   * gone.
+   */
+  LIST_CHANGED: { code: 4213, reason: "list-changed" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**
@@ -35,6 +48,20 @@ export const WS_CLOSE = {
    */
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;
+
+/** The close that sends a client of another list's copy to load the real list from nothing. */
+export function listChangedClose(listId: string) {
+  const { code, reason } = WS_CLOSE.LIST_CHANGED;
+  return { code, reason: `${reason}:${listId}` };
+}
+
+/** The list id a list-changed close names, if it is one. */
+export function listChangedId(event: { code: number; reason: string }): string | undefined {
+  const { code, reason } = WS_CLOSE.LIST_CHANGED;
+  return event.code === code && event.reason.startsWith(`${reason}:`)
+    ? event.reason.slice(reason.length + 1)
+    : undefined;
+}
 
 const REBUILD_RECORD = /^list-rebuild:([0-9a-zA-Z_-]{1,64})$/;
 

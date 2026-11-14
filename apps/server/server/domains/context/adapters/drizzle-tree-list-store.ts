@@ -1,13 +1,6 @@
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  admit,
-  type Connection,
-  isListRoot,
-  recordsOf,
-  type TreeRecord,
-  TreeWriter,
-} from "@meridian/project-tree";
+import { admit, isListRoot, recordsOf, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -24,15 +17,14 @@ import {
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabJournal } from "../../collab/adapters/drizzle-journal.js";
-import {
-  type CommittedTreeUpdate,
-  type ListWriter,
-  NO_WRITE_ACCESS,
-  type TreeList,
-  type TreeListStore,
+import type {
+  CommittedTreeUpdate,
+  ListWriter,
+  TreeList,
+  TreeListStore,
 } from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
-import { arriveNodes, claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
+import { arriveNodes, claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
 
 /**
  * This process's copy of one list, brought to the journal's head under the list's lock and
@@ -328,8 +320,7 @@ export function createDrizzleTreeListStore(deps: {
           : sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid AND id = ${accountId}::uuid`,
       );
       if (!owner) return null;
-      const connection = await readConnection(db as DrizzleDb, list, accountId);
-      return { listId, level: connection ? "edit" : "read" };
+      return { listId };
     },
 
     readSince: async ({ listId, afterSeq }) => {
@@ -355,47 +346,24 @@ export function createDrizzleTreeListStore(deps: {
       };
     },
 
-    admit: async ({ list, accountId, update }) => {
-      let created: readonly Extract<TreeRecord, { type: "create" }>[] = [];
-      try {
-        return await withLists([list], async (tx, [held], owner) => {
-          const { copy, listId } = held as Held;
-          const connection: Connection | null = await readConnection(tx, list, accountId);
-          if (!connection) return { ok: false as const, reason: NO_WRITE_ACCESS };
-          const before = Y.encodeStateVector(copy.doc);
-          const verdict = admit(copy.writer, update, connection);
-          if (!verdict.ok) return verdict;
-          if (sameBytes(Y.encodeStateVector(copy.doc), before))
-            return { ok: true as const, committed: null };
-          copy.pending = owner;
-          const refused = new Set(verdict.refused.map((entry) => entry.id));
-          const kept = verdict.kept.map((entry) => entry.record);
-          const added = [...verdict.records.filter((record) => !refused.has(record.id)), ...kept];
-          created = verdict.records.filter(isCreate);
-          // Every create the update holds claims its id, a refused one too (its kept create has
-          // the same node): an id in use refuses the whole update.
-          return {
-            ok: true as const,
-            committed: await commitChange(
-              tx,
-              list,
-              copy,
-              listId,
-              before,
-              added,
-              verdict.records.filter(isCreate),
-            ),
-          };
-        });
-      } catch (cause) {
-        // The transaction is rolled back: the update, its claims and its rows are not stored.
-        if (cause instanceof NodeIdRefusedError) {
-          const record = created.find((create) => create.node === cause.nodeId)?.id;
-          return { ok: false as const, reason: cause.message, ...(record ? { record } : {}) };
-        }
-        throw cause;
-      }
-    },
+    admit: ({ list, accountId, update }) =>
+      withLists([list], async (tx, [held], owner) => {
+        const { copy, listId } = held as Held;
+        const connection = await readConnection(tx, list, accountId);
+        // The project or account is gone or no longer the account's: nothing to admit to.
+        if (!connection) throw new Error("The account cannot write this list");
+        const before = Y.encodeStateVector(copy.doc);
+        const admitted = admit(copy.writer, update, connection);
+        if (sameBytes(Y.encodeStateVector(copy.doc), before)) return { committed: null };
+        copy.pending = owner;
+        // A dropped create is in no view: no claim, no row. A create whose node id is another's
+        // fails its claim alone, and the rest of the update stands.
+        const dropped = new Set(admitted.dropped);
+        const live = admitted.records.filter((record) => !dropped.has(record.id));
+        const failed = await claimNodeIdsEach(tx, listId, live);
+        const made = live.filter((record) => record.type !== "create" || !failed.has(record.node));
+        return { committed: await commitChange(tx, list, copy, listId, before, made, []) };
+      }),
 
     submit: ({ lists, make }) =>
       withLists(lists, async (tx, held, owner) => {

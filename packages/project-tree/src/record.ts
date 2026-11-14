@@ -81,8 +81,6 @@ export type CreateRecord = RecordBase & {
   /** It has imported properties to show, which load by id. Server only. */
   hasProperties?: true;
   blob?: BlobRef;
-  /** On a create the server appended for a node whose client create it refused: that create. */
-  replaces?: string;
 };
 export type MoveRecord = RecordBase & {
   type: "move";
@@ -138,7 +136,6 @@ export type Settlement =
   | "applied"
   | "discarded"
   | "superseded"
-  | "refused"
   /** A create the server stamped at admission: its Work or source was closed. In no view. */
   | "dropped";
 

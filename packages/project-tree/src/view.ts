@@ -45,7 +45,7 @@ const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
 /**
  * What a view replays, in replay order: the live records, then the Work's pending ones. A record
  * id counts once (a client that sends a record again after rebuilding its copy adds nothing). A
- * refused record is in no view, and nor is a live copy whose Apply was taken back. `settled` is
+ * dropped create is in no view. `settled` is
  * what each record's last settlement is, for reading the view as a settlement would leave it. A
  * value that is no record is kept where it stands in the list, in every view, and the replay
  * reports it as `unreadable`: nobody can tell which Work it belonged to.
@@ -66,11 +66,7 @@ export function viewValues(
     }
   }
   const live = all.filter(
-    (value) =>
-      !isRecord(value) ||
-      (value.draft === null &&
-        settled.get(value.id) !== "refused" &&
-        settled.get(value.id) !== "dropped"),
+    (value) => !isRecord(value) || (value.draft === null && settled.get(value.id) !== "dropped"),
   );
   if (view.draft === null) return live;
   return [

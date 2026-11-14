@@ -1,20 +1,9 @@
 /** One project-lifetime owner for Trash restore progress and outcomes, by node id. */
 import { plural, t } from "@lingui/core/macro";
-import { lastSettlements, listRecords } from "@meridian/project-tree";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useTreeList } from "@/client/query/useProjectTree";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { StatusToast, type StatusToastNotice } from "@/components/app/StatusToast";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
-import { useAccountId, useOptionalContextRemovalCoordinator } from "./account-feature-context";
+import { useOptionalContextRemovalCoordinator } from "./account-feature-context";
 import type { EntryRef } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { runDelete } from "./entry-drag/entry-failure";
@@ -58,13 +47,8 @@ export function DocumentTrashRestoreProvider({
 }) {
   const removal = useOptionalContextRemovalCoordinator();
   const actions = useEntryActions(projectId);
-  const accountId = useAccountId();
-  const projectList = useTreeList({ kind: "project", projectId });
-  const accountList = useTreeList({ kind: "account", userId: accountId });
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
-  // A restore the list has taken and the server has not answered, by its record's id.
-  const awaiting = useRef(new Map<string, Restorable>());
 
   const setState = useCallback((node: string, state: TrashRestoreState | null) => {
     setStates((current) => {
@@ -96,38 +80,14 @@ export function DocumentTrashRestoreProvider({
   );
 
   const fail = useCallback(
-    (entry: Restorable, reason?: string) => {
+    (entry: Restorable) => {
       setState(entry.ref.id, {
         kind: "failed",
-        message: reason
-          ? t`Couldn't restore ${entry.name}. ${reason}`
-          : t`Couldn't restore ${entry.name}. Try again.`,
+        message: t`Couldn't restore ${entry.name}. Try again.`,
       });
     },
     [setState],
   );
-
-  // A refusal comes back as a settlement on the `restore` record; until then the entry is restored.
-  useEffect(() => {
-    const check = () => {
-      for (const session of [projectList.session, accountList.session]) {
-        if (!session) continue;
-        const settled = lastSettlements(session.getSnapshot().doc);
-        for (const [record, entry] of awaiting.current) {
-          const settlement = settled.get(record);
-          if (!settlement) continue;
-          awaiting.current.delete(record);
-          if (settlement.to === "refused") fail(entry, settlement.reason);
-        }
-      }
-    };
-    const stops = [projectList.session, accountList.session].map((session) =>
-      session?.subscribe(check),
-    );
-    return () => {
-      for (const stop of stops) stop?.();
-    };
-  }, [projectList.session, accountList.session, fail]);
 
   /** Appends the entries' `restore` records, one update per list; returns whether the lists took them. */
   const append = useCallback(
@@ -137,8 +97,6 @@ export function DocumentTrashRestoreProvider({
         const mine = held.filter((item) => item.list === list);
         const result = list.restore(mine.map(({ entry }) => entry.ref.id));
         if (!result.ok) return false;
-        const session = list === actions.account ? accountList.session : projectList.session;
-        const records = session ? listRecords(session.getSnapshot().doc) : [];
         for (const [index, { entry }] of mine.entries()) {
           if (destination)
             list.move(
@@ -146,15 +104,11 @@ export function DocumentTrashRestoreProvider({
               destination.parentId,
               destination.index === undefined ? undefined : destination.index + index,
             );
-          const made = records
-            .filter((record) => record.type === "restore" && record.node === entry.ref.id)
-            .at(-1);
-          if (made) awaiting.current.set(made.id, entry);
         }
       }
       return true;
     },
-    [actions, accountList.session, projectList.session],
+    [actions],
   );
 
   const restore = useCallback(

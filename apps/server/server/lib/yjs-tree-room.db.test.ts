@@ -265,45 +265,6 @@ describe("a tree list's room (postgres)", () => {
     );
   });
 
-  it("closes a hostile update's connection, rebuilds the client and loses nothing honest", async () => {
-    const server = serverProcess();
-    const tab = browser(server);
-    await until(() => tab.state === "synced", "synced");
-    const first = createDocument(tab.copy, "first");
-    await until(async () => (await journalRecords(server)).length === 1, "first admitted");
-
-    // A forged record between two honest ones, each in its own update, as three frames.
-    const forged: TreeRecord = {
-      ...(recordsOf(tab.copy.doc).get(0) as TreeRecord),
-      id: crypto.randomUUID(),
-      node: crypto.randomUUID(),
-      actor: `user:${STRANGER}`,
-    };
-    const staleDoc = tab.copy.doc;
-    createDocument(tab.copy, "second");
-    staleDoc.transact(() => recordsOf(staleDoc).push([forged]));
-    createDocument(tab.copy, "third");
-
-    await until(() => tab.states.includes("rebuilding"), "the rebuild");
-    await until(
-      () => tab.copy.doc !== staleDoc && tab.state === "synced",
-      "the rebuilt copy to sync",
-    );
-    await until(
-      async () => (await journalRecords(server)).length === 3 && tab.rejected.length === 1,
-      "the honest records admitted and the forged one given up on",
-    );
-    const names = (await db.select().from(treeNodes)).map((row) => row.name).sort();
-    expect(names).toEqual(["first", "second", "third"]);
-    expect(await journalRecords(server)).not.toContainEqual(
-      expect.objectContaining({ id: forged.id }),
-    );
-    expect(first.id).toBeTruthy();
-    // The rebuilt copy has a Yjs client id of its own.
-    expect(tab.copy.doc.clientID).not.toBe(staleDoc.clientID);
-    expect(tab.states).toContain("rebuilding");
-  }, 60_000);
-
   it("sends a long offline session up in parts, and a new client takes the whole history", async () => {
     const server = serverProcess();
     const admissions: number[] = [];
@@ -350,7 +311,6 @@ describe("a tree list's room (postgres)", () => {
     const tabOther = browser(other);
     await until(() => tabOne.state === "synced" && tabOther.state === "synced", "both synced");
 
-    const committedAt = Date.now();
     createDocument(tabOne.copy, "from process one");
     await until(() => tabOther.ids().length === 1, "the record on the other process");
     const rows = await db.select().from(treeNodes).where(eq(treeNodes.contextSourceId, MANUSCRIPT));
@@ -383,24 +343,6 @@ describe("a tree list's room (postgres)", () => {
     // The deletion publishes this change in the application; the gateway closes by the room's key.
     await server.changes.publish({ projectId: PROJECT });
     await until(() => reader.state === "denied", "denied after the project went");
-  });
-
-  it("keeps a read-only connection's updates out of the store", async () => {
-    // A project with no source the account can write: the owner may read the list, not write it.
-    const READ_ONLY = "00000000-0000-4000-8000-000000000b06";
-    await db
-      .insert(projects)
-      .values({ id: READ_ONLY, userId: ACCOUNT, name: "Empty", slug: "empty" });
-    const server = serverProcess();
-    const admit = vi.spyOn(server.store, "admit");
-    const tab = browser(server, { room: `tree:project:${READ_ONLY}` });
-    await until(() => tab.state === "read-only", "synced, read-only");
-    const framesBefore = tab.wire.toClient.length;
-    createDocument(tab.copy, "never admitted", sourceRoot(UNFILED));
-    // The room answers the dropped frame with its SyncStatus(false): nothing was admitted or stored.
-    await until(() => tab.wire.toClient.length > framesBefore, "the room's answer");
-    expect(admit).not.toHaveBeenCalled();
-    expect(await db.select().from(treeNodes)).toHaveLength(0);
   });
 
   it("refuses a connection that is not the list's account", async () => {

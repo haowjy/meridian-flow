@@ -2,7 +2,9 @@ export {
   type Admission,
   admit,
   type Connection,
-  type KeptCreate,
+  CopyFault,
+  clientMayWrite,
+  guard,
   MAX_RECORDS,
 } from "./admission.js";
 export {
@@ -70,7 +72,7 @@ export {
   type RankedSibling,
 } from "./siblings.js";
 export { deleteStands, undoChange } from "./undo.js";
-export { type ReadRecord, readRecord } from "./validate.js";
+export type { ReadRecord } from "./validate.js";
 export {
   LIVE,
   lastSettlements,

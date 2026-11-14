@@ -597,8 +597,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await liveRow(folder)).toMatchObject({ name: "Arc" });
         expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
         expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
-        // Taken back already: the list moved since the Apply.
-        expect(await unapply(commandId)).toMatchObject({ status: "refused", reason: "gone" });
+        // Taken back already: nothing of it is left to take back.
+        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
       });
 
       it("applies a folder and what is under it as one command, and one Un-Apply takes both", async () => {
@@ -616,20 +616,22 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await pendingCount()).toBe(0);
 
         expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
-        expect(await liveRow(folder)).toBeUndefined();
-        expect(await liveRow(chapter)).toBeUndefined();
-        expect(await branchRow(chapter)).toMatchObject({ existsOnlyInDraft: true });
+        // Each fact is taken back by its opposite: the live copies go to Trash, and the Work's
+        // records are pending again.
+        expect(await liveRow(folder)).toMatchObject({ trashRecord: expect.any(String) });
+        expect(await liveRow(chapter)).toMatchObject({ trashRecord: expect.any(String) });
+        expect(await branchRow(chapter)).toMatchObject({ deleted: false });
         expect(await pendingCount()).toBe(1);
       });
 
-      it("refuses Un-Apply once anything else was admitted to the list", async () => {
+      it("takes back an Apply's facts one by one, whatever else was admitted to the list since", async () => {
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
         await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
         const commandId = randomUUID();
         expect(await applyGroup([a], commandId)).toMatchObject({ status: "applied" });
         await seed.document(SOURCE, "elsewhere.md");
-        expect(await unapply(commandId)).toMatchObject({ status: "refused", reason: "gone" });
-        expect(await liveRow(a)).toMatchObject({ name: "renamed" });
+        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
+        expect(await liveRow(a)).toMatchObject({ name: "alpha" });
       });
 
       it("Undo of a Discard brings its records back pending, once, for a part and a whole Discard", async () => {

@@ -10,11 +10,11 @@
  * with the verdicts the server appended after them), delivered from `onCommitted`.
  */
 
-import { listRebuildClose, treeRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { listChangedClose, treeRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { CopyFault } from "@meridian/project-tree";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
-import { NO_WRITE_ACCESS } from "../domains/context/ports/tree-list-store.js";
 import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
 
@@ -50,13 +50,14 @@ export class TreeRoomRefusal extends Error {
 export type TreeRoomConnection = {
   list: TreeList;
   listId: string;
-  level: "edit" | "read";
   accountId: string;
   /** Admissions available now (negative while the connection owes its wait), and when counted. */
   tokens: number;
   countedAt: number;
   /** Set by the first refusal: Hocuspocus still runs the messages queued behind it, and none may reach the store. */
   refusal: RoomClose | null;
+  /** The connection's last admission: the next waits for it, so parts reach the store in the order they were sent. */
+  queue: Promise<unknown>;
 };
 
 type Room = {
@@ -146,24 +147,22 @@ export function createTreeRooms(services: TreeRoomServices) {
       return;
     }
     if (type !== messageYjsSyncStep2 && type !== messageYjsUpdate) return;
-    if (payload.length <= EMPTY_UPDATE_BYTES || tree.level === "read") return;
+    if (payload.length <= EMPTY_UPDATE_BYTES) return;
     const wait = reserveToken(tree);
     if (wait > MAX_WAIT_MS) throw refusal(tree, { code: 1013, reason: "rate-limited" });
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    const result = await store.admit({
-      list: tree.list,
-      accountId: tree.accountId,
-      update: payload,
-    });
-    if (result.ok) return;
-    if (result.reason === NO_WRITE_ACCESS) throw refusal(tree, WS_CLOSE.ACCESS_CHANGED);
-    emitEvent(services.eventSink, {
-      level: "warn",
-      source: "collab.tree_list",
-      name: "update.refused",
-      payload: { listId: tree.listId, reason: result.reason },
-    });
-    throw refusal(tree, listRebuildClose(result.record));
+    try {
+      await store.admit({ list: tree.list, accountId: tree.accountId, update: payload });
+    } catch (cause) {
+      if (!(cause instanceof CopyFault)) throw cause;
+      emitEvent(services.eventSink, {
+        level: "warn",
+        source: "collab.tree_list",
+        name: "copy.broken",
+        payload: { listId: tree.listId, why: cause.why },
+      });
+      throw refusal(tree, WS_CLOSE.COPY_BROKEN);
+    }
   }
 
   return {
@@ -174,25 +173,25 @@ export function createTreeRooms(services: TreeRoomServices) {
     async connect(input: {
       list: TreeList;
       accountId: string;
-      connectionConfig: { readOnly: boolean };
+      /** The list id the client's stored copy was made of, or null for a copy with none. */
+      storedListId: string | null;
       register(roomName: string): void;
     }): Promise<TreeRoomConnection> {
-      const access = await store.open({ list: input.list, accountId: input.accountId });
-      if (!access) throw new TreeRoomRefusal(WS_CLOSE.PERMISSION_DENIED);
+      const opened = await store.open({ list: input.list, accountId: input.accountId });
+      if (!opened) throw new TreeRoomRefusal(WS_CLOSE.PERMISSION_DENIED);
       input.register(treeRoomName(input.list));
-      // A change between the check and the registration reached no one: ask once more.
-      const settled = await store.open({ list: input.list, accountId: input.accountId });
-      if (settled?.level !== access.level) throw new TreeRoomRefusal(WS_CLOSE.ACCESS_CHANGED);
-      // Hocuspocus drops the updates of a read-only connection and answers SyncStatus(false).
-      input.connectionConfig.readOnly = access.level === "read";
+      // A copy of another list (a reset database, a recreated account list) is thrown away by
+      // the client, which loads this one from nothing.
+      if (input.storedListId !== null && input.storedListId !== opened.listId)
+        throw new TreeRoomRefusal(listChangedClose(opened.listId));
       return {
         list: input.list,
-        listId: access.listId,
-        level: access.level,
+        listId: opened.listId,
         accountId: input.accountId,
         tokens: BURST,
         countedAt: Date.now(),
         refusal: null,
+        queue: Promise.resolve(),
       };
     },
 
@@ -217,14 +216,16 @@ export function createTreeRooms(services: TreeRoomServices) {
     /**
      * Runs before Hocuspocus applies a message. A SyncStep1 first brings the room to the journal's
      * head. An update goes to the store, which checks it and stores it: a whole refusal closes
-     * the connection with `list-rebuild` and nothing is applied anywhere. Throws
+     * the connection with `COPY_BROKEN` and nothing is applied anywhere. Throws
      * `TreeRoomRefusal` to refuse; any other error is the gateway's to turn into a close.
      */
     async beforeSync(input: { tree: TreeRoomConnection; type: number; payload: Uint8Array }) {
       const { tree } = input;
       if (tree.refusal) throw new TreeRoomRefusal(tree.refusal);
+      const turn = tree.queue.then(() => admitMessage(tree, input.type, input.payload));
+      tree.queue = turn.catch(() => undefined);
       try {
-        await admitMessage(tree, input.type, input.payload);
+        await turn;
       } catch (cause) {
         // The gateway closes the socket on any error; the queued messages behind it must find it closed.
         tree.refusal ??= SERVER_ERROR_CLOSE;
