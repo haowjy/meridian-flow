@@ -24,7 +24,7 @@ export default defineEventHandler(async (event): Promise<ListDiscardEntriesRespo
   );
   const entries: ListDiscardEntriesResponse["entries"] = [];
   listed.forEach((entry, at) => {
-    const taken = halves.map((half) => half[at]!).filter((half) => !half.restored);
+    const taken = halves.flatMap((half) => (half[at] && !half[at].restored ? [half[at]] : []));
     const records = taken.reduce((sum, half) => sum + half.records.length, 0);
     if (entry.drafts.length === 0 && records === 0) return;
     entries.push({
