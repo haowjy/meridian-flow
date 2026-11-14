@@ -218,7 +218,9 @@ model-request debug projection testable with Vitest without booting Nitro.
 ### Adding a command route
 
 1. Add a file under `server/routes/api/` (Nitro file-based routing).
-2. Authenticate with `requireAppUser(event)` from `server/lib/auth-gate.ts`.
+2. Authenticate with `requireAppUser(event)` from `server/lib/auth-gate.ts`. It answers 409
+   `wrong_account` before anything runs when the request's `x-meridian-account` header names
+   another account than the signed-in one (a request without the header is not checked).
 3. Destructure needed services from the composed app aggregate.
 4. Run the domain gate for the resource: project/thread/document access.
 5. Call the domain API and return `@meridian/contracts/*` wire shapes only.
