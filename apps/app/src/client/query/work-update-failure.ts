@@ -12,6 +12,10 @@ export function workUpdateFailure(cause: unknown, fallback: string): string {
   switch (cause.reason) {
     case "name_conflict":
       return t`Another Work already has this name. Choose a different name.`;
+    case "returned":
+      return cause.state === "work_archived"
+        ? t`This Work is archived. Unarchive it to edit.`
+        : t`This Work no longer exists.`;
     case "unavailable":
       return cause.state === "archived"
         ? t`This Work is archived. Unarchive it to edit.`

@@ -171,6 +171,12 @@ type ViewOf<Op extends WorkOperation> = {
   committed?: Work;
   /** Why the server turned it away (`name_conflict`, `restore_expired`, ...), when it says. */
   reason: string | null;
+  /**
+   * Set when the server answered `done` but changed nothing because the Work is closed
+   * (`settled: [{ rule: "returned", why }]`): `work_archived` or `work_deleted`. The result is then
+   * the Work as it stands, so projecting it puts the subject back.
+   */
+  returned: string | null;
   /** For `unavailable`: whether the Work is `archived`, `deleted` or `missing`. */
   refusalState: string | null;
 };
@@ -211,6 +217,12 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
     since: record.since,
     committed: committed?.id ? committed : undefined,
     reason: refusal?.error ?? null,
+    returned:
+      (record.state === "done" &&
+        (result as { settled?: { rule?: string; why?: string }[] } | null)?.settled?.find(
+          (entry) => entry.rule === "returned",
+        )?.why) ||
+      null,
     refusalState: refusal?.state ?? null,
   } as WorkCommandRecord;
 }

@@ -99,8 +99,13 @@ async function runWorkCommand<Op extends WorkOperation>(
     openDeleteWindow(client, projectId, { workId, commandId: id, openedAt: Date.now() });
   const settled = await driver.whenSettled(id);
   if (operation === "restore" && settled?.state === "done") closeWindows(client, projectId, workId);
+  const failed = settled && workCommandOf(settled);
+  // A closed Work answers `done` with nothing changed: the field reopens like a refusal.
+  if (failed?.returned) {
+    if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
+    return new WorkCommandRefused("returned", failed.returned);
+  }
   if (settled?.state !== "never") return null;
-  const failed = workCommandOf(settled);
   if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
   return refusedBy(failed);
 }
