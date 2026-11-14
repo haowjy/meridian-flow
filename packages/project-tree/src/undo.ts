@@ -39,11 +39,17 @@ function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, re
   });
 }
 
-/** Whether the delete record's Trash entry, or an Undo's copy of it, is still in Trash. */
+/**
+ * Whether the delete record's Trash entry, an Undo's copy of it, or the entry it put back (a delete
+ * that took a restore back stands for the entries that restore lifted) is still in Trash.
+ */
 function inTrashOf(projection: TreeProjection, record: TreeRecord): boolean {
   const root = record.carries ?? record.id;
   return projection.trash.some(
-    (entry) => entry.id === record.id || (entry.from ?? entry.id) === root,
+    (entry) =>
+      entry.id === record.id ||
+      (entry.from ?? entry.id) === root ||
+      (entry.putBackBy?.includes(root) ?? false),
   );
 }
 

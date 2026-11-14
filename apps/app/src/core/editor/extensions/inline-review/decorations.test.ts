@@ -8,10 +8,12 @@
  * - review-base provider cache
  */
 
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as Y from "yjs";
 import type { DocumentSessionSnapshot } from "@/core/editor/document-session";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { readBase } from "@/features/draft-review/review-frame";
 import {
   createReviewRuntime,
@@ -28,9 +30,20 @@ import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
 import { inlineReviewClassNames } from "./decorations";
 
 const projectors: ReviewRuntime[] = [];
-function reviewing(base: string[], draft: string[]) {
+function reviewing(base: string[], draft: string[], withIds = false) {
   const { editor, doc } = createReviewEditor(draft);
   seedReviewBase(doc, base);
+  // A document the editor has opened has block ids; typing in an id-less paragraph gives it one.
+  if (withIds)
+    for (const name of [PROSEMIRROR_FRAGMENT_NAME, REVIEW_BASE_FRAGMENT])
+      doc.transact(() =>
+        doc
+          .getXmlFragment(name)
+          .toArray()
+          .forEach((block, at) => {
+            (block as Y.XmlElement).setAttribute("id", `p${at}`);
+          }),
+      );
   const projector = attachReviewRuntime(editor, doc);
   projectors.push(projector);
   projector.projectNow();
@@ -120,7 +133,7 @@ describe("recomputing while the writer types", () => {
 });
 
 it("retains mark and removal DOM while typing inside a change and changing emphasis", () => {
-  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."], true);
   const mark = editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`);
   const removal = removals(editor)[0];
   editor.commands.setTextSelection(15);
@@ -148,7 +161,7 @@ it("retains mark and removal DOM while typing inside a change and changing empha
 it("defers projected paint during composition and consumes a pulse at the DOM only once", () => {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."], true);
   const root = editor.view.dom;
   const mark = root.querySelector(`.${inlineReviewClassNames.added}`);
   const removal = removals(editor)[0];

@@ -64,6 +64,8 @@ export type TrashEntry = {
   /** The delete record's id (a record that carries another names it in `from`). */
   id: string;
   from?: string;
+  /** Deletes that took a restore back and so put this entry in force again (a Redo of the restore's Undo): their root ids. */
+  putBackBy?: string[];
   node: string;
   cascade: string[];
 };
@@ -131,6 +133,8 @@ type Lifted = { entries: DeleteInForce[]; members: Array<[DeleteInForce, string]
 type DeleteInForce = {
   id: string;
   from?: string;
+  /** Root ids of the deletes that put it back in force, until a restore lifts it again. */
+  putBackBy: Set<string>;
   node: string;
   cascade: Set<string>;
   /** The viewed Work's own delete, pending or already applied. */
@@ -341,7 +345,10 @@ export function replay(
         // deletes it lifted are in force again, each with what it took and its own Trash entry.
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
         if (back) {
-          for (const entry of back.entries) if (!deletes.includes(entry)) deletes.push(entry);
+          for (const entry of back.entries) {
+            entry.putBackBy.add(record.carries ?? record.id);
+            if (!deletes.includes(entry)) deletes.push(entry);
+          }
           for (const [entry, member] of back.members) entry.cascade.add(member);
           lifted.set(record.carries ?? record.id, back);
           break;
@@ -350,6 +357,7 @@ export function replay(
         deletes.push({
           id: record.id,
           ...(record.carries ? { from: record.carries } : {}),
+          putBackBy: new Set(),
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
@@ -371,6 +379,7 @@ export function replay(
           members: [],
         };
         deletes = deletes.filter((entry) => !took.entries.includes(entry));
+        for (const entry of took.entries) entry.putBackBy.clear();
         node.arrivedAt = index;
         if (again)
           for (const [entry, member] of again.members) {
@@ -591,6 +600,7 @@ function derive(
       .map((entry) => ({
         id: entry.id,
         ...(entry.from ? { from: entry.from } : {}),
+        ...(entry.putBackBy.size > 0 ? { putBackBy: [...entry.putBackBy] } : {}),
         node: entry.node,
         cascade: [...entry.cascade],
       })),

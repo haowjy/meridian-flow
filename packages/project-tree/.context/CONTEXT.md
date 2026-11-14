@@ -78,7 +78,10 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   Undo of a delete is allowed while that delete is a Trash entry in force. The opposite record of a
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
   replay keeps what each restore lifted): the entry is the original delete again, so its Undo and
-  `restoreEntry` reach it, and a restore that takes that Undo back lifts them again.
+  `restoreEntry` reach it, and a restore that takes that Undo back lifts them again. That
+  opposite delete is not itself a Trash entry, so each entry it put back names it in `putBackBy`
+  (until a restore lifts the entry again), and the delete is undoable while one such entry stands:
+  a Redo of a Redo's Undo, and so on round, works every time.
 - **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
   record in force there is live (a drafted change an Apply landed), the opposite record goes to
   live. Its `draft` says which. No caller retries in another view.
