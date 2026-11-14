@@ -1,15 +1,16 @@
 /**
  * The project's one live subscription to the server's wake hints. A hint carries no state: it says
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
- * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list and the
- * project's sources.
+ * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and a
+ * Work's count with it) and the project's sources.
  */
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
-import { refreshWorksSnapshot } from "./works-projection-acquisition";
+import { refreshWorksSnapshot, repairWorksSnapshot } from "./works-projection-acquisition";
 
 export function useProjectWake(projectId: string): void {
   const queryClient = useQueryClient();
@@ -52,6 +53,8 @@ export function useProjectWake(projectId: string): void {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
         });
+        // A Work's count is the Works list's: the picker and Changes read it there.
+        if (workIdOfDraftOwnerKey(hint.owner)) void repairWorksSnapshot(queryClient, projectId);
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
         });

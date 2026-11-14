@@ -79,8 +79,8 @@ export type WorkProjectionMutation = {
    * Owner-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, then its
    * lineages' draft-owner locks in root order, in the caller's transaction, before it takes any
    * draft, branch or document row. At commit each locked owner's branches are recounted and
-   * stored; a Work whose total moved gets a revision and a notice, a lineage branch whose
-   * count moved gets a `draft-owner-hint`; unmoved counts get neither. Apart from the owners'
+   * stored; a Work whose total moved gets a revision and a notice, and every branch whose
+   * count moved gets a `draft-owner-hint` for its owner; unmoved counts get neither. Apart from the owners'
    * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
@@ -208,14 +208,18 @@ export function createWorkProjectionMutation(input: {
             .returning({ id: branches.id })
         ).map(({ id }) => id as string),
       );
+      // The owner's list gained or lost a document: its readers ask again. A draft joins the
+      // list when the effect projection judges it, after the write that made it.
       input.draftOwnerHints.publishDraftOwnerHints(
         branchCounts.flatMap((row) =>
-          row.rootThreadId && movedBranches.has(row.branchId)
+          movedBranches.has(row.branchId)
             ? [
                 {
                   type: "draft-owner-hint" as const,
                   projectId: row.projectId,
-                  owner: draftOwnerKey({ kind: "lineage", rootThreadId: row.rootThreadId }),
+                  owner: row.rootThreadId
+                    ? draftOwnerKey({ kind: "lineage", rootThreadId: row.rootThreadId })
+                    : draftOwnerKey({ kind: "work", workId: row.workId as string }),
                 },
               ]
             : [],
