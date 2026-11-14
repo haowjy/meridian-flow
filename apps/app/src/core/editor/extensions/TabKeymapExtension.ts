@@ -129,9 +129,8 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
 }
 
 /**
- * Inside a list the key belongs to the list, refusal included: `sinkListItem`
- * has nothing to sink the first item under, and a tab in that bullet's text is
- * not what the writer asked for by pressing the indent key.
+ * In a list the key indents the item; when `indentList` refuses (the first item) it does
+ * nothing, rather than type a tab into the bullet.
  */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
