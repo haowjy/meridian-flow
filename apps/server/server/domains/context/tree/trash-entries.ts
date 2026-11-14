@@ -1,16 +1,13 @@
 /**
- * The tree half of a Discard's Trash entry, which the change set's restore command calls: what
- * the Discard settled, and its fresh pending copies when it is restored. The Trash list itself is
+ * The tree half of a Discard's Trash entry: what the Discard settled. The Trash list itself is
  * `drizzle-document-trash.ts`.
  */
 import {
-  type Actor,
   type DiscardedBy,
   discardedBy,
   isSourceRoot,
   type NodeKind,
   nameSet,
-  restoreDiscard,
   type TreeRecord,
 } from "@meridian/project-tree";
 import type { TreeList, TreeListStore } from "../ports/tree-list-store.js";
@@ -68,22 +65,4 @@ export async function discardedTree(
       });
     },
   });
-}
-
-/**
- * The tree half of restoring a Discard: fresh pending copies on `branchId`, in the caller's
- * command transaction (it joins it and takes the list's key, which sorts after the Work, branch
- * and draft rows). `superseded` when it was restored already or discarded nothing.
- */
-export async function restoreDiscardedTree(
-  store: Pick<TreeListStore, "submit">,
-  list: TreeList,
-  input: { command: string; by: Actor; branchId: string; restoreCommand: string },
-): Promise<{ copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded"> {
-  const { result } = await store.submit({
-    lists: [list],
-    make: ([{ writer }]) =>
-      restoreDiscard(writer, input.command, input.by, input.branchId, input.restoreCommand),
-  });
-  return result;
 }

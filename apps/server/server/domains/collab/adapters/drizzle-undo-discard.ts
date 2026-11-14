@@ -11,7 +11,7 @@
  * the documents the copies act on, then the draft rows.
  */
 
-import type { BranchId } from "@meridian/contracts";
+import type { BranchId, ProjectId } from "@meridian/contracts";
 import type { UndoDiscardResult } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
@@ -42,6 +42,7 @@ class UndoDiscardRefused extends Error {
 /** A restore of this command that took effect: stored with the Discard it named. */
 async function restoredBefore(
   tx: ReturnType<typeof currentDrizzleDb>,
+  projectId: ProjectId,
   userId: string,
   request: UndoDiscardCommand["request"],
 ): Promise<boolean> {
@@ -50,6 +51,7 @@ async function restoredBefore(
     .from(commands)
     .where(
       and(
+        eq(commands.projectId, projectId),
         eq(commands.kind, "undo_discard"),
         eq(commands.accountId, userId),
         sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
@@ -78,11 +80,6 @@ export function createDrizzleUndoDiscard(
         db,
         envelope,
         async () => {
-          // A purged Work's branches went with it, before the Work's boundary can be entered.
-          const found = await deps.branches.ownerOf(branchId);
-          if (!found) throw new UndoDiscardRefused("work_purged");
-          if (found.branch.projectId !== envelope.projectId)
-            throw new ApplyClickRefused("not_found");
           return deps.workProjection.mutate(
             { branches: [branchId] },
             async (): Promise<UndoDiscardResult> => {
@@ -106,7 +103,12 @@ export function createDrizzleUndoDiscard(
                 throw new ApplyClickRefused("not_found");
               if (discard.at <= deletionPurgeCutoff(new Date()))
                 throw new UndoDiscardRefused("expired");
-              const owner = (await deps.branches.ownerOf(branchId))?.owner;
+              // A purged Work's branches went with it: no row names an owner to lock or write.
+              const found = await deps.branches.ownerOf(branchId);
+              if (!found) throw new UndoDiscardRefused("work_purged");
+              if (found.branch.projectId !== envelope.projectId)
+                throw new ApplyClickRefused("not_found");
+              const { owner } = found;
               if (!owner) throw new UndoDiscardRefused("work_purged");
               approveBranchWriteJoin();
               const target = await deps.branches.ensureActiveForWrite({
@@ -220,7 +222,10 @@ export function createDrizzleUndoDiscard(
                 // took the members says so; a Discard's text drafts leave only by their
                 // document's purge, which deletes them.
                 if (leftOut > 0) throw new UndoDiscardRefused("document_purged");
-                if (treeAlreadyRestored || (await restoredBefore(tx, userId, request)))
+                if (
+                  treeAlreadyRestored ||
+                  (await restoredBefore(tx, envelope.projectId, userId, request))
+                )
                   throw new UndoDiscardRefused("already_restored");
                 throw new UndoDiscardRefused(
                   foreignRecords ? "nothing_to_restore" : "document_purged",

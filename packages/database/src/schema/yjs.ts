@@ -376,6 +376,10 @@ export const commands = pgTable(
   },
   (table) => [
     index("commands_thread").on(table.threadId),
+    // Trash lists a project's Discards, and a restore looks for an earlier one of the same Discard.
+    index("commands_discard_project")
+      .on(table.projectId, table.createdAt)
+      .where(sql`${table.kind} IN ('discard', 'undo_discard')`),
     check(
       "commands_kind_valid",
       sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')`,
