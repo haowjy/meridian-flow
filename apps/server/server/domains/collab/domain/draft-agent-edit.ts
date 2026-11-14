@@ -203,16 +203,19 @@ export function createDraftAgentEditCoordinator(input: {
     );
     const { result, write } = await drafts.prepareStagedRows(
       workDraftId,
-      async () => ({
-        result: {
-          kept: entries.flatMap((entry) =>
-            entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-          ),
-          rejected: [],
-          room: draftRoom(workDraftId),
-        },
-        rows: rowsFor(workDraftId, entries),
-      }),
+      async (doc) => {
+        for (const entry of entries) Y.applyUpdate(doc, entry.update);
+        return {
+          result: {
+            kept: entries.flatMap((entry) =>
+              entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+            ),
+            rejected: [],
+            room: draftRoom(workDraftId),
+          },
+          rows: rowsFor(workDraftId, entries),
+        };
+      },
       true,
       precondition,
     );

@@ -9,6 +9,7 @@ import type {
   WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
 import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
+import type { ResponseAuthorship } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import {
@@ -153,7 +154,7 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
-  ctx: { threadId: string; responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+  ctx: { threadId: string; responseIdentity?: ResponseAuthorship },
   version?: DocumentVersion,
 ): Promise<ToolCall | ToolErrorOutput> {
   const context = await resolveContextPort(

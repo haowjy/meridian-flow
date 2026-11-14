@@ -196,7 +196,7 @@ type AgentTreeChange = {
     | {
         threadId: ThreadId;
         turnId?: TurnId;
-        responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+        responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
         toolCallId?: string;
         /** Where the model saw the document: the path it moved or deleted it from. */
         shownAt: string;

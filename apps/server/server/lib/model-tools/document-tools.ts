@@ -402,7 +402,18 @@ export function createReadHandler(deps: ToolWiringDeps) {
 }
 
 export function createWriteHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
+  return async (input: unknown, handlerCtx: ToolHandlerContext) => {
+    // A call that is a command has no reply scope, even while the loop still opens one for the
+    // held writes beside it: nothing below may stage under it.
+    const ctx: ToolHandlerContext =
+      handlerCtx.modelEdit && handlerCtx.responseIdentity
+        ? {
+            ...handlerCtx,
+            responseIdentity: {
+              providerResponseId: handlerCtx.responseIdentity.providerResponseId,
+            },
+          }
+        : handlerCtx;
     const parsed = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
@@ -477,11 +488,29 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
+    // A write to an existing document finds it before the command claims its id. A drafted write
+    // plans on a draft caught up with live, and the pull opens a connection of its own.
+    let existing: ResolvedDocumentAddress | undefined;
+    if (!inverse && !creates) {
+      const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
+      if (isToolError(found)) {
+        const removed =
+          found.output.status === "document_not_found"
+            ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
+            : null;
+        return removed ?? found;
+      }
+      if (ctx.modelEdit)
+        await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
+      existing = found;
+    }
+
     let refresh: DocumentId | undefined;
     const effect = async () => {
       let address = inverse
         ? inverse.address
-        : await inContainer(deps, principal, parsed.command, target, () =>
+        : (existing ??
+          (await inContainer(deps, principal, parsed.command, target, () =>
             resolveDocumentAddress(context, parsed.command, parsed.path, {
               origin: {
                 type: "agent",
@@ -514,14 +543,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                   }
                 : {}),
             }),
-          );
-      if (isToolError(address)) {
-        const removed =
-          !creates && address.output.status === "document_not_found"
-            ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
-            : null;
-        return removed ?? address;
-      }
+          )));
+      if (isToolError(address)) return address;
 
       if (parsed.command === "copy" && copied) {
         // The copy's new identity is known now: a whole document's own links name the copy, not

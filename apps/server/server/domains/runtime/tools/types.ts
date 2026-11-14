@@ -11,7 +11,7 @@
  * orchestrator injects for tools that stream live process output.
  */
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
-import type { ModelResponseIdentity } from "@meridian/contracts";
+import type { ResponseAuthorship } from "@meridian/contracts";
 import type {
   ModelEditKey,
   ModelEditOutcome,
@@ -67,7 +67,7 @@ export interface ToolExecutionContext {
   threadId: ThreadId;
   turnId: TurnId;
   /** Model-response id currently dispatching tool calls. */
-  responseIdentity?: ModelResponseIdentity;
+  responseIdentity?: ResponseAuthorship;
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -168,7 +168,7 @@ export interface ToolHandlerContext {
   threadId: string;
   turnId: string;
   /** Model-response id currently dispatching tool calls. */
-  responseIdentity?: ModelResponseIdentity;
+  responseIdentity?: ResponseAuthorship;
   /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**

@@ -454,10 +454,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     afterLiveCommit: (documentId) => draftPulls.scheduleLivePull(documentId),
   });
-  const modelEdits = createDrizzleModelEdits(
-    deps.db,
-    scopeModelEditWrite(modelEditWrite, deps.links),
-  );
+  const modelEdits = createDrizzleModelEdits(deps.db, {
+    write: scopeModelEditWrite(modelEditWrite, deps.links),
+    catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+  });
 
   const draftAheads = createDraftAheadRegistration({
     drafts: draftCoordinator,

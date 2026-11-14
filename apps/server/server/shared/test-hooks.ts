@@ -52,6 +52,14 @@ const TEST_HOOK_POINTS = [
   "draft.append.afterCommit",
   /** A draft rewrite wrote its checkpoint; the transaction has not committed. */
   "draft.rewrite.beforeCommit",
+  /** A model edit's command has not claimed its id. */
+  "command.beforeClaim",
+  /** The command holds its claim and has run nothing of its effect. */
+  "command.afterClaim",
+  /** The effect ran and its outcome is stored; nothing has committed. */
+  "command.beforeCommit",
+  /** The command's transaction committed; the caller has not been answered. */
+  "command.afterCommit",
   /** The ask row exists as pending, before the asking turn settles and publishes it. */
   "ask.pending",
   /** An answer, result block, completed asking turn, and continuation committed together. */

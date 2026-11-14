@@ -1,4 +1,4 @@
-import type { ModelResponseIdentity } from "@meridian/contracts";
+import type { ResponseAuthorship } from "@meridian/contracts";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
@@ -178,7 +178,7 @@ export interface WriteContext {
   /** Host/tool-call idempotency key. Replays return the original outcome. */
   tool_use_id?: string;
   /** Immutable provider authorship and the independently rotated prepared scope. */
-  responseIdentity?: ModelResponseIdentity;
+  responseIdentity?: ResponseAuthorship;
   /**
    * Host-captured interaction identity: baseline, journal floor, draft
    * generation, and optional attempt guard travel as one object.

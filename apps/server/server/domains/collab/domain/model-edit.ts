@@ -5,6 +5,7 @@
  */
 
 import type { WriteCommand } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts";
 import type {
   ModelEditKey,
   ModelEditOutcome,
@@ -25,6 +26,12 @@ export class ModelEditRefusal<E = unknown> extends Error {
 }
 
 export type ModelEdits = {
+  /**
+   * Before `run`: brings a document's Work drafts level with live, so the write plans on a draft
+   * that has the writer's latest text. A pull opens a connection of its own, so it cannot run
+   * inside the command.
+   */
+  catchUp(documentId: DocumentId): Promise<void>;
   /**
    * Claims the call's command id, runs `effect` under it and stores what it returns. The effect
    * throws `ModelEditRefusal` to answer without changing anything; any other throw rolls the
