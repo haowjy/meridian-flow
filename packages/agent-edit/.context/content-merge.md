@@ -227,8 +227,10 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   changed loses to the draft's whole table (`whole-block-unit`).
 - A join across a block that moved is not read as a join: the other block is removed and its words
   go to the first.
-- One merged list had one id on two blocks, once in 24,000 generated merges, with a ten-word
-  vocabulary.
+- Both sides gaining a block with one new id (absent from the base, present in live and in the
+  draft) leaves that id on two blocks of the merge: 56 of 3,000 generated seeds, in the same four
+  suites. Nothing in the app mints one id on two sides; the generator does. The merge does not
+  repair it.
 - Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
   person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
   text under the splitter's byline.
