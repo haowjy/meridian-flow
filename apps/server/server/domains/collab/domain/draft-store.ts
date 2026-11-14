@@ -210,11 +210,6 @@ export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
-  /** Candidate block ids whose deletion is certified by a server row's receipt. */
-  serverDeletedBlocks(
-    draftId: string,
-    ids: readonly { client: number; clock: number }[],
-  ): Promise<ReadonlySet<string>>;
   /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
    * rolled back the revision bump and everything registered inside it before it returns.

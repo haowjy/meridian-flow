@@ -55,7 +55,6 @@ export type FinalizeAppendInput = {
   authorServerRows?: AuthorServerRows;
   recovery?: {
     memory(): LateTyping;
-    serverDeletedBlocks(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
   };
   /**
    * A private clone of the caller's base replica, made off the lock. When the checkpoint held
@@ -152,59 +151,35 @@ export async function finalizeAppend(
       const lost =
         row.source === "server" || !input.recovery
           ? { typed: [], deleted: [] }
-          : findLostEdits(doc, row.updateData);
+          : findLostEdits(doc, row.updateData, lateTyping.paragraphs);
       const refused = admit(row);
       if (refused) return done(refused);
       if (input.recovery && (lost.typed.length || lost.deleted.length)) {
-        const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const blocks = new Map<string, Y.ID>();
-        const blockOf = (id: Y.ID): Y.ID | null => {
-          let item: Y.Item | Y.GC | null = Y.getItem(doc.store, id);
-          while (item instanceof Y.Item) {
-            const parent = item.parent as Y.AbstractType<unknown>;
-            if (parent === fragment) return item.id;
-            item = parent._item;
-          }
-          return null;
-        };
-        for (const edit of lost.typed) {
-          const id = blockOf(edit.id);
-          if (id) blocks.set(`${id.client}:${id.clock}`, id);
-        }
-        const deleted = blocks.size
-          ? await input.recovery.serverDeletedBlocks([...blocks.values()])
-          : new Set<string>();
-        const typed = lost.typed.filter((edit) => {
-          const block = blockOf(edit.id);
-          return block && deleted.has(`${block.client}:${block.clock}`);
-        });
-        {
-          // Without typing the helper only advances deletion memory; no clone or server row.
-          const authoring = typed.length ? createCollabYDoc({ gc: false }) : doc;
-          try {
-            if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
-            const recovery = recoverLatePeerEdits({
-              doc: authoring,
-              update: row.updateData,
-              lost: { ...lost, typed },
-              memory: retainLateTypingDeletions(lateTyping, input.recovery.memory()),
-              schema: recoverySchema,
-              fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-              clientId: DRAFT_SERVER_CLIENT_ID,
+        // Without typing the helper only advances deletion memory; no clone or server row.
+        const authoring = lost.typed.length ? createCollabYDoc({ gc: false }) : doc;
+        try {
+          if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
+          const recovery = recoverLatePeerEdits({
+            doc: authoring,
+            update: row.updateData,
+            lost,
+            memory: retainLateTypingDeletions(lateTyping, input.recovery.memory()),
+            schema: recoverySchema,
+            fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+            clientId: DRAFT_SERVER_CLIENT_ID,
+          });
+          lateTyping = recovery.memory;
+          recovered.push(...recovery.written);
+          if (recovery.update) {
+            const refused = admit({
+              draftId: row.draftId,
+              source: "server",
+              updateData: recovery.update,
             });
-            lateTyping = recovery.memory;
-            recovered.push(...recovery.written);
-            if (recovery.update) {
-              const refused = admit({
-                draftId: row.draftId,
-                source: "server",
-                updateData: recovery.update,
-              });
-              if (refused) return done(refused);
-            }
-          } finally {
-            if (authoring !== doc) authoring.destroy();
+            if (refused) return done(refused);
           }
+        } finally {
+          if (authoring !== doc) authoring.destroy();
         }
       }
     }

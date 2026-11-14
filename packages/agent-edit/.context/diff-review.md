@@ -210,6 +210,8 @@ its one id.
 
 ## Late peers
 
+Detection finds typing under a deleted item and typing a delete removes without listing it. `LateTyping.paragraphs` remembers every paragraph recovery wrote, settled ones too, so a peer that deletes one without having seen the typing recovered into it is caught.
+
 The rules are in the [late-peer recovery rule][late-peer]. Detection indexes the incoming
 structs once by client and clock in the shared pinned Yjs adapter; parent and origin lookups
 must not scan the whole update per item, because a whole-draft Discard or Undo can carry tens

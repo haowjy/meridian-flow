@@ -549,43 +549,6 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    async serverDeletedBlocks(draftId, ids) {
-      if (!ids.length) return new Set<string>();
-      const rows = await currentDrizzleDb(db)
-        .select({ effect: documentEditParts.effect })
-        .from(documentEditParts)
-        .innerJoin(
-          draftWriteJournal,
-          sql`${draftWriteJournal.id} = (${documentEditParts.origin}->>'rowId')::bigint`,
-        )
-        .where(
-          and(
-            sql`${documentEditParts.origin}->>'kind' = 'pending'`,
-            sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
-            eq(draftWriteJournal.source, "server"),
-            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
-            where ${sql.join(
-              ids.map(
-                (id) =>
-                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
-              ),
-              sql` or `,
-            )})`,
-          ),
-        );
-      return new Set(
-        ids
-          .filter((id) =>
-            rows.some((row) =>
-              row.effect.deleted.some(
-                (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
-              ),
-            ),
-          )
-          .map((id) => `${id.client}:${id.clock}`),
-      );
-    },
-
     appendRows,
     writeEffect,
     staleEffectDrafts,

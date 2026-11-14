@@ -48,9 +48,14 @@ export interface LateTyping {
   readonly spans: readonly WrittenSpan[];
   /** Characters of dead blocks the peer deleted in earlier frames, other than typing written before. */
   readonly deleted: ReadonlySet<string>;
+  /**
+   * Every paragraph recovery wrote (`client:clock`), settled ones included: a peer that deletes one without
+   * having seen the typing recovered into it since is `findLostEdits`' to catch.
+   */
+  readonly paragraphs: ReadonlySet<string>;
 }
 
-export const NO_LATE_TYPING: LateTyping = { spans: [], deleted: new Set() };
+export const NO_LATE_TYPING: LateTyping = { spans: [], deleted: new Set(), paragraphs: new Set() };
 
 /** Entries kept per draft; past this the memory starts over (later typing may then start new paragraphs). */
 const MEMORY_LIMIT = 50_000;
@@ -74,7 +79,7 @@ export function retainLateTypingDeletions(memory: LateTyping, observed: LateTypi
   const deleted = new Set(memory.deleted);
   for (const id of observed.deleted) if (!remembered.has(id)) deleted.add(id);
   const size = deleted.size + memory.spans.reduce((n, span) => n + span.ids.length, 0);
-  return size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans: memory.spans, deleted };
+  return size > MEMORY_LIMIT ? NO_LATE_TYPING : { ...memory, deleted };
 }
 
 const LATE_PEER_ORIGIN = "late-peer";
@@ -297,7 +302,9 @@ export function recoverLatePeerEdits(input: {
 }
 
 function finish(out: LateRecovery, spans: WrittenSpan[], deleted: Set<string>): LateRecovery {
-  const size = deleted.size + spans.reduce((n, s) => n + s.ids.length, 0);
-  out.memory = size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans, deleted };
+  const paragraphs = new Set(out.memory.paragraphs);
+  for (const span of spans) if (span.paragraph) paragraphs.add(keyOf(span.paragraph));
+  const size = deleted.size + paragraphs.size + spans.reduce((n, s) => n + s.ids.length, 0);
+  out.memory = size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans, deleted, paragraphs };
   return out;
 }

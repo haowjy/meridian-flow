@@ -113,13 +113,6 @@ export class MemoryDraftStore implements DraftStore {
     };
   }
 
-  async serverDeletedBlocks(
-    _draftId: string,
-    _ids: readonly { client: number; clock: number }[],
-  ): Promise<ReadonlySet<string>> {
-    return new Set();
-  }
-
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
     if (

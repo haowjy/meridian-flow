@@ -501,8 +501,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
                 ? {
                     recovery: {
                       memory: () => lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
-                      serverDeletedBlocks: (ids: readonly Y.ID[]) =>
-                        input.store.serverDeletedBlocks(snapshot.draftId, ids),
                     },
                   }
                 : {}),

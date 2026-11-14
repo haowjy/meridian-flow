@@ -476,15 +476,21 @@ background rebases keep archived drafts current. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
-Only hidden typing under a top-level block whose deletion is certified by a
-server row's immutable receipt is recovered. Receipt reads happen only for
-hidden typing, selected by block id. Recovery authors another client-1 server row
+A writer's typing that the deleter never saw is recovered, whoever deleted: a
+rebase, a peer's Discard revert, another writer or the model. Two arrival orders
+find it. Typing that arrives under a block already deleted (its parent chain
+reaches a deleted item), and a delete that arrives after the typing and removes it
+without listing it (a deleter's delete set lists every item its own transaction
+deleted, children included, so an unlisted writer item was typed unseen). Typing
+by a reserved client id is never recovered, except inside a paragraph recovery
+wrote earlier (`LateTyping.paragraphs`, which keeps settled ones). No receipt
+read decides it. Recovery authors another client-1 server row
 in the same append; its opaque per-draft `LateTyping` memory installs only after
 commit. Deletion-only frames advance memory without writing; a contained echo with
 existing recovery observes its deleted separators without a row hold. Deferred
 observers read latest memory at commit, and finalizers retain observations made
 during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
-never remove recovered writing. Another writer's deleted block is not recovered.
+never remove recovered writing. A writer's own backspace of typing that arrived hidden, in a frame after the one that recovered it, is not applied: Yjs cannot tell it from a reconnect's resent delete set, so the recovered words stay and the writer deletes them again. Live rooms have no such recovery: see TODO.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row

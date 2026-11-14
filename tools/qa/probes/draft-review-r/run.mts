@@ -265,48 +265,6 @@ try {
     assert.equal(result.length, 2);
     once(result, "XZY");
   });
-  await row("contained-separator-delete-during-recovery-receipt-read", async () => {
-    const s = await seed("r-memory-race", [paragraph("ab")]);
-    const stale = clone(s.room);
-    const first = captured(stale, () => {
-      textAt(stale).insert(1, "X");
-      textAt(stale).insert(3, "Y");
-    });
-    await live(s, [rebuilt("ab")]);
-    await pulls.flushLivePull(s.documentId);
-    await writer(s, first);
-    const next = captured(stale, () => textAt(stale).insert(2, "Z"));
-    let resume!: () => void, signal!: () => void;
-    const blocked = new Promise<void>((done) => {
-      signal = done;
-    });
-    const released = new Promise<void>((done) => {
-      resume = done;
-    });
-    const original = h.store.serverDeletedBlocks;
-    h.store.serverDeletedBlocks = async (...args) => {
-      signal();
-      await released;
-      return original(...args);
-    };
-    const recovery = writer(s, next);
-    try {
-      await reached(blocked);
-      await writer(
-        s,
-        captured(stale, () => textAt(stale).delete(3, 1)),
-      );
-      resume();
-      await recovery;
-      const result = await read(s);
-      assert.equal(result.length, 2);
-      once(result, "XZY");
-    } finally {
-      h.store.serverDeletedBlocks = original;
-      resume();
-      await recovery;
-    }
-  });
   await row("deferred-contained-observer-keeps-newer-recovery-spans", async () => {
     const s = await seed("r-memory-deferred", [paragraph("ab")]);
     const stale = clone(s.room);
@@ -350,17 +308,43 @@ try {
       await outer;
     }
   });
-  await row("writer-deleted-paragraph-is-not-recovered", async () => {
-    const s = await seed("r-writer-delete");
-    const stale = clone(s.room),
-      other = clone(s.room);
-    const typing = captured(stale, () => textAt(stale).insert(4, "notRecovered"));
+  await row("typing-the-deleter-never-saw-is-recovered-in-either-order", async () => {
+    // The delete arrives first: the typing lands under a deleted block.
+    const first = await seed("r-writer-delete");
+    const stale = clone(first.room),
+      other = clone(first.room);
+    const typing = captured(stale, () => textAt(stale).insert(4, "recoveredLate"));
     await writer(
-      s,
+      first,
       captured(other, () => fragment(other).delete(0, 1)),
     );
-    await writer(s, typing);
-    assert.ok(!(await read(s)).some((b) => b.textContent.includes("notRecovered")));
+    await writer(first, typing);
+    once(await read(first), "recoveredLate");
+    // The typing arrives first: the delete removes it without listing it.
+    const second = await seed("r-writer-delete-after");
+    const typist = clone(second.room),
+      deleter = clone(second.room);
+    await writer(
+      second,
+      captured(typist, () => textAt(typist).insert(4, "recoveredFirst")),
+    );
+    await writer(
+      second,
+      captured(deleter, () => fragment(deleter).delete(0, 1)),
+    );
+    once(await read(second), "recoveredFirst");
+    // A deleter that saw the typing deletes it for good.
+    const third = await seed("r-writer-delete-seen");
+    const seen = clone(third.room);
+    await writer(
+      third,
+      captured(seen, () => textAt(seen).insert(4, "seenThenDeleted")),
+    );
+    await writer(
+      third,
+      captured(seen, () => fragment(seen).delete(0, 1)),
+    );
+    assert.ok(!(await read(third)).some((b) => b.textContent.includes("seenThenDeleted")));
   });
   await row("effect-drops-after-live-matches-no-key", async () => {
     const s = await seed("r-effect");
@@ -431,7 +415,7 @@ try {
       ["Base words."],
     );
   });
-  console.log(`${passed.length}/10 acceptance rows passed`);
+  console.log(`${passed.length}/9 acceptance rows passed`);
 } finally {
   effect.dispose();
   pulls.cancelScheduledPulls();
