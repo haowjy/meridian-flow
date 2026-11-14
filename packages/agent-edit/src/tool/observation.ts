@@ -211,9 +211,11 @@ function changeAuthors(
       } finally {
         own.destroy();
       }
+      const writtenClients = insertingClients(source.written ?? []);
       for (const item of source.concurrent ?? []) {
         const own =
           (source.written ?? []).some((update) => bytesEqual(update, item.update)) ||
+          insertsOnlyFrom(item.update, writtenClients) ||
           (item.origin.type === "agent" &&
             source.ownActorTurnIds?.has(item.origin.actorTurnId) === true);
         const effect = item.effects
@@ -278,6 +280,20 @@ function changeAuthors(
     });
   if (fallback.changed.size || fallback.removed.size) byAuthor.set("unknown", fallback);
   return byAuthor;
+}
+
+/**
+ * A write's own change reaches the journal diff as a residual that is not byte-equal to the
+ * write: removing a block also deletes what a peer typed into it after the write's cut. The
+ * write's Yjs client ids still identify what it inserted.
+ */
+function insertingClients(updates: readonly Uint8Array[]): Set<number> {
+  return new Set(updates.flatMap((u) => Y.decodeUpdate(u).structs.map((s) => s.id.client)));
+}
+
+function insertsOnlyFrom(update: Uint8Array, clients: ReadonlySet<number>): boolean {
+  const { structs } = Y.decodeUpdate(update);
+  return structs.length > 0 && structs.every((s) => clients.has(s.id.client));
 }
 
 function authorLabel(origin: ConcurrentUpdate["origin"]): string {
