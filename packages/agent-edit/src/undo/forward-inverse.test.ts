@@ -445,6 +445,22 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(xml(v)).toBe("");
     v.doc.destroy();
   });
+  it("a paragraph kept for the writer's typing keeps its id when the AI's insert is undone", () => {
+    const v = base(["Alpha."]);
+    const added = write(v, [
+      (v) => {
+        const p = paragraph("He waited.");
+        p.setAttribute("id", "q");
+        v.doc.getXmlFragment("prosemirror").insert(1, [p]);
+      },
+    ]);
+    write(v, [(v) => text(v, 1).insert(10, " STAY")]);
+    inverse(v, added, "invert");
+    expect(content(v)).toEqual(["Alpha.", " STAY"]);
+    expect(ps(v)[1].getAttribute("id")).toBe("q");
+    v.doc.destroy();
+  });
+
   it("lists, atoms, hard breaks, links, move and copy use new identities", () => {
     const v = base(["abc", "def"]);
     write(v, [

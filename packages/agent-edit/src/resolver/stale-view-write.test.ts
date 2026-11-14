@@ -1,7 +1,8 @@
 /**
  * Guards the invariant "Text converges" (`.context/invariants.md`): a write planned on a
- * stale view lands after someone deleted text it shares words with. A deleted letter comes
- * back only inside the model's own whole new text. The server plans a reply's write on the model's view
+ * stale view lands after someone deleted text it shares words with. A word the model changes
+ * is the unit it lands, so a find's replace of a sentence the writer cut lands only the
+ * changed words. The server plans a reply's write on the model's view
  * and merges the update into the current room, which is what this test does with two Yjs
  * docs. Every row runs with the model's client id below and above the writer's, since Yjs
  * orders concurrent inserts at one place by client id.
@@ -12,11 +13,10 @@
  * an unspaced clause stays cut when the model changes another word of it.
  *
  * Pins implementation decisions: the write never reads the room. A replace deletes only the
- * units the room still holds and inserts the model's whole new text after them, with no trim
- * of the edges the old and new text share (owner's decision, "the AI's whole word"), so a
- * word the writer deleted and the model's text repeats comes back with it, and odd merges
- * such as `He sighedthen he cried.` are accepted: the model is trusted to notice a mangled
- * merge in the echo (`write-architecture.md`).
+ * units the room still holds and writes the model's changed words (the same word diff as any
+ * write; a find only places it), so a word the writer deleted comes back only when the model's
+ * change writes it, and odd merges such as `He sighedthen he cried.` are accepted: the model is
+ * trusted to notice a mangled merge in the echo (`write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -104,11 +104,11 @@ it.each([
     `WRITER ${WHOLE}`,
   ],
   [
-    "the model's whole new text for a change to text the writer deleted",
+    "only the model's changed words for a change to text the writer deleted",
     TEXT,
     { command: "replace", find: "DRAFT-B line.", content: "DRAFT-B3 line." },
     deleteLine,
-    "A disciple.DRAFT-B3 line. SIDETEXT",
+    "A disciple.3 SIDETEXT",
   ],
   [
     "a find insert after a word the writer deleted",
@@ -118,7 +118,7 @@ it.each([
     "the, steadily moving train",
   ],
   [
-    "the model's whole polished sentence, which the writer had cut",
+    "only the model's changed words of a sentence the writer had cut",
     KEEP,
     {
       command: "replace",
@@ -126,7 +126,7 @@ it.each([
       content: "Keep this. Cut sentence there, polished. Keep end.",
     },
     deleteText("Cut sentence there. "),
-    "Keep this. Cut sentence there, polished. Keep end.",
+    "Keep this. , polishedKeep end.",
   ],
   [
     "the model's changed Chinese word, with a phrase the writer cut elsewhere in the clause",

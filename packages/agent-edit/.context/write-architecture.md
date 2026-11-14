@@ -42,19 +42,17 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   for an inline atom the model kept (an image, a line break), attribute sets
   addressed by its unit; and for a container whose children differ (a table that gains a row),
   `insert` and `delete` of nodes, the children paired by `correspond`. A unit is one UTF-16 code unit of text, or one inline atom. The
-  model's changes come from a find's window, otherwise from the word diff (`wordDiff`, the Yjs writer's own: it splits words with
+  model's changes come from the word diff (a find's windows place it: the diff runs inside each window, and an insert goes after its match) (`wordDiff`, the Yjs writer's own: it splits words with
   `Intl.Segmenter`, so an unspaced Chinese clause is several words, and the word the model
   changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
   formatting is not part of a token). A changed run that only gained characters (the old run is a subsequence of the new)
   writes just the insertions (`retainShared`), so the old characters keep their items and author; any other change writes the run whole. Every operation is made and Yjs merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
-  the model's read is no input to it. The owner chose "the AI's whole word" and to
-  trust the model to notice an odd merge in the write's echo and its listing of concurrent
-  edits (`He sighedthen he cried.`, `AlphaGamma.`). A word the writer deleted that the
-  model's new text repeats comes back inside it (`sighed softly` over a deleted `sighed`
-  lands `He sighed softly,`). A trim of the shared edges would keep the deleted word out,
-  but loses model letters (`Gamma` over a deleted `Beta` lands `Gamm`); it was tried and
-  removed. The apply step never reads the room either: the update deletes what the model's
+  the model's read is no input to it. The model is trusted to notice an odd merge in the write's echo and its listing of
+  concurrent edits (`He sighedthen he cried.`, `AlphaGamma.`). A replace lands the words the
+  model changed, as a find or a block write alike: `DRAFT-B line.` to `DRAFT-B3 line.` over a
+  line the writer deleted lands `3`. A word the writer deleted that the model's changed word
+  repeats comes back inside it. The apply step never reads the room either: the update deletes what the model's
   view held, including units the writer has since deleted, and Yjs merges it. The write's
   record is made when the write is journalled, where the journal takes `heldDeletes` of the room before the
   update applies and `captureEditParts` drops those items from the part's `deleted`
