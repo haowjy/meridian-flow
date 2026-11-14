@@ -15,6 +15,7 @@ const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   const paragraph = new Y.XmlElement("paragraph");
+  paragraph.setAttribute("id", "p");
   paragraph.insert(0, [new Y.XmlText(value)]);
   doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
   return doc;

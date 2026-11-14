@@ -117,6 +117,7 @@ describe("writer frames racing rewrites (postgres)", () => {
 
   const appendParagraph = (text: string) => (fragment: Y.XmlFragment) => {
     const paragraph = new Y.XmlElement("paragraph");
+    paragraph.setAttribute("id", `p-${text}`);
     const content = new Y.XmlText();
     content.insert(0, text);
     paragraph.insert(0, [content]);

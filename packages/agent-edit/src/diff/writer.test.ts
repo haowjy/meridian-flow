@@ -9,13 +9,14 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
-import { genScenario, Rng, resetWords, show, toPM } from "./merge.fixtures.js";
+import { genScenario, Rng, resetWords, show, tagged, toPM } from "./merge.fixtures.js";
 import { rebase } from "./merge.js";
 import { pmToY, writeBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
 const FRAG = "prosemirror";
-const para = (s: string) => schema.nodes.paragraph.create(null, s ? schema.text(s) : undefined);
+const para = (s: string) =>
+  schema.nodes.paragraph.create({ id: "t" }, s ? schema.text(s) : undefined);
 
 function seeded(blocks: readonly PMNode[]): Y.Doc {
   const doc = new Y.Doc();
@@ -90,8 +91,8 @@ describe("minimal Yjs writer", () => {
       resetWords();
       const sc = genScenario(new Rng(seed), {});
       const [B, L, D] = [toPM(schema, sc.base), toPM(schema, sc.live), toPM(schema, sc.draft)];
-      const { blocks } = rebase(schema, B, L, D);
-      const doc = seeded(D);
+      const blocks = tagged(rebase(schema, B, L, D).blocks);
+      const doc = seeded(tagged(D));
       doc.transact(() => writeBlocks(doc.getXmlFragment(FRAG), schema, blocks));
       if (!blocksEqual(readBlocks(doc.getXmlFragment(FRAG), schema), blocks))
         wrong.push(`seed ${seed}`);

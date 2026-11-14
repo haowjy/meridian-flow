@@ -75,6 +75,7 @@ describe("Yjs draft handshake route guard", () => {
   it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
     const live = new Y.Doc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
+    paragraph.setAttribute("id", "p");
     paragraph.insert(0, [new Y.XmlText("live advanced")]);
     live.getXmlFragment("prosemirror").insert(0, [paragraph]);
     const loadedRoom = new Y.Doc({ gc: false });
@@ -164,13 +165,13 @@ describe("Yjs draft handshake route guard", () => {
     await flushDraftLivePull.mock.results[0]?.value;
     await vi.waitFor(() => {
       expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe(
-        "<paragraph>live advanced</paragraph>",
+        '<paragraph id="p">live advanced</paragraph>',
       );
     });
     const persisted = new Y.Doc({ gc: false });
     Y.applyUpdate(persisted, await readDraftContent(store, "draft_1"));
     expect(persisted.getXmlFragment("prosemirror").toString()).toBe(
-      "<paragraph>live advanced</paragraph>",
+      '<paragraph id="p">live advanced</paragraph>',
     );
   });
 

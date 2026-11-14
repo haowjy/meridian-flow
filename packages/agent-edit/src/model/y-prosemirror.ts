@@ -1,4 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
+import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -149,7 +150,9 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
     id: getBlockItemId(element),
     hash: hashes[index],
     fullHash: fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(element))),
-    node: root.child(index),
+    // The model reads and writes Markdown, which has no ids, so its view of a block has none: a
+    // block it leaves alone compares equal to its own Markdown and keeps its element and id.
+    node: withoutBlockIds(root.child(index)),
   }));
 }
 
@@ -234,7 +237,8 @@ export function applyBlockDiff(
       `Cannot update ${element.nodeName} block with ${replacement.type.name} content`,
     );
   }
-  writePmBlock(doc, element, replacement);
+  // A block the model rewrites whole is a new block to the merge: it takes a fresh id.
+  writePmBlock(doc, element, withBlockIds(replacement));
 }
 
 function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
@@ -422,7 +426,10 @@ export function insertBlocks(
   if (afterElement !== null && index === 0) {
     throw new Error("Cannot insert after a block that is not in the document");
   }
-  const inserted = parsed.blocks.map((block) => pmNodeToYElement(block, createBindingMetadata()));
+  // The codec's blocks have no ids: this is where they become stored blocks.
+  const inserted = parsed.blocks.map((block) =>
+    pmNodeToYElement(withBlockIds(block), createBindingMetadata()),
+  );
   if (inserted.length > 0) fragment.insert(index, inserted);
   return inserted;
 }

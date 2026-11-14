@@ -6,6 +6,8 @@
  * depends on what precedes the token (a split turns " word" into "word"); alignment ignores it and
  * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
  */
+
+import { newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 
@@ -173,7 +175,7 @@ export function buildBlocks(
     blocks.push(type.create(shell.attrs, joinText(allowed), shell.marks));
     if (rejected.length) {
       normalized++;
-      blocks.push(schema.nodes.paragraph.create(null, joinText(rejected)));
+      blocks.push(schema.nodes.paragraph.create({ id: newBlockId() }, joinText(rejected)));
     }
   };
   for (const t of toks) {
@@ -186,7 +188,7 @@ export function buildBlocks(
     } else {
       if (!cur) {
         // Inline content with no textblock to hold it (after a whole block, or at the start).
-        cur = { shell: schema.nodes.paragraph.create(), inline: [] };
+        cur = { shell: schema.nodes.paragraph.create({ id: newBlockId() }), inline: [] };
         normalized++;
       }
       if (t.kind === "text") {
@@ -201,7 +203,8 @@ export function buildBlocks(
     }
   }
   flush();
-  if (!blocks.length && !opts.allowEmpty) blocks.push(schema.nodes.paragraph.create());
+  if (!blocks.length && !opts.allowEmpty)
+    blocks.push(schema.nodes.paragraph.create({ id: newBlockId() }));
   return { blocks, normalized };
 }
 

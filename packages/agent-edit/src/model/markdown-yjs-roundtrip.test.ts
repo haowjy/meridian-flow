@@ -1,5 +1,9 @@
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  withoutBlockIds,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
 import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
@@ -80,5 +84,5 @@ function prosemirrorJson(markdown: string): unknown {
 function prosemirrorReadbackJson(markdown: string): unknown {
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(doc, null, codec.parse(markdown));
-  return prosemirrorRootOf(doc, schema).toJSON();
+  return withoutBlockIds(prosemirrorRootOf(doc, schema)).toJSON();
 }

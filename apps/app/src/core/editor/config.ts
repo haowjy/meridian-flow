@@ -22,6 +22,7 @@ import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collab
 import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
+import { BlockIdExtension } from "./extensions/block-id";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
@@ -340,6 +341,7 @@ export function createStandaloneEditorExtensions({
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
+      BlockIdExtension,
       MeridianCodeBlockLowlight.configure({ lowlight }),
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
@@ -354,6 +356,7 @@ export function createStandaloneEditorExtensions({
     MeridianEm,
     MeridianCode,
     MeridianLink,
+    BlockIdExtension,
     NestingExtension,
     MeridianHardBreak,
     MeridianHorizontalRule,

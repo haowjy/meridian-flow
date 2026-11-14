@@ -164,7 +164,7 @@ export const d22ConcurrentUndo: Probe = {
         statuses.join(", "),
       );
       assert.deepEqual(kinds, ["write", "undo"]);
-      assert.equal(text, "<paragraph>Base</paragraph>");
+      assert.equal(text, '<paragraph id="p">Base</paragraph>');
     }
     {
       const seeded = await seedModelDraftWrite(harness, "two-undo-draft");
@@ -190,7 +190,7 @@ export const d22ConcurrentUndo: Probe = {
         statuses.join(", "),
       );
       assert.deepEqual(kinds, ["write", "undo"]);
-      assert.equal(draft.text, "<paragraph>Base</paragraph>");
+      assert.equal(draft.text, '<paragraph id="p">Base</paragraph>');
     }
   },
 };

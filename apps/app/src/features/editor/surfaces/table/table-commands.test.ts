@@ -9,6 +9,7 @@
  * - table row and column movement semantics
  */
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
@@ -176,7 +177,8 @@ function expectWireFixpoint(current: Editor) {
     schema: current.schema,
     components: {},
   });
-  const blocks = [...current.state.doc.content.content];
+  // Markdown carries no ids.
+  const blocks = [...current.state.doc.content.content].map(withoutBlockIds);
   const reparsed = codec.parse(codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).blocks;
   expect(reparsed.map((block) => block.toJSON())).toEqual(blocks.map((block) => block.toJSON()));
 }
