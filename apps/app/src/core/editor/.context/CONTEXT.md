@@ -263,7 +263,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   only way to reach that spot. `pressSelection` stays pure; the write is in
   `pressOnInertTarget`, so one undo removes the line. A document already ending
   on an empty paragraph gets the caret there, and a press in a cell never makes
-  one. A press that lands
+  one. Ctrl/Cmd+Home and End go to the same gap cursor when a table or other
+  object starts or ends the document (`documentEdgeTransaction`); the browser's
+  own keys would put the caret inside the cell. A press that lands
   where the caret already stands is left to the browser, which knows the line
   the caret is on. A press in a cell stays in that cell.
 - **A selection drag** (`landing/selection-drag.ts`) is the one press on text
