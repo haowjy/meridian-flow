@@ -619,7 +619,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await liveRow(folder)).toBeUndefined();
         expect(await liveRow(chapter)).toBeUndefined();
         expect(await branchRow(chapter)).toMatchObject({ existsOnlyInDraft: true });
-        expect(await pendingCount()).toBe(1);
+        // The folder and the document under it: the count is changed documents plus folders.
+        expect(await pendingCount()).toBe(2);
       });
 
       it("refuses Un-Apply once anything else was admitted to the list", async () => {

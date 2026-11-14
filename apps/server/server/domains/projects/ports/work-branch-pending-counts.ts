@@ -4,7 +4,7 @@
  * aggregate per call.
  */
 
-/** An active branch of a named owner and its pending documents (zero when none). */
+/** An active branch of a named owner and its pending documents and folders (zero when none). */
 export type BranchPendingCount = {
   branchId: string;
   projectId: string;

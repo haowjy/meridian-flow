@@ -6,7 +6,9 @@
  */
 import { t } from "@lingui/core/macro";
 import {
+  branchRows,
   isSourceRoot,
+  projectedRows,
   type SkipReason,
   type TreeProjection,
   type TreeRecord,
@@ -36,6 +38,33 @@ export type ChangeGroup<T> = {
   } | null;
   files: T[];
 };
+
+/** A Work's tree changes: its view, its pending records, what cannot land, and the folders it changes. */
+export type WorkTreeChanges = {
+  work: TreeProjection;
+  pending: readonly TreeRecord[];
+  faults: ReadonlyMap<string, LandingFault>;
+  /**
+   * The folders the Work shows differently from live, as the server's rows do. A folder made and
+   * deleted in the Work, or moved and moved back, is no change: Undo of a drafted change leaves
+   * its records and no difference.
+   */
+  folders: ReadonlySet<string>;
+};
+
+export function workTreeChanges(
+  live: TreeProjection,
+  work: TreeProjection,
+  pending: readonly TreeRecord[],
+): WorkTreeChanges {
+  const differing = branchRows(projectedRows(live), projectedRows(work));
+  const folders = new Set<string>();
+  for (const record of pending) {
+    const row = differing.get(record.node);
+    if (row?.kind === "folder" && !(row.existsOnlyInDraft && row.deleted)) folders.add(record.node);
+  }
+  return { work, pending, faults: landingFaults(work, pending), folders };
+}
 
 const GONE: ReadonlySet<SkipReason> = new Set([
   "missing-node",
@@ -95,15 +124,11 @@ function folderChange(work: TreeProjection, records: readonly TreeRecord[]): Fol
  */
 export function groupByChangedFolder<T extends { documentId: string }>(
   files: readonly T[],
-  work: TreeProjection,
-  pending: readonly TreeRecord[],
-  faults: ReadonlyMap<string, LandingFault>,
+  { work, pending, faults, folders }: WorkTreeChanges,
 ): ChangeGroup<T>[] {
   const byFolder = new Map<string, TreeRecord[]>();
   for (const record of pending) {
-    const node = work.nodes.get(record.node);
-    const kind = node?.kind ?? (record.type === "create" ? record.kind : undefined);
-    if (kind !== "folder") continue;
+    if (!folders.has(record.node)) continue;
     byFolder.set(record.node, [...(byFolder.get(record.node) ?? []), record]);
   }
   const outermost = (documentId: string): string | null => {

@@ -93,7 +93,7 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
     async close(branchId, at) {
       await tx()
         .update(branches)
-        .set({ status: "closed", closedAt: at, pendingDocumentCount: 0 })
+        .set({ status: "closed", closedAt: at, pendingChangeCount: 0 })
         .where(and(eq(branches.id, branchId), eq(branches.status, "active")));
     },
     async byIds(branchIds) {

@@ -190,7 +190,7 @@ function PickRow({
 
 /** Only state that asks for action: documents to review and chats waiting on the writer. */
 function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
-  const toReview = work.pendingDocumentCount;
+  const toReview = work.pendingChangeCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
     <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">

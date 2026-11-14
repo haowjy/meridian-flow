@@ -10,7 +10,7 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
-import { branchRows, LIVE, pendingRecords, projectedRows } from "@meridian/project-tree";
+import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -21,6 +21,7 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
+import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
 import { workDisplayName } from "@/lib/work-name";
 import { useAccountId } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
@@ -36,8 +37,12 @@ export type ShellTreeVersion = {
   ownerKey: string;
   /** The Work's name, for the words on a page; null for a chat's own drafts. */
   name: string | null;
-  /** The documents and folders the Work changes: marked in the tree on Live. */
+  /** The documents and folders the Work changes: marked in the tree on Live. Never a count. */
   changed: ReadonlySet<string>;
+  /** What the Work's review count says: its changed documents and folders, the Changes list's items. */
+  changeCount: number;
+  /** The Work's tree changes, when its list is open; null with no branch. */
+  tree: WorkTreeChanges | null;
   /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
   flip: () => void;
@@ -113,27 +118,26 @@ export function TreeVersionProvider({
     rows,
     work ? workLifecycleState(work) : "active",
   );
-  // A change to a folder alone lists no document, so the lists say what else the Work changes:
-  // the nodes its view shows differently from live, as the server's rows do. A change and its
-  // Undo leave records and no difference, so they count for nothing.
-  const changed = useMemo(() => {
-    const nodes = new Set(rows?.map((row) => row.documentId));
-    if (branchId === null || !draftVersion) return nodes;
-    for (const list of [project, account]) {
-      const { session, snapshot } = list;
-      if (!session || !snapshot) continue;
-      const differing = branchRows(
-        projectedRows(session.replay(LIVE)),
-        projectedRows(session.replay(draftVersion.view, draftVersion.pendingText)),
-      );
-      for (const record of pendingRecords(snapshot.doc, branchId)) {
-        const row = differing.get(record.node);
-        if (row && !(row.existsOnlyInDraft && row.deleted)) nodes.add(record.node);
-      }
-    }
-    return nodes;
-  }, [branchId, rows, draftVersion, project, account]);
-  const offered = branchId !== null && changed.size > 0;
+  // The Work's tree changes, from the browser's replay of its view: what the Changes list builds
+  // its folder groups from, including a change not yet admitted (made offline or in flight).
+  const { session, snapshot } = project;
+  const tree = useMemo(() => {
+    const draft = draftVersion?.view.draft ?? null;
+    if (!draftVersion || draft === null || !session || !snapshot) return null;
+    return workTreeChanges(
+      session.replay(LIVE),
+      session.replay(draftVersion.view, draftVersion.pendingText),
+      pendingRecords(snapshot.doc, draft),
+    );
+  }, [draftVersion, session, snapshot]);
+  // Documents from the server's pending drafts, folders from the replay.
+  const changeCount = (rows?.length ?? 0) + (tree?.folders.size ?? 0);
+  // The nodes the tree marks on Live.
+  const changed = useMemo(
+    () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
+    [rows, tree],
+  );
+  const offered = branchId !== null && changeCount > 0;
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
@@ -155,11 +159,26 @@ export function TreeVersionProvider({
       ownerKey,
       name,
       changed,
+      changeCount,
+      tree,
       draftOf: fileForDocument,
       flip,
       show,
     }),
-    [version, draftVersion, showing, offered, ownerKey, name, changed, fileForDocument, flip, show],
+    [
+      version,
+      draftVersion,
+      showing,
+      offered,
+      ownerKey,
+      name,
+      changed,
+      changeCount,
+      tree,
+      fileForDocument,
+      flip,
+      show,
+    ],
   );
   return (
     <ShellTreeVersionContext.Provider value={state}>

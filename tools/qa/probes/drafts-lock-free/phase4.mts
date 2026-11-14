@@ -430,10 +430,10 @@ export async function within<T>(
 
 /** The Work's badge as a Works snapshot serves it: its stored pending count and revision. */
 export async function workBadge(harness: Harness, workId: string) {
-  const [row] = await harness.raw<{ pending_document_count: number; entity_revision: string }[]>`
-    select pending_document_count, entity_revision from works where id = ${workId}`;
+  const [row] = await harness.raw<{ pending_change_count: number; entity_revision: string }[]>`
+    select pending_change_count, entity_revision from works where id = ${workId}`;
   return {
-    pending: Number(row?.pending_document_count),
+    pending: Number(row?.pending_change_count),
     entityRevision: Number(row?.entity_revision),
   };
 }

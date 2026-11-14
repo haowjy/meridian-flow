@@ -83,19 +83,19 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }).drafts?.length;
   const { works } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
-  // The shell reads the Work's list and its tree: every document and folder it changes, each
-  // once, as the rows show them. The Work's own count, from the Works list, counts documents.
+  // The shell's count is the Changes list's: the Work's changed documents and folders, from its
+  // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
-  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changed.size : null;
+  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changeCount : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
-    const count = changed ?? (picked ? picked.pendingDocumentCount : (lineageCount ?? 0));
+    const count = changed ?? (picked ? picked.pendingChangeCount : (lineageCount ?? 0));
     const others = (works ?? [])
       .filter((other) => other.id !== work?.id && !isWorkArchived(other))
-      .filter((other) => other.pendingDocumentCount > 0)
+      .filter((other) => other.pendingChangeCount > 0)
       .sort((a, b) => Number(b.id === chatWorkId) - Number(a.id === chatWorkId));
     const other = count === 0 ? others[0] : undefined;
-    const elsewhere = other ? { work: other, count: other.pendingDocumentCount } : null;
+    const elsewhere = other ? { work: other, count: other.pendingChangeCount } : null;
     // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
@@ -197,7 +197,7 @@ export function ChangesSource({
       return next;
     });
   const groups = tree
-    ? groupByChangedFolder(listedFiles, tree.work, tree.pending, tree.faults)
+    ? groupByChangedFolder(listedFiles, tree)
     : [{ folder: null, files: listedFiles }];
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap((group) => group.files);
@@ -625,32 +625,27 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
   return [source, ...folders].filter(Boolean).join("/");
 }
 
-/** The Work's view, its pending records and what cannot land, read from the list. */
+/** The Work's tree changes (the shell's) and a node's entry in the Work's view. */
 function useWorkTree(projectId: string, ownerKey: string) {
   const shell = useShellTreeVersion();
   const version = shell?.ownerKey === ownerKey ? shell.draftVersion : null;
-  const { session, snapshot } = useTreeList({ kind: "project", projectId });
   const schemes = useMemo(() => [...EDITOR_CONTEXT_SCHEMES], []);
   const trees = useProjectTreeViews(projectId, schemes, {
     enabled: version !== null,
     ...(version ? { version } : {}),
   });
-  const docVersion = snapshot?.version;
-  return useMemo(() => {
-    if (!version || !session || !snapshot || version.view.draft === null) return null;
-    const work = session.replay(version.view, version.pendingText);
-    const pending = pendingRecords(snapshot.doc, version.view.draft);
-    return {
-      work,
-      pending,
-      faults: landingFaults(work, pending),
-      entry: (id: string) =>
-        Object.values(trees)
-          .flatMap(({ tree }) => tree?.entry(id) ?? [])
-          .at(0) ?? null,
-    };
-    // `version` of the copy is what changes the replay.
-  }, [version, session, snapshot, docVersion, trees]);
+  const changes = version && shell?.ownerKey === ownerKey ? shell.tree : null;
+  return useMemo(
+    () =>
+      changes && {
+        ...changes,
+        entry: (id: string) =>
+          Object.values(trees)
+            .flatMap(({ tree }) => tree?.entry(id) ?? [])
+            .at(0) ?? null,
+      },
+    [changes, trees],
+  );
 }
 
 /**

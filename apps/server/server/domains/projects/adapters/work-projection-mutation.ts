@@ -208,14 +208,14 @@ export function createWorkProjectionMutation(input: {
         (
           await tx
             .update(branches)
-            .set({ pendingDocumentCount: counts })
+            .set({ pendingChangeCount: counts })
             .where(
               and(
                 inArray(
                   branches.id,
                   branchCounts.map(({ branchId }) => branchId),
                 ),
-                ne(branches.pendingDocumentCount, counts),
+                ne(branches.pendingChangeCount, counts),
               ),
             )
             .returning({ id: branches.id })
@@ -241,8 +241,8 @@ export function createWorkProjectionMutation(input: {
       )} end)`;
       const movedWorks = await tx
         .update(works)
-        .set({ pendingDocumentCount: count, entityRevision: sql`${works.entityRevision} + 1` })
-        .where(and(inArray(works.id, workIds), ne(works.pendingDocumentCount, count)))
+        .set({ pendingChangeCount: count, entityRevision: sql`${works.entityRevision} + 1` })
+        .where(and(inArray(works.id, workIds), ne(works.pendingChangeCount, count)))
         .returning({ id: works.id, projectId: works.projectId });
       for (const work of movedWorks)
         wake(work.projectId, draftOwnerKey({ kind: "work", workId: work.id }));

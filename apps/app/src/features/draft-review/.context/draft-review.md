@@ -185,7 +185,7 @@ the surface it was made on (Changes list, a chat's strip, a document's band) and
 there; a band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
-removed-documents notice). Only the document's name shortens in a notice (a sentence with no name shortens whole, its full text in the title); its verb and Undo
+removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
 always show. Focus stays on the surface where the writer pressed: each surface (review line,
 phone review header, Changes list, strip) wraps its notice and controls in one
 `useFocusSuccession` container, so a Discard's focus goes to the notice's Undo and an Undo's to

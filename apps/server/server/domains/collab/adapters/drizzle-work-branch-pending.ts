@@ -5,14 +5,14 @@ import { branches, documentDrafts, threads, works } from "@meridian/database/sch
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { pendingDocuments } from "../../context/tree/pending-documents.js";
+import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
 import { createDraftDispositionReader } from "../domain/draft-disposition.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
  * What is pending in a Work is the one reviewable-pending predicate
- * (`context/tree/pending-documents.ts`), the review list's too: the Work count and the document hint both
+ * (`context/tree/pending-documents.ts`), the review list's too: the Work count (with the folders it changes) and the document hint both
  * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
@@ -31,7 +31,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       ].filter((clause) => clause !== null);
       const active = sql`SELECT b.id FROM branches b WHERE b.status = 'active'
         AND (${sql.join(owned, sql` OR `)})`;
-      // One row per active branch and document, whichever arm made it pending.
+      // One row per active branch and changed document or folder, whichever arm made it pending.
       const rows = await currentDrizzleDb(db).execute<{
         branch_id: string;
         project_id: string;
@@ -44,8 +44,12 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
                coalesce(c.count, 0)::int AS count
         FROM branches b
         LEFT JOIN (
-          SELECT p.branch_id, count(DISTINCT p.document_id) AS count
-          FROM (${pendingDocuments(active)}) p GROUP BY p.branch_id
+          SELECT p.branch_id, count(DISTINCT p.id) AS count
+          FROM (
+            SELECT branch_id, document_id AS id FROM (${pendingDocuments(active)}) d
+            UNION ALL
+            SELECT branch_id, folder_id AS id FROM (${pendingFolders(active)}) f
+          ) p GROUP BY p.branch_id
         ) c ON c.branch_id = b.id
         WHERE b.id IN (${active})`);
       return rows.map((row) => ({
@@ -58,7 +62,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     },
     async countPendingInProject(projectId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ count: sql<number>`coalesce(sum(${branches.pendingDocumentCount}), 0)::int` })
+        .select({ count: sql<number>`coalesce(sum(${branches.pendingChangeCount}), 0)::int` })
         .from(branches)
         .where(and(eq(branches.projectId, projectId), eq(branches.status, "active")));
       return row?.count ?? 0;

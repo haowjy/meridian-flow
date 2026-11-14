@@ -14,9 +14,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * The line a command leaves where it happened: what was done, the way to take it back, and
- * Dismiss ("Deleted Chapter 3 · Undo · ×"). The line never grows: the sentence keeps to one line
- * (a name shortens first, then the sentence) with its full text in the title, and a long action
- * label shortens too. An Undo that failed takes the line's place as
+ * Dismiss ("Deleted Chapter 3 · Undo · ×"). A sentence with a name keeps to one line, the name
+ * shortening; one without wraps. An Undo that failed takes the line's place as
  * `InlineErrorRow`, so its message names what failed. The caller owns when it shows, what Undo
  * does and where focus first goes; the caller places the line in its host (`className`).
  */
@@ -37,8 +36,6 @@ export function ActionNotice({
     onClick: () => void;
     pending?: boolean;
     ref?: Ref<HTMLButtonElement>;
-    /** The label in full, for when it shortens. */
-    title?: string;
   };
   onDismiss: () => void;
   failure?: Pick<ComponentProps<typeof InlineErrorRow>, "message" | "onRetry" | "onDismiss"> | null;
@@ -97,8 +94,7 @@ export function ActionNotice({
             <button
               ref={action.ref}
               type="button"
-              title={action.title}
-              className="text-button min-w-0 max-w-[40%] shrink-0 truncate text-xs coarse:min-h-11 coarse:min-w-11"
+              className="text-button shrink-0 text-xs coarse:min-h-11 coarse:min-w-11"
               disabled={action.pending}
               onClick={action.onClick}
             >
@@ -127,12 +123,8 @@ function Sentence({
 }) {
   const text = typeof sentence === "string" ? sentence : sentence(name ?? "");
   const parts = typeof sentence === "string" || !name ? null : sentence(NAME_SLOT).split(NAME_SLOT);
-  if (parts?.length !== 2)
-    return (
-      <span className="min-w-0 flex-1 truncate" title={text}>
-        {text}
-      </span>
-    );
+  // With no name to shorten, the sentence wraps: what it says is never only in a hover title.
+  if (parts?.length !== 2) return <span className="min-w-0 flex-1 text-pretty">{text}</span>;
   return (
     <span className="flex min-w-0 flex-1 whitespace-pre" title={text}>
       <span className="shrink-0">{parts[0]}</span>

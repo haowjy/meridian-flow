@@ -470,7 +470,8 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
  * Brings the rows to the list's replay: `added` are the records this transaction admitted, whose
  * documents get their `documents` rows. Call under the list's lock, after the update is
  * journaled, so the rows are never behind the list. The views replayed are live and every open
- * Work with pending tree records or pending text. Returns the creates that made a document row.
+ * Work with pending tree records or pending text. Returns the creates that made a document row,
+ * and the Works' branches whose rows changed (their review count may have moved).
  */
 export async function syncRows(
   db: DrizzleDb,
@@ -478,7 +479,7 @@ export async function syncRows(
   listId: string,
   doc: Y.Doc,
   added: readonly TreeRecord[],
-): Promise<CreateRecord[]> {
+): Promise<{ created: CreateRecord[]; changedBranches: string[] }> {
   const tx = currentDrizzleDb(db as Database);
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
@@ -507,16 +508,18 @@ export async function syncRows(
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
-  for (const branchId of new Set([...prev.keys(), ...next.keys()]))
-    changed.push(
-      ...(await writeBranch(
-        tx,
-        listId,
-        branchId,
-        prev.get(branchId) ?? new Map(),
-        next.get(branchId) ?? new Map(),
-      )),
+  const changedBranches: string[] = [];
+  for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
+    const written = await writeBranch(
+      tx,
+      listId,
+      branchId,
+      prev.get(branchId) ?? new Map(),
+      next.get(branchId) ?? new Map(),
     );
+    if (written.length > 0) changedBranches.push(branchId);
+    changed.push(...written);
+  }
   await markUnviewed(tx, changed);
-  return created;
+  return { created, changedBranches };
 }

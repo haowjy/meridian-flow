@@ -36,8 +36,8 @@ been released after the retention window; placement and the removal record remai
 A `branches` row is one owner's pending file tree. Its active owner is either
 a Work (`origin_work_id`) or a conversation lineage (`origin_root_thread_id`,
 no foreign key), enforced by `branches_one_owner`.
-`branches.pending_document_count` is its own count;
-`works.pending_document_count` sums its active branches.
+`branches.pending_change_count` is its own count;
+`works.pending_change_count` sums its active branches.
 `document_drafts` stores document versions, with writes in
 `draft_write_journal`; `branch_tree_changes` belongs to the whole branch. `document_commands` holds one row
 per command sent as a request (Apply, Un-Apply, Discard), inserted first in the effect
