@@ -45,7 +45,7 @@ import {
 } from "./tokens.js";
 
 export interface Conflict {
-  kind: "overlap" | "moved-text" | "move";
+  kind: "overlap" | "moved-text" | "move" | "attributes";
   baseIds: number[]; // original base block indices the conflict covers
   base: Tok[];
   live: Tok[];
@@ -315,6 +315,54 @@ function unifyAdded(
   return out ?? draft;
 }
 
+/**
+ * `block-attributes-merged`: a block both sides kept (paired by id, of one type) takes each
+ * attribute from the side that changed it, and the draft's where both changed it to different
+ * values (one clash for the block). The three versions then carry the same attributes, so the
+ * token merge sees none changed and an edit or an insertion beside the block merges as if no
+ * attribute had changed. A block one side removed is left to the token merge.
+ */
+function mergeAttributes(
+  base: readonly PMNode[],
+  live: readonly PMNode[],
+  draft: readonly PMNode[],
+  inLive: Correspondence,
+  inDraft: Correspondence,
+): { sides: [PMNode[], PMNode[], PMNode[]]; clashes: Conflict[] } {
+  const sides: [PMNode[], PMNode[], PMNode[]] = [[...base], [...live], [...draft]];
+  const clashes: Conflict[] = [];
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  base.forEach((b, i) => {
+    const [l, d] = [live[inLive.partner[i]], draft[inDraft.partner[i]]];
+    if (!l || !d || l.type !== b.type || d.type !== b.type) return;
+    const attrs: Record<string, unknown> = {};
+    let clash = false;
+    for (const key of Object.keys(b.attrs)) {
+      if (key === "id") continue;
+      const [was, byLive, byDraft] = [b.attrs[key], l.attrs[key], d.attrs[key]];
+      const liveChanged = !same(was, byLive);
+      const draftChanged = !same(was, byDraft);
+      clash ||= liveChanged && draftChanged && !same(byLive, byDraft);
+      attrs[key] = draftChanged ? byDraft : byLive;
+    }
+    const at = [i, inLive.partner[i], inDraft.partner[i]];
+    [b, l, d].forEach((node, k) => {
+      const merged = { ...node.attrs, ...attrs };
+      if (!same(merged, node.attrs))
+        sides[k][at[k]] = node.type.create(merged, node.content, node.marks);
+    });
+    if (clash)
+      clashes.push({
+        kind: "attributes",
+        baseIds: [i],
+        base: tokenizeBlock(b).slice(0, 1),
+        live: tokenizeBlock(l).slice(0, 1),
+        draft: tokenizeBlock(d).slice(0, 1),
+      });
+  });
+  return { sides, clashes };
+}
+
 export function rebase(
   schema: Schema,
   base: readonly PMNode[],
@@ -330,6 +378,8 @@ export function rebase(
     live = stretches.live;
     inLive = stretches.inLive;
   }
+  const attributes = mergeAttributes(base, live, draft, inLive, inDraft);
+  [base, live, draft] = attributes.sides;
   let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
   let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
 
@@ -382,13 +432,16 @@ export function rebase(
         else overrode++;
       }
   };
-  const conflicts: Conflict[] = order.contested.map((i) => ({
-    kind: "move" as const,
-    baseIds: [i],
-    base: tokenizeBlock(base[i]),
-    live: [],
-    draft: [],
-  }));
+  const conflicts: Conflict[] = [
+    ...attributes.clashes,
+    ...order.contested.map((i) => ({
+      kind: "move" as const,
+      baseIds: [i],
+      base: tokenizeBlock(base[i]),
+      live: [],
+      draft: [],
+    })),
+  ];
   // A stretch where the pairing could not be trusted keeps the draft's blocks: one clash each.
   for (const st of stretches?.stretches ?? []) {
     const [l, d] = [st.live, st.draft].map((bs) => bs.flatMap((b) => tokenizeBlock(b)));

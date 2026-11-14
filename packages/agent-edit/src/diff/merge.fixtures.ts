@@ -10,19 +10,6 @@ import { correspond } from "./correspond.js";
 import type { Conflict } from "./merge.js";
 import type { Tok } from "./tokens.js";
 
-/** The blocks with one shared id on each block that carries one, for tests that need ids but not pairing. */
-export function tagged(blocks: readonly PMNode[]): PMNode[] {
-  const tag = (node: PMNode): PMNode => {
-    const children: PMNode[] = [];
-    node.forEach((child) => {
-      children.push(tag(child));
-    });
-    const attrs = node.type.spec.attrs?.id ? { ...node.attrs, id: "t" } : node.attrs;
-    return node.isText ? node : node.type.create(attrs, children, node.marks);
-  };
-  return blocks.map(tag);
-}
-
 /** `text#id` is a unit with the id `id`; no suffix, no id. */
 const withId = (text: string): [string, { id: string } | null] => {
   const m = /^(.*)#(\w+)$/s.exec(text);
@@ -39,9 +26,14 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
     const i = part.indexOf(":");
     const head = i < 0 ? part.trim() : part.slice(0, i).trim();
     const text = i < 0 ? "" : part.slice(i + 1);
-    const [kind, own] = head.includes("#")
-      ? [head.slice(0, head.indexOf("#")), { id: head.slice(head.indexOf("#") + 1) }]
-      : [head, null];
+    // `p#a{path=--,marker=done}:text` sets the id and block attributes.
+    const [, bare, braces] = /^(.*?)(?:\{([^}]*)\})?$/s.exec(head) ?? [];
+    const attrs = Object.fromEntries(
+      (braces?.split(",") ?? []).filter(Boolean).map((kv) => kv.split("=") as [string, string]),
+    );
+    const [kind, own] = bare.includes("#")
+      ? [bare.slice(0, bare.indexOf("#")), { id: bare.slice(bare.indexOf("#") + 1), ...attrs }]
+      : [bare, braces ? attrs : null];
     const para = (t: string, extra?: object) => {
       const [body, id] = withId(t);
       return schema.nodes.paragraph.create({ ...id, ...extra }, inline(schema, body));
@@ -207,7 +199,11 @@ function renderBlock(b: PMNode): string {
       : b.attrs.align === "center"
         ? "pc"
         : "p";
-  return `${kind}:${t}`;
+  const nesting = ["path", "marker"].filter((key) => b.attrs[key] != null);
+  const braces = nesting.length
+    ? `{${nesting.map((key) => `${key}=${b.attrs[key]}`).join(",")}}`
+    : "";
+  return `${kind}${braces}:${t}`;
 }
 
 export class Rng {
@@ -1954,5 +1950,60 @@ export const CASES: Case[] = [
     draft: "quote:a;c d;b",
     merged: "quote:a;;c d;b",
     conflicts: 0,
+  },
+  // block-attributes-merged: each attribute from the side that changed it (flat-model/design.md section 5)
+  {
+    row: "live indents an item, the draft checks it",
+    name: "attrs-different-attributes",
+    base: "p#a{path=-,marker=item}:one two | p#b:three",
+    live: "p#a{path=--,marker=item}:one two | p#b:three",
+    draft: "p#a{path=-,marker=done}:one two | p#b:three",
+    merged: "p{path=--,marker=done}:one two | p:three",
+    conflicts: 0,
+  },
+  {
+    row: "both sides change the same attribute to different values",
+    name: "attrs-same-attribute-clash",
+    base: "p#a{path=-,marker=item}:one two",
+    live: "p#a{path=--,marker=item}:one two",
+    draft: "p#a{path=---,marker=item}:one two",
+    merged: "p{path=---,marker=item}:one two",
+    conflicts: 1,
+  },
+  {
+    row: "both sides change the same attribute to the same value",
+    name: "attrs-same-attribute-agree",
+    base: "p#a{path=-,marker=item}:one two",
+    live: "p#a{path=-,marker=done}:one two",
+    draft: "p#a{path=-,marker=done}:one two",
+    merged: "p{path=-,marker=done}:one two",
+    conflicts: 0,
+  },
+  {
+    row: "live changes an attribute, the draft edits the text and another attribute",
+    name: "attrs-against-text-edit",
+    base: "p#a{path=-,marker=item}:one two three",
+    live: "p#a{path=--,marker=item}:one two three",
+    draft: "p#a{path=-,marker=done}:one two THREE",
+    merged: "p{path=--,marker=done}:one two THREE",
+    conflicts: 0,
+  },
+  {
+    row: "live changes an attribute and inserts a block before it, the draft changes another attribute",
+    name: "attrs-beside-inserted-block",
+    base: "p#a{path=-,marker=item}:one two | p#b:three",
+    live: "p#x:fresh | p#a{path=--,marker=item}:one two | p#b:three",
+    draft: "p#a{path=-,marker=done}:one two | p#b:three",
+    merged: "p:fresh | p{path=--,marker=done}:one two | p:three",
+    conflicts: 0,
+  },
+  {
+    row: "live changes an attribute of a block the draft removed",
+    name: "attrs-against-removal",
+    base: "p#a{path=-,marker=item}:one two | p#b:three",
+    live: "p#a{path=--,marker=item}:one two | p#b:three",
+    draft: "p#b:three",
+    merged: "p:three",
+    conflicts: 1,
   },
 ];
