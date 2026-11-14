@@ -41,7 +41,8 @@ async function launchAgentsSource(): Promise<AgentSourceSnapshot> {
 async function criticTools() {
   const agentRevisions = createInMemoryAgentRevisionStore({ threadExists: async () => true });
   const installed = await agentRevisions.installSource(await launchAgentsSource());
-  const critic = installed.definitions.find((definition) => definition.slug === "critic");
+  const criticRow = installed.definitions.find((definition) => definition.slug === "critic");
+  const critic = criticRow && (await agentRevisions.readRevision(criticRow.id));
   if (!critic) throw new Error("Critic definition missing");
   const configuration = await resolveAgentConfiguration({
     revision: critic,

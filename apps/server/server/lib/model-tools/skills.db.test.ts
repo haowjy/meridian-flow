@@ -96,15 +96,17 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         ownerUserId: null,
         coordinate: "meridian-launch-agents",
         currentRevisionId: launch.packageRevisionId,
-        upstreamRevisionId: launch.packageRevisionId,
-        origin: null,
       });
-      const general = (
+      const generalRow = (
         await agentRevisions.installSource({
           coordinate: "meridian/general",
-          files: { "agents/general.md": "---\nname: General\nmodel: fixture-model\n---\n\n" },
+          files: {
+            "mars.toml": '[package]\nname = "general"\nversion = "0.1.0"\nschema = 1\n',
+            "agents/general.md": "---\nname: General\nmodel: fixture-model\n---\n\n",
+          },
         })
       ).definitions[0];
+      const general = generalRow && (await agentRevisions.readRevision(generalRow.id));
       if (!general) throw new Error("General definition missing");
       const configuration = await resolveAgentConfiguration({
         revision: general,

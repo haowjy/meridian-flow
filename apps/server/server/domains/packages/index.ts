@@ -1,4 +1,4 @@
-// Public package parsing, compilation, catalog, and persistence surface.
+// Public package reading, compilation, catalog, and persistence surface.
 
 export { createDrizzleAccountSkillInstallStore } from "./adapters/drizzle-account-skill-install-store.js";
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
@@ -20,18 +20,6 @@ export {
   retainedPackageSkillMaps,
 } from "./domain/agent-configuration.js";
 export {
-  type AgentCompilationDiagnostic,
-  type AgentCompilationResult,
-  type CompiledAgentDefinition,
-  compileAgentDefinition,
-  type NormalizedAgentMetadata,
-} from "./domain/agent-definition-compiler.js";
-export {
-  AgentSourceError,
-  type AgentSourceSnapshot,
-  prepareAgentSourceRevision,
-} from "./domain/agent-source-revision.js";
-export {
   AgentPublicationConflictError,
   type AgentSelection,
   AgentSelectionError,
@@ -40,34 +28,28 @@ export {
   createBoundAgentCatalog,
 } from "./domain/bound-agent-catalog.js";
 export {
+  AgentSourceError,
+  type AgentSourceSnapshot,
+  type CompiledAgent,
+  type CompiledAgentDefinition,
+  type CompiledPackage,
+  compilePackage,
+  type NormalizedAgentMetadata,
+  type PackageDiagnostic,
+} from "./domain/compile-package.js";
+export {
   seedGeneralAgent,
   seedLaunchAgentPackage,
 } from "./domain/default-package-seeding.js";
-export {
-  canonicalizeJsonObject,
-  parseMarkdownDefinition,
-  parseMarsToml,
-  serializeMarkdownDefinition,
-} from "./domain/mars-source.js";
+export { GRAMMAR_VERSION } from "./domain/mars.js";
 export {
   exportMarsPackage,
   PackageInstallationNotFoundError,
 } from "./domain/package-export.js";
 export { buildMarsPackageZip } from "./domain/package-zip.js";
-export {
-  bufferToSkillFileEntry,
-  readSkillFileFromDisk,
-  skillFileEntryToBuffer,
-} from "./domain/skill-files.js";
 export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
-export type {
-  AgentConfigOverlay,
-  ExportedMarsDirectory,
-  JsonObject,
-  MarsPackageMetadata,
-  PackageVisibility,
-  ParsedMarsToml,
-} from "./domain/types.js";
+export { recompileStalePackages } from "./domain/source-publication.js";
+export type { ExportedMarsDirectory, SkillFiles } from "./domain/types.js";
 export {
   type AccountSkillInstall,
   AccountSkillInstallConflictError,
@@ -79,4 +61,5 @@ export type {
   AgentRevision,
   AgentRevisionBinding,
   AgentRevisionStore,
+  CatalogRevision,
 } from "./ports/agent-revision-store.js";

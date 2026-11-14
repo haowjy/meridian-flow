@@ -1,7 +1,7 @@
 /** Atomic source publication: management provenance and future-chat pointers share one owner. */
 import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
-import { resolveAgentDependencies } from "./agent-configuration.js";
-import type { AgentSourceSnapshot } from "./agent-source-revision.js";
+import type { AgentSourceSnapshot } from "./compile-package.js";
+import { agentSlugOf, GRAMMAR_VERSION, skillSlugOf } from "./mars.js";
 
 export class AgentPublicationConflictError extends Error {}
 
@@ -11,10 +11,10 @@ function sourceEntities(
 ): Array<{ kind: "agent" | "skill"; slug: string }> {
   const entities: Array<{ kind: "agent" | "skill"; slug: string }> = [];
   for (const name of Object.keys(source.files).sort()) {
-    const agent = /^agents\/([^/]+)\.md$/.exec(name);
-    if (agent) entities.push({ kind: "agent", slug: agent[1] });
-    const skill = /^skills\/([^/]+)\/SKILL\.md$/.exec(name);
-    if (skill) entities.push({ kind: "skill", slug: skill[1] });
+    const agent = agentSlugOf(name);
+    if (agent !== undefined) entities.push({ kind: "agent", slug: agent });
+    const skill = skillSlugOf(name);
+    if (skill !== undefined) entities.push({ kind: "skill", slug: skill });
   }
   return entities;
 }
@@ -24,7 +24,7 @@ export async function publishAgentSource(input: {
   ownerUserId: string | null;
   source: AgentSourceSnapshot;
   expectedRevisionId?: string;
-  upstreamRevisionId?: string;
+  grammarVersion?: string;
 }) {
   const { store, ownerUserId, source } = input;
   return store.withCatalogTransaction(ownerUserId, async () => {
@@ -44,7 +44,7 @@ export async function publishAgentSource(input: {
           );
       }
     }
-    const installed = await store.installSource(source);
+    const installed = await store.installSource(source, input.grammarVersion);
     if (
       existing &&
       existing.currentRevisionId !== input.expectedRevisionId &&
@@ -57,10 +57,9 @@ export async function publishAgentSource(input: {
     if (!existing && input.expectedRevisionId !== undefined)
       throw new AgentPublicationConflictError("Package installation is missing.");
     for (const revision of installed.definitions) {
-      await resolveAgentDependencies({ revision, store });
       const entry = await store.readCatalogEntry(ownerUserId, revision.slug);
       if (entry) {
-        const previous = await store.readRevision(entry.selectedRevisionId);
+        const previous = await store.readCatalogRevision(entry.selectedRevisionId);
         const previousSource = previous && (await store.readSource(previous.packageRevisionId));
         if (previousSource?.coordinate !== source.coordinate) {
           throw new AgentPublicationConflictError(
@@ -80,8 +79,10 @@ export async function publishAgentSource(input: {
         throw new AgentPublicationConflictError(`Agent selection changed: ${revision.slug}`);
     }
     if (existing) {
-      const previousDefinitions = await store.readPackageDefinitions(existing.currentRevisionId);
-      for (const previous of previousDefinitions) {
+      const previousSource = await store.readSource(existing.currentRevisionId);
+      if (!previousSource) throw new Error("Installed package references missing retained source");
+      for (const previous of sourceEntities(previousSource)) {
+        if (previous.kind !== "agent") continue;
         if (installed.definitions.some((item) => item.slug === previous.slug)) continue;
         const entry = await store.readCatalogEntry(ownerUserId, previous.slug);
         if (entry) await store.removeOwnedEntry(ownerUserId, entry.id);
@@ -91,13 +92,30 @@ export async function publishAgentSource(input: {
       ownerUserId,
       coordinate: source.coordinate,
       currentRevisionId: installed.packageRevisionId,
-      upstreamRevisionId:
-        input.upstreamRevisionId ?? existing?.upstreamRevisionId ?? installed.packageRevisionId,
-      origin: existing?.origin ?? null,
       ...(existing ? { expectedRevisionId: existing.currentRevisionId } : {}),
     });
     if (!installation)
       throw new AgentPublicationConflictError("Package head changed during publication.");
     return { ...installed, installation };
   });
+}
+
+/**
+ * After a reader change, every package whose current file set has no rows at the running
+ * version is published again through the same path seeding uses, so its catalog entries
+ * advance. Chats already bound keep their revisions. With no change it finds nothing.
+ */
+export async function recompileStalePackages(store: AgentRevisionStore): Promise<void> {
+  for (const installation of await store.listInstallationsWithoutRows(GRAMMAR_VERSION)) {
+    const source = await store.readSource(installation.currentRevisionId);
+    if (!source || !Object.keys(source.files).some((path) => agentSlugOf(path) !== undefined)) {
+      continue;
+    }
+    await publishAgentSource({
+      store,
+      ownerUserId: installation.ownerUserId,
+      source,
+      expectedRevisionId: installation.currentRevisionId,
+    });
+  }
 }

@@ -437,6 +437,9 @@ importers:
       '@meridian-flow/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway
+      '@meridian-flow/mars-schema':
+        specifier: 0.31.1
+        version: 0.31.1
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -2195,6 +2198,9 @@ packages:
         optional: true
       rolldown:
         optional: true
+
+  '@meridian-flow/mars-schema@0.31.1':
+    resolution: {integrity: sha512-mJOSy9REPP9YiHlQFTRpdAY6qO1HtA2p5flPGmNMWxe/1GT45Xm1yfT5mzKOJCdd28P4TlR6CGqz6N5hIsacfQ==}
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -8035,6 +8041,8 @@ snapshots:
     transitivePeerDependencies:
       - babel-plugin-macros
       - supports-color
+
+  '@meridian-flow/mars-schema@0.31.1': {}
 
   '@mermaid-js/parser@1.2.0':
     dependencies:
