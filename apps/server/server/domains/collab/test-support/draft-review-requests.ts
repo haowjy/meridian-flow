@@ -1,13 +1,21 @@
 /** Snapshot-owned draft edits and explicit preview-fenced request envelopes. */
 import { randomUUID } from "node:crypto";
-import type { BranchCommandId, BranchId, DraftOwner, UserId, WorkId } from "@meridian/contracts";
-import type { BranchCommandKind } from "@meridian/contracts/branches";
+import type {
+  BranchId,
+  DocumentCommandId,
+  DraftOwner,
+  ProjectId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts";
+import type { DocumentCommandKind } from "@meridian/contracts/branches";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftReviewApi } from "../contracts.js";
-import { type BranchCommandEnvelope, commandDigest } from "../domain/branch-commands.js";
+import { commandDigest, type DocumentCommandEnvelope } from "../domain/document-commands.js";
 import {
   type createHarness,
+  PROJECT_ID,
   THREAD_ID,
   TURN_ID,
   USER_ID,
@@ -64,21 +72,21 @@ export async function commitDraftEdit(
 
 /** A fresh command envelope for facade-level suites; the route builds its own from the body. */
 export function testEnvelope(input: {
-  kind: BranchCommandKind;
+  kind: DocumentCommandKind;
   branchId: BranchId;
   userId?: UserId;
-  commandId?: BranchCommandId;
+  commandId?: DocumentCommandId;
   body?: unknown;
-}): BranchCommandEnvelope {
+}): DocumentCommandEnvelope {
   const accountId = input.userId ?? (USER_ID as UserId);
   return {
-    commandId: input.commandId ?? (randomUUID() as BranchCommandId),
+    commandId: input.commandId ?? (randomUUID() as DocumentCommandId),
     accountId,
+    projectId: PROJECT_ID as ProjectId,
     kind: input.kind,
-    branchId: input.branchId,
     digest: commandDigest({
       accountId,
-      projectId: "",
+      projectId: PROJECT_ID,
       branchId: input.branchId,
       kind: input.kind,
       selectors: { branchId: input.branchId },
@@ -120,7 +128,7 @@ export function reviewDriver(
           item,
           ends: "item",
           userId,
-          envelope: testEnvelope({ kind: "discard_items", branchId, userId }),
+          envelope: testEnvelope({ kind: "discard", branchId, userId }),
         }),
       );
     },
@@ -132,7 +140,7 @@ export function reviewDriver(
         await review.discardAll({
           branchId,
           userId,
-          envelope: testEnvelope({ kind: "discard_branch", branchId, userId }),
+          envelope: testEnvelope({ kind: "discard", branchId, userId }),
         }),
       );
     },

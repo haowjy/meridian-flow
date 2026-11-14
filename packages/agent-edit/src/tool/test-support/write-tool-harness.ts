@@ -14,17 +14,16 @@ import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type PreparedSave,
   type RoomRead,
   type SavePrecondition,
   SavePreconditionRefused,
-  type StagedRoomEntries,
-  type StagedWriteSaveResult,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import { createStaticDocumentLinks } from "../../ports/static-document-links.js";
-import type { UpdateJournal } from "../../ports/update-journal.js";
+import type { JournalBatchAppendEntry, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -39,20 +38,7 @@ const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 export function harness(
   initialDocs: Record<string, string> = {},
   options: {
-    onResponseLifecycleError?: Parameters<
-      typeof createAgentEditCore
-    >[0]["onResponseLifecycleError"];
-    onResponseClaimDiscarded?: Parameters<
-      typeof createAgentEditCore
-    >[0]["onResponseClaimDiscarded"];
-    onResponseCommitterTransition?: Parameters<
-      typeof createAgentEditCore
-    >[0]["onResponseCommitterTransition"];
-    onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
     onUnexpectedWriteError?: Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"];
-    closedResponseTombstoneCap?: Parameters<
-      typeof createAgentEditCore
-    >[0]["closedResponseTombstoneCap"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal;
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
@@ -73,21 +59,8 @@ export function harness(
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
-    ...(options.onResponseLifecycleError
-      ? { onResponseLifecycleError: options.onResponseLifecycleError }
-      : {}),
-    ...(options.onResponseClaimDiscarded
-      ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
-      : {}),
-    ...(options.onResponseCommitterTransition
-      ? { onResponseCommitterTransition: options.onResponseCommitterTransition }
-      : {}),
-    ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
     ...(options.onUnexpectedWriteError
       ? { onUnexpectedWriteError: options.onUnexpectedWriteError }
-      : {}),
-    ...(options.closedResponseTombstoneCap !== undefined
-      ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
       : {}),
     ...(options.onLinkSpliceFallback ? { onLinkSpliceFallback: options.onLinkSpliceFallback } : {}),
   });
@@ -192,13 +165,15 @@ export class MemoryCoordinator implements DocumentCoordinator {
    * then), and delivered to the in-memory room at `transfer`. A missing document saves onto an
    * empty one.
    */
-  async prepareSave(
-    input: StagedRoomEntries & { docId: string; precondition?: SavePrecondition },
-  ): Promise<StagedWriteSaveResult> {
+  async prepareSave(input: {
+    docId: string;
+    entries: readonly JournalBatchAppendEntry[];
+    precondition?: SavePrecondition;
+  }): Promise<PreparedSave> {
     const failure = this.takeFailure(input.docId);
     if (failure) throw failure;
     const doc = this.docs.has(input.docId)
-      ? (await this.readRoom(input.docId, null)).doc
+      ? (await this.readRoom(input.docId)).doc
       : new Y.Doc({ gc: false });
     let prepared: Uint8Array;
     try {
@@ -207,10 +182,6 @@ export class MemoryCoordinator implements DocumentCoordinator {
       doc.destroy();
     }
     const result = {
-      kept: input.entries.flatMap((entry) =>
-        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-      ),
-      rejected: [],
       room: this.docs.has(input.docId) ? `memory:${input.docId}` : null,
     };
     if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
@@ -252,23 +223,18 @@ export class MemoryCoordinator implements DocumentCoordinator {
 
   /**
    * A copy of the in-memory document caught up from the journal (as a live room behind a
-   * failed projection is), with the staged entries applied in order.
+   * failed projection is).
    */
-  async readRoom(docId: string, staged: StagedRoomEntries | null): Promise<RoomRead> {
+  async readRoom(docId: string): Promise<RoomRead> {
     if (this.failure) throw this.failure;
     const doc = cloneDoc(this.require(docId));
     const committed = await this.journal?.read(docId);
     if (committed?.checkpoint) Y.applyUpdate(doc, committed.checkpoint);
     for (const entry of committed?.updates ?? []) Y.applyUpdate(doc, entry.update);
-    for (const entry of staged?.entries ?? []) Y.applyUpdate(doc, entry.update);
     return {
       doc,
       room: `memory:${docId}`,
       position: committed?.persistenceWatermark ?? committed?.updates.at(-1)?.seq ?? 0,
-      kept: (staged?.entries ?? []).flatMap((entry) =>
-        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-      ),
-      rejected: [],
     };
   }
 }

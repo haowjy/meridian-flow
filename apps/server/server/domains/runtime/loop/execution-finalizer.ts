@@ -157,6 +157,12 @@ export async function finalizeExecution(
     >;
     eventWriter: LiveEventWriter;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
+    /**
+     * Answers the document commands a dying assistant turn left unanswered. It runs inside this
+     * terminal write, under the thread lock and the caller's session claim (no lease check), so
+     * the turn never becomes terminal with a command still open.
+     */
+    recoverCommands(threadId: ThreadId, turn: Turn): Promise<void>;
   },
   input: {
     threadId: ThreadId;
@@ -199,6 +205,7 @@ export async function finalizeExecution(
         report = existingReport;
         return { result: turn, events: [] };
       }
+      if (turn.role === "assistant") await deps.recoverCommands(input.threadId, turn);
       const askedCause = input.cause.kind === "asked" ? input.cause : null;
       const publishAsk =
         askedCause !== null && thread && !thread.deletedAt && thread.status !== "archived";

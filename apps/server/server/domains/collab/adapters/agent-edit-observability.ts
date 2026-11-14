@@ -3,24 +3,15 @@ import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
   ObservationFailedDetail,
-  ResponseLifecycleClaimDiscardedDetail,
   UnexpectedWriteErrorDetail,
-  WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
-import {
-  type EventSink,
-  emitEvent,
-  errorMessageOf,
-  unknownToEventPayload,
-} from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
-import type { DraftAgentEditDiagnostics } from "../domain/draft-agent-edit.js";
 import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
 import type { DraftProjectionDiagnostics } from "../domain/draft-projection.js";
 import type { DraftPullDiagnostics } from "../domain/draft-pulls.js";
 import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
-import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
 import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
@@ -184,49 +175,6 @@ export function createDraftAheadDiagnostics(eventSink?: EventSink): DraftAheadDi
   };
 }
 
-export function createResponseTransactionDiagnostics(
-  eventSink?: EventSink,
-): ResponseTransactionDiagnostics {
-  const emitFailure = (name: string, input: { responseTransactionId: string; cause: unknown }) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "error",
-      source: "collab.response_transaction",
-      name,
-      payload: {
-        responseTransactionId: input.responseTransactionId,
-        ...unknownToEventPayload(input.cause),
-        ...errorMessageOf(input.cause),
-      },
-    });
-  };
-  return {
-    participantCommitFailed: (input) => emitFailure("participant_commit.failed", input),
-    participantReconciliationFailed: (input) =>
-      emitFailure("participant_reconciliation.failed", input),
-  };
-}
-
-export function createDraftAgentEditDiagnostics(eventSink?: EventSink): DraftAgentEditDiagnostics {
-  return {
-    replyPinMismatch(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.reply_save_fences",
-        name: "reply_pin.identity_mismatch",
-        correlation: {
-          documentId: payload.documentId,
-          branchId: payload.pin.branchId,
-          peerDraftId: payload.pin.peerDraftId,
-          upstreamDraftId: payload.pin.upstreamDraftId,
-        },
-        payload: { threadId: payload.threadId ?? null, refusal: "integration" },
-      });
-    },
-  };
-}
-
 export function createAgentEditInvariantDiagnostic(
   eventSink?: EventSink,
 ): (payload: Record<string, unknown>) => void {
@@ -338,21 +286,6 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
         payload: input,
       });
     },
-    recordFailedAfterDurability(input) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.model_context_notices",
-        name: "record_failed_after_durability",
-        payload: {
-          kind: input.kind,
-          threadId: input.threadId,
-          documentIds: [...input.documentIds],
-          ...(input.responseId ? { responseId: input.responseId } : {}),
-          cause: unknownToEventPayload(input.cause),
-        },
-      });
-    },
   };
 }
 
@@ -360,19 +293,9 @@ export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
 }): Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "onResponseLifecycleError"
-  | "onResponseClaimDiscarded"
-  | "onResponseCommitterTransition"
-  | "onIdempotencyHit"
-  | "onUnexpectedWriteError"
-  | "onLinkSpliceFallback"
-  | "onObservationFailed"
+  "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 > {
   return {
-    onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
-    onResponseClaimDiscarded: responseClaimDiscardedObserver(input.eventSink),
-    onResponseCommitterTransition: responseCommitterTransitionObserver(input.eventSink),
-    onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
     onObservationFailed: observationFailedObserver(input.eventSink),
@@ -440,70 +363,6 @@ function unexpectedWriteErrorObserver(
         ...(event.toolUseId ? { toolUseId: event.toolUseId } : {}),
         ...unknownToEventPayload(event.cause),
       },
-    });
-  };
-}
-
-function responseLifecycleObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseLifecycleError"]> {
-  return (event) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "error",
-      source: "collab.agent_edit",
-      name: "response_lifecycle.error",
-      correlation: {
-        ...(event.threadId ? { threadId: event.threadId } : {}),
-        ...(event.turnId ? { turnId: event.turnId } : {}),
-        errorCode: event.code,
-      },
-      payload: { ...event },
-    });
-  };
-}
-
-function responseClaimDiscardedObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseClaimDiscarded"]> {
-  return (event: ResponseLifecycleClaimDiscardedDetail) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "error",
-      source: "collab.agent_edit",
-      name: "response_lifecycle.claim_discarded",
-      payload: { ...event },
-    });
-  };
-}
-
-function responseCommitterTransitionObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseCommitterTransition"]> {
-  return (event) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "info",
-      source: "collab.agent_edit",
-      name: `response_committer.${event.transition}`,
-      correlation: {
-        ...(event.threadId ? { threadId: event.threadId } : {}),
-      },
-      payload: { ...event },
-    });
-  };
-}
-
-function idempotencyHitObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"]> {
-  return (event: WriteIdempotencyHitDetail) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "info",
-      source: "collab.agent_edit",
-      name: "write.idempotency_hit",
-      payload: { ...event },
     });
   };
 }

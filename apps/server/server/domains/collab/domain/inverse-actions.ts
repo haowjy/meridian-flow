@@ -8,19 +8,14 @@ export const partKey = (part: { editId: string; ordinal?: number }) =>
 
 /** One row of the action index: a text part or a tree entry, ordered by `id` on one axis. */
 type HistoryRow = StoredInversePart | StoredTreeEntry;
-const rowKey = (row: HistoryRow) => ("tree" in row ? treeKey(row.editId) : partKey(row));
 
-/** Consumption is per accepted part, and a rolled-back action has no stack effect. */
+/** Consumption is per accepted part. */
 export function effectiveActionIndex<Row extends HistoryRow>(
   history: readonly Row[],
   keys: ReadonlySet<string>,
 ) {
-  const rolledBack = new Set(
-    history.filter((part) => part.kind === "rollback").flatMap((part) => part.targets.map(partKey)),
-  );
-  const effective = history.filter((part) => !rolledBack.has(rowKey(part)));
   const grouped = new Map<string, Row[]>();
-  for (const part of effective) {
+  for (const part of history) {
     if (
       (part.kind !== "undo" && !(part.kind === "revert" && part.actor === "human")) ||
       !part.actionId ||
@@ -32,7 +27,7 @@ export function effectiveActionIndex<Row extends HistoryRow>(
     grouped.set(part.actionId, parts);
   }
   const consumption = new Map<string, Set<string>>();
-  for (const part of effective) {
+  for (const part of history) {
     if (part.kind !== "redo") continue;
     for (const id of part.consumes) {
       const targets = consumption.get(id) ?? new Set<string>();
@@ -59,5 +54,5 @@ export function effectiveActionIndex<Row extends HistoryRow>(
       accepted.push(action);
       byPart.set(target, accepted);
     }
-  return { actions, byPart, rolledBack };
+  return { actions, byPart };
 }

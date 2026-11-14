@@ -6,7 +6,7 @@
  * outcome to HTTP. Nothing here decides an effect.
  */
 
-import type { BranchCommandId, BranchId, DraftOwner } from "@meridian/contracts";
+import type { BranchId, DocumentCommandId, DraftOwner } from "@meridian/contracts";
 import {
   type DraftOwnerKey,
   draftItemKey,
@@ -16,21 +16,21 @@ import {
 import {
   type ApplyClick,
   type ApplyClickAnswer,
-  type ApplyClickObservation,
-  BRANCH_COMMAND_CONFLICT_CODE,
-  BRANCH_COMMAND_UNKNOWN_CODE,
-  BranchCommandIdSchema,
-  type BranchCommandKind,
-  type BranchCommandObservation,
-  type BranchCommandPendingResponse,
-  type BranchCommandResult,
+  type ApplyClickResult,
   type BranchDiscardAllRequest,
+  type DiscardCommandResult,
+  DOCUMENT_COMMAND_CONFLICT_CODE,
+  DocumentCommandIdSchema,
+  type DocumentCommandKind,
+  type DocumentCommandLookupResponse,
   type DocumentDraftHint,
   type DocumentDraftHintsResponse,
   type DraftMetadataResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
+  type UnapplyClick,
   type UnapplyClickAnswer,
+  type UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -38,11 +38,12 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime"
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
-import {
-  type BranchCommandEnvelope,
-  commandDigest,
-} from "../domains/collab/domain/branch-commands.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
+import {
+  commandDigest,
+  type DocumentCommandEnvelope,
+  replay,
+} from "../domains/collab/domain/document-commands.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import {
@@ -148,7 +149,7 @@ async function requireListedOwner(
 const Base = {
   branchId: z.string().uuid(),
   itemKey: z.string().max(80),
-  commandId: BranchCommandIdSchema,
+  commandId: DocumentCommandIdSchema,
 };
 const RangeBody = z
   .strictObject({
@@ -159,7 +160,7 @@ const RangeBody = z
 const ApplyClickBody = z
   .strictObject({
     draftId: z.string().min(1).max(128).optional(),
-    commandId: BranchCommandIdSchema,
+    commandId: DocumentCommandIdSchema,
     snapshot: z.string().min(1).optional(),
     baseViewDelta: z.array(
       z.strictObject({
@@ -174,8 +175,8 @@ const ApplyClickBody = z
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const UnapplyClickBody = z.strictObject({
-  commandId: BranchCommandIdSchema,
-  applyCommandId: BranchCommandIdSchema,
+  commandId: DocumentCommandIdSchema,
+  applyCommandId: DocumentCommandIdSchema,
 });
 const DiscardBody = z.discriminatedUnion("ends", [
   z.strictObject({ ...Base, ends: z.literal("tree") }),
@@ -202,17 +203,17 @@ function envelopeOf(
   scope: CommandScope,
   command: {
     commandId: string;
-    kind: BranchCommandKind;
+    kind: DocumentCommandKind;
     branchId: string;
     selectors: Record<string, string | null>;
     body: unknown;
   },
-): BranchCommandEnvelope {
+): DocumentCommandEnvelope {
   return {
-    commandId: command.commandId as BranchCommandId,
+    commandId: command.commandId as DocumentCommandId,
     accountId: scope.userId,
+    projectId: scope.projectId,
     kind: command.kind,
-    branchId: scope.branchId,
     digest: commandDigest({
       accountId: scope.userId,
       projectId: scope.projectId,
@@ -224,80 +225,58 @@ function envelopeOf(
   };
 }
 
-export type CommandRouteResult =
-  | { httpStatus: 200 | 409; body: BranchCommandResult }
-  | { httpStatus: 202; body: BranchCommandPendingResponse };
+export type CommandRouteResult = { httpStatus: 200; body: DiscardCommandResult };
 
-/** Map stored Discard results, pending claims and command-id conflicts to HTTP. */
-function respond(
-  outcome: CommandOutcome,
-  command: { branchId: string; commandId: string },
-): CommandRouteResult {
+/** Map stored Discard results and command-id conflicts to HTTP. */
+function respond(outcome: CommandOutcome): CommandRouteResult {
   switch (outcome.kind) {
     case "conflict":
       return throwHttpInterrupt(
         meridianErrorFromSystem(
-          BRANCH_COMMAND_CONFLICT_CODE,
+          DOCUMENT_COMMAND_CONFLICT_CODE,
           "That command id was used for a different command",
           false,
         ),
         409,
       );
-    case "pending":
-      return {
-        httpStatus: 202,
-        body: {
-          status: "pending",
-          branchId: command.branchId as BranchId,
-          commandId: command.commandId as BranchCommandId,
-        },
-      };
     case "result": {
       return { httpStatus: 200, body: outcome.result };
     }
   }
 }
 
-/** The stored answer of a command id this branch already knows, looked up before any grant. */
+/** The stored answer of a command id this account already used, looked up before any grant. */
 async function recorded(
   deps: BranchRouteServices,
-  envelope: BranchCommandEnvelope,
+  envelope: DocumentCommandEnvelope,
 ): Promise<CommandRouteResult | null> {
-  const found = await deps.documentSync.draftReview.lookupCommand(envelope);
-  if (found.kind === "none") return null;
-  const outcome: CommandOutcome =
-    found.kind === "done"
-      ? { kind: "result", result: found.result as BranchCommandResult }
-      : found.kind === "conflict"
-        ? { kind: "conflict" }
-        : { kind: "pending" };
-  return respond(outcome, { branchId: envelope.branchId, commandId: envelope.commandId });
+  const stored = replay<DiscardCommandResult>(
+    await deps.documentSync.draftReview.lookupCommand(envelope),
+    envelope.commandId,
+  );
+  if (!stored) return null;
+  return respond(
+    stored.status === "conflict" ? { kind: "conflict" } : { kind: "result", result: stored },
+  );
 }
 
-/** GET …/branches/:branchId/commands/:commandId: what a command settled as, never a guess from the list. */
-export async function handleBranchCommandObservation(
-  deps: BranchRouteServices,
-  input: CommandScope & { commandId: string },
-): Promise<ApplyClickObservation | UnapplyClickAnswer | BranchCommandObservation> {
-  await requireBranchIdentity(deps, input);
-  const id = BranchCommandIdSchema.safeParse(input.commandId);
-  if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
+/**
+ * GET /api/document-commands/:id: what a command settled as, never a guess from the list.
+ * Another account's id answers `none`, revealing nothing.
+ */
+export async function handleDocumentCommandLookup(
+  deps: Pick<BranchRouteServices, "documentSync">,
+  input: { userId: UserId; commandId: string },
+): Promise<DocumentCommandLookupResponse> {
+  const id = DocumentCommandIdSchema.safeParse(input.commandId);
+  if (!id.success) return { status: "none" };
   const found = await deps.documentSync.draftReview.lookupCommand({
-    commandId: id.data as BranchCommandId,
-    branchId: input.branchId,
+    commandId: id.data as DocumentCommandId,
     accountId: input.userId,
   });
-  switch (found.kind) {
-    case "none":
-    case "conflict":
-      return { status: found.kind, commandId: id.data as BranchCommandId };
-    case "pending":
-      return { status: "pending", commandId: id.data as BranchCommandId };
-    case "done":
-      if (found.commandKind === "apply_click") return found.result as ApplyClickAnswer;
-      if (found.commandKind === "unapply_click") return found.result as UnapplyClickAnswer;
-      return { state: "done", result: found.result as BranchCommandResult };
-  }
+  return found.kind === "stored"
+    ? { status: "stored", kind: found.commandKind, outcome: found.outcome }
+    : { status: "none" };
 }
 
 // --- Grants ------------------------------------------------------------------------------------
@@ -559,7 +538,7 @@ type PreparedCommand =
 async function commandIngress(
   deps: BranchRouteServices,
   input: CommandScope,
-  envelope: BranchCommandEnvelope,
+  envelope: DocumentCommandEnvelope,
   prepare: (access: BranchAccess) => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
   const access = await requireBranchAccess(deps, input);
@@ -587,7 +566,7 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  return respond(outcome, { branchId: envelope.branchId, commandId: envelope.commandId });
+  return respond(outcome);
 }
 
 /** One immutable Apply click. Until execution lands, a valid click is refused as unavailable. */
@@ -598,36 +577,32 @@ export async function handleApplyClickRequest(
   overtaken = false,
 ): Promise<ApplyClickAnswer> {
   const access = await requireBranchIdentity(deps, input);
-  const parsedId = BranchCommandIdSchema.safeParse(
+  const parsedId = DocumentCommandIdSchema.safeParse(
     input.request && typeof input.request === "object" && "commandId" in input.request
       ? input.request.commandId
       : undefined,
   );
   if (!parsedId.success) throw createError({ statusCode: 400, message: "Invalid Apply request" });
-  const commandId = parsedId.data as BranchCommandId;
-  const envelope: BranchCommandEnvelope = {
+  const commandId = parsedId.data as DocumentCommandId;
+  const envelope: DocumentCommandEnvelope = {
     commandId,
     accountId: input.userId,
-    kind: "apply_click",
-    branchId: input.branchId,
+    projectId: input.projectId,
+    kind: "apply",
     digest: commandDigest({
       accountId: input.userId,
       projectId: input.projectId,
       branchId: input.branchId,
-      kind: "apply_click",
+      kind: "apply",
       selectors: { documentId: input.documentId },
       body: input.request,
     }),
   };
-  const lookup = async (): Promise<ApplyClickAnswer | null> => {
-    const found = await deps.documentSync.draftReview.lookupCommand(envelope);
-    if (found.kind === "none") return null;
-    if (found.kind === "done")
-      return found.commandKind === "apply_click"
-        ? (found.result as ApplyClickAnswer)
-        : { status: "conflict", commandId };
-    return { status: found.kind === "conflict" ? "conflict" : "pending", commandId };
-  };
+  const lookup = async (): Promise<ApplyClickAnswer | null> =>
+    replay<ApplyClickResult>(
+      await deps.documentSync.draftReview.lookupCommand(envelope),
+      commandId,
+    );
   const recorded = await lookup();
   if (recorded) return recorded;
   const refuse = async (
@@ -709,37 +684,30 @@ export async function handleApplyClickRequest(
 export async function handleUnapplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
-): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> {
+): Promise<UnapplyClickAnswer> {
   await requireBranchIdentity(deps, input);
   const parsed = UnapplyClickBody.safeParse(input.request);
   if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid Un-Apply request" });
-  const request = parsed.data as import("@meridian/contracts/branches").UnapplyClick;
-  const envelope: BranchCommandEnvelope = {
+  const request = parsed.data as UnapplyClick;
+  const envelope: DocumentCommandEnvelope = {
     commandId: request.commandId,
     accountId: input.userId,
-    kind: "unapply_click",
-    branchId: input.branchId,
+    projectId: input.projectId,
+    kind: "unapply",
     digest: commandDigest({
       accountId: input.userId,
       projectId: input.projectId,
       branchId: input.branchId,
-      kind: "unapply_click",
+      kind: "unapply",
       selectors: { documentId: input.documentId },
       body: request,
     }),
   };
-  const lookup = async () => {
-    const found = await deps.documentSync.draftReview.lookupCommand(envelope);
-    if (found.kind === "none") return null;
-    if (found.kind === "done")
-      return found.commandKind === "unapply_click"
-        ? (found.result as import("@meridian/contracts/branches").UnapplyClickResult)
-        : ({ status: "conflict", commandId: request.commandId } as const);
-    return {
-      status: found.kind === "conflict" ? ("conflict" as const) : ("pending" as const),
-      commandId: request.commandId,
-    };
-  };
+  const lookup = async () =>
+    replay<UnapplyClickResult>(
+      await deps.documentSync.draftReview.lookupCommand(envelope),
+      request.commandId,
+    );
   const recorded = await lookup();
   if (recorded) return recorded;
   const grant = await deps.fileAccess.authorize(
@@ -789,7 +757,7 @@ export async function handleDiscardWorkDraftRequest(
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
-    kind: "discard_items",
+    kind: "discard",
     branchId: request.branchId,
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
@@ -825,7 +793,7 @@ export async function handleDiscardAllWorkBranchRequest(
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
-    kind: "discard_branch",
+    kind: "discard",
     branchId: request.branchId,
     selectors: {},
     body,

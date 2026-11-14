@@ -318,7 +318,7 @@ else
       await expect(
         repos.transaction(async () => {
           await finalizeExecution(
-            { repos, eventWriter: logged },
+            { repos, eventWriter: logged, recoverCommands: async () => {} },
             {
               threadId: ids.child,
               turnId: ids.execution,
@@ -341,7 +341,7 @@ else
       });
 
       const first = await finalizeExecution(
-        { repos, eventWriter: logged },
+        { repos, eventWriter: logged, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -364,7 +364,7 @@ else
         publication: "pending",
       });
       const replay = await finalizeExecution(
-        { repos, eventWriter: logged },
+        { repos, eventWriter: logged, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -431,7 +431,7 @@ else
         content: "final ",
       });
       const terminal = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -478,7 +478,7 @@ else
         content: "found the contradiction in chapter 12",
       });
       const terminal = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter, recoverCommands: async () => {} },
         {
           threadId: ids.child,
           turnId: ids.execution,

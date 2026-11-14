@@ -1,7 +1,6 @@
 /**
  * The `read` and `write` tools: a path resolves to its tracked document,
- * the file policy grants the call, and the collab pool reads or writes under
- * that grant. `skills://` paths go to the skill files.
+ * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
  */
 
 import type {
@@ -21,9 +20,14 @@ import {
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
-import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
+import {
+  createCopyIdentityMap,
+  ModelEditRefusal,
+  remapCopiedBlocks,
+} from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -33,6 +37,7 @@ import {
 } from "../../domains/file-policy/index.js";
 import {
   isSkillsUri,
+  type ModelEditHandlerResult,
   type ResultEvidence,
   readSkill,
   refuseSkillWrite,
@@ -63,7 +68,6 @@ import { currentUri, resolveDisplacedTarget, resolveInverseTarget } from "./inve
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { removedPathError } from "./removed-path.js";
-import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
@@ -237,19 +241,21 @@ async function writeUnderGrant(
   if (isToolError(grant)) return grant;
   let written: WriteOutcome;
   try {
+    // The write runs under its own lock, inside the command's transaction.
     written = await deps.documentSync
-      .agentEdit()
+      .modelEdits()
       .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
         responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
-        createdDocument: address.created === true,
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
-        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
+        ...(ctx.frontiers
+          ? { frontiers: ctx.frontiers, creditedBlockIds: ctx.frontiers.credited() }
+          : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -393,14 +399,18 @@ export function createReadHandler(deps: ToolWiringDeps) {
 }
 
 export function createWriteHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
+  return async (input: unknown, handlerCtx: ToolHandlerContext) => {
+    const ctx = handlerCtx;
+    const edit = ctx.modelEdit;
+    if (!edit) throw new Error("A write is a document command: the executor keys it");
     const parsed = input as WriteToolInput;
     const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
+    const settle = effectSettler(deps, ctx, edit);
     if (parsed.command === "move" || parsed.command === "delete")
-      return runNamespaceCommand(deps, call, parsed, ctx);
+      return runNamespaceCommand(deps, call, parsed, ctx, settle);
     const { context, principal } = call;
     const inverse =
       parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert"
@@ -441,8 +451,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         }
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
         // holding the branch's own object (12b-Q2).
-        return inContainer(deps, principal, parsed.command, target, () =>
-          copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
+        return settle(() =>
+          inContainer(deps, principal, parsed.command, target, () =>
+            copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
+          ),
         );
       }
       const read = await readTrackedCopySource(
@@ -465,193 +477,200 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    let address = inverse
-      ? inverse.address
-      : await inContainer(deps, principal, parsed.command, target, () =>
-          resolveDocumentAddress(context, parsed.command, parsed.path, {
-            origin: {
-              type: "agent",
-              agentSlug: ctx.agentSlug,
-              threadId: ctx.threadId,
-              turnId: ctx.turnId,
-            },
-            ...(parsed.command === "copy" && copied
-              ? {
-                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
-                  sourceExtension: sourceExtension(copied.copiedFrom.uri),
-                }
-              : {}),
-            ...(creates
-              ? {
-                  recordCreate: async ({ documentId, change }) => {
-                    await deps.documentSync.treeHistory().recordAgentTreeChange({
-                      documentId,
-                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
-                      ...(ctx.turnId
-                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
-                        : {}),
-                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-                      op: "create",
-                      change,
-                      shownAt: parsed.path,
-                    });
-                  },
-                }
-              : {}),
-          }),
-        );
-    if (isToolError(address)) {
-      const removed =
-        !creates && address.output.status === "document_not_found"
-          ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
-          : null;
-      return removed ?? address;
-    }
-
-    if (parsed.command === "copy" && copied) {
-      // The copy's new identity is known now: a whole document's own links name the copy, not
-      // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
-      // A selection is not the copied set: its links to the whole source keep naming it.
-      copied = {
-        ...copied,
-        nodes: remapCopiedBlocks({
-          blocks: copied.nodes,
-          sourceHolderUri: copied.copiedFrom.uri,
-          aheadSettlements: copied.aheadSettlements,
-          map: createCopyIdentityMap({
-            documents: copied.wholeDocument
-              ? [
-                  {
-                    sourceDocumentId: copied.sourceDocumentId,
-                    sourceUri: copied.copiedFrom.uri,
-                    documentId: address.documentId,
-                    uri: address.uri,
-                  },
-                ]
-              : [],
-            folders: [],
-          }),
-        }),
-      };
-    }
-
-    let outcome = await writeUnderGrant(
-      deps,
-      principal,
-      parsed,
-      address,
-      copied,
-      ctx,
-      context.resolution.uploadsOwner?.chatRef,
-      inverse?.grant,
-    );
-    // Nothing of this chat's to reverse here, where it moved or deleted another document away.
-    if (
-      inverse &&
-      (parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert") &&
-      ["nothing_to_undo", "nothing_to_redo", "invalid_write"].includes(
-        outcome.isError ? outcome.output.status : outcome.result.status,
-      )
-    ) {
-      const displaced = await resolveDisplacedTarget(
-        deps,
-        call,
-        parsed.command,
-        address,
-        ctx.threadId,
-      );
-      if (isToolError(displaced)) return displaced;
-      if (displaced) {
-        address = displaced.address;
-        outcome = await writeUnderGrant(
-          deps,
-          principal,
-          parsed,
-          address,
-          copied,
-          ctx,
-          context.resolution.uploadsOwner?.chatRef,
-          displaced.grant,
-        );
+    // A write to an existing document finds it before the command claims its id. A drafted write
+    // plans on a draft caught up with live, and the pull opens a connection of its own.
+    let existing: ResolvedDocumentAddress | undefined;
+    if (!inverse && !creates) {
+      const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
+      if (isToolError(found)) {
+        const removed =
+          found.output.status === "document_not_found"
+            ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
+            : null;
+        return removed ?? found;
       }
+      await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
+      existing = found;
     }
-    // A reversed move left the document somewhere else: the result names where it is now. A
-    // reversed creation removed the document, so its text half must not claim an empty document
-    // survived the tree half of the same inverse.
-    if (inverse && !outcome.isError && outcome.result.status === "success") {
-      const now = await currentUri(call, address.documentId);
-      if (now && now !== outcome.result.path)
-        outcome = { ...outcome, result: { ...outcome.result, path: now } };
-      else if (!now && outcome.result.documentEmpty)
-        outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
-    }
-    const stagedCreate =
-      creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
-    if (outcome.isError) {
-      if (stagedCreate) {
-        try {
-          await retractCreatedTrackedDocument({
-            port: context.port,
-            uri: address.uri,
-            documentId: address.documentId,
-            cause: "create_failed",
-          });
-        } catch (error) {
-          return writeToolError(
-            parsed.command,
-            `Failed to discard staged create for ${parsed.path}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-            "internal_error",
+
+    let refresh: DocumentId | undefined;
+    const effect = async () => {
+      let address = inverse
+        ? inverse.address
+        : (existing ??
+          (await inContainer(deps, principal, parsed.command, target, () =>
+            resolveDocumentAddress(context, parsed.command, parsed.path, {
+              origin: {
+                type: "agent",
+                agentSlug: ctx.agentSlug,
+                threadId: ctx.threadId,
+                turnId: ctx.turnId,
+              },
+              ...(parsed.command === "copy" && copied
+                ? {
+                    metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
+                    sourceExtension: sourceExtension(copied.copiedFrom.uri),
+                  }
+                : {}),
+              ...(creates
+                ? {
+                    recordCreate: async ({ documentId, change }) => {
+                      await deps.documentSync.treeHistory().recordAgentTreeChange({
+                        documentId,
+                        threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                        ...(ctx.turnId
+                          ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                          : {}),
+                        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+                        op: "create",
+                        change,
+                        shownAt: parsed.path,
+                      });
+                    },
+                  }
+                : {}),
+            }),
+          )));
+      if (isToolError(address)) return address;
+
+      if (parsed.command === "copy" && copied) {
+        // The copy's new identity is known now: a whole document's own links name the copy, not
+        // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+        // A selection is not the copied set: its links to the whole source keep naming it.
+        copied = {
+          ...copied,
+          nodes: remapCopiedBlocks({
+            blocks: copied.nodes,
+            sourceHolderUri: copied.copiedFrom.uri,
+            aheadSettlements: copied.aheadSettlements,
+            map: createCopyIdentityMap({
+              documents: copied.wholeDocument
+                ? [
+                    {
+                      sourceDocumentId: copied.sourceDocumentId,
+                      sourceUri: copied.copiedFrom.uri,
+                      documentId: address.documentId,
+                      uri: address.uri,
+                    },
+                  ]
+                : [],
+              folders: [],
+            }),
+          }),
+        };
+      }
+
+      let outcome = await writeUnderGrant(
+        deps,
+        principal,
+        parsed,
+        address,
+        copied,
+        ctx,
+        context.resolution.uploadsOwner?.chatRef,
+        inverse?.grant,
+      );
+      // Nothing of this chat's to reverse here, where it moved or deleted another document away.
+      if (
+        inverse &&
+        (parsed.command === "undo" || parsed.command === "redo" || parsed.command === "revert") &&
+        ["nothing_to_undo", "nothing_to_redo", "invalid_write"].includes(
+          outcome.isError ? outcome.output.status : outcome.result.status,
+        )
+      ) {
+        const displaced = await resolveDisplacedTarget(
+          deps,
+          call,
+          parsed.command,
+          address,
+          ctx.threadId,
+        );
+        if (isToolError(displaced)) return displaced;
+        if (displaced) {
+          address = displaced.address;
+          outcome = await writeUnderGrant(
+            deps,
+            principal,
+            parsed,
+            address,
+            copied,
+            ctx,
+            context.resolution.uploadsOwner?.chatRef,
+            displaced.grant,
           );
         }
       }
-      return { isError: true, output: outcome.output, evidence: outcome.evidence };
-    }
-    if (stagedCreate) {
-      const responseId = ctx.responseIdentity?.editScopeId;
-      if (responseId === undefined) {
-        return writeToolError(parsed.command, "Missing staged response id", "internal_error");
+      // A reversed move left the document somewhere else: the result names where it is now. A
+      // reversed creation removed the document, so its text half must not claim an empty document
+      // survived the tree half of the same inverse.
+      if (inverse && !outcome.isError && outcome.result.status === "success") {
+        const now = await currentUri(call, address.documentId);
+        if (now && now !== outcome.result.path)
+          outcome = { ...outcome, result: { ...outcome.result, path: now } };
+        else if (!now && outcome.result.documentEmpty)
+          outcome = { ...outcome, result: { ...outcome.result, documentEmpty: false } };
       }
-      deps.responseWrites.trackStagedCreate({
-        responseId,
-        port: context.port,
-        uri: address.uri,
-        documentId: address.documentId,
-      });
-    }
+      if (outcome.isError)
+        return { isError: true, output: outcome.output, evidence: outcome.evidence };
 
-    // Settlement phase, not command names, decides who still owes admission.
-    const unchanged = outcome.result.unchanged === true;
-    const stagedWrite = outcome.status === "success" && outcome.phase === "staged";
-    if (!stagedWrite && !unchanged) {
+      if (outcome.result.unchanged !== true) refresh = address.documentId as DocumentId;
+      const notice = await deps.contextPorts.chatFiles.notice(
+        context.resolution.thread.projectId,
+        parsed.path,
+        address.uri,
+      );
+      return {
+        output: notice ? { ...outcome.result, ...notice } : outcome.result,
+        metadata: documentRevisionMetadata(address, outcome.revision),
+        evidence: outcome.evidence,
+      };
+    };
+    const result = await settle(effect);
+    // The projection catches up once the edit is durable, whoever stored it.
+    if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({
-        documentId: address.documentId,
+        documentId: refresh,
         threadId: ctx.threadId,
       });
-    }
-    const notice = await deps.contextPorts.chatFiles.notice(
-      context.resolution.thread.projectId,
-      parsed.path,
-      address.uri,
-    );
-    return {
-      output: notice ? { ...outcome.result, ...notice } : outcome.result,
-      metadata: {
-        ...documentRevisionMetadata(address, outcome.revision),
-        ...(stagedWrite
-          ? {
-              documentId: address.documentId,
-              stagedWrite: true,
-              ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
-              ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-            }
-          : {}),
-      },
-      evidence: outcome.evidence,
-    };
+    return result;
   };
+}
+
+/**
+ * Runs a call's effect as the command the executor keyed it by, which stores its result with
+ * its outcome. An error result is the command's refusal: whatever the effect changed rolls
+ * back with it.
+ */
+function effectSettler(
+  deps: ToolWiringDeps,
+  ctx: ToolHandlerContext,
+  edit: NonNullable<ToolHandlerContext["modelEdit"]>,
+): (effect: () => Promise<unknown>) => Promise<unknown> {
+  return async (effect): Promise<ModelEditHandlerResult> => {
+    const { outcome, evidence } = await deps.documentSync.modelEdits().run({
+      key: edit.key,
+      owner: { threadId: ctx.threadId, turnId: ctx.turnId },
+      signal: ctx.signal,
+      async effect() {
+        const raw = await effect();
+        const rendered = edit.render(raw);
+        if (isErrorOutput(raw)) throw new ModelEditRefusal(rendered.toolResult, rendered.evidence);
+        return rendered;
+      },
+    });
+    return { modelEdit: outcome, ...(evidence ? { evidence } : {}) };
+  };
+}
+
+function isErrorOutput(value: unknown): boolean {
+  return (
+    typeof value === "object" && value !== null && (value as { isError?: unknown }).isError === true
+  );
+}
+
+function isCommandResult(value: unknown): value is ModelEditHandlerResult {
+  return typeof value === "object" && value !== null && "modelEdit" in value;
 }
 
 function sourceExtension(uri: string): string {

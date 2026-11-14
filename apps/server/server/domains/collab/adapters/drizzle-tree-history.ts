@@ -25,8 +25,7 @@ function directProvenance(input: DirectTreeChange) {
   return {
     threadId: input.threadId,
     turnId: input.turnId ?? null,
-    responseId: input.responseIdentity?.providerResponseId ?? null,
-    editScopeId: input.responseIdentity?.editScopeId ?? null,
+    responseId: input.responseIdentity?.modelResponseId ?? null,
     toolCallId: input.toolCallId ?? null,
     shownAt: input.shownAt,
   };
@@ -59,7 +58,6 @@ export function createDrizzleTreeHistory(
               threadId: documentEdits.threadId,
               turnId: documentEdits.turnId,
               responseId: documentEdits.responseId,
-              editScopeId: documentEdits.editScopeId,
               toolCallId: documentEdits.toolCallId,
               tree: documentEdits.treeChange,
             })
@@ -84,7 +82,6 @@ export function createDrizzleTreeHistory(
             threadId: source.threadId as import("@meridian/contracts").ThreadId,
             turnId: source.turnId,
             responseId: source.responseId,
-            editScopeId: source.editScopeId,
             toolCallId: source.toolCallId,
             shownAt: source.tree?.shownAt ?? null,
           }
@@ -105,7 +102,6 @@ export function createDrizzleTreeHistory(
         threadId: provenance.threadId,
         turnId: provenance.turnId,
         responseId: provenance.responseId,
-        editScopeId: provenance.editScopeId,
         toolCallId: provenance.toolCallId,
         kind: "write",
         receipts: [],

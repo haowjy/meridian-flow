@@ -561,24 +561,36 @@ msgid "{name} source"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted before this reply saved its change."
+msgid "{name} was deleted before this change could be made."
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "{name} was deleted before this reply saved its change."
+#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was deleted with the Work {work} before this reply saved its change."
-msgstr "{name} 已随工作区 {work} 删除，在此回复保存其更改之前。"
-
-#: src/features/chat/tool-renderers.tsx
-msgid "{name} was discarded from the draft before this reply saved its change."
+msgid "{name} was deleted with the Work {work} before this change could be made."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+#~ msgid "{name} was deleted with the Work {work} before this reply saved its change."
+#~ msgstr "{name} 已随工作区 {work} 删除，在此回复保存其更改之前。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} was discarded from the draft before this change could be made."
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "{name} was discarded from the draft before this reply saved its change."
+#~ msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
@@ -688,8 +700,8 @@ msgid "{title} was discarded from the draft."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was removed when the reply that created it didn't finish."
-msgstr ""
+#~ msgid "{title} was removed when the reply that created it didn't finish."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{toReview} to review"
@@ -700,20 +712,36 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, other {# 个未回答}}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} deleted {name} before this reply saved its change."
-msgstr "{who} 在此回复保存其更改之前删除了 {name}。"
+msgid "{who} deleted {name} before this change could be made."
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} deleted this document before this reply saved its change."
-msgstr "{who} 在此回复保存其更改之前删除了这份文档。"
+#~ msgid "{who} deleted {name} before this reply saved its change."
+#~ msgstr "{who} 在此回复保存其更改之前删除了 {name}。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded {name} from the draft before this reply saved its change."
-msgstr "{who} 在此回复保存其更改之前从草稿中放弃了 {name}。"
+msgid "{who} deleted this document before this change could be made."
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "{who} discarded this document from the draft before this reply saved its change."
-msgstr "{who} 在此回复保存其更改之前从草稿中放弃了这份文档。"
+#~ msgid "{who} deleted this document before this reply saved its change."
+#~ msgstr "{who} 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} discarded {name} from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "{who} discarded {name} from the draft before this reply saved its change."
+#~ msgstr "{who} 在此回复保存其更改之前从草稿中放弃了 {name}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} discarded this document from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "{who} discarded this document from the draft before this reply saved its change."
+#~ msgstr "{who} 在此回复保存其更改之前从草稿中放弃了这份文档。"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -4518,8 +4546,8 @@ msgid "Remove reference"
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Removed from {place} on {deleted}, when the reply that created it didn't finish."
-msgstr ""
+#~ msgid "Removed from {place} on {deleted}, when the reply that created it didn't finish."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
@@ -4725,8 +4753,8 @@ msgid "Right"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Rolled back"
-msgstr ""
+#~ msgid "Rolled back"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Row"
@@ -5439,8 +5467,12 @@ msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in {chat} deleted {name} before this reply saved its change."
-msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了 {name}。"
+msgid "The AI in {chat} deleted {name} before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "The AI in {chat} deleted {name} before this reply saved its change."
+#~ msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了 {name}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
@@ -5451,8 +5483,12 @@ msgid "The AI in {chat} deleted {title}."
 msgstr "{chat} 中的 AI 删除了{title}。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in {chat} deleted this document before this reply saved its change."
-msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了这份文档。"
+msgid "The AI in {chat} deleted this document before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "The AI in {chat} deleted this document before this reply saved its change."
+#~ msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了这份文档。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted this document."
@@ -5463,8 +5499,12 @@ msgid "The AI in a chat deleted {count} documents ({names})."
 msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in a chat deleted {name} before this reply saved its change."
-msgstr "某个对话中的 AI 在此回复保存其更改之前删除了 {name}。"
+msgid "The AI in a chat deleted {name} before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "The AI in a chat deleted {name} before this reply saved its change."
+#~ msgstr "某个对话中的 AI 在此回复保存其更改之前删除了 {name}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
@@ -5475,8 +5515,12 @@ msgid "The AI in a chat deleted {title}."
 msgstr "某个对话中的 AI 删除了{title}。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The AI in a chat deleted this document before this reply saved its change."
-msgstr "某个对话中的 AI 在此回复保存其更改之前删除了这份文档。"
+msgid "The AI in a chat deleted this document before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "The AI in a chat deleted this document before this reply saved its change."
+#~ msgstr "某个对话中的 AI 在此回复保存其更改之前删除了这份文档。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document."
@@ -5818,8 +5862,12 @@ msgid "This document was deleted"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted before this reply saved its change."
+msgid "This document was deleted before this change could be made."
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "This document was deleted before this reply saved its change."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This document was deleted from the manuscript. Apply again to bring it back."
@@ -5830,8 +5878,12 @@ msgid "This document was deleted with the Work {name}."
 msgstr "这份文档已随工作区 {name} 一并删除。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was deleted with the Work {work} before this reply saved its change."
-msgstr "这份文档已随工作区 {work} 删除，在此回复保存其更改之前。"
+msgid "This document was deleted with the Work {work} before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "This document was deleted with the Work {work} before this reply saved its change."
+#~ msgstr "这份文档已随工作区 {work} 删除，在此回复保存其更改之前。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."
@@ -5842,20 +5894,24 @@ msgid "This document was discarded from the draft"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was discarded from the draft before this reply saved its change."
+msgid "This document was discarded from the draft before this change could be made."
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "This document was discarded from the draft before this reply saved its change."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This document was removed when the reply that created it didn't finish, so this change wasn't made."
-msgstr ""
+#~ msgid "This document was removed when the reply that created it didn't finish, so this change wasn't made."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was removed when the reply that created it didn't finish."
-msgstr ""
+#~ msgid "This document was removed when the reply that created it didn't finish."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."

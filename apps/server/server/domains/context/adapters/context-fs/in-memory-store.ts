@@ -1,8 +1,4 @@
-import {
-  addressCandidates,
-  firstFreeName,
-  type RetractionCause,
-} from "@meridian/contracts/protocol";
+import { addressCandidates, firstFreeName } from "@meridian/contracts/protocol";
 /**
  * In-memory ContextFS persistence for tests and lightweight composition.
  * It provides both the per-source ContextDocumentStore CRUD surface and the
@@ -33,7 +29,6 @@ export type FolderRow = ContextFolder & {
 export type DocumentRow = ContextDocument & {
   deletionReason?: "deleted" | "discarded";
   deletedByUserId?: string | null;
-  deletionCause?: RetractionCause | null;
 
   contextSourceId: string;
   deletedAt: string | null;

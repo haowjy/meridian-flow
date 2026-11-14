@@ -278,6 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // No failure-close or run-session cleanup: the worker died after commit.
       await createOrphanReportRepair({
+        recoverCommands: async () => {},
         repos: {
           ...repos,
           turns: {
@@ -336,6 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const delivery = createTestDrizzleDelivery(db, { repos, runClaim: authority, publishStatus });
       const repairDeps = {
+        recoverCommands: async () => {},
         repos,
         inbox: delivery,
         authority,

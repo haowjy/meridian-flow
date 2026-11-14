@@ -20,7 +20,7 @@ import * as Y from "yjs";
 import type { BranchOwnerLifecycle } from "../../../shared/draft-owner.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
-export type DraftKind = "work_draft" | "thread_peer";
+export type DraftKind = "work_draft";
 export type DraftStatus = "active" | "closed";
 
 export type DraftSeedRecord = {
@@ -54,14 +54,12 @@ export type DraftSnapshot = {
   draftId: string;
   documentId: DocumentId;
   kind: DraftKind;
-  upstreamDraftId: string | null;
-  /** The branch this draft belongs to; a thread peer carries its upstream's. */
+  /** The branch this draft belongs to. */
   branchId: BranchId;
   /** Derived: the branch's owner, a Work or a lineage (`branches.origin_*`); both null when closed with no owner. */
   workId: WorkId | null;
   rootThreadId: ThreadId | null;
   projectId: ProjectId;
-  threadId: ThreadId | null;
   status: DraftStatus;
   /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
   closedCause: "discarded" | "document_removed" | null;

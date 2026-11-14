@@ -6,7 +6,7 @@
  */
 
 import type { BranchId, DocumentId, DraftOwner, ThreadId, TurnId } from "@meridian/contracts";
-import type { ContextSiblingPosition, RetractionCause } from "@meridian/contracts/protocol";
+import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BranchTreeChange, BranchTreeFault } from "../tree/branch-tree-changes.js";
 import type {
@@ -36,12 +36,6 @@ export interface BranchTreePort {
     /** The chat that made the create (§3.3), recorded on the change row; absent for a writer's. */
     createdBy?: BranchChangeAuthor;
   }): Promise<Result<BranchCreateResult, CreateFault>>;
-  /** Reverse the branch's create of a document, unless another contribution makes it stand. */
-  retractCreate(input: {
-    branch: EnsuredBranch;
-    documentId: DocumentId;
-    cause: RetractionCause;
-  }): Promise<"retracted" | "stands">;
   /** The branch places a document it shows at `dir/name.extension` in this source. */
   moveInBranch(input: {
     branch: EnsuredBranch;

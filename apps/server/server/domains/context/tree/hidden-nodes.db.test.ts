@@ -173,7 +173,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Kael, again.",
         overwrite: true,
       });
-      await again.save();
       expect.soft(rewritten.isError ?? false, "the overwrite succeeds").toBe(false);
       expect.soft(await createdIn(scenario, ascension), "one create per branch").toEqual([kael]);
 

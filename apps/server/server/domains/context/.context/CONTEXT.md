@@ -101,8 +101,7 @@ spends its own budget waiting, and returns stopped and empty. No per-user cap ex
 Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view (a code file's text is the file itself, with no fence). Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
-sees (current derivation, no active draft in the reader's own Work, no staged writes of
-the reply), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
+sees (current derivation, no active draft in the reader's own Work), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
 same door for `ls -v`: it answers for current derivations only, and a document it leaves out
 lists with no word count. Context never reads the block tables itself. Candidate paths are spelled through
 the tree view's folder chain; a document under a deleted ancestor has no path and is not
@@ -131,8 +130,7 @@ chat's write mode, checks project-final availability, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
 live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
-independent pull transaction rules. It reports settled authority, not a
-response's staged overlay.
+independent pull transaction rules. It reports settled authority.
 
 A project-final identity lookup distinguishes missing, deleted, and
 reversibly hidden authority; foreign identities stay indistinguishable from
@@ -173,10 +171,7 @@ instant create is never refused for a name: a branch's hidden text document at
 that path is unhidden and keeps its id, the device's minted id forwards to it
 (`document_forwards`, answered `joined`, and link resolution follows forwards for
 ids no document holds), and a visible occupant sends the create to the first
-free name. `retractCreate` reverses a create for a rolled-back reply or failed
-write: a draft placement ends the branch's use unless another thread's committed
-text makes the document stand, and only that Work's document draft, peers, and
-rooms retire.
+free name. A create is never reversed by retraction: a model's edit commits at its call.
 
 A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
 `create-folder` route): a replay finds the folder under its ID and answers
@@ -218,8 +213,7 @@ are facts about the target (the occupant, `onlyAt`). A row that left the locked 
 `io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
 from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
 occupied destination leaf sends the arrival to the next free name and
-returns that actual path. A delete with `onlyAt` (a model create's retraction) acts
-only on a row still at that path and otherwise answers `stale_target`. An absent,
+returns that actual path. An absent,
 terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
@@ -255,7 +249,10 @@ one source's tree contributes.
   refusal, a retryable failure, a replay that never reads it). A process crash between a put
   and the rollback still leaks it (the model copy tool leaks the same way; one storage sweep
   would cover both).
-- The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
+- Copy's `document_commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the receipt the
+  client reads back through `GET .../context/operations/:id`) owns the transaction: the claim is its first
+  write, a refusal after it is stored, and a transient `io_error` rolls the claim back so the id stays
+  retryable. Move and delete still use `context_operation_receipts`. Inside it the command
   transaction takes the destination's Work and namespace, and nothing else: the sources are
   a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
   of what the writer saw. The command re-resolves an identity destination through the

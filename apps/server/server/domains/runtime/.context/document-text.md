@@ -18,32 +18,39 @@ Exclude it from document pairing and edit records, and retain its not-run output
 verbatim in compaction and history, rather than treating missing evidence as a stale
 successful write.
 
-Staged mutation results start with null. The response-settlement receipt supplies
-the revision captured at apply, and `persistCommittedWriteResult` copies it without
-a second read: a reread would misattribute an intervening writer edit. Revision
-evidence is distinct from shown-link evidence and is not derived from it.
+Revision evidence is distinct from shown-link evidence and is not derived from it.
 
 ## Shown links
 
-Tool results that show document links record host-only shown-link facts, stripped
-from the model-facing result. Handlers produce candidates and the executor records
-them only with an accepted result, in the transaction of the tool result or
-reference blocks. Settled receipts and concurrent response fits use the response
-save transaction. A response rollback still keeps evidence for an echo the model
-already saw.
+Tool results that show document links carry host-only shown-link facts, stripped
+from the model-facing result. The document side (collab's `ModelEvidence`) owns the
+rows: an edit's are recorded in the edit's own command transaction, a read's are handed
+over after its block is stored (`DocumentEvidence.resultStored`), and a writer turn's
+reference blocks' are handed over in the transaction that persists those blocks.
 
 Rows are per showing key per turn. Fork readers select their own and source rows
 through the cutoff, then deduplicate by the latest eligible sequence; nothing is
-copied at fork time. Handoffs and spawned children inherit no rows.
+copied at fork time. Handoffs and spawned children inherit no rows. A thread's rows go
+when the thread is deleted (`forgetThreads`).
 
 ## Observation frontiers
 
-[The Model's View][kb-model-view] is the current implementation. Here, a handler
-returns host-only evidence beside the result, and the executor strips it from
-serialized output and records it with the source block; `source_block_id` permits at
-most one row per block. Inverse echoes record a frontier without the concurrent-change
-lookup. A failed insert logs `observation_frontier.record_failed` and the result
-still commits.
+[The Model's View][kb-model-view] is the current implementation. A handler returns
+host-only evidence beside the result and the executor strips it from serialized output.
+Collab keeps the rows, keyed by the result block's id with no foreign key to the block, so
+a row a crash left behind is never read: every lookup names the block ids it asks about
+(`loop/frontier-recording.ts` names the blocks the request carries).
+
+- **An edit** records its frontier and shown links in its command transaction, under the
+  result block's id (`modelEditIds(key).blockId`); a refused edit records none, and what its
+  refusal showed is handed over like a read's. A crash after the commit loses nothing.
+- **A read** returns its evidence beside its result; once the block is stored,
+  `recordStoredResult` calls `resultStored`. Only a returned value is handed on, so a handler
+  that outlived its timeout attaches nothing. A failed hand-over logs
+  `observation_frontier.record_failed` and the block keeps no frontier; a crash between the
+  two loses that read's evidence, and the model's next write plans on its previous frontier
+  (Yjs still merges; the report of concurrent changes can name too much).
+- Inverse echoes record a frontier without the concurrent-change lookup.
 
 ## Tool policy and elision
 

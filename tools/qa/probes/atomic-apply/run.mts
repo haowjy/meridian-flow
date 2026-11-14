@@ -14,16 +14,16 @@ import {
   createDrizzleApplyClick,
   measureApplyAppend,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-apply-click.ts";
-import { createDrizzleBranchCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-commands.ts";
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
+import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
 import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTreeHistory } from "../../../../apps/server/server/domains/collab/adapters/drizzle-tree-history.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
-import type { CommandLookupKey } from "../../../../apps/server/server/domains/collab/domain/branch-commands.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
+import type { CommandLookupKey } from "../../../../apps/server/server/domains/collab/domain/document-commands.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { lockDocumentNamespaces } from "../../../../apps/server/server/domains/context/adapters/context-fs/document-locations.ts";
 import { recordCreated } from "../../../../apps/server/server/domains/context/tree/branch-tree-store.ts";
@@ -98,7 +98,7 @@ const fileAccess = createFileAccess({
   grants: createOwnerFileGrants(),
   readAgentChain: async () => [],
 });
-const commands = createDrizzleBranchCommands(h.db);
+const commands = createDrizzleDocumentCommands(h.db);
 
 async function fixture(
   baseText: string[],
@@ -403,7 +403,7 @@ try {
     await applied(f, c);
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
@@ -424,7 +424,7 @@ try {
       assert.equal((await f.send(overlap)).status, "refused");
       assert.equal(
         (
-          await h.raw`select count(*)::int as n from branch_commands where id in (${bad.request.commandId},${overlap.request.commandId})`
+          await h.raw`select count(*)::int as n from document_commands where id in (${bad.request.commandId},${overlap.request.commandId})`
         )[0].n,
         0,
       );
@@ -452,7 +452,7 @@ try {
       assert.equal(recovered, beforeRecover);
       assert.equal(
         (
-          await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
+          await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
         )[0].n,
         0,
       );
@@ -489,7 +489,7 @@ try {
     }
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from document_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
@@ -530,6 +530,7 @@ try {
     const a = await fixture(["The big black cat sat."], ["The cat sat."]);
     const click = a.click();
     const discard = createDrizzleBranchDiscard(h.db, {
+      releaseObjects: async () => {},
       workProjection: h.projection,
       branches: h.branches,
       close: createDraftClose(),
@@ -538,6 +539,7 @@ try {
     });
     await discard.discardLocked({
       kernel: { branchId: a.branchId, userId: h.ids.user, selection: { kind: "whole" } },
+      command: h.discardCommand(a.branchId),
     });
     const branch = await h.projection.mutate({ works: [a.workId] }, () =>
       h.branches.ensureActiveLocked({

@@ -288,9 +288,8 @@ repeat the partial read. Dump the rows after each phase:
 tools/qa/probes/observation-frontiers.sh "$T"
 ```
 
-In a draft Work, the room key must be `draft:<work_draft.id>`, not a thread
-peer. Read then write and write then read; the read and saved write record once,
-the staged write records nothing, and an undo records a frontier in the room it
+In a draft Work, the room key must be `draft:<work_draft.id>`, . Read then write and write then read; the read and the write record once,
+and an undo records a frontier in the room it
 changed. `recorded_seq` gaps are identity, not an error. The raw model request
 contains no frontier fields.
 

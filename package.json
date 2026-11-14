@@ -63,6 +63,7 @@
     "@types/ws": "^8.18.1",
     "ajv": "^8.20.0",
     "drizzle-orm": "catalog:",
+    "esbuild": "0.28.1",
     "lefthook": "^2.1.9",
     "nx": "^23.0.1",
     "portless": "^0.15.12",

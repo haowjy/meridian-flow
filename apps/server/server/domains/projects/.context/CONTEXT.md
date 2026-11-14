@@ -10,7 +10,9 @@ commit together with a durable readiness flag. Authenticated entry reads that
 flag lock-free (`ensureDefaultBootstrapReady`), and only an incomplete workspace
 re-enters the locked bootstrap: running it on every request made the warm path
 pay for work it no longer needed. A failed seed leaves the flag unset for a
-later repair and doesn't fail the request that found it.
+later repair and doesn't fail the request that found it. The starter chapter
+is seeded once, here; `./mf` reads the personal project from `GET /api/projects`
+and has no route that re-enters the bootstrap.
 
 ## Work operations
 

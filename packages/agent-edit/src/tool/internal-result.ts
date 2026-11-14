@@ -6,12 +6,7 @@ import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
 import { removedFile } from "./removal-copy.js";
-import type {
-  DocumentCommandName,
-  WriteErrorDetail,
-  WriteStatus,
-  WriteSuccessPhase,
-} from "./types.js";
+import type { DocumentCommandName, WriteStatus, WriteSuccessPhase } from "./types.js";
 
 export type InternalWriteResult = InternalWriteResultBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
@@ -28,8 +23,6 @@ interface InternalWriteResultBase {
   aheadSettlements?: ReadonlyMap<string, string>;
   model?: AgentEditModelPayload;
   writeId?: string;
-  settlementId?: string;
-  error?: WriteErrorDetail;
 }
 
 /** A missing document; a removed one says who removed it and how. */

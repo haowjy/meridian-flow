@@ -38,7 +38,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
 import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
@@ -744,82 +744,6 @@ export const threadDocuments = pgTable(
       "thread_documents_relationship_valid",
       sql`${table.relationship} IN ('editing', 'reading', 'created')`,
     ),
-  ],
-);
-
-/**
- * Links shown to the model in a holder document, per thread (host-only
- * evidence for ref assignment). Independent of transcript blocks, so
- * compaction and restart keep it. One row per showing key per turn: a repeat
- * in a later turn adds a row rather than moving the earlier one, so a fork
- * whose cutoff precedes the repeat still reads the showing it saw. Within a
- * turn the row keeps the greatest `seq` from the global sequence, which orders
- * showings ("latest"). Readers select the lineage's eligible rows by cutoff
- * first and only then keep the latest per key; nothing is copied.
- *
- * Addresses and holder URIs have no byte bound, so the key stores
- * `showing_digest`, a SHA-256 of the exact (ref, address, holder, view) tuple,
- * beside the exact values. Distinct tuples sharing a digest are treated as
- * impossible; were one to occur, the writer's exact-equality guard leaves the
- * first showing untouched rather than merging the two.
- */
-export const threadShownLinks = pgTable(
-  "thread_shown_links",
-  {
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    ref: text("ref").notNull(),
-    address: text("address").notNull(),
-    holderUri: text("holder_uri").notNull(),
-    /** `live` or `branch:<branchId>`. */
-    view: text("view").notNull(),
-    showingDigest: text("showing_digest").notNull(),
-    turnId: uuid("turn_id").$type<TurnId>().notNull(),
-    seq: bigserial("seq", { mode: "number" }).notNull(),
-  },
-  (table) => [
-    primaryKey({
-      name: "thread_shown_links_pk",
-      columns: [table.threadId, table.documentId, table.showingDigest, table.turnId],
-    }),
-    check("thread_shown_links_digest_valid", sql`${table.showingDigest} ~ '^[0-9a-f]{64}$'`),
-  ],
-);
-
-/**
- * Observation frontiers: the document state the model was shown by one
- * transcript block (a tool result, or a writer turn's reference block whose
- * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
- * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
- * captured with that cut.
- * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`.
- *
- * Keyed by the block's own id, so a fork that renders the inherited block
- * finds its rows with nothing copied, and deleting the block deletes them.
- * `recorded_seq` is global recording order: the latest row among a
- * conversation's blocks is the model's frontier for a room.
- */
-export const observationFrontiers = pgTable(
-  "observation_frontiers",
-  {
-    sourceBlockId: uuid("source_block_id")
-      .$type<TurnBlockId>()
-      .primaryKey()
-      .references(() => turnBlocks.id, { onDelete: "cascade" }),
-    roomKey: text("room_key").notNull(),
-    snapshot: byteaColumn("snapshot").notNull(),
-    journalPosition: bigint("journal_position", { mode: "number" }),
-    recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
-  },
-  (table) => [
-    // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
-    index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
   ],
 );
 

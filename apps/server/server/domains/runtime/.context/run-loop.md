@@ -86,17 +86,23 @@ so no exit after preparation can strand a heartbeating claim.
 `persistModelResponse` mints the response ID used by tool handlers. One
 response's tool calls dispatch one at a time (`orchestrator.ts`, "Sequential
 dispatch is load-bearing"), each result persisting before the next call runs.
-After all tool results persist, response-scoped agent-edit writes commit, so
-staged writes save at the end of every model step, before the next request is
-prepared; staged results are replaced by settled receipts in the same
-transaction. A staged result left by process failure becomes a typed rejection
-only when its canonical result shape and staged phase are both present.
-Cancellation rolls the response buffer back before finalizing the turn.
+A document-changing call (a registration with `documentCommand`) is a command
+keyed by its response and tool-call id (`modelEditIds`); it commits at its call,
+not at the end of the step, and its result block is final when stored, under the
+id `modelEditIds(key).blockId`. Every exit of such a call reaches the command's
+stored outcome before its block is stored and before the next call: the handler
+returned (success or refusal), timeout, cancel or a throw (the executor asks
+`resolveCommand`; a `never` outcome stores the runtime's "did not run" block),
+and a return followed by an abort (the returned outcome is stored, no second
+resolve; the run then cancels). A response with two `tool_use` parts under one id
+is refused before it is stored. A call left open by a dead process is resolved
+and stored by `loop/command-recovery.ts` when the turn is finalized
+([recovery](recovery.md)). Cancellation has nothing to roll back.
 
-A block whose document view the model receives records its
-[observation frontier](document-text.md#observation-frontiers) in the
-transaction that persists it, in `afterEvents`, once the block row exists. A
-staged result records none; the settled receipt that replaces it does.
+A block whose document view the model receives has its
+[observation frontier](document-text.md#observation-frontiers) recorded by the document
+side: an edit's inside its command, a read's handed over once the block is stored. The
+runtime's transactions write only the runtime's tables.
 
 Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
 handoff settlement is outside this loop. Summary calls do not consume model
@@ -135,7 +141,7 @@ the same shutdown hook sequence.
 - One response's tool calls run sequentially, in the model's order; timeout and
   abort races belong to the executor. `ToolExecutor.executeTools` (parallel
   unless a registration is sequential) is not used by the loop.
-- Response-write settlement is report-only: ordinary Yjs merge commits, and concurrent
-  attribution failure never changes acceptance.
+- A document write is a command: ordinary Yjs merge commits, and concurrent attribution
+  failure never changes acceptance.
 - Production runners hold the cross-process claim through completion delivery;
   process loss therefore leaves work for [recovery](recovery.md).

@@ -266,7 +266,7 @@ export class DraftCommandOwner {
       applyEntries: new Set(),
       queue: new ApplyClickQueue({
         send: (body) => applyDraftClick(ref, body),
-        lookup: (body) => observeDraftClick(ref, body),
+        lookup: observeDraftClick,
         unapply: (body) => unapplyDraftClick(ref, body),
         changed: () => {
           for (const entry of item.rooms) {

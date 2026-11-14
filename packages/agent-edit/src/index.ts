@@ -1,40 +1,12 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
-// A host's response-attempt surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is
-// exported once, from `integration.ts`.
-
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
-export interface AgentEditCore {
-  read: ReturnType<typeof createWriteTool>["read"];
-  write: ReturnType<typeof createWriteTool>["write"];
-  commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
-  prepareResponse: ReturnType<typeof createWriteTool>["prepareResponse"];
-  rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
-  hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
-  readRoom: ReturnType<typeof createWriteTool>["readRoom"];
-  responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
-  refuseStaged: ReturnType<typeof createWriteTool>["refuseStaged"];
-  retirePeer: ReturnType<typeof createWriteTool>["retirePeer"];
-  dropStaged: ReturnType<typeof createWriteTool>["dropStaged"];
-}
+export type AgentEditCore = ReturnType<typeof createWriteTool>;
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
-  const tool = createWriteTool(options);
-  return {
-    read: tool.read,
-    write: tool.write,
-    commitResponse: tool.commitResponse,
-    prepareResponse: tool.prepareResponse,
-    rollbackResponse: tool.rollbackResponse,
-    hasResponseDocument: tool.hasResponseDocument,
-    readRoom: tool.readRoom,
-    responseDocuments: tool.responseDocuments,
-    refuseStaged: tool.refuseStaged,
-    retirePeer: tool.retirePeer,
-    dropStaged: tool.dropStaged,
-  };
+  return createWriteTool(options);
 }
 
 export { splitDocumentFile } from "./document-address.js";
@@ -100,21 +72,10 @@ export {
 export type {
   MutationActor,
   ReadFunction,
-  ResponseClaimDiscardedEntry,
-  ResponseCommitDocumentResult,
-  ResponseCommitSuccessResult,
-  ResponseCommitterTransitionDetail,
-  ResponseCommitWriteReceipt,
-  ResponseLifecycleClaimDiscardedDetail,
-  ResponseLifecycleErrorDetail,
-  ResponseLifecycleEvent,
-  ResponseRollbackResult,
-  ResponseStagedCreateOutcome,
   UnexpectedWriteErrorDetail,
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
-  WriteIdempotencyHitDetail,
   WriteOutcome,
   WriteStatus,
   WriteSuccessPhase,

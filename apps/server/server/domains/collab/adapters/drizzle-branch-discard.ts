@@ -18,11 +18,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { discardBranchTreeFacts } from "../../context/tree/branch-tree-changes.js";
@@ -34,7 +30,6 @@ import {
   type TreeScopeRequest,
 } from "../../context/tree/mutation-scope.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardDraftChangedError,
@@ -42,11 +37,12 @@ import {
   type BranchDiscardStore,
   type DiscardKernelInput,
   type DiscardKernelResult,
+  type DiscardRefusal,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
-import { claimCommandWithinTx, settleCommandWithinTx } from "./drizzle-branch-commands.js";
+import { runCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
@@ -158,6 +154,8 @@ export function createDrizzleBranchDiscard(
   deps: KernelDeps & {
     branches: Pick<Branches, "lockActive" | "close">;
     workProjection: Pick<WorkProjectionMutation, "mutate">;
+    /** After commit: delete tombstoned binaries' objects, best effort. */
+    releaseObjects(storageUrls: readonly string[]): Promise<void>;
   },
 ): DrizzleBranchDiscard {
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
@@ -221,47 +219,55 @@ export function createDrizzleBranchDiscard(
 
   return {
     kernel,
-    deferUntilCommit: deferUntilDrizzleCommit,
     async discardLocked({ kernel: input, command }) {
-      return runInDrizzleTransaction(db, async () => {
-        // The branch's owner enters the Work boundary before the branch row and the scope
-        // locks.
-        return deps.workProjection.mutate(
-          { branches: [input.branchId] },
-          async () => {
-            // Claims follow the Work boundary for every command, including conflicting deliveries.
-            // The claim is pending until the kernel says what it ended, in this transaction.
-            if (command && !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope))) {
-              throw new BranchCommandExistsError(command.envelope.commandId);
-            }
-            const settle = async (ended: DiscardKernelResult | null) => {
-              if (command)
-                await settleCommandWithinTx(
-                  currentDrizzleDb(db),
-                  command.envelope.commandId,
-                  command.result(ended),
-                );
-              return ended;
-            };
-            if (!(await deps.branches.lockActive(input.branchId))) return settle(null);
-            const items = input.selection.kind === "items" ? input.selection.items : null;
-            const itemIds = items?.map((item) => item.documentId);
-            await acquireScope(db, input.branchId, {
-              branches: [
-                {
-                  branchId: input.branchId,
-                  ...(itemIds ? { documentIds: itemIds } : {}),
-                },
-              ],
-              documentIds: itemIds ?? [],
-            });
-            return settle(await kernel(input));
-          },
-          { seam: true, requireActive: true, allowFrozenLineage: true },
-        );
-      });
+      const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = { ended: null };
+      await runCommand(
+        db,
+        command.envelope,
+        // The branch's owner enters the Work boundary after the claim, before the branch row
+        // and the scope locks.
+        () =>
+          deps.workProjection.mutate(
+            { branches: [input.branchId] },
+            async () => {
+              settled.ended = null;
+              if (await deps.branches.lockActive(input.branchId)) {
+                const items = input.selection.kind === "items" ? input.selection.items : null;
+                const itemIds = items?.map((item) => item.documentId);
+                await acquireScope(db, input.branchId, {
+                  branches: [
+                    {
+                      branchId: input.branchId,
+                      ...(itemIds ? { documentIds: itemIds } : {}),
+                    },
+                  ],
+                  documentIds: itemIds ?? [],
+                });
+                const ended = await kernel(input);
+                deferUntilDrizzleCommit(() => deps.releaseObjects(ended.releasedObjects));
+                settled.ended = ended;
+              }
+              return command.result(settled.ended);
+            },
+            { seam: true, requireActive: true, allowFrozenLineage: true },
+          ),
+        (cause) => {
+          const refused = discardRefusal(cause);
+          if (!refused) return undefined;
+          settled.ended = refused;
+          return command.result(refused);
+        },
+      );
+      return settled.ended;
     },
   };
+}
+
+/** The kernel's final refusals: the branch's state no longer allows this item's Discard. */
+function discardRefusal(cause: unknown): DiscardRefusal | undefined {
+  if (cause instanceof BranchDiscardApplicableStateChangedError) return { refused: "stale" };
+  if (cause instanceof BranchDiscardDraftChangedError) return { refused: "draft_changed" };
+  return undefined;
 }
 
 /** Purge transactions run again when a branch's tree scope moved under them. */

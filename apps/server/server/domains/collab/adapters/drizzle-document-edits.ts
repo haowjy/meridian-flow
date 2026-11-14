@@ -15,8 +15,12 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import {
+  getDrizzleTransactionLocal,
+  setDrizzleTransactionLocal,
+} from "../../../shared/drizzle-transaction.js";
 import { treeChangeFault } from "../domain/tree-inverse.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
@@ -25,7 +29,7 @@ export interface ReceiptWrite {
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
   responseId?: string | null;
-  editScopeId?: string | null;
+  commandId?: string;
   toolCallId?: string | null;
   actor: "agent" | "human" | "system";
   /** Reserved once by the logical model edit; never allocated at capture. */
@@ -37,6 +41,17 @@ export interface ReceiptWrite {
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
   /** A tree entry: a move, delete, restore or settlement, recorded with no parts. */
   treeChange?: TreeChange;
+}
+
+const modelEditCommand = { name: "model-edit-command" };
+
+/**
+ * Every edit receipt recorded in the ambient transaction names this command, so the model's text
+ * receipts and its tree entries carry the id of the one command that made them without each
+ * writer threading it through.
+ */
+export function bindEditsToCommand(commandId: string): void {
+  setDrizzleTransactionLocal(modelEditCommand, commandId);
 }
 
 /** Caller holds the authoritative document/draft mutation lock and its event transaction. */
@@ -53,7 +68,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       threadId: input.threadId,
       turnId: input.turnId,
       responseId: input.responseId,
-      editScopeId: input.editScopeId,
+      commandId: input.commandId ?? getDrizzleTransactionLocal<string>(modelEditCommand),
       toolCallId: input.toolCallId,
       actor: input.actor,
       actorUserId: input.actorUserId,
@@ -122,4 +137,25 @@ export function captureReceiptRows(
     origin: rows[i].origin,
     held: receipt.held,
   }));
+}
+
+/** Names the command on the receipts of the live updates it appended (rows already recorded). */
+export async function stampLiveEditsWithCommand(
+  db: Db,
+  commandId: string,
+  seqs: readonly number[],
+): Promise<void> {
+  if (!seqs.length) return;
+  await db
+    .update(documentEdits)
+    .set({ commandId })
+    .where(
+      inArray(
+        documentEdits.id,
+        db
+          .select({ id: documentYjsUpdates.editId })
+          .from(documentYjsUpdates)
+          .where(inArray(documentYjsUpdates.id, [...seqs])),
+      ),
+    );
 }

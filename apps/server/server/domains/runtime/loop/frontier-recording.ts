@@ -1,41 +1,39 @@
 /**
- * Records observation frontiers with the transcript block that showed them and
- * builds frontier lookups. Clearing a block's old row is part of writing the
- * block and fails it; recording the new row never does: the store isolates its
- * insert in a savepoint, and a failure is logged and leaves the block with no
- * frontier.
+ * The runtime's side of what the model was shown: handing a stored result's evidence to the
+ * document side, and the lookups a tool call reads. The document side owns the rows, so a failed
+ * hand-over is logged and leaves the block with no frontier, and a failed lookup is logged and
+ * answers the empty frontier: what records next is conservative, never missing.
  */
-import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
-import type { TurnBlockId } from "@meridian/contracts";
+import type { FrontierLookup } from "@meridian/agent-edit/integration";
+import type { ProjectId, TurnBlockId } from "@meridian/contracts";
+import type { ResultEvidence } from "../../../shared/model-evidence.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
+import type { DocumentEvidence } from "../ports/document-evidence.js";
 
 export interface FrontierRecordingDeps {
-  observationFrontiers: ObservationFrontiers;
+  documentEvidence: DocumentEvidence;
   eventSink: EventSink;
 }
 
-/**
- * Replace a block's frontier inside the transaction persisting it, after its
- * row is projected (`afterEvents`). A result whose content was replaced always
- * calls this, with none when its new rendering records no frontier.
- */
-export async function recordFrontier(
+/** A read's evidence, handed over once the block that showed it is stored. */
+export async function recordStoredResult(
   deps: FrontierRecordingDeps,
-  sourceBlockId: TurnBlockId,
-  frontier: ObservationFrontier | undefined,
-  correlation: { threadId: string; turnId: string },
+  owner: { projectId: ProjectId; threadId: string; turnId: string },
+  blockId: TurnBlockId,
+  evidence: ResultEvidence,
 ): Promise<void> {
-  await deps.observationFrontiers.remove(sourceBlockId);
-  if (!frontier) return;
   try {
-    await deps.observationFrontiers.insert(sourceBlockId, frontier);
+    await deps.documentEvidence.resultStored({
+      ...owner,
+      shown: evidence.shown,
+      frontiers: evidence.frontier ? [{ blockId, frontier: evidence.frontier }] : [],
+    });
   } catch (error) {
     emitEvent(deps.eventSink, {
       level: "warn",
       source: "runtime.orchestrator",
       name: "observation_frontier.record_failed",
-      correlation,
+      correlation: { threadId: owner.threadId, turnId: owner.turnId },
       payload: unknownToEventPayload(error),
     });
   }
@@ -66,11 +64,7 @@ export class CreditedBlocks {
   }
 }
 
-/**
- * The model's latest frontier for a room among `blockIds`, read when called.
- * A failed lookup is logged and answers null, the empty frontier, so what
- * records next is conservative rather than missing.
- */
+/** The model's latest frontier for a room among `blockIds`, read when called. */
 export function frontierLookup(
   deps: FrontierRecordingDeps,
   blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
@@ -78,7 +72,7 @@ export function frontierLookup(
 ): FrontierLookup {
   return async (room) => {
     try {
-      return await deps.observationFrontiers.latest(room, await blockIds());
+      return await deps.documentEvidence.latestFrontier(room, await blockIds());
     } catch (error) {
       emitEvent(deps.eventSink, {
         level: "warn",

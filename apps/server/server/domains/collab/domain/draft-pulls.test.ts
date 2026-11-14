@@ -41,10 +41,6 @@ describe("DraftPullService", () => {
         }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
-          ensureThreadPeerDraft: async () => ({
-            documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            workDraft: { draftId: "work", seed: null },
-          }),
         },
         debounceMs: 10,
         maxDebounceMs: 50,
@@ -94,10 +90,6 @@ describe("DraftPullService", () => {
         }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
-          ensureThreadPeerDraft: async () => ({
-            documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            workDraft: { draftId: "work", seed: null },
-          }),
         },
         diagnostics: { backgroundFailed: () => {}, merged: () => {} },
         debounceMs: 10,
@@ -164,10 +156,6 @@ describe("DraftPullService", () => {
         }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
-          ensureThreadPeerDraft: async () => ({
-            documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            workDraft: { draftId: "work", seed: null },
-          }),
         },
         diagnostics: { backgroundFailed: failed, merged: () => {} },
         debounceMs: 10,

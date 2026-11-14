@@ -24,7 +24,7 @@ function resolveResponse(step: MockModelStep, requestCount: number, promptTokens
   }
   const reasoning = step.reasoning ?? sample?.reasoning ?? "";
   const toolCalls = (step.toolCalls ?? []).map((call, index) => ({
-    id: `call_mock_${requestCount}_${index}`,
+    id: call.id ?? `call_mock_${requestCount}_${index}`,
     type: "function" as const,
     function: { name: call.name, arguments: call.rawArgs ?? JSON.stringify(call.args ?? {}) },
   }));

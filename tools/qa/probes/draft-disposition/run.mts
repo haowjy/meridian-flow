@@ -181,9 +181,10 @@ try {
 
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
-  const journalBefore = await h.raw`select id,status from draft_write_journal order by id`;
+  const journalBefore = await h.raw`select id from draft_write_journal order by id`;
   const close = createDraftClose();
   const discard = createDrizzleBranchDiscard(h.db, {
+    releaseObjects: async () => {},
     close,
     branches: h.branches,
     workProjection: h.projection,
@@ -196,6 +197,7 @@ try {
   });
   await discard.discardLocked({
     kernel: { branchId: work.branchId, selection: { kind: "whole" } },
+    command: h.discardCommand(work.branchId),
   });
   const closed =
     await h.raw`select id,status,closed_cause from document_drafts where branch_id=${work.branchId} order by id`;
@@ -206,10 +208,7 @@ try {
     await h.raw`select id,origin,effect from document_edit_parts order by id`,
     partsBefore,
   );
-  assert.deepEqual(
-    await h.raw`select id,status from draft_write_journal order by id`,
-    journalBefore,
-  );
+  assert.deepEqual(await h.raw`select id from draft_write_journal order by id`, journalBefore);
   for (const f of closing)
     assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "discarded"));
   assert.equal(

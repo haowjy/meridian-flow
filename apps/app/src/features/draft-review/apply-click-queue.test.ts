@@ -119,7 +119,7 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     await flush();
     queue.close();
     expect(await second).toEqual({ status: "cancelled" });
-    answer.resolve({ status: "pending", commandId: "first" });
+    answer.resolve({ status: "conflict", commandId: "first" });
     await flush();
     await vi.advanceTimersByTimeAsync(1000);
     expect(lookup).toHaveBeenCalledWith(body("first"));

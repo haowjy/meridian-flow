@@ -63,6 +63,7 @@ async function setup() {
     turnId: turn.id,
     blockSeqRef: { value: 0 },
     allBlocks: [],
+    store: (persist) => persist(),
   };
   return { repos, child, turn, transcript };
 }
@@ -129,7 +130,7 @@ describe("captured candidate terminal policy", () => {
       executionReports: repos.executionReports,
     });
     await finalizeExecution(
-      { repos, eventWriter: transcript.persistence.eventWriter },
+      { repos, eventWriter: transcript.persistence.eventWriter, recoverCommands: async () => {} },
       {
         threadId: child.id,
         turnId: turn.id,
@@ -187,7 +188,11 @@ describe("persisted execution fallback", () => {
       content: "unattributed text",
     });
     const terminal = await finalizeExecution(
-      { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
+      {
+        repos: scope.repos,
+        eventWriter: scope.transcript.persistence.eventWriter,
+        recoverCommands: async () => {},
+      },
       {
         threadId: scope.child.id,
         turnId: scope.turn.id,
@@ -206,7 +211,11 @@ describe("persisted execution fallback", () => {
       content: "durable partial",
     });
     const terminal = await finalizeExecution(
-      { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
+      {
+        repos: scope.repos,
+        eventWriter: scope.transcript.persistence.eventWriter,
+        recoverCommands: async () => {},
+      },
       {
         threadId: scope.child.id,
         turnId: scope.turn.id,

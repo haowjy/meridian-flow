@@ -54,7 +54,6 @@ export async function readDocument(
       ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
       ...(options.recordingFrontier ? { frontiers: { recording: options.recordingFrontier } } : {}),
-      ...(ctx.responseIdentity?.editScopeId ? { responseIdentity: ctx.responseIdentity } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },
   );
