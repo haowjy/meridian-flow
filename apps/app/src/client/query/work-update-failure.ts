@@ -18,8 +18,6 @@ export function workUpdateFailure(cause: unknown, fallback: string): string {
       return t`This Work is archived. Unarchive it to edit.`;
     case "work_not_found":
       return t`This Work no longer exists.`;
-    case "work_name_conflict":
-      return t`Another Work already has this name. Choose a different name.`;
     default:
       return fallback;
   }

@@ -58,8 +58,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       runWorkLifecycleCommand,
       WorkDeleteRetryError,
       updateWorkTransition,
-      WorkRestoreConflictError,
-      WorkRestoreExpiredError,
       createWorkProjectionMutation,
       createDrizzleWorkPurger,
     } = await import("./index.js");
@@ -225,9 +223,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         claimed();
         return held;
       });
-      const first = runWorkCommand(commands, input(raced, "work_create"), () =>
-        works.create({ projectId: PROJECT_ID, name: "Raced" }),
-      );
+      const first = runWorkCommand(commands, input(raced, "work_create"), async () => ({
+        work: await works.create({ projectId: PROJECT_ID, name: "Raced" }),
+      }));
       await entered;
       const resolving = commands.resolve({
         commandId: raced as CommandId,
@@ -241,9 +239,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await resolving).toMatchObject({ kind: "stored", outcome: { status: "done" } });
 
       // A resend answers the stored Work and creates nothing.
-      const resent = await runWorkCommand(commands, input(raced, "work_create"), () =>
-        works.create({ projectId: PROJECT_ID, name: "Raced" }),
-      );
+      const resent = await runWorkCommand(commands, input(raced, "work_create"), async () => ({
+        work: await works.create({ projectId: PROJECT_ID, name: "Raced" }),
+      }));
       expect(resent?.name).toBe("Raced");
       expect(
         (await works.listByProject(PROJECT_ID, {})).filter((w) => w.name === "Raced"),
@@ -260,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         runWorkCommand(commands, input(never, "work_create"), async () => {
           ran = true;
-          return works.create({ projectId: PROJECT_ID, name: "Too late" });
+          return { work: await works.create({ projectId: PROJECT_ID, name: "Too late" }) };
         }),
       ).rejects.toMatchObject({ statusCode: 409 });
       expect(ran).toBe(false);
@@ -277,7 +275,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             attempts += 1;
             if (attempts === 1) throw new WorkDeleteRetryError();
             await works.softDelete(victim.id, async () => {});
-            return undefined;
+            return {};
           }),
       );
       expect(attempts).toBe(2);
@@ -544,7 +542,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("frees a deleted Work's name, keeps its handle, and refuses a restore into a reclaimed name", async () => {
+    it("keeps a deleted Work's handle through restore, and restores into a name another Work holds", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
       await expect(works.restore(available.id)).resolves.toMatchObject({
@@ -555,7 +553,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const nameOwner = await works.create({ projectId: PROJECT_ID, name: "Reclaimed" });
       await works.softDelete(nameOwner.id);
       await works.create({ projectId: PROJECT_ID, name: "Reclaimed" });
-      await expect(works.restore(nameOwner.id)).rejects.toEqual(new WorkRestoreConflictError());
+      await expect(works.restore(nameOwner.id)).resolves.toMatchObject({
+        after: { deletedAt: null, name: "Reclaimed", handle: nameOwner.handle },
+        changed: true,
+      });
     });
 
     it("keeps a Work's sources and nodes through its delete and restore", async () => {
@@ -856,15 +857,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           ),
       ).resolves.toHaveLength(1);
-    });
-
-    it("refuses restoring a deleted Work after its retention deadline", async () => {
-      const work = await works.create({ projectId: PROJECT_ID, name: "Expired Work" });
-      await db
-        .update(schema.works)
-        .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
-        .where(eq(schema.works.id, work.id));
-      await expect(works.restore(work.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
     });
 
     it("refuses restoring a marked child after its root moves to another Work", async () => {

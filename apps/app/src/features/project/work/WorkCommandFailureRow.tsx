@@ -54,7 +54,7 @@ export function workFailureLine(
   };
 }
 
-/** A restore the server will refuse again as it is: Retry can't help. */
+/** A restore the server will refuse again as it is: Retry can't help. A 404 is a Work the purge already took. */
 function restoreRefusal(error: Error, name?: string): ReactNode {
   const status = error instanceof HttpResponseError ? error.status : null;
   if (status === 409)
@@ -63,7 +63,7 @@ function restoreRefusal(error: Error, name?: string): ReactNode {
     ) : (
       <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
     );
-  if (status === 410)
+  if (status === 404)
     return name ? (
       <Trans>
         {name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.

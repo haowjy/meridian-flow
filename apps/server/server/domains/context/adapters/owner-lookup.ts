@@ -108,7 +108,7 @@ export function createDrizzleOwnerLookup(
     },
     async worksNamed(projectId, name) {
       // Exact name, or the same name with punctuation and spacing collapsed: the two spellings
-      // `findWorkNamed` accepts. Few rows can match, so the cap only guards a pathological project.
+      // `worksNamedLike` accepts. Few rows can match, so the cap only guards a pathological project.
       const exact = foldAccents(name.trim()).toLowerCase();
       const collapsed = collapseName(name);
       const rows = await currentDrizzleDb(db)

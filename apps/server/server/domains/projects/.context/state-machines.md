@@ -14,8 +14,8 @@ stateDiagram-v2
   state "deletedAt" as D {
     [*] --> present
     present --> deleted: softDelete, ending its threads' runs in the same transaction
-    deleted --> present: restore
-    deleted --> [*]: purge
+    deleted --> present: restore, whatever the deleted time
+    deleted --> [*]: purge, 30 days after the delete
   }
 ```
 
@@ -31,10 +31,22 @@ stateDiagram-v2
   node is written: what is in Trash comes back as it was. A chat the writer
   trashed separately stays trashed
   ([thread trash](../../threads/.context/state-machines.md)).
+- **Restore never reads the clock; the purge does.** A Work in Trash restores, even past 30 days,
+  until the purge sweep takes it (`drizzle-work-purge.ts`, the only code that compares the deleted
+  time with `deletionPurgeCutoff`). Both take the Work's thread-tree lock and the purge re-checks
+  under it, so a restore never brings back a half-purged Work. A purged Work is a 404.
+- **A second press answers `already`.** Archive of an archived Work, unarchive of a live one,
+  delete of a deleted one and restore of a live one store `done` with the Work and
+  `settled: [{ rule: "already", state }]` (`lib/work-command.ts`).
+- **A rename or goal lands on a Work wherever it is filed**, archived or in Trash; the Work
+  stays where it is. Names may repeat (no unique index): a Work is told apart by its id and
+  handle, and a name that matches two Works resolves to neither in the model's lookups
+  (`context/owner-lookup.ts`), which answer with both handles.
 - **Branches and drafts outlive the delete** until purge, so restore finds them.
 - No Work, the project's Work for chats outside any task, is never archived (the
   `works_no_work_not_archived` check), and the repository refuses to change it
-  (`WorkLockedError`).
+  (`WorkLockedError`, answered 400 `work_locked`).
 - A caller that finds the Work unavailable gets `WorkLifecycleUnavailableError` with
-  `missing`, `deleted` or `archived` (`domain/work-lifecycle.ts`). `missing` is a lookup
-  result, never a stored state.
+  `missing`, `deleted` or `archived` (`domain/work-lifecycle.ts`): the lock layer's draft writes
+  and archive of a deleted Work. A Work update never raises it. `missing` is a lookup result,
+  never a stored state.

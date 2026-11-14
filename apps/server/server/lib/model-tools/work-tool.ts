@@ -21,7 +21,6 @@ import {
   updateWorkTransition,
   WorkLifecycleUnavailableError,
   WorkLockedError,
-  WorkNameConflictError,
   WorkNameRequiredError,
   WorkStatusInvalidError,
 } from "../../domains/projects/index.js";
@@ -336,8 +335,6 @@ function expectedWorkError(
     return toolError({ code: "invalid_work_status", message: error.message });
   if (error instanceof WorkNameRequiredError)
     return toolError({ code: "invalid_work_name", message: error.message });
-  if (error instanceof WorkNameConflictError)
-    return toolError({ code: "work_name_conflict", message: error.message });
   if (error instanceof WorkLockedError)
     return toolError({ code: error.code, message: error.message });
   if (error instanceof WorkLifecycleUnavailableError)

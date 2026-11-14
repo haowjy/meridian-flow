@@ -1,14 +1,9 @@
 /** Pure restore policy shared by every Work repository adapter. */
-import { deletionPurgeAt } from "@meridian/contracts/retention";
 import type { Work } from "@meridian/contracts/works";
-import { WorkRestoreExpiredError } from "../ports/work-repository.js";
 
 export type WorkRestoreDecision = "restore" | "unchanged";
 
-export function decideWorkRestore(work: Work, now: Date): WorkRestoreDecision {
-  if (!work.deletedAt) return "unchanged";
-  if (deletionPurgeAt(work.deletedAt).getTime() <= now.getTime()) {
-    throw new WorkRestoreExpiredError();
-  }
-  return "restore";
+/** A Work still in Trash restores; only the purge sweep reads the 30-day clock. */
+export function decideWorkRestore(work: Work): WorkRestoreDecision {
+  return work.deletedAt ? "restore" : "unchanged";
 }

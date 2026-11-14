@@ -31,7 +31,9 @@ export async function updateWorkMetadataForWriter(
   },
 ): Promise<Work> {
   try {
-    const work = await requireWorkOwner(deps, input.workId, input.userId);
+    const work = await requireWorkOwner(deps, input.workId, input.userId, {
+      includeSoftDeleted: true,
+    });
     const updated = await runWorkCommand(
       deps.commands,
       {
@@ -42,9 +44,11 @@ export async function updateWorkMetadataForWriter(
         workId: input.workId,
         body: { name: input.name, goal: input.goal },
       },
-      async () =>
-        (await updateWorkTransition(deps, input.workId, { name: input.name, goal: input.goal }))
-          .after,
+      async () => ({
+        work: (
+          await updateWorkTransition(deps, input.workId, { name: input.name, goal: input.goal })
+        ).after,
+      }),
     );
     return updated as Work;
   } catch (error) {

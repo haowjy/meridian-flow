@@ -28,14 +28,14 @@ export default defineEventHandler(async (event) => {
         workId,
         body,
       },
-      async () =>
-        (
-          await setWorkArchived(
-            { works: app.workRepo, workContextNotices: app.workContextNotices },
-            workId,
-            true,
-          )
-        ).after,
+      async () => {
+        const { after, changed } = await setWorkArchived(
+          { works: app.workRepo, workContextNotices: app.workContextNotices },
+          workId,
+          true,
+        );
+        return { work: after, ...(!changed && { already: "archived" }) };
+      },
     );
     return serializeTransport(archived);
   } catch (error) {

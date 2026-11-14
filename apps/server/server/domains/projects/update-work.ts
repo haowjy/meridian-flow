@@ -53,10 +53,6 @@ export async function updateWorkTransition(
   const result = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before) throw new WorkLifecycleUnavailableError(workId, "missing");
-    const lifecycle = workLifecycleState(before);
-    if (lifecycle !== "active") {
-      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.handle);
-    }
     if (
       before.isNoWork &&
       (normalized.name !== undefined ||
@@ -101,9 +97,8 @@ export async function setWorkArchived(
   return deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before) throw new WorkLifecycleUnavailableError(workId, "missing");
-    const lifecycle = workLifecycleState(before);
-    if (lifecycle === "deleted") {
-      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.handle);
+    if (workLifecycleState(before) === "deleted") {
+      throw new WorkLifecycleUnavailableError(workId, "deleted", before.handle);
     }
     const after = archived ? await deps.works.archive(workId) : await deps.works.unarchive(workId);
     const result = { before, after, changed: before.archivedAt !== after.archivedAt };

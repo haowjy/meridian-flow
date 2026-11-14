@@ -24,7 +24,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createWorkProjectionMutation } = await import("./adapters/work-projection-mutation.js");
     const { createDrizzleContextSources } = await import("../context/adapters/context-sources.js");
     const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
-    const { WorkNameConflictError } = await import("./ports/work-repository.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -187,25 +186,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: projectId,
       });
       await expect(works.findById(workId as never)).resolves.toMatchObject({ id: workId });
-    });
-
-    it("maps case-insensitive active Work name conflicts to the domain error", async () => {
-      const userId = "93b1f764-1234-f678-0712-123456789ac0";
-      const projectId = "93b1f764-1234-f678-0712-123456789ac1";
-      await db.insert(schema.users).values({
-        id: userId,
-        externalId: "work-name-conflict",
-        email: "work-name-conflict@example.com",
-      });
-
-      const projects = createDrizzleProjectRepository({ db });
-      const works = workRepository();
-      await projects.create({ id: projectId, userId, title: "Name conflict" });
-      await works.create({ projectId, createdByUserId: userId, name: "Book Two" });
-
-      await expect(
-        works.create({ projectId, createdByUserId: userId, name: "book two" }),
-      ).rejects.toBeInstanceOf(WorkNameConflictError);
     });
   });
 }

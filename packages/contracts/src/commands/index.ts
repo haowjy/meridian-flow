@@ -45,6 +45,12 @@ export type CommandOutcome<R = unknown> =
   | { status: "done" | "refused"; result: R }
   | { status: "never" };
 
+/**
+ * Where a done command's result differs from what was asked. Absent when it landed as asked.
+ * `already`: the asked state held before the command ran (a second press, or another tab did it).
+ */
+export type Settlement = { rule: "already"; state: string };
+
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =
   | { status: "none" }
