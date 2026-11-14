@@ -16,7 +16,8 @@ import {
 export type FolderChange =
   | { kind: "new" }
   | { kind: "deleted" }
-  | { kind: "changed"; was: string | null; moved: boolean };
+  /** `was`: the name before a rename. `moved`: into a folder by name, or `top` of its source. */
+  | { kind: "changed"; was: string | null; moved: { into: string } | "top" | null };
 
 /** Why a pending change cannot land: the replay skips it, or live deleted what it changes. */
 export type LandingFault =
@@ -62,21 +63,29 @@ export function landingFaults(
   return faults;
 }
 
-function folderChange(records: readonly TreeRecord[]): FolderChange {
+function folderChange(work: TreeProjection, records: readonly TreeRecord[]): FolderChange {
   if (records.some((record) => record.type === "create")) return { kind: "new" };
   if (records.at(-1)?.type === "delete") return { kind: "deleted" };
   const renamed = records.find((record) => record.type === "rename");
+  // Where the Work sends it, which is not where it stands when the move cannot land.
+  const move = records.filter((record) => record.type === "move").at(-1);
   return {
     kind: "changed",
     was: renamed?.type === "rename" ? renamed.fromName : null,
-    moved: records.some((record) => record.type === "move"),
+    moved:
+      move?.type !== "move"
+        ? null
+        : isSourceRoot(move.parent)
+          ? "top"
+          : { into: work.nodes.get(move.parent)?.displayName ?? "" },
   };
 }
 
 /**
  * The drafted documents arranged under the outermost folder the Work changes above each, in
  * the list's order; documents under none come first, ungrouped. A changed folder no drafted
- * document stands under (a rename alone) is a group with no files.
+ * document stands under (a rename alone), or whose change cannot land, is a group with no
+ * files: what is inside it is not going where it goes.
  */
 export function groupByChangedFolder<T extends { documentId: string }>(
   files: readonly T[],
@@ -95,7 +104,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     let found: string | null = null;
     let at = work.nodes.get(documentId)?.parent;
     for (let hops = 0; at && !isSourceRoot(at) && hops < 10_000; hops += 1) {
-      if (byFolder.has(at)) found = at;
+      if (byFolder.has(at) && !faults.has(at)) found = at;
       at = work.nodes.get(at)?.parent;
     }
     return found;
@@ -108,14 +117,14 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     else grouped.set(folder, [...(grouped.get(folder) ?? []), file]);
   }
   const heads = [...byFolder.keys()].filter(
-    (folder) => outermost(folder) === null && work.nodes.has(folder),
+    (folder) => work.nodes.has(folder) && (faults.has(folder) || outermost(folder) === null),
   );
   return [
     ...(loose.length > 0 ? [{ folder: null, files: loose }] : []),
     ...heads.map((id) => ({
       folder: {
         id,
-        change: folderChange(byFolder.get(id) ?? []),
+        change: folderChange(work, byFolder.get(id) ?? []),
         fault: faults.get(id) ?? null,
       },
       files: grouped.get(id) ?? [],

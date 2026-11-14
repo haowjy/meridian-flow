@@ -14,7 +14,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
-import { documentLocationName } from "@/features/chat/document-display-name";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -623,16 +622,16 @@ function FolderGroupRow({
 }) {
   const name = entry?.name ?? t`Folder`;
   const { change } = folder;
+  const was = change.kind === "changed" ? change.was : null;
+  const moved = change.kind === "changed" ? change.moved : null;
+  const into = moved && moved !== "top" ? moved.into : null;
+  const movedLine = moved === "top" ? t`Moving to the top` : into ? t`Moving into ${into}` : null;
   const detail =
     change.kind === "new"
       ? t`New`
       : change.kind === "deleted"
         ? t`Deleted`
-        : change.was && change.moved
-          ? t`Was ${change.was}, now in ${entry ? documentLocationName(entry.uri) : name}`
-          : change.was
-            ? t`Was ${change.was}`
-            : t`Moving to ${entry ? documentLocationName(entry.uri) : name}`;
+        : [was ? t`Was ${was}` : null, movedLine].filter(Boolean).join(". ");
   return (
     <li data-change-folder={folder.id}>
       <ListRow
