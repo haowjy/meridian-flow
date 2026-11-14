@@ -23,3 +23,9 @@
   (`components/ui/list-row.tsx`, `picker.tsx`): `WorkspaceNavBody`'s rows are not
   `ListRow`s yet; `WorkScopePicker` is a `DropdownMenu`, not a `Picker`; and
   the editor's `SuggestionMenu` keeps its own listbox.
+- Sidebar row notices (`components/app/RowWord.tsx`): a row inside a collapsed folder or
+  scrolled out of view shows no word, so its Undo is reachable only by Ctrl+Z; mark the nearest
+  visible ancestor instead. After a word's Undo, focus falls to the pane's first button when
+  the row hasn't come back yet. The server-refusal mark (`NamespaceFailureMark`, and its phone
+  `refusalNotice` line, which adds height) should become a `RowWord` ("Moved back", the reason
+  in its sentence).
