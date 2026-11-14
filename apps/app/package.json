@@ -28,7 +28,6 @@
     "@meridian/design-tokens": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
-    "@meridian/resource-replica": "workspace:*",
     "@meridian/thread-client": "workspace:*",
     "@meridian/yjs-inspect": "workspace:*",
     "@meridian/project-tree": "workspace:*",

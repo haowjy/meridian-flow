@@ -1,5 +1,4 @@
-/** Shared sibling ordering: stored ranks, and the name order a batch of arrivals takes. */
-import type { CatalogEntry } from "@meridian/contracts/protocol";
+/** Sibling orders that listings outside the replay share with it. */
 
 export interface DefaultSiblingOrderEntry {
   kind: "folder" | "file";
@@ -24,9 +23,8 @@ export function compareDefaultSiblings(
   return left.identity < right.identity ? -1 : left.identity > right.identity ? 1 : 0;
 }
 
-type CatalogChild = Extract<CatalogEntry, { kind: "folder" | "file" }>;
-/** What display order reads of a child; a catalog row or a server listing row both have it. */
-export type RankedSibling = Pick<CatalogChild, "rank" | "entryId">;
+/** What display order reads of a child: a server listing row has both. */
+export type RankedSibling = { rank?: string | null; entryId: string };
 
 /** Display order of one parent's children: rank (compared bytewise, never with the name collator), then identity. */
 export function compareCatalogSiblings(left: RankedSibling, right: RankedSibling): number {

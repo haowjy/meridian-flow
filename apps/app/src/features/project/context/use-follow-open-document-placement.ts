@@ -10,18 +10,17 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useMemo, useRef } from "react";
+import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
-  useAccountResourceProjection,
   useContextRemovalCoordinator,
   usePresentedDocuments,
-  useProjectContextAvailabilityCoordinator,
   useShownDocuments,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
-import { projectResourceDocument } from "./open-document-from-file";
+import { placeTab } from "./open-document-from-file";
 import { useIsDraftOnly } from "./use-is-draft-only";
 
 export function useFollowOpenDocumentPlacement(input: {
@@ -45,9 +44,8 @@ export function useFollowOpenDocumentPlacement(input: {
     ],
     [presented, shown],
   );
-  const resourceProjection = useAccountResourceProjection(input.projectId);
+  const trees = useProjectTrees(input.projectId);
   const contextRemoval = useContextRemovalCoordinator();
-  const availability = useProjectContextAvailabilityCoordinator();
   const isDraftOnly = useIsDraftOnly(input.projectId);
   // A removal is said once per document: the document stays presented in its removed state.
   const removed = useRef(new Set<string>());
@@ -69,28 +67,23 @@ export function useFollowOpenDocumentPlacement(input: {
         : null;
     const gone = new Set<string>();
     for (const tab of mounted) {
-      const projection = projectResourceDocument(
-        tab,
-        resourceProjection.records,
-        resourceProjection.placement,
+      const found = trees.find(tab.documentId);
+      const projection = placeTab(
+        found && {
+          scheme: found.source.scheme,
+          file: found.file,
+          owner: ownerOfSource(found.source),
+        },
+        trees.isComplete,
         isDraftOnly(tab.documentId),
       );
       if (projection.kind === "none") continue;
-      if (projection.kind === "terminal" || projection.kind === "removed") {
+      if (projection.kind === "removed") {
         gone.add(tab.documentId);
         if (removed.current.has(tab.documentId)) continue;
         removed.current.add(tab.documentId);
         // closeVanished keeps a document a live draft still holds, and says the rest went.
         contextRemoval.closeVanished(input.projectId, tab);
-        if (projection.kind === "terminal")
-          void availability
-            .acceptCommittedDelete({
-              projectId: input.projectId,
-              deletedDocumentIds: projection.documentIds,
-              generation: projection.generation,
-              deletionVersion: projection.deletionVersion,
-            })
-            .catch((error: unknown) => reportError(error));
         continue;
       }
       // A route is the document's only while the selection is bound to it there; a URL the
@@ -129,11 +122,9 @@ export function useFollowOpenDocumentPlacement(input: {
     input.onOpenContextTarget,
     input.projectId,
     input.selection,
-    availability,
     contextRemoval,
     isDraftOnly,
-    resourceProjection.records,
-    resourceProjection.placement,
+    trees,
     mounted,
   ]);
 }

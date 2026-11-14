@@ -38,7 +38,7 @@ export function useNewDocument(
       {
         isCurrent,
         focus: true,
-        document: { kind: "new", documentId, name: made.name, resourceHandle: documentId },
+        document: { kind: "new", documentId, name: made.name },
       },
     );
     if (result.kind === "failed") throw result.error;

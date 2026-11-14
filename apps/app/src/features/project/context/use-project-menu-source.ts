@@ -28,7 +28,12 @@ export type ProjectMenuSource = {
   /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
   trailInside(folderId: string): DrillNode[] | null;
   /** The tree and shown node a folder or file id names, from whichever area holds it. */
-  locate(id: string): { scheme: ProjectContextTreeScheme; tree: TreeView; entry: TreeEntry } | null;
+  locate(id: string): {
+    scheme: ProjectContextTreeScheme;
+    owner: ContextOwner;
+    tree: TreeView;
+    entry: TreeEntry;
+  } | null;
   /** Resolve an area or folder row into its placement destination. */
   folderFor(rowId: string): {
     scheme: ProjectContextTreeScheme;
@@ -188,7 +193,8 @@ export function useProjectMenuSource({
     locate: (id) => {
       for (const area of areas) {
         const entry = area.tree?.entry(id);
-        if (area.tree && entry) return { scheme: area.scheme, tree: area.tree, entry };
+        if (area.tree && entry)
+          return { scheme: area.scheme, owner: area.owner, tree: area.tree, entry };
       }
       return null;
     },

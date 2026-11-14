@@ -1,7 +1,6 @@
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import type { ContextOwner } from "@meridian/contracts/protocol";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
-import { type ProjectTrees, useProjectTrees } from "@/client/query/useProjectTrees";
+import { ownerOfSource, type ProjectTrees, useProjectTrees } from "@/client/query/useProjectTrees";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { serverDocumentFromFile } from "@/features/project/context/open-document-from-file";
 import { useIsDraftOnly } from "@/features/project/context/use-is-draft-only";
@@ -51,16 +50,7 @@ export function useLiveTabs(): LiveTabs {
 function currentTab(trees: ProjectTrees, tab: OpenDocument): OpenDocument | null {
   const place = trees.find(tab.documentId);
   if (!place) return null;
-  const { owner } = place.source;
-  const contextOwner: ContextOwner =
-    owner.kind === "work"
-      ? { workId: owner.workId }
-      : owner.kind === "lineage"
-        ? { rootThreadId: owner.rootThreadId }
-        : owner.kind === "chat"
-          ? { chatThreadId: owner.chatId }
-          : {};
-  return serverDocumentFromFile(place.source.scheme, place.file, contextOwner);
+  return serverDocumentFromFile(place.source.scheme, place.file, ownerOfSource(place.source));
 }
 
 function useProjectLiveTabs(projectId: string): LiveTabs {

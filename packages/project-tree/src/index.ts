@@ -58,6 +58,12 @@ export {
   projectedRows,
 } from "./rows.js";
 export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";
+export {
+  compareCatalogSiblings,
+  compareDefaultSiblings,
+  type DefaultSiblingOrderEntry,
+  type RankedSibling,
+} from "./siblings.js";
 export { undoChange } from "./undo.js";
 export { type ReadRecord, readRecord } from "./validate.js";
 export {

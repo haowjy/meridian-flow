@@ -97,17 +97,16 @@ function TrashRow({
   onRestore: (documentIds: readonly string[]) => void;
 }) {
   const location = documentPlace(entry.scheme, entry.formerPath);
-  const restoring = state?.kind === "restoring";
   const dragged = useMemo(() => trashDragEntry(entry), [entry]);
-  const row = useEntryRow(dragged, { active, draggable: !restoring, source: "trash" });
-  const menu = useEntryMenu(dragged, restoring ? [] : RESTORE, (_action, rows) =>
+  const row = useEntryRow(dragged, { active, draggable: true, source: "trash" });
+  const menu = useEntryMenu(dragged, RESTORE, (_action, rows) =>
     onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.documentId]),
   );
   return (
     <ListRow
       icon={fileKindIcon(entry.name)}
       title={entry.name}
-      meta={restoring ? <Trans>Restoring</Trans> : relativeTime(entry.removal.time, now)}
+      meta={relativeTime(entry.removal.time, now)}
       detail={<span title={location}>{location}</span>}
       onOpen={onOpen}
       current={active && "page"}

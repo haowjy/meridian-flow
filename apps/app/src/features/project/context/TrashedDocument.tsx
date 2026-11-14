@@ -118,7 +118,7 @@ function useOpenOnceLiving(
     const restored = restore === "restored";
     if (leaving.current || (!restored && !missing)) return;
     leaving.current = true;
-    void openDocument({ documentId, refreshIdentity: true, replace: true }).then((outcome) => {
+    void openDocument({ documentId, replace: true }).then((outcome) => {
       if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
     });
   }, [restore, missing, documentId, openDocument]);

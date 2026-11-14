@@ -112,7 +112,7 @@ type Source = {
 function useRootDrop(scheme: TreeKey, reveal?: () => void): SourceDrop {
   const rootId = useWriteSources().catalogs[scheme].tree?.root.entryId ?? null;
   const target = useMemo(
-    () => ({ scheme, catalogRootId: rootId ?? `${scheme}:loading`, folder: null }),
+    () => ({ scheme, treeRootId: rootId ?? `${scheme}:loading`, folder: null }),
     [scheme, rootId],
   );
   return useTreeDropTarget(target, { reveal });
@@ -128,7 +128,7 @@ function treeSource(scheme: TreeKey): Source {
       return (
         <ContextTreePanel
           scheme={scheme}
-          catalogState={sources.catalogs[scheme]}
+          treeState={sources.catalogs[scheme]}
           projectId={sources.projectId}
           editorWorkId={sources.editorWorkId}
           activeScheme={sources.activeScheme}

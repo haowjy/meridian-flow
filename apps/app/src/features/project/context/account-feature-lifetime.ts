@@ -10,7 +10,6 @@ import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
-import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
@@ -18,14 +17,11 @@ import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
-import { observeRefusedDeletes } from "./refused-delete-observer";
 import { RemovedNoticeStore } from "./removed-notice-store";
-import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
 export class AccountFeatureLifetime {
   readonly runtime;
@@ -40,14 +36,10 @@ export class AccountFeatureLifetime {
   readonly removal;
   readonly availability;
   readonly notices;
-  readonly resources;
   /** The project tree's lists this account has open; step 6's tree screens read them. */
   readonly treeLists: TreeListRegistry;
   private readonly stopTreeListDebugHook: () => void;
   readonly opener;
-  readonly renameOperations;
-  private readonly continuity: IdentityContinuity | null;
-  private readonly stopRefusedDeletes: (() => void) | null;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
@@ -157,24 +149,6 @@ export class AccountFeatureLifetime {
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     dropRetiredTabSession(accountId);
-    this.resources =
-      typeof window === "undefined"
-        ? null
-        : new AccountResourceReplica(
-            accountId,
-            this.runtime,
-            (error) => {
-              this.beginClose();
-              onInvalidated(error);
-            },
-            connectivityHints,
-          );
-    this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
-    this.continuity = this.resources ? new IdentityContinuity(accountId, this.resources) : null;
-    this.stopRefusedDeletes = this.resources
-      ? observeRefusedDeletes(this.resources, this.notices)
-      : null;
-    if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
       registry: this.registry,
@@ -235,12 +209,8 @@ export class AccountFeatureLifetime {
     if (this.state !== "open") return;
     this.state = "closing";
     for (const stop of [...this.removedRooms]) stop();
-    this.renameOperations?.dispose();
-    this.continuity?.dispose();
-    this.stopRefusedDeletes?.();
     this.stopTreeListDebugHook();
     this.treeLists.close();
-    this.resources?.beginClose();
     this.draftCommands.close();
     this.runtime.beginClose();
     this.featureLease.suspend();

@@ -14,12 +14,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
-import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useProjectWake } from "@/client/query/useProjectWake";
 import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
   patchAccountRecentsFromDocuments,
   readAccountRecents,
@@ -153,13 +152,7 @@ export function ProjectView(props: ProjectViewProps) {
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
-  const repairColdWork = useCallback(
-    (workId: string) => {
-      void availability.coldScopeHint(props.projectId, workId);
-    },
-    [availability, props.projectId],
-  );
-  useContextCatalogWake(props.projectId, repairColdWork);
+  useProjectWake(props.projectId);
   // The removed-documents notice sits in main's band; a navigation in main ends it.
   useRemovedNoticeLifetime(props.projectId, {
     key: JSON.stringify([props.chatDisplay, props.activeContextScheme, props.activeContextPath]),
@@ -223,13 +216,11 @@ export function ProjectView(props: ProjectViewProps) {
     const stopSelection = removal.subscribe(props.projectId, reportWatches);
     const stopRecents = subscribeAccountRecents(reportWatches);
     const stopDraftOnly = draftOnlyDocuments?.subscribe(reportWatches);
-    const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
     return () => {
       stopPresented?.();
       stopSelection();
       stopRecents();
       stopDraftOnly?.();
-      stopWorksObservation();
       lease.release();
     };
   }, [

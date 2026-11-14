@@ -5,12 +5,20 @@
  * does not show (in Trash, purged, never there) is not found, and `isComplete` says whether that
  * means "gone" or "the list has not synced yet".
  */
-import type { ContextSource } from "@meridian/contracts/protocol";
+import type { ContextOwner, ContextSource } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import { buildTreeView, type TreeFile, type TreeView } from "@/core/project-tree/tree-view";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
+
+/** The owner a source's documents are opened with. */
+export function ownerOfSource({ owner }: ContextSource): ContextOwner {
+  if (owner.kind === "work") return { workId: owner.workId };
+  if (owner.kind === "lineage") return { rootThreadId: owner.rootThreadId };
+  if (owner.kind === "chat") return { chatThreadId: owner.chatId };
+  return {};
+}
 
 export type DocumentPlace = { file: TreeFile; source: ContextSource };
 

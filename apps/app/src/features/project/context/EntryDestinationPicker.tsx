@@ -228,10 +228,9 @@ function OpenPicker({
     setPending(true);
     setError(null);
     try {
-      const rows = await copyRows(copyPlan(destination.scheme, destination.entryId, folder.name), {
-        projectId,
-      });
-      if (!rows) throw new Error(unavailable);
+      const plan = copyPlan(destination, folder.name);
+      if (!plan) throw new Error(unavailable);
+      const rows = await copyRows(projectId, plan);
       selectRows(selection, rows);
       revealFolder(destination.entryId);
       onOpenChange(false);
@@ -243,16 +242,36 @@ function OpenPicker({
   }
 
   const copyPlan = (
-    scheme: ProjectContextTreeScheme,
-    parentId: string,
+    destination: NonNullable<ReturnType<typeof source.folderFor>>,
     destinationName: string,
-  ): ReadyCopy => ({
-    kind: "ready",
-    destinationName,
-    scheme,
-    into: { parentId },
-    copies: subjects.map((row) => ({ entry: row.ref, name: row.name, view: row.view })),
-  });
+  ): ReadyCopy | null => {
+    const copies = placed.flatMap(({ row, at }) =>
+      at
+        ? [
+            {
+              entry: row.ref,
+              name: row.name,
+              view: row.view,
+              place: { scheme: at.scheme, owner: at.owner, path: at.entry.path },
+            },
+          ]
+        : [],
+    );
+    if (copies.length !== placed.length) return null;
+    return {
+      kind: "ready",
+      destinationName,
+      scheme: destination.scheme,
+      area: {
+        scheme: destination.scheme,
+        owner: destination.owner,
+        tree: destination.tree,
+        accepts: true,
+      },
+      into: destination.entryId,
+      copies,
+    };
+  };
 
   return (
     <DrillInMenu

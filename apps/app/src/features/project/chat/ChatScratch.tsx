@@ -27,7 +27,7 @@ import { serverDocumentFromFile } from "../context/open-document-from-file";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
-import { useScratchCatalogs } from "../context/use-scratch-catalogs";
+import { useScratchTrees } from "../context/use-scratch-trees";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useOptionalMainItem } from "../views";
@@ -42,7 +42,7 @@ function useOpenDocumentId(): string | undefined {
 /** A chat's Scratch: its trees, the list areas they make, and the load state. */
 function useChatScratch(projectId: string, threadId: string | null) {
   const source = useChatScratchSource(projectId, threadId);
-  const { primary, earlier } = useScratchCatalogs(projectId, source);
+  const { primary, earlier } = useScratchTrees(projectId, source);
   const { works, noWork } = useWorks(projectId);
   const work =
     source?.owner.workId === noWork?.id
@@ -57,7 +57,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
             {
               scheme: "scratch" as const,
               owner: source.owner,
-              catalog: primary.tree,
+              tree: primary.tree,
               accepts: editable,
             },
           ]
@@ -67,7 +67,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
             {
               scheme: "scratch" as const,
               owner: { rootThreadId: source.earlierRootThreadId },
-              catalog: earlier.tree,
+              tree: earlier.tree,
               accepts: true,
             },
           ]
@@ -258,7 +258,7 @@ function ScratchTree({
       scheme: "scratch" as const,
       owner,
       capabilities: editable ? SCRATCH_ACTIONS : READ_ONLY,
-      catalog: tree,
+      tree: tree,
       activeScheme: "scratch" as const,
       activePath: tree.findDocument(openId ?? "")?.path ?? null,
       onSelectFile: (_scheme: string, file: Parameters<typeof serverDocumentFromFile>[1]) => {
