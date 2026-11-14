@@ -3,7 +3,7 @@
  * drop scope. The sidebar is one list over the project's areas, User and the
  * picked Work's Scratch, a chat's Scratch one over the current and Earlier
  * notes, and a Work's Files one over its Scratch.
- * Shells declare the catalogs they show; this owns the rest: what a hovered
+ * Shells declare the trees they show; this owns the rest: what a hovered
  * target would do and what a drop does. A list row dropped within one system
  * moves at once; a drop across systems, and any other source (a chip, tab,
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
@@ -14,10 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
-import {
-  useAccountResourceProjection,
-  useAccountResourceReplica,
-} from "../account-feature-context";
+import { useOptionalContextRemovalCoordinator } from "../account-feature-context";
 import { useDocumentTrashRestore } from "../DocumentTrashRestoreProvider";
 import {
   type EntriesRoute,
@@ -38,6 +35,7 @@ import {
   noLongerThere,
   type PendingChoice,
 } from "./drop-choice";
+import { useEntryActions } from "./entry-actions";
 import { runCopy, runMove } from "./entry-failure";
 import { renamesOnArrival } from "./execute-move";
 import {
@@ -56,13 +54,12 @@ import {
   useEntrySelection,
 } from "./selection";
 
-/** The placement and catalogs a drop is judged against. */
+/** The trees and Works a drop is judged against. */
 const moveView = (now: {
   areas: readonly MoveArea[];
-  projection: ReturnType<typeof useAccountResourceProjection>;
   works: ReturnType<typeof useWorks>["works"];
   noWork: ReturnType<typeof useWorks>["noWork"];
-}): MoveView => ({ ...now.projection, areas: now.areas, works: now.works, noWork: now.noWork });
+}): MoveView => ({ areas: now.areas, works: now.works, noWork: now.noWork });
 
 type EntryListController = {
   selection: EntrySelection;
@@ -76,35 +73,35 @@ export function useEntryList({
   areas,
 }: {
   projectId: string;
-  /** Every catalog this list shows; a target names its catalog by root ID. */
+  /** Every tree this list shows; a target names its tree by root ID. */
   areas: readonly MoveArea[];
 }): EntryListController {
-  const resources = useAccountResourceReplica();
+  const actions = useEntryActions(projectId);
+  const removal = useOptionalContextRemovalCoordinator();
   const queryClient = useQueryClient();
   const { restoreInto } = useDocumentTrashRestore();
   const { works, noWork } = useWorks(projectId);
-  const projection = useAccountResourceProjection(projectId);
   const selection = useEntrySelection();
-  const latest = useRef({ areas, projection, works, noWork, selection });
+  const latest = useRef({ areas, works, noWork, selection });
   useLayoutEffect(() => {
-    latest.current = { areas, projection, works, noWork, selection };
+    latest.current = { areas, works, noWork, selection };
   });
 
   const [pending, setPending] = useState<PendingChoice | null>(null);
 
   const runListMove = useCallback(
     (move: ReadyMove) =>
-      void runMove({ resources, projectId }, move.moves, move.destinationName, (moved) =>
+      void runMove({ actions, projectId, removal }, move.moves, move.destinationName, (moved) =>
         selectRows(latest.current.selection, moved),
       ),
-    [resources, projectId],
+    [actions, projectId, removal],
   );
   const runListCopy = useCallback(
     (copy: ReadyCopy) =>
-      void runCopy({ resources, projectId }, copy, (rows) =>
+      void runCopy({ actions, projectId, removal }, copy, (rows) =>
         selectRows(latest.current.selection, rows),
       ),
-    [resources, projectId],
+    [actions, projectId, removal],
   );
 
   const route = useMemo<EntriesRoute>(() => {
@@ -112,7 +109,7 @@ export function useEntryList({
       const drag = activeDragSession();
       if (!drag) return null;
       const view = moveView(latest.current);
-      return { drag, view, resolved: resolveDrop(view, drag, target) };
+      return { drag, resolved: resolveDrop(view, drag, target) };
     };
     // Trash rows the drag carries, as Trash lists them now; a row Trash no longer lists is gone.
     const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
@@ -138,10 +135,9 @@ export function useEntryList({
       if (!drop || !resolved) return null;
       if (resolved.unavailable.length > 0) return { kind: "refuse", label: noLongerThere() };
       if (resolved.insideItself) return { kind: "refuse", label: insideItself() };
-      const { view } = drop;
       // A drop that asks offers what the menu would; the hint is the first thing it offers.
       if (resolved.asks) {
-        const { items, plans } = dropChoices(view, resolved, target);
+        const { items, plans } = dropChoices(resolved, target);
         const first = items.find((item) => item.enabled);
         if (!first) return null;
         // A move renames a row the writer already has; a copy is new, so it needs no warning.
@@ -149,15 +145,15 @@ export function useEntryList({
         return {
           kind: "accept",
           label: askLabel(first.label),
-          warning: describeRenames(renamesOnArrival(moved, view)),
+          warning: describeRenames(renamesOnArrival(moved)),
         };
       }
-      const planned = planMove(view, resolved);
+      const planned = planMove(resolved);
       if (planned.kind !== "ready") return null;
       return {
         kind: "accept",
         label: moveLabel(planned),
-        warning: describeRenames(renamesOnArrival(planned.moves, view)),
+        warning: describeRenames(renamesOnArrival(planned.moves)),
       };
     };
     // `dragover` repeats many times a second over one target; its answer changes
@@ -166,9 +162,9 @@ export function useEntryList({
       null;
     return {
       verdict(target) {
-        const { areas, projection, works, noWork } = latest.current;
+        const { areas, works, noWork } = latest.current;
         const key = treeDropTargetKey(target);
-        const inputs = [activeDragSession(), areas, projection, works, noWork];
+        const inputs = [activeDragSession(), areas, works, noWork];
         if (last?.key === key && last.inputs.every((input, index) => input === inputs[index]))
           return last.verdict;
         const verdict = judge(target);
@@ -187,7 +183,7 @@ export function useEntryList({
         const resolved = drop?.resolved;
         if (!drop || !resolved) return;
         if (resolved.asks) {
-          if (dropChoices(drop.view, resolved, target).items.some((item) => item.enabled))
+          if (dropChoices(resolved, target).items.some((item) => item.enabled))
             // `dragend` clears the drag session after this, so the choice keeps the drag.
             setPending({
               drag: drop.drag,
@@ -197,7 +193,7 @@ export function useEntryList({
             });
           return;
         }
-        const planned = planMove(drop.view, resolved);
+        const planned = planMove(resolved);
         if (planned.kind === "ready") runListMove(planned);
       },
     };
@@ -206,20 +202,20 @@ export function useEntryList({
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;
     const choicesNow = (view: MoveView) =>
-      dropChoices(view, resolveDrop(view, pending.drag, pending.target), pending.target);
+      dropChoices(resolveDrop(view, pending.drag, pending.target), pending.target);
     return {
       point: pending.point,
       returnFocus: pending.returnFocus,
-      items: choicesNow(moveView({ areas, projection, works, noWork })).items,
+      items: choicesNow(moveView({ areas, works, noWork })).items,
       choose(action: DropAction) {
-        // Judged again from the replica now: the destination may have been renamed or removed.
+        // Judged again from the trees now: the destination may have been renamed or removed.
         const { plans } = choicesNow(moveView(latest.current));
         if (action === "move" && plans.move) runListMove(plans.move);
         else if (action === "copy" && plans.copy) runListCopy(plans.copy);
       },
       dismiss: () => setPending(null),
     };
-  }, [pending, areas, projection, works, noWork, runListMove, runListCopy]);
+  }, [pending, areas, works, noWork, runListMove, runListCopy]);
 
   return useMemo(() => ({ selection, route, choice }), [selection, route, choice]);
 }

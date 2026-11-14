@@ -2,47 +2,38 @@
  * useCreateEntryForm — inline context entry creation, built on useInlineEdit.
  *
  * Adds create-specific metadata (dynamic file icon, kind-aware placeholder) and
- * the create mutation. Submit semantics are the shared inline-edit protocol:
+ * the create record. Submit semantics are the shared inline-edit protocol:
  * Enter or blur commits, Escape or an empty name cancels.
  */
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  classifyFiletype,
-  parseDocumentFilename,
-  storedFilename,
-} from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
+import { classifyFiletype, storedFilename } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
-import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import {
-  contextEntryConflictMessage,
-  joinContextEntryPath,
-  validateContextEntryName,
-} from "./context-entry-name";
+import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
+import { useEntryActions } from "./entry-drag/entry-actions";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
-  /** Parent folder path. Defaults to `""` (scheme root). */
+  /** The folder the entry goes in, or the id of the tree's source at the top. */
+  parentId: string;
+  /** That folder's path; `""` at the top. */
   parent?: string;
-  /** Sibling names for collision detection. Omit to skip collision checks. */
+  /** Sibling names for the clash warning. */
   siblings?: readonly ContextEntrySibling[];
   /** Called when the form completes (successful create or cancel). */
   onDone: () => void;
   /** Called on cancel instead of `onDone`. */
   onCancel?: () => void;
-  /** Called after a successful create, with the new entry's path. */
+  /** Called after a successful create, with the new entry's path (numbered if a name was taken). */
   onCreated?: (path: string) => void;
 };
 
@@ -52,88 +43,49 @@ export type CreateEntryForm = InlineEdit & {
   placeholder: string;
 };
 
-/** The durable local reservation protocol currently owns document-schema files only. */
-export function usesResourceDocumentCreate(name: string): boolean {
-  const parsed = parseDocumentFilename(name);
-  if (!parsed.ok) return false;
-  const classification = classifyFiletype(parsed.value.filetype);
-  return classification.kind === "tracked" && classification.schemaType === "document";
-}
-
 export function useCreateEntryForm({
   projectId,
   scheme,
   kind,
+  parentId,
   parent = "",
   siblings = [],
   onDone,
   onCancel = onDone,
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
-  const mutation = useCreateContextEntry(projectId);
-  const queryClient = useQueryClient();
-  const resources = useAccountResourceReplica();
+  const actions = useEntryActions(projectId);
 
+  // The entry is appended to the writer's copy of the list and shows at once; a refusal by the
+  // server comes back on its row.
   const handleSubmit = useCallback(
-    async (typed: string) => {
-      // Submit the name the server will store, so the optimistic entry and the
-      // server's answer are the same path and nothing flips when it arrives.
+    (typed: string) => {
+      const unavailable = () =>
+        new Error(
+          kind === "folder" ? t`Couldn't create this folder.` : t`Couldn't create this file.`,
+        );
       const stored = kind === "file" ? storedFilename(typed) : null;
-      const name = stored?.ok ? stored.name : typed;
-      const path = joinContextEntryPath(parent, name);
-      if (kind === "folder" || usesResourceDocumentCreate(name)) {
-        const destinationParent = await resources.findParentAtLocation(projectId, {
-          scheme,
-          path: parent,
-          name: "",
-          workId: null,
-        });
-        if (!destinationParent)
-          throw new Error(
-            kind === "folder" ? t`Couldn't create this folder.` : t`Couldn't create this file.`,
-          );
-        if (kind === "folder") {
-          // The row is listed at once; the server's answer, or its refusal, settles it later.
-          await resources.createFolder(projectId, scheme, { parent: destinationParent, name });
-        } else {
-          // The destination goes out with the create, so a branch's new document waiting at
-          // this name is joined instead of a twin being made.
-          // No Unfiled folder path: the destination is the home, and a refused create lists
-          // the document in Unfiled itself, not under a phantom folder named like this one.
-          const reservation = await resources.reserveDocument(projectId, "", {
-            parent: destinationParent,
-            name,
-          });
-          if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
-          reservation.content.handle.release();
-          // This path bypasses the create mutation's own invalidation, so the new
-          // entry stays out of the cached catalog until we drop it here; without
-          // this, the tree and any catalog-driven open lag behind the create.
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, undefined),
-          });
-        }
-      } else {
-        const result = await mutation.mutateAsync({ scheme, type: "file", path, workId: null });
-        if (result.status === "conflict") {
-          throw new Error(
-            result.occupantKind
-              ? contextEntryConflictMessage(name, result.occupantKind)
-              : (validateContextEntryName(name, siblings, kind)?.message ??
-                  contextEntryConflictMessage(name)),
-          );
-        }
-      }
-      onCreated?.(path);
+      if (stored && !stored.ok) throw new Error(stored.message);
+      const filetype = stored?.filename.filetype ?? "markdown";
+      if (stored && classifyFiletype(filetype).kind !== "tracked") throw unavailable();
+      const made = (scheme === "user" ? actions.account : actions.project).create({
+        parentId,
+        name: stored?.name ?? typed,
+        ...(kind === "folder"
+          ? { kind: "folder" as const }
+          : { kind: "document" as const, filetype }),
+      });
+      if (!made.ok) throw unavailable();
+      onCreated?.(joinContextEntryPath(parent, made.name));
     },
-    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, siblings],
+    [actions, scheme, kind, parentId, parent, onCreated],
   );
 
   const form = useInlineEdit({
     initial: "",
     validate: (draft) => validateContextEntryName(draft, siblings, kind),
-    onCommit: async (name) => {
-      await handleSubmit(name);
+    onCommit: (name) => {
+      handleSubmit(name);
       onDone();
     },
     onCancel,

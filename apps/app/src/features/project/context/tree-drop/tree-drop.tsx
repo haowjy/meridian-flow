@@ -27,9 +27,9 @@ import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
-  /** The catalog the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
-  catalogRootId: string;
-  /** The folder row, or null for the catalog's top level (the area header). */
+  /** The tree the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
+  treeRootId: string;
+  /** The folder row, or null for the tree's top level (the area header). */
   folder: { entryId: string; path: string; uri: string; name: string } | null;
   /** A sibling edge; absent while the folder/container region owns the target. */
   position?: ContextSiblingPosition;
@@ -89,9 +89,9 @@ type ScopeValue = {
 
 const ScopeContext = createContext<ScopeValue | null>(null);
 
-/** One key per distinct target: catalog, folder and, for an edge, its side and anchor. */
+/** One key per distinct target: tree, folder and, for an edge, its side and anchor. */
 export function treeDropTargetKey(target: TreeDropTarget): string {
-  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}:${JSON.stringify(target.position)}`;
+  return `${target.scheme}:${target.folder?.entryId ?? target.treeRootId}:${JSON.stringify(target.position)}`;
 }
 
 /**
@@ -219,7 +219,7 @@ function targetAt(target: TreeDropTarget, edges: RowEdges | undefined, event: Dr
   if (!kind) return target;
   return {
     scheme: target.scheme,
-    catalogRootId: target.catalogRootId,
+    treeRootId: target.treeRootId,
     folder: edges.folder,
     position: { kind, siblingId: edges.siblingId },
   };

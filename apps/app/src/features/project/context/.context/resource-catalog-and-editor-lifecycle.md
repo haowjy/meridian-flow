@@ -286,9 +286,9 @@ document's edits removes nothing, so it marks nothing. Only documents a host
 presents are marked. While the
 mark lives every sighting is silent; "kept" releases it, and a settled
 removal lasts until each host that presented the document saw it vanish or its removal
-landed (`ownRemovalEnded`). A delete the server refuses after the replica admitted it never
-lands, so `observeRefusedDeletes` (account lifetime, no screen needed) ends the marks of the
-refused entry's documents. A replica change origin cannot replace the marks: Discard is a server command,
+landed (`ownRemovalEnded`). A delete the server refuses after the list took it never
+lands: the row comes back with its failure mark, and the marks of the refused entry's documents
+end with it (the observer that did this on the replica is gone; step 6b reads it from the replay). A replica change origin cannot replace the marks: Discard is a server command,
 not a replica mutation.
 
 A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
