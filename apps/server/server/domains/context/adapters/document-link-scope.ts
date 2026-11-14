@@ -23,11 +23,7 @@ import {
   parseContextUri,
   parseLinkRef,
 } from "@meridian/contracts";
-import {
-  contextOwner,
-  PROJECT_CONTEXT_AVAILABILITY_MAX_IDS,
-  type ResolvedContextOwner,
-} from "@meridian/contracts/protocol";
+import { contextOwner, type ResolvedContextOwner } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branches as branchTable } from "@meridian/database/schema";
@@ -290,32 +286,19 @@ export function createDrizzleDocumentLinkScopes(deps: {
         ...[...addressIds.values()].filter((id): id is string => id !== null && !byId.has(id)),
       ]);
       if (ids.size > 0) {
-        const answers = new Map<
-          string,
-          NonNullable<Awaited<ReturnType<typeof availability.lookup>>["folderResolutions"]>[number]
-        >();
-        const requested = [...ids];
-        for (
-          let start = 0;
-          start < requested.length;
-          start += PROJECT_CONTEXT_AVAILABILITY_MAX_IDS
-        ) {
-          const resolved = await availability.lookup(
-            {
-              projectId: snapshot.projectId as ProjectId,
-              documentIds: [],
-              folderIds: requested.slice(start, start + PROJECT_CONTEXT_AVAILABILITY_MAX_IDS),
-              view: treeViewOf(view),
-            },
-            { userId: snapshot.viewer },
-          );
-          for (const item of resolved.folderResolutions ?? []) answers.set(item.folderId, item);
-        }
+        const { folders } = await availability.placed(
+          {
+            projectId: snapshot.projectId as ProjectId,
+            folderIds: [...ids],
+            view: treeViewOf(view),
+          },
+          { userId: snapshot.viewer },
+        );
         for (const id of ids) {
-          const answer = answers.get(id);
+          const answer = folders.get(id);
           byId.set(
             id,
-            answer?.kind === "available"
+            answer
               ? {
                   folderId: id,
                   uri: answer.entry.uri,

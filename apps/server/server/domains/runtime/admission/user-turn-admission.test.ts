@@ -104,15 +104,24 @@ function harness(
     capturedStart = start;
     return accepted();
   };
-  const availabilityLookup = vi.fn(
-    async (): Promise<Awaited<ReturnType<ProjectContextAvailabilityPort["lookup"]>>> => ({
-      projectId,
-      resolutionId: "resolution",
-      resolutions: resolutions as never,
-    }),
+  const placedNodes = vi.fn(
+    async (): Promise<Awaited<ReturnType<ProjectContextAvailabilityPort["placed"]>>> => {
+      const found = (resolutions as { kind: string; documentId: string }[]).filter(
+        (resolution) => resolution.kind === "available",
+      );
+      return {
+        documents: new Map(found.map((resolution) => [resolution.documentId, resolution])) as never,
+        folders: new Map(),
+        inconsistent: new Set(
+          (resolutions as { kind: string; documentId: string }[])
+            .filter((resolution) => resolution.kind === "indeterminate")
+            .map((resolution) => resolution.documentId),
+        ),
+      };
+    },
   );
   const availability: ProjectContextAvailabilityPort = {
-    lookup: availabilityLookup,
+    placed: placedNodes,
     async held() {
       return null;
     },
@@ -154,7 +163,7 @@ function harness(
     lookup,
     producer,
     availability,
-    availabilityLookup,
+    placedNodes,
     threadProject,
     runClaim,
     captured: () => capturedStart,
@@ -313,7 +322,7 @@ describe("UserTurnAdmission", () => {
     await expect(
       replay.service.admit(variants[1] as UserTurnAdmissionInput),
     ).rejects.toBeInstanceOf(AdmissionConflictError);
-    expect(replay.availability.lookup).not.toHaveBeenCalled();
+    expect(replay.availability.placed).not.toHaveBeenCalled();
   });
 
   it("authorizes stable ID plus canonical URI and preserves ordered occurrences", async () => {
@@ -339,8 +348,8 @@ describe("UserTurnAdmission", () => {
         relationship: "created",
       },
     ]);
-    expect(h.availability.lookup).toHaveBeenCalledTimes(1);
-    expect(h.availability.lookup).toHaveBeenCalledWith(
+    expect(h.availability.placed).toHaveBeenCalledTimes(1);
+    expect(h.availability.placed).toHaveBeenCalledWith(
       { projectId, documentIds: [documentId], folderIds: [] },
       { userId: actor },
     );
@@ -348,9 +357,6 @@ describe("UserTurnAdmission", () => {
     const folderUri = "manuscript://Act 1";
     const folderText = "[Act 1](manuscript://Act%201/)";
     const folderEntry = {
-      kind: "available" as const,
-      folderId,
-      generation: "1",
       entry: {
         kind: "folder" as const,
         observationVersion: "1",
@@ -370,11 +376,10 @@ describe("UserTurnAdmission", () => {
       references: [{ kind: "folder", folderId, uri: folderUri }],
     });
     const admitted = harness();
-    admitted.availabilityLookup.mockResolvedValueOnce({
-      projectId,
-      resolutionId: "folder-resolution",
-      resolutions: [],
-      folderResolutions: [folderEntry],
+    admitted.placedNodes.mockResolvedValueOnce({
+      documents: new Map(),
+      folders: new Map([[folderId, folderEntry]]) as never,
+      inconsistent: new Set(),
     });
     await admitted.service.admit(folderInput);
     expect(admitted.captured()).toMatchObject({
@@ -383,13 +388,12 @@ describe("UserTurnAdmission", () => {
     });
 
     const moved = harness();
-    moved.availabilityLookup.mockResolvedValueOnce({
-      projectId,
-      resolutionId: "moved-folder-resolution",
-      resolutions: [],
-      folderResolutions: [
-        { ...folderEntry, entry: { ...folderEntry.entry, uri: "manuscript://Act 2" } },
-      ],
+    moved.placedNodes.mockResolvedValueOnce({
+      documents: new Map(),
+      folders: new Map([
+        [folderId, { entry: { ...folderEntry.entry, uri: "manuscript://Act 2" } }],
+      ]) as never,
+      inconsistent: new Set(),
     });
     await moved.service.admit(folderInput);
     expect(moved.captured()).toMatchObject({
@@ -435,7 +439,7 @@ describe("UserTurnAdmission", () => {
         .map((block) => block.text)
         .join(""),
     ).toBe(input().text);
-    expect(h.availability.lookup).toHaveBeenCalledTimes(1);
+    expect(h.availability.placed).toHaveBeenCalledTimes(1);
   });
 
   it("admits a New-chat upload by identity and records the address it now has, whatever its name", async () => {
