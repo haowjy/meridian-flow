@@ -9,7 +9,8 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a file with any Mars diagnostic, of any severity, defines nothing
  * - an Agent naming a missing, unavailable or non-invocable subagent or skill is unavailable
- * - a tool rule with a pattern on a capability Flow has makes the Agent unavailable
+ * - a tool rule with a pattern, or on a capability Mars has no Flow row for, makes the Agent
+ *   unavailable
  */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -223,6 +224,10 @@ try {
       name: "Flow value invalid (no Mars diagnostic)",
       files: fm("harness-overrides: {meridian-flow: {permission: admin}}\n"),
     },
+    {
+      name: "rule on a capability Flow has no row for",
+      files: fm('tools: {"*": deny, bash: allow}\n'),
+    },
     { name: "scoped rule on a Flow tool", files: fm('tools: {"write(kb/**)": deny}\n') },
     { name: "no mars.toml", files: (slug) => ({ [`agents/${slug}.md`]: agent("A") }) },
     {
@@ -311,9 +316,24 @@ try {
     },
     { name: "tools: * deny", frontmatter: 'tools: {"*": deny}\n', expect: { tools: [] } },
     {
-      name: "tools: * deny, bash allow",
-      frontmatter: 'tools: {"*": deny, bash: allow}\n',
+      name: "tools: * deny, glob allow (Flow has no glob: met)",
+      frontmatter: 'tools: {"*": deny, glob: allow}\n',
       expect: { tools: [] },
+    },
+    {
+      name: "tools: * deny, read allow, grep ask (ask runs as allow)",
+      frontmatter: 'tools: {"*": deny, read: allow, grep: ask}\n',
+      expect: { tools: ["read", "grep"] },
+    },
+    {
+      name: "tools: * deny, read allow, write deny",
+      frontmatter: 'tools: {"*": deny, read: allow, write: deny}\n',
+      expect: { tools: ["read"], "disallowed-tools": ["write"] },
+    },
+    {
+      name: "tools: read allow beside no allow-list",
+      frontmatter: "tools: {read: allow}\n",
+      expect: {},
     },
     {
       name: "tools: write allow, edit deny",

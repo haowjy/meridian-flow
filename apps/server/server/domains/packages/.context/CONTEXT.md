@@ -20,8 +20,12 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   with no definition. `CatalogRevision` is the row either way, for the catalog.
 - Flow checks its own `harness-overrides.meridian-flow` block from the file as
   written (Mars returns it unchecked) and caps `permission` at `read` for
-  `sandbox: read-only` anywhere in the file. `tools` rules come from Mars's
-  `project`.
+  `sandbox: read-only` anywhere in the file.
+- `tools` rules come from Mars's `project` for `meridian-flow`; Flow adds no precedence or
+  coverage logic. `allow` and `ask` names become `tools` when the file has an allow-list
+  (`*: deny`), `[]` included; `deny` becomes `disallowed-tools`. A rule Mars calls `unknown` or
+  `unscopable` makes the Agent unavailable with Mars's note; `absent` is met; `ask` runs as
+  `allow` with a warning.
 - A revision's key includes `GRAMMAR_VERSION` (the Mars version and Flow's
   `flow-N`). Whoever changes the availability table or the tool projection bumps
   `flow-N`. Boot republishes every package with no rows at the running version.

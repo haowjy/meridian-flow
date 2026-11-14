@@ -15,10 +15,10 @@ and runs the real Drizzle store and catalog over it. It checks:
 
 - the built-in package: nine Agents, no diagnostics, `resolvePrimary` for the six primaries, and
   `permission: "read"` for Critic and for the two subagents Muse names;
-- 24 files that must each be an unavailable Agent (Mars errors, warnings and infos, Flow's own
+- 25 files that must each be an unavailable Agent (Mars errors, warnings and infos, Flow's own
   block checks, a missing or invalid manifest, a missing skill or subagent), with `readRevision`
   returning nothing and a `NULL` `definition` row;
-- files that must resolve with exactly the permission or tool lists their rules give;
+- files that must resolve with exactly the permission or tool lists their rules give (an allow-list is `tools`, `deny` is `disallowed-tools`, `ask` runs as allow, a rule on a tool Flow lacks is met);
 - saving a valid file over a broken personal Agent;
 - a reader bump: a second reader version's rows, a held old selection refused, a bound chat's
   child Agents still resolving, and the boot recompile advancing a package left at the old version.

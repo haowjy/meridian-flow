@@ -16,10 +16,12 @@ import {
   type Diagnostic,
   GRAMMAR_VERSION,
   MANIFEST_PATH,
+  projectRules,
   readAgent,
   readManifest,
   readSkill,
   skillSlugOf,
+  type ToolProjection,
 } from "./mars.js";
 import type { SkillFiles } from "./skill-files.js";
 
@@ -203,6 +205,7 @@ interface Draft {
   errors: PackageDiagnostic[];
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
+  tools: ToolProjection | undefined;
 }
 
 function draftAgent(
@@ -221,6 +224,7 @@ function draftAgent(
     errors: [...packageErrors, ...reading.diagnostics.map((item) => fromMars(file, item))],
     warnings: [],
     permission: undefined,
+    tools: undefined,
   };
   const { fields } = reading;
   if (!fields) return draft;
@@ -232,9 +236,7 @@ function draftAgent(
   ) {
     draft.permission = "read";
   }
-  if (fields.tools.length) {
-    draft.errors.push(flow(file, "tools-pending", "Tool rules are not supported yet"));
-  }
+  if (fields.tools.length) draft.tools = projectTools(fields.tools, file, draft);
   if (fields["model-policies"].length) {
     draft.warnings.push(
       flow(file, "model-policies-ignored", "model-policies are read, not applied", "warning"),
@@ -256,6 +258,27 @@ function draftAgent(
     }
   }
   return draft;
+}
+
+/**
+ * Lowers the Agent's tool rules with Mars's `project`; precedence and coverage are Mars's. A rule
+ * Mars cannot name or scope on Flow makes the Agent unavailable, because a deny that is not
+ * enforced would leave the Agent with more access than its file says.
+ */
+function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): ToolProjection {
+  const projection = projectRules(rules, "meridian-flow");
+  projection.rules.forEach((projected, index) => {
+    if (projected.status !== "unscopable" && projected.status !== "unknown") return;
+    const { capability, pattern, action } = projected.rule;
+    const named = `${capability}${pattern === null ? "" : `(${pattern})`}: ${action}`;
+    const message = `Tool rule ${named}: ${projected.note ?? projected.status}`;
+    draft.errors.push(flow(file, `tools-${projected.status}`, message, "error", ["tools", index]));
+  });
+  if (projection.ask.length) {
+    const message = `ask runs as allow: ${projection.ask.join(", ")}`;
+    draft.warnings.push(flow(file, "tools-ask", message, "warning", ["tools"]));
+  }
+  return projection;
 }
 
 type Frontmatter = [string, unknown][];
@@ -350,6 +373,23 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),
+    ...toolsOf(draft.tools, fields),
   };
   return { schemaVersion: 1, systemPrompt: draft.body, metadata };
+}
+
+/**
+ * `tools` is the allow-list, written whenever the file has one (a `*: deny` rule), `[]` included;
+ * grants beside no allow-list restrict nothing. `ask` runs as `allow`.
+ */
+function toolsOf(
+  projection: ToolProjection | undefined,
+  fields: AgentFields,
+): Pick<NormalizedAgentMetadata, "tools" | "disallowed-tools"> {
+  if (!projection) return {};
+  const allowList = fields.tools.some((rule) => rule.capability === "*" && rule.action === "deny");
+  return {
+    ...(allowList ? { tools: [...projection.allow, ...projection.ask] } : {}),
+    ...(projection.deny.length ? { "disallowed-tools": projection.deny } : {}),
+  };
 }

@@ -8,9 +8,11 @@ import {
   type DefinitionRead,
   type Diagnostic,
   type ManifestRead,
+  project,
   read,
   rewriteBlock,
   type SkillFields,
+  type ToolProjection,
   version,
 } from "@meridian-flow/mars-schema";
 
@@ -22,7 +24,7 @@ export { rewriteBlock };
  * part of a revision's key, and without a bump the same bytes are never read twice, so the
  * change never reaches a stored Agent.
  */
-export const GRAMMAR_VERSION = `mars-${version()}+flow-1`;
+export const GRAMMAR_VERSION = `mars-${version()}+flow-2`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
 const SKILL_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
@@ -33,7 +35,8 @@ export const skillPath = (slug: string): `skills/${string}/SKILL.md` => `skills/
 export const agentSlugOf = (path: string): string | undefined => AGENT_PATH.exec(path)?.[1];
 export const skillSlugOf = (path: string): string | undefined => SKILL_PATH.exec(path)?.[1];
 
-export type { AgentFields, Diagnostic, SkillFields };
+export type { AgentFields, Diagnostic, SkillFields, ToolProjection };
+export { project as projectRules };
 
 export const readManifest = (text: string): ManifestRead => read(MANIFEST_PATH, text);
 export const readAgent = (slug: string, text: string): DefinitionRead<AgentFields> =>
