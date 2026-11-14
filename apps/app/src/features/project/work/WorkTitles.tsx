@@ -47,7 +47,7 @@ export function WorkTitleTab({
   variant: "tab" | "quiet";
 }) {
   const rename = useWorkRename(projectId, work);
-  if (isWorkArchived(work)) return <PlainWorkTitleTab name={work.name} variant={variant} />;
+  const archived = isWorkArchived(work);
   return (
     <div className={titleChipClass(variant)}>
       <TitleEditSlot
@@ -57,20 +57,26 @@ export function WorkTitleTab({
         closed={closedSentence}
         rename={rename}
       >
-        {({ start, triggerRef }) => (
-          <span className="flex min-w-0 px-1">
-            <button
-              ref={triggerRef}
-              type="button"
-              aria-label={t`Rename Work: ${work.name}`}
-              title={work.name}
-              onClick={() => start(work.name)}
-              className="pane-title inline-edit-trigger focus-ring min-w-0 truncate text-left"
-            >
+        {({ start, triggerRef }) =>
+          archived ? (
+            <span title={work.name} className="pane-title min-w-0 truncate px-1">
               {work.name}
-            </button>
-          </span>
-        )}
+            </span>
+          ) : (
+            <span className="flex min-w-0 px-1">
+              <button
+                ref={triggerRef}
+                type="button"
+                aria-label={t`Rename Work: ${work.name}`}
+                title={work.name}
+                onClick={() => start(work.name)}
+                className="pane-title inline-edit-trigger focus-ring min-w-0 truncate text-left"
+              >
+                {work.name}
+              </button>
+            </span>
+          )
+        }
       </TitleEditSlot>
     </div>
   );
@@ -79,7 +85,7 @@ export function WorkTitleTab({
 /** The Work page's heading, renamed in place like the tab above it. */
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
   const rename = useWorkRename(projectId, work);
-  if (isWorkArchived(work)) return <PlainWorkHeading name={work.name} />;
+  const archived = isWorkArchived(work);
   return (
     <h1 className={headingClass}>
       <TitleEditSlot
@@ -90,19 +96,25 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         rename={rename}
         fieldClassName="flex min-w-0"
       >
-        {({ start, triggerRef }) => (
+        {({ start, triggerRef }) =>
           // The heading's accessible name stays the Work's name, and the
           // tooltip shows it whole when it truncates.
-          <button
-            ref={triggerRef}
-            type="button"
-            title={work.name}
-            onClick={() => start(work.name)}
-            className="inline-edit-trigger focus-ring min-w-0 truncate text-left"
-          >
-            {work.name}
-          </button>
-        )}
+          archived ? (
+            <span title={work.name} className="min-w-0 truncate">
+              {work.name}
+            </span>
+          ) : (
+            <button
+              ref={triggerRef}
+              type="button"
+              title={work.name}
+              onClick={() => start(work.name)}
+              className="inline-edit-trigger focus-ring min-w-0 truncate text-left"
+            >
+              {work.name}
+            </button>
+          )
+        }
       </TitleEditSlot>
     </h1>
   );

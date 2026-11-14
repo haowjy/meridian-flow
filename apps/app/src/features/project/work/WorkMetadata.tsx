@@ -45,7 +45,8 @@ export function useWorkMetadataController(
   const [shownReadOnly, setShownReadOnly] = useState(readOnly);
   if (shownReadOnly !== readOnly) {
     setShownReadOnly(readOnly);
-    if (readOnly) {
+    // A save in flight, or one a closed Work just bounced, keeps its field to say so.
+    if (readOnly && !saving && closed === null) {
       setEditing(false);
     }
   }
