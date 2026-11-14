@@ -9,7 +9,7 @@ import type { CommandDriver } from "@meridian/command-driver";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
-import { submitCommand } from "@/client/commands/submit";
+import { DeviceRefusedError, submitCommand } from "@/client/commands/submit";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   WORK_KINDS,
@@ -100,7 +100,7 @@ async function runWorkCommand<Op extends WorkOperation>(
     lanes: workLanes(operation, projectId, workId),
     body: { projectId, variables },
   });
-  if (!record) return new Error("The change could not be saved on this device");
+  if (!record) return new DeviceRefusedError();
   const { id } = record;
   saved?.();
   if (operation === "delete")

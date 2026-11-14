@@ -7,6 +7,14 @@ import {
 } from "@meridian/command-driver";
 import { notifyFailure } from "@/components/app/failure-toast";
 
+/** The device could not keep a command: the writer was told once (the toast), so no caller says it again. */
+export class DeviceRefusedError extends Error {
+  readonly name = "DeviceRefusedError";
+  constructor() {
+    super("The change could not be saved on this device");
+  }
+}
+
 /**
  * Saves a command in the journal. The one place a device that cannot keep it is told to the
  * writer: nothing was saved, shown or sent, so the caller gets `null` and does nothing more.

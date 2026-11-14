@@ -328,6 +328,9 @@ export class CommandDriver {
       if (record.state === "done" && !this.observedHere.has(record.id))
         this.lingering.set(record.id, { ...record, observed: false });
     const journaled = new Set(this.records.map((record) => record.id));
+    // Nothing needs an id once the journal has dropped it and this tab has seen it through.
+    for (const id of this.observedHere) if (!journaled.has(id)) this.observedHere.delete(id);
+    for (const id of this.reacted) if (!journaled.has(id)) this.reacted.delete(id);
     const gone = [...this.lingering.values()].filter((record) => !journaled.has(record.id));
     this.shown = [
       ...this.records.map((record) =>

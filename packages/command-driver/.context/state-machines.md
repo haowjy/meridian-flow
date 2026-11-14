@@ -13,7 +13,7 @@ stateDiagram-v2
   [*] --> sending: submit commits to the journal
   sending --> done: 2xx, or the server's stored outcome is done
   sending --> never: the stored outcome is never or refused
-  never --> sending: retry, same id and place, new sendId
+  never --> sending: retry, new sendId; same place only while nothing later in its lanes was sent
   never --> [*]: dismissed, or after 30 days
   done --> done: observed, once a read of the domain's data that started after it settled returns
   done --> [*]: observed and a minute old

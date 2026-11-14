@@ -9,8 +9,9 @@ export type Outcome =
 export type CommandState = "sending" | "done" | "never";
 
 /**
- * One command the writer asked for. `id` and `seq` never change; `sendId` is what the server
- * sees and changes only on `retry`, since the server keeps a `never` under the old one.
+ * One command the writer asked for. `id` never changes. `sendId` is what the server sees and
+ * changes only on `retry`, since the server keeps a `never` under the old one; `seq` changes on a
+ * retry only when a later record of the same lanes was already sent, so a lane is never sent out of order.
  */
 export type CommandRecord<Body = unknown> = {
   id: string;

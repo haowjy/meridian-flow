@@ -6,9 +6,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { deletedDestinationCopy } from "@/client/api/meridian-error";
+import { DeviceRefusedError } from "@/client/commands/submit";
 import { WorkCommandRefused } from "./work-mutations";
 
 export function workUpdateFailure(cause: unknown, fallback: string): string {
+  // The device-refusal toast already said it; the field keeps its draft and adds no second line.
+  if (cause instanceof DeviceRefusedError) return "";
   if (!(cause instanceof WorkCommandRefused)) return fallback;
   const deleted = cause.code ? deletedDestinationCopy(cause.code) : null;
   if (deleted) return deleted;
