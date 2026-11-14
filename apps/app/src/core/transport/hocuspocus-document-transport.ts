@@ -391,6 +391,9 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
+    // A read-only connection's edits were held, never sent for the server to refuse:
+    // the reconnect's admission decides whether they now land (an Unarchive does).
+    const refusable = outbox !== null && currentAccess !== "read";
     if (
       event.reason === WS_CLOSE.ACCESS_CHANGED.reason ||
       event.reason === WS_CLOSE.DOCUMENT_DELETED.reason
@@ -399,7 +402,7 @@ export function createHocuspocusDocumentTransport({
       // a removed document has no reconnect, so it stays read-only.
       publishAccess("read");
     }
-    const state = classifyDocumentTransportClose(roomName, event, outbox !== null);
+    const state = classifyDocumentTransportClose(roomName, event, refusable);
     if (state) {
       publishTerminal(state);
       return;

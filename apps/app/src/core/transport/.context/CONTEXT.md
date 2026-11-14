@@ -48,6 +48,11 @@ the IndexedDB copy still holding the refused edits. Editor hosts unbind at once
 (`useRefusedEditsReopen`) and reopen when the drop settles; a drop that fails leaves the
 refused session bound read-only rather than reopening again.
 
+A 4409 on a connection already admitted read-only refuses nothing: the server dropped that
+connection's updates unread, so the edits are held, not refused. The transport reconnects and
+the new admission decides. An Unarchive admits it `edit` and the handshake delivers them; a
+read admission holds them again.
+
 ## 4208: the document was removed
 
 Terminal for live and draft rooms alike: nothing rebuilds, replays or drops the room,
