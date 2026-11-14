@@ -28,13 +28,18 @@ const TUNE = {
   similar: 0.5,
   /** Share of a block's words that must be in a pair for the block to be a split or a join's piece. */
   piece: 0.5,
-  /** Old-by-new pairs searched exhaustively; a larger gap is searched in a band. */
+  /** Table cells a gap may score exhaustively; a larger gap is first cut at its similar pairs. */
   cells: 10_000,
-  /** Table size the band search may allocate. */
-  work: 4_000_000,
-  /** Band half-width, in blocks, around the diagonal of a large gap. */
-  band: 40,
+  /** Words per block that look up candidates, rarest first. */
+  lookups: 6,
+  /** Candidates of one block that are scored. */
+  candidates: 4,
+  /** Entries of a common word's list that are read, nearest the block's place. */
+  window: 16,
 };
+
+/** Weight of the least similar pair that clears `TUNE.similar`; weaker pairs weigh under 200. */
+const STRONG = Math.round(TUNE.similar * 100) * 100;
 
 const sameContent = (a: PMNode, b: PMNode) => a.type === b.type && a.content.eq(b.content);
 
@@ -77,9 +82,6 @@ function remembered(memo: WeakMap<object, number>, b: object, score: () => numbe
   memo.set(b, v);
   return v;
 }
-
-/** Weight of a pair that shares enough words to be one block edited; weaker pairs weigh less. */
-const SIMILAR = 5_000;
 
 /**
  * Score of pairing two blocks of one type: same content beats similar text beats a weaker overlap
@@ -139,24 +141,32 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   while (o0 < o1 && n0 < n1 && blockKey(old[o1 - 1]) === blockKey(next[n1 - 1]))
     pairs.push([--o1, --n1]);
   const anchors = findAnchors(old, next, o0, o1, n0, n1);
+  // A gap that fits the budget is scored whole. A larger one is cut at its similar pairs first, and
+  // each piece between them is treated the same way; one that still does not fit pairs nothing new.
   const pairGap = (a0: number, a1: number, b0: number, b1: number) => {
     const rows = a1 - a0;
     const cols = b1 - b0;
     if (!rows || !cols) return;
-    // Within a large gap only pairs near its diagonal are scored; the bar for a pair stays the same.
-    const ratio = cols / rows;
-    const banded = rows * cols > TUNE.cells;
-    const matches =
-      weightedOrderedMatches(
-        (i, j) =>
-          banded && Math.abs(j - b0 - (i - a0) * ratio) > TUNE.band ? 0 : weight(old[i], next[j]),
+    if ((rows + 1) * (cols + 1) <= TUNE.cells) {
+      for (const m of weightedOrderedMatches(
+        (i, j) => weight(old[i], next[j]),
         a0,
         a1,
         b0,
         b1,
-        TUNE.work,
-      ) ?? [];
-    for (const [i, j] of matches) pairs.push([i, j]);
+        TUNE.cells,
+      ) ?? [])
+        pairs.push([m[0], m[1]]);
+      return;
+    }
+    const chain = similarChain(old, next, a0, a1, b0, b1);
+    if (!chain.length) return;
+    let [ao, an] = [a0, b0];
+    for (const [i, j] of [...chain, [a1, b1] as [number, number]]) {
+      pairGap(ao, i, an, j);
+      if (i < a1) pairs.push([i, j]);
+      [ao, an] = [i + 1, j + 1];
+    }
   };
   let [ao, an] = [o0, n0];
   for (const [i, j] of [...anchors, [o1, n1] as [number, number]]) {
@@ -165,6 +175,76 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
     [ao, an] = [i + 1, j + 1];
   }
   return pairs;
+}
+
+/**
+ * The longest in-order chain of pairs in a gap that clear the similarity bar. Candidates come from a
+ * word index, not from scoring every pair: each block looks up its rarest words, and a word too
+ * common to be a clue is read only near the block's own place in the gap. So the cost follows the
+ * number of blocks, not their product.
+ */
+function similarChain(
+  old: readonly PMNode[],
+  next: readonly PMNode[],
+  a0: number,
+  a1: number,
+  b0: number,
+  b1: number,
+): Array<[number, number]> {
+  const termsOf = (n: PMNode) => [`\u0001${contentKey(n)}`, ...new Set(contentWords(n))];
+  const index = new Map<string, number[]>();
+  for (let j = b0; j < b1; j++)
+    for (const t of termsOf(next[j])) {
+      const at = index.get(t);
+      if (at) at.push(j);
+      else index.set(t, [j]);
+    }
+  const ratio = (b1 - b0) / (a1 - a0);
+  const cand: Array<[number, number]> = [];
+  for (let i = a0; i < a1; i++) {
+    const lists = termsOf(old[i])
+      .map((t) => index.get(t))
+      .filter((l): l is number[] => l !== undefined)
+      .sort((x, y) => x.length - y.length)
+      .slice(0, TUNE.lookups);
+    const place = b0 + (i - a0) * ratio;
+    const votes = new Map<number, number>();
+    for (const list of lists) {
+      let [from, to] = [0, list.length];
+      if (list.length > TUNE.window) {
+        let [lo, hi] = [0, list.length];
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (list[mid] < place) lo = mid + 1;
+          else hi = mid;
+        }
+        from = Math.min(Math.max(0, lo - TUNE.window / 2), list.length - TUNE.window);
+        to = from + TUNE.window;
+      }
+      for (let k = from; k < to; k++) votes.set(list[k], (votes.get(list[k]) ?? 0) + 1);
+    }
+    const best = [...votes]
+      .sort((x, y) => y[1] - x[1] || Math.abs(x[0] - place) - Math.abs(y[0] - place))
+      .slice(0, TUNE.candidates);
+    // Largest j first within one old block, so a strictly rising chain takes at most one of them.
+    for (const [j] of best.sort((x, y) => y[0] - x[0]))
+      if (weight(old[i], next[j]) >= STRONG) cand.push([i, j]);
+  }
+  const tails: number[] = [];
+  const previous: number[] = [];
+  cand.forEach(([, j], c) => {
+    let [lo, hi] = [0, tails.length];
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cand[tails[mid]][1] < j) lo = mid + 1;
+      else hi = mid;
+    }
+    previous[c] = lo > 0 ? tails[lo - 1] : -1;
+    tails[lo] = c;
+  });
+  const chain: Array<[number, number]> = [];
+  for (let c = tails.at(-1) ?? -1; c >= 0; c = previous[c]) chain.push(cand[c]);
+  return chain.reverse();
 }
 
 /**
