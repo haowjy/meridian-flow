@@ -209,7 +209,6 @@ export function createDrizzleDraftStore(
           id: `draft_${randomUUID()}`,
           documentId: input.documentId,
           kind: "work_draft",
-          upstreamDraftId: null,
           branchId: input.branchId,
           status: "active",
           ...checkpoint,

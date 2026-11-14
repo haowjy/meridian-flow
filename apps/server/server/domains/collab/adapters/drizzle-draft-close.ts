@@ -1,6 +1,6 @@
 /**
- * Ending drafts: the one close for every cause, locking upstream Work drafts before thread
- * peers, and the retirement it owes once the root transaction commits.
+ * Ending drafts: the one close for every cause, and the retirement it owes once the root
+ * transaction commits.
  *
  * Every close joins its root transaction's retirement batch (a transaction participant, so a
  * rolled-back savepoint's closes leave with it); a removal registers its documents and record
@@ -29,12 +29,11 @@ import type {
   DraftRetirementBatch,
 } from "../domain/draft-retirement.js";
 
-/** Which drafts a close takes: by document (optionally one branch's), branch, id or upstream. */
+/** Which drafts a close takes: by document (optionally one branch's), branch or id. */
 export type DraftSelection =
   | { documentIds: readonly DocumentId[]; branchId?: BranchId }
   | { branchId: BranchId }
-  | { draftIds: readonly string[] }
-  | { upstreamDraftIds: readonly string[] };
+  | { draftIds: readonly string[] };
 
 export function draftSelectionPredicate(selection: DraftSelection): SQL | undefined {
   if ("documentIds" in selection)
@@ -43,12 +42,10 @@ export function draftSelectionPredicate(selection: DraftSelection): SQL | undefi
       selection.branchId ? eq(documentDrafts.branchId, selection.branchId) : undefined,
     );
   if ("draftIds" in selection) return inArray(documentDrafts.id, [...selection.draftIds]);
-  if ("upstreamDraftIds" in selection)
-    return inArray(documentDrafts.upstreamDraftId, [...selection.upstreamDraftIds]);
   return eq(documentDrafts.branchId, selection.branchId);
 }
 
-/** The caller holds its Work/branch and document admission locks; pulls lock upstream first too. */
+/** The caller holds its Work/branch and document admission locks. */
 export async function lockActiveDrafts(db: DrizzleDb, selection: DraftSelection) {
   return db
     .select({ id: documentDrafts.id })

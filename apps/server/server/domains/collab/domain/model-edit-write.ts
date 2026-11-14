@@ -9,12 +9,12 @@ import {
   type AgentEditCore,
   modelResult,
   parseDocumentAddress,
-  type RetiredWriteReason,
   rejectedWriteResult,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
   type WriteOutcome,
+  type WriteRefusalReason,
 } from "@meridian/agent-edit/integration";
 import type { DraftOwner, LinkView, ProjectId, ThreadId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -166,7 +166,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
 /** The refusal a write gets when the draft its model last saw has been discarded since. */
 export function discardedWrite(
   command: WriteCommand,
-  reason: RetiredWriteReason = "discarded_edit",
+  reason: WriteRefusalReason = "discarded_edit",
 ): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   return {

@@ -1,12 +1,6 @@
 import type { Database } from "@meridian/database";
-import {
-  documentDrafts,
-  documentEditParts,
-  documentEdits,
-  draftWriteJournal,
-  threads,
-} from "@meridian/database/schema";
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { documentDrafts, draftWriteJournal, threads } from "@meridian/database/schema";
+import { and, eq, gt, lte } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "../domain/draft-journal.js";
 
@@ -26,44 +20,6 @@ type JournalRecord = Pick<typeof draftWriteJournal.$inferSelect, keyof typeof jo
 
 export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJournalReads {
   return {
-    async listJournalRowsForDraft(input) {
-      const conditions = [eq(draftWriteJournal.draftId, input.draftId)];
-      if (input.throughJournalId !== undefined) {
-        conditions.push(sql`${draftWriteJournal.id} <= ${input.throughJournalId}`);
-      }
-      const rows = await currentDrizzleDb(db)
-        .select({
-          row: journalColumns,
-          editKind: documentEdits.kind,
-          threadHandle: threads.ref,
-        })
-        .from(draftWriteJournal)
-        .leftJoin(threads, eq(threads.id, draftWriteJournal.threadId))
-        .leftJoin(
-          documentEditParts,
-          sql`
-          ${documentEditParts.origin}->>'kind' = 'pending'
-          and ${documentEditParts.origin}->>'draftId' = ${draftWriteJournal.draftId}::text
-          and ${documentEditParts.origin}->>'rowId' = ${draftWriteJournal.id}::text
-        `,
-        )
-        .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-        .where(and(...conditions))
-        .orderBy(draftWriteJournal.id);
-      // A row can carry several parts of one edit: one entry per row, in journal order.
-      const byRow = new Map<number, ReturnType<typeof mapJournalRow>>();
-      for (const { row, editKind, threadHandle } of rows) {
-        const seen = byRow.get(row.id);
-        if (!seen || (!seen.editKind && editKind)) {
-          byRow.set(row.id, {
-            ...mapJournalRow(row, threadHandle),
-            ...(editKind ? { editKind } : {}),
-          });
-        }
-      }
-      return [...byRow.values()];
-    },
-
     async listConcurrentJournalRows(draftId, options) {
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.

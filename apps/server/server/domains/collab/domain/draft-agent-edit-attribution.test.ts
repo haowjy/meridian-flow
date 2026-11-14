@@ -40,8 +40,7 @@ function fixture(existingUpstream?: Y.Doc) {
   const baseline = cloneYDoc(upstream);
   docs.push(upstream, baseline);
   const rows: DraftJournalRow[] = [];
-  const snapshot = (draftId: string): DraftSnapshot =>
-    testDraftRow({ draftId, documentId, upstreamDraftId: null });
+  const snapshot = (draftId: string): DraftSnapshot => testDraftRow({ draftId, documentId });
   const coordinator = createDraftAgentEditCoordinator({
     threadId,
     liveJournal: {
@@ -59,7 +58,6 @@ function fixture(existingUpstream?: Y.Doc) {
     flushLivePull: async () => {},
     journalRows: {
       listConcurrentJournalRows: async () => rows,
-      listJournalRowsForDraft: async () => [],
     },
   });
   function row(updateData: Uint8Array): DraftJournalRow {

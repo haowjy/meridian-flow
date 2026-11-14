@@ -54,7 +54,6 @@ export type DraftSnapshot = {
   draftId: string;
   documentId: DocumentId;
   kind: DraftKind;
-  upstreamDraftId: string | null;
   /** The branch this draft belongs to. */
   branchId: BranchId;
   /** Derived: the branch's owner, a Work or a lineage (`branches.origin_*`); both null when closed with no owner. */

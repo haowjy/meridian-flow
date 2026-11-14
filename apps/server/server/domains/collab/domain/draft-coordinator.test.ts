@@ -39,17 +39,12 @@ function documentWithReservedFacts(): Y.Doc {
 /** A draft's materialized content (checkpoint ⊕ tail), for assertions. */
 type StoredDraft = MemoryDraft & { state: Uint8Array; stateVector: Uint8Array };
 
-function draftSnapshot(input: {
-  draftId: string;
-  doc: Y.Doc;
-  upstreamDraftId?: string | null;
-}): MemoryDraft {
+function draftSnapshot(input: { draftId: string; doc: Y.Doc }): MemoryDraft {
   return memoryDraft(
     testDraftRow({
       draftId: input.draftId,
       documentId: DOCUMENT_ID,
       kind: "work_draft",
-      upstreamDraftId: input.upstreamDraftId ?? null,
       workId: WORK_ID,
     }),
     input.doc,

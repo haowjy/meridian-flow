@@ -48,9 +48,6 @@ export const documentDrafts = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     kind: text("kind").$type<DocumentDraftKind>().notNull(),
-    upstreamDraftId: text("upstream_draft_id").references((): AnyPgColumn => documentDrafts.id, {
-      onDelete: "set null",
-    }),
     /** The branch this document draft belongs to. */
     branchId: uuid("branch_id")
       .$type<BranchId>()

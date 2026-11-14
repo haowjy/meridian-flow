@@ -20,7 +20,6 @@ export function testDraftRow(
 ): DraftSnapshot {
   return {
     kind: "work_draft",
-    upstreamDraftId: null,
     branchId: "branch-1" as DraftSnapshot["branchId"],
     workId: null,
     rootThreadId: null,

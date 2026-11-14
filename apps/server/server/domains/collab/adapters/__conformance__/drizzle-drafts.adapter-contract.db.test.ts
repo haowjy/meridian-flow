@@ -325,7 +325,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: "draft_corrupt_review_entry",
         documentId: DOC_ID as never,
         kind: "work_draft",
-        upstreamDraftId: null,
         branchId: BRANCH_ID as never,
         status: "active",
         state: Buffer.from([1, 2]),

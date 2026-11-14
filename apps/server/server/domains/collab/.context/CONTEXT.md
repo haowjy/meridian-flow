@@ -504,8 +504,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
 database Work rows (only through the Works mutation boundary), the branch row,
 sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
-ID order), then draft rows, an
-upstream before its peer, otherwise ID order. No path takes a Work row, a
+ID order), then draft rows in ID order. No path takes a Work row, a
 live lock or a namespace lock after a draft row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set
 first and revalidates. Live mutexes are held around a commit scope (an

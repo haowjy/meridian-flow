@@ -88,12 +88,9 @@ export function removedWriteRefusal(removal: DocumentRemovalRecord | null): {
 /** A refusal explains host evidence, not a guess from item visibility. */
 function writeRejection(reason?: Exclude<WriteRefusalReason, object>): WriteRejection {
   switch (reason) {
-    case "discard":
-      return "discarded_edit";
     case "discarded_draft":
     case "discarded_document":
     case "discarded_edit":
-    case "inverse":
       return reason;
     default:
       return "integration";
@@ -103,16 +100,12 @@ function writeRejection(reason?: Exclude<WriteRefusalReason, object>): WriteReje
 export function rejectedWriteExplanation(reason?: WriteRefusalReason): string {
   if (typeof reason === "object") return `this file was ${removalPhrase(reason.removed)}`;
   switch (reason) {
-    case "discard":
-      return "the user discarded the text it edited";
     case "discarded_draft":
       return "the user discarded this draft";
     case "discarded_document":
       return "the user discarded this new document";
     case "discarded_edit":
       return "the user discarded the text it edited";
-    case "inverse":
-      return "an inverse removed the text it edited";
     default:
       return "the write could not integrate with the current draft";
   }

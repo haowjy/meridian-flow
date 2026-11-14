@@ -59,7 +59,6 @@ export type {
   DocumentCoordinator,
   PreparedSave,
   PreparedWrite,
-  RetiredWriteReason,
   RoomRead,
   SaveCut,
   SavePrecondition,

@@ -207,10 +207,7 @@ try {
     await h.raw`select id,origin,effect from document_edit_parts order by id`,
     partsBefore,
   );
-  assert.deepEqual(
-    await h.raw`select id from draft_write_journal order by id`,
-    journalBefore,
-  );
+  assert.deepEqual(await h.raw`select id from draft_write_journal order by id`, journalBefore);
   for (const f of closing)
     assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "discarded"));
   assert.equal(

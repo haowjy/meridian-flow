@@ -18,8 +18,6 @@ export type DraftJournalRow = {
   actorUserId: UserId | null;
   updateData: Uint8Array;
   updateMeta?: unknown;
-  /** Immutable edit evidence, never inferred from actor or missing text. */
-  editKind?: "write" | "undo" | "redo" | "revert";
 };
 
 export type DraftReplayJournalReads = {
@@ -27,8 +25,4 @@ export type DraftReplayJournalReads = {
     draftId: string,
     options: { documentId: DocumentId; after: number; through: number },
   ): Promise<DraftJournalRow[]>;
-  listJournalRowsForDraft(input: {
-    draftId: string;
-    throughJournalId?: number;
-  }): Promise<DraftJournalRow[]>;
 };

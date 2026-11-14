@@ -44,9 +44,8 @@ model.
 5. **Stop mid-step.** Script step 1 `move` ch4 → ch4-old; step 2 `move` ch5 → ch5-final,
    `delete` ch3, then thousands of `ls` calls to hold the step open. When ch5-final shows,
    `./mf thread stop` (the app's Stop operation; the browser struggles to render thousands of
-   live rows, so reload it afterwards). ch3 and ch5 are back, ch4-old stays, and the card
-   lists "Moved ch4 to ch4-old" with ch3 and ch5 "Rolled back" under "Undo leaves 2 parts as
-   they are".
+   live rows, so reload it afterwards). The writes that landed before Stop stay
+   landed (each one on the card), and Undo reverses them.
 
 Do not add `ask_user` to this fixture: it ends the reply and waits for an answer.
 

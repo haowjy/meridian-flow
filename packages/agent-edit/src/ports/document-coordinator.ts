@@ -4,18 +4,12 @@ import type { ConcurrentUpdate } from "../apply/types.js";
 import type { BlockOriginMap } from "../model/block-hash.js";
 import type { JournalBatchAppendEntry } from "./update-journal.js";
 
-/** Why a write to a draft did not land: a Discard that retired it, or the document's removal. */
-export type RetiredWriteReason = Exclude<WriteRefusalReason, "discard" | "inverse" | "integration">;
-
 /**
  * Why a write did not land. `discarded_*` come from a Discard: the whole branch, this created
  * document, or this edited document's text. `removed` is the document's removal, with its
  * record; null when a removal closed the draft but the document stands again (a Work Restore).
  */
 export type WriteRefusalReason =
-  | "discard"
-  | "inverse"
-  | "integration"
   | "discarded_draft"
   | "discarded_document"
   | "discarded_edit"

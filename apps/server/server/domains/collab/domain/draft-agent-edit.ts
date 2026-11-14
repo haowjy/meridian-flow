@@ -239,7 +239,7 @@ export type DraftLookupWithSnapshots = WorkDraftLookup & {
     draftId: string,
   ): Promise<Pick<
     DraftSnapshot,
-    "upstreamDraftId" | "branchId" | "status" | "closedCause" | "documentId" | "seed"
+    "branchId" | "status" | "closedCause" | "documentId" | "seed"
   > | null>;
   /** The thread's primary Work's active draft on the document, as metadata. */
   resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;

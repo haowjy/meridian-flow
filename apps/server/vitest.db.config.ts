@@ -20,7 +20,6 @@ const expectedSuites = [
   "apps/server/server/domains/import/import-upload.db.test.ts",
   "apps/server/server/domains/collab/seed-batch.db.test.ts",
   "apps/server/server/domains/collab/draft-disposition.db.test.ts",
-  "apps/server/server/domains/collab/draft-journal-edit-kind.db.test.ts",
   "apps/server/server/domains/collab/document-commands.db.test.ts",
   "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
   "apps/server/server/lib/thread-deletion-proof.db.test.ts",

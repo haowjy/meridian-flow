@@ -168,7 +168,6 @@
     "apps/server/server/domains/collab/domain/provenance.test.ts": 8,
     "apps/server/server/domains/collab/draft-disposition.db.test.ts": 3,
     "apps/server/server/domains/collab/draft-frame-races.db.test.ts": 9,
-    "apps/server/server/domains/collab/draft-journal-edit-kind.db.test.ts": 1,
     "apps/server/server/domains/collab/grep-text.db.test.ts": 2,
     "apps/server/server/domains/collab/hocuspocus-persistence.test.ts": 15,
     "apps/server/server/domains/collab/inverse-actions.db.test.ts": 2,
