@@ -46,14 +46,17 @@ export function useLiveDraftCue(projectId: string, document: OpenDocument): Live
 export function LiveDraftNotice({
   projectId,
   document,
+  className = "px-4 pt-3",
 }: {
   projectId: string;
   document: OpenDocument;
+  /** The pane's inset: the desktop page's, or the phone's. */
+  className?: string;
 }) {
   const cue = useLiveDraftCue(projectId, document);
   if (!cue) return null;
   return (
-    <div className="px-4 pt-3" data-live-draft-notice>
+    <div className={className} data-live-draft-notice>
       <DocumentNotice
         icon={<Info aria-hidden className="size-4" />}
         action={
