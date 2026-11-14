@@ -17,6 +17,7 @@ import { documentPreviousLocations, projects, threads, works } from "@meridian/d
 import { and, eq, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  type DrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentAddressStore } from "../ports/document-address.js";
@@ -96,7 +97,7 @@ export class UnresolvableAddressError extends RangeError {
  * a plain error when the holder's own project or No Work row is missing.
  */
 export async function resolveCanonicalAddress(
-  db: Database,
+  db: DrizzleDb,
   input: { holderProjectId: ProjectId; address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "document");
@@ -104,7 +105,7 @@ export async function resolveCanonicalAddress(
 
 /** A decoded canonical folder address resolved to the same storage coordinates as a document. */
 export async function resolveCanonicalFolderAddress(
-  db: Database,
+  db: DrizzleDb,
   input: { holderProjectId: ProjectId; address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "folder");
@@ -118,7 +119,7 @@ export function resolveCanonicalAddresses(
 }
 
 async function resolveAddressCoordinates(
-  db: Database,
+  db: DrizzleDb,
   input: { holderProjectId: ProjectId; address: string },
   kind: "document" | "folder",
 ): Promise<DocumentCoordinates> {

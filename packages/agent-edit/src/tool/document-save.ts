@@ -84,6 +84,8 @@ export interface SaveNowInput {
   preOwnSnapshot: Uint8Array;
   actor: MutationActor;
   interactionContext?: InteractionContext;
+  /** The Work draft a model edit saves to directly (no thread peer), as the host ensured it. */
+  workDraftId?: string;
   /**
    * A create without overwrite lands only in a document still empty when its append reads it
    * under the document's lock; otherwise this is the answer.
@@ -192,7 +194,9 @@ export function createDocumentSave(deps: {
     },
 
     async saveNow(input) {
-      const access = accessFor(input.interactionContext);
+      const access =
+        accessFor(input.interactionContext) ??
+        (input.workDraftId ? { workDraftId: input.workDraftId } : undefined);
       const { refuseUnlessEmpty } = input;
       const saved = await coordinator.prepareSave({
         docId: input.docId,

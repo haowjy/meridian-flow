@@ -648,6 +648,7 @@ export function createWriteCommands(deps: {
         preOwnSnapshot,
         refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
         interactionContext,
+        ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
       });
       if (isInternalWriteResult(saved)) return saved;
       // The echo and frontier show the room as the save left it, as a reply's receipt does.

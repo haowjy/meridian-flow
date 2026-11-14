@@ -1,18 +1,12 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
-  type FrontierLookup,
-  modelResult,
   parseDocumentAddress,
-  projectSeedFrontier,
   type ReadCommand,
   ResponseAttemptStaleError,
   type ResponseCommitAttempt,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  type RetiredWriteReason,
-  rejectedWriteResult,
-  splitDocumentFile,
   type WriteCommand,
   type WriteContext,
   type WriteOutcome,
@@ -58,7 +52,7 @@ import { type EnsuredThreadPeer, peerLossReason } from "./draft-pulls.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import type { DraftSeedRecord } from "./draft-store.js";
 import { DraftCasConflictError } from "./draft-store.js";
-import { draftRoom } from "./observation-rooms.js";
+import { discardedWrite } from "./model-edit-write.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import {
   pinStaged,
@@ -66,6 +60,7 @@ import {
   type ReplyRecord,
   type ReplySaveFences,
 } from "./reply-save-fences.js";
+import { projectedFrontiers, projectedLookup } from "./seed-frontier.js";
 
 type ResponseRecord = ReplyRecord;
 
@@ -246,48 +241,6 @@ export function createThreadPeerCorePool(input: {
           upstreamDraftId: peer.upstreamDraftId,
         },
       },
-    };
-  }
-
-  type FrontierProjection = { workDraftId: string; seed: DraftSeedRecord | null };
-
-  /** One projection door for tool calls and their later response save. */
-  function projectedFrontiers(
-    frontiers: WriteContext["frontiers"],
-    projections: readonly FrontierProjection[],
-  ): WriteContext["frontiers"] {
-    if (!frontiers) return frontiers;
-    return {
-      ...frontiers,
-      recording: projectedLookup(frontiers.recording, projections),
-      ...(frontiers.planning ? { planning: projectedLookup(frontiers.planning, projections) } : {}),
-    };
-  }
-
-  function projectedLookup(
-    lookup: FrontierLookup,
-    projections: readonly FrontierProjection[],
-  ): FrontierLookup {
-    const byRoom = new Map(
-      projections.flatMap(({ workDraftId, seed }) =>
-        seed ? [[draftRoom(workDraftId), seed] as const] : [],
-      ),
-    );
-    if (!byRoom.size) return lookup;
-    return async (room) => {
-      const native = await lookup(room);
-      if (native) return native;
-      const seed = byRoom.get(room);
-      if (!seed) return null;
-      return projectSeedFrontier(await lookup(seed.liveRoom), {
-        sourceRoom: seed.liveRoom,
-        sourceSnapshot: seed.liveSnapshot,
-        ...(seed.liveAttribution ? { sourceAttribution: seed.liveAttribution } : {}),
-        targetRoom: room,
-        targetSnapshot: seed.draftSnapshot,
-        targetPosition: 0,
-        origins: new Map(Object.entries(seed.origins)),
-      });
     };
   }
 
@@ -853,22 +806,6 @@ function mergeRollbackResults(
       committed: results.flatMap((result) => result.stagedCreates.committed),
       discarded: results.flatMap((result) => result.stagedCreates.discarded),
     },
-  };
-}
-
-/** A write the Work's Discard retired before it could be staged; the copy a save receipt uses. */
-function discardedWrite(command: WriteCommand, reason: RetiredWriteReason): WriteOutcome {
-  const path = splitDocumentFile(command.file).filePath;
-  return {
-    status: "invalid_write",
-    isError: true,
-    revision: null,
-    command: command.command,
-    result: modelResult({
-      command: command.command,
-      status: "invalid_write",
-      payload: { path, ...rejectedWriteResult(reason).model },
-    }),
   };
 }
 

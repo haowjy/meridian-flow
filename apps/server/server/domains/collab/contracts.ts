@@ -38,6 +38,7 @@ import type {
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
+import type { ModelEdits } from "./domain/model-edit.js";
 import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -165,6 +166,8 @@ export type CollabTransport = {
 export type AgentEditAccess = {
   /** The one model read/write entry point; each call names its destination. */
   agentEdit(): ThreadPeerAgentEditCore;
+  /** A model's document-changing calls as commands. */
+  modelEdits(): ModelEdits;
   /** The model's moves and deletes in the documents' edit history. */
   treeHistory(): AgentTreeHistory;
 };

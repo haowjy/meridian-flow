@@ -739,6 +739,18 @@ export function createDrizzleDraftStore(
       return rows.map((row) => row.id);
     },
 
+    async listWorkDraftStates(documentId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ draftId: documentDrafts.id, status: documentDrafts.status })
+        .from(documentDrafts)
+        .where(
+          and(eq(documentDrafts.documentId, documentId), eq(documentDrafts.kind, "work_draft")),
+        );
+      return rows;
+    },
+
+    findBranchDraft: activeDocumentDraft,
+
     ensureDocumentDraft(input) {
       return runInDrizzleTransaction(db, () => ensureDocumentDraft(input));
     },

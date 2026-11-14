@@ -155,6 +155,7 @@ export {
   writeModeSwitchNotice,
 } from "./loop/write-mode-switch.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
+export type { DocumentCommands } from "./ports/document-commands.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { MediaResolverPort } from "./ports/media-resolver.js";
 export { unavailableMediaResolver } from "./ports/media-resolver.js";

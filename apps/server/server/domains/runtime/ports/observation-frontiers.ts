@@ -9,6 +9,7 @@
  * rows by their ids.
  */
 import type {
+  FrontierLookups as AgentEditFrontierLookups,
   FrontierLookup,
   ObservationFrontier,
   ReplyMutations,
@@ -31,6 +32,14 @@ export interface ObservationFrontiers {
    * savepoint inside a transaction, so a failure leaves the caller's usable.
    */
   latest(room: string, sourceBlockIds: readonly TurnBlockId[]): Promise<ObservationFrontier | null>;
+  /**
+   * Which of `rooms` the model saw most recently among `sourceBlockIds`: the room of the
+   * latest-recorded row in any of them, or null when none holds one.
+   */
+  latestRoom(
+    rooms: readonly string[],
+    sourceBlockIds: readonly TurnBlockId[],
+  ): Promise<string | null>;
 }
 
 /**
@@ -44,5 +53,7 @@ export interface ObservationFrontiers {
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
+  /** The same blocks as `recording`: which of these rooms the model last saw. */
+  latestRoom: NonNullable<AgentEditFrontierLookups["latestRoom"]>;
   reply: ReplyMutations;
 }

@@ -12,6 +12,11 @@
  */
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
+import type {
+  ModelEditKey,
+  ModelEditOutcome,
+  ModelEditToolResult,
+} from "@meridian/contracts/branches";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ReturnResultCapture,
@@ -178,6 +183,17 @@ export interface ToolHandlerContext {
   frontiers?: FrontierLookups;
   /** The model this turn runs on, for a tool that decides what it can show it. */
   model?: ModelInfo;
+  /** Set for a registration with `documentCommand`: what its effect is keyed by and rendered with. */
+  modelEdit?: ModelEditContext;
+}
+
+/**
+ * A document-changing call's command: its effect settles under `key`, whatever becomes of the
+ * call, and `render` is how its raw handler output becomes the result block's stored result.
+ */
+export interface ModelEditContext {
+  key: ModelEditKey;
+  render(raw: unknown): { toolResult: ModelEditToolResult; evidence?: ResultEvidence };
 }
 
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
@@ -294,6 +310,12 @@ export interface ToolRegistration {
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
+  /**
+   * The call's effect is a command in `document_commands` (`modelEdits().run`): the executor
+   * gives the handler a `modelEdit` context, and a call that does not finish asks the command
+   * for its outcome instead of assuming it did not run.
+   */
+  documentCommand?: true;
   capability?: "spawn" | "thread_message" | "thread_report" | "return_result" | "request";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
@@ -304,6 +326,15 @@ export interface ToolRegistration {
    * reaches it: the executor renders refusals itself.
    */
   renderResult?: (result: JsonValue, input: JsonObject) => ToolContentPart[];
+}
+
+/**
+ * What a handler returns for a call it ran as a command: the command's outcome, which holds the
+ * call's stored result, and what that result showed the model.
+ */
+export interface ModelEditHandlerResult {
+  modelEdit: ModelEditOutcome;
+  evidence?: ResultEvidence;
 }
 
 export interface ToolExecutionError {

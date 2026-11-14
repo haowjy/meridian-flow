@@ -91,3 +91,25 @@ export function frontierLookup(
     }
   };
 }
+
+/** `frontierLookup`'s question across rooms: which of them the model last saw among `blockIds`. */
+export function latestRoomLookup(
+  deps: FrontierRecordingDeps,
+  blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
+  correlation: { threadId: string; turnId: string },
+): (rooms: readonly string[]) => Promise<string | null> {
+  return async (rooms) => {
+    try {
+      return await deps.observationFrontiers.latestRoom(rooms, await blockIds());
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "observation_frontier.lookup_failed",
+        correlation,
+        payload: unknownToEventPayload(error),
+      });
+      return null;
+    }
+  };
+}

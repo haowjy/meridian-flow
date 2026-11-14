@@ -1029,7 +1029,7 @@ CREATE TABLE "document_commands" (
 	"request_digest" text NOT NULL,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard'))
+	CONSTRAINT "document_commands_kind_valid" CHECK ("document_commands"."kind" IN ('apply', 'unapply', 'discard', 'model_edit'))
 );
 --> statement-breakpoint
 CREATE TABLE "document_drafts" (

@@ -1,6 +1,6 @@
 /** PostgreSQL `ObservationFrontiers` over `observation_frontiers`. */
 import * as schema from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDatabase,
@@ -54,6 +54,23 @@ export function createDrizzleObservationFrontiers(db: DrizzleDatabase): Observat
             ...(row.journalPosition === null ? {} : { position: row.journalPosition }),
           }
         : null;
+    },
+    async latestRoom(rooms, sourceBlockIds) {
+      if (rooms.length === 0 || sourceBlockIds.length === 0) return null;
+      const [row] = await runIsolatedFromAmbientTransaction(db, () =>
+        db_()
+          .select({ room: table.roomKey })
+          .from(table)
+          .where(
+            and(
+              inArray(table.roomKey, [...rooms]),
+              sql`${table.sourceBlockId}::text = ANY(string_to_array(${sourceBlockIds.join(",")}, ','))`,
+            ),
+          )
+          .orderBy(sql`${table.recordedSeq} DESC NULLS LAST`)
+          .limit(1),
+      );
+      return row?.room ?? null;
     },
   };
 }

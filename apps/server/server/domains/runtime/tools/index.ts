@@ -55,6 +55,8 @@ export {
 } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
 export type {
+  ModelEditContext,
+  ModelEditHandlerResult,
   RequestToolHandlerContext,
   ResultEvidence,
   ToolCallInput,

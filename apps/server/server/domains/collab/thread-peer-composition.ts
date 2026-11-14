@@ -6,13 +6,16 @@
  */
 import {
   type AgentEditCodecFactory,
+  type AgentEditCore,
   createAgentEditCore,
   type DocumentEdits,
   type SemanticProvenanceWriter,
   type UpdateJournal,
+  type WriteContext,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { LinkView } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentRemovals } from "../context/ports/document-removal.js";
 import type { FileAccess, OwnerLocks } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
@@ -50,7 +53,7 @@ type AgentEditObservability = Pick<
  * The production thread-peer pool: each thread's agent-edit core over its peer drafts
  * (draft journal, draft coordinator, scoped links), the reply save fences, and the pool.
  */
-export function createDraftThreadPeerAgentEditCore(input: {
+type ThreadPeerInput = {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
@@ -75,7 +78,43 @@ export function createDraftThreadPeerAgentEditCore(input: {
   lockOwners(locks: OwnerLocks): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   branches: Pick<Branches, "viewForOwner" | "ensureActiveForWrite" | "shareActive">;
-}): ThreadPeerAgentEditCore {
+};
+
+/** One thread's agent-edit core over its Work drafts: the pool's, and a model edit's. */
+export function createThreadCoreFactory(input: ThreadPeerInput) {
+  return (
+    threadId: ThreadId,
+    viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
+  ) =>
+    createAgentEditCore({
+      links: createScopedDocumentLinks({
+        scopes: input.links,
+        registrar: input.aheadRefs,
+        viewFor,
+      }),
+      journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
+      coordinator: createDraftAgentEditCoordinator({
+        threadId,
+        removals: input.removals,
+        draftCoordinator: input.draftCoordinator,
+        drafts: input.drafts,
+        journalRows: input.draftJournal,
+        liveJournal: input.journal,
+        flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
+        branches: input.branches,
+      }),
+      documentEdits: input.documentEdits,
+      codec: input.codec,
+      model: input.model,
+      semanticProvenance: input.semanticProvenance,
+      defaultThreadId: threadId,
+      ...input.observability,
+    });
+}
+
+export function createDraftThreadPeerAgentEditCore(
+  input: ThreadPeerInput,
+): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     branches: input.branches,
     drafts: input.drafts,
@@ -99,31 +138,33 @@ export function createDraftThreadPeerAgentEditCore(input: {
     attemptScope: input.attemptScope,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
-    createThreadCore: (threadId, viewFor) =>
-      createAgentEditCore({
-        links: createScopedDocumentLinks({
-          scopes: input.links,
-          registrar: input.aheadRefs,
-          viewFor,
-        }),
-        journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
-        coordinator: createDraftAgentEditCoordinator({
-          threadId,
-          removals: input.removals,
-          draftCoordinator: input.draftCoordinator,
-          drafts: input.drafts,
-          journalRows: input.draftJournal,
-          liveJournal: input.journal,
-          flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
-          branches: input.branches,
-        }),
-        documentEdits: input.documentEdits,
-        codec: input.codec,
-        model: input.model,
-        semanticProvenance: input.semanticProvenance,
-        defaultThreadId: threadId,
-        ...input.observability,
-      }),
+    createThreadCore: createThreadCoreFactory(input),
     ensureThreadPeer: (command) => input.draftPulls.ensureThreadPeer(command),
   });
+}
+
+/** A model edit's thread cores: each call names its view, and no response state lives in them. */
+export function createModelEditThreadCores(
+  factory: ReturnType<typeof createThreadCoreFactory>,
+  max = 128,
+): (threadId: ThreadId) => AgentEditCore {
+  const cores = new Map<ThreadId, AgentEditCore>();
+  return (threadId) => {
+    const existing = cores.get(threadId);
+    if (existing) {
+      cores.delete(threadId);
+      cores.set(threadId, existing);
+      return existing;
+    }
+    const core = factory(threadId, (documentId, context) => {
+      if (context?.linkView) return context.linkView;
+      throw new Error(`A model edit spelled ${documentId} without a routed link view.`);
+    });
+    cores.set(threadId, core);
+    for (const oldest of cores.keys()) {
+      if (cores.size <= max) break;
+      cores.delete(oldest);
+    }
+    return core;
+  };
 }

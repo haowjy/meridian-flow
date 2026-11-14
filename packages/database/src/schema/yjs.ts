@@ -361,7 +361,10 @@ export const documentCommands = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    check("document_commands_kind_valid", sql`${table.kind} IN ('apply', 'unapply', 'discard')`),
+    check(
+      "document_commands_kind_valid",
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'model_edit')`,
+    ),
   ],
 );
 
