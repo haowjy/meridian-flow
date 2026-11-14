@@ -42,9 +42,11 @@ that catalog when a named scope disagrees with `readOnly`. Its own changes to
 
 A 4409 `access-changed` close never resets the room, whatever is unacknowledged. It marks
 the room read-only at once, the transport reconnects, and the new admission decides: a
-read admission (an archived Work, a read-only link) holds the unsent edits on screen and
-in the IndexedDB copy, and an edit admission (an Unarchive) delivers them in the
-handshake. Writer text is never dropped for an access change, live room or draft. The
+read admission (an archived Work, a trashed chat's draft) holds the unsent edits on
+screen and in the IndexedDB copy, and an edit admission (an Unarchive) delivers them in
+the handshake. A room no editor holds is retired at the read-only mark, before the
+reconnect: its edits stay in the IndexedDB copy and are delivered the next time the
+document opens. Writer text is never dropped for an access change, live room or draft. The
 server sends 4409 only when the scope it admitted no longer holds (an archive, an
 Unarchive, a lifecycle change under a draft write), so the reconnect's admission matches
 what the write path accepts.

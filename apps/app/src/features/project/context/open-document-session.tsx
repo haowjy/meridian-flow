@@ -36,8 +36,8 @@ type OpenDocumentSessionProps = {
 
 /**
  * One stable host across local adoption; server retention lasts until the host
- * unmounts. A room dropped because the server refused its edits reopens as a
- * fresh session: local probe and server binding both start over.
+ * unmounts. An explicit retry reopens it as a fresh session: local probe and
+ * server binding both start over.
  */
 export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
   const [opening, setOpening] = useState(0);
