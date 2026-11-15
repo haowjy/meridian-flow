@@ -323,22 +323,31 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     addressKind === "review" && reviewedItem && closingDocumentId
       ? placeTrees.find(closingDocumentId)
       : null;
+  // A draft a Discard closed anywhere but here stays addressed, in Trash: its document is found
+  // where live has it, since the Work's tree no longer lists the draft.
+  const inTrash = closeState.closed && !closeState.closedHere && !closeState.removed;
+  const trashedPlace =
+    addressKind === "review" && inTrash && closingDocumentId ? trees.find(closingDocumentId) : null;
   const reviewAddress = useMemo((): ReplayAddress | undefined => {
     if (addressKind !== "review") return undefined;
-    if (!closingDocumentId || reviewed?.status === "gone") return { kind: "absent" };
-    if (!reviewPlace) return placeTrees.isComplete && reviewedItem ? { kind: "absent" } : undefined;
-    const owner = ownerOfSource(reviewPlace.source);
+    if (!closingDocumentId) return { kind: "absent" };
+    const place = trashedPlace ?? (reviewed?.status === "gone" ? null : reviewPlace);
+    const tree = trashedPlace ? trees : placeTrees;
+    if (!trashedPlace && reviewed?.status === "gone") return { kind: "absent" };
+    if (!place)
+      return tree.isComplete && (reviewedItem || inTrash) ? { kind: "absent" } : undefined;
+    const owner = ownerOfSource(place.source);
     return resolveReplayAddress({
       projectId,
       accountId: user.userId,
       destination: {
         kind: "document",
-        scheme: reviewPlace.source.scheme,
-        path: reviewPlace.file.path,
+        scheme: place.source.scheme,
+        path: place.file.path,
       },
       workId: owner.workId ?? null,
       rootThreadId: owner.rootThreadId ?? null,
-      tree: { tree: placeTrees.tree(reviewPlace.source.id), isComplete: true, isError: false },
+      tree: { tree: tree.tree(place.source.id), isComplete: true, isError: false },
       boundDocumentId: closingDocumentId,
     });
   }, [
@@ -348,6 +357,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     reviewedItem,
     reviewPlace,
     placeTrees,
+    trashedPlace,
+    trees,
+    inTrash,
     projectId,
     user.userId,
   ]);

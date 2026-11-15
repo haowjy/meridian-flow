@@ -8,7 +8,8 @@
  * - `fenced`: a schema reset, a room whose updates the server kept refusing (`updatesRefused`), or a
  *   draft the server closed (`draftClosed`, in Trash). Its terminal session is kept so an editor can
  *   paint it read-only with its notice, and it is never a target for a command. `retry()` rebuilds
- *   a refused one, which resends its edits from IndexedDB, and a closed one a restore reopened.
+ *   a refused one, which resends its edits from IndexedDB; a restore restarts a closed one's
+ *   transport in place, and it reads `usable` again.
  * - `unavailable`: the room was superseded, or the session ended. Ask what the draft is now.
  * - `error`: opening or rebuilding the room failed. `retry()` asks again.
  *
@@ -18,7 +19,6 @@
 import {
   type DocumentSession,
   type DocumentSessionSnapshot,
-  draftClosed,
   isSignInLapse,
   updatesRefused,
 } from "./document-session";
@@ -156,9 +156,7 @@ export function readDraftRoom(registry: DraftRoomRegistry, ref: DraftRoomRef): D
       if (
         state.kind === "error" ||
         state.kind === "unavailable" ||
-        (state.kind === "fenced" &&
-          (updatesRefused(state.session.getSnapshot().connectionState) ||
-            draftClosed(state.session.getSnapshot().connectionState)))
+        (state.kind === "fenced" && updatesRefused(state.session.getSnapshot().connectionState))
       )
         rebuild();
     },

@@ -46,7 +46,12 @@ export function useOpenReviewChanges(
     changes,
     retry: read.retry,
     items,
-    status: withoutText ? "ready" : (read.status as DraftChangesData["status"]),
+    // A draft closed while on screen stays readable, in Trash, with nothing to act on.
+    status: command.closed
+      ? "gone"
+      : withoutText
+        ? "ready"
+        : (read.status as DraftChangesData["status"]),
 
     completing: command.discarding
       ? ("discard" as const)

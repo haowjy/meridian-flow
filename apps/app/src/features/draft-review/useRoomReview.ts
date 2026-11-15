@@ -21,9 +21,18 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
   const registry = useLiveDocumentSessionRegistry();
   const owner = useDraftCommandOwner();
   const metadata = useDraftMetadata(drafts);
-  const names = metadata.map((entry) =>
-    entry.data?.status === "active" ? entry.data.reviewRoomName : null,
-  );
+  // A draft that closed while on screen keeps its room: its text stays, read-only, in Trash.
+  const shownRooms = useRef(new Map<string, string>());
+  const names = metadata.map((entry, index) => {
+    const itemKey = drafts[index].itemKey;
+    if (entry.data?.status === "active") {
+      shownRooms.current.set(itemKey, entry.data.reviewRoomName);
+      return entry.data.reviewRoomName;
+    }
+    if (entry.data?.status === "gone") return shownRooms.current.get(itemKey) ?? null;
+    shownRooms.current.delete(itemKey);
+    return null;
+  });
   const namesKey = JSON.stringify(names);
   const metadataKey = JSON.stringify(
     metadata.map((result, index) => [
@@ -134,7 +143,8 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
         const status =
           meta?.data?.status === "tree-only"
             ? ("ready" as const)
-            : meta?.data?.status === "gone"
+            : // A room this tab still holds stays on screen after its draft closed (in Trash).
+              meta?.data?.status === "gone" && !current?.session
               ? "gone"
               : metadataFailed || roomFailed
                 ? "error"

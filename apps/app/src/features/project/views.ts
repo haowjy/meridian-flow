@@ -23,7 +23,7 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -31,6 +31,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
@@ -43,7 +44,7 @@ import {
 } from "@/client/project-shell/document-views";
 import { type TreeVersionChoice, useTreeVersionChoice } from "@/client/project-shell/store";
 import { unwrapListQuery } from "@/client/query/list-query";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
@@ -184,8 +185,8 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     painted.current?.documentId === documentId && painted.current.chose === choseKey
       ? painted.current.draft
       : null;
-  // What became of it here: `trash` once its room says it closed by a Discard made elsewhere,
-  // `asking` while its metadata is read again, `ended` when this tab ended it.
+  // What became of it here: `trash` once it closed by a Discard made elsewhere, `ended` when this
+  // tab ended it, `asking` while the server is asked.
   const fateOf = () => {
     if (!heldItem) return "ended";
     const command = commands.state(heldItem.itemKey);
@@ -194,14 +195,9 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     return command.checkingClose ? "asking" : "open";
   };
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
-  const asking =
-    useIsFetching({
-      queryKey: projectQueryKeys.ownerDraftMetadataOf(
-        projectId,
-        heldItem?.ownerKey ?? "",
-        documentId ?? "",
-      ),
-    }) > 0;
+  // The server's answer for a painted draft that left its list: still open (an Apply took its
+  // changes, so the page goes on), or gone, which closes it here and keeps it, in Trash.
+  const [answered, setAnswered] = useState<string | null>(null);
   const held = heldItem && fate !== "ended" ? heldItem : null;
   const pin = chosen ?? held ?? undefined;
   const foreign = pin !== undefined && pin.ownerKey !== scopeOwnerKey;
@@ -219,14 +215,31 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     held !== null && pin?.itemKey === held.itemKey && pinList.status === "ready" && !pinListed
       ? fate === "trash"
         ? ("trash" as const)
-        : fate === "asking" || asking
-          ? ("asking" as const)
-          : ("gone" as const)
+        : answered === held.itemKey
+          ? ("gone" as const)
+          : ("asking" as const)
       : null;
+  const queryClient = useQueryClient();
+  const askKey = unlisted === "asking" && held && documentId ? held.itemKey : null;
+  useEffect(() => {
+    if (!askKey || !held || !documentId || fate !== "open") return;
+    const ref = { projectId, ownerKey: held.ownerKey, documentId, itemKey: held.itemKey };
+    let current = true;
+    fetchCurrentDraftMetadata(queryClient, ref).then(
+      (answer) => {
+        if (!current) return;
+        if (answer.status === "gone") void commands.metadataGone(ref);
+        else setAnswered(ref.itemKey);
+      },
+      () => current && setAnswered(ref.itemKey),
+    );
+    return () => {
+      current = false;
+    };
+  }, [askKey, fate]);
   const pinMissing =
     pin !== undefined && pinList.status === "ready" && !pinListed && unlisted === null;
 
-  const queryClient = useQueryClient();
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
   // A document live lacks shows "removed" only when the scope has no draft of it either: its view
   // moves to the scope's draft when the pinned one ends.

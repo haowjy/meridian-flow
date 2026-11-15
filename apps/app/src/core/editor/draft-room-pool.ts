@@ -119,9 +119,14 @@ export class DraftRoomPool {
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
   }
 
-  /** A restore reopened the draft: the next `get` or `rebuild` opens its room again. */
-  reopen(roomKey: string): void {
+  /**
+   * A restore reopened the draft: the next `get` opens its room again. Returns the closed session
+   * an owner still shows, for its transport to restart in place.
+   */
+  reopen(roomKey: string): DocumentSession | null {
     this.closed.delete(roomKey);
+    const session = this.rooms.get(roomKey);
+    return session && draftClosed(session.getSnapshot().connectionState) ? session : null;
   }
 
   /** The account runtime is closing: forget every owner and retire every room. */

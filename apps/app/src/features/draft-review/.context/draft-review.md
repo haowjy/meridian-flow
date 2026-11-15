@@ -246,7 +246,9 @@ another version). The editor's status pill says "This draft is in Trash" with Re
 Discard leaves for Live, where its notice has the Undo. Restore, the notice's Undo and Trash's
 Restore send the one `restoreDiscard`; every tab learns of it from fresh draft metadata (the
 owner hint re-reads it), and `metadataActive` clears what the tab held as ended and lets the
-room join again under the same id.
+room join again under the same id: the session on screen rejoins in place. While closed, the
+review keeps the room its metadata last named (`useRoomBindings`), and the band and change
+bars offer nothing to act on (`useOpenReviewChanges` reads `gone`).
 
 Every Discard of a whole draft is a server command under an id the client mints, so Trash
 lists it and Restore brings it back: one document's draft as an item Discard

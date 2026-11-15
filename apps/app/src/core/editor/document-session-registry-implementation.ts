@@ -256,7 +256,11 @@ export class DocumentSessionRegistry {
   }
 
   reopenDraftRoom(roomKey: string): void {
-    this.draftRooms.reopen(roomKey);
+    // The same draft id is back: the session on screen joins it again, text and readers kept.
+    void this.draftRooms
+      .reopen(roomKey)
+      ?.restartTransport(this.transportFactory)
+      .catch(reportError);
   }
 
   getDraftRoom(roomKey: string): DocumentSession {

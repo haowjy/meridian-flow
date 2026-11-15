@@ -29,7 +29,7 @@ import type {
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
-import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
+import { closeDraftRooms, closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -505,7 +505,7 @@ export function createHocuspocusPersistenceService(
     },
 
     closeHocuspocusDraftRoom(draftId) {
-      deps.hocuspocus()?.closeConnections(draftRoomName(draftId));
+      closeDraftRooms(deps.hocuspocus(), draftId);
     },
 
     async disconnectLiveGeneration(documentId, generation) {

@@ -125,7 +125,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   retires the room when the review owner learns closure through authoritative metadata before
   the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
   draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive`). A room still on screen is
-  kept read-only (`endClosed`), so a draft discarded elsewhere stays readable, in Trash.
+  kept read-only (`endClosed`), so a draft discarded elsewhere stays readable, in Trash; a
+  restore restarts that same session's transport rather than opening a new one.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
   back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
   delivers it on the room's next open.

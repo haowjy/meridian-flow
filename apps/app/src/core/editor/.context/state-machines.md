@@ -77,7 +77,7 @@ stateDiagram-v2
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
   fenced --> rebuilding: retry, for a room whose updates were refused
-  fenced --> rebuilding: retry, for a closed draft a restore reopened
+  fenced --> usable: a restore reopened a closed draft; its session rejoins in place
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
@@ -90,8 +90,9 @@ stateDiagram-v2
   session (`draftClosed`; `endClosed` when the server's answer came before the socket's close)
   and refuses to open its id again; when a fresh draft metadata answer shows the same draft
   active after this tab saw it end (`DraftCommandOwner.metadataActive`), the pool lets the id
-  open (`reopenDraftRoom`) and the read rebuilds. A wrong answer costs one refused join, which
-  closes it again.
+  open (`reopenDraftRoom`) and the kept session restarts its transport, so every reader of it,
+  and the text on screen, carries on with the same session. A reader the close left
+  `unavailable` retries. A wrong answer costs one refused join, which closes it again.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
   `usable`; the server's new scope only makes it read-only or writable again.
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
