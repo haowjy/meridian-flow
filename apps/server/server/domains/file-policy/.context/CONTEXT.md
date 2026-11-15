@@ -34,8 +34,15 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   loads the branch's view for every document, as before.
 - **Deny.** A `deny` place caps an agent at `read` with `ai_access_denied`, a `permission_denied`
   refusal that no retry or re-read helps. A person never meets it.
+- **Agents levels (`agents://`, `user://.agents/`).** `FileFacts.agentsLevel` comes from the
+  folder chain in the view the facts were loaded in. For an AI whose place has no stored
+  `ask`/`deny` and whose chat is not in draft mode (`appliesAfterCheck`), the place is an `ask`
+  place: the write lands in the chat's branch, and `lib/agents-widening.ts` then Applies it with the
+  writer's own Apply when it widens no Agent, else leaves it labelled. `deny` still wins; a stored
+  `ask` or a draft-mode chat never auto-applies. Reads, `ls` and `grep` need no extra term: the
+  place's destination is the draft, and the branch view falls back to live for a file with none.
 - **Not built yet.** Stored settings (written only by the writer's tree command, never a model tool);
-  the widening check on `agents://`; a rule for another Work's Scratch; a setting that changes
+  a rule for another Work's Scratch; a setting that changes
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
   destination: that waits for the executor's rerun of a failed effect).
 

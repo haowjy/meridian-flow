@@ -521,6 +521,12 @@ share against a caller-held lifecycle lock.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
 
+0. The Agents level's session advisory lock (`shared/agents-level-lock.ts`), held on a reserved
+   connection across an AI auto-Apply's comparison and its Apply, taken with no other lock held.
+   It is not a transaction lock because the comparison reads text through the live and draft rooms,
+   which run outside any command transaction. Only that path takes it; the writer's typing and
+   Apply never do, so a writer's concurrent edit to the level is not serialized with the check.
+
 1. Live `withDocument` mutexes (sorted), before any transaction.
 2. In the database, the command's claim row (`runCommand`).
 3. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
