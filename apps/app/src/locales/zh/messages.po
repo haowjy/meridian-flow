@@ -3659,6 +3659,10 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr ""

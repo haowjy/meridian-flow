@@ -54,13 +54,21 @@ export type DraftCommandState = {
   hidden: boolean;
   discarding: ((change: ReviewChange) => boolean) | null;
   failure: BranchCommandFailure | null;
-  closed: boolean;
-  /** This tab's own Discard closed it; any other close leaves the draft on screen, in Trash. */
-  closedHere: boolean;
+  /** How the draft ended, once it has; null while it is open. */
+  ended: DraftEnd | null;
   checkingClose: boolean;
-  removed: boolean;
-  liveUri: string | null;
 };
+/**
+ * What closed a draft, which decides what the page does: `here`, this tab's own Discard (the page
+ * leaves for Live, where the notice has the Undo); `in-trash`, a Discard anywhere else (the draft
+ * stays on screen, read-only, with Restore); `document`, its document went to Trash (the draft
+ * stays with the document's Restore); `other`, anything else, such as a purge (the page leaves).
+ */
+export type DraftEnd = "here" | "in-trash" | "document" | "other";
+/** An ended draft the page keeps showing, with its Restore. */
+export function staysOnScreen(end: DraftEnd | null): boolean {
+  return end === "in-trash" || end === "document";
+}
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
@@ -69,11 +77,8 @@ const EMPTY: DraftCommandState = {
   hidden: false,
   discarding: null,
   failure: null,
-  closed: false,
-  closedHere: false,
+  ended: null,
   checkingClose: false,
-  removed: false,
-  liveUri: null,
 };
 export type CommandOutcome =
   | { kind: "blocked" }
@@ -177,9 +182,15 @@ export class DraftCommandOwner {
       reopenDraftRoom(roomKey: string): void;
     },
     private readonly lifecycle: {
-      resolveGone?(
+      /**
+       * What became of a draft whose room closed or whose metadata answered gone, read from the
+       * server now: `open` when it holds the draft open (a restore that arrived before the close),
+       * null when it can't tell yet.
+       */
+      resolveEnd?(
         ref: DraftRef,
-      ): Promise<{ disposition: "closed" | "removed"; liveUri?: string } | null>;
+        draftId: string,
+      ): Promise<Exclude<DraftEnd, "here"> | "open" | null>;
       closeCreated?(ref: DraftRef): void;
     } = {},
   ) {}
@@ -198,6 +209,10 @@ export class DraftCommandOwner {
    */
   state(itemKey: string): DraftCommandState {
     return this.records.get(this.generation(itemKey)) ?? EMPTY;
+  }
+  /** How a draft ended, by its id: what a surface showing its room tells the writer. */
+  endOf(draftId: string): DraftEnd | null {
+    return this.records.get(draftId)?.ended ?? null;
   }
   /** The draft the item's state currently follows; the key itself before any draft is known. */
   generation(itemKey: string): string {
@@ -382,7 +397,7 @@ export class DraftCommandOwner {
         connection?.kind === "reset" &&
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
-        this.finishClose(entry.ref, entry.draftId, connection.disposition);
+        void this.resolveEnd(entry.ref, entry.draftId);
       } else if (
         snapshot.status === "destroyed" ||
         connection?.kind === "reset" ||
@@ -436,7 +451,7 @@ export class DraftCommandOwner {
       binding &&
       ref.projectId === projectId &&
       ref.documentId === documentId &&
-      !this.records.get(draftId)?.closed
+      !this.records.get(draftId)?.ended
         ? [ref]
         : [],
     );
@@ -448,10 +463,21 @@ export class DraftCommandOwner {
    * is a newer one, and stays open.
    */
   metadataGone(ref: DraftRef): Promise<void> {
-    const id = this.generation(ref.itemKey);
-    if (!this.active || this.records.get(id)?.closed) return Promise.resolve();
+    return this.resolveEnd(ref, this.generation(ref.itemKey));
+  }
+
+  /**
+   * A draft's room closed, or its metadata answered gone: ask the server what became of it, in
+   * whichever order the close and a restore arrived. This tab's own Discard needs no asking.
+   */
+  private resolveEnd(ref: DraftRef, id: string): Promise<void> {
+    if (!this.active || this.records.get(id)?.ended) return Promise.resolve();
     const pending = this.resolvingGone.get(id);
     if (pending) return pending;
+    if (this.discardedHere.has(id) || this.discardedHere.has(ref.itemKey)) {
+      this.finishClose(ref, id, "here");
+      return Promise.resolve();
+    }
     const entry = this.entries.get(id);
     const lease = entry?.binding
       ? readDraftRoom(this.registry, {
@@ -462,20 +488,20 @@ export class DraftCommandOwner {
     if (entry) entry.users++;
     this.setState(ref.itemKey, { checkingClose: true }, id);
     const resolving = (async () => {
-      const disposition = await this.lifecycle.resolveGone?.(ref);
-      if (this.active && disposition)
-        this.finishClose(ref, id, disposition.disposition, disposition.liveUri);
-    })()
-      .catch(() => undefined)
-      .finally(() => {
-        this.resolvingGone.delete(id);
-        if (this.active) this.setState(ref.itemKey, { checkingClose: false }, id);
-        lease?.dispose();
-        if (entry) {
-          entry.users--;
-          this.releaseIdle(entry);
-        }
-      });
+      const end = await this.lifecycle.resolveEnd?.(ref, id).catch(() => "other" as const);
+      if (!this.active || !end) return;
+      // A restore landed before this close: the session on screen joins the reopened draft.
+      if (end === "open") this.registry.reopenDraftRoom(draftRoomName(id));
+      else this.finishClose(ref, id, end);
+    })().finally(() => {
+      this.resolvingGone.delete(id);
+      if (this.active) this.setState(ref.itemKey, { checkingClose: false }, id);
+      lease?.dispose();
+      if (entry) {
+        entry.users--;
+        this.releaseIdle(entry);
+      }
+    });
     this.resolvingGone.set(id, resolving);
     return resolving;
   }
@@ -487,7 +513,7 @@ export class DraftCommandOwner {
    * leaves the item closed.
    */
   reconcileClosed(ref: DraftRef, read: () => Promise<DraftMetadataResponse>): Promise<boolean> {
-    if (!this.state(ref.itemKey).closed) return Promise.resolve(this.active);
+    if (!this.state(ref.itemKey).ended) return Promise.resolve(this.active);
     const pending = this.reconciling.get(ref.itemKey);
     if (pending) return pending;
     const closedId = this.generation(ref.itemKey);
@@ -500,7 +526,7 @@ export class DraftCommandOwner {
           const item = this.items.get(ref.itemKey);
           if (item) this.publishQueue(item);
         }
-        return !this.state(ref.itemKey).closed;
+        return !this.state(ref.itemKey).ended;
       })
       .catch(() => false)
       .finally(() => this.reconciling.delete(ref.itemKey));
@@ -525,12 +551,9 @@ export class DraftCommandOwner {
       this.setState(
         ref.itemKey,
         {
-          closed: false,
-          closedHere: false,
+          ended: null,
           hidden: false,
-          removed: false,
           checkingClose: false,
-          liveUri: null,
           failure: null,
         },
         key,
@@ -544,28 +567,13 @@ export class DraftCommandOwner {
     return true;
   }
 
-  private finishClose(
-    ref: DraftRef,
-    id: string,
-    disposition: "closed" | "removed",
-    liveUri?: string,
-  ) {
+  private finishClose(ref: DraftRef, id: string, end: DraftEnd) {
     const record = this.records.get(id) ?? EMPTY;
-    if (!this.active || record.closed) return;
+    if (!this.active || record.ended) return;
     const entry = this.entries.get(id);
     this.endedAt.set(id, Date.now());
-    this.setState(
-      ref.itemKey,
-      {
-        closed: true,
-        closedHere: this.discardedHere.has(id) || this.discardedHere.has(ref.itemKey),
-        checkingClose: false,
-        removed: disposition === "removed",
-        liveUri: liveUri ?? null,
-      },
-      id,
-    );
-    if (entry?.binding) for (const end of entry.binding.notices) end();
+    this.setState(ref.itemKey, { ended: end, checkingClose: false }, id);
+    if (entry?.binding) for (const stop of entry.binding.notices) stop();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
@@ -720,7 +728,7 @@ export class DraftCommandOwner {
   ): StartedApply | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
-    if (!entry || !binding?.runtime.state().ready || this.records.get(entry.draftId)?.closed)
+    if (!entry || !binding?.runtime.state().ready || this.records.get(entry.draftId)?.ended)
       return null;
     const frame = binding.runtime.projectNow();
     if (!frame) return null;

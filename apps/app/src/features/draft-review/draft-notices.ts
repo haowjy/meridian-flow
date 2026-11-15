@@ -28,7 +28,7 @@ export type NoticeSubject =
  * Why a restore came back with nothing done: the Work is archived or deleted (or its chat is in
  * Trash), or Trash no longer holds what the Discard took.
  */
-export type RestoreReturned = "work-closed" | "gone-from-trash";
+export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
 
 export type DiscardUndoAnswer = {
   /** `returned`: the restore was answered and did nothing, for `why`. */

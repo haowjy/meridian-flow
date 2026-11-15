@@ -24,6 +24,7 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import { isEditorScheme } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
+import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
@@ -240,13 +241,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const draftCommands = useDraftCommandOwner();
   const closeSnapshot = () => {
     const state = draftCommands.state(address.itemKey ?? "");
-    return JSON.stringify([
-      state.closed,
-      state.closedHere,
-      state.removed,
-      state.checkingClose,
-      state.liveUri,
-    ]);
+    return JSON.stringify([state.ended, state.checkingClose]);
   };
   useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
   const closeState = draftCommands.state(address.itemKey ?? "");
@@ -325,7 +320,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       : null;
   // A draft a Discard closed anywhere but here stays addressed, in Trash: its document is found
   // where live has it, since the Work's tree no longer lists the draft.
-  const inTrash = closeState.closed && !closeState.closedHere && !closeState.removed;
+  const inTrash = staysOnScreen(closeState.ended);
   const trashedPlace =
     addressKind === "review" && inTrash && closingDocumentId ? trees.find(closingDocumentId) : null;
   const reviewAddress = useMemo((): ReplayAddress | undefined => {
@@ -495,8 +490,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         : "loading"
       : documentResult.kind === "unavailable"
         ? closingRef &&
-          !closeState.removed &&
-          (closeMetadata?.isFetching || closeState.checkingClose || closeState.closed)
+          closeState.ended !== "other" &&
+          (closeMetadata?.isFetching || closeState.checkingClose || closeState.ended)
           ? "loading"
           : "unavailable"
         : undefined;
@@ -595,8 +590,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [shownTrashed, openTrashed],
   );
   useEffect(() => {
-    // A draft discarded anywhere but here stays on screen, in Trash, until the writer moves on.
-    if (!closingRef || !closeState.closed || closeState.removed || !closeState.closedHere) return;
+    // A draft that ended the way the page keeps showing stays until the writer moves on.
+    if (!closingRef || !closeState.ended || staysOnScreen(closeState.ended)) return;
     const itemKey = closingRef.itemKey;
     let current = true;
     // The address names the item; a newer draft of it may have replaced the closed one.
@@ -605,21 +600,10 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       .then((open) => {
         const now = latest.current;
         if (!current || open || !now.navigation || now.address.itemKey !== itemKey) return;
-        const closed = draftCommands.state(itemKey);
-        const live = closed.liveUri ? parseContextUri(closed.liveUri) : null;
         // The view owns the pin: the replace below only rewrites the address to follow it.
         endPin(user.userId, projectId, closingRef);
         void now.navigation.replaceIfCurrent(now.navigation.capture(), {
           ...now.address,
-          ...(live
-            ? {
-                destination: {
-                  kind: "document",
-                  scheme: live.scheme,
-                  path: live.path.replace(/^\/+/, ""),
-                },
-              }
-            : {}),
           itemKey: undefined,
           changeId: undefined,
         });
@@ -627,13 +611,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     return () => {
       current = false;
     };
-  }, [
-    address.itemKey,
-    closeState.closed,
-    closeState.closedHere,
-    closeState.removed,
-    closeState.liveUri,
-  ]);
+  }, [address.itemKey, closeState.ended]);
   const closeDestination = useCallback(
     (target: ContextRouteRequest | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;

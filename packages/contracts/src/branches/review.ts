@@ -216,6 +216,8 @@ export type ListDiscardEntriesResponse = {
     /** What the command settled in the tree and no restore has taken. */
     tree: {
       records: number;
+      /** Every node those records are on: with the drafts' documents, what an Undo of a restore discards again. */
+      nodes: string[];
       created: { node: string; kind: string; name: string; path: string[] }[];
     };
   })[];

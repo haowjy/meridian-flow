@@ -12,7 +12,7 @@
  * a draft shown, its owner's list not loaded  → pending (never Live first)
  * the list read failed                        → failed (shown on the document, the pin kept)
  * the draft's item is listed                  → that draft
- * the draft painted was discarded elsewhere    → that draft, in Trash, until the writer moves on
+ * the draft painted ended and stays on screen  → that draft, in Trash, until the writer moves on
  * the list lacks a pinned item                → pending, until a fresh read also lacks it and
  *                                               the pin goes (`verifyPin`); then continue
  * otherwise                                   → Live
@@ -48,6 +48,7 @@ import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
+import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
@@ -179,19 +180,21 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   // else leaves its list without the draft, and the page stays on it, in Trash, until the
   // writer chooses something else or a restore lists it again.
   const commands = useDraftCommandOwner();
-  const painted = useRef<{ documentId: string; draft: DraftPin; chose: string } | null>(null);
+  const [painted, setPainted] = useState<{
+    documentId: string;
+    draft: DraftPin;
+    chose: string;
+  } | null>(null);
   const choseKey = JSON.stringify([stored.pin?.ownerKey, stored.pin?.itemKey, choice]);
   const heldItem =
-    painted.current?.documentId === documentId && painted.current.chose === choseKey
-      ? painted.current.draft
-      : null;
-  // What became of it here: `trash` once it closed by a Discard made elsewhere, `ended` when this
-  // tab ended it, `asking` while the server is asked.
+    painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
+  // What became of it here: `trash` once it ended in a way the page keeps showing, `ended` when it
+  // ended otherwise, `asking` while the server is asked.
   const fateOf = () => {
     if (!heldItem) return "ended";
     const command = commands.state(heldItem.itemKey);
-    if (command.hidden || command.closedHere || command.removed) return "ended";
-    if (command.closed) return "trash";
+    if (command.hidden) return "ended";
+    if (command.ended) return staysOnScreen(command.ended) ? "trash" : "ended";
     return command.checkingClose ? "asking" : "open";
   };
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
@@ -262,14 +265,20 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinChange = pin?.changeId;
   const paints = pinListed || unlisted === "trash" || unlisted === "asking";
   useEffect(() => {
-    const kept = painted.current?.documentId === documentId && painted.current.chose === choseKey;
     if (documentId && pinOwner && pinItem && paints)
-      painted.current = {
-        documentId,
-        draft: { ownerKey: pinOwner, itemKey: pinItem },
-        chose: choseKey,
-      };
-    else if (!kept || unlisted === "gone" || fate === "ended") painted.current = null;
+      setPainted((prior) =>
+        prior?.documentId === documentId &&
+        prior.chose === choseKey &&
+        prior.draft.ownerKey === pinOwner &&
+        prior.draft.itemKey === pinItem
+          ? prior
+          : { documentId, draft: { ownerKey: pinOwner, itemKey: pinItem }, chose: choseKey },
+      );
+    else
+      setPainted((prior) => {
+        const kept = prior?.documentId === documentId && prior.chose === choseKey;
+        return !kept || unlisted === "gone" || fate === "ended" ? null : prior;
+      });
   }, [documentId, pinOwner, pinItem, paints, choseKey, unlisted, fate]);
   return useMemo((): DocumentPaint => {
     const scopeDraft =

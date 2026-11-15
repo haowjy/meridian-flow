@@ -124,7 +124,7 @@ export function useDocumentReview(
       // the server decides whether a newer draft replaced the closed one.
       admit: async (target) => {
         if (draftCommands.state(target.itemKey).hidden) return false;
-        if (draftCommands.state(target.itemKey).closed) {
+        if (draftCommands.state(target.itemKey).ended) {
           const ref = {
             projectId,
             ownerKey: target.ownerKey,

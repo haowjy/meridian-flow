@@ -122,11 +122,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
   draft recovers unsent text. No close deletes a draft's cache: a Discard can be undone, so the
   copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
-  retires the room when the review owner learns closure through authoritative metadata before
+  ends the room when the review owner learns closure through authoritative metadata before
   the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
-  draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive`). A room still on screen is
-  kept read-only (`endClosed`), so a draft discarded elsewhere stays readable, in Trash; a
-  restore restarts that same session's transport rather than opening a new one.
+  draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive` or a close the server
+  answers open). A room an owner still retains keeps its session, read-only (`endClosed`), so a
+  draft that ended on screen stays readable; a restore restarts that same session's transport
+  rather than opening a new one. Only an unretained closed room retires.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
   back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
   delivers it on the room's next open.
@@ -517,10 +518,12 @@ keyboard, pointer, drop, or draft-recovery answer.
 - Before a room's local copy goes with typing the server never acknowledged, the registry
   reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
   updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
-  `observeUnsentTyping` once per session. It reads them on a closing or removing reset
-  (its own subscription, made before the draft pool's, which retires the room on that same
-  notification), in `clearLocalCopy` (cause `removed`) and in `closeDraftRoom`. A 4409 access
-  change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  `observeUnsentTyping` once per session. It reads them as the session's retirement begins,
+  when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
+  and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
+  shows that text, and a restore that restarts it delivers it, so the words would come back
+  twice. A session retires once, so each session's typing is handed back at most once. A 4409
+  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
@@ -536,10 +539,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   before retirement. The drain ends when the server acknowledges the edits or when
   `canDeliverUnsentEdits()` turns false, read-only access included. Ordinary retirement keeps IndexedDB state. There is no
   draft-generation replacement or writer-operation handoff to a new draft.
-- Terminal `4205` (`closed`) and `4208` (`removed`) end that identity; its cache stays. The account command owner also handles authoritative metadata
-  `gone` through the same disposition, including when metadata beats the socket
-  close. Availability decides live navigation versus removal presentation;
-  failed reads never prove closure. See the
+- Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
+  stays, and a retained session stays readable until its owner releases it or a restore
+  restarts it. The account command owner asks the server what each close means (fresh
+  metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
+  whichever arrives first; see Draft end and reopen in the
+  [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
   [review runtime](../../../features/draft-review/.context/draft-review.md).
 - `resetDisposition` is the session transport's terminal-state vocabulary,
   not a draft reset protocol. Schema fences, authorization loss and explicit

@@ -296,10 +296,7 @@ function useTrashDiscardRows(projectId: string) {
   };
 }
 
-/** The documents a Discard took: its drafts' and the ones its tree half created. */
+/** What a Discard took: its drafts' documents and every node its tree half settled. */
 const documentsOf = (entry: DiscardEntry) => [
-  ...new Set([
-    ...entry.drafts.map((draft) => draft.documentId),
-    ...entry.tree.created.map((node) => node.node),
-  ]),
+  ...new Set([...entry.drafts.map((draft) => draft.documentId), ...entry.tree.nodes]),
 ];

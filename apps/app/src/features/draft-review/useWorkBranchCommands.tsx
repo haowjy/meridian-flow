@@ -742,8 +742,9 @@ export async function restoreDiscard(
         return { answer: "gone" };
       case "work_archived":
       case "work_deleted":
-      case "chat_frozen":
         return { answer: "returned", why: "work-closed" };
+      case "chat_frozen":
+        return { answer: "returned", why: "chat-in-trash" };
       default:
         return { answer: "returned", why: "gone-from-trash" };
     }

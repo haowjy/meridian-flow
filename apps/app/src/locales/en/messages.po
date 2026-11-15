@@ -3659,6 +3659,10 @@ msgstr "It's over the import size limit."
 msgid "Italic"
 msgstr "Italic"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash."
+msgstr "Its chat is in Trash."
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr "Its document wasn't restored"

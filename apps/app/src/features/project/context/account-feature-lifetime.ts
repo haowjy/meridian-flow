@@ -1,6 +1,8 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
 import type { AccountId } from "@meridian/contracts/protocol";
+import { getDraftMetadata } from "@/client/api/branches-api";
+import { getTrashDiscards } from "@/client/api/projects-api";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -70,14 +72,19 @@ export class AccountFeatureLifetime {
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner(this.registry, {
-      // A draft's room closed: where the document stands says whether it went to live or was removed.
-      resolveGone: async (ref) => {
+      // The server's state now, whichever arrived first: the close, or a restore after it.
+      resolveEnd: async (ref, draftId) => {
+        const answer = await getDraftMetadata(ref);
+        if (answer.status === "active" && answer.draftId === draftId) return "open";
+        const trash = await getTrashDiscards(ref.projectId);
+        if (trash.entries.some(({ drafts }) => drafts.some((draft) => draft.draftId === draftId)))
+          return "in-trash";
         const standing = this.standings.standing(ref.projectId, ref.documentId);
-        return standing.kind === "in-tree"
-          ? { disposition: "closed" }
-          : standing.kind === "waiting"
-            ? null
-            : { disposition: "removed" };
+        return standing.kind === "waiting"
+          ? null
+          : standing.kind === "in-trash"
+            ? "document"
+            : "other";
       },
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);

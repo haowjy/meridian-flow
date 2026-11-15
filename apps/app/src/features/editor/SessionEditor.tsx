@@ -16,15 +16,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
-import {
-  type DocumentSession,
-  type DocumentSessionSnapshot,
-  draftClosed,
-} from "@/core/editor/document-session";
+import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
@@ -36,6 +33,7 @@ import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountEpochSignal,
   useAccountId,
+  useOptionalDraftCommandOwner,
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
@@ -92,6 +90,8 @@ function workOfOwner(ownerKey: string): string | null {
   const owner = parseDraftOwnerKey(ownerKey);
   return owner?.kind === "work" ? owner.id : null;
 }
+
+const subscribeNothing = () => () => {};
 
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
@@ -172,12 +172,15 @@ function ActiveSessionEditorView({
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
   const removal = useRemovalRecord(projectId ?? "", removed ? documentId : null);
-  // A draft discarded elsewhere, or a document removed elsewhere and still in Trash, stays on
-  // screen read-only; the pill says so and restores it.
-  const closedRoom =
-    inReview && draftClosed(snapshot.connectionState) ? parseYjsRoomName(identity.roomName) : null;
-  const closedDraft = closedRoom?.kind === "draft" ? closedRoom.draftId : undefined;
-  const removedInTrash = removal?.kind === "removed" && removal.inTrash;
+  // A draft discarded elsewhere, or one whose document went to Trash, stays on screen read-only,
+  // as does a document removed elsewhere and still in Trash; the pill says so and restores it.
+  const commands = useOptionalDraftCommandOwner();
+  const room = inReview ? parseYjsRoomName(identity.roomName) : null;
+  const reviewDraft = room?.kind === "draft" ? room.draftId : null;
+  const endOf = () => (commands && reviewDraft ? commands.endOf(reviewDraft) : null);
+  const end = useSyncExternalStore(commands?.subscribe ?? subscribeNothing, endOf, endOf);
+  const trashedDraft = end === "in-trash" ? reviewDraft : null;
+  const documentInTrash = end === "document" || (removal?.kind === "removed" && removal.inTrash);
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -429,12 +432,8 @@ function ActiveSessionEditorView({
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
-          {projectId && (closedDraft || removedInTrash) ? (
-            <InTrashStatus
-              projectId={projectId}
-              documentId={documentId}
-              draftId={closedDraft ?? null}
-            />
+          {projectId && (trashedDraft || documentInTrash) ? (
+            <InTrashStatus projectId={projectId} documentId={documentId} draftId={trashedDraft} />
           ) : (
             <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           )}

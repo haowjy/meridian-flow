@@ -379,7 +379,14 @@ function factSentence(fact: AppliedFact): string {
 
 /** What a restore that did nothing says, wherever it was sent from. */
 export function restoreReturnedSentence(why: RestoreReturned | null): string {
-  return why === "work-closed" ? t`Work was closed.` : t`Gone from Trash.`;
+  switch (why) {
+    case "work-closed":
+      return t`Work was closed.`;
+    case "chat-in-trash":
+      return t`Its chat is in Trash.`;
+    default:
+      return t`Gone from Trash.`;
+  }
 }
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */

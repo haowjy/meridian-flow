@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTrashDiscards } from "@/client/query/useDocumentTrash";
 import { Button } from "@/components/ui/button";
 import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
@@ -42,15 +42,24 @@ function DraftInTrash({
   useLingui();
   const discards = useTrashDiscards(projectId);
   const { states, restore } = useRestoreDiscard(projectId);
+  // A list read before the close can't name this draft yet: read it again as the pill appears.
+  const [reread, setReread] = useState<string | null>(null);
+  const { refetch } = discards;
+  useEffect(() => {
+    let current = true;
+    void refetch().finally(() => current && setReread(draftId));
+    return () => {
+      current = false;
+    };
+  }, [refetch, draftId]);
   const entry = discards.data?.entries.find(({ drafts }) =>
     drafts.some((draft) => draft.draftId === draftId),
   );
   const state = entry ? states.get(entry.commandId) : undefined;
-  // Trash is read again after the Discard: until it answers, the entry may not be there yet.
   if (!entry)
     return (
       <Pill>
-        {discards.isSuccess && !discards.isFetching ? (
+        {reread === draftId && discards.isSuccess ? (
           <Trans>This draft is gone from Trash</Trans>
         ) : (
           <Trans>This draft is in Trash</Trans>

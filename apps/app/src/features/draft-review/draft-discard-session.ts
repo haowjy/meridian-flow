@@ -80,7 +80,7 @@ export function startDraftDiscardSession(input: {
   history.stopCapturing();
   let item: StackItem | null = null;
   const write = (): CommandOutcome => {
-    if (!input.active() || entry.binding !== binding || input.state().closed)
+    if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
     // A read room drops the writer's text: a revert written here would show, then never land.
     if (binding.session.getSnapshot().access === "read") {
@@ -191,7 +191,7 @@ export function startDraftDiscardSession(input: {
         !item ||
         !input.active() ||
         entry.binding !== binding ||
-        input.state().closed ||
+        input.state().ended ||
         binding.session.getSnapshot().access === "read"
       ) {
         end();

@@ -31,7 +31,11 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 
-/** The resets whose teardown ends the room for good, so its unsent typing is handed back first. */
+/**
+ * The resets that end a room for good: its unsent typing is handed back when the session retires,
+ * not at the reset. A session kept on screen still shows that text, and a restore that restarts it
+ * delivers it, so handing it back earlier would offer text the document then gets too.
+ */
 const UNSENT_CAUSE_OF_RESET: Readonly<
   Record<ResetDisposition | "none", UnsentTypingCause | undefined>
 > = {
@@ -64,6 +68,10 @@ export class DocumentSessionRegistry {
   private readonly copies: LocalDocumentCopies;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
+    (session) => {
+      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      if (cause) this.handBackUnsent(session, cause);
+    },
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
   private readonly draftRooms: DraftRoomPool;
@@ -250,8 +258,6 @@ export class DocumentSessionRegistry {
   }
 
   closeDraftRoom(roomKey: string): Promise<void> {
-    const session = this.draftRooms.peek(roomKey);
-    if (session) this.handBackUnsent(session, "closed");
     return this.draftRooms.close(roomKey);
   }
 
@@ -375,12 +381,6 @@ export class DocumentSessionRegistry {
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
-    // Before any other observer: the draft pool retires the room, and its unsent typing, on this
-    // same notification.
-    session.subscribe(() => {
-      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
-      if (cause) this.handBackUnsent(session, cause);
-    });
     if (session.room.kind === "live")
       session.subscribe(() => {
         this.retireDrainedRoom(session);

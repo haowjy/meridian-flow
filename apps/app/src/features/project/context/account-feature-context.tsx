@@ -216,6 +216,11 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   return owner;
 }
 
+/** The draft command owner; null outside the authenticated shell. */
+export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
+  return useContext(DraftCommandsContext);
+}
+
 /** The draft-only documents mounted hosts present; null outside the authenticated shell. */
 export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
   return useContext(DraftOnlyContext);
