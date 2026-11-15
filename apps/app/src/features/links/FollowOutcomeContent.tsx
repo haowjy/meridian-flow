@@ -134,7 +134,7 @@ export function FollowOutcomeContent({
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
   const { create, failed: failedToCreate } = useCreateLinkedDocument(projectId);
-  const openCreated = useOpenCreatedDocument(projectId ?? "");
+  const openCreated = useOpenCreatedDocument();
   const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
   const name = outcome.state === "missing" ? targetName(outcome) : "";
 
@@ -183,7 +183,12 @@ export function FollowOutcomeContent({
               const documentId = create(creation);
               if (!documentId) return;
               onClose();
-              await openCreated(documentId, async () => {
+              const path = [creation.folderPath, creation.name].filter(Boolean).join("/");
+              const document = {
+                documentId,
+                contextLocation: { scheme: creation.scheme, path: `/${path}` },
+              };
+              await openCreated(document, async () => {
                 await onOpen({ documentId, focus: true });
               });
             }}

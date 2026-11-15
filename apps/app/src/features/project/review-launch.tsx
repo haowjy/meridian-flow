@@ -7,15 +7,10 @@
 
 import { type BranchId, type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { EventRecord } from "@meridian/contracts/observability";
-import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import {
-  cachedOwnerDrafts,
-  relistedOwnerDraft,
-  useOwnerDrafts,
-} from "@/client/query/useOwnerDrafts";
-import { projectWorkBranchFiles, type ReviewFileTarget } from "@/client/query/work-branch-files";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
@@ -24,10 +19,7 @@ import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
-import {
-  type OpenContextRoute,
-  useCaptureProjectNavigation,
-} from "./routing/ProjectNavigationContext";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
 import { useShellTreeVersion } from "./tree-version";
@@ -201,47 +193,44 @@ export function useAiDraftLauncher() {
   return { openAiDraft, openReviewFile };
 }
 
+/** A document the writer just made: where the version it was made in puts it. */
+export type CreatedDocument = {
+  documentId: string;
+  contextLocation: Pick<ContextUri, "scheme" | "path">;
+  documentName?: string;
+};
+
 /**
- * Opens a document the writer just made, in the version they made it in. On Live that is `live`,
- * at once. On Draft the create's admission makes the Work's text draft of the document, which only
- * the server can answer for, so the page opens on that draft once the Work's list has it, as a
- * Changes row does: until then the new row shows in the tree and the page stays where it was. A
- * newer navigation, or no answer in time, leaves the row to be opened by hand. `opened` runs once
- * the draft opens (the phone's drawer closes then, as a row's click closes it).
+ * Opens a document the writer just made, at once, in the version they made it in. On Live that is
+ * `live`. On Draft it is the Work's draft of it: the create names that draft (`createdDraftId`),
+ * so the page opens on it before the server has heard of the create, offline too, as a Changes row
+ * opens a listed one. `opened` runs once it opens (the phone's drawer closes then, as a row's click
+ * closes it).
  */
-export function useOpenCreatedDocument(
-  projectId: string,
-): (documentId: string, live: () => Promise<void>, opened?: () => void) => Promise<void> {
+export function useOpenCreatedDocument(): (
+  document: CreatedDocument,
+  live: () => Promise<void>,
+  opened?: () => void,
+) => Promise<void> {
   const shell = useShellTreeVersion();
   const { openAiDraft } = useAiDraftLauncher();
-  const captureNavigation = useCaptureProjectNavigation();
-  const queryClient = useQueryClient();
   const branchId = shell?.version.view.draft ?? null;
   const ownerKey = shell?.ownerKey ?? null;
   return useCallback(
-    async (documentId, live, opened) => {
+    async (document, live, opened) => {
       if (!branchId || !ownerKey) return live();
-      const isCurrent = captureNavigation?.() ?? (() => true);
-      const itemKey = draftItemKey(branchId as BranchId, documentId as DocumentId);
-      if (!(await relistedOwnerDraft(queryClient, projectId, ownerKey, itemKey)) || !isCurrent())
-        return;
-      const row = cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
-        (item) => item.itemKey === itemKey,
-      );
-      const [file] = row ? projectWorkBranchFiles([row], null) : [];
-      if (!file?.contextLocation) return;
       openAiDraft({
         ownerKey,
-        documentId: file.documentId,
-        itemKey: file.draft.itemKey,
-        contextLocation: file.contextLocation,
-        documentName: file.documentName ?? undefined,
-        draftOnly: file.draftOnly,
+        documentId: document.documentId,
+        itemKey: draftItemKey(branchId as BranchId, document.documentId as DocumentId),
+        contextLocation: document.contextLocation,
+        documentName: document.documentName,
+        draftOnly: true,
         made: true,
       });
       opened?.();
     },
-    [branchId, ownerKey, projectId, captureNavigation, queryClient, openAiDraft],
+    [branchId, ownerKey, openAiDraft],
   );
 }
 

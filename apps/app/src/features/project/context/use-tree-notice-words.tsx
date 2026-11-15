@@ -194,44 +194,60 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
 }
 
 /**
- * A bounced change's word: what didn't happen, "Not created", "Not renamed", "Not moved", "Not
- * deleted", or "Copy" when the writer typed something it can hand back (a created document's
- * text, a rename's name). `work` is the Work that was closed, when the shell knows it.
+ * What a bounced change says: what didn't happen ("Not created", "Not renamed", "Not moved", "Not
+ * deleted"), why, and the Copy it offers when the writer typed something it can hand back (a
+ * created document's text, a rename's name). `work` is the Work that was closed, when the shell
+ * knows it. A row's word and a not-created document's tab say it the same.
  */
-function BounceWord({ bounce, work }: { bounce: Bounce; work: string | null }) {
+export function bounceSaying(
+  bounce: Bounce,
+  work: string | null,
+): {
+  word: ReactNode;
+  sentence: string;
+  copy: { word: ReactNode; label: string; take: () => void } | null;
+} {
   const closed = work ? t`${work} was closed.` : t`The Work was closed.`;
   const { record, typed } = bounce;
   if (typed) {
     const created = record.type === "create";
     const lead = created ? t`Not created:` : t`Not renamed:`;
     const takes = created ? t`Copy takes what you typed.` : t`Copy takes the name you typed.`;
-    return (
-      <RowWord
-        word={<Trans>Copy</Trans>}
-        label={created ? t`Copy what you typed` : t`Copy the name you typed`}
-        sentence={`${lead} ${closed} ${takes}`}
-        onAction={() => void navigator.clipboard.writeText(typed)}
-      />
-    );
+    const word = <Trans>Copy</Trans>;
+    return {
+      word,
+      sentence: `${lead} ${closed} ${takes}`,
+      copy: {
+        word,
+        label: created ? t`Copy what you typed` : t`Copy the name you typed`,
+        take: () => void navigator.clipboard.writeText(typed),
+      },
+    };
   }
-  return (
-    <RowWord
-      tone="warning"
-      word={
-        record.type === "create" ? (
-          <Trans>Not created</Trans>
-        ) : record.type === "move" ? (
-          <Trans>Not moved</Trans>
-        ) : record.type === "delete" ? (
-          <Trans>Not deleted</Trans>
-        ) : record.type === "restore" ? (
-          <Trans>Not restored</Trans>
-        ) : (
-          <Trans>Not renamed</Trans>
-        )
-      }
-      sentence={closed}
-    />
+  return {
+    word:
+      record.type === "create" ? (
+        <Trans>Not created</Trans>
+      ) : record.type === "move" ? (
+        <Trans>Not moved</Trans>
+      ) : record.type === "delete" ? (
+        <Trans>Not deleted</Trans>
+      ) : record.type === "restore" ? (
+        <Trans>Not restored</Trans>
+      ) : (
+        <Trans>Not renamed</Trans>
+      ),
+    sentence: closed,
+    copy: null,
+  };
+}
+
+function BounceWord({ bounce, work }: { bounce: Bounce; work: string | null }) {
+  const { word, sentence, copy } = bounceSaying(bounce, work);
+  return copy ? (
+    <RowWord word={copy.word} label={copy.label} sentence={sentence} onAction={copy.take} />
+  ) : (
+    <RowWord tone="warning" word={word} sentence={sentence} />
   );
 }
 
