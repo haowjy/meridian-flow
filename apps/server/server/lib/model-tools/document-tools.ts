@@ -39,7 +39,6 @@ import {
   type FileDestination,
   FileEditRefusedError,
   type FileGrant,
-  inOthersNotes,
   isFileAccessDenied,
   type Principal,
 } from "../../domains/file-policy/index.js";
@@ -68,6 +67,8 @@ import {
   documentNotFoundError,
   fileAccessDeniedError,
   firstRefusal,
+  HELD_IN_OTHERS_NOTES,
+  heldInOthersNotes,
   inContainer,
   keptDraft,
   removalBehind,
@@ -219,9 +220,6 @@ function buildAgentWriteCommand(
     tool_use_id: toolUseId,
   };
 }
-
-const HELD_IN_OTHERS_NOTES =
-  "These are another owner's notes: your change is held in this chat's Changes until the writer applies it.";
 
 /**
  * Writes report where they landed; a drafted write names its Work, and one into another owner's
@@ -452,9 +450,7 @@ async function writeUnderGrant(
       outcome,
       grant.destination,
       parsed.command,
-      grant.destination.kind === "draft" &&
-        !!principal.agent &&
-        inOthersNotes(principal.agent, grant.facts),
+      heldInOthersNotes(principal, [grant]),
     ),
     evidence,
   } as WriteOutcome & {

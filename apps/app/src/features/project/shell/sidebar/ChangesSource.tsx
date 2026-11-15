@@ -707,13 +707,16 @@ function changeSummary(
           ? t`Moving to ${line.place}`
           : line?.kind === "reorder"
             ? t`Changing position`
-            : notesOwner;
+            : null;
+  // A new document's place already names the owner; any other change says whose notes it is.
+  const owner = file.draft.isNew ? null : notesOwner;
   // A new or deleted document is the whole change: its text needs no count.
   const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
-  if (!tree && count === null) return null;
+  if (!tree && !owner && count === null) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">
       {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
+      {owner ? <span className="min-w-0 truncate">{owner}</span> : null}
       {count !== null ? (
         // A row word and the ✕ ✓ can leave less than the count's width: it breaks between words.
         <span className="whitespace-normal">
@@ -723,6 +726,9 @@ function changeSummary(
     </span>
   );
 }
+
+/** "Tea Notes'" and "Cup Draft's". */
+const possessive = (name: string) => (name.endsWith("s") ? `${name}'` : `${name}'s`);
 
 /**
  * Whose notes a held Scratch draft changes, as the row says it ("Tea Notes' notes"); null for
@@ -738,11 +744,11 @@ function useNotesOwner(
     const owner = file.draft.contextLocation?.scratchOwner;
     if (!owner) return null;
     if (owner.kind === "lineage") {
-      return scopeWork?.isNoWork ? null : t`${owner.rootThreadRef}'s notes`;
+      return scopeWork?.isNoWork ? null : t`${possessive(owner.rootThreadRef)} notes`;
     }
     if (owner.workHandle === scopeWork?.handle) return null;
     const name = works?.find((work) => work.handle === owner.workHandle)?.name;
-    return name ? t`${name}'s notes` : null;
+    return name ? t`${possessive(name)} notes` : null;
   };
 }
 
