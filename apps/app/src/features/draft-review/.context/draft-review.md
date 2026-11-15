@@ -160,10 +160,10 @@ Undo already uses (`work-closed`, `chat-in-trash`); the owner's outcome is `retu
 hook is the one place that makes it a notice (`showBounce`, a `discarded` notice with status `bounced`) and reads the
 Works list again. The notice is a chip ("Work was closed", "Its chat is in Trash") in the trailing slot of the
 control pressed, for 6 s, with the full sentence on hover, focus or long press: a Changes row's notice slot (a
-folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band. It adds no line,
+folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band, a change card's own row (one press, one chip, on the card pressed). It adds no line,
 so `hasLine` is false for it. A change's Discard in a closed Work writes in a room the server admits read-only;
 `startDraftDiscardSession` returns `returned` there, with the word for the room's `closedWhy`, instead of a
-`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
+`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission, and any 4409 that names no reason, holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A Discard's deferred write answers from the room only once it is settled read-only; while the reason is pending it writes at once, as an offline press does, and the next admission decides. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
 notice, Trash's row and the editor's pill. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering

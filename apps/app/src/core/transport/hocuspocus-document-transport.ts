@@ -356,6 +356,8 @@ export function createHocuspocusDocumentTransport({
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
+    // No admission is coming to name a reason.
+    if (currentAccess && reasonPending) publishAccess(currentAccess, currentClosedWhy);
     document.off("update", handleDocumentUpdate);
     stopHints();
     acknowledgement.terminate();
@@ -406,10 +408,14 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (isAccessChangedClose(event) || event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
-      // Frozen until the reconnect's authenticated message names the new scope;
-      // a removed document has no reconnect, so it stays read-only.
-      publishAccess("read", accessChangedWhy(event) ?? null);
+    if (isAccessChangedClose(event)) {
+      // Frozen until the reconnect's authenticated message names the new scope. A close that
+      // names no reason (an unarchive, a restore) leaves it pending too: the answer is on its way.
+      const why = accessChangedWhy(event) ?? null;
+      publishAccess("read", why, !why);
+    } else if (event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
+      // A removed document has no reconnect, so it stays read-only.
+      publishAccess("read", null);
     }
     const state = classifyDocumentTransportClose(event);
     if (state) {

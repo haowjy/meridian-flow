@@ -82,9 +82,11 @@ export function startDraftDiscardSession(input: {
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
-    // A read room drops the writer's text: a revert written here would show, then never land.
-    if (binding.session.getSnapshot().access === "read") {
-      const { closedWhy } = binding.session.getSnapshot();
+    // A settled read room drops the writer's text: a revert written here would show, then never land.
+    // While its reason is pending the write goes in, as an offline press does: the next admission decides.
+    const room = binding.session.getSnapshot();
+    if (room.access === "read" && !room.reasonPending) {
+      const { closedWhy } = room;
       if (closedWhy) return { kind: "returned", why: closedOwnerWord(closedWhy) };
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
