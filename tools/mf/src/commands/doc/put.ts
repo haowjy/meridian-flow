@@ -57,12 +57,7 @@ export async function putDocument(
     const opened = await trees.at(target);
     let previousDocumentId: string | null = null;
     const existing = lookupPath(opened.list.replay(), opened.source, target.path).node;
-    if (existing) {
-      if (!input.overwrite) {
-        throw new CliError("usage", `${target.uri} already exists`, {
-          hint: "Pass --overwrite to delete it and create a new document at this URI (new id, old drafts lost).",
-        });
-      }
+    if (existing && input.overwrite) {
       previousDocumentId = await deleteAt(opened, target);
     }
     let created: CreateRecord;

@@ -766,7 +766,7 @@ export function runTreeCommand(
         ok: true,
         subject: last,
         made: [],
-        shownAt: command.path,
+        shownAt: landedAt,
         landedAt,
         ...(landedAt !== uriOfPath(cx, command.path) ? { landed: landedAt } : {}),
         ...(kept ? { kept } : {}),

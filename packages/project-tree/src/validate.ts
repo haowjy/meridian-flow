@@ -59,8 +59,10 @@ function read(value: unknown): ReadRecord {
   const serverFields = kind === undefined ? undefined : SERVER_FIELDS.get(kind);
   if (!clientFields && !serverFields) return fail("unknown type");
   const allowed = [...(clientFields ?? []), ...SERVER_BASE, ...(serverFields ?? [])];
+  // Old moves may carry a retired arrival name; replay keeps the move, not that name.
   for (const key of Object.keys(value))
-    if (!allowed.includes(key) && value[key] !== undefined) return fail(`field ${key}`);
+    if (!allowed.includes(key) && !(kind === "move" && key === "name") && value[key] !== undefined)
+      return fail(`field ${key}`);
   const matches = (v: unknown, pattern: RegExp): v is string =>
     typeof v === "string" && pattern.test(v);
   const optional = <T>(v: unknown, ok: (v: unknown) => v is T): v is T | undefined =>

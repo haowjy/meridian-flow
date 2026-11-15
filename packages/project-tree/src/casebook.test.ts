@@ -79,6 +79,26 @@ function targetGone(doc: Y.Doc, view: View): TreeRecord[] {
 }
 
 describe("part 1: a draft and live changed the same thing", () => {
+  it("replays an old move carrying its retired name field", () => {
+    const t = start();
+    const folder = t.folder("Destination");
+    const chapter = t.chapter("Chapter");
+    t.doc.getArray("ops").push([
+      {
+        id: cmd(),
+        node: chapter,
+        actor: WRITER,
+        draft: null,
+        type: "move",
+        parent: folder,
+        rank: "a0",
+        from: { parent: ROOT, rank: "a0" },
+        name: "Chapter 2",
+      },
+    ]);
+    expect(t.at(chapter)).toMatchObject({ parent: folder, name: "Chapter" });
+  });
+
   it("1. draft moved a chapter, live renamed it: both stand", () => {
     const t = start();
     const arc = t.folder("Arc 3");
