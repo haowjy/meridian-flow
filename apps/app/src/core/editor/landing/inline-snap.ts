@@ -6,7 +6,7 @@
 
 import type { Mark, Node as PMNode } from "@tiptap/pm/model";
 
-import { classifyLinkTarget, isInternalLinkTarget } from "../links/link-target";
+import { chipLinkTarget } from "../links/link-chip";
 
 import type { Geometry, Point } from "./point-landing";
 
@@ -60,18 +60,11 @@ function snapOutOf(doc: PMNode, pos: number, key: RunKey): number {
 
 const codeMark: RunKey = (node) => node.marks.find((mark) => mark.type.name === "code") ?? null;
 
-/**
- * A link drawn as a chip: one that names a file or folder, by its ref or by an
- * internal address (`kb://notes/kael`, `kael.md`). An external link stays text.
- */
+/** A link drawn as a chip, which the writer reads as one thing. */
 function chipLink(node: PMNode): Mark | null {
-  return node.marks.find((mark) => mark.type.name === "link" && isChip(mark)) ?? null;
-}
-
-function isChip(link: Mark): boolean {
-  if (link.attrs.ref !== null) return true;
-  const target = typeof link.attrs.href === "string" ? classifyLinkTarget(link.attrs.href) : null;
-  return target !== null && isInternalLinkTarget(target);
+  return (
+    node.marks.find((mark) => mark.type.name === "link" && chipLinkTarget(mark.attrs.href)) ?? null
+  );
 }
 
 /** Inside inline code the landing is the span's nearer edge. */

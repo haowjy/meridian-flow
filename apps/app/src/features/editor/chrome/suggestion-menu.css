@@ -22,13 +22,15 @@
    last, so a menu that opened short under a caret near the bottom (one row
    while references load, a composer at the window's edge) fit that sliver on
    every later check and never flipped as its rows arrived, leaving them under
-   the window's edge. With the floor, a sliver too small for a few rows reads as
-   an overflow and the menu moves to the roomier side. */
+   the window's edge. With the floor, a sliver too small for about three rows
+   reads as an overflow and the menu moves to the roomier side. It stays that
+   small because a short viewport (a phone with its keyboard up, landscape) may
+   have no side taller than the floor, and then the menu hangs off an edge. */
 .meridian-suggestion-menu-shell {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: max(var(--radix-popper-available-height), 12rem);
+  max-height: max(var(--radix-popper-available-height), 7rem);
 }
 
 /* Height caps near eight rows and the list scrolls inside itself (ruled). The
