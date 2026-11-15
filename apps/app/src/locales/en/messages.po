@@ -2209,8 +2209,8 @@ msgstr "Couldn't delete this chat. Retry tries again."
 #~ msgstr "Couldn't delete this document."
 
 #: src/features/chat/ChatFilesMenu.tsx
-msgid "Couldn’t delete this file. Try again."
-msgstr "Couldn’t delete this file. Try again."
+#~ msgid "Couldn’t delete this file. Try again."
+#~ msgstr "Couldn’t delete this file. Try again."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't delete this folder."
