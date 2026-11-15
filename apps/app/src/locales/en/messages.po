@@ -2919,8 +2919,13 @@ msgstr "Discarding"
 #: src/features/editor/RescuedText.tsx
 #: src/features/project/context/EntryRefusalNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/features/project/work/GoneWord.tsx
+msgid "Dismiss {name}"
+msgstr "Dismiss {name}"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Dismiss the error"
@@ -3357,6 +3362,7 @@ msgstr "Goal: {0}. "
 msgid "Gone for good: this document was emptied from Trash."
 msgstr "Gone for good: this document was emptied from Trash."
 
+#: src/features/project/work/GoneWord.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Gone from Trash."
 msgstr "Gone from Trash."
@@ -5027,8 +5033,8 @@ msgstr "Response complete"
 msgid "Restore"
 msgstr "Restore"
 
+#. placeholder {0}: entry.work.name
 #. placeholder {0}: scoped.name
-#. placeholder {0}: work.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"

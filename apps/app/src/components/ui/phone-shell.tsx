@@ -4,10 +4,10 @@
  * `PhoneSheet` is a bottom sheet with a grabber, a title and a close button. Callers
  * supply the body and its scrolling.
  */
+
 import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
-
 import {
   DialogClose,
   DialogDescription,
@@ -15,9 +15,9 @@ import {
   DialogPortal,
   DialogTitle,
   focusContentOnOpen,
-  ignoreFieldEscape,
   useOpenerFocus,
 } from "@/components/ui/dialog";
+import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 

@@ -26,7 +26,8 @@ export type WorkCommandVariables = {
   archive: { workId: string };
   unarchive: { workId: string };
   delete: { workId: string };
-  restore: { workId: string };
+  /** `name`: the Work as the writer saw it, for the row a restore that finds it gone leaves. */
+  restore: { workId: string; name?: string };
 };
 
 /** How a closed Work turned a command away. */

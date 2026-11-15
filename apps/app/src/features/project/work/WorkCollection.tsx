@@ -3,8 +3,8 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useRef } from "react";
-import { type AddressableWork, useWorks } from "@/client/query/useWorks";
+import { useMemo } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-mutations";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -17,9 +17,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
+import { GoneWord } from "./GoneWord";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
-import { takeWorkFocus, type WorkDeletion, type WorkPlace, workPlace } from "./useWorkDeletion";
+import {
+  rememberWorkPlace,
+  takeWorkFocus,
+  type WorkDeletion,
+  type WorkPlace,
+  workPlace,
+} from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import {
   WORK_ROW_OPERATIONS,
@@ -63,34 +70,33 @@ export function WorkCollection({
   const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);
   const toggleArchive = useWorkArchiveToggle(projectId);
   const archiveFocus = useArchiveFocusFollow(works);
-  // A purged Work leaves the server's list, but a restore that found it gone keeps its row, with
-  // the sentence, until the writer dismisses it.
-  const seen = useRef(new Map<string, AddressableWork>());
-  for (const work of [...(works ?? []), ...deleted]) seen.current.set(work.id, work);
-  const withGone = useMemo(() => {
-    const present = new Set<string>([...(works ?? []), ...deleted].map((work) => work.id));
-    const gone = [...failures.values()].flatMap((failure) =>
-      failure.operation === "restore" && !present.has(failure.workId)
-        ? (seen.current.get(failure.workId) ?? [])
-        : [],
-    );
-    return gone.length ? [...deleted, ...gone] : deleted;
-  }, [works, deleted, failures]);
   const entries = useMemo(
     () =>
       workListEntries(
-        { works: works ?? [], deleted: withGone, creations, restoring },
+        { works: works ?? [], deleted, creations, restoring },
         deletion.windows,
         failures,
+        workPlace,
       ),
-    [works, withGone, creations, restoring, deletion.windows, failures],
+    [works, deleted, creations, restoring, deletion.windows, failures],
   );
   // Focus follows an Archive, or its retry, to the tab the Work moves to.
   const retry = ({ operation, workId, retry }: WorkRowFailure) =>
     operation === "archive" || operation === "unarchive"
       ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
       : undefined;
-  const row = ({ work, state, failure }: WorkListEntry, place?: WorkPlace): ReactNode => {
+  const row = (entry: WorkListEntry, place?: WorkPlace): ReactNode => {
+    if (entry.state === "gone")
+      return (
+        <WorkRow
+          work={{ name: entry.work.name, goal: null, lastActivityAt: new Date(now).toISOString() }}
+          now={now}
+          onOpen={() => undefined}
+          gone
+          notice={<GoneWord entry={entry} />}
+        />
+      );
+    const { work, state, failure } = entry;
     const shared = { work, now, onOpen: () => onOpen(work.id) };
     switch (state) {
       case "creating":
@@ -143,7 +149,7 @@ export function WorkCollection({
                   word={<Trans>Undo</Trans>}
                   label={t`Undo delete of ${name}`}
                   sentence={t`Deleted just now. Undo puts it back.`}
-                  onAction={() => deletion.undo(work.id)}
+                  onAction={() => deletion.undo(work)}
                   focus={{ take: () => takeWorkFocus(work.id), back: () => workRowOf(work.id) }}
                 />
               )
@@ -207,7 +213,11 @@ export function WorkCollection({
         ) : view === "deleted" ? (
           <DeletedWorkList
             entries={entries.deleted}
-            onRestore={(work) => void restore({ workId: work.id })}
+            list={`works:${projectId}:deleted`}
+            onRestore={(work, place) => {
+              rememberWorkPlace(work.id, place);
+              void restore({ workId: work.id, name: work.name });
+            }}
           />
         ) : view === "archived" ? (
           <WorkRows
@@ -254,8 +264,9 @@ function WorkRows({
   row: (entry: WorkListEntry, place?: WorkPlace) => ReactNode;
   empty: ReactNode;
 }) {
-  const listed = entries.filter((entry) => entry.state !== "undo");
-  const undo = entries.filter((entry) => entry.state === "undo");
+  const standsIn = (entry: WorkListEntry) => entry.state === "undo" || entry.state === "gone";
+  const listed = entries.filter((entry) => !standsIn(entry));
+  const undo = entries.filter(standsIn);
   const here = (entry: WorkListEntry) => workPlace(entry.work.id)?.list === list;
   const ids = listed.map((entry) => entry.work.id);
   const rows = [
