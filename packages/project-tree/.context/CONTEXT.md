@@ -121,7 +121,8 @@ the replay uses them (package `AGENTS.md`).
   tab can tell the Apply's tree half has ended (a card's Undo of the drafted change took the copy
   back). A Redo (an undo of the undo) puts it back in force, and an Undo of it then undoes the
   Redo (`redoneAs`) when the Undos in the chain put back exactly what they undid, else it answers
-  `changed_since`. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
+  `changed_since`. A Redo puts back what the move did, its numbered name included, even if the
+  clash that numbered it has gone since. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
   a copy of the Apply's own Undo record may bring one back in force on the way.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
   numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,

@@ -1,7 +1,7 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter, type TreeProjection } from "./replay.js";
 import { descendantsOf, nameAmong } from "./shape.js";
-import { inForce, LIVE, type View, viewRecords } from "./view.js";
+import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Whether the record is the one that last set the fact `setter` stands for. */
@@ -49,7 +49,7 @@ const standsIn = (projection: TreeProjection, record: TreeRecord) =>
  * lifted by a restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
  */
 export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
-  const record = inForce(writer.doc, asked, recordId);
+  const record = lastOfFamily(writer.doc, asked, recordId);
   if (!record || record === "unknown" || record.type !== "delete") return false;
   return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
 }
@@ -73,12 +73,16 @@ export function recordsInForce(records: readonly TreeRecord[]): Set<string> {
 
 /** Whether `undoer` put back what `record` changed: an Undo drafted elsewhere may have gone elsewhere. */
 function reverses(undoer: TreeRecord, record: TreeRecord): boolean {
-  if (record.type === "move")
+  if (record.type === "move") {
+    // A move that set a name is also undone as a rename of that name, which leaves its place.
+    if (undoer.type === "rename")
+      return record.name !== undefined && undoer.fromName === record.name;
     return (
       undoer.type === "move" &&
       undoer.parent === record.from.parent &&
       undoer.rank === record.from.rank
     );
+  }
   if (record.type === "rename") return undoer.type === "rename" && undoer.name === record.fromName;
   return true;
 }
@@ -129,7 +133,7 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | NotUndone {
-  const named = inForce(writer.doc, asked, recordId);
+  const named = lastOfFamily(writer.doc, asked, recordId);
   if (named === "unknown") return named;
   if (!named) return "already";
   const view = named.draft === null ? LIVE : asked;
