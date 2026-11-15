@@ -70,7 +70,10 @@ stateDiagram-v2
   with the status pill's Restore (the Discard's, or the document's). `here` and `other` leave
   for Live; `here` has its notice's Undo.
 - **Reopening needs an answer newer than the end** (`metadataActive` compares the answer's time
-  with `endedAt`): a cached active answer read before the close can't undo it.
+  with `endedAt`): a cached active answer read before the close can't undo it. Two readers
+  deliver it: a surface holding the draft's room (`useRoomBindings`), and admission of a page
+  that names the draft (`reconcileClosed`), so a draft the writer's own Discard closed opens again
+  after a restore even when nothing held its room.
 - Apply sets `hidden` while it is queued, which leaves the review at once whatever `ended` turns
   out to be.
 

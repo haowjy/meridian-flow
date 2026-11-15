@@ -78,12 +78,15 @@ its newest known generation, advanced by `bind` and `reconcileClosed`, never by 
 A close retires the generation it was issued for, so a late answer about the old draft
 can't close a newer one.
 
-While the item's known draft is closed, the review address port and the route's address
-clearing ask the server first (`reconcileClosed`). `gone`, the same closed draft or a
-failed read refuse admission, because the room owner just ended that review and admitting
-it again would loop; a different active draft is the replacement. While a command hides
-the item (a Discard in flight), the port refuses it outright for the same reason; the end of the hide is a new port, so a refused Discard restores the
-review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
+While the item's known draft is closed, or this tab's Discard hid it, the review address port
+and the route's address clearing ask the server first (`reconcileClosed`), with a read that goes
+to the server rather than joining the cached query (a restore's invalidation would cancel it).
+`gone` or a failed read refuse admission, because the room owner just ended that review and
+admitting it again would loop; the same draft active again, read after the end, is a restore,
+which reopens it (`metadataActive`) whether or not any surface holds its room; a different
+active draft is the replacement. While a Discard is still in flight the port refuses the item
+outright for the same reason; the end of the hide is a new port, so a refused Discard restores
+the review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
 that gave it, so a replacement that becomes known later is retried once.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
