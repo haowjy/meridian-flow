@@ -13,8 +13,10 @@ import {
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import {
+  ClosedBounceChip,
   DeletedFromManuscriptTag,
   DraftCommandStatus,
+  useClosedBounce,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
@@ -42,6 +44,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
 
+  // A file's own status line says it (`DraftCommandStatus`): the summary does for several shut files.
+  const summaryBounce =
+    useClosedBounce(dock.ownerKey) !== undefined && dock.files.length > 1 && !expanded;
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
 
@@ -89,15 +94,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {askingApply ? null : dock.showCommands ? (
-        <ReviewActions
-          scope={multi ? "all" : "change"}
-          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
-          density="full"
-          disabled={!dock.canCommand}
-          discardAsks={dock.discardAsks}
-          onDiscard={dock.discard}
-          onApply={dock.canApply ? startApply : undefined}
-        />
+        <>
+          {summaryBounce ? <ClosedBounceChip pressed={dock.ownerKey} /> : null}
+          <ReviewActions
+            scope={multi ? "all" : "change"}
+            labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+            density="full"
+            disabled={!dock.canCommand}
+            discardAsks={dock.discardAsks}
+            onDiscard={dock.discard}
+            onApply={dock.canApply ? startApply : undefined}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -119,7 +127,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        className="min-w-[12ch] flex-auto coarse:min-h-11"
+        // The Work chip joins the line, which gives up the name's room instead of wrapping.
+        className={cn(
+          "coarse:min-h-11",
+          summaryBounce ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
+        )}
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">

@@ -26,6 +26,7 @@ import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
+import { ClosedBounceChip } from "@/features/draft-review/DraftCommandStatus";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
@@ -186,6 +187,7 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
+      <ClosedBounceChip pressed={props.itemKey} />
       {finished || header.asking ? null : (
         <ReviewActions
           scope="document"

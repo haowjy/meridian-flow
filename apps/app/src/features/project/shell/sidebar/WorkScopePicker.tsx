@@ -65,7 +65,7 @@ export function WorkScopePicker({
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const commands = useDraftCommandOwner();
   useSyncExternalStore(commands.subscribe, commands.snapshot, commands.snapshot);
-  const closedBounce = scoped ? commands.isClosedBounce(scoped.id) : false;
+  const closedBounce = scoped ? commands.closedBounce(scoped.id) !== undefined : false;
 
   return (
     <DropdownMenu>

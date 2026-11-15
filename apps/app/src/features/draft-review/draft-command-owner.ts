@@ -174,28 +174,37 @@ export class DraftCommandOwner {
     };
   };
   snapshot = () => this.revision;
-  /** Works whose closed state a command just ran into; each clears itself after a moment. */
-  private readonly closedWorks = new Map<string, ReturnType<typeof setTimeout>>();
-  isClosedBounce = (workId: string) => this.closedWorks.has(workId);
   /**
-   * A refusal because the Work is closed shows once, in the Work chip, instead of on the control
-   * pressed: the controls look as an open Work's do, and the line would only go stale on restore.
+   * Works, and the owners and items pressed in them, whose closed state a command just ran into; each
+   * clears itself after a moment. One entry per key, so the sidebar's chip reads the Work and a
+   * control's own chip reads its item.
    */
-  private shown(ownerKey: string, failure: BranchCommandFailure): BranchCommandFailure | null {
-    if (failure.serverCode !== "work_archived" && failure.serverCode !== "work_deleted")
-      return failure;
-    const workId = workIdOfDraftOwnerKey(ownerKey);
-    if (workId) {
-      clearTimeout(this.closedWorks.get(workId));
-      this.closedWorks.set(
-        workId,
-        setTimeout(() => {
-          this.closedWorks.delete(workId);
+  private readonly closedBounces = new Map<
+    string,
+    { why: "work_archived" | "work_deleted"; timer: ReturnType<typeof setTimeout> }
+  >();
+  closedBounce = (key: string) => this.closedBounces.get(key)?.why;
+  /**
+   * A refusal because the Work is closed shows once, as the "Work was closed" chip where the
+   * press was (the item's status line or controls) and in the Work chip, instead of a failure:
+   * the controls look as an open Work's do, and a failure line would only go stale on restore.
+   */
+  private shown(ref: DraftRef, failure: BranchCommandFailure): BranchCommandFailure | null {
+    const why = failure.serverCode;
+    if (why !== "work_archived" && why !== "work_deleted") return failure;
+    const keys = [ref.itemKey, ref.ownerKey, workIdOfDraftOwnerKey(ref.ownerKey)];
+    for (const key of keys) {
+      if (!key) continue;
+      clearTimeout(this.closedBounces.get(key)?.timer);
+      this.closedBounces.set(key, {
+        why,
+        timer: setTimeout(() => {
+          this.closedBounces.delete(key);
           this.publish();
         }, 6000),
-      );
-      this.publish();
+      });
     }
+    this.publish();
     return null;
   }
   /**
@@ -576,7 +585,7 @@ export class DraftCommandOwner {
       this.setState(
         ref.itemKey,
         {
-          failure: this.shown(ref.ownerKey, {
+          failure: this.shown(ref, {
             code: "apply-refused",
             serverCode: refusalCode(answer),
           }),
@@ -933,7 +942,7 @@ export class DraftCommandOwner {
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
-        failure: this.shown(ref.ownerKey, { code: "discard-refused", serverCode: result.status }),
+        failure: this.shown(ref, { code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
@@ -987,7 +996,7 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
       this.setState(ref.itemKey, {
-        failure: this.shown(ref.ownerKey, { code: "discard-refused", serverCode: result.status }),
+        failure: this.shown(ref, { code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
@@ -1036,7 +1045,7 @@ export class DraftCommandOwner {
         for (const ref of scope.values())
           this.setState(ref.itemKey, {
             hidden: false,
-            failure: failure && this.shown(ref.ownerKey, failure),
+            failure: failure && this.shown(ref, failure),
           });
     };
     try {

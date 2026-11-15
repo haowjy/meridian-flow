@@ -393,7 +393,7 @@ export function ChangesSource({
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
                       hold();
-                      void controller.discardAll(everyDraft);
+                      void controller.discardAll(everyDraft, changedFolders);
                     }
                   : undefined
               }

@@ -6,7 +6,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { useSyncExternalStore } from "react";
+import { workClosedSentence } from "@/client/query/work-update-failure";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
@@ -25,6 +28,21 @@ export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem |
       <Trans>Deleted</Trans>
     </span>
   );
+}
+
+/**
+ * The Work chip where a command was pressed in a closed Work, for the few seconds the owner
+ * remembers it; the sidebar's chip is out of sight on a phone. Nothing otherwise.
+ */
+export function useClosedBounce(pressed: string) {
+  const owner = useDraftCommandOwner();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  return owner.closedBounce(pressed);
+}
+
+export function ClosedBounceChip({ pressed }: { pressed: string }) {
+  const why = useClosedBounce(pressed);
+  return why ? <WorkClosedChip sentence={workClosedSentence(why)} /> : null;
 }
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
@@ -59,7 +77,8 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
       />
     )
   ) : null;
-  if (!content) return null;
+  const bounced = <ClosedBounceChip pressed={itemKey} />;
+  if (!content) return bounced;
   return (
     <div
       role="status"

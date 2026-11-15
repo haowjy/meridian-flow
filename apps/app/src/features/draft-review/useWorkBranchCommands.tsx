@@ -581,22 +581,18 @@ export function useWorkBranchCommands({
      * notice's Undo is the server's Undo of that Discard, which brings both halves back. `name`:
      * the folder the selection is, for the notice.
      */
-    const discardSelection = (
-      input:
-        | { all: true; drafts: readonly DraftReviewSelection[]; name: null }
-        | {
-            all?: false;
-            drafts: readonly DraftReviewSelection[];
-            folders: readonly string[];
-            name: string | null;
-          },
-    ): Promise<CommandOutcome> => {
+    const discardSelection = (input: {
+      all?: boolean;
+      drafts: readonly DraftReviewSelection[];
+      folders: readonly string[];
+      name: string | null;
+    }): Promise<CommandOutcome> => {
       endNotice();
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       );
       const branchId = listed?.branchId;
-      const folders = input.all ? [] : input.folders;
+      const { folders } = input;
       if (locked || !branchId || (input.drafts.length === 0 && folders.length === 0))
         return Promise.resolve({ kind: "blocked" });
       const commandId = crypto.randomUUID();
@@ -709,8 +705,8 @@ export function useWorkBranchCommands({
       discardMany,
       discardSelection,
       /** Discard all: every change of the branch, the one Discard that closes it. */
-      discardAll: (drafts: readonly DraftReviewSelection[]) =>
-        discardSelection({ all: true, drafts, name: null }),
+      discardAll: (drafts: readonly DraftReviewSelection[], folders: readonly string[]) =>
+        discardSelection({ all: true, drafts, folders, name: null }),
     };
   }, [
     owner,
