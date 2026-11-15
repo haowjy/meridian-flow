@@ -54,6 +54,9 @@ export type EditResolutionErrorCode =
   | "invalid_write"
   | "document_not_found";
 
+/** What the model reads when an edit did not land because the server failed; it asks for no retry. */
+export const EDIT_FAILED_MESSAGE = "The edit did not land: the server failed while applying it.";
+
 export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "internal_error";
 
 export interface AgentOrigin {

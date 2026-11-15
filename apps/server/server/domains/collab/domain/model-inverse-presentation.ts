@@ -30,21 +30,21 @@ export function textPlanRefusal(
   if (failure === "applied")
     return {
       status: `cant_${verb}_applied`,
-      message: `The user applied ${handle} to the manuscript, and its draft is closed. Read ${uri} and make a new replace.`,
+      message: `The user applied ${handle} to the manuscript, and its draft is closed. Nothing was changed in ${uri}.`,
     };
   if (failure === "partly_applied")
     return {
       status: `cant_${verb}_applied`,
-      message: `The user applied part of ${handle} to the manuscript and discarded the rest, and its draft is closed. Read ${uri} and make a new replace for what is still missing.`,
+      message: `The user applied part of ${handle} to the manuscript and discarded the rest, and its draft is closed. Nothing was changed in ${uri}.`,
     };
   return failure === "discarded"
     ? {
         status: `cant_${verb}_discarded`,
-        message: `The user discarded ${handle}; it is already gone. Read ${uri} and make a new replace if it is still wanted.`,
+        message: `The user discarded ${handle}; it is already gone. Nothing was changed in ${uri}.`,
       }
     : {
         status: `cant_${verb}_changed`,
-        message: `Can't ${verb} ${handle}: none of that edit remains unchanged. Read ${uri} for current text.`,
+        message: `Can't ${verb} ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
       };
 }
 

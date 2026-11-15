@@ -5,6 +5,7 @@ import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
+  documentToolReturned,
   sourcePath,
   stringInput,
   toolCommand,
@@ -21,6 +22,7 @@ import { CommandTitle } from "./CommandTitle";
 import {
   type CommandExpand,
   descriptorFor,
+  failureOrReturnedVerb,
   humanizeToolName,
   type ToolActivityPhrase,
   toolActivityPhrase,
@@ -324,14 +326,11 @@ export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): str
       return name
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
+    case "returned":
+      return returnedWriteCopy(documentFailureReturned(tool).why, name, tool);
     case "invalid_write": {
       const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool), names);
       if (refused) return refused;
-      const reason =
-        documentFailureRejected(tool) === "removed"
-          ? removedWriteCopy(name, documentFailureRemoval(tool))
-          : rejectionCopy(documentFailureRejected(tool));
-      if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     }
     default:
@@ -348,25 +347,28 @@ function documentFailureRefusal(tool: ToolView): string | null {
   return asString(result.refusal) ?? null;
 }
 
-/** The host's structured reason a staged write was rejected, when it gave one. */
-function documentFailureRejected(tool: ToolView): string | null {
+/** The `returned` block of a returned write's typed result: why, and the removal record if any. */
+function documentFailureReturned(tool: ToolView): {
+  why: string | null;
+  removal: ToolView["result"] | null;
+} {
   const result = tool.result;
-  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
-  return asString(result.rejected) ?? null;
+  const returned =
+    result && typeof result === "object" && !Array.isArray(result) ? result.returned : null;
+  if (!returned || typeof returned !== "object" || Array.isArray(returned))
+    return { why: null, removal: null };
+  return { why: asString(returned.why) ?? null, removal: returned.removal ?? null };
 }
 
 /**
- * Who removed a refused write's document and how, when the host sent the
- * record with a `removed` rejection. A named person is named; anyone
- * else reads passively.
+ * Who removed a returned write's document and how, when the host sent the record with it. A
+ * named person is named; anyone else reads passively.
  */
 function documentFailureRemoval(tool: ToolView): {
   by: { kind: "person"; name: string } | { kind: "agent"; chat: string | null } | null;
   reason: "deleted" | "discarded";
 } {
-  const result = tool.result;
-  const removal =
-    result && typeof result === "object" && !Array.isArray(result) ? result.removal : null;
+  const { removal } = documentFailureReturned(tool);
   if (!removal || typeof removal !== "object" || Array.isArray(removal))
     return { by: null, reason: "deleted" };
   const actor = removal.actor;
@@ -381,6 +383,26 @@ function documentFailureRemoval(tool: ToolView): {
         : null,
     reason: removal.reason === "discarded" ? "discarded" : "deleted",
   };
+}
+
+/** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
+function returnedWriteCopy(why: string | null, name: string | null, tool: ToolView): string {
+  switch (why) {
+    case "draft_discarded":
+      return t`You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
+    case "draft_replaced":
+      return t`A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
+    case "document_removed":
+      return removedWriteCopy(name, documentFailureRemoval(tool));
+    case "work_archived":
+      return t`This Work is archived, so its drafts take no new text and the change wasn't kept.`;
+    case "work_deleted":
+      return t`This Work is deleted, so its drafts take no new text and the change wasn't kept.`;
+    case "block_gone":
+      return t`That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands.`;
+    default:
+      return name ? t`That change wasn't kept in ${name}.` : t`That change wasn't kept.`;
+  }
 }
 
 /** A write refused because its document was removed before the write ran. */
@@ -418,23 +440,6 @@ function removedWriteCopy(
       : t`This document was deleted before this change could be made.`;
 }
 
-function rejectionCopy(rejected: string | null): string | null {
-  switch (rejected) {
-    case "discarded_draft":
-      return t`This draft was discarded, so the change wasn't kept. The AI will read it again.`;
-    case "discarded_document":
-      return t`This new document was discarded, so the change wasn't kept. The AI will read it again.`;
-    case "discarded_edit":
-      return t`The text it edited was discarded, so the change wasn't kept. The AI will read it again.`;
-    case "inverse":
-      return t`The text it edited was undone, so the change wasn't kept. The AI will read it again.`;
-    case "integration":
-      return t`The change didn't fit the current draft. The AI will read it again.`;
-    default:
-      return null;
-  }
-}
-
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const input = inputObject(tool);
@@ -449,7 +454,7 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   }
 
   if (documentToolFailed(tool)) {
-    const verb = descriptor.failureVerb();
+    const verb = failureOrReturnedVerb(tool);
     // A move that didn't run left its document where it was.
     const subject = command === "move" ? (sourcePath(input) ?? path) : path;
     return subject ? (
@@ -520,7 +525,15 @@ function fileGivenLine(file: ReadFile): string {
 function DocumentFailureText({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   return (
-    <div className="text-compact text-destructive">{documentToolFailureCopy(tool, names)}</div>
+    <div
+      className={
+        documentToolReturned(tool)
+          ? "text-compact text-muted-foreground"
+          : "text-compact text-destructive"
+      }
+    >
+      {documentToolFailureCopy(tool, names)}
+    </div>
   );
 }
 

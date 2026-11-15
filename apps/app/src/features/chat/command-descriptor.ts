@@ -4,6 +4,7 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
+  documentToolReturned,
   humanizeSkillSlug,
   sourcePath,
   stringInput,
@@ -323,6 +324,11 @@ function documentTarget(input: Record<string, JsonValue>): string | undefined {
   return stringInput(input, "path") ?? stringInput(input, "uri") ?? stringInput(input, "file");
 }
 
+/** A write the document's state returned changed nothing, and that is no failure of the call. */
+export function failureOrReturnedVerb(tool: ToolView): string {
+  return documentToolReturned(tool) ? t`Not applied to` : descriptorFor(tool).failureVerb();
+}
+
 export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];
 }
@@ -336,7 +342,7 @@ export function humanizeToolName(toolName: string): string {
 /** The phrase for the tool's current protocol state, never guessed from timing. */
 export function toolActivityPhrase(tool: ToolView, names?: OwnerNames): ToolActivityPhrase {
   const descriptor = descriptorFor(tool);
-  if (documentToolFailed(tool)) return { verb: descriptor.failureVerb() };
+  if (documentToolFailed(tool)) return { verb: failureOrReturnedVerb(tool) };
   const vocabulary = descriptor.phrases(tool, names);
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }

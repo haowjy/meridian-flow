@@ -222,7 +222,8 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
   const result = record.outcome ? (record.outcome.result as WorkResult | null) : null;
   const done = record.state === "done" && result ? result : null;
   const committed = done && (isAnswer(done) ? done : done.work);
-  const returned = done?.settled?.find((entry) => entry.rule === "returned");
+  const settled: Settlement[] | undefined = done?.settled;
+  const returned = settled?.find((entry) => entry.rule === "returned");
   const refused = record.outcome?.status === "never" ? record.outcome : null;
   return {
     id: record.id,

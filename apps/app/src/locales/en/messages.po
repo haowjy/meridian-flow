@@ -952,6 +952,10 @@ msgstr "A folder named {name} already exists in this location."
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr "A source is no longer there."
@@ -4351,6 +4355,10 @@ msgstr "No Works match “{query}”."
 msgid "None"
 msgstr "None"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Not applied to"
+msgstr "Not applied to"
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -5822,6 +5830,14 @@ msgid "That change is no longer in the draft."
 msgstr "That change is no longer in the draft."
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept in {name}."
+msgstr "That change wasn't kept in {name}."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept."
+msgstr "That change wasn't kept."
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr "That change wasn't reverted because its text changed or is already gone."
 
@@ -5865,6 +5881,10 @@ msgstr "That link could not be checked"
 #: src/features/project/context/context-entry-name.ts
 msgid "That location does not exist"
 msgstr "That location does not exist"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/editor/PassageNotice.tsx
 msgid "That passage changed after this search."
@@ -5997,8 +6017,8 @@ msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The change didn't fit the current draft. The AI will read it again."
-msgstr "The change didn't fit the current draft. The AI will read it again."
+#~ msgid "The change didn't fit the current draft. The AI will read it again."
+#~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
@@ -6070,12 +6090,12 @@ msgid "the source chat"
 msgstr "the source chat"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
-msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+#~ msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+#~ msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "The upload didn’t start."
@@ -6378,8 +6398,8 @@ msgid "This draft just became read-only, so nothing was discarded. Check it, the
 msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/draft-review/ReviewToast.tsx
 msgid "This draft was discarded."
@@ -6454,8 +6474,8 @@ msgid "This name can't be used. Try a different one."
 msgstr "This name can't be used. Try a different one."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This note is empty. Open it in the Editor to write."
@@ -6513,6 +6533,10 @@ msgstr "This took too long, so it was stopped."
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
+msgstr "This Work is archived, so its drafts take no new text and the change wasn't kept."
+
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
@@ -6528,6 +6552,10 @@ msgstr "This Work is archived. Unarchive it to change its tree."
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
 msgstr "This Work is archived. Unarchive it to edit."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is deleted, so its drafts take no new text and the change wasn't kept."
+msgstr "This Work is deleted, so its drafts take no new text and the change wasn't kept."
 
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is deleted."
@@ -7108,6 +7136,10 @@ msgstr "You can't copy there."
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "You can't open these files."
 msgstr "You can't open these files."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/project/context/tree-action-message.ts
 msgid "You don't have access to change this."

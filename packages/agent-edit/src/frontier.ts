@@ -120,6 +120,8 @@ export interface ReplyMutations {
   append(docId: string, updates: readonly Uint8Array[]): void;
   created(docId: string): boolean;
   noteCreated(docId: string): void;
+  /** What a rolled-back command leaves behind: call the returned function to put this state back. */
+  checkpoint(): () => void;
   clear(): void;
 }
 
@@ -133,6 +135,16 @@ export function createReplyMutations(): ReplyMutations {
     },
     created: (docId) => created.has(docId),
     noteCreated: (docId) => created.add(docId),
+    checkpoint() {
+      const kept = new Map(docs);
+      const keptCreated = new Set(created);
+      return () => {
+        docs.clear();
+        for (const [docId, updates] of kept) docs.set(docId, updates);
+        created.clear();
+        for (const docId of keptCreated) created.add(docId);
+      };
+    },
     clear() {
       docs.clear();
       created.clear();
