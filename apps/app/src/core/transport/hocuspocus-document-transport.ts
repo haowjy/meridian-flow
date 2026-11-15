@@ -80,6 +80,7 @@ import { buildSameOriginWsUrl } from "./dev-transport";
 import {
   createHandshakeDifferenceReader,
   type HandshakeDifferenceReader,
+  readServerStateVector,
 } from "./handshake-difference";
 import {
   createServerAcknowledgementTracker,
@@ -110,6 +111,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
   private readonly difference: HandshakeDifferenceReader;
+  private readonly onServerStateVector: (vector: Uint8Array) => void;
   private readonly handshakeUploadFirst: boolean;
   // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
   private handshakeUploaded = false;
@@ -119,11 +121,13 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
     difference: HandshakeDifferenceReader,
+    onServerStateVector: (vector: Uint8Array) => void,
     handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
     this.difference = difference;
+    this.onServerStateVector = onServerStateVector;
     this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
@@ -188,6 +192,8 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
       const frame = new Uint8Array(event.data);
       this.acknowledgement.noteFrameReceived(frame);
       if (this.acknowledgement.readOnly) this.difference.noteFrameReceived(frame);
+      const serverState = readServerStateVector(frame);
+      if (serverState) this.onServerStateVector(serverState);
     }
   }
 
@@ -305,10 +311,16 @@ export function createHocuspocusDocumentTransport({
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const differenceListeners = new Set<(difference: HandshakeDifference | null) => void>();
+  const serverHasListeners = new Set<(vector: Uint8Array, handshake: boolean) => void>();
+  const serverHas = (vector: Uint8Array, handshake: boolean) => {
+    for (const listener of serverHasListeners) listener(vector, handshake);
+  };
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
     if (acknowledged && !terminal) {
       outbox = null;
       refusals = 0;
+      // The handshake and every update since are applied: the server holds the whole document.
+      serverHas(Y.encodeStateVector(document), false);
     }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
@@ -322,6 +334,7 @@ export function createHocuspocusDocumentTransport({
     createHandshakeDifferenceReader(document, (difference) => {
       for (const listener of differenceListeners) listener(difference);
     }),
+    (vector) => serverHas(vector, true),
     isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
@@ -385,7 +398,9 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin !== provider) {
+    // What the server sent: it holds those items and, per client, every one before them.
+    if (origin === provider) serverHas(Y.encodeStateVectorFromUpdate(update), false);
+    else {
       const wasEmpty = outbox === null;
       outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
       if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
@@ -508,6 +523,12 @@ export function createHocuspocusDocumentTransport({
         differenceListeners.delete(listener);
       };
     },
+    subscribeServerHas(listener) {
+      serverHasListeners.add(listener);
+      return () => {
+        serverHasListeners.delete(listener);
+      };
+    },
     subscribeStatus(listener) {
       listeners.add(listener);
       listener(currentState);
@@ -538,6 +559,7 @@ export function createHocuspocusDocumentTransport({
       accessListeners.clear();
       acknowledgementListeners.clear();
       differenceListeners.clear();
+      serverHasListeners.clear();
       changeEventListeners.clear();
     },
   };
