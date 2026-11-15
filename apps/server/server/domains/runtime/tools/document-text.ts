@@ -61,10 +61,28 @@ export const readDocumentText: DocumentTextPolicy = {
   },
 };
 
+/**
+ * A write result that shows the document and changed nothing: a `returned` edit, or a `not_found`
+ * that carries the document. Its text is a read, whatever the call that asked for it.
+ */
+export function showsDocumentText(result: JsonValue | undefined): boolean {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) return false;
+  return result.status === "returned" || (result.status === "not_found" && "blocks" in result);
+}
+
 export const writeDocumentText: DocumentTextPolicy = {
   kind: "write",
-  elide({ input = {} }, changed, treatment) {
+  elide({ input = {}, result }, changed, treatment) {
     const documents = documentsLabel(changed, input);
+    // The edit did not land, so the stub says so and asks for no re-read: the text it showed was
+    // a read, and what the call carried is not worth keeping.
+    if (showsDocumentText(result)) {
+      const { content: _content, find: _find, around: _around, ...kept } = input;
+      return {
+        ...(["create", "insert", "replace"].includes(String(input.command)) ? { input: kept } : {}),
+        text: `[edit not applied to ${documents} (${input.command})]`,
+      };
+    }
     if (treatment === "history") {
       return { text: `[edit applied to ${documents} (${input.command})]` };
     }

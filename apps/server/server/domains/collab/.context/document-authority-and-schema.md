@@ -73,12 +73,14 @@ only beside the admission that inserted the row. Reads of a deleted document's
 history stay open; only purge deletes it.
 
 A removal refuses as a `DocumentNotFoundError` carrying the removal record, so
-every not-found mapping, including model tool results, answers a removal as
+every not-found mapping, including a model's read, answers a removal as
 `document_not_found` with who removed it (status and words once, agent-edit's
-`removedFile` in `removal-copy.ts`) until the model gets its own `document_deleted` answer. A
-model's write the removal stopped is one `invalid_write` with `rejected: "removed"`
-and the record in `removal` (agent-edit's `removedWriteRefusal`), which the chat's
-card words.
+`removedFile` in `removal-copy.ts`). A model's text edit, undo, redo or revert the
+removal stopped is not refused: it is a `done` row that says `returned` with
+`document_removed` and the record in `returned.removal` (agent-edit's
+`returnedWriteResult`), which the chat's card words. It is answered from an
+identity the call already holds (the document the write resolved to, or the node the model
+was shown); a write by a path that no longer resolves stays `document_not_found`.
 
 ## Schema-aware document engine
 

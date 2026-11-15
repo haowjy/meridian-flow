@@ -8,6 +8,7 @@ import {
   documentNotFoundMessage,
   modelResult,
 } from "@meridian/agent-edit/integration";
+import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
@@ -116,6 +117,20 @@ export async function removalBehind(
   const { documentId } = denial.target;
   if ((await deps.fileAccess.historyAccess(principal, documentId)) !== "deleted") return undefined;
   return (await deps.documentRemovals.lookup([documentId])).get(documentId);
+}
+
+/**
+ * Why a refused text edit is returned instead of refused: its Work is archived or deleted (the
+ * files read, and take no new words), or its document was removed. Null: the refusal is who is
+ * acting, or the file never existed.
+ */
+export function returnedWhy(
+  denial: FileAccessDenied,
+  removal: DocumentRemovalRecord | undefined,
+): ReturnedWhy | null {
+  if (isPermissionDenial(denial)) return denial.reason === "work_archived" ? "work_archived" : null;
+  if (denial.level === "read") return "work_deleted";
+  return removal ? "document_removed" : null;
 }
 
 /** A missing file as the tool's error. */

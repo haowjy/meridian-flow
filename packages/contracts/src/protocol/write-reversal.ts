@@ -11,6 +11,23 @@ export type WriteErrorStatus =
   | "gone"
   | "path_changed"
   | "partial_failure"
+  | "work_archived"
+  | "binary_file"
+  | "permission_denied"
+  | "internal_error";
+
+/**
+ * What an undo, redo or revert came to: it changed what it could and says what it left and why
+ * (the writer applied it, discarded it, or changed the text since). None of these is an error:
+ * the call settled.
+ */
+export type UndoRedoOutcome =
+  | "reversed"
+  | "reconciled"
+  | "partial"
+  | "nothing_to_undo"
+  | "nothing_to_redo"
+  | "expired"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
@@ -20,22 +37,10 @@ export type WriteErrorStatus =
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
-  | "nothing_to_revert"
-  | "work_archived"
-  | "binary_file"
-  | "permission_denied"
-  | "internal_error";
-
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
+  | "nothing_to_revert";
 
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
 
 export interface DocumentReversalResult {
   documentId: string;

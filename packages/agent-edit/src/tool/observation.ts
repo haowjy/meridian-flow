@@ -24,14 +24,6 @@ import type {
 } from "./model-result.js";
 import type { ObservationFailedDetail } from "./write-deps.js";
 
-/**
- * Blocks others changed past which the result carries no echo and no listing and sends the model
- * back to the file. A hash costs the model about three tokens, so the listing is never what costs
- * too much: past this the model can no longer repair by naming blocks, and a fresh read of the
- * changed file is what it needs.
- */
-export const CONCURRENT_REREAD_BLOCKS = 10;
-
 export interface ListingSource {
   doc: Y.Doc;
   model: AgentEditModel;
@@ -70,14 +62,9 @@ export async function recordObservation(
       const { frontier, concurrent: listing } = observeRendered(observedSource, room, prev, [
         result.model,
       ]);
-      if (listing) {
-        const { blocks: _echo, ...bare } = result.model ?? {};
-        observed = {
-          ...result,
-          frontier,
-          model: { ...(listing.reread ? bare : result.model), concurrent: listing },
-        };
-      } else observed = { ...result, frontier };
+      observed = listing
+        ? { ...result, frontier, model: { ...result.model, concurrent: listing } }
+        : { ...result, frontier };
     } catch (cause) {
       onFailed?.({ documentId, cause });
     }
@@ -147,34 +134,28 @@ export function observeRendered(
   const authors = changeAuthors(source, prev, changed, removed);
   const overwritten = [...authors.values()].flatMap((changes) => [...changes.overwritten]);
   const hashes = hashMap(doc, project(), [...removed, ...overwritten.map(parseFrontierBlockId)]);
-  const touched = new Set<string>();
   const groups: AgentEditConcurrentListing["groups"] = [];
   for (const [author, changes] of authors) {
     const group: Omit<AgentEditConcurrentGroup, "author"> = {};
     for (const id of changes.changed) {
       const hash = hashes.get(id);
       if (!hash) continue;
-      touched.add(id);
       if (shown.has(id)) group.shown = [...(group.shown ?? []), hash];
       else group.other = [...(group.other ?? []), hash];
     }
     for (const id of changes.removed) {
       const hash = hashes.get(id);
       if (!hash) continue;
-      touched.add(id);
       group.removed = [...(group.removed ?? []), hash];
     }
     for (const id of changes.overwritten) {
       const hash = hashes.get(id);
       if (!hash) continue;
-      touched.add(id);
       group.overwritten = [...(group.overwritten ?? []), hash];
     }
     if (group.shown || group.other || group.removed || group.overwritten)
       groups.push({ author, ...group });
   }
-  if (touched.size > CONCURRENT_REREAD_BLOCKS)
-    return { frontier, concurrent: { groups: [], reread: touched.size } };
   return { frontier, ...(groups.length ? { concurrent: { groups } } : {}) };
 }
 
