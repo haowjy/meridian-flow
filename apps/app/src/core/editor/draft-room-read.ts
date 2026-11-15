@@ -27,7 +27,11 @@ import type { DraftRoomRef } from "./draft-room-pool";
 
 export type DraftRoomRegistry = Pick<
   LiveDocumentSessionRegistry,
-  "retainDraftRooms" | "releaseDraftRooms" | "getDraftRoom" | "rebuildDraftRoom"
+  | "retainDraftRooms"
+  | "releaseDraftRooms"
+  | "getDraftRoom"
+  | "rebuildDraftRoom"
+  | "observeReplacement"
 >;
 
 export type DraftRoomState =
@@ -142,6 +146,11 @@ export function readDraftRoom(registry: DraftRoomRegistry, ref: DraftRoomRef): D
 
   registry.retainDraftRooms(owner, [ref]);
   acquire();
+  // A read-only room replaces its session once: bind it, never on the old one's `destroyed` alone
+  // (a removed room would loop).
+  const stopReplacements = registry.observeReplacement(roomKey, (replacement) => {
+    if (!disposed) bind(replacement);
+  });
 
   return {
     state: () => state,
@@ -163,6 +172,7 @@ export function readDraftRoom(registry: DraftRoomRegistry, ref: DraftRoomRef): D
     dispose() {
       if (disposed) return;
       disposed = true;
+      stopReplacements();
       unwatch?.();
       listeners.clear();
       registry.releaseDraftRooms(owner);
