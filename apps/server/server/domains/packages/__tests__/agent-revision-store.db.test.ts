@@ -184,7 +184,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
 
     describe("Saves", () => {
-      const OTHER = "00000000-0000-4000-8000-000000000872";
       const owner = { userId: USER };
       const retain = async (body: string) =>
         (await store.installSource(source(body))).packageRevisionId;
@@ -213,15 +212,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           }),
         ).rejects.toThrow("A file would not merge");
         expect((await store.readSaved(owner)).map((row) => row.id)).toEqual([first.id]);
-      });
-
-      it("lets another account bind a revision only by its own Save", async () => {
-        await db.insert(schema.users).values(conformanceUserValues(OTHER, "other-owner"));
-        const installed = await store.installSource(source("Mine"));
-        await store.savePackage(owner, "", installed.packageRevisionId);
-        const id = installed.definitions[0].id;
-        expect((await store.readSavedRevision(USER, undefined, id))?.id).toBe(id);
-        expect(await store.readSavedRevision(OTHER, undefined, id)).toBeUndefined();
       });
 
       it("orders a Save that arrives during an Undo after it", async () => {

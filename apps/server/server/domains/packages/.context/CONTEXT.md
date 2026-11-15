@@ -57,10 +57,13 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   tree and of each document's admitted text, so the files are a state the level was in. No change
   is `unchanged`; otherwise `installSource` and a Save row. A failed Save is a result, never a
   refused write. A package's Saves and Undos are ordered by one transaction-scoped advisory lock
-  per (owner, folder) taken by `savePackage` and `undoSave`. `undoSave` runs in one transaction:
+  per (owner, folder). `AgentRevisionStore.settleSave` is a Save's whole decision under it: it
+  reads the latest Save row, applies the last-good rule, decides `unchanged` and adds the row in
+  one transaction, so a concurrent Save is never put back by a decision made on an older read
+  (only the captured file cut is read before the lock). `undoSave` runs in one transaction:
   after the stale check it merges the previous save's text into each file through the documents'
-  own write path (`MarkdownDocumentStore.mergeCodeText`, which merges under the document's lock
-  against what it holds then; base: that Save's text, target: the previous save's text; the writer's
+  own write path (`MarkdownDocumentStore.mergeCodeText`, which takes the document's durable
+  mutation lock before it reads the live text and merges against what it holds then; base: that Save's text, target: the previous save's text; the writer's
   text wins where both changed the same text) and then adds the row, so a failure changes nothing
   and a stale Undo answers `undone: false`. Undo never creates or deletes a file. The user level's
   documents resolve from the account, not from `projectId`.

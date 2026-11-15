@@ -6,10 +6,11 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentFileChange, AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
+import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { FindingList, heldBack, useOpenAgentFile } from "./PackageSave";
-import { packageLabel, usePackageSaves } from "./package-save";
+import { packageLabel, statusOf, usePackageSaves } from "./package-save";
 
 export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome[] }) {
   const projectId = useProjectDocumentNavigationProjectId();
@@ -139,8 +140,9 @@ function changeLine({ path, change }: AgentFileChange): string {
 }
 
 /**
- * Undo of one Save, said in the card from the state every surface shares: the package goes back
- * to the version before, its text merged into the files with any edit made since kept.
+ * Undo of one Save, said as the package's notice says it, from the state every surface shares.
+ * Offered only while this is still the package's latest Save: after a reload, a Save already
+ * undone or saved over has nothing to undo.
  */
 function UndoSave({
   projectId,
@@ -152,23 +154,21 @@ function UndoSave({
   saveId: string;
 }) {
   const saves = usePackageSaves(projectId);
+  const files = useAgentFiles(projectId);
   const state = saves.undoOf(saveId);
   const label = packageLabel(outcome);
-  if (state === "undone" || state === "nothing")
+  if (state === "undone")
     return (
       <span className="shrink-0 text-muted-foreground" role="status">
-        {state === "undone" ? (
-          <Trans>Undone: {label} is back to its previous saved version.</Trans>
-        ) : (
-          <Trans>Not undone: {label} was saved again since.</Trans>
-        )}
+        <Trans>Undone</Trans>
       </span>
     );
+  if (state !== "pending" && statusOf(files?.packages, outcome)?.saveId !== saveId) return null;
   return (
     <>
       {state === "failed" ? (
         <span className="shrink-0 text-destructive" role="status">
-          <Trans>Couldn't reach the server.</Trans>
+          <Trans>Couldn't reach the server. Undo tries again.</Trans>
         </span>
       ) : null}
       <Button
@@ -180,7 +180,7 @@ function UndoSave({
         disabled={state === "pending"}
         onClick={() => void saves.undo({ level: outcome.level, folder: outcome.folder }, saveId)}
       >
-        {state === "pending" ? <Trans>Undoing…</Trans> : <Trans>Undo</Trans>}
+        <Trans>Undo</Trans>
       </Button>
     </>
   );

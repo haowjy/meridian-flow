@@ -77,6 +77,15 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
     db().execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`${"userId" in owner ? `user:${owner.userId}` : `project:${owner.projectId}`} ${folder}`}, 0))`,
     );
+  const latestOf = async (owner: SaveOwner, folder: string) => {
+    const [row] = await db()
+      .select()
+      .from(agentPackageSaves)
+      .where(and(ownerIs(owner), eq(agentPackageSaves.folder, folder)))
+      .orderBy(desc(agentPackageSaves.seq))
+      .limit(1);
+    return row && saveOf(row, await digestOf(row.packageRevisionId));
+  };
   const digestOf = async (packageRevisionId: string | null) => {
     if (!packageRevisionId) return null;
     const [row] = await db()
@@ -148,15 +157,25 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         available,
       );
     },
-    async savePackage(owner, folder, packageRevisionId) {
+    async settleSave(owner, folder, decide) {
       return runInDrizzleTransaction(database, async () => {
         await lockPackage(owner, folder);
+        const latest = await latestOf(owner, folder);
+        const { value, publish } = await decide(latest);
+        if (!publish) return { value };
         const [row] = await db()
           .insert(agentPackageSaves)
-          .values({ ...ownerColumns(owner), folder, packageRevisionId })
+          .values({ ...ownerColumns(owner), folder, packageRevisionId: publish.packageRevisionId })
           .returning();
-        return saveOf(row, await digestOf(row.packageRevisionId));
+        return { value, row: saveOf(row, await digestOf(row.packageRevisionId)) };
       });
+    },
+    async savePackage(owner, folder, packageRevisionId) {
+      const { row } = await store.settleSave(owner, folder, async () => ({
+        value: undefined,
+        publish: { packageRevisionId },
+      }));
+      return row as PackageSave;
     },
     async readSaved(owner) {
       const rows = await db()
@@ -181,18 +200,8 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           .where(and(eq(agentPackageSaves.id, saveId), ownerIs(owner)));
         if (!target) return undefined;
         await lockPackage(owner, target.folder);
-        const [latest] = await db()
-          .select()
-          .from(agentPackageSaves)
-          .where(and(ownerIs(owner), eq(agentPackageSaves.folder, target.folder)))
-          .orderBy(desc(agentPackageSaves.seq))
-          .limit(1);
-        if (latest.id !== target.id) {
-          return {
-            current: saveOf(latest, await digestOf(latest.packageRevisionId)),
-            undone: null,
-          };
-        }
+        const latest = (await latestOf(owner, target.folder)) as PackageSave;
+        if (latest.id !== target.id) return { current: latest, undone: null };
         const [before] = await db()
           .select()
           .from(agentPackageSaves)

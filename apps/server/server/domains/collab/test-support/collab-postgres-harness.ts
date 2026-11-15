@@ -75,6 +75,7 @@ export const {
   runOutsideDrizzleTransaction,
   runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
+const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
@@ -343,6 +344,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       },
     }),
     initialDocumentSeeds: persistence.seeds,
+    lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,

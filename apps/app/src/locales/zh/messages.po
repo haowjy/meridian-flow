@@ -2528,13 +2528,14 @@ msgid "Couldn't reach the server, so nothing was saved. Retry tries again."
 msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
-msgid "Couldn't reach the server."
-msgstr ""
+#~ msgid "Couldn't reach the server."
+#~ msgstr ""
 
 #: src/client/api/upload-request.ts
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
 msgid "Couldn't reach the server. Undo tries again."
 msgstr ""
@@ -4714,8 +4715,8 @@ msgid "Not sent: {0}"
 msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
-msgid "Not undone: {label} was saved again since."
-msgstr ""
+#~ msgid "Not undone: {label} was saved again since."
+#~ msgstr ""
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
 #: src/features/agents/AgentFileNotice.tsx
@@ -7306,19 +7307,19 @@ msgstr ""
 msgid "Undoing Apply"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
 msgid "Undone"
 msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
-msgid "Undone: {label} is back to its previous saved version."
-msgstr ""
+#~ msgid "Undone: {label} is back to its previous saved version."
+#~ msgstr ""
 
 #: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts

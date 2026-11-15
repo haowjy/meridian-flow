@@ -234,56 +234,70 @@ export function createPackageSaver(input: {
         const owner = levels.ownerOf(level, userId, projectId);
         if (!owner) continue;
         const pkg = packagesOf(all.find((item) => item.level === level)).get(folder);
-        const latest = saves[level].find((item) => item.folder === folder);
-        const saved = latest?.packageRevisionId ? latest : undefined;
-        if (!pkg && !saved) continue;
-        const savedPackage = await savedPackageOf(saved);
-        const check = pkg ? checkPackage(pkg) : undefined;
-        const blocked = check !== undefined && check.blocking.length > 0;
-        const { effective, kept } =
-          pkg && !blocked
-            ? keepLastGood(pkg, savedPackage)
-            : { effective: pkg, kept: [] as string[] };
-        const leftOut = effective && !blocked ? checkPackage(effective).leftOut : [];
-        // An error on an item that now runs (one only a broken subagent held back) is no longer news.
-        const shown = (check?.findings ?? [])
-          .filter(
-            (item) =>
-              item.severity !== "error" ||
-              !agentSlugOrSkill(item.file) ||
-              kept.includes(item.file) ||
-              leftOut.includes(item.file),
-          )
-          .map(findingOf);
-        const base = {
-          level,
+        // The saved version a Save builds on is read, and the result published, under the package's
+        // one ordering, so a concurrent Save is never put back by a decision made on an older read.
+        const { value: outcome, row } = await store.settleSave<SaveOutcome | undefined>(
+          owner,
           folder,
-          changes: changesOf(savedPackage?.files, effective?.files, level, folder),
-          kept,
-          leftOut,
-          renamed: [],
-        };
-        if (blocked) {
-          outcomes.push({
-            ...base,
-            outcome: "failed",
-            findings: shown.filter((item) => item.severity === "error"),
-          });
+          async (latest) => {
+            const saved = latest?.packageRevisionId ? latest : undefined;
+            if (!pkg && !saved) return { value: undefined };
+            const savedPackage = await savedPackageOf(saved);
+            const check = pkg ? checkPackage(pkg) : undefined;
+            const blocked = check !== undefined && check.blocking.length > 0;
+            const { effective, kept } =
+              pkg && !blocked
+                ? keepLastGood(pkg, savedPackage)
+                : { effective: pkg, kept: [] as string[] };
+            const leftOut = effective && !blocked ? checkPackage(effective).leftOut : [];
+            // An error on an item that now runs (one only a broken subagent held back) is no longer news.
+            const shown = (check?.findings ?? [])
+              .filter(
+                (item) =>
+                  item.severity !== "error" ||
+                  !agentSlugOrSkill(item.file) ||
+                  kept.includes(item.file) ||
+                  leftOut.includes(item.file),
+              )
+              .map(findingOf);
+            const base = {
+              level,
+              folder,
+              changes: changesOf(savedPackage?.files, effective?.files, level, folder),
+              kept,
+              leftOut,
+              renamed: [] as string[],
+            };
+            if (blocked) {
+              return {
+                value: {
+                  ...base,
+                  outcome: "failed" as const,
+                  findings: shown.filter((item) => item.severity === "error"),
+                },
+              };
+            }
+            if (effective && saved && filesDigest(effective) === saved.contentDigest) {
+              return { value: { ...base, outcome: "unchanged" as const, findings: shown } };
+            }
+            const revision = effective ? await levels.install(effective) : undefined;
+            return {
+              value: { ...base, outcome: "saved" as const, findings: shown },
+              publish: { packageRevisionId: revision?.packageRevisionId ?? null },
+            };
+          },
+        );
+        if (!outcome) continue;
+        if (!row) {
+          outcomes.push(outcome);
           continue;
         }
-        if (effective && saved && filesDigest(effective) === saved.contentDigest) {
-          outcomes.push({ ...base, outcome: "unchanged", findings: shown });
-          continue;
-        }
-        const revision = effective ? await levels.install(effective) : undefined;
-        const row = await store.savePackage(owner, folder, revision?.packageRevisionId ?? null);
         saves[level] = [...saves[level].filter((item) => item.folder !== folder), row];
         const after = namesOf(await levels.fromSaves(saves));
         outcomes.push({
-          ...base,
+          ...outcome,
           outcome: "saved",
           saveId: row.id,
-          findings: shown,
           renamed: [...before].flatMap(([slug, usable]) => {
             // A name two packages bring stays as an unavailable item; both Agents are renamed.
             const names = [...after.keys()].filter(

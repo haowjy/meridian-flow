@@ -109,6 +109,15 @@ export function createInMemoryAgentRevisionStore(input: {
         };
       });
     },
+    async settleSave(owner, folder, decide) {
+      const latest = [...state().saves.values()]
+        .filter((save) => save.owner === ownerKey(owner) && save.folder === folder)
+        .pop();
+      const { value, publish } = await decide(latest && copy(latest));
+      return publish
+        ? { value, row: await store.savePackage(owner, folder, publish.packageRevisionId) }
+        : { value };
+    },
     async savePackage(owner, folder, packageRevisionId) {
       const digest = packageRevisionId
         ? (state().sources.get(packageRevisionId)?.digest ?? null)

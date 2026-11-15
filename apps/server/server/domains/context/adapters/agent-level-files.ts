@@ -12,6 +12,7 @@ import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import {
+  assertOutsideCommandTransaction,
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
@@ -127,6 +128,8 @@ export function createAgentLevelFiles(deps: {
     },
 
     read(input): Promise<LevelFiles> {
+      // Inside a command transaction the snapshot below would join it, not isolate the read.
+      assertOutsideCommandTransaction("An Agent files read");
       return runInRootDrizzleReadSnapshot(deps.db, async () => {
         const files: Record<string, string> = {};
         const problems: Record<string, string> = {};

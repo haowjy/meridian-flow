@@ -1,5 +1,6 @@
 /** Writer-owned Agent files for a test, by level: what the documents would hold. */
 import type { AgentsLevel } from "@meridian/contracts/agents";
+import { mergeCodeText } from "../domains/collab/domain/code-merge.js";
 import type { AgentLevelFiles } from "../domains/packages/index.js";
 
 export interface InMemoryLevelFiles extends AgentLevelFiles {
@@ -15,8 +16,9 @@ export function createInMemoryLevelFiles(): InMemoryLevelFiles {
     },
     async mergeFiles({ level, files }) {
       for (const [path, { base, target }] of Object.entries(files)) {
-        // A test's files are whole texts: the writer's text stays unless it is still the base.
-        if (levels[level][path] === base) levels[level][path] = target;
+        // The real merge, and a file the writer deleted stays deleted.
+        const live = levels[level][path];
+        if (live !== undefined) levels[level][path] = mergeCodeText({ base, live, target });
       }
     },
     write(level, path, text) {

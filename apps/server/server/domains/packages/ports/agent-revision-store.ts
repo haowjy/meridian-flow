@@ -67,6 +67,20 @@ export interface AgentRevisionStore {
     folder: string,
     packageRevisionId: string | null,
   ): Promise<PackageSave>;
+  /**
+   * Settles one package's Save as one operation under its ordering: `decide` gets the package's
+   * latest Save row (any, a removal included) and returns the result with, to publish, the new
+   * saved version (null: removed). It runs and the row is added in one transaction, so what it
+   * read is still the latest when its row lands. `row` is that row, absent when nothing is
+   * published. `decide` must not wait on another Save of the same package.
+   */
+  settleSave<T>(
+    owner: SaveOwner,
+    folder: string,
+    decide: (
+      latest: PackageSave | undefined,
+    ) => Promise<{ value: T; publish?: { packageRevisionId: string | null } }>,
+  ): Promise<{ value: T; row?: PackageSave }>;
   /** Each package's latest Save of `owner`, one row per folder. */
   readSaved(owner: SaveOwner): Promise<PackageSave[]>;
   /**

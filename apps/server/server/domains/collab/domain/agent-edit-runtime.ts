@@ -41,6 +41,7 @@ export function createAgentEditRuntime(input: {
   agentCoordinator: DocumentCoordinator;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
+  lockDocument?(documentId: DocumentId): Promise<void>;
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
@@ -87,6 +88,7 @@ export function createAgentEditRuntime(input: {
       coordinator: input.coordinator,
       initialDocumentSeeds: input.initialDocumentSeeds,
       deferUntilCommit: input.deferUntilCommit,
+      lockDocument: input.lockDocument,
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
       identityPreservingWrite: ({ documentId, content, actor }) =>

@@ -4,6 +4,7 @@ import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -317,6 +318,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     initialDocumentSeeds: persistence.seeds,
     deferUntilCommit: deferUntilDrizzleCommit,
+    lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(deps.db), documentId),
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
