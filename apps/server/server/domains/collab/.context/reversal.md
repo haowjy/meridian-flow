@@ -84,6 +84,12 @@ Undo after a pull equals Undo of the same typing on the draft when the writer in
 the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
+Un-Apply adds one rule the card does not have: an inverse never changes a word that holds writing
+made after the Apply, so a group whose reversal would (a writer's letters inside or joined to the
+AI's word) stays applied and is named in `skippedGroupIds`. A whole word typed after the AI's
+text usually doesn't stop it, but one typed just before a replacement does: restoring the old word
+there would join it to the writer's ("smallvery"). `packages/agent-edit/.context/CONTEXT.md` has the definition and its known gap, a
+later deletion that glues words.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`): a restore in live acts only through deletes that
 still hold its nodes in Trash (`deleteStands`; the writer's restore or later delete, or a purge,
@@ -98,7 +104,8 @@ longer reverses. An Undo that deletes a create in live takes the text an Apply w
 document: Apply writes new items in live, so that text has no inverse of its own, and a revert in
 the Work's draft would leave the Work a change to a deleted document (`leavesLive`). Its Redo's
 restore brings the text back. The Work's draft stays as it is, with any other turn's change in it.
-A reversal's result names a document in Trash by where it last stood. A turn's edit targets include its create transition even when the document is empty. A create
+A reversal's result names a document in Trash by where it last stood.
+A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo

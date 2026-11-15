@@ -3,7 +3,8 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Mock-bearing tests use isolated Vitest module graphs
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -14,15 +15,19 @@ import { asVitestGlob, mockedServerTests } from "../../apps/server/vitest.mocked
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const moduleMock = /\bvi\s*\.\s*(?:mock|doMock)\s*\(/;
 
-function walk(directory: string, found: string[] = []): string[] {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === ".output" || entry.name === "dist")
-      continue;
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) walk(path, found);
-    else found.push(path);
-  }
-  return found;
+// The repo's own files only: a running dev stack writes and deletes lock files
+// under the gitignored logs/ while a directory walk would be reading it.
+function walk(directory: string): string[] {
+  const listed = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", directory],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  return listed
+    .split("\0")
+    .filter(Boolean)
+    .map((path) => join(repoRoot, path))
+    .filter((path) => existsSync(path));
 }
 
 function isolateFalseRoots(): string[] {
