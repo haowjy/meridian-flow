@@ -177,7 +177,10 @@ function CornerToggle({
   );
 }
 
-/** The sidebar in main's cell, at its own width over main's left edge. */
+/**
+ * The sidebar in main's cell, at its own width over main's left edge, leaving at least the phone
+ * drawer's 56px of page to press (`NavigationDrawer`), clear of the side panel's toggle.
+ */
 function sidebarOverSlots(width: number): SlotDefinition[] {
   return DESKTOP_PROJECT_SLOTS.map((slot) =>
     slot.id === "rail-l"
@@ -185,7 +188,7 @@ function sidebarOverSlots(width: number): SlotDefinition[] {
           ...slot,
           area: "center",
           className: cn(slot.className, "z-20 rounded-r-xl shadow-modal"),
-          style: { justifySelf: "start", width },
+          style: { justifySelf: "start", width: `min(${width}px, 100% - 3.5rem)` },
         }
       : slot,
   );

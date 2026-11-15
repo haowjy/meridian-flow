@@ -1,6 +1,6 @@
 /**
  * focus-on-open — a document the writer just made opens with the caret in it, and so
- * does main's first document after a page load.
+ * does main's document after a page load or an open from a sidebar lying over main.
  *
  * Creating a document (New file, a link's Create) is an invitation to type. The
  * committed open arms its document, and only the editor of that document claims
@@ -26,36 +26,42 @@ export function claimEditorFocus(documentId: string | undefined): boolean {
   return true;
 }
 
-/**
- * A page load gives main's document the caret to the document it shows, so the writer's
- * first keys land in the text rather than in the side panel's chat. Held from the load
- * until the writer takes the focus (a key, a press, focus placed anywhere else, even
- * before an editor has painted); not on a touch screen, where focusing a text opens the
- * on-screen keyboard over it. Editors join as they paint and leave as they unmount.
- */
-const loadEditors = new Set<Editor>();
-let loadFocusOpen =
-  typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches;
-if (loadFocusOpen) {
-  holdFocus(shownLoadEditor, () => {
-    loadFocusOpen = false;
-    loadEditors.clear();
-  });
-}
+/** Main's editors as they paint: a warm copy mounts hidden or inert beside the shown one. */
+const mainEditors = new Set<Editor>();
 
-/** The registered editor that is on screen: a warm copy mounts hidden or inert beside it. */
-function shownLoadEditor(): HTMLElement | null {
-  for (const editor of loadEditors) {
+function shownMainEditor(): HTMLElement | null {
+  for (const editor of mainEditors) {
     const dom = editor.isDestroyed ? null : editor.view.dom;
     if (dom && dom.getClientRects().length > 0 && !dom.closest("[inert]")) return dom;
   }
   return null;
 }
 
-/** Joins `editor` to the load's hold while it can still take the caret; returns its leave. */
-export function focusOnLoad(editor: Editor): () => void {
-  if (!loadFocusOpen) return () => {};
-  loadEditors.add(editor);
-  if (focusIsFree()) shownLoadEditor()?.focus();
-  return () => loadEditors.delete(editor);
+let stopMainFocus: (() => void) | null = null;
+
+/**
+ * Main's editor takes the caret where it keeps it, as soon as it shows and whenever the focus
+ * falls free, until the writer takes the focus (a key, a press, focus placed anywhere else).
+ * A later call replaces an earlier one.
+ */
+export function focusMainEditor(): void {
+  stopMainFocus?.();
+  stopMainFocus = holdFocus(shownMainEditor, () => {
+    stopMainFocus = null;
+  });
+}
+
+/**
+ * A page load gives main's document the caret, so the writer's first keys land in the text
+ * rather than in the side panel's chat; not on a touch screen, where focusing a text opens the
+ * on-screen keyboard over it.
+ */
+if (typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches)
+  focusMainEditor();
+
+/** Joins `editor`, live and editable, to main's editors; returns its leave. */
+export function joinMainEditors(editor: Editor): () => void {
+  mainEditors.add(editor);
+  if (stopMainFocus && focusIsFree()) shownMainEditor()?.focus();
+  return () => mainEditors.delete(editor);
 }

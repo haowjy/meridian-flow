@@ -52,8 +52,8 @@ export type ContextDocumentHostProps = {
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onCloseDraftOnly?: () => void;
-  /** Main's document: a page load puts the caret in it (`focusOnLoad`). */
-  loadFocus?: boolean;
+  /** Main's document: the caret main gives goes to it (`joinMainEditors`). */
+  inMain?: boolean;
 };
 
 export function ContextDocumentHost({
@@ -63,7 +63,7 @@ export function ContextDocumentHost({
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onCloseDraftOnly,
-  loadFocus = false,
+  inMain = false,
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
@@ -189,7 +189,7 @@ export function ContextDocumentHost({
                 projectId={projectId}
                 documentId={document.documentId}
                 focusKey={document.documentId}
-                loadFocus={loadFocus}
+                inMain={inMain}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to

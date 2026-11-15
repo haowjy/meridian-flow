@@ -115,12 +115,15 @@ export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void
     if (to instanceof Element && (heldByPaint(to) || target()?.contains(to))) return;
     taken();
   };
+  // Focus also falls free with no mutation to see: a focused control turned inert blurs later.
+  const blurred = () => queueMicrotask(settle);
   const observer = new MutationObserver(settle);
   const stop = () => {
     observer.disconnect();
     window.removeEventListener("keydown", taken, true);
     window.removeEventListener("pointerdown", taken, true);
     document.removeEventListener("focusin", outside, true);
+    document.removeEventListener("focusout", blurred, true);
   };
   function taken() {
     stop();
@@ -129,6 +132,7 @@ export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void
   window.addEventListener("keydown", taken, true);
   window.addEventListener("pointerdown", taken, true);
   document.addEventListener("focusin", outside, true);
+  document.addEventListener("focusout", blurred, true);
   observer.observe(document.body, { childList: true, subtree: true, attributes: true });
   settle();
   return stop;

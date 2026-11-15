@@ -11,7 +11,6 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { useRouterState } from "@tanstack/react-router";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { DismissableLayer } from "radix-ui/internal";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +19,8 @@ import { mainTabKey } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";
 import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
-import { focusWhenFree, holdFocus } from "@/lib/focus-follow";
+import { focusMainEditor } from "@/features/editor/focus-on-open";
+import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
@@ -45,6 +45,7 @@ import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
 import { useTrashNavigation } from "./routing/ProjectNavigationContext";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
+import { useOnOpen } from "./routing/use-on-open";
 import { useOpenInMain } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
@@ -82,19 +83,15 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
   const sidebarOver = narrowHold.narrow && panels["rail-l"].open;
-  // Any open goes to main, so a sidebar lying over main folds to show it, as the phone's drawer
-  // closes, and the focus follows to what opened. The history position, not the entry's key: an
-  // address repair replaces the entry.
-  const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
-  const arrivedAt = useRef(position);
   const { foldSidebar } = narrowHold;
-  useEffect(() => {
-    if (arrivedAt.current === position) return;
-    arrivedAt.current = position;
+  // Any open goes to main, so a sidebar lying over main folds to show it, as the phone's drawer
+  // closes, and the focus follows to what opened.
+  useOnOpen(() => {
     if (!sidebarOver) return;
     foldSidebar();
-    holdFocus(mainFocusTarget);
-  }, [position, sidebarOver, foldSidebar]);
+    if (mainTab) focusMainEditor();
+    else holdFocus(mainControl);
+  });
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
@@ -385,7 +382,9 @@ function SideEmpty({ projectId }: { projectId: string }) {
 /**
  * The sidebar lying over main dismisses as the phone's drawer does: Escape (not one a field
  * inside handles itself) returns the focus to the sidebar toggle, and a press or focus on the
- * page beside it leaves the focus there. The toggle is its own control, not the page.
+ * page beside it leaves the focus there. Only the page counts: a dialog or menu over it is a layer
+ * above the sidebar, and the toggle is its own control. The layer is always mounted, so the
+ * sidebar is never remounted (`SlotGrid`); beside main it has no `onDismiss` and does nothing.
  */
 function SidebarOver({
   over,
@@ -396,20 +395,22 @@ function SidebarOver({
   onFold: () => void;
   children: ReactNode;
 }) {
-  if (!over) return children;
   return (
     <DismissableLayer.Root
       className="contents"
-      onDismiss={onFold}
+      onDismiss={over ? onFold : undefined}
       onEscapeKeyDown={(event) => {
+        if (!over) return;
         ignoreFieldEscape(event);
         if (event.defaultPrevented) return;
-        const toggle = document.querySelector<HTMLElement>('[data-panel-toggle="left"]');
-        if (toggle) focusWhenFree(toggle);
+        document.querySelector<HTMLElement>('[data-panel-toggle="left"]')?.focus();
       }}
       onInteractOutside={(event) => {
-        if (event.target instanceof Element && event.target.closest('[data-panel-toggle="left"]'))
-          event.preventDefault();
+        const target = event.target instanceof Element ? event.target : null;
+        const onPage =
+          target?.closest("[data-stable-layout-grid]") &&
+          !target.closest('[data-panel-toggle="left"]');
+        if (!onPage) event.preventDefault();
       }}
     >
       {children}
@@ -417,24 +418,16 @@ function SidebarOver({
   );
 }
 
-const FIRST_CONTROL =
-  'button:not(:disabled), [href], input:not(:disabled), textarea, [tabindex]:not([tabindex="-1"])';
-
-/**
- * Where an open from the sidebar lands: main's place to type, else its first control. A document
- * still loading or mounting its editor gives nothing yet, so its editor takes the focus once it
- * shows; one that failed gives its Retry.
- */
-function mainFocusTarget(): HTMLElement | null {
+/** Where an open from the sidebar lands when main shows no document: its place to type, else its first control. */
+function mainControl(): HTMLElement | null {
   const main = document.querySelector<HTMLElement>('[data-project-slot="center"]');
-  if (!main) return null;
-  const typing = main.querySelector<HTMLElement>('[contenteditable="true"]');
-  if (typing) return typing;
-  const page = main.querySelector<HTMLElement>("[data-context-editor-document-id]");
-  if (!page) return main.querySelector<HTMLElement>(FIRST_CONTROL);
-  const settled = page.querySelector('.ProseMirror, [role="alert"]');
-  if (page.getAttribute("aria-busy") === "true" || !settled) return null;
-  return page.querySelector<HTMLElement>(FIRST_CONTROL) ?? main.querySelector(FIRST_CONTROL);
+  return (
+    main?.querySelector<HTMLElement>('[contenteditable="true"], textarea') ??
+    main?.querySelector<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ??
+    null
+  );
 }
 
 /**

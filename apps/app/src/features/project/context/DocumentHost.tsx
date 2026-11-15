@@ -251,7 +251,7 @@ function DesktopDocumentFrame({
                   projectId={projectId}
                   document={document}
                   active={onScreen}
-                  loadFocus={place === "main"}
+                  inMain={place === "main"}
                 />
               </div>
             )}
@@ -266,12 +266,12 @@ function EditableDocument({
   projectId,
   document,
   active,
-  loadFocus,
+  inMain,
 }: {
   projectId: string;
   document: EditableOpenDocument;
   active: boolean;
-  loadFocus: boolean;
+  inMain: boolean;
 }) {
   const freeze = useHostFreeze(projectId, document);
   return (
@@ -280,7 +280,7 @@ function EditableDocument({
       document={document}
       active={active}
       readOnly={freeze !== null}
-      loadFocus={loadFocus}
+      inMain={inMain}
     />
   );
 }
