@@ -313,7 +313,6 @@ async function reverseReceipt(
       : {}),
   };
   return {
-    ...(landed === 0 ? { isError: true as const } : {}),
     output: modelResult({ command: input.command, status, payload }),
     metadata: { treeWrite: true },
     evidence: { shown: [], ...namesEvidence(done.delta) },

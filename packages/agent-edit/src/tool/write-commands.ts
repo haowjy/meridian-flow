@@ -27,7 +27,7 @@ import type { DocumentSave } from "./document-save.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { type ListingSource, recordObservation } from "./observation.js";
-import { renderReceipt } from "./receipt.js";
+import { renderReceipt, returnedWriteResult } from "./receipt.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
 import { openRoom, type RoomCallInput, type RoomCopy } from "./room.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
@@ -415,12 +415,17 @@ export function createWriteCommands(deps: {
           appliedPlanDoc = room.doc;
         }
         if (!resolved.ok) {
-          return errorResponse(
+          const failed = errorResponse(
             resolved.error.code,
             resolved.error.message,
             address.filePath,
             documentBlocksDetail(resolved.error.details),
           );
+          // A hash or number the view does not hold: the model may have lost its view, so the
+          // answer shows the document and the next write plans on it.
+          return resolved.error.code === "not_found"
+            ? withCurrentText(failed, room, links, address, context)
+            : failed;
         }
         validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
         if (resolved.edits.length === 0) return formatUnchangedSuccess();
@@ -465,7 +470,13 @@ export function createWriteCommands(deps: {
   async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
     const { command, session, context, room, planDoc, links, actor, docId, filePath, plan } = edit;
     if (planDoc !== room.doc && "edits" in plan && hasMissingTarget(plan.edits, room.doc)) {
-      return status("not_found", "The selected block no longer exists.");
+      return withCurrentText(
+        returnedWriteResult("block_gone"),
+        room,
+        links,
+        { documentId: docId, filePath },
+        context,
+      );
     }
     const [, identity] = await Promise.all([
       registerMinted(edit.assigner, docId, context),
@@ -634,7 +645,44 @@ export function createWriteCommands(deps: {
     );
   }
 
-  /** A view lowers without what the room deleted since; the room copy is current already. */
+  /**
+   * `result` with the document as the room holds it now, and that text recorded as the model's
+   * latest view: an answer about a view that lost what it named carries the text the next write
+   * plans on, so it needs no read first.
+   */
+  function withCurrentText(
+    result: InternalWriteResult,
+    room: RoomCopy,
+    links: CommandLinks,
+    address: { documentId: string; filePath: string },
+    context: WriteContext,
+  ): Promise<InternalWriteResult> {
+    const selection = renderer.selectReadBlocks(
+      toDocHandle(room.doc),
+      { file: address.filePath },
+      address,
+    );
+    if (!selection.ok) return Promise.resolve(result);
+    const { model } = readSuccess(renderer.renderRead(selection, links.codec, "full"));
+    return withEvidence(
+      links,
+      room,
+      address.documentId,
+      context,
+      {
+        ...result,
+        model: { ...result.model, ...model },
+        revision: options.links.revision(room.doc, links.scope),
+      },
+      { projected: selection.projected },
+    );
+  }
+
+  /**
+   * A view lowers without what the room deleted since; the room copy is current already. An
+   * insert after a block the room deleted is not missing its target: it is new words, and the
+   * block's tombstone still places them where it was.
+   */
   function hasMissingTarget(edits: readonly ResolvedEdit[], current: Y.Doc): boolean {
     const live = new Set(
       options.model.getBlocks(toDocHandle(current)).map((block) => {
@@ -643,7 +691,8 @@ export function createWriteCommands(deps: {
       }),
     );
     return edits.some((edit) => {
-      const target = edit.kind === "insert" ? edit.after : edit.block;
+      if (edit.kind === "insert") return false;
+      const target = edit.block;
       if (!target) return false;
       const id = options.model.getCanonicalBlockIdentity(target);
       return !live.has(`${id.clientID}:${id.clock}`);

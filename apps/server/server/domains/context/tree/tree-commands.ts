@@ -631,8 +631,15 @@ export function reachPath(
     concurrent: new Map(),
   };
   const projection = scope.writer.view(scope.view);
-  const resolved = resolveShown(projection, shown, scope.root, pathFrom(cx, path));
-  // Undo names what was deleted by its old path: the node in Trash is the one it means.
+  // A write or an Undo names what was deleted by its old path: the shown node is the one it
+  // means, the leaf even when a folder above it was the one deleted.
+  const resolved = resolveShown(
+    projection,
+    shown,
+    scope.root,
+    pathFrom(cx, path),
+    options.allowGone ? { through: true } : {},
+  );
   const found: Resolution =
     options.allowGone && resolved.kind === "gone"
       ? { kind: "node", node: resolved.node, along: [], parent: resolved.node.parent, trashed: [] }

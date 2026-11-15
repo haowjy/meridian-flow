@@ -4,7 +4,13 @@ import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { editSegments } from "./segments.js";
-import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
+import {
+  type ApplyErrorCode,
+  type ApplyResult,
+  type ApplyTransactionOrigin,
+  EDIT_FAILED_MESSAGE,
+  type ResolvedEdit,
+} from "./types.js";
 
 type Ref = BlockRef;
 
@@ -84,10 +90,10 @@ export function applyEdits(
         origin,
       );
       if (failure) return failure;
-    } catch (cause) {
+    } catch {
       return applyError(
         "partial_failure",
-        cause instanceof Error ? cause.message : String(cause),
+        EDIT_FAILED_MESSAGE,
         { failedAt: committedEdits },
         { committedEdits },
       );

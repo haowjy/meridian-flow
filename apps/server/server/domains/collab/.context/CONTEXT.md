@@ -97,7 +97,7 @@ cause, by?)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
 `closed_cause` (`document_removed` for a removal, else `discarded`) and, when a Discard or restore
-command closes it, `closed_by` (that command's id), and joins the root transaction's
+command (or an Apply of the document's delete) closes it, `closed_by` (that command's id), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
@@ -222,8 +222,13 @@ An undo, redo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A write to a Work draft that a Discard closed after the model last read it is refused by
-the closed-draft rule in `model-edit-write.ts` (`sawClosedDraft`): the model reads again.
+A write to a Work draft that closed after the model last read it is returned by the
+closed-draft rule in `model-edit-write.ts` (`closedDraftSeen`), before a branch or draft opens:
+a `done` row with `settled: returned`, and the document as that chat reads it now, its evidence
+stored in the row so the model's next write plans on it. The same answer covers an archived or
+deleted Work's draft, a removed document and a block the writer deleted, merged or moved
+(`block_gone`, from the write core). An insert whose anchor block the writer deleted lands where
+the anchor was: it is new words, and the anchor's tombstone still places them.
 
 Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
 planning-visible item disappearing is not by itself evidence against a write. Only

@@ -7,11 +7,14 @@ import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
  * file is gone but not removed itself: its source or Work went, or a closed draft sits over a
  * document that stands again.
  */
-export function removalPhrase(removal: DocumentRemovalRecord | null | undefined): string {
+export function removalPhrase(
+  removal: DocumentRemovalRecord | null | undefined,
+  thisChat?: string,
+): string {
   if (!removal) return "deleted";
   const { actor } = removal;
   const verb = removal.reason === "deleted" ? "deleted" : "discarded from the draft";
-  const name = actorName(actor);
+  const name = actor?.kind === "agent" && actor.chatId === thisChat ? "you" : actorName(actor);
   return name ? `${verb} by ${name}` : verb;
 }
 
@@ -51,9 +54,4 @@ export function removedFile(removal: DocumentRemovalRecord | null | undefined): 
     status: "document_not_found",
     message: `File not found. This file was ${removalPhrase(removal)}.`,
   };
-}
-
-/** A write the removal stopped before it ran. */
-export function removedWriteMessage(removal: DocumentRemovalRecord | null | undefined): string {
-  return `This file was ${removalPhrase(removal)} before this edit ran, so this change wasn't made.`;
 }
