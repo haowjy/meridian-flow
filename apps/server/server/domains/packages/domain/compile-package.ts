@@ -146,6 +146,8 @@ export function compilePackage(
       ...manifest,
       ...agents.flatMap((agent) => agent.diagnostics),
       ...[...skills.values()].flat(),
+      // What Mars says of a folder, such as a skill folder with no SKILL.md, belongs to no item.
+      ...Object.keys(verdict.diagnostics).flatMap((file) => foundIn(verdict, file)),
     ]),
   };
 }
@@ -219,7 +221,10 @@ const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => ({
   code: diagnostic.code,
   severity: severityIn(diagnostic),
   path: diagnostic.path,
-  message: diagnostic.message,
+  message:
+    diagnostic.code === "skill-ref.external"
+      ? diagnostic.message.replace("; a consumer must hold a package that does", "")
+      : diagnostic.message,
 });
 const flow = (
   file: string,
@@ -258,7 +263,7 @@ function manifestFindings(
       flow(
         MANIFEST_PATH,
         "dependency-missing",
-        `Dependency "${name}" isn't vendored in this package`,
+        `Dependency "${name}" isn't in this package, and Flow can't fetch it`,
         "error",
         ["dependencies", name],
       ),
