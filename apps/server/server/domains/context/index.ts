@@ -159,10 +159,7 @@ export {
   type PromotionService,
 } from "./promotion/promotion-service.js";
 export type { ResultProvenance } from "./promotion/result-provenance.js";
-export {
-  type ScratchLineage,
-  type ScratchLineages,
-} from "./scratch-owner.js";
+export type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
