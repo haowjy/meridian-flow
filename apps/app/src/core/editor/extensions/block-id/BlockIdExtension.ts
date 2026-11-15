@@ -12,6 +12,8 @@ const BLOCK_ID_TYPES = [
   "code_block",
   "table",
   "table_row",
+  "table_cell",
+  "table_header",
   "figure",
   "horizontal_rule",
   "jsx_leaf",

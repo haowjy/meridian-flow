@@ -3,7 +3,7 @@
 ## Why parity matters
 
 The server never renders TipTap DOM, but it parses, diffs, mirrors and serializes the same
-Yjs documents. A server schema narrower than the editor's lets y-prosemirror updates decode on
+Yjs documents. A server schema narrower than the editor's lets the shared y-tiptap binding decode on
 one side and fail on the other, so this package follows the editor's structural surface.
 
 ## Contracts
@@ -28,12 +28,17 @@ one side and fail on the other, so this package follows the editor's structural 
   leading steps a run of blocks sits in together, which is where a quote around them goes.
   Removing the list and quote nodes was part of collab schema 3.0.0.
 
-- Every block node (the nine that carry nesting, plus `table_row`) has `id`, a permanent
-  identity the merge, review and the Yjs writer pair blocks by. It is set once where a block
-  is made and copied with the other attributes everywhere; Markdown never carries it, and a
-  block read from the model's Markdown has none. Null means none recorded, which no stored
-  block may be: `writeBlocks` refuses it and `insertBlocks` (the door for codec blocks) assigns
-  one. `block-id.ts` holds the generator and the walkers. Adding it was also part of collab schema 3.0.0.
+- Every block node, table row and table cell (`table_cell` and `table_header`) has an `id`
+  attribute. This permanent identity lets the merge, review and Yjs writer match the same
+  block across edits. It is set once where a block is made and copied with its other
+  attributes on a move; a copied block gets a new ID. Markdown never carries IDs, so content
+  parsed from the model's Markdown has the schema's default, null. Stored blocks must have
+  non-null IDs: `insertBlocks` assigns them when codec blocks enter storage, and `writeBlocks`
+  rejects a block without one. `block-id.ts` holds the generator and walkers.
+  Rows and content blocks gained IDs in collab schema 3.0.0; cells gained them in 3.1.0.
+  Before using 3.1.0 with older tables, run `pnpm db:reset` from the checkout that owns the
+  dev database. This deletes that database's data. There is no backfill, and the minor version
+  does not stop the server from reading older stored documents.
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it

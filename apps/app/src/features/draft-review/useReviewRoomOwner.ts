@@ -1,6 +1,7 @@
 /** Open review ownership holds a stable room; projection readiness is independent of command delivery. */
 import { type Dispatch, useEffect, useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { staysOnScreen } from "./draft-command-owner";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { useRoomBindings } from "./useRoomReview";
 
@@ -12,17 +13,15 @@ export function useReviewRoomOwner(input: {
 }) {
   const { review, dispatch } = input;
   const commands = useDraftCommandOwner();
-  const hidden = () => commands.state(review?.itemKey ?? "").hidden;
-  const closed = () => commands.state(review?.itemKey ?? "").closed;
-  useSyncExternalStore(commands.subscribe, hidden, hidden);
-  useSyncExternalStore(commands.subscribe, closed, closed);
-  const command = commands.state(review?.itemKey ?? "");
+  // A draft discarded elsewhere, or whose document went to Trash, stays on screen with Restore.
+  const leaves = () => {
+    const command = commands.state(review?.itemKey ?? "");
+    return command.hidden || (command.ended !== null && !staysOnScreen(command.ended));
+  };
+  const leaving = useSyncExternalStore(commands.subscribe, leaves, leaves);
   useEffect(() => {
-    if (!review || (!command.hidden && !command.closed)) return;
-    dispatch({ type: "exitInline" });
-    if (!command.hidden && command.closed && !command.removed)
-      dispatch({ type: "toast", code: "draft-closed", tone: "info" });
-  }, [command.hidden, command.closed, review?.itemKey, dispatch]);
+    if (review && leaving) dispatch({ type: "exitInline" });
+  }, [leaving, review?.itemKey, dispatch]);
   const read = useRoomBindings(
     review
       ? [

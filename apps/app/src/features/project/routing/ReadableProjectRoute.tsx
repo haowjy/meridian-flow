@@ -24,6 +24,7 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import { isEditorScheme } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
+import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
@@ -241,13 +242,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const draftCommands = useDraftCommandOwner();
   const closeSnapshot = () => {
     const state = draftCommands.state(address.itemKey ?? "");
-    return JSON.stringify([state.closed, state.removed, state.checkingClose, state.liveUri]);
+    return JSON.stringify([state.ended, state.checkingClose]);
   };
   useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
   const closeState = draftCommands.state(address.itemKey ?? "");
   useLayoutEffect(() => {
-    if (closingRef && closeMetadata?.data?.status === "gone")
-      void draftCommands.metadataGone(closingRef);
+    if (closingRef && closeMetadata?.data?.status === "gone") void draftCommands.askEnd(closingRef);
   }, [draftCommands, closingRef?.itemKey, closeMetadata?.dataUpdatedAt]);
   // A review's item names its document; a plain address is the document its history entry
   // last resolved.
@@ -318,22 +318,35 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     addressKind === "review" && reviewedItem && closingDocumentId
       ? placeTrees.find(closingDocumentId)
       : null;
+  // A draft a Discard closed anywhere but here stays addressed, in Trash: its document is found
+  // where live has it, since the Work's tree no longer lists the draft. So is one whose end is
+  // still being asked: a page that let go of it then would not have it to keep.
+  const inTrash = staysOnScreen(closeState.ended);
+  const endUndecided = reviewed?.status === "gone" && !closeState.ended;
+  const trashedPlace =
+    addressKind === "review" && (inTrash || endUndecided) && closingDocumentId
+      ? trees.find(closingDocumentId)
+      : null;
   const reviewAddress = useMemo((): ReplayAddress | undefined => {
     if (addressKind !== "review") return undefined;
-    if (!closingDocumentId || reviewed?.status === "gone") return { kind: "absent" };
-    if (!reviewPlace) return placeTrees.isComplete && reviewedItem ? { kind: "absent" } : undefined;
-    const owner = ownerOfSource(reviewPlace.source);
+    if (!closingDocumentId) return { kind: "absent" };
+    const place = trashedPlace ?? (reviewed?.status === "gone" ? null : reviewPlace);
+    const tree = trashedPlace ? trees : placeTrees;
+    if (!trashedPlace && reviewed?.status === "gone") return { kind: "absent" };
+    if (!place)
+      return tree.isComplete && (reviewedItem || inTrash) ? { kind: "absent" } : undefined;
+    const owner = ownerOfSource(place.source);
     return resolveReplayAddress({
       projectId,
       accountId: user.userId,
       destination: {
         kind: "document",
-        scheme: reviewPlace.source.scheme,
-        path: reviewPlace.file.path,
+        scheme: place.source.scheme,
+        path: place.file.path,
       },
       workId: owner.workId ?? null,
       rootThreadId: owner.rootThreadId ?? null,
-      tree: { tree: placeTrees.tree(reviewPlace.source.id), isComplete: true, isError: false },
+      tree: { tree: tree.tree(place.source.id), isComplete: true, isError: false },
       boundDocumentId: closingDocumentId,
     });
   }, [
@@ -343,6 +356,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     reviewedItem,
     reviewPlace,
     placeTrees,
+    trashedPlace,
+    trees,
+    inTrash,
     projectId,
     user.userId,
   ]);
@@ -478,8 +494,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         : "loading"
       : documentResult.kind === "unavailable"
         ? closingRef &&
-          !closeState.removed &&
-          (closeMetadata?.isFetching || closeState.checkingClose || closeState.closed)
+          closeState.ended !== "other" &&
+          (closeMetadata?.isFetching || closeState.checkingClose || closeState.ended)
           ? "loading"
           : "unavailable"
         : undefined;
@@ -579,7 +595,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [shownTrashed, openTrashed],
   );
   useEffect(() => {
-    if (!closingRef || !closeState.closed || closeState.removed) return;
+    // A draft that ended the way the page keeps showing stays until the writer moves on.
+    if (!closingRef || !closeState.ended || staysOnScreen(closeState.ended)) return;
     const itemKey = closingRef.itemKey;
     let current = true;
     // The address names the item; a newer draft of it may have replaced the closed one.
@@ -588,21 +605,10 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       .then((open) => {
         const now = latest.current;
         if (!current || open || !now.navigation || now.address.itemKey !== itemKey) return;
-        const closed = draftCommands.state(itemKey);
-        const live = closed.liveUri ? parseContextUri(closed.liveUri) : null;
         // The view owns the pin: the replace below only rewrites the address to follow it.
         endPin(user.userId, projectId, closingRef);
         void now.navigation.replaceIfCurrent(now.navigation.capture(), {
           ...now.address,
-          ...(live
-            ? {
-                destination: {
-                  kind: "document",
-                  scheme: live.scheme,
-                  path: live.path.replace(/^\/+/, ""),
-                },
-              }
-            : {}),
           itemKey: undefined,
           changeId: undefined,
         });
@@ -610,7 +616,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     return () => {
       current = false;
     };
-  }, [address.itemKey, closeState.closed, closeState.removed, closeState.liveUri]);
+  }, [address.itemKey, closeState.ended]);
   const closeDestination = useCallback(
     (target: ContextRouteRequest | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;

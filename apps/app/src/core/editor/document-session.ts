@@ -129,6 +129,14 @@ export type DocumentSessionResetReason =
 export type ResetDisposition = "schema" | "removed" | "closed";
 
 /**
+ * The server closed the draft (a Discard, here or anywhere): its room is in Trash. Its owner may
+ * keep showing its text read-only until a restore reopens it.
+ */
+export function draftClosed(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "reset" && state.disposition === "closed";
+}
+
+/**
  * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
  * edits like an offline one, and the account's list shows the "sign in again" prompt.
  */
@@ -376,6 +384,8 @@ export class DocumentSession {
     this.status = "syncing";
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
+        // A close learned first from the server's answer stands: the socket's later news can't reopen it.
+        if (draftClosed(this.transportState)) return;
         this.transportState = state;
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
           this.localPeers?.stop();
@@ -455,6 +465,21 @@ export class DocumentSession {
     this.localPeers = null;
     this.attachTransport(transportFactory);
     this.startLocalPeers();
+  }
+
+  /**
+   * The server answered that this draft closed before its socket said so: the room ends as its
+   * close would (read-only, nothing reconnects), and stays readable for its owner.
+   */
+  endClosed(): void {
+    if (this.destroyed || this.transportState?.kind === "reset") return;
+    this.transportState = {
+      kind: "reset",
+      reason: WS_CLOSE.DRAFT_CLOSED.reason,
+      disposition: "closed",
+    };
+    this.localPeers?.stop();
+    this.recomputeStatus();
   }
 
   get resetDisposition(): ResetDisposition | null {

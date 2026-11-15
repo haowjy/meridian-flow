@@ -1,7 +1,3 @@
-/**
- * Block ids. `id` is on every block node the content merge pairs: top-level blocks, table rows
- * and the paragraphs in a cell. A block keeps its id for life; a copy gets a new one.
- */
 import { Fragment, type Node as PMNode } from "prosemirror-model";
 
 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
