@@ -10,15 +10,19 @@ immutable journal edit; it never rewrites a target row or marks it reversed.
 accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
 `commandId` for each click and each Try again. It is a `reverse_turn` row in `commands`:
 `DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
-its outcome, the no-op and refusal answers included (`nothing_to_undo`, `expired`,
-`permission_denied`). The turn's Work receipts (`reverseTurnCard`'s `alongside`,
+its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every stored answer is
+`done`. The turn's Work receipts (`reverseTurnCard`'s `alongside`,
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
 is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
 dropped from the grants and never run: it reports as skipped, and the rest of the reply still
-reverses (`TreePlan.gone`). Every other denial of a step's document refuses the whole reversal,
-a deleted Work's included, and the outcome carries the policy's reason (`denial`) for the card to
-word: archived Work, deleted chat, deleted document or Work, or no longer editable.
+reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
+in Trash) is planned per target, not refused: the reversal lands Live and open targets and
+reports each closed one as a `returned` skip with its `why` (`work_archived`, `work_deleted`,
+`chat_frozen`, `TurnInverseSkip.why`), which the card words per part. A reversal whose every
+target is closed answers `expired` with those skips. A denial for another reason refuses the
+whole reversal, and the outcome carries the policy's reason (`denial`) for the card to word: deleted
+document, or no longer editable.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
 and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each

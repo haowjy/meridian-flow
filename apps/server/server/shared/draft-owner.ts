@@ -11,6 +11,7 @@ import {
   type DraftOwnerKey,
   draftOwnerKey,
 } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import { branches, documentDrafts, threads } from "@meridian/database/schema";
 import { and, eq, inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
@@ -27,6 +28,21 @@ export function mergeOwnerLocks(...sets: readonly OwnerLocks[]): OwnerLocks {
 }
 
 export type BranchOwnerLifecycle = "active" | "archived" | "frozen" | "deleted" | "missing";
+
+/** Why a branch's owner is closed to writes, or null while it is active. */
+export function closedOwnerOf(lifecycle: BranchOwnerLifecycle): ClosedOwnerWhy | null {
+  switch (lifecycle) {
+    case "active":
+      return null;
+    case "archived":
+      return "work_archived";
+    case "frozen":
+      return "chat_frozen";
+    case "deleted":
+    case "missing":
+      return "work_deleted";
+  }
+}
 
 /** Identity is independent of availability: a trashed first chat can have live forks. */
 export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {

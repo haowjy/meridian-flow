@@ -109,16 +109,16 @@ function extensionOf(node: TreeNode): string {
 }
 
 /**
- * Folders along `dir` from the source's top, made where missing. A document or file on the way
- * refuses with the occupant's kind.
+ * Folders along `dir` from `from` (the source's root by default), made where missing. A document
+ * or file on the way refuses with the occupant's kind.
  */
 function ensureFolders(
   writer: TreeWriter,
   target: TreeWriteTarget,
-  sourceId: string,
   dir: readonly string[],
+  from: string,
 ): Result<string, AdapterFault> {
-  let parent = sourceRoot(sourceId);
+  let parent = from;
   for (const name of dir) {
     const existing = childNamed(writer.view(target.view), parent, name);
     if (existing) {
@@ -297,6 +297,8 @@ export interface SourceTree {
     target: TreeWriteTarget,
     input: {
       dir: readonly string[];
+      /** The folder to start from, by id, instead of walking `dir` by name: a folder in Trash is kept standing by what lands in it. */
+      parent?: { folderId: string; createFolders: readonly string[] };
       roots: readonly NewNode[];
       position?: ContextSiblingPosition;
     },
@@ -369,7 +371,7 @@ export function createSourceTree(deps: {
       const result = await write<CreatedNode>([await list()], ([{ writer }]) => {
         const parent =
           input.into === undefined
-            ? ensureFolders(writer, target, sourceId, input.dir)
+            ? ensureFolders(writer, target, input.dir, sourceRoot(sourceId))
             : Ok(input.into);
         if (!parent.ok) return parent;
         const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
@@ -450,7 +452,7 @@ export function createSourceTree(deps: {
           pathOf(origin.writer.view(LIVE), node.id).join("/") !== input.onlyAt
         )
           return Err({ code: "stale_target" } as AdapterFault);
-        const parent = ensureFolders(writer, target, sourceId, input.dir);
+        const parent = ensureFolders(writer, target, input.dir, sourceRoot(sourceId));
         if (!parent.ok) return parent;
         const projection = writer.view(LIVE);
 
@@ -513,7 +515,9 @@ export function createSourceTree(deps: {
       const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
         [await list()],
         ([{ writer }]) => {
-          const parent = ensureFolders(writer, target, sourceId, input.dir);
+          const parent = input.parent
+            ? ensureFolders(writer, target, input.parent.createFolders, input.parent.folderId)
+            : ensureFolders(writer, target, input.dir, sourceRoot(sourceId));
           if (!parent.ok) return parent;
           const projection = writer.view(target.view);
           if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))

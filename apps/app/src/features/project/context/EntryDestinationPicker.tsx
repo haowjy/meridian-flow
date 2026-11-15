@@ -8,6 +8,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import {
   ArrowDownToLine,
   ArrowDownUp,
@@ -23,8 +24,10 @@ import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
+import { useOptionalLiveDocumentSessionRegistry } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
+import { copySettledNotice } from "./entry-drag/entry-failure";
 import { copyRows } from "./entry-drag/execute-copy";
 import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
@@ -75,6 +78,7 @@ function OpenPicker({
   const projectActions = useTreeActions({ kind: "project", projectId });
   const accountActions = useTreeActions({ kind: "account" });
   const selection = useOptionalEntrySelection();
+  const registry = useOptionalLiveDocumentSessionRegistry();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // A moved selection keeps focus at its first row in its new place, not at the row it left.
@@ -246,7 +250,16 @@ function OpenPicker({
     try {
       const plan = copyPlan(destination, folder.name);
       if (!plan) throw new Error(unavailable);
-      const rows = await copyRows(projectId, plan);
+      const { rows, settled } = await copyRows(
+        projectId,
+        plan,
+        (documentId) => registry?.openStateVector(documentId as DocumentId) ?? null,
+      );
+      const notice = copySettledNotice(settled);
+      if (notice) {
+        setError(notice);
+        return;
+      }
       selectRows(selection, rows);
       revealFolder(destination.entryId);
       onOpenChange(false);

@@ -15,10 +15,8 @@ import type {
   CopySourceFolder,
 } from "../../ports/context-copy.js";
 import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
-import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
-import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
   /** Why this placement cannot take a copy (a draft placement), or null. */
@@ -28,65 +26,64 @@ export interface ContextFsCopyDeps extends CopyTreeDeps {
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
 
-  /** The source subtree at one path: the folder with every descendant, or one file. */
-  async function snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>> {
-    const clean = path.replace(/\/+$/, "");
+  /**
+   * The source subtree of node `id`, wherever it stands now (live, or in Trash with what its
+   * delete took): the folder with every descendant in its visible order, or the one file. `path`
+   * only spells the root's address; the id decides which node is copied.
+   */
+  async function snapshotSource(source: {
+    id: string;
+    path: string;
+  }): Promise<Result<CopySourceEntry, AdapterFault>> {
+    const clean = source.path.replace(/\/+$/, "");
     if (!clean) {
       return Err({
         code: "invalid_operation",
         message: "The source root cannot be copied; copy a file or a folder in it.",
       });
     }
-    const folder = await store.resolveFolderAt(LIVE_TREE, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (folder.kind === "found" && folder.node) {
-      return Ok(await folderSnapshot(clean, folder.node));
-    }
-    const document = await store.resolveDocumentAt(LIVE_TREE, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
-    if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
-    return Err({ code: "not_found" });
-  }
-
-  async function folderSnapshot(path: string, folder: ContextFolder): Promise<CopySourceFolder> {
-    const [folders, documents] = await Promise.all([
-      store.listFolders(LIVE_TREE, folder.id),
-      store.listDocuments(LIVE_TREE, folder.id),
-    ]);
-    const siblings = [
-      ...folders.map((child) => ({
-        order: { kind: "folder" as const, name: child.name, rank: child.rank, entryId: child.id },
-        folder: child,
-      })),
-      ...documents.map((child) => ({
-        order: {
-          kind: "file" as const,
-          name: renderFilename(child.name, child.extension),
-          rank: child.rank,
-          entryId: child.id,
-        },
-        document: child,
-      })),
-    ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
-    const children: CopySourceEntry[] = [];
-    for (const sibling of siblings) {
-      children.push(
-        "folder" in sibling
-          ? await folderSnapshot(joinPath(path, sibling.folder.name), sibling.folder)
-          : fileSnapshot(
-              joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
-              sibling.document,
-            ),
-      );
-    }
-    return {
-      kind: "folder",
-      path,
-      uri: folderUri(path),
-      folderId: folder.id,
-      name: folder.name,
-      children,
+    const subtree = await store.readSubtree(source.id);
+    if (!subtree) return Err({ code: "not_found" });
+    if (subtree.root.kind === "document") return Ok(fileSnapshot(clean, subtree.root.document));
+    const folders = new Map<string | null, ContextFolder[]>();
+    for (const child of subtree.folders)
+      folders.set(child.parentId, [...(folders.get(child.parentId) ?? []), child]);
+    const documents = new Map<string | null, ContextDocument[]>();
+    for (const child of subtree.documents)
+      documents.set(child.folderId, [...(documents.get(child.folderId) ?? []), child]);
+    const folderSnapshot = (path: string, folder: ContextFolder): CopySourceFolder => {
+      const siblings = [
+        ...(folders.get(folder.id) ?? []).map((child) => ({
+          order: { kind: "folder" as const, name: child.name, rank: child.rank, entryId: child.id },
+          folder: child,
+        })),
+        ...(documents.get(folder.id) ?? []).map((child) => ({
+          order: {
+            kind: "file" as const,
+            name: renderFilename(child.name, child.extension),
+            rank: child.rank,
+            entryId: child.id,
+          },
+          document: child,
+        })),
+      ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
+      return {
+        kind: "folder",
+        path,
+        uri: folderUri(path),
+        folderId: folder.id,
+        name: folder.name,
+        children: siblings.map((sibling) =>
+          "folder" in sibling
+            ? folderSnapshot(joinPath(path, sibling.folder.name), sibling.folder)
+            : fileSnapshot(
+                joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
+                sibling.document,
+              ),
+        ),
+      };
     };
+    return Ok(folderSnapshot(clean, subtree.root.folder));
   }
 
   function fileSnapshot(path: string, document: ContextDocument): CopySourceFile {

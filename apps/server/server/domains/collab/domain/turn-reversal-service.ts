@@ -48,16 +48,6 @@ export type TurnReversalServiceDeps = {
   commands: DocumentCommands;
 };
 
-/** Whether the reversal changed anything: a document's parts, or a Work the caller put back. */
-function changedSomething(outcome: ReversalOutcome): boolean {
-  return (
-    (outcome.acceptedParts ?? 0) > 0 ||
-    (outcome.workReceipts ?? []).some(
-      (work) => work.status === "reversed" || work.status === "redone",
-    )
-  );
-}
-
 /** A reversal declares its owners, locks them, and finds the commit wants more: runs again. */
 const OWNER_ATTEMPTS = 4;
 
@@ -131,7 +121,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     await alongside?.lockNamespaces();
     const documents = await reverseDocuments({ ...query, declared: owners }, targets);
     const outcome = alongside ? await alongside.run(documents) : documents;
-    return { status: changedSomething(outcome) ? "reversed" : "refused", outcome };
+    return { status: "reversed", outcome };
   }
 
   /** One `reverse_turn` command: its stored outcome, or `effect` run under its claim. */

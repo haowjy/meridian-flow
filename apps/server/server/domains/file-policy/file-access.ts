@@ -3,6 +3,7 @@
  * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
  * re-check a write seam runs inside its transaction.
  */
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { TreeView } from "../context/tree/tree-view.js";
 import { decide, destinationFor, levelAt, personLevel } from "./domain/policy.js";
@@ -34,7 +35,7 @@ export interface FileAccess {
   destinationAvailability(
     target: FileTarget,
     destination: FileDestination,
-  ): Promise<{ frozen: boolean }>;
+  ): Promise<{ closed: ClosedOwnerWhy | null }>;
   /** Preflight: fast errors and UI state. Advisory for writes. */
   authorize<N extends FileNeed>(
     principal: Principal,
@@ -99,10 +100,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         target,
         ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
       });
-      if (!facts) return { frozen: false };
+      if (!facts) return { closed: null };
       const work = destination.kind === "draft" ? facts.branchOwner : facts.ownerWork;
+      if (work?.deleted) return { closed: "work_deleted" };
+      if (work?.archived) return { closed: "work_archived" };
       const frozenLineage = destination.kind === "draft" && facts.branchOwner?.frozen === true;
-      return { frozen: work?.archived === true || work?.deleted === true || frozenLineage };
+      return { closed: frozenLineage ? "chat_frozen" : null };
     },
     async authorize(principal, target, need) {
       const facts = await loadFor(principal, target);

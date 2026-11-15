@@ -4,6 +4,7 @@
  * concerns. A Copy is a route, and its failure is a toast with Retry.
  */
 import { plural, t } from "@lingui/core/macro";
+import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -31,6 +32,11 @@ export type EntryContext = {
    * the document main shows follows main to where it goes back to. None: no notice.
    */
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
+};
+
+/** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
+export type CopyContext = EntryContext & {
+  stateVectorOf: (documentId: string) => Uint8Array | null;
 };
 
 /** A Copy the route refused: it has its own key, and Retry runs it again. */
@@ -102,7 +108,7 @@ function copyFailureTitle(
 }
 
 /** Toasts a refused Copy; Retry runs it again. */
-function showCopyFailure(context: EntryContext, failure: CopyFailure): void {
+function showCopyFailure(context: CopyContext, failure: CopyFailure): void {
   notifyFailure({
     key: failure.key,
     title: copyFailureTitle(failure.sources, failure.destination, failure.reason),
@@ -110,13 +116,30 @@ function showCopyFailure(context: EntryContext, failure: CopyFailure): void {
   });
 }
 
+/** What a Copy that left something undone says, in the writer's words; null when it left nothing. */
+export function copySettledNotice(settled: readonly Settlement[]): string | null {
+  const returned = settled.find((one) => one.rule === "returned");
+  if (returned) return t`That Work is closed, so nothing was copied.`;
+  const left = settled.find((one) => one.rule === "left_out");
+  if (left?.why === "would_loop") return t`A folder can't be copied into itself.`;
+  if (left) return t`Part of it is gone for good, so it wasn't copied.`;
+  return null;
+}
+
 export async function runCopy(
-  context: EntryContext,
+  context: CopyContext,
   copy: ReadyCopy,
   onCopied?: (copies: readonly EntryRef[]) => void,
 ): Promise<void> {
   try {
-    onCopied?.(await copyRows(context.projectId, copy));
+    const { rows, settled } = await copyRows(context.projectId, copy, context.stateVectorOf);
+    if (rows.length > 0) onCopied?.(rows);
+    const notice = copySettledNotice(settled);
+    if (notice)
+      notifyFailure({
+        key: entryToast(context.projectId, crypto.randomUUID()),
+        title: notice,
+      });
   } catch (error) {
     showCopyFailure(context, {
       key: entryToast(context.projectId, crypto.randomUUID()),

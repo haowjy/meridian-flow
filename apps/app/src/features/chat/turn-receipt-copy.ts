@@ -4,7 +4,6 @@ import type {
   ReversalOutcome,
   TreeReversalFault,
   TurnInverseSkip,
-  TurnInverseSkipCause,
 } from "@meridian/contracts/protocol";
 import type { ReversalDirection } from "@/client/api/reverse-api";
 import { documentLocationName, type OwnerNames } from "./document-display-name";
@@ -134,8 +133,8 @@ function reversalRetryCopy(direction: ReversalDirection): string {
 }
 
 /** Why one part of a reversal stayed, beside its excerpts or its document's name. */
-export function skipCauseCopy(cause: TurnInverseSkipCause): string {
-  switch (cause) {
+export function skipCauseCopy(skip: Pick<TurnInverseSkip, "cause" | "why">): string {
+  switch (skip.cause) {
     case "ancestor_taken":
       return t`A document blocks its folder path`;
     case "folder_missing":
@@ -162,8 +161,10 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
       return t`This document was deleted`;
     case "document_discarded":
       return t`This document was discarded from the draft`;
-    case "draft_archived":
-      return t`This draft is archived`;
+    case "returned":
+      return skip.why === "chat_frozen"
+        ? t`Its chat is in Trash, so this stayed as it is`
+        : t`Its Work was closed, so this stayed as it is`;
     case "paragraph_removed":
       return t`Its paragraph was removed`;
     case "edited_since":

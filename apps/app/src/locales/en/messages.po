@@ -952,6 +952,10 @@ msgstr "A file named {name} already exists in this location."
 msgid "A file path in this selection is too long to import."
 msgstr "A file path in this selection is too long to import."
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "A folder can't be copied into itself."
+msgstr "A folder can't be copied into itself."
+
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
@@ -3680,6 +3684,10 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/features/chat/turn-receipt-copy.ts
+msgid "Its chat is in Trash, so this stayed as it is"
+msgstr "Its chat is in Trash, so this stayed as it is"
+
+#: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr "Its document wasn't restored"
 
@@ -3690,6 +3698,10 @@ msgstr "Its folder is gone"
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
 msgstr "Its paragraph was removed"
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Its Work was closed, so this stayed as it is"
+msgstr "Its Work was closed, so this stayed as it is"
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
@@ -4701,6 +4713,10 @@ msgstr "Over your monthly usage"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr "Paragraph"
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Part of it is gone for good, so it wasn't copied."
+msgstr "Part of it is gone for good, so it wasn't copied."
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -5940,6 +5956,10 @@ msgstr "That place is no longer available"
 #~ msgid "That rename couldn't be completed. Choose another name or try again."
 #~ msgstr "That rename couldn't be completed. Choose another name or try again."
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "That Work is closed, so nothing was copied."
+msgstr "That Work is closed, so nothing was copied."
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "That Work is no longer available. Choose another Work."
@@ -6428,8 +6448,8 @@ msgid "This draft changed since you looked. Check it, then discard again."
 msgstr "This draft changed since you looked. Check it, then discard again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This draft is archived"
-msgstr "This draft is archived"
+#~ msgid "This draft is archived"
+#~ msgstr "This draft is archived"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."

@@ -171,7 +171,10 @@ export function TurnEditsReceipt({
         !hasEditedDocuments &&
         restored.length > 0 &&
         (status === "nothing_to_undo" || status === "nothing_to_redo");
-      const refusal = status && !documentHalfEmpty ? status : null;
+      // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
+      const onlyReturned =
+        !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
+      const refusal = status && !documentHalfEmpty && !onlyReturned ? status : null;
       setCommandRefusal(
         refusal
           ? {
@@ -269,7 +272,7 @@ export function TurnEditsReceipt({
                 {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
                     <SkipSubject skip={skip} />
-                    <span className="ml-1">{skipCauseCopy(skip.cause)}</span>
+                    <span className="ml-1">{skipCauseCopy(skip)}</span>
                   </li>
                 ))}
               </ul>

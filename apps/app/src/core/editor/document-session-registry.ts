@@ -38,6 +38,11 @@ export interface LiveDocumentSessionRegistry {
   /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
+  /**
+   * The Yjs state vector of the document's live session in this tab, typing the server hasn't
+   * acknowledged included; null when this tab holds no session for it.
+   */
+  openStateVector(documentId: DocumentId): Uint8Array | null;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,
