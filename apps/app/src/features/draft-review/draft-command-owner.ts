@@ -647,9 +647,7 @@ export class DraftCommandOwner {
     if (answer.status !== "applied" && answer.status !== "landed" && answer.status !== "cancelled")
       this.setState(
         ref.itemKey,
-        {
-          failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }),
-        },
+        { failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }) },
         id,
       );
     return this.outcomeOf(ref, answer, restore);
@@ -1102,10 +1100,7 @@ export class DraftCommandOwner {
       for (const key of own) this.discardedHere.delete(key);
       if (this.active)
         for (const ref of scope.values())
-          this.setState(ref.itemKey, {
-            hidden: false,
-            failure: failure && shownRefusal(failure),
-          });
+          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
     };
     try {
       const answer = await discardBranch(projectId, branchId, {
