@@ -2141,6 +2141,10 @@ msgstr ""
 msgid "Couldn't create a Work"
 msgstr ""
 
+#: src/features/home/NewProjectView.tsx
+msgid "Couldn’t create the project."
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't create this document. Try another place."
 msgstr ""
