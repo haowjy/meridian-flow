@@ -9,7 +9,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a draft-mode write creates its Work draft inside the command's transaction
  * - a new draft seeds from the live cut the model last read, or live's head when it has none
- * - a write whose last seen draft was discarded is refused, and the refusal is the stored outcome
+ * - a write whose last seen draft was discarded answers `returned`, and that answer is the stored outcome
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -306,7 +306,7 @@ const cases: ModelEditCase[] = [
   },
   {
     name: "a Discard between two calls of one response",
-    expected: "the first call's edit went to the discarded draft; the second is refused, stored",
+    expected: "the first call's edit went to the discarded draft; the second is returned, stored",
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "discard-between", "draft");
       const doc = await h.seedDocument("discard-between", "Live seed.");
@@ -336,9 +336,9 @@ const cases: ModelEditCase[] = [
     },
   },
   {
-    name: "a write after a Discard is refused and its refusal is the stored answer",
+    name: "a write after a Discard is returned and the returned answer is the stored one",
     expected:
-      "the refusal is stored once; resolving the key again returns it, the draft stays closed",
+      "the returned answer is stored once as a done row; resolving the key again returns it, the draft stays closed",
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "write-after-discard", "draft");
       const doc = await h.seedDocument("write-after-discard", "Live seed.");
@@ -360,7 +360,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(after.results[0], "call-1:committed");
       assert.notEqual(after.results[1], "call-2:committed");
       assert.deepEqual(after.edits, ["call-1"]);
-      assert.equal(after.commands[1], "refused");
+      assert.equal(after.commands[1], "done");
       const [use] = await h.raw<{ response: string }[]>`
         select b.model_response_id as response from turn_blocks b join turns t on t.id=b.turn_id
         where t.thread_id=${thread} and b.content->>'toolCallId'='call-2' and b.block_type='tool_use'`;
@@ -371,7 +371,10 @@ const cases: ModelEditCase[] = [
         accountId: h.ids.user,
         projectId: h.ids.project,
       })) as { status: string };
-      assert.equal(again.status, "refused");
+      assert.equal(again.status, "done");
+      assert.deepEqual((again as { result?: { settled?: unknown } }).result?.settled, [
+        { rule: "returned", why: "draft_discarded" },
+      ]);
       assert.deepEqual(
         (await drafts(h, doc.documentId)).map((d) => d.status),
         ["closed"],

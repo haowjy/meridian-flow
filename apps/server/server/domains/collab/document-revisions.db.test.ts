@@ -14,11 +14,10 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
-import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
 import { createLocalFileAccessChanges, type FileDestination } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
@@ -126,9 +125,9 @@ async function fixture(
     threads: createDrizzleThreadRepository(db, {
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
     }),
-    availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
-    branches,
+    fileAccess: drizzleFileAccess(db),
+    readAgentChain: async () => [],
     works: createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,

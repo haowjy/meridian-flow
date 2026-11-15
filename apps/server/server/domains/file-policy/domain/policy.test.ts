@@ -73,7 +73,11 @@ const lineageLink = (rootThreadId: string): AgentLink => ({
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
   accountId: OWNER,
-  agent: { chain, branchOwner: null },
+  agent: {
+    chain,
+    branchOwner: { owner: { kind: "work", workId: "a" }, handle: null },
+    writeMode: "direct",
+  },
 });
 
 describe("file policy", () => {
@@ -130,6 +134,7 @@ describe("file policy", () => {
             owner: { kind: "work", workId: branchWork.id },
             handle: branchWork.handle,
           },
+          writeMode: "draft",
         },
       },
       file("manuscript", null, { branchOwner: ownerFacts(branchWork) }),

@@ -26,11 +26,12 @@ const DONE_STATUSES: ReadonlySet<string> = new Set([
   "restored",
   "discarded",
   "edited",
+  "returned",
   "reversed",
   "copied",
 ]);
 
-/** `done` when the effect committed; every other answer is a refusal that changed nothing. */
+/** `done` when the effect committed or answered with the document as it stands; every other answer is a refusal that changed nothing. */
 export function documentOutcomeOf(result: { status: string }): "done" | "refused" {
   return DONE_STATUSES.has(result.status) ? "done" : "refused";
 }

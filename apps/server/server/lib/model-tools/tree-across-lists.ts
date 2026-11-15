@@ -89,7 +89,7 @@ async function moveOne(
   },
 ) {
   const port = contextPortForThread(deps.contextPorts, call.context.resolution, {
-    liveWrites: true,
+    destination: { kind: "live" },
   });
   const history = deps.documentSync.treeHistory();
   let handle: string | undefined;

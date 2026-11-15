@@ -10,13 +10,14 @@ import { lookupCommand, resolveCommand } from "../../../shared/commands/drizzle-
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
 import { evidenceFrontiers } from "../../../shared/model-evidence.js";
+import { documentOutcomeOf } from "../domain/document-commands.js";
 import { ModelEditRefusal, type ModelEdits } from "../domain/model-edit.js";
 import type { ModelEvidence } from "../domain/model-evidence.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 
 export function createDrizzleModelEdits(
   db: Database,
-  seams: Pick<ModelEdits, "write" | "catchUp">,
+  seams: Pick<ModelEdits, "write" | "read" | "catchUp">,
   evidence: Pick<ModelEvidence, "resultStored">,
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {
@@ -60,7 +61,13 @@ export function createDrizzleModelEdits(
                 shown: done.evidence.shown,
                 frontiers: evidenceFrontiers(ids.blockId, done.evidence),
               });
-            return { status: "edited" as const, toolResult: done.toolResult };
+            return {
+              status: done.settled?.some((s) => s.rule === "returned")
+                ? ("returned" as const)
+                : ("edited" as const),
+              toolResult: done.toolResult,
+              ...(done.settled ? { settled: done.settled } : {}),
+            };
           },
           (cause) => {
             if (!(cause instanceof ModelEditRefusal)) return undefined;
@@ -69,7 +76,7 @@ export function createDrizzleModelEdits(
           },
         );
         return {
-          outcome: { status: result.status === "edited" ? "done" : "refused", result },
+          outcome: { status: documentOutcomeOf(result), result },
           ...(refusedEvidence === undefined ? {} : { evidence: refusedEvidence }),
         };
       } catch (cause) {

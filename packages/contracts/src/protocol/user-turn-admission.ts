@@ -44,7 +44,7 @@ export type UserMessageBlock =
 export type AdmittedMessageBlock =
   | Exclude<UserMessageBlock, { type: "image" }>
   | (Extract<UserMessageBlock, { type: "image" }> &
-      Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name">);
+      Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name" | "chatCopy">);
 
 /**
  * The durable turn block a submitted message block becomes. Server persistence
@@ -67,6 +67,7 @@ export function userMessageTurnBlock(block: AdmittedMessageBlock): {
           mediaType: block.mediaType,
           sizeBytes: block.sizeBytes,
           name: block.name,
+          ...(block.chatCopy ? { chatCopy: block.chatCopy } : {}),
         } satisfies StoredMediaPart,
       };
     default:

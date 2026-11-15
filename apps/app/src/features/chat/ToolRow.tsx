@@ -22,7 +22,7 @@
 import { t } from "@lingui/core/macro";
 import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";
-import type { ToolView } from "@meridian/thread-client";
+import { documentToolReturned, type ToolView } from "@meridian/thread-client";
 import { Pause } from "lucide-react";
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
@@ -50,7 +50,7 @@ function ExecutedToolRow({ tool }: ToolRowProps) {
   const status: ActivityRowStatus =
     tool.status === "partial"
       ? "running"
-      : toolRowFailed(tool) && !isToolNotRunResult(tool.result)
+      : toolRowFailed(tool) && !isToolNotRunResult(tool.result) && !documentToolReturned(tool)
         ? "error"
         : "done";
   const presentation = useMemo(

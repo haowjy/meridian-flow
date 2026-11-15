@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Prints `export PG*=…` lines for this checkout's database, for `tools/dev/psql`
  * to eval. Connection details travel in psql's environment, never its argv, so

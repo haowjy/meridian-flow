@@ -11,8 +11,8 @@ ContextPort seam, and agent move/reorder behavior as one coherent change.
 
 ## Batch revision availability
 
-`DocumentRevisions.current` and compaction have batch-capable availability
-ports but may still issue per-document lookups. Measure compaction and multi-
+`DocumentRevisions.current` reads each revision per document (the access decisions come
+from one `listAccess`). Compaction may still issue per-document lookups. Measure compaction and multi-
 document revision latency before changing the call shape.
 
 ## Owner-name collision lookup

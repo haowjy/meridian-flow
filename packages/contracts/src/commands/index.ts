@@ -49,12 +49,24 @@ export type CommandOutcome<R = StoredResult> =
  * Where a done command's result differs from what was asked: `result.settled` on a done outcome,
  * absent when it landed as asked.
  * `already`: the asked state held before the command ran (a second press, or another tab did it).
- * `returned`: the command would change a closed Work, so nothing changed; the result carries the
- * Work as it stands and `why` names how it is closed.
+ * `returned`: the command would add words to something closed, so nothing changed; the result
+ * carries the subject as it stands and `why` names how it is closed.
  */
 export type Settlement =
   | { rule: "already"; state: string }
-  | { rule: "returned"; why: "work_archived" | "work_deleted" };
+  | { rule: "returned"; why: ReturnedWhy };
+
+/**
+ * Why an act was returned. The first two close a Work; the rest are a model's edit that cannot
+ * land: the draft it edited was discarded or replaced by a restore, its document was removed, or the block it named is gone.
+ */
+export type ReturnedWhy =
+  | "work_archived"
+  | "work_deleted"
+  | "draft_discarded"
+  | "draft_replaced"
+  | "document_removed"
+  | "block_gone";
 
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };

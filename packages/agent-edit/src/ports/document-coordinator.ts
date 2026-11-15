@@ -5,17 +5,6 @@ import type { BlockOriginMap } from "../model/block-hash.js";
 import type { JournalBatchAppendEntry } from "./update-journal.js";
 
 /**
- * Why a write did not land. `discarded_*` come from a Discard: the whole branch, this created
- * document, or this edited document's text. `removed` is the document's removal, with its
- * record; null when a removal closed the draft but the document stands again (a Work Restore).
- */
-export type WriteRefusalReason =
-  | "discarded_draft"
-  | "discarded_document"
-  | "discarded_edit"
-  | { removed: DocumentRemovalRecord | null };
-
-/**
  * A call's copy of a document's room: private, gc-off, the room's committed state. The caller
  * owns `doc` and destroys it. `room` is the host's label for the room the copy was read from
  * (null records no frontier).

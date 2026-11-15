@@ -289,6 +289,7 @@ async function harness(
     shownLinks: store,
     contextPorts: { chatFiles: emptyOwnerLookup },
     fileAccess: {
+      authorize: async () => ({ level: "edit", destination: { kind: "live" }, facts: {} }),
       // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
         new Map(ids.filter((id) => id !== HIDDEN).map((id) => [id, { level: "edit" }])),

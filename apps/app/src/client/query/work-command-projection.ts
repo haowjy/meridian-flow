@@ -1,17 +1,14 @@
 /**
  * Work command records read against the server snapshot: the snapshot with
- * every pending command laid over it, the Works still being created beside
+ * every unsettled command laid over it, the Works still being created beside
  * it, and whether the snapshot already shows what a command asked for.
  */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 
 import {
-  type CommandOf,
-  type RecordOf,
   type WorkCommandRecord,
   type WorkCommandVariables,
-  type WorkOperation,
   workCommandSpecs,
 } from "./work-commands";
 
@@ -22,7 +19,7 @@ export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
 
 /**
  * A Work the server has not created yet: pending while its create is on its
- * way, failed once it was refused.
+ * way, failed once the server turned it away.
  */
 export type WorkCreation = { work: UncreatedWork; phase: "pending" | "failed" };
 
@@ -36,11 +33,11 @@ function uncreatedWork(
 const isoAt = (time: number) => new Date(time).toISOString();
 
 /**
- * The server snapshot with every pending command laid over it, oldest first:
- * what it expects before the server answers, what the server returned after.
- * A create shows as a `WorkCreation` until the server has the Work, then
- * first in the list, where the server's newest-first order will put it. A
- * Work being created shows even before the first snapshot loads.
+ * The server snapshot with every unsettled command laid over it, oldest first: what it expects
+ * before the server answers, what the server returned after, until a read that started after
+ * it settled has come back (`observed`). A create shows as a `WorkCreation` until the server has
+ * the Work, then first in the list, where the server's newest-first order will put it. A Work
+ * being created shows even before the first snapshot loads.
  */
 export function projectWorkCommands(
   snapshot: WorksSnapshot | undefined,
@@ -52,13 +49,13 @@ export function projectWorkCommands(
   const created: string[] = [];
   let changed = false;
   for (const record of records) {
-    const refused = record.status === "failed" && record.operation === "create";
-    if (record.status !== "pending" && !refused) continue;
+    const refused = record.state === "never" && record.operation === "create";
+    if (record.state === "never" ? !refused : record.state === "done" && record.observed) continue;
     changed = true;
     const before = byId.get(record.workId);
-    if (!before && record.operation === "create" && !record.committed) {
+    if (!before && record.operation === "create" && record.state !== "done") {
       creations.set(record.workId, {
-        work: uncreatedWork(record.variables, record.submittedAt),
+        work: uncreatedWork(record.variables, record.since),
         phase: refused ? "failed" : "pending",
       });
       continue;
@@ -82,19 +79,19 @@ export function projectWorkCommands(
 }
 
 /** The Work as one record leaves it. */
-export function recordProjection<Op extends WorkOperation>(
-  work: Work | undefined,
-  record: RecordOf<Op>,
-): Work | undefined {
-  const spec = workCommandSpecs[record.operation];
-  if (record.committed) return spec.commit(work, record.variables, record.committed.result);
-  return spec.project(work, record.variables, { at: isoAt(record.submittedAt) });
+function recordProjection(work: Work | undefined, record: WorkCommandRecord): Work | undefined {
+  const spec = workCommandSpecs[record.operation] as {
+    project: (w: Work | undefined, v: unknown, c: { at: string }) => Work | undefined;
+    commit: (w: Work | undefined, v: unknown, c: Work | undefined) => Work | undefined;
+  };
+  if (record.state === "done") return spec.commit(work, record.variables, record.committed);
+  return spec.project(work, record.variables, { at: isoAt(record.since) });
 }
 
 /** Whether the server snapshot already shows what this command asked for. */
-export function snapshotHasCommandTarget<Op extends WorkOperation>(
+export function snapshotHasCommandTarget(
   snapshot: WorksSnapshot | undefined,
-  command: CommandOf<Op>,
+  command: Pick<WorkCommandRecord, "operation" | "variables">,
 ): boolean {
   if (!snapshot) return false;
   const { workId } = command.variables;
@@ -102,5 +99,7 @@ export function snapshotHasCommandTarget<Op extends WorkOperation>(
     snapshot.noWork.id === workId
       ? snapshot.noWork
       : snapshot.works.find((entry) => entry.id === workId);
-  return workCommandSpecs[command.operation].reached(work, command.variables);
+  return (
+    workCommandSpecs[command.operation].reached as (w: Work | undefined, v: unknown) => boolean
+  )(work, command.variables);
 }

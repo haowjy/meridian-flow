@@ -86,6 +86,7 @@ export { type FoldDigest, foldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";
 export {
   documentToolFailed,
+  documentToolReturned,
   humanizeSkillSlug,
   skillFile,
   sourcePath,

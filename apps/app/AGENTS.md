@@ -8,8 +8,9 @@ client contracts, stores and server-owned runtime behavior.
   mount a fabricated route to navigate early.
 - New persistent state picks a tier before it ships ([state tiers][state-tiers]).
 - Choose a command's lifecycle before wiring it ([writer commands][commands]).
-  Command records that outlive their caller, stack per entity, or share one
-  failure across surfaces go in a per-domain record store, as Work commands do.
+  A command the server may not have received is a kind on the command driver
+  (`client/commands/`, `@meridian/command-driver`), as Work commands are: the driver
+  delivers it, the domain projects its unsettled records over its own data.
 - `/_authenticated` mounts one unconditional provider tree. Gating a provider by
   pathname drops `ThreadStoreProvider` during transitions.
 - When a shadcn primitive fits, adopt or extend its API in `components/ui/` and

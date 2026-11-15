@@ -131,8 +131,8 @@ export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  /** Who owns the drafts this chat writes (its Work, or its lineage with no Work); null in direct mode. */
-  branchOwner: DraftOwner | null;
+  /** Who owns the drafts this chat writes (its Work, or its lineage with no Work), in either mode. */
+  branchOwner: DraftOwner;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

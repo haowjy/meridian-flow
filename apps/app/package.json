@@ -14,7 +14,7 @@
     "test:e2e:auth": "MODEL_PROVIDER=mock playwright test -c e2e/playwright.auth.config.ts",
     "test:e2e:chat-smoke": "playwright test -c e2e/playwright.chat-smoke.config.ts",
     "test:e2e:mobile-shell": "playwright test -c e2e/playwright.mobile-shell.config.ts",
-    "verify:process-disclosure": "tsx e2e/verify-process-disclosure.mts",
+    "verify:process-disclosure": "bun e2e/verify-process-disclosure.mts",
     "lingui:extract": "lingui extract",
     "lingui:compile": "lingui compile",
     "bench:markdown": "tsc --noEmit -p bench/tsconfig.json && tsx bench/markdown.mts"
@@ -24,6 +24,7 @@
     "@lingui/core": "^6.4.0",
     "@lingui/react": "^6.4.0",
     "@meridian/agent-edit": "workspace:*",
+    "@meridian/command-driver": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/design-tokens": "workspace:*",
     "@meridian/markup": "workspace:*",

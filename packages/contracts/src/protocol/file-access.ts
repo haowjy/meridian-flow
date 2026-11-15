@@ -16,7 +16,8 @@ export type FileAccessDenial =
   | "work_archived"
   | "chat_frozen"
   | "agent_read_only"
-  | "uploads_read_only";
+  | "uploads_read_only"
+  | "ai_access_denied";
 
 /**
  * The `reason` on an AI tool's `permission_denied` result: a file-policy

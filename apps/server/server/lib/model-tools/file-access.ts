@@ -8,22 +8,22 @@ import {
   documentNotFoundMessage,
   modelResult,
 } from "@meridian/agent-edit/integration";
+import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import {
-  type BranchOwnerRef,
   type FileAccessDenied,
+  type FileDestination,
   type FileEditRefusedError,
   type FileGrant,
   type FileNeed,
   type FileTarget,
+  isDrafted,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
-import { chatOwner } from "../../shared/draft-owner.js";
 import {
   isPermissionDenial,
   permissionDeniedMessage,
@@ -36,13 +36,6 @@ import type {
   ToolWiringDeps,
   WriteToolErrorOutput,
 } from "./tool-context.js";
-
-/** The principal with its drafted writes routed to `owner`'s drafts, or live for null. */
-export function withBranchOwner(principal: Principal, owner: BranchOwnerRef | null): Principal {
-  return principal.agent
-    ? { ...principal, agent: { ...principal.agent, branchOwner: owner } }
-    : principal;
-}
 
 /**
  * The agent a tool call acts as (file-access §8): the thread's person, its
@@ -59,47 +52,48 @@ export async function agentPrincipal(
     accountId: thread.userId as Principal["accountId"],
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      branchOwner: execution.branchOwner
-        ? { owner: execution.branchOwner, handle: execution.scope.workHandle }
-        : null,
+      branchOwner: { owner: execution.branchOwner, handle: execution.scope.workHandle },
+      writeMode: execution.aiWriteMode,
     },
   };
 }
 
 /**
- * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept (a chat switched to auto-apply, or another chat writes drafts there),
- * so the result says `draft`. With
- * no kept draft of this document it reads live, as `draft` always did there.
+ * Where an explicit `version: "draft"` read goes: the draft the Work kept of the document, so the
+ * result says `draft`. A document whose content source can't hold a draft (its `contentScheme`
+ * from the grant's facts, which a move keeps apart from its address), or one with none kept,
+ * reads where its access sends it, as `draft` always did there.
  */
-export async function keptDraftReader(
+export async function keptDraft(
   deps: Pick<ToolWiringDeps, "branches">,
-  principal: Principal,
-  execution: ThreadExecutionContext,
-  thread: Pick<Thread, "projectId" | "rootThreadId">,
+  grant: Pick<FileGrant, "facts">,
   documentId: string,
-): Promise<Principal> {
-  if (!principal.agent || principal.agent.branchOwner || execution.branchOwner) return principal;
-  const { workId, workHandle } = execution.scope;
-  const owner = chatOwner(thread, { id: workId, isNoWork: workHandle === null });
+  execution: ThreadExecutionContext,
+): Promise<FileDestination | null> {
+  if (!isDrafted(grant.facts.contentScheme)) return null;
+  const owner = execution.branchOwner;
   const drafts = await deps.branches.draftReview.list({ owner });
-  if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withBranchOwner(principal, { owner, handle: workHandle });
+  return drafts.some((draft) => draft.documentId === documentId)
+    ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
+    : null;
 }
 
-/** The file policy's grant on a document; a denial comes back as the tool's error. */
+/**
+ * The file policy's grant on a document, at the destination its access gives or at `at`; a
+ * denial comes back as the tool's error.
+ */
 export async function documentGrant<N extends FileNeed>(
   deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
   command: DocumentCommandName,
   address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
   need: N,
+  at?: FileDestination,
 ): Promise<FileGrant<N> | WriteToolErrorOutput> {
-  const grant = await deps.fileAccess.authorize(
-    principal,
-    { kind: "document", documentId: address.documentId as never },
-    need,
-  );
+  const target = { kind: "document", documentId: address.documentId as never } as const;
+  const grant = at
+    ? await deps.fileAccess.authorizeAt(principal, target, at, need)
+    : await deps.fileAccess.authorize(principal, target, need);
   return isFileAccessDenied(grant)
     ? fileAccessDeniedError(
         command,
@@ -123,6 +117,20 @@ export async function removalBehind(
   const { documentId } = denial.target;
   if ((await deps.fileAccess.historyAccess(principal, documentId)) !== "deleted") return undefined;
   return (await deps.documentRemovals.lookup([documentId])).get(documentId);
+}
+
+/**
+ * Why a refused text edit is returned instead of refused: its Work is archived or deleted (the
+ * files read, and take no new words), or its document was removed. Null: the refusal is who is
+ * acting, or the file never existed.
+ */
+export function returnedWhy(
+  denial: FileAccessDenied,
+  removal: DocumentRemovalRecord | undefined,
+): ReturnedWhy | null {
+  if (isPermissionDenial(denial)) return denial.reason === "work_archived" ? "work_archived" : null;
+  if (denial.level === "read") return "work_deleted";
+  return removal ? "document_removed" : null;
 }
 
 /** A missing file as the tool's error. */
@@ -195,8 +203,17 @@ export async function containerReadonly(
   principal: Principal,
   context: ResolvedModelContextPort,
   path: string,
+  at?: FileDestination,
 ): Promise<boolean | undefined> {
   const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
-  return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
+  const grant = at
+    ? await deps.fileAccess.authorizeAt(principal, target, at, "edit")
+    : await deps.fileAccess.authorize(principal, target, "edit");
+  return isFileAccessDenied(grant);
+}
+
+/** A `version: "live"` read of a listing or search: its documents are decided live, not in a draft. */
+export function liveListing(version: "draft" | "live" | undefined): FileDestination | undefined {
+  return version === "live" ? { kind: "live" } : undefined;
 }

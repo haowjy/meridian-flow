@@ -4,15 +4,20 @@
  * that reads, plans and appends under the document's lock.
  */
 
-import type { WriteCommand } from "@meridian/agent-edit/integration";
+import type { ReadCommand, WriteCommand, WriteOutcome } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import type {
   ModelEditKey,
   ModelEditOutcome,
   ModelEditToolResult,
 } from "@meridian/contracts/branches";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { ResultEvidence } from "../../../shared/model-evidence.js";
-import type { RoutedWriteContext, RoutedWriteOutcome } from "./agent-edit-cores.js";
+import type {
+  RoutedReadContext,
+  RoutedWriteContext,
+  RoutedWriteOutcome,
+} from "./agent-edit-cores.js";
 
 /** An effect turned the call away: its savepoint rolls back and `toolResult` is the stored answer. */
 export class ModelEditRefusal extends Error {
@@ -52,7 +57,12 @@ export type ModelEdits = {
     /** The thread and turn the result block belongs to. */
     owner: { threadId: string; turnId: string };
     signal: AbortSignal;
-    effect(): Promise<{ toolResult: ModelEditToolResult; evidence?: ResultEvidence }>;
+    effect(): Promise<{
+      toolResult: ModelEditToolResult;
+      evidence?: ResultEvidence;
+      /** Set when the call changed nothing and says why (a `returned` edit). */
+      settled?: Settlement[];
+    }>;
   }): Promise<{ outcome: ModelEditOutcome; evidence?: ResultEvidence }>;
   /**
    * What the call under `key` came to: waits on a transaction still holding it, and stops a call
@@ -64,4 +74,9 @@ export type ModelEdits = {
    * takes. Valid only inside a `run` effect: it joins that transaction.
    */
   write(command: WriteCommand, context: ModelEditWriteContext): Promise<RoutedWriteOutcome>;
+  /**
+   * A read inside a `run` effect: it joins the command's transaction and pulls nothing from live
+   * (the document was caught up before `run`). A returned edit shows the document with it.
+   */
+  read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
 };

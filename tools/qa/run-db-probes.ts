@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Runs every self-contained database probe, `tools/qa/probes/<name>/run.mts`, one after another and
  * exits nonzero if any fails or hangs. Each creates, migrates and drops what it needs, so a file
@@ -30,11 +30,12 @@ const probes = requested.length ? available.filter((name) => requested.includes(
 
 /**
  * Exit status, or "timeout" after killing the probe. The probe is one node process (no pnpm or
- * tsx wrapper to leave behind), so killing the child kills everything it started.
+ * tsx wrapper to leave behind), so killing the child kills everything it started. It runs on Node
+ * though the runner is Bun: the probes import server code.
  */
 function runProbe(name: string): Promise<number | "timeout"> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--import", "tsx", join(probesDir, name, "run.mts")], {
+    const child = spawn("node", ["--import", "tsx", join(probesDir, name, "run.mts")], {
       stdio: "inherit",
     });
     // An interrupt of the runner alone (a CI cancel, a command timeout) would orphan the probe.
