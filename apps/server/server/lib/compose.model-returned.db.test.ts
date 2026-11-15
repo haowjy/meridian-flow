@@ -103,7 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           title: `${mode} chat`,
           kind: "primary",
-          status: "idle",
           aiWriteMode: mode,
         });
         await db.insert(schema.turns).values({

@@ -126,7 +126,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Renumbering",
         kind: "primary",
-        status: "idle",
         aiWriteMode: "direct",
       });
       await db.insert(schema.threads).values({
@@ -136,7 +135,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Polish",
         kind: "primary",
-        status: "idle",
         aiWriteMode: "draft",
       });
       await db
@@ -941,7 +939,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           title: "Fresh",
           kind: "primary",
-          status: "idle",
           aiWriteMode: "direct",
         });
         await db.insert(schema.threadWorks).values({

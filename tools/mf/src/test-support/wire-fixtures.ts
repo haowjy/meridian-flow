@@ -23,7 +23,6 @@ export function thread(): Thread {
     effectiveAiWriteMode: "direct",
     userId: "u1",
     kind: "primary",
-    status: "idle",
     title: "Wire thread",
     ref: "c1",
     initialPromptBakeId: null,

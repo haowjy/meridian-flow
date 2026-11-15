@@ -14,7 +14,6 @@ export const threadSchema = z.object({
   effectiveAiWriteMode: aiWriteModeSchema,
   userId: z.string().min(1),
   kind: z.enum(["primary", "subagent"]),
-  status: z.enum(["idle", "archived"]),
   title: z.string().nullable(),
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: z.string().nullable(),

@@ -2127,13 +2127,6 @@
           "notNull": true,
           "default": "'primary'"
         },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'idle'"
-        },
         "initial_prompt_bake_id": {
           "name": "initial_prompt_bake_id",
           "type": "uuid",
@@ -2331,7 +2324,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"threads\".\"kind\" = 'primary' AND \"threads\".\"deleted_at\" IS NULL AND \"threads\".\"status\" <> 'archived'",
+          "where": "\"threads\".\"kind\" = 'primary' AND \"threads\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2521,10 +2514,6 @@
         "threads_kind_valid": {
           "name": "threads_kind_valid",
           "value": "\"threads\".\"kind\" IN ('primary', 'subagent')"
-        },
-        "threads_status_valid": {
-          "name": "threads_status_valid",
-          "value": "\"threads\".\"status\" IN ('idle', 'archived')"
         },
         "threads_origin_type_valid": {
           "name": "threads_origin_type_valid",

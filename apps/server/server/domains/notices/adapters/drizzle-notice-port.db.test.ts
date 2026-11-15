@@ -52,7 +52,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           title: "Thread",
           kind: "primary",
-          status: "idle",
         },
         {
           rootThreadId: OTHER_THREAD_ID,
@@ -61,7 +60,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           title: "Other Thread",
           kind: "primary",
-          status: "idle",
         },
       ]);
     });

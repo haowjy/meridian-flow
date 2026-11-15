@@ -34,7 +34,6 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "subagent",
-    status: "idle",
     title: input.title ?? null,
     ref: null,
     initialPromptBakeId: null,

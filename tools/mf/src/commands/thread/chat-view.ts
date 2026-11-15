@@ -178,7 +178,6 @@ export type ChatViewEnvelope = {
     projectId: string;
     workId: string | null;
     agentName: string | null;
-    status: Thread["status"];
     turnCount: number;
     totalCostUsd: string;
   };
@@ -271,7 +270,6 @@ export function projectChatView(
       projectId: thread.projectId,
       workId: thread.workId,
       agentName: thread.agentName,
-      status: thread.status,
       turnCount: thread.turnCount,
       totalCostUsd: thread.totalCostUsd,
     },
