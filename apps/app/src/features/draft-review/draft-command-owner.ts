@@ -925,21 +925,18 @@ export class DraftCommandOwner {
 
   /**
    * The caller names whose history also holds it: its own editor (Ctrl+Z), or none (`notice`).
-   * The returned handle is the notice's Undo; the caller shows it or ends it. `closed`: what the
-   * screen reads as why this owner is closed, which a read-only room's Discard returns.
+   * The returned handle is the notice's Undo; the caller shows it or ends it.
    */
   discard(
     ref: DraftRef,
     target: GroupsTarget,
     history: Editor | "notice" | null,
-    closed: RestoreReturned | null,
   ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
     let handle: DiscardUndo | null = null;
     const started = startDraftDiscardSession({
       target,
       history,
-      closed,
       onNoticeEnd: () => {
         if (handle) this.notices.partEnded(handle);
       },
@@ -1029,11 +1026,10 @@ export class DraftCommandOwner {
     target: GroupsTarget | { kind: "tree" },
     history: Editor | "notice" | null,
     commandId: string,
-    closed: RestoreReturned | null,
   ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
     if (!this.active || !item.tree) return null;
     const text =
-      item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history, closed) : null;
+      item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
     if (item.hasDraft && target.kind !== "tree" && !text) return null;
     return {
       handle: text?.handle ?? null,

@@ -54,6 +54,8 @@ import {
   WebSocketStatus,
 } from "@hocuspocus/provider";
 import {
+  type AccessChangedWhy,
+  accessChangedWhy,
   type ChangeEventWsMessage,
   isAccessChangedClose,
   parseYjsStatelessMessage,
@@ -286,7 +288,9 @@ export function createHocuspocusDocumentTransport({
   connectivityHints,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
-  const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
+  const accessListeners = new Set<
+    (access: DocumentSessionAccess, closedWhy: AccessChangedWhy | null) => void
+  >();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
@@ -308,6 +312,9 @@ export function createHocuspocusDocumentTransport({
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
   let currentAccess: DocumentSessionAccess | null = null;
+  // Why a read-only room is read-only, when its owner is closed: named by the admission's
+  // message or the closing 4409, never inferred.
+  let currentClosedWhy: AccessChangedWhy | null = null;
   let outbox: Uint8Array | null = null;
   let refusals = 0;
   let terminal = false;
@@ -327,10 +334,14 @@ export function createHocuspocusDocumentTransport({
     for (const listener of listeners) listener(state);
   }
 
-  function publishAccess(access: DocumentSessionAccess): void {
-    if (access === currentAccess) return;
+  function publishAccess(
+    access: DocumentSessionAccess,
+    closedWhy: AccessChangedWhy | null = null,
+  ): void {
+    if (access === currentAccess && closedWhy === currentClosedWhy) return;
     currentAccess = access;
-    for (const listener of accessListeners) listener(access);
+    currentClosedWhy = closedWhy;
+    for (const listener of accessListeners) listener(access, closedWhy);
   }
 
   function publishTerminal(state: DocumentSessionConnectionState): void {
@@ -388,7 +399,7 @@ export function createHocuspocusDocumentTransport({
     if (isAccessChangedClose(event) || event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
       // Frozen until the reconnect's authenticated message names the new scope;
       // a removed document has no reconnect, so it stays read-only.
-      publishAccess("read");
+      publishAccess("read", accessChangedWhy(event) ?? null);
     }
     const state = classifyDocumentTransportClose(event);
     if (state) {
@@ -407,8 +418,9 @@ export function createHocuspocusDocumentTransport({
 
   function handleStateless({ payload }: onStatelessParameters): void {
     const message = parseYjsStatelessMessage(payload);
-    if (message?.type !== "change_event") return;
-    for (const listener of changeEventListeners) listener(message);
+    if (message?.type === "read_only") publishAccess("read", message.why);
+    else if (message?.type === "change_event")
+      for (const listener of changeEventListeners) listener(message);
   }
 
   // Store local bytes before the provider's listener sends and publishes its
@@ -471,7 +483,7 @@ export function createHocuspocusDocumentTransport({
     },
     subscribeAccess(listener) {
       accessListeners.add(listener);
-      if (currentAccess) listener(currentAccess);
+      if (currentAccess) listener(currentAccess, currentClosedWhy);
       return () => {
         accessListeners.delete(listener);
       };

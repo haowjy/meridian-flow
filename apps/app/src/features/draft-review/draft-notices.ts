@@ -41,8 +41,12 @@ export function returnedOf(answer: {
   settled?: readonly Settlement[];
 }): RestoreReturned | null {
   const returned = answer.settled?.find((one) => one.rule === "returned");
-  if (returned?.rule !== "returned") return null;
-  return returned.why === "chat_frozen" ? "chat-in-trash" : "work-closed";
+  return returned?.rule === "returned" ? returnedWhy(returned.why) : null;
+}
+
+/** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
+export function returnedWhy(why: string): RestoreReturned {
+  return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
 }
 
 export type DiscardUndoAnswer = {

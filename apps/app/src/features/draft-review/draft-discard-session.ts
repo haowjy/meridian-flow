@@ -13,7 +13,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
-import type { DiscardUndo, RestoreReturned } from "./draft-notices";
+import { type DiscardUndo, returnedWhy } from "./draft-notices";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -35,8 +35,6 @@ export function startDraftDiscardSession(input: {
    * not reviewing this draft, so nothing is written.
    */
   history: Editor | "notice" | null;
-  /** Why the screen reads the owner as closed: a read-only room returns the Discard for it. */
-  closed: RestoreReturned | null;
   onNoticeEnd?: () => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
@@ -86,7 +84,8 @@ export function startDraftDiscardSession(input: {
       return { kind: "blocked" };
     // A read room drops the writer's text: a revert written here would show, then never land.
     if (binding.session.getSnapshot().access === "read") {
-      if (input.closed) return { kind: "returned", why: input.closed };
+      const { closedWhy } = binding.session.getSnapshot();
+      if (closedWhy) return { kind: "returned", why: returnedWhy(closedWhy) };
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }

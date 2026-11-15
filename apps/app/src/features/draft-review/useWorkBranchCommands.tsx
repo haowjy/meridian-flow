@@ -79,12 +79,6 @@ export function useWorkBranchCommands({
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
-  // What a command the owner's room can't take says: the Work, or the trashed chat, is closed.
-  const closed: RestoreReturned | null = frozen
-    ? "chat-in-trash"
-    : work && workLifecycleState(work) !== "active"
-      ? "work-closed"
-      : null;
   const notices = owner.notices;
   const removal = useOptionalContextRemovalCoordinator();
   const treeLists = useOptionalTreeLists();
@@ -560,7 +554,7 @@ export function useWorkBranchCommands({
       if (target.kind === "tree" || (target.kind === "groups" && target.tree)) {
         if (!item?.tree) return none(blocked());
         const commandId = crypto.randomUUID();
-        const discarded = owner.discardItem(ref(draft), item, target, history, commandId, closed);
+        const discarded = owner.discardItem(ref(draft), item, target, history, commandId);
         if (!discarded) return none(blocked());
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
@@ -577,7 +571,7 @@ export function useWorkBranchCommands({
           part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
         };
       }
-      const discarded = owner.discard(ref(draft), target, history, closed);
+      const discarded = owner.discard(ref(draft), target, history);
       if (!discarded) return none(blocked());
       void discarded.outcome.then(() => refresh([draft.documentId]));
       const start = { sent: true, outcome: discarded.outcome };

@@ -20,7 +20,7 @@ function scriptedTransport() {
   let outbox: Uint8Array | null = new Uint8Array([1]);
   let state: DocumentSessionConnectionState = { kind: "connected" };
   const statusListeners = new Set<(s: DocumentSessionConnectionState) => void>();
-  const accessListeners = new Set<(a: DocumentSessionAccess) => void>();
+  const accessListeners = new Set<(a: DocumentSessionAccess, why: null) => void>();
   const ackListeners = new Set<(acknowledged: boolean) => void>();
   const script = {
     destroyed: false,
@@ -33,7 +33,7 @@ function scriptedTransport() {
       for (const listener of statusListeners) listener(next);
     },
     setAccess(access: DocumentSessionAccess) {
-      for (const listener of accessListeners) listener(access);
+      for (const listener of accessListeners) listener(access, null);
     },
   };
   const provider: DocumentSessionTransportProvider = {

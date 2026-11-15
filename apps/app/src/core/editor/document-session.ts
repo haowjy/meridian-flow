@@ -40,6 +40,7 @@
  * saved" after an outage.
  */
 import {
+  type AccessChangedWhy,
   type ChangeEventWsMessage,
   parseYjsRoomName,
   WS_CLOSE,
@@ -106,6 +107,8 @@ export type DocumentSessionSnapshot = {
    * (local-first).
    */
   access: DocumentSessionAccess | null;
+  /** Why a read-only room is read-only, when its owner is closed (a Work archived or deleted, a chat in Trash). */
+  closedWhy: AccessChangedWhy | null;
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
@@ -198,7 +201,9 @@ export type DocumentSessionTransportProvider = {
    * Every scope the server names for this room, and on subscribe the one it
    * last named. Nothing until it names one: a transport never invents a scope.
    */
-  subscribeAccess?: (listener: (access: DocumentSessionAccess) => void) => () => void;
+  subscribeAccess?: (
+    listener: (access: DocumentSessionAccess, closedWhy: AccessChangedWhy | null) => void,
+  ) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
@@ -273,6 +278,7 @@ export class DocumentSession {
    */
   private transportState: DocumentSessionConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
+  private closedWhy: AccessChangedWhy | null = null;
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private schemaRepairWitness: SchemaRepairWitness | null = null;
@@ -397,9 +403,10 @@ export class DocumentSession {
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeTransportAccess =
-      this.transportProvider.subscribeAccess?.((access) => {
-        if (access === this.access) return;
+      this.transportProvider.subscribeAccess?.((access, closedWhy) => {
+        if (access === this.access && closedWhy === this.closedWhy) return;
         this.access = access;
+        this.closedWhy = closedWhy;
         this.emit();
       }) ?? null;
     this.unsubscribeChangeEvents =
@@ -572,6 +579,7 @@ export class DocumentSession {
       serverHasLocalChanges: this.serverHasLocalChanges,
       connectionState: this.transportState,
       access: this.access,
+      closedWhy: this.closedWhy,
       localPersistenceSynced: this.localPersistenceSynced,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
