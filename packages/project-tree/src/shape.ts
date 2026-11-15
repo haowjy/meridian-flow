@@ -1,3 +1,4 @@
+import { entrySegment, idHex, readSegment } from "@meridian/contracts/protocol";
 import { generateKeyBetween } from "fractional-indexing";
 import { freeName } from "./names.js";
 import { isSourceRoot, type NodeKind } from "./record.js";
@@ -26,6 +27,31 @@ export function descendantsOf(projection: TreeProjection, node: string): string[
   return out;
 }
 
+/** A node's path segment: its name, and a later twin's `~` suffix (rule 14). */
+export function segmentOf(node: Pick<TreeNode, "name" | "suffix">): string {
+  return entrySegment(node.name, node.suffix);
+}
+
+/**
+ * The shown child a path segment reaches: with a `~` suffix, the one whose id's hex digits begin
+ * with it (the lowest id, should a suffix shortened by hand fit two), and the name in front is not
+ * checked; without one, the child of that name that carries no suffix.
+ */
+export function childAtSegment(
+  children: readonly TreeNode[],
+  segment: string,
+): TreeNode | undefined {
+  const { suffix } = readSegment(segment);
+  let found: TreeNode | undefined;
+  for (const child of children) {
+    if (child.trashed) continue;
+    if (suffix === undefined) {
+      if (child.suffix === undefined && child.name === segment) return child;
+    } else if (idHex(child.id).startsWith(suffix) && (!found || child.id < found.id)) found = child;
+  }
+  return found;
+}
+
 /**
  * The name a record should carry for a node going under `parent`: `name`, or its numbered copy
  * when a shown sibling already has it, as the author's own copy shows it (design, section 4).
@@ -41,7 +67,7 @@ export function nameAmong(
   const taken = new Set(
     childrenOf(projection, parent)
       .filter((node) => node.id !== moving)
-      .map((node) => node.displayName),
+      .map((node) => node.name),
   );
   return freeName(kind, name, taken);
 }
@@ -83,7 +109,7 @@ export function fingerprint(projection: TreeProjection, marks = true): string {
   const walk = (parent: string, depth: number) => {
     for (const child of childrenOf(projection, parent, true)) {
       lines.push(
-        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${marks && child.keptByChild ? "!" : ""}${marks && child.keptByPending ? "?" : ""}${child.kind[0]}:${child.displayName}#${child.id}@${child.rank}`,
+        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${marks && child.keptByChild ? "!" : ""}${marks && child.keptByPending ? "?" : ""}${child.kind[0]}:${segmentOf(child)}#${child.id}@${child.rank}`,
       );
       walk(child.id, depth + 1);
     }
@@ -115,12 +141,12 @@ export function treeViolations(
       problems.push(`shown ${node.id} under trashed ${parent.id}`);
   }
   for (const [parent, kids] of projection.children) {
-    const names = new Set<string>();
+    const segments = new Set<string>();
     for (const node of kids) {
       if (node.trashed) continue;
-      if (names.has(node.displayName))
-        problems.push(`duplicate name ${node.displayName} in ${parent}`);
-      names.add(node.displayName);
+      const segment = segmentOf(node);
+      if (segments.has(segment)) problems.push(`duplicate segment ${segment} in ${parent}`);
+      segments.add(segment);
     }
   }
   if (expectedNodes)

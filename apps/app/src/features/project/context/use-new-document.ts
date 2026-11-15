@@ -1,4 +1,4 @@
-import { newId } from "@meridian/project-tree";
+import { newId, segmentOf } from "@meridian/project-tree";
 import { useCallback } from "react";
 import { useProjectContextSources } from "@/client/query/useContextSources";
 import { sourceFor, useTreeList } from "@/client/query/useProjectTree";
@@ -38,10 +38,9 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
-    // The replay's name for the node, at the top of Unfiled: its address.
-    const name =
-      session?.replay(version.view, version.pendingText).nodes.get(documentId)?.displayName ??
-      made.name;
+    // The replay's segment for the node, at the top of Unfiled: its address.
+    const shown = session?.replay(version.view, version.pendingText).nodes.get(documentId);
+    const name = shown ? segmentOf(shown) : made.name;
     const document = {
       documentId,
       contextLocation: { scheme: "unfiled" as const, path: `/${name}` },

@@ -131,7 +131,7 @@ export class TreeWriter {
         let kids = siblings.get(input.parent);
         if (!kids) {
           kids = childrenOf(projection, input.parent).map((node) => ({
-            name: node.displayName,
+            name: node.name,
             rank: node.rank,
           }));
           siblings.set(input.parent, kids);
@@ -197,7 +197,7 @@ export class TreeWriter {
       if (!kids) {
         kids = childrenOf(projection, parent).map((child) => ({
           id: child.id,
-          name: child.displayName,
+          name: child.name,
           rank: child.rank,
         }));
         siblings.set(parent, kids);

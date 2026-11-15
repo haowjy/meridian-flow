@@ -280,10 +280,6 @@ export function documentToolFailureCopy(tool: ToolView): string {
       if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
     }
-    case "ambiguous_path":
-      return name
-        ? t`Two of this Work's drafts share the path ${name}. Review the drafts to keep one.`
-        : t`Two of this Work's drafts share this path. Review the drafts to keep one.`;
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`

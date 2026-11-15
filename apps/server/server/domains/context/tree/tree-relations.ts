@@ -26,6 +26,8 @@ const visibleDocumentShape = pgTable("visible_documents", {
   contextSourceId: uuid("context_source_id").$type<ContextSourceId>().notNull(),
   folderId: uuid("folder_id").$type<FolderId>(),
   name: text("name").notNull(),
+  /** The path segment: the name, and a later twin's `~` suffix. */
+  segment: text("segment").notNull(),
   extension: text("extension").notNull(),
   fileType: text("file_type").notNull(),
   storageUrl: text("storage_url"),
@@ -44,6 +46,7 @@ const visibleFolderShape = pgTable("visible_folders", {
   contextSourceId: uuid("context_source_id").$type<ContextSourceId>().notNull(),
   parentId: uuid("parent_id").$type<FolderId>(),
   name: text("name").notNull(),
+  segment: text("segment").notNull(),
   rank: text("rank").notNull(),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
 });
@@ -76,7 +79,7 @@ const documentTail = sql.raw(
 );
 
 function documentsQuery(view: TreeView): SQL {
-  const live = sql`SELECT t.id, t.context_source_id, t.parent_id AS folder_id, t.name, t.extension,
+  const live = sql`SELECT t.id, t.context_source_id, t.parent_id AS folder_id, t.name, t.segment, t.extension,
       t.file_type, ${documentTail}, t.rank, t.location_version
     FROM tree_nodes t JOIN documents d ON d.id = t.id
     WHERE t.kind = 'document' AND t.trash_record IS NULL`;
@@ -85,7 +88,7 @@ function documentsQuery(view: TreeView): SQL {
   return sql`${live} AND NOT EXISTS (
       SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
     UNION ALL
-    SELECT b.id, b.context_source_id, b.parent_id AS folder_id, b.name, b.extension,
+    SELECT b.id, b.context_source_id, b.parent_id AS folder_id, b.name, b.segment, b.extension,
       b.file_type, ${documentTail}, b.rank, coalesce(t.location_version, 0)
     FROM branch_tree_nodes b JOIN documents d ON d.id = b.id
       LEFT JOIN tree_nodes t ON t.id = b.id
@@ -93,14 +96,14 @@ function documentsQuery(view: TreeView): SQL {
 }
 
 function foldersQuery(view: TreeView): SQL {
-  const live = sql`SELECT t.id, t.context_source_id, t.parent_id, t.name, t.rank, t.location_version
+  const live = sql`SELECT t.id, t.context_source_id, t.parent_id, t.name, t.segment, t.rank, t.location_version
     FROM tree_nodes t WHERE t.kind = 'folder' AND t.trash_record IS NULL`;
   if (view.kind === "live") return live;
   const branch = sql`${view.branchId}::uuid`;
   return sql`${live} AND NOT EXISTS (
       SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
     UNION ALL
-    SELECT b.id, b.context_source_id, b.parent_id, b.name, b.rank, coalesce(t.location_version, 0)
+    SELECT b.id, b.context_source_id, b.parent_id, b.name, b.segment, b.rank, coalesce(t.location_version, 0)
     FROM branch_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
     WHERE b.branch_id = ${branch} AND b.kind = 'folder' AND NOT b.deleted`;
 }

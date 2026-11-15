@@ -1,3 +1,4 @@
+import { readSegment } from "@meridian/contracts/protocol";
 /**
  * context-location — pure helpers describing the phone shell's drilled-in
  * context location (Files › scheme › folders › file) for the top-bar
@@ -25,7 +26,7 @@ export type FolderCrumb = {
 export function folderAncestry(folder: string | null): FolderCrumb[] {
   const names = (folder ?? "").split("/").filter(Boolean);
   return names.map((name, index) => ({
-    name,
+    name: readSegment(name).name,
     path: `/${names.slice(0, index + 1).join("/")}`,
   }));
 }

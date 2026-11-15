@@ -6,7 +6,12 @@
  * model could not have known about the nodes it touched. Nothing here writes before it has
  * decided: a refusal makes no record.
  */
-import { canonicalLeaf, type Filetype, storedFilename } from "@meridian/contracts/protocol";
+import {
+  canonicalLeaf,
+  type Filetype,
+  readSegment,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import {
   type Actor,
   childrenOf,
@@ -16,6 +21,7 @@ import {
   LIVE,
   listRecords,
   type NodeKind,
+  segmentOf,
   sourceIdOf,
   sourceRoot,
   type TrashEntry,
@@ -230,6 +236,9 @@ const uriOfPath = (cx: Context, path: string) => {
   return at ? `${at.area}${at.rest}` : path;
 };
 
+/** The name a written segment gives: a twin's `~id` is not part of it. */
+const nameOf = (segment: string) => readSegment(segment).name;
+
 /** What others did to a node since the model last saw its name and place, as the one line each. */
 function noteChanges(
   cx: Context,
@@ -240,19 +249,19 @@ function noteChanges(
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
   const setters = projection.setters.get(node.id);
-  const nowName = node.displayName;
+  // Names, not segments: a twin's suffix that came or went since is no rename or move.
   const sameName =
-    nowName === writtenLeaf ||
-    nowName === (written.folder ? writtenLeaf : canonicalLeaf(writtenLeaf));
+    node.name === nameOf(writtenLeaf) ||
+    node.name === nameOf(written.folder ? writtenLeaf : canonicalLeaf(writtenLeaf));
   if (!sameName)
     noteConcurrent(
       cx,
       actorOfRecord(cx, setters?.label?.id),
-      `renamed: ${writtenUri} → ${nowName}`,
+      `renamed: ${writtenUri} → ${segmentOf(node)}`,
     );
-  const writtenParent = written.segments.slice(0, -1);
+  const writtenParent = written.segments.slice(0, -1).map(nameOf);
   const nowParent = pathNames(projection, node.id).slice(0, -1);
-  if (writtenParent.join("/") !== nowParent.join("/"))
+  if (writtenParent.join("/") !== nowParent.map(nameOf).join("/"))
     noteConcurrent(
       cx,
       actorOfRecord(cx, setters?.place?.id),
@@ -280,7 +289,7 @@ function ensureFolders(
     });
     remember(cx, created.id, created.node);
     const shown = cx.scope.writer.view(cx.scope.view).nodes.get(created.node);
-    filled.push({ folder: parent, name: shown?.displayName ?? name, node: created.node });
+    filled.push({ folder: parent, name: shown ? segmentOf(shown) : name, node: created.node });
     parent = created.node;
   }
   return parent;
@@ -490,16 +499,16 @@ function moveOne(
   const typedFrom = source.segments.at(-1) ?? "";
   const keepsName =
     toLeaf === undefined ||
-    (source.folder ? typedFrom : canonicalLeaf(typedFrom)) ===
-      (to.folder ? toLeaf : canonicalLeaf(toLeaf));
+    nameOf(source.folder ? typedFrom : canonicalLeaf(typedFrom)) ===
+      nameOf(to.folder ? toLeaf : canonicalLeaf(toLeaf));
   let name: string | undefined;
   let filetype: Filetype | null = null;
   if (!keepsName && toLeaf !== undefined) {
-    if (node.kind === "folder") name = toLeaf;
+    if (node.kind === "folder") name = nameOf(toLeaf);
     else {
-      const ext = node.displayName.lastIndexOf(".");
-      const parsed = storedFilename(toLeaf, {
-        extension: ext > 0 ? node.displayName.slice(ext + 1).toLowerCase() : "",
+      const ext = node.name.lastIndexOf(".");
+      const parsed = storedFilename(nameOf(toLeaf), {
+        extension: ext > 0 ? node.name.slice(ext + 1).toLowerCase() : "",
         editable: node.kind === "document",
         filetype: node.filetype,
       });
@@ -528,7 +537,7 @@ function moveOne(
   const folder = makeDestination(cx, destination, filled);
   const { index, atEnd } = indexFor(cx, folder, node.id, position);
   const oldParent = node.parent;
-  const oldName = node.displayName;
+  const oldName = segmentOf(node);
   if (!sameParent || position || node.trashed) {
     const record = scope.writer.move(scope.view, scope.actor, node.id, folder, index);
     remember(cx, record.id, node.id);
@@ -546,7 +555,7 @@ function moveOne(
   const final = scope.writer.view(scope.view);
   const landedNode = final.nodes.get(node.id) as TreeNode;
   emptied.push({ folder: oldParent, name: oldName });
-  filled.push({ folder: landedNode.parent, name: landedNode.displayName, node: node.id });
+  filled.push({ folder: landedNode.parent, name: segmentOf(landedNode), node: node.id });
   const landedAt = nodeUri(cx, final, landedNode);
   const kept = keptTrashed(cx, projection, destination.trashed);
   return {
@@ -943,7 +952,7 @@ export function runTreeCommand(
         taken: took,
         arrived: [],
         touched: [],
-        delta: changeDelta([{ folder: node.parent, name: node.displayName }], []),
+        delta: changeDelta([{ folder: node.parent, name: segmentOf(node) }], []),
       });
     }
 
@@ -1007,7 +1016,7 @@ export function runTreeCommand(
         touched: [],
         delta: changeDelta(
           [],
-          [{ folder: landedNode.parent, name: landedNode.displayName, node: node.id }],
+          [{ folder: landedNode.parent, name: segmentOf(landedNode), node: node.id }],
         ),
       });
     }
@@ -1080,11 +1089,11 @@ export function runTreeUndo(
       names: [
         ...touched.flatMap((t): Array<[string, string, string | null]> => {
           const was = before.nodes.get(t.node);
-          return was ? [[was.parent, was.displayName, null]] : [];
+          return was ? [[was.parent, segmentOf(was), null]] : [];
         }),
         ...touched.flatMap((t): Array<[string, string, string | null]> => {
           const now = after.nodes.get(t.node);
-          return now && !now.trashed ? [[now.parent, now.displayName, t.node]] : [];
+          return now && !now.trashed ? [[now.parent, segmentOf(now), t.node]] : [];
         }),
       ],
     },
@@ -1101,7 +1110,7 @@ function touchedNodes(cx: Context, before: TreeProjection, after: TreeProjection
       was &&
       !named.has(id) &&
       was.parent === node.parent &&
-      was.displayName === node.displayName &&
+      segmentOf(was) === segmentOf(node) &&
       was.trashed === node.trashed
     )
       continue;

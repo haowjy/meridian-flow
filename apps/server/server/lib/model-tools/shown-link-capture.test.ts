@@ -272,6 +272,7 @@ async function harness(
       folderId: null,
       name: names[id] as string,
       extension: "",
+      segment: names[id] as string,
       fileType: null,
       filetype: "markdown" as const,
       storageUrl: null,

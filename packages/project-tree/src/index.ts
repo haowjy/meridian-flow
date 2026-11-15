@@ -68,7 +68,15 @@ export {
   pendingCreates,
   projectedRows,
 } from "./rows.js";
-export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";
+export {
+  childAtSegment,
+  childrenOf,
+  descendantsOf,
+  fingerprint,
+  rankAt,
+  segmentOf,
+  treeViolations,
+} from "./shape.js";
 export {
   compareCatalogSiblings,
   compareDefaultSiblings,

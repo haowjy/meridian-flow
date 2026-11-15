@@ -7343,12 +7343,12 @@ msgid "Turns {0}"
 msgstr "轮次 {0}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
-msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草稿并保留其中一个。"
+#~ msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+#~ msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草稿并保留其中一个。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
-msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
+#~ msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
+#~ msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"

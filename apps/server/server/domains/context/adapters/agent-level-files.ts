@@ -7,6 +7,7 @@
 
 import type { UserId } from "@meridian/contracts";
 import { type AgentsLevel, agentsRootOf } from "@meridian/contracts/agents";
+import { entrySegment, readSegment } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database/schema";
@@ -56,13 +57,15 @@ async function candidatesOf(
   for (let next = pending.pop(); next; next = pending.pop()) {
     const { folderId, prefix } = next;
     for (const folder of await store.listFolders(LIVE_TREE, folderId)) {
-      pending.push({ folderId: folder.id, prefix: `${prefix}${folder.name}/` });
+      pending.push({ folderId: folder.id, prefix: `${prefix}${folder.segment}/` });
     }
     for (const document of await store.listDocuments(LIVE_TREE, folderId)) {
       const name = document.extension ? `${document.name}.${document.extension}` : document.name;
       const prose =
         document.fileType === null && document.filetype !== "source" && !document.extension;
-      const path = `${prefix}${prose ? `${name}.md` : name}`;
+      // A later twin is its own file: its `~id` ends the path, so Mars reads it as no package file.
+      const { suffix } = readSegment(document.segment);
+      const path = `${prefix}${entrySegment(prose ? `${name}.md` : name, suffix)}`;
       byPath.set(path, [...(byPath.get(path) ?? []), { document, path }]);
     }
   }

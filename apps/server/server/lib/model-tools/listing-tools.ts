@@ -6,6 +6,7 @@
  */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { segmentOf } from "@meridian/project-tree";
 import type { ContextFileEntry } from "../../domains/context/index.js";
 import { listingDelta } from "../../domains/context/tree/names-shown.js";
 import {
@@ -146,7 +147,7 @@ async function listedNames(
         ),
       );
       return listingDelta(scope.writer.view(scope.view), folder, (node) =>
-        listed.has(node.displayName),
+        listed.has(segmentOf(node)),
       );
     },
   });

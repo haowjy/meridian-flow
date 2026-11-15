@@ -175,6 +175,7 @@ describe("the tree list store (postgres)", () => {
     parentId: row.parentId,
     sourceId: row.sourceId,
     name: row.name,
+    suffix: row.suffix,
     extension: row.extension,
     filetype: row.filetype,
     rank: row.rank,
@@ -191,6 +192,7 @@ describe("the tree list store (postgres)", () => {
         parentId: row.parentId,
         sourceId: row.contextSourceId,
         name: row.name,
+        suffix: row.suffix,
         extension: row.extension,
         filetype: row.fileType,
         rank: row.rank,
@@ -204,12 +206,14 @@ describe("the tree list store (postgres)", () => {
         parentId: row.parentId,
         sourceId: row.contextSourceId,
         name: row.name,
+        suffix: row.suffix,
         extension: row.extension,
         filetype: row.fileType,
         rank: row.rank,
         deleted: row.deleted,
       }),
       existsOnlyInDraft: row.existsOnlyInDraft,
+      changed: row.changed,
     }));
     return { live: byId(live), branch: byId(branch) };
   }
@@ -223,6 +227,7 @@ describe("the tree list store (postgres)", () => {
         [...replayed.branch.values()].map((row) => ({
           ...pick(row),
           existsOnlyInDraft: row.existsOnlyInDraft,
+          changed: row.changed,
         })),
       ),
     );

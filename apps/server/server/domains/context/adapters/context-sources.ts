@@ -104,10 +104,10 @@ export function createDrizzleContextSources(db: Database): ContextSources {
     async liveDocuments(sourceId) {
       const rows = await currentDrizzleDb(db).execute<{ id: DocumentId; path: string }>(sql`
         WITH RECURSIVE placed AS (
-          SELECT id, kind, name::text AS path FROM tree_nodes
+          SELECT id, kind, segment::text AS path FROM tree_nodes
           WHERE context_source_id = ${sourceId} AND parent_id IS NULL AND trash_record IS NULL
           UNION ALL
-          SELECT t.id, t.kind, p.path || '/' || t.name FROM tree_nodes t
+          SELECT t.id, t.kind, p.path || '/' || t.segment FROM tree_nodes t
           JOIN placed p ON t.parent_id = p.id WHERE t.trash_record IS NULL
         )
         SELECT id, path FROM placed WHERE kind = 'document'`);

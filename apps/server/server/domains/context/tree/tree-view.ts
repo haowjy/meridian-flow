@@ -1,12 +1,13 @@
 /**
  * The tree view: which documents and folders a reader sees, live or in one Work's tree.
  * Readers select from `visibleDocuments(view)` / `visibleFolders(view)` (`tree-relations.ts`)
- * or ask the `TreeReader`. A node's filename is its `name`, extension included; a document
- * the view does not place (in Trash, deleted in the Work, or in no view) is never visible,
+ * or ask the `TreeReader`. A node's filename is its `name`, extension included, and two siblings
+ * may share it: a path walks `segment`s, the later twin's carrying `~` and the start of its id
+ * (project-tree rule 14), so every path reaches one node. A document the view does not place (in Trash, deleted in the Work, or in no view) is never visible,
  * and one in no view has no place at all.
  */
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import { addressCandidates } from "@meridian/contracts/protocol";
+import { addressCandidates, readSegment } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { inArray, type SQL, sql } from "drizzle-orm";
@@ -55,6 +56,8 @@ export type VisibleDocument = {
   folderId: FolderId | null;
   /** The filename as the view shows it, extension included: never render it with an extension. */
   name: string;
+  /** The path segment: the name, and a later twin's `~` suffix. */
+  segment: string;
   /** What follows the last dot of the name, lowercased; empty when the name has none. */
   extension: string;
   fileType: string;
@@ -75,6 +78,7 @@ export type VisibleFolder = {
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
   name: string;
+  segment: string;
   rank: string;
   locationVersion: bigint;
   path: string;
@@ -83,11 +87,7 @@ export type VisibleFolder = {
 /** A source-relative path to resolve. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string };
 
-export type PathResolution<N> =
-  | { kind: "found"; node: N }
-  /** Two or more visible nodes at one path in this view. */
-  | { kind: "ambiguous"; nodes: readonly [NodeRef, NodeRef, ...NodeRef[]] }
-  | { kind: "not_found" };
+export type PathResolution<N> = { kind: "found"; node: N } | { kind: "not_found" };
 
 export type TreeNode =
   | { kind: "document"; document: VisibleDocument }
@@ -125,8 +125,8 @@ export interface TreeReader {
    */
   resolveDocumentAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
-   * One step of a walk: what this view shows named `filename` directly under `parentId`
-   * (null: the source root).
+   * One step of a walk: what this view shows at the segment `filename` directly under
+   * `parentId` (null: the source root).
    */
   childAt(
     view: TreeView,
@@ -180,13 +180,15 @@ type NodeSlot = {
   key: number;
   sourceId: ContextSourceId;
   parentId: FolderId | null;
-  name: string;
+  segment: string;
 };
 
 /**
- * The ids of the nodes of one kind that the view shows at each slot (source, parent, name).
- * One statement for any number of slots: each is a `LATERAL ... OFFSET 0` probe of the
- * relation, which keeps a Work's union planned as index probes (see the store page).
+ * The id of the node of one kind that the view shows at each slot (source, parent, segment):
+ * a plain segment matches a node's segment, one with a `~` suffix the child whose id begins with
+ * it, the lowest id if two do (`childAtSegment` in `@meridian/project-tree` reads the same).
+ * One statement for any number of slots: each is a `LATERAL` probe of the relation, which keeps
+ * a Work's union planned as index probes (see the store page).
  */
 async function nodesAt(
   db: DrizzleDb,
@@ -197,27 +199,38 @@ async function nodesAt(
   if (slots.length === 0) return [];
   const relation = kind === "document" ? visibleDocumentsSql(view) : visibleFoldersSql(view);
   const parentColumn = sql.raw(kind === "document" ? "r.folder_id" : "r.parent_id");
-  const probe = (rooted: boolean): SQL | null => {
-    const mine = slots.filter((slot) => (slot.parentId === null) === rooted);
+  const probe = (rooted: boolean, byId: boolean): SQL | null => {
+    const mine = slots.filter(
+      (slot) =>
+        (slot.parentId === null) === rooted &&
+        (readSegment(slot.segment).suffix !== undefined) === byId,
+    );
     if (mine.length === 0) return null;
     const values = sql.join(
-      mine.map((slot) =>
-        rooted
-          ? sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${slot.name}::text)`
-          : sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${slot.name}::text, ${slot.parentId}::uuid)`,
-      ),
+      mine.map((slot) => {
+        const match = byId ? (readSegment(slot.segment).suffix as string) : slot.segment;
+        return rooted
+          ? sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${match}::text)`
+          : sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${match}::text, ${slot.parentId}::uuid)`;
+      }),
       sql`, `,
     );
     return sql`SELECT s.key, n.id::text AS id
-      FROM (VALUES ${values}) AS s(${sql.raw(rooted ? "key, source_id, name" : "key, source_id, name, parent_id")})
+      FROM (VALUES ${values}) AS s(${sql.raw(rooted ? "key, source_id, match" : "key, source_id, match, parent_id")})
       CROSS JOIN LATERAL (
         SELECT r.id FROM ${relation} r
-        WHERE r.context_source_id = s.source_id AND r.name = s.name
+        WHERE r.context_source_id = s.source_id
+          AND ${byId ? sql`replace(r.id::text, '-', '') LIKE s.match || '%'` : sql`r.segment = s.match`}
           AND ${rooted ? sql`${parentColumn} IS NULL` : sql`${parentColumn} = s.parent_id`}
-        OFFSET 0
+        ORDER BY r.id LIMIT 1
       ) n`;
   };
-  const statements = [probe(true), probe(false)].filter((each): each is SQL => each !== null);
+  const statements = [
+    probe(true, false),
+    probe(false, false),
+    probe(true, true),
+    probe(false, true),
+  ].filter((each): each is SQL => each !== null);
   return [
     ...(await db.execute<{ key: number; id: string }>(sql.join(statements, sql` UNION ALL `))),
   ];
@@ -257,6 +270,7 @@ export function createTreeReader(db: Database): TreeReader {
       contextSourceId: row.contextSourceId,
       folderId: row.folderId,
       name: row.name,
+      segment: row.segment,
       extension: row.extension,
       fileType: row.fileType,
       storageUrl: row.storageUrl,
@@ -272,9 +286,10 @@ export function createTreeReader(db: Database): TreeReader {
   }
 
   /**
-   * The one meaning of "same path": the ids of every node the view shows at each source-relative
-   * path, walked one level at a time through the view's folders by name (one statement per
-   * depth for the whole batch, then one for the documents and one for the folders).
+   * The one meaning of "same path": the id of the node the view shows at each source-relative
+   * path, walked one level at a time through the view's folders by segment (one statement per
+   * depth for the whole batch, then one for the documents and one for the folders). A segment
+   * reaches one node of each kind at most; of a document and a folder the lowest id answers.
    */
   async function pathOccupants(
     view: TreeView,
@@ -303,7 +318,7 @@ export function createTreeReader(db: Database): TreeReader {
                 owner,
                 sourceId: walk.sourceId,
                 parentId,
-                name: walk.dirs[level] as string,
+                segment: walk.dirs[level] as string,
               }))
             : [],
         ),
@@ -319,7 +334,7 @@ export function createTreeReader(db: Database): TreeReader {
           owner,
           sourceId: walk.sourceId,
           parentId,
-          name: walk.filename,
+          segment: walk.filename,
         })),
       ),
     );
@@ -336,31 +351,18 @@ export function createTreeReader(db: Database): TreeReader {
 
   async function resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
     const [found] = await pathOccupants(view, [at]);
-    if (!found || found.documents.length + found.folders.length === 0) {
-      return { kind: "not_found" };
+    const ref = found && lowest(found.documents, found.folders);
+    if (!found || !ref) return { kind: "not_found" };
+    if (ref.kind === "document") {
+      const [row] = await documentRows(view, (vd) => inArray(vd.id, [ref.id]));
+      return row
+        ? { kind: "found", node: { kind: "document", document: toDocument(row, found.path) } }
+        : { kind: "not_found" };
     }
-    const documents =
-      found.documents.length === 0
-        ? []
-        : await documentRows(view, (vd) => inArray(vd.id, found.documents));
-    const folders =
-      found.folders.length === 0
-        ? []
-        : await folderRows(view, (vf) => inArray(vf.id, found.folders));
-    const nodes: TreeNode[] = [
-      ...documents.map((row) => ({
-        kind: "document" as const,
-        document: toDocument(row, found.path),
-      })),
-      ...folders.map((row) => ({
-        kind: "folder" as const,
-        folder: { ...row, path: found.path },
-      })),
-    ];
-    const [first, second, ...rest] = nodes;
-    if (!first) return { kind: "not_found" };
-    if (!second) return { kind: "found", node: first };
-    return { kind: "ambiguous", nodes: [refOf(first), refOf(second), ...rest.map(refOf)] };
+    const [row] = await folderRows(view, (vf) => inArray(vf.id, [ref.id]));
+    return row
+      ? { kind: "found", node: { kind: "folder", folder: { ...row, path: found.path } } }
+      : { kind: "not_found" };
   }
 
   async function childAt(
@@ -372,19 +374,17 @@ export function createTreeReader(db: Database): TreeReader {
     },
   ): Promise<PathResolution<NodeRef>> {
     const slot = [
-      { key: 0, sourceId: at.contextSourceId, parentId: at.parentId, name: at.filename },
+      { key: 0, sourceId: at.contextSourceId, parentId: at.parentId, segment: at.filename },
     ];
     const [documentHits, folderHits] = await Promise.all([
       nodesAt(tx(), view, "document", slot),
       nodesAt(tx(), view, "folder", slot),
     ]);
-    const [first, second, ...rest] = [
-      ...documentHits.map((hit): NodeRef => ({ kind: "document", id: hit.id as DocumentId })),
-      ...folderHits.map((hit): NodeRef => ({ kind: "folder", id: hit.id as FolderId })),
-    ];
-    if (!first) return { kind: "not_found" };
-    if (!second) return { kind: "found", node: first };
-    return { kind: "ambiguous", nodes: [first, second, ...rest] };
+    const ref = lowest(
+      documentHits.map((hit) => hit.id as DocumentId),
+      folderHits.map((hit) => hit.id as FolderId),
+    );
+    return ref ? { kind: "found", node: ref } : { kind: "not_found" };
   }
 
   async function findById(view: TreeView, id: DocumentId) {
@@ -393,7 +393,7 @@ export function createTreeReader(db: Database): TreeReader {
     if (!row) return { kind: "not_found" } as const;
     const chains = await loadFolderChains(tx(), [row.folderId], view);
     const path =
-      chainPrefix(row.folderId === null ? [] : (chains.get(row.folderId) ?? [])) + row.name;
+      chainPrefix(row.folderId === null ? [] : (chains.get(row.folderId) ?? [])) + row.segment;
     return { kind: "found", document: toDocument(row, path) } as const;
   }
 
@@ -412,14 +412,14 @@ export function createTreeReader(db: Database): TreeReader {
       id: string;
       context_source_id: string;
       parent_id: string | null;
-      name: string;
+      segment: string;
       file_type: string;
       deleted: boolean;
       exists_only_in_draft: boolean;
       in_trash: boolean;
     }>(sql`
       SELECT n.id::text AS id, n.context_source_id::text AS context_source_id,
-        n.parent_id::text AS parent_id, n.name, n.file_type, n.deleted, n.exists_only_in_draft,
+        n.parent_id::text AS parent_id, n.segment, n.file_type, n.deleted, n.exists_only_in_draft,
         lt.trash_record IS NOT NULL AS in_trash
       FROM ${placedNodesSql(view)} n LEFT JOIN tree_nodes lt ON lt.id = n.id
       WHERE n.kind = 'document' AND n.id IN (${sql.join(
@@ -432,7 +432,7 @@ export function createTreeReader(db: Database): TreeReader {
         documentId: row.id as DocumentId,
         contextSourceId: row.context_source_id as ContextSourceId,
         folderId: row.parent_id as FolderId | null,
-        name: row.name,
+        segment: row.segment,
         fileType: row.file_type,
       } satisfies NodeLocation,
       deleted: row.deleted,
@@ -557,8 +557,7 @@ export function createTreeReader(db: Database): TreeReader {
     const slash = at.path.lastIndexOf("/");
     for (const leaf of addressCandidates(at.path.slice(slash + 1))) {
       const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
-      if (found.kind === "ambiguous" || (found.kind === "found" && found.node.kind === "document"))
-        return found;
+      if (found.kind === "found" && found.node.kind === "document") return found;
     }
     return { kind: "not_found" };
   }
@@ -585,12 +584,12 @@ function positions(asks: readonly (Omit<NodeSlot, "key"> & { owner: number })[])
   const slots: NodeSlot[] = [];
   const owners = new Map<number, number[]>();
   for (const ask of asks) {
-    const identity = JSON.stringify([ask.sourceId, ask.parentId, ask.name]);
+    const identity = JSON.stringify([ask.sourceId, ask.parentId, ask.segment]);
     let key = keys.get(identity);
     if (key === undefined) {
       key = slots.length;
       keys.set(identity, key);
-      slots.push({ key, sourceId: ask.sourceId, parentId: ask.parentId, name: ask.name });
+      slots.push({ key, sourceId: ask.sourceId, parentId: ask.parentId, segment: ask.segment });
     }
     owners.set(ask.owner, [...(owners.get(ask.owner) ?? []), key]);
   }
@@ -601,6 +600,14 @@ function positions(asks: readonly (Omit<NodeSlot, "key"> & { owner: number })[])
       return [...new Set(hits.filter((hit) => asked.has(hit.key)).map((hit) => hit.id))];
     },
   };
+}
+
+/** Of the document and the folder a segment reaches, the one with the lowest id. */
+function lowest(documents: readonly DocumentId[], folders: readonly FolderId[]): NodeRef | null {
+  const [document] = documents;
+  const [folder] = folders;
+  if (document && (!folder || document < folder)) return { kind: "document", id: document };
+  return folder ? { kind: "folder", id: folder } : null;
 }
 
 /** The identity of a node a reader found. */

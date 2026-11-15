@@ -13,8 +13,10 @@ import { contextRootUri } from "@meridian/contracts/context-uri";
 import {
   type ContextEntryRef,
   documentFilenameAt,
+  entrySegment,
   filenameForBinary,
   type ParsedDocumentFilename,
+  readSegment,
   renderFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
@@ -398,14 +400,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return resolved;
   }
 
-  /** The dispatch with its leaf rendered from the parts the name codec or the caller decided. */
+  /**
+   * The dispatch with its leaf rendered from the parts the name codec or the caller decided. A
+   * twin's `~id` stays on the leaf: it names which of the documents of that name is meant.
+   */
   function withFilename<T extends Dispatch, P extends { name: string; extension: string }>(
     dispatch: T,
     parts: P,
   ): T & { filename: P } {
+    const segments = dispatch.path.split("/");
+    const { suffix } = readSegment(segments.at(-1) ?? "");
     const path = [
-      ...dispatch.path.split("/").slice(0, -1),
-      renderFilename(parts.name, parts.extension),
+      ...segments.slice(0, -1),
+      entrySegment(renderFilename(parts.name, parts.extension), suffix),
     ].join("/");
     return {
       ...dispatch,

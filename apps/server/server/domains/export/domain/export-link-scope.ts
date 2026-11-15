@@ -10,7 +10,7 @@ import {
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
 import { addressScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { parseDocumentFilename, readSegment } from "@meridian/contracts/protocol";
 import type { DocumentLinkScope } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
 
@@ -106,7 +106,7 @@ export class ExportLinkScope implements DocumentLinkScope {
     const parsed = parseContextUri(uri);
     if (!parsed.ok) return undefined;
     const path = parsed.value.path.split("/");
-    const filename = parseDocumentFilename(path.pop() ?? "");
+    const filename = parseDocumentFilename(readSegment(path.pop() ?? "").name);
     if (!filename.ok) return undefined;
     const root = uri.slice(0, -parsed.value.path.length);
     let prefix = this.roots.get(root)?.split("/");
@@ -131,7 +131,7 @@ export class ExportLinkScope implements DocumentLinkScope {
     const { name, extension, filetype } = filename.value;
     return [
       ...prefix,
-      ...path.slice(matched),
+      ...path.slice(matched).map((segment) => readSegment(segment).name),
       `${name}.${filetype === "markdown" ? "md" : extension}`,
     ].join("/");
   }
