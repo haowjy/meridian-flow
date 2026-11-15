@@ -297,7 +297,7 @@ identity in anchors or holds.
 
 ## Interaction mechanics and recovery
 
-`patches/prosemirror-view@1.41.9.patch` adds `selectionForDOM`, an optional native
+`patches/prosemirror-view@1.42.9.patch` adds `selectionForDOM`, an optional native
 caret projection used by object physics. ProseMirror owns placing the caret and
 recording it with its DOM observer; application code must not write a second
 native selection or call the private observer. Native placement and orientation
