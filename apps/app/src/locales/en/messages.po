@@ -1048,6 +1048,10 @@ msgstr "A folder can't be copied into itself."
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "A newer version is saved"
+msgstr "A newer version is saved"
+
 #: src/core/editor/file-drop/file-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
@@ -1168,6 +1172,10 @@ msgstr "Adding {name} to {area}"
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr "Agent"
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "Agent definition"
+msgstr "Agent definition"
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "Agent name"
@@ -2441,6 +2449,10 @@ msgstr "Couldn't load the conversation this fork continues."
 msgid "Couldn't load the preview."
 msgstr "Couldn't load the preview."
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+#~ msgid "Couldn't load this definition."
+#~ msgstr "Couldn't load this definition."
+
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
 msgstr "Couldn't load this document."
@@ -2449,7 +2461,7 @@ msgstr "Couldn't load this document."
 msgid "Couldn't load this draft."
 msgstr "Couldn't load this draft."
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -4140,7 +4152,7 @@ msgstr "Loading Work…"
 msgid "Loading Works…"
 msgstr "Loading Works…"
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6385,6 +6397,10 @@ msgstr "That's more files than one import can hold. Import fewer at a time."
 msgid "That's more than one import can hold. Import less at a time."
 msgstr "That's more than one import can hold. Import less at a time."
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "The Agent definition this chat runs, read-only."
+msgstr "The Agent definition this chat runs, read-only."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI can't view this file."
 msgstr "The AI can't view this file."
@@ -7532,6 +7548,10 @@ msgstr "Versions"
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
 msgstr "View projects"
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "View this chat's Agent definition"
+msgstr "View this chat's Agent definition"
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "Viewing chat resources is not available yet. These files remain available to your chats and AI tools."

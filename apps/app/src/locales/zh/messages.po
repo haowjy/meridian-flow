@@ -1048,6 +1048,10 @@ msgstr ""
 msgid "A folder named {name} already exists in this location."
 msgstr ""
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "A newer version is saved"
+msgstr ""
+
 #: src/core/editor/file-drop/file-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
@@ -1167,6 +1171,10 @@ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
+msgstr ""
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "Agent definition"
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -2441,6 +2449,10 @@ msgstr ""
 msgid "Couldn't load the preview."
 msgstr ""
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+#~ msgid "Couldn't load this definition."
+#~ msgstr ""
+
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
 msgstr ""
@@ -2449,7 +2461,7 @@ msgstr ""
 msgid "Couldn't load this draft."
 msgstr ""
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -4140,7 +4152,7 @@ msgstr ""
 msgid "Loading Works…"
 msgstr ""
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6385,6 +6397,10 @@ msgstr ""
 msgid "That's more than one import can hold. Import less at a time."
 msgstr ""
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "The Agent definition this chat runs, read-only."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI can't view this file."
 msgstr ""
@@ -7531,6 +7547,10 @@ msgstr ""
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
+msgstr ""
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "View this chat's Agent definition"
 msgstr ""
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx

@@ -156,7 +156,7 @@ export function createRuntimeHarness(
       "",
       boundThreads,
     ),
-    agentCatalog: { resolveSkill: async () => undefined },
+    agentCatalog: { resolveSkill: async () => undefined, refreshBinding: async () => undefined },
     toolRegistry,
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     rateSource: registryTokenRateSource(),
