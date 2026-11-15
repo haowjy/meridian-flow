@@ -78,6 +78,7 @@ export {
   lastSettlements,
   listRecords,
   pendingRecords,
+  readRecords,
   replayView,
   settlementsOf,
   type View,

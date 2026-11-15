@@ -1,6 +1,13 @@
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { admit, isListRoot, recordsOf, type TreeRecord, TreeWriter } from "@meridian/project-tree";
+import {
+  admit,
+  isListRoot,
+  readRecords,
+  recordsOf,
+  type TreeRecord,
+  TreeWriter,
+} from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -380,8 +387,8 @@ export function createDrizzleTreeListStore(deps: {
           return {
             held: each,
             before: mark.before,
-            added: all.slice(mark.ops),
-            earlier: all.slice(0, mark.ops),
+            added: readRecords(all.slice(mark.ops)),
+            earlier: readRecords(all.slice(0, mark.ops)),
           };
         });
         // Settlements gain nothing in the records: the state is what says a copy changed.

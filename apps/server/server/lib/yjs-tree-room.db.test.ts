@@ -20,7 +20,12 @@ import {
   TreeWriter,
 } from "@meridian/project-tree";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
-import { connectTreeList, type ListCopy, type ListSyncState } from "@meridian/tree-list-sync";
+import {
+  connectTreeList,
+  type ListCopy,
+  type ListSyncState,
+  type Replacement,
+} from "@meridian/tree-list-sync";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -68,9 +73,9 @@ function memoryCopy(listId: string | null = null): ListCopy & { doc: Y.Doc } {
     async setListId(id: string) {
       list = id;
     },
-    async replace(records: readonly TreeRecord[], id: string | null) {
-      carried = records;
-      list = id;
+    async replace(replacement: Replacement) {
+      carried = replacement.kind === "recover" ? replacement.carried : [];
+      list = replacement.listId;
       copy.doc = make();
     },
     carried: () => carried,
@@ -279,10 +284,14 @@ describe("a tree list's room (postgres)", () => {
     await until(async () => (await journalRecords(server)).length === 1, "first admitted");
 
     // A `purge` is the server's alone: it sits between two honest records, each its own update.
-    const forged: TreeRecord = {
-      ...(recordsOf(tab.copy.doc).get(0) as TreeRecord),
+    const first = recordsOf(tab.copy.doc).get(0) as TreeRecord;
+    const forged = {
       id: crypto.randomUUID(),
+      node: first.node,
+      actor,
+      draft: null,
       type: "purge",
+      delete: first.id,
     } as TreeRecord;
     const brokenDoc = tab.copy.doc;
     createDocument(tab.copy, "second");
@@ -391,12 +400,42 @@ describe("a tree list's room (postgres)", () => {
       if (failures-- > 0) throw new Error("the database dropped the connection");
       return admit(input);
     };
+    const doc = tab.copy.doc;
     createDocument(tab.copy, "after a fault");
     await until(() => tab.states.includes("offline"), "the socket closed with a real code");
+    // Written while the record the server lost is not back: it stands beside that record.
+    createDocument(tab.copy, "while reconnecting");
     await until(
-      async () => (await journalRecords(server)).length === 1 && tab.state === "synced",
-      "reconnected and the record admitted",
+      async () => (await journalRecords(server)).length === 2 && tab.state === "synced",
+      "reconnected and both records admitted",
     );
+    expect(tab.copy.doc).toBe(doc);
+  });
+
+  it("takes a reloaded copy's earlier session and a write made during the handshake, with no fault", async () => {
+    const server = serverProcess();
+    // An earlier session wrote two records it never sent; the reload is a new Yjs client id.
+    const earlier = memoryCopy();
+    createDocument(earlier, "earlier one");
+    createDocument(earlier, "earlier two");
+    const reloaded = memoryCopy();
+    Y.applyUpdate(reloaded.doc, Y.encodeStateAsUpdate(earlier.doc));
+    const doc = reloaded.doc;
+
+    const tab = browser(server, { copy: reloaded });
+    // Before the server has answered: the provider would send it ahead of the SyncStep2.
+    createDocument(tab.copy, "during the handshake");
+    await until(
+      async () => (await journalRecords(server)).length === 3 && tab.state === "synced",
+      "all three records admitted",
+    );
+    expect(tab.copy.doc).toBe(doc);
+    expect(tab.states).not.toContain("broken");
+    expect((await db.select().from(treeNodes)).map((row) => row.name).sort()).toEqual([
+      "during the handshake",
+      "earlier one",
+      "earlier two",
+    ]);
   });
 
   it("closes the connections of a project that is deleted", async () => {

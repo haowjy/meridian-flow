@@ -14,7 +14,12 @@ import {
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import { connectTreeList, type ListCopy, type ListSyncState } from "@meridian/tree-list-sync";
+import {
+  connectTreeList,
+  type ListCopy,
+  type ListSyncState,
+  type Replacement,
+} from "@meridian/tree-list-sync";
 import * as Y from "yjs";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -45,10 +50,10 @@ class MemoryCopy implements ListCopy {
   async setListId(id: string) {
     this.list = id;
   }
-  async replace(carried: readonly TreeRecord[], listId: string | null) {
+  async replace(replacement: Replacement) {
     this.doc = newDoc();
-    this.held = carried;
-    this.list = listId;
+    this.held = replacement.kind === "recover" ? replacement.carried : [];
+    this.list = replacement.listId;
   }
   carried() {
     return this.held;

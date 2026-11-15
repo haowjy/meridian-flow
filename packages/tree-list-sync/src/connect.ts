@@ -6,9 +6,9 @@
  */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { listChangedId, WS_CLOSE } from "@meridian/contracts/protocol";
-import { clientMayWrite, recordsOf, type TreeRecord } from "@meridian/project-tree";
+import { clientMayWrite, listRecords, recordsOf, type TreeRecord } from "@meridian/project-tree";
 import type * as Y from "yjs";
-import { PART_RECORDS, splitSyncFrame } from "./parts.js";
+import { PART_RECORDS, splitSyncFrame, syncFrameKind } from "./parts.js";
 
 /**
  * - `connecting`: no answer yet from the server this connection; the copy shows what it has
@@ -28,6 +28,15 @@ export type ListSyncState =
   | "unauthenticated"
   | "denied";
 
+/**
+ * Why a copy starts over. `recover`: the server broke the connection for what the copy holds; the
+ * records it held are carried into the fresh copy of the same list. `discard`: the copy is of
+ * another list, whose records name nodes that are gone; nothing is carried.
+ */
+export type Replacement =
+  | { kind: "recover"; carried: readonly TreeRecord[]; listId: string | null }
+  | { kind: "discard"; listId: string };
+
 /** The browser's copy of one list. */
 export type ListCopy = {
   readonly doc: Y.Doc;
@@ -36,22 +45,51 @@ export type ListCopy = {
   /** Remembers which list the copy is of. */
   setListId(id: string): Promise<void>;
   /**
-   * Starts a copy over: `doc` becomes an empty document under a new Yjs client id, of the list
-   * `listId` (null: not known yet). `carried` (the records the old copy held) is stored with it,
-   * durably, before the old copy is retired.
+   * Starts a copy over: `doc` becomes an empty document under a new Yjs client id, of the
+   * replacement's list (null: not known yet). A recovery's `carried` is stored with it, durably,
+   * before the old copy is retired.
    */
-  replace(carried: readonly TreeRecord[], listId: string | null): Promise<void>;
+  replace(replacement: Replacement): Promise<void>;
   /** The records a replacement carried that the new copy has not appended again. */
   carried(): readonly TreeRecord[];
   /** Forgets the carried records, once the copy holds all it needs of them. */
   settleCarried(): Promise<void>;
 };
 
-/** Sends what the server lacks from this copy in parts, never as one update. */
-class PartsWebsocket extends HocuspocusProviderWebsocket {
+/**
+ * Sends what the server lacks from this copy in parts, never as one update, and holds every live
+ * update of a connection until the copy's SyncStep2 has gone. The provider sends an edit the
+ * moment the socket opens, before the SyncStep2 that carries what the server lacks (the records of
+ * an earlier session, or of an update lost in flight): the server would meet a record beside one
+ * it does not hold yet. The SyncStep2 already holds every update made before it; the held ones go
+ * after it, so the provider's count of unconfirmed updates still reaches zero.
+ */
+class ListWebsocket extends HocuspocusProviderWebsocket {
+  private stepTwoSent = false;
+  private held: Uint8Array[] = [];
+
+  constructor(configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0]) {
+    super(configuration);
+    // Registered before the provider's own `open`, which starts the next handshake.
+    const reset = () => {
+      this.stepTwoSent = false;
+      this.held = [];
+    };
+    this.on("open", reset);
+    this.on("disconnect", reset);
+  }
+
   override send(message: unknown) {
     if (!(message instanceof Uint8Array)) return super.send(message);
+    const kind = syncFrameKind(message);
+    if (kind === "update" && !this.stepTwoSent) {
+      this.held.push(message);
+      return;
+    }
     for (const part of splitSyncFrame(message, PART_RECORDS)) super.send(part);
+    if (kind !== "step2" || this.stepTwoSent) return;
+    this.stepTwoSent = true;
+    for (const update of this.held.splice(0)) this.send(update);
   }
 }
 
@@ -66,7 +104,7 @@ export function connectTreeList(options: {
   onDropped?(records: readonly TreeRecord[]): void;
 }) {
   const { copy } = options;
-  let socket: PartsWebsocket | null = null;
+  let socket: ListWebsocket | null = null;
   let provider: HocuspocusProvider | null = null;
   let destroyed = false;
   let state: ListSyncState = "connecting";
@@ -93,39 +131,37 @@ export function connectTreeList(options: {
     if (recovering) return publish("broken");
     recovering = true;
     publish("connecting");
-    await copy.replace(recordsOf(copy.doc).toArray(), copy.listId());
+    await copy.replace({ kind: "recover", carried: listRecords(copy.doc), listId: copy.listId() });
     if (!destroyed) start();
   }
 
   /** The stored copy is of another list: its records name nodes that are gone, so none are carried. */
   async function loadFromNothing(listId: string) {
     stop();
+    recovering = appended = false;
     publish("connecting");
-    await copy.replace([], listId);
+    await copy.replace({ kind: "discard", listId });
     if (!destroyed) start();
   }
 
   /**
    * Appends what the fresh copy lacks of the records the broken one held, once: a record a client
    * of this build never writes is dropped, and the rest go in one update. Stored until it has.
+   * With nothing to append, the recovery is over at the sync.
    */
   async function appendAgain() {
-    const carried = copy.carried();
-    if (carried.length === 0) return;
-    const held = new Set(
-      recordsOf(copy.doc)
-        .toArray()
-        .map((record) => record.id),
-    );
-    const missing = carried.filter((record) => !held.has(record.id));
+    const held = new Set(listRecords(copy.doc).map((record) => record.id));
+    const missing = copy.carried().filter((record) => !held.has(record.id));
     const send = missing.filter(clientMayWrite);
-    const dropped = missing.filter((record) => !send.includes(record));
+    const dropped = missing.filter((record) => !clientMayWrite(record));
     if (send.length > 0) {
       appended = true;
       copy.doc.transact(() => recordsOf(copy.doc).push(send));
-    } else recovering = false;
+    }
+    // Nothing of the recovery is waiting on the server: the next fault is a new one.
+    recovering &&= appended;
     if (dropped.length > 0) options.onDropped?.(dropped);
-    await copy.settleCarried();
+    if (copy.carried().length > 0) await copy.settleCarried();
   }
 
   function end(next: "unauthenticated" | "denied") {
@@ -135,7 +171,7 @@ export function connectTreeList(options: {
 
   function start() {
     const doc = copy.doc;
-    socket = new PartsWebsocket({
+    socket = new ListWebsocket({
       url: options.url(copy.listId()),
       WebSocketPolyfill: options.WebSocketPolyfill,
       autoConnect: false,

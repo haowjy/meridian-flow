@@ -7,7 +7,8 @@
  *
  * A document the writer just made exists only in this device's copy of the list until the list
  * syncs, and the server answers a record for it 404. So the POST waits until the project's list
- * has synced; one that never gets there (the account closed, or no access) is never posted.
+ * has synced; one that never gets there (the account closed, no access, or a copy that broke) is
+ * never posted.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,7 +42,8 @@ function whenListSynced(
     const check = () => {
       const { status } = held.session.getSnapshot();
       if (status === "synced") finish(true);
-      else if (status === "denied" || status === "unauthenticated") finish(false);
+      else if (status === "denied" || status === "unauthenticated" || status === "broken")
+        finish(false);
     };
     signal.addEventListener("abort", onAbort, { once: true });
     stop = held.session.subscribe(check);

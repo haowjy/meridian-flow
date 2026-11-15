@@ -144,6 +144,30 @@ function encodePart(part: Map<number, Run[]>): Uint8Array {
   return encoder.toUint8Array();
 }
 
+type SyncFrame = { name: string; outer: number; inner: number; payload: Uint8Array };
+
+/** The frame's sync header and update, when it is a sync frame that carries one. */
+function readSyncFrame(frame: Uint8Array): SyncFrame | null {
+  try {
+    const decoder = createDecoder(frame);
+    const name = readVarString(decoder);
+    const outer = readVarUint(decoder);
+    if (outer !== OUTER_SYNC && outer !== OUTER_SYNC_REPLY) return null;
+    const inner = readVarUint(decoder);
+    if (inner !== INNER_STEP2 && inner !== INNER_UPDATE) return null;
+    return { name, outer, inner, payload: readVarUint8Array(decoder) };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a client frame is its SyncStep2, a live update, or neither. */
+export function syncFrameKind(frame: Uint8Array): "step2" | "update" | null {
+  const read = readSyncFrame(frame);
+  if (read === null) return null;
+  return read.inner === INNER_STEP2 ? "step2" : "update";
+}
+
 /**
  * A Hocuspocus frame as the frames to send in its place: a big sync update (or SyncStep2) goes
  * as updates in parts, the last one in the original's shape so the receiver's own bookkeeping
@@ -151,21 +175,9 @@ function encodePart(part: Map<number, Run[]>): Uint8Array {
  */
 export function splitSyncFrame(frame: Uint8Array, maxItems: number): Uint8Array[] {
   if (frame.byteLength < MIN_BYTES_TO_SPLIT) return [frame];
-  let name: string;
-  let outer: number;
-  let inner: number;
-  let payload: Uint8Array;
-  try {
-    const decoder = createDecoder(frame);
-    name = readVarString(decoder);
-    outer = readVarUint(decoder);
-    if (outer !== OUTER_SYNC && outer !== OUTER_SYNC_REPLY) return [frame];
-    inner = readVarUint(decoder);
-    if (inner !== INNER_STEP2 && inner !== INNER_UPDATE) return [frame];
-    payload = readVarUint8Array(decoder);
-  } catch {
-    return [frame];
-  }
+  const read = readSyncFrame(frame);
+  if (read === null) return [frame];
+  const { name, outer, inner, payload } = read;
   const parts = splitUpdate(payload, maxItems);
   if (parts.length === 1) return [frame];
   return parts.map((part, at) => {

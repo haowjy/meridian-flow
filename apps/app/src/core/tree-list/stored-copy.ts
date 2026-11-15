@@ -9,8 +9,14 @@
  * `carried` key) before the old generation goes, so they survive whichever tab owns the connection
  * next, until the new copy holds them. The `list` key is the id of the server's list the copy is of.
  */
-import { recordsOf, type TreeRecord } from "@meridian/project-tree";
-import type { ListCopy } from "@meridian/tree-list-sync";
+import {
+  clientMayWrite,
+  listRecords,
+  readRecords,
+  recordsOf,
+  type TreeRecord,
+} from "@meridian/project-tree";
+import type { ListCopy, Replacement } from "@meridian/tree-list-sync";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
@@ -31,8 +37,12 @@ const LIST_KEY = "list";
 type Body =
   | { kind: "update"; update: Uint8Array }
   | { kind: "hello"; stateVector: Uint8Array; reply: boolean }
-  /** The owner replaced the copy: every tab starts over on this generation, keeping what the owner did not carry. */
-  | { kind: "reset"; carriedIds: string[] }
+  /**
+   * The owner replaced the copy: every tab starts over on this generation, of `listId`. After a
+   * recovery a tab writes again what it made that the owner did not carry; after a discard
+   * (another list) nothing.
+   */
+  | { kind: "reset"; listId: string | null; carriedIds: string[] | "discard" }
   | { kind: "settled" }
   | { kind: "status"; status: string };
 type Message = Body & { generation: number };
@@ -100,8 +110,11 @@ export class StoredListCopy implements ListCopy {
           if (fresh.listId !== null) custom.put(fresh.listId, LIST_KEY);
         });
       } else {
-        this.carriedRecords = ((await persistence.get(CARRIED_KEY)) as TreeRecord[]) ?? [];
-        this.storedListId = ((await persistence.get(LIST_KEY)) as string | undefined) ?? null;
+        // Written by another tab, perhaps of an older build: read like any list value.
+        const carried: unknown = await persistence.get(CARRIED_KEY);
+        this.carriedRecords = Array.isArray(carried) ? readRecords(carried) : [];
+        const listId: unknown = await persistence.get(LIST_KEY);
+        this.storedListId = typeof listId === "string" ? listId : null;
       }
       this.post({ kind: "hello", stateVector: Y.encodeStateVector(doc), reply: false });
     });
@@ -190,28 +203,35 @@ export class StoredListCopy implements ListCopy {
    * generation holds what the old copy carries, and only then is the old one retired. The swap
    * itself is immediate, so a record written meanwhile goes into the copy that survives.
    */
-  async replace(carried: readonly TreeRecord[], listId: string | null) {
+  async replace(replacement: Replacement) {
     const old = { persistence: this.persistence, generation: this.generation };
-    this.open(newDoc(), old.generation + 1, { carried, listId });
+    const carried = replacement.kind === "recover" ? replacement.carried : [];
+    this.open(newDoc(), old.generation + 1, { carried, listId: replacement.listId });
     await this.loaded;
     localStorage.setItem(this.generationKey, String(this.generation));
-    this.post({ kind: "reset", carriedIds: carried.map((record) => record.id) });
+    this.post({
+      kind: "reset",
+      listId: replacement.listId,
+      carriedIds: replacement.kind === "recover" ? carried.map((record) => record.id) : "discard",
+    });
     await old.persistence.destroy();
     // Blocked until every tab has let go of the old copy, then done.
     indexedDB.deleteDatabase(this.databaseName(old.generation));
   }
 
   /**
-   * The owner replaced the copy. This tab starts over on the new generation at once, and writes
-   * again what it made that the owner had not yet carried.
+   * The owner replaced the copy. This tab starts over on the new generation at once. After a
+   * recovery it writes again what it made that the owner had not yet carried, through the filter
+   * the owner's own append uses; after a discard the old list's records go with it.
    */
   private followReset(message: Message & { kind: "reset" }) {
-    const carried = new Set(message.carriedIds);
-    const late = recordsOf(this.doc)
-      .toArray()
-      .filter((record) => !carried.has(record.id));
+    const carried = message.carriedIds === "discard" ? null : new Set(message.carriedIds);
+    const late = carried
+      ? listRecords(this.doc).filter((record) => !carried.has(record.id) && clientMayWrite(record))
+      : [];
     const retired = this.persistence;
     this.open(newDoc(), message.generation);
+    this.storedListId = message.listId;
     if (late.length > 0) this.doc.transact(() => recordsOf(this.doc).push(late));
     void retired.destroy();
   }

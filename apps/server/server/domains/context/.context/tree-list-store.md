@@ -138,7 +138,10 @@ What a change must keep:
   reconnect on) before Hocuspocus applies anything; what reaches the document is
   `onCommitted`'s update, so a turned-away copy is in no room. One connection's messages are
   admitted in the order they arrive (`TreeRoomConnection.queue`), so a part is never admitted
-  before the one it follows.
+  before the one it follows; a message whose turn comes after a refusal finds the connection
+  shut and reaches no store. The guard trusts that order: the client sends no live update before
+  its SyncStep2 (`packages/tree-list-sync`, "The handshake"), so an honest reconnect never
+  sends a record beside one the server lacks.
 - **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
   row. A commit applies its update to the process's own room at once; the `NOTIFY` it sent in
   its transaction then reaches every process (this one too), whose room reads the rows past

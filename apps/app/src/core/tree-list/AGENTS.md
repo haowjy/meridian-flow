@@ -16,8 +16,10 @@ through `client/query/useProjectTree.ts` (a source's tree from the replay) and w
   `carried` and `list` keys), and only then retires the old one once every tab has let go
   (`StoredListCopy.replace`):
   deleting the database a peer has just opened blocks forever, and retiring the old one first
-  loses the records no one has appended yet. Every message between tabs names its generation; a
-  follower that hears the reset rewrites what it wrote that the owner did not carry.
+  loses the records no one has appended yet. Every message between tabs names its generation. The
+  reset names the list and how the copy started over: after a recovery a follower rewrites what it
+  wrote that the owner did not carry (through `clientMayWrite`); after a discard (another list) it
+  rewrites nothing, or the old list's records would come back into the new one.
 - Resolve an address only when the status is `synced`, `offline` or `broken`; `waiting` is
   "waiting for the list", not "not there". The snapshot's `version` counts changes to the copy:
   `session.replay(view)` is a view's replay (live by default, or live then a Work's pending records) once per version, shared by every reader. The registry's `onDropped` is told the records a

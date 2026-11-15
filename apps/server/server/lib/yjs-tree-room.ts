@@ -54,7 +54,7 @@ export type TreeRoomConnection = {
   /** Admissions available now (negative while the connection owes its wait), and when counted. */
   tokens: number;
   countedAt: number;
-  /** Set by the first refusal: Hocuspocus still runs the messages queued behind it, and none may reach the store. */
+  /** Set by the first refusal: Hocuspocus still runs the messages queued behind it, and none may reach the store (each turn checks it). */
   refusal: RoomClose | null;
   /** The connection's last admission: the next waits for it, so parts reach the store in the order they were sent. */
   queue: Promise<unknown>;
@@ -223,6 +223,8 @@ export function createTreeRooms(services: TreeRoomServices) {
       const { tree } = input;
       if (tree.refusal) throw new TreeRoomRefusal(tree.refusal);
       const turn = tree.queue.then(async () => {
+        // A message queued before an earlier one faulted finds the connection shut when its turn comes.
+        if (tree.refusal) return { cause: new TreeRoomRefusal(tree.refusal) };
         try {
           await admitMessage(tree, input.type, input.payload);
           return null;

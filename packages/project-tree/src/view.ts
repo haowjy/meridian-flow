@@ -30,14 +30,17 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
   return new Map([...lastSettlements(doc)].map(([id, settle]) => [id, settle.to]));
 }
 
-/** The list's records in order, each read through `readStored`. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
+/** The values that are records, each read through `readStored`, in order. */
+export function readRecords(values: readonly unknown[]): TreeRecord[] {
+  return values.flatMap((value) => {
+    const read = readStored(value);
+    return read.ok ? [read.record] : [];
+  });
+}
+
+/** The list's records in order. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
 export function listRecords(doc: Y.Doc): TreeRecord[] {
-  return recordsOf(doc)
-    .toArray()
-    .flatMap((value) => {
-      const read = readStored(value);
-      return read.ok ? [read.record] : [];
-    });
+  return readRecords(recordsOf(doc).toArray());
 }
 
 const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
