@@ -226,13 +226,20 @@ const CodeDocument = Node.create({
 
   // The only block is the whole document, so no selection belongs at the doc
   // level: Ctrl+A would make paste split into paragraphs (a code-only doc keeps
-  // the first) and typing or Delete replace the block, dropping its language
-  // and id. Select-all becomes the text of the block instead.
+  // the first) and typing replace the block, dropping its language and id.
+  // Select-all becomes the text of the block instead. Tiptap's clearDocument
+  // resets the block to defaults when the whole text goes; the server sets
+  // `language` only at create, so every edit opts out of it.
   addProseMirrorPlugins() {
     return [
       new Plugin({
+        filterTransaction(transaction) {
+          transaction.setMeta("preventClearDocument", true);
+          return true;
+        },
         appendTransaction(_trs, _old, state) {
-          if (state.selection.$from.depth > 0) return null;
+          const { $from, $to } = state.selection;
+          if ($from.depth > 0 && $to.depth > 0) return null;
           return state.tr.setSelection(
             TextSelection.create(state.doc, 1, state.doc.content.size - 1),
           );
