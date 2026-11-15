@@ -145,9 +145,7 @@ export async function readTurnFolderTargets(
 /**
  * The documents the turn's tree receipts changed (a folder has no document), live or in the
  * branch the change was drafted in, whether or not the card's Undo has since taken them back.
- * Merged into `known` where a text edit already lists the same destination. Only the turn's own
- * writes count, as for folders: a Redo's receipt names where the Redo landed, not where the
- * turn wrote.
+ * Merged into `known` where a text edit already lists the same destination.
  */
 export async function readTurnTreeTargets(
   db: Pick<Database, "selectDistinct">,
@@ -175,6 +173,7 @@ export async function readTurnTreeTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
+        // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
         eq(treeEditReceipts.kind, "write"),
       ),
     );

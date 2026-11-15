@@ -432,15 +432,6 @@ export class DraftCommandOwner {
     return this.renamedDocuments.get(JSON.stringify([projectId, documentId])) ?? null;
   }
 
-  /**
-   * A turn's Undo or Redo took these documents back: no Apply's words about them hold any more,
-   * on its rows or on a document's band.
-   */
-  takenBack(projectId: string, documentIds: readonly string[]): void {
-    for (const documentId of documentIds) this.forgetApplyFacts(projectId, documentId);
-    this.notices.forgetApplied(new Set(documentIds));
-  }
-
   forgetApplyFacts(projectId: string, documentId: string): void {
     const key = JSON.stringify([projectId, documentId]);
     const restored = this.restoredDocuments.delete(key);

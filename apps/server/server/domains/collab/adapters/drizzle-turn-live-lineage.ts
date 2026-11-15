@@ -61,6 +61,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           and(
             eq(treeEditReceipts.threadId, threadId),
             eq(treeEditReceipts.turnId, turnId),
+            // The standing change, a Redo included: a line says where the document is now, and
+            // `readTurnTreeTargets` alone says where the turn wrote.
             ne(treeEditReceipts.kind, "undo"),
             // The turn didn't leave a change its own Undo took back.
             notExists(
