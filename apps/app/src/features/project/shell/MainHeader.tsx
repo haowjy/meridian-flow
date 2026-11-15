@@ -7,6 +7,7 @@ import { t } from "@lingui/core/macro";
 import { History, MessageSquare, PenLine } from "lucide-react";
 import type { ReactNode } from "react";
 import type { MainTab, MainTabKind } from "@/client/project-shell/main-tabs";
+import { NotSentYet } from "@/components/app/NotSentYet";
 import { role } from "@/components/ui/roles";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,12 @@ export function MainHeader({
           />
         </div>
       }
-      actions={actions}
+      actions={
+        <>
+          <NotSentYet />
+          {actions}
+        </>
+      }
     />
   );
 }

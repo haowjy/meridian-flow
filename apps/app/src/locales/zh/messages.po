@@ -466,8 +466,8 @@ msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "{days, plural, one {# day left} other {# days left}}"
-msgstr ""
+#~ msgid "{days, plural, one {# day left} other {# days left}}"
+#~ msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
@@ -634,6 +634,10 @@ msgstr "{name} 从草稿中放弃了{title}。"
 msgid "{name} discarded this document from the draft."
 msgstr "{name} 从草稿中放弃了这份文档。"
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "{name} is gone from Trash."
+msgstr ""
+
 #: src/lib/upload-limit.ts
 msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
 msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
@@ -647,8 +651,8 @@ msgid "{name} was deleted before this change could be made."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr ""
+#~ msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
@@ -1616,6 +1620,10 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#: src/components/app/NotSentYet.tsx
+msgid "Changes are waiting to be sent. They go out on their own."
+msgstr ""
+
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr ""
@@ -2426,8 +2434,16 @@ msgstr ""
 msgid "Couldn't run that skill"
 msgstr ""
 
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change on this device, so it wasn’t sent."
+msgstr ""
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
+msgstr ""
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t save this change to the Work"
 msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
@@ -2767,7 +2783,11 @@ msgid "workReceipt.deleted"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Deleted Work can be restored."
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -3337,6 +3357,10 @@ msgstr ""
 msgid "Gone for good: this document was emptied from Trash."
 msgstr ""
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Gone from Trash."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr ""
@@ -3706,8 +3730,8 @@ msgid "Left"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Less than a day left"
-msgstr ""
+#~ msgid "Less than a day left"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
@@ -4370,6 +4394,14 @@ msgstr ""
 msgid "Not run before compaction"
 msgstr ""
 
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent"
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent, signed out"
+msgstr ""
+
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Not sent: {0}"
@@ -4931,8 +4963,8 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkTitles.tsx
-msgid "Rename Work: {0}"
-msgstr ""
+#~ msgid "Rename Work: {0}"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Renamed"
@@ -5178,8 +5210,8 @@ msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Saving…"
-msgstr ""
+#~ msgid "Saving…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"
@@ -6519,8 +6551,8 @@ msgid "This Work no longer exists."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr ""
+#~ msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr ""
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work was deleted. Restore it to edit."
@@ -6999,6 +7031,10 @@ msgstr ""
 msgid "Work couldn’t load"
 msgstr ""
 
+#: src/components/app/WorkClosedChip.tsx
+msgid "Work was closed"
+msgstr ""
+
 #: src/features/chat/SpawnReportCard.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Working"
@@ -7083,6 +7119,10 @@ msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr ""
 
 #: src/features/import/ImportProvider.tsx
