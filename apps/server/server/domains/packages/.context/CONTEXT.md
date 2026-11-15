@@ -24,10 +24,14 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   `warning` or `info` doesn't: it is shown and the Agent runs as its file reads (a restriction
   `prepare` dropped, `field.restriction-lost`, is a warning). `compilePackage` holds the table.
   Mars's levels are used as it grades them (Error: won't load; Warning: written but won't take
-  effect; Info: nothing lost, never shown). Flow changes one: `skill-ref.external` (a skill ref
-  the package doesn't ship, in a package with no `[dependencies]`) is an Error, because Flow never
-  resolves a ref across levels. Two Agents with one `name` are both Errors
-  (`definition.duplicate-name`, Mars's), so both are out until one is renamed. Flow adds only what
+  effect; Info: nothing lost) except two that Flow changes: `skill-ref.external` (a skill ref the
+  package doesn't ship, in a package with no `[dependencies]`) is an Error, because Flow never
+  resolves a ref across levels; `definition.duplicate-name` (two Agents with one `name`) is a
+  Warning, because both work and the picker tells them apart by file. A retired restricting key
+  (`permission`, `disallowed-tools`, `field.retired`) says the Agent "is not limited by it".
+  Info is kept in the package status and stored rows (the editor marks a key "not in effect" from
+  `field.unknown`); `shownFindings` (`@meridian/contracts/agents`) drops it, and every list, chip,
+  count, Save result and the `save_agents` text goes through it. Flow adds only what
   Mars can't judge: its tool and permission rules, subagents, a skill that has an error, unreadable
   files, and a `[dependencies]` entry (`flow.dependency-missing`, `flow.dependency-unreadable`;
   Flow vendors none yet, so `dependencies` is passed empty, and a package that declares one fails

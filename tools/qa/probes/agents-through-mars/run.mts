@@ -18,6 +18,7 @@
  */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { shownFindings } from "@meridian/contracts/agents";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
@@ -146,7 +147,7 @@ try {
   });
 
   await check(
-    "the built-in package: nine Agents at the built-in level, no diagnostics, read-only stays read-only",
+    "the built-in package: nine Agents at the built-in level, no errors or warnings, read-only stays read-only",
     async () => {
       const slugs = [
         "general",
@@ -166,7 +167,7 @@ try {
         assert.ok(item.selection, `${slug} has no selection`);
         const row = await store.readCatalogRevision(item.selection.definitionRevisionId);
         assert.ok(row?.definition, `${slug} has no definition`);
-        assert.deepEqual(row.diagnostics, [], `${slug} has diagnostics`);
+        assert.deepEqual(shownFindings(row.diagnostics), [], `${slug} has diagnostics`);
         assert.ok(await store.readRevision(row.id));
       }
       for (const slug of ["general", "critic", "muse", "setup", "spark", "writer"])

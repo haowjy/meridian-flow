@@ -12,7 +12,12 @@ import type {
   AgentsLevel,
   SaveOutcome,
 } from "@meridian/contracts/agents";
-import { agentsFileOf, agentsLocationOf, agentsRootOf } from "@meridian/contracts/agents";
+import {
+  agentsFileOf,
+  agentsLocationOf,
+  agentsRootOf,
+  shownFindings,
+} from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
@@ -573,8 +578,8 @@ export function savedNotes(word: PackageWord | null): string[] | null {
   const { renamed, findings } = word.outcome;
   const lines = [
     ...renamed,
-    ...findings
-      .filter((finding) => finding.severity === "warning")
+    ...shownFindings(findings)
+      .filter((finding) => finding.severity !== "error")
       .map((finding) => `${finding.file}: ${findingSentence(finding)}`),
   ];
   return lines.length ? lines : null;

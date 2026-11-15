@@ -5,7 +5,7 @@
  *
  * The rule this keeps: a finding of severity `error`, Mars's or Flow's, on an Agent's file makes
  * that Agent unavailable, and an unavailable Agent has no definition for anything to run. A
- * `warning` or `info` doesn't: it is shown, and the Agent runs as its file reads (a restriction
+ * `warning` or `info` doesn't: it is shown (Info only where `shownFindings` lets it through), and the Agent runs as its file reads (a restriction
  * `prepare` dropped, `field.restriction-lost`, is such a warning). Save installs, for an item with
  * an error, the files of its last saved version when that was usable (`save-packages.ts`), and
  * fails only on a broken `mars.toml`; a saved Agent can still be unavailable, because a newer
@@ -208,24 +208,44 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
   return input.files;
 }
 
-/**
- * Mars leaves a ref to a skill the package doesn't ship as a warning when the package has no
- * `[dependencies]`, since a consumer may hold the skill. Flow resolves a ref inside the package
- * and never across levels, so there the skill is missing.
- */
-const severityIn = (diagnostic: Diagnostic) =>
-  diagnostic.code === "skill-ref.external" ? "error" : diagnostic.severity;
+/** Keys of an Agent file whose retirement means the Agent is no longer limited by them. */
+const RESTRICTING_KEYS = new Set(["permission", "disallowed-tools"]);
 
-const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => ({
-  file,
-  code: diagnostic.code,
-  severity: severityIn(diagnostic),
-  path: diagnostic.path,
-  message:
-    diagnostic.code === "skill-ref.external"
-      ? diagnostic.message.replace("; a consumer must hold a package that does", "")
-      : diagnostic.message,
-});
+/**
+ * Flow grades some of Mars's findings differently, and words two of them for its writers:
+ * - `skill-ref.external`, a warning in Mars when the package has no `[dependencies]` (a consumer
+ *   may hold the skill): Flow resolves a ref inside the package only, so there the skill is missing;
+ * - `definition.duplicate-name`, an error in Mars: two Agents of one name both work here, and the
+ *   picker tells them apart by file;
+ * - `field.retired` says, for a restricting key, that the Agent is not limited by it.
+ */
+const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
+  const base = {
+    file,
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    path: diagnostic.path,
+    message: diagnostic.message,
+  };
+  switch (diagnostic.code) {
+    case "skill-ref.external":
+      return {
+        ...base,
+        severity: "error",
+        message: diagnostic.message.replace("; a consumer must hold a package that does", ""),
+      };
+    case "definition.duplicate-name":
+      return { ...base, severity: "warning" };
+    case "field.retired": {
+      const key = String(diagnostic.path[0] ?? "");
+      return RESTRICTING_KEYS.has(key)
+        ? { ...base, message: `\`${key}\` is no longer read, so this Agent is not limited by it.` }
+        : base;
+    }
+    default:
+      return base;
+  }
+};
 const flow = (
   file: string,
   code: string,
@@ -234,14 +254,9 @@ const flow = (
   path: (string | number)[] = [],
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
-/**
- * Mars's errors and warnings on one file of the package, in Mars's order. Info says nothing the
- * author wrote is lost, and nothing here shows it.
- */
+/** Mars's findings on one file of the package, in Mars's order, Info included. */
 const foundIn = (verdict: Check, file: string): PackageDiagnostic[] =>
-  (verdict.diagnostics[file] ?? [])
-    .filter((item) => item.severity !== "info")
-    .map((item) => fromMars(file, item));
+  (verdict.diagnostics[file] ?? []).map((item) => fromMars(file, item));
 
 /**
  * Findings on `mars.toml`; its errors make every Agent of the package unavailable. `prepare`
@@ -325,7 +340,7 @@ interface Draft {
   body: string;
   /** Blocking: findings of severity `error`, Mars's and Flow's. */
   errors: PackageDiagnostic[];
-  /** Shown, never blocking: warnings and info. */
+  /** Never blocking: warnings and info. */
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;

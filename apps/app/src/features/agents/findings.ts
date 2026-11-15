@@ -3,12 +3,13 @@
  * sentence where Flow has one (Mars's own words otherwise), and what a file's findings make of it.
  */
 import { plural, t } from "@lingui/core/macro";
-import type {
-  AgentFileStatus,
-  AgentFinding,
-  AgentLevel,
-  AgentPackageStatus,
-  AgentsLevel,
+import {
+  type AgentFileStatus,
+  type AgentFinding,
+  type AgentLevel,
+  type AgentPackageStatus,
+  type AgentsLevel,
+  shownFindings,
 } from "@meridian/contracts/agents";
 import { errorsOf, failsSave, type PackageRef, packageFolderOf, statusOf } from "./package-save";
 
@@ -57,9 +58,9 @@ export function findingSentence(finding: AgentFinding): string {
   return finding.message;
 }
 
-/** A file's findings in its package, by the package-relative path. */
+/** A file's shown findings (no Info) in its package, by the package-relative path. */
 export const findingsOfFile = (findings: readonly AgentFinding[], file: string) =>
-  findings.filter((finding) => finding.file === file);
+  shownFindings(findings).filter((finding) => finding.file === file);
 
 /**
  * What keeps one Agent or skill file from use, the first that applies:
@@ -91,7 +92,7 @@ export function fileTrouble(
     };
   }
   if (file.hiddenBy) return { kind: "hidden", by: file.hiddenBy };
-  const warnings = findings.filter((finding) => finding.severity === "warning");
+  const warnings = findings.filter((finding) => finding.severity !== "error");
   return warnings.length ? { kind: "notes", notes: warnings.map(findingSentence) } : null;
 }
 

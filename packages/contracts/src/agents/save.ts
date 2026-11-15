@@ -26,6 +26,15 @@ export const agentFindingSchema = z.object({
   message: z.string(),
 }) satisfies z.ZodType<AgentFinding>;
 
+/**
+ * The findings a writer is shown: errors and warnings. Info says what Flow ignored and is for the
+ * editor's own marks only, so every list, chip, count and the AI's `save_agents` text takes its
+ * findings through this.
+ */
+export const shownFindings = <T extends Pick<AgentFinding, "severity">>(
+  findings: readonly T[],
+): T[] => findings.filter((finding) => finding.severity !== "info");
+
 /** How a package's files differ from its saved version. */
 export interface AgentFileChange {
   path: string;
@@ -56,7 +65,7 @@ export interface AgentPackageStatus {
   saveId: string | null;
   /** Files added, changed or deleted since the saved version. */
   changes: AgentFileChange[];
-  /** Errors and warnings in the package's files. */
+  /** Errors, warnings and Info in the package's files; show them through `shownFindings`. */
   findings: AgentFinding[];
 }
 export const agentPackageStatusSchema = z.object({
