@@ -146,6 +146,8 @@ export interface AgentEditModelPayload {
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
+    /** The Work a `draft` read names, as a write's `draftWork` does; `/` for no Work's draft. */
+    draftWork?: string;
   };
   blocks?: AgentEditBlockGroup[];
   concurrent?: AgentEditConcurrentListing;
