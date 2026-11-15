@@ -484,7 +484,7 @@ The failed reply's `metadata.providerError` is `{ status, message }`, with
 the message capped at 1,000 characters; `status` is null for a failure reported
 inside the stream. Server events keep only `errorCode`, so provider text never
 enters `EventSink`, JSONL, or model context. The retry policy is in the
-[gateway context](../packages/gateway/.context/CONTEXT.md#provider-errors).
+[gateway context](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md#canonicalization-and-errors).
 
 ## Debug Gate
 

@@ -19,8 +19,13 @@ function omitLinks(_key: string, value: unknown): unknown {
 }
 
 function serializeCanonicalRequest(request: GenerateRequest): string {
-  const { signal: _signal, correlation: _correlation, ...canonicalRequest } = request;
-  const serialized = JSON.stringify(canonicalRequest, omitLinks);
+  // Named fields, not the request minus a denylist: a field the gateway adds later (as it added
+  // `auth`, a credential) stays out of the capture until someone adds it here.
+  const { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention } = request;
+  const serialized = JSON.stringify(
+    { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention },
+    omitLinks,
+  );
   if (serialized === undefined) throw new Error("Model request debug capture expected an object");
   return serialized;
 }
