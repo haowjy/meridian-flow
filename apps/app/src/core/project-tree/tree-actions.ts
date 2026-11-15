@@ -11,7 +11,10 @@
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).
  */
 import {
+  childrenOf,
+  isSourceRoot,
   type NodeKind,
+  sourceIdOf,
   sourceRoot,
   type TreeProjection,
   type TreeRecord,
@@ -19,7 +22,16 @@ import {
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import { endWhenRestored, pushUndoStep, shownSourceOf, type TreeStep, undoStep } from "./tree-undo";
+import {
+  endWhenRestored,
+  pushUndoStep,
+  shownSourceOf,
+  type TreeGesture,
+  type TreeStep,
+  type UndoStep,
+  undoStep,
+  type Was,
+} from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
 
 export class TreeActions {
@@ -55,12 +67,32 @@ export class TreeActions {
   /** The gesture's records go on the list's Undo stack, under the sources its nodes show in. */
   private remember(
     made: { session: TreeListSession; view: View; replay: () => TreeProjection },
+    gesture: TreeGesture,
+    before: TreeProjection,
     records: readonly TreeRecord[],
   ) {
     const projection = made.replay();
     const nodes = [...new Set(records.map((record) => record.node))];
+    const was = new Map(
+      nodes.flatMap((node) => {
+        const at = before.nodes.get(node);
+        if (!at) return [];
+        const top = isSourceRoot(at.parent);
+        const siblings = childrenOf(before, at.parent).map((child) => child.id);
+        const was: Was = {
+          name: at.name,
+          kind: at.kind === "folder" ? "folder" : "document",
+          folder: top ? null : (before.nodes.get(at.parent)?.name ?? null),
+          parent: top ? sourceIdOf(at.parent) : at.parent,
+          after: siblings.slice(0, siblings.indexOf(node)).reverse(),
+        };
+        return [[node, was] as const];
+      }),
+    );
     const step: TreeStep = {
       kind: "tree",
+      gesture,
+      was,
       records: records.map((record) => record.id),
       draft: made.view.draft,
       sources: [...new Set(nodes.flatMap((node) => shownSourceOf(projection, node) ?? []))],
@@ -70,18 +102,13 @@ export class TreeActions {
     return step;
   }
 
-  /** A notice's Undo of a gesture made here: the step the sidebar's Ctrl+Z would take. */
-  undo(step: TreeStep): boolean {
+  /** A notice's Undo of a step made here: the step the sidebar's Ctrl+Z would take. */
+  undo(step: UndoStep): Promise<boolean> {
     const session = this.session();
-    if (!session) return false;
+    if (!session) return Promise.resolve(false);
     const { view, pendingText } = this.version();
-    return undoStep(session, step, this.actor, view.draft === step.draft ? pendingText : undefined);
-  }
-
-  /** Ends `step` once its deleted nodes are out of Trash; the returned stop ends the watch. */
-  endWhenRestored(step: TreeStep): () => void {
-    const session = this.session();
-    return session ? endWhenRestored(session, step) : () => {};
+    const same = step.kind === "tree" && view.draft === step.draft;
+    return undoStep(session, step, this.actor, same ? pendingText : undefined);
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */
@@ -99,7 +126,8 @@ export class TreeActions {
     filetype?: string;
   }): { node: string; name: string } {
     const made = this.writable();
-    const parent = this.parentOf(made.replay(), input.parentId);
+    const before = made.replay();
+    const parent = this.parentOf(before, input.parentId);
     const record = made.writer.create(made.view, this.actor, {
       name: input.name,
       parent,
@@ -110,14 +138,15 @@ export class TreeActions {
         ? { kind: "folder" as const }
         : { kind: "document" as const, filetype: input.filetype ?? "markdown" }),
     });
-    this.remember(made, [record]);
+    this.remember(made, "create", before, [record]);
     return { node: record.node, name: record.name };
   }
 
   rename(node: string, name: string, filetype?: string): { name: string } {
     const made = this.writable();
+    const before = made.replay();
     const record = made.writer.rename(made.view, this.actor, node, name, filetype);
-    this.remember(made, [record]);
+    this.remember(made, "rename", before, [record]);
     return { name: record.name };
   }
 
@@ -135,21 +164,53 @@ export class TreeActions {
       this.actor,
       moves.map((move, at) => ({ ...move, parent: parents[at] as string })),
     );
-    this.remember(made, records);
+    this.remember(made, "move", replay, records);
   }
 
   /** One gesture's deletes as one update; the step is its Undo. */
   remove(nodes: readonly string[]): TreeStep {
     const made = this.writable();
-    return this.remember(made, made.writer.deleteAll(made.view, this.actor, nodes));
+    const replay = made.replay();
+    const step = this.remember(
+      made,
+      "delete",
+      replay,
+      made.writer.deleteAll(made.view, this.actor, nodes),
+    );
+    // Once nothing it deleted is in Trash any more (restored anywhere, purged), its Undo ends.
+    endWhenRestored(made.session, step);
+    return step;
   }
 
-  restore(nodes: readonly string[]): void {
+  /**
+   * Brings nodes back from Trash, where they were or, dragged out, into `into` (a folder's or a
+   * source's id) from `index` on: one gesture, one Undo.
+   */
+  restore(
+    nodes: readonly string[],
+    into?: { parentId: string; index?: number },
+  ): { records: readonly TreeRecord[] } {
     const made = this.writable();
+    const before = made.replay();
     const records: TreeRecord[] = [];
     made.writer.transact(() => {
       for (const node of nodes) records.push(made.writer.restore(made.view, this.actor, node));
     });
-    this.remember(made, records);
+    if (into) {
+      const parent = this.parentOf(made.replay(), into.parentId);
+      records.push(
+        ...made.writer.moveAll(
+          made.view,
+          this.actor,
+          nodes.map((node, at) => ({
+            node,
+            parent,
+            ...(into.index === undefined ? {} : { index: into.index + at }),
+          })),
+        ),
+      );
+    }
+    this.remember(made, "restore", before, records);
+    return { records };
   }
 }

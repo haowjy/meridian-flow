@@ -6,6 +6,10 @@
  * history), or asked of the server for an Apply, and a step that no longer fits is skipped for
  * the one before it. A notice's Undo (`undoStep`) takes back the same step a press would. There is
  * no Redo: an Undo's own records go on no stack.
+ *
+ * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
+ * its Undo, or what a press skipped or couldn't take back. It ends at the next gesture or press,
+ * or when its step leaves the stack.
  */
 import {
   deleteStands,
@@ -21,8 +25,25 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
 export type UndoStep = TreeStep | ApplyStep;
 
+/** What the writer did; a create shows no notice (the new row says it). */
+export type TreeGesture = "create" | "rename" | "move" | "delete" | "restore";
+
+export type Was = {
+  name: string;
+  kind: "folder" | "document";
+  /** The folder's name, null at the top of a source. */
+  folder: string | null;
+  /** The folder's or the source's id: the parent the tree's rows are listed under. */
+  parent: string;
+  /** The siblings listed before it, nearest first. */
+  after: readonly string[];
+};
+
 export type TreeStep = {
   kind: "tree";
+  gesture: TreeGesture;
+  /** Each node as it was before the gesture: what its notice says, and where a gone row stays. */
+  was: ReadonlyMap<string, Was>;
   /** The records the gesture appended, in order. */
   records: readonly string[];
   /** The view it was made in: a press takes back only steps of the view on screen. */
@@ -45,24 +66,101 @@ export type ApplyStep = {
   sources: readonly string[];
   /** What it applied, for the notice: "Ch 3 and Outline", "4 changes". */
   name: string;
+  /** The nodes it took, whose rows say what an Undo of it couldn't do. */
+  nodes: readonly string[];
   /** `textLeft`: the text changes a later edit overlaps, which stay applied. */
   unapply(): Promise<{ answer: "unapplied" | "skipped" | "failed"; textLeft?: number }>;
 };
 
-export type Skipped = { kind: "tree" | "apply"; name: string };
+export type Skipped = { kind: "tree" | "apply"; name: string; nodes: readonly string[] };
+
+/**
+ * What a list's rows say: the latest gesture, whose rows offer its Undo, or what the latest press
+ * has to say about the steps it couldn't take back, each on that step's rows.
+ */
+export type TreeNotice = { kind: "step"; step: TreeStep } | { kind: "said"; said: readonly Said[] };
+
+export type Said =
+  | { kind: "skipped"; of: Skipped["kind"]; name: string; nodes: readonly string[] }
+  /** An Apply taken back but for `textLeft` text changes edited since. */
+  | { kind: "partial"; name: string; nodes: readonly string[]; textLeft: number }
+  /** An Apply's Un-Apply didn't reach the server; `step` is still on the stack. */
+  | { kind: "failed"; name: string; nodes: readonly string[]; step: ApplyStep };
 
 export type UndoOutcome =
   /** `partial`: an Apply taken back but for text changes edited since, which stay applied. */
   | {
       kind: "undone";
       skipped: readonly Skipped[];
-      partial?: { name: string; textLeft: number };
+      /** What the step taken back acted on: where the focus follows it. */
+      nodes: readonly string[];
+      partial?: { name: string; nodes: readonly string[]; textLeft: number };
     }
   | { kind: "nothing"; skipped: readonly Skipped[] }
   /** An Apply's Un-Apply didn't reach the server: the step stays on the stack. */
-  | { kind: "failed"; skipped: readonly Skipped[]; name: string };
+  | { kind: "failed"; skipped: readonly Skipped[]; name: string; step: ApplyStep };
+
+function saidOf(outcome: UndoOutcome): TreeNotice | null {
+  const said: Said[] = [
+    ...outcome.skipped.map(({ kind, ...each }) => ({
+      kind: "skipped" as const,
+      of: kind,
+      ...each,
+    })),
+    ...(outcome.kind === "undone" && outcome.partial
+      ? [{ kind: "partial" as const, ...outcome.partial }]
+      : []),
+    ...(outcome.kind === "failed"
+      ? [
+          {
+            kind: "failed" as const,
+            name: outcome.name,
+            nodes: outcome.step.nodes,
+            step: outcome.step,
+          },
+        ]
+      : []),
+  ];
+  return said.length ? { kind: "said", said } : null;
+}
 
 const stacks = new WeakMap<TreeListSession, UndoStep[]>();
+const notices = new WeakMap<TreeListSession, TreeNotice>();
+const listeners = new Set<() => void>();
+let revision = 0;
+
+/** Changes whenever any list's notice does. */
+export const treeNoticeRevision = () => revision;
+
+export function treeNotice(session: TreeListSession | null): TreeNotice | null {
+  return (session && notices.get(session)) ?? null;
+}
+
+export function subscribeTreeNotices(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function show(session: TreeListSession, notice: TreeNotice | null) {
+  if (notice === (notices.get(session) ?? null)) return;
+  if (notice) notices.set(session, notice);
+  else notices.delete(session);
+  revision += 1;
+  for (const listener of [...listeners]) listener();
+}
+
+/** The writer acted elsewhere in the list (opened a document): its notice ends. */
+export function endTreeNotice(session: TreeListSession): void {
+  show(session, null);
+}
+
+/** Ends the notice when it is `step`'s: the step left the stack. */
+function endStepNotice(session: TreeListSession, step: UndoStep) {
+  const notice = notices.get(session);
+  if (notice?.kind === "step" && notice.step === step) show(session, null);
+}
 
 function stackOf(session: TreeListSession): UndoStep[] {
   let stack = stacks.get(session);
@@ -84,7 +182,11 @@ export function shownSourceOf(projection: TreeProjection, node: string): string 
 }
 
 export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
-  if (step.kind === "apply" || step.records.length > 0) stackOf(session).push(step);
+  if (step.kind === "tree" && step.records.length === 0) return;
+  stackOf(session).push(step);
+  // A gesture in the list is the writer's next action there; an Apply is made in Changes.
+  if (step.kind === "tree")
+    show(session, step.gesture === "create" ? null : { kind: "step", step });
 }
 
 const holds = (step: UndoStep, source: string | null, view: View) =>
@@ -105,6 +207,19 @@ export async function undoLatest(
   actor: string,
   pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
+  show(session, null);
+  const outcome = await takeLatest(session, source, view, actor, pendingText);
+  show(session, saidOf(outcome));
+  return outcome;
+}
+
+async function takeLatest(
+  session: TreeListSession,
+  source: string | null,
+  view: View,
+  actor: string,
+  pendingText?: ReadonlySet<string>,
+): Promise<UndoOutcome> {
   const stack = stackOf(session);
   const skipped: Skipped[] = [];
   for (let at = stack.length - 1; at >= 0; at -= 1) {
@@ -118,45 +233,74 @@ export async function undoLatest(
         return {
           kind: "undone",
           skipped,
-          ...(textLeft > 0 ? { partial: { name: step.name, textLeft } } : {}),
+          nodes: step.nodes,
+          ...(textLeft > 0 ? { partial: { name: step.name, nodes: step.nodes, textLeft } } : {}),
         };
       if (answer === "failed") {
         stack.splice(at, 0, step);
-        return { kind: "failed", skipped, name: step.name };
+        return { kind: "failed", skipped, name: step.name, step };
       }
-      skipped.push({ kind: "apply", name: step.name });
+      skipped.push({ kind: "apply", name: step.name, nodes: step.nodes });
       continue;
     }
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],
     );
-    if (takeBack(session, step, view, actor, pendingText)) return { kind: "undone", skipped };
-    skipped.push({ kind: "tree", name: names[0] ?? "" });
+    if (takeBack(session, step, view, actor, pendingText))
+      return { kind: "undone", skipped, nodes: step.nodes };
+    skipped.push({ kind: "tree", name: names[0] ?? "", nodes: step.nodes });
   }
   return { kind: "nothing", skipped };
 }
 
 /**
- * A notice's Undo: takes back `step` if it is still on the stack, as a press would. False when a
- * press took it first or nothing of it can be taken back any more.
+ * A row's Undo: takes back `step` if it is still on the stack, as a press would, and says so as a
+ * press does. False when a press took it first or nothing of it can be taken back any more.
  */
-export function undoStep(
+export async function undoStep(
   session: TreeListSession,
-  step: TreeStep,
+  step: UndoStep,
   actor: string,
   pendingText?: ReadonlySet<string>,
-): boolean {
+): Promise<boolean> {
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0) return false;
   stack.splice(at, 1);
-  return takeBack(
+  show(session, null);
+  if (step.kind === "apply") {
+    const { answer, textLeft = 0 } = await step.unapply();
+    if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
+    show(
+      session,
+      saidOf(
+        answer === "failed"
+          ? { kind: "failed", skipped: [], name: step.name, step }
+          : answer === "skipped"
+            ? { kind: "nothing", skipped: [{ kind: "apply", name: step.name, nodes: step.nodes }] }
+            : {
+                kind: "undone",
+                skipped: [],
+                nodes: step.nodes,
+                ...(textLeft > 0
+                  ? { partial: { name: step.name, nodes: step.nodes, textLeft } }
+                  : {}),
+              },
+      ),
+    );
+    return answer === "unapplied";
+  }
+  step.ended?.();
+  const view = step.draft === null ? LIVE : { draft: step.draft };
+  const name = step.nodes.flatMap((node) => step.was.get(node)?.name ?? []).at(0) ?? "";
+  const undone = takeBack(session, step, view, actor, pendingText);
+  show(
     session,
-    step,
-    step.draft === null ? LIVE : { draft: step.draft },
-    actor,
-    pendingText,
+    undone
+      ? null
+      : saidOf({ kind: "nothing", skipped: [{ kind: "tree", name, nodes: step.nodes }] }),
   );
+  return undone;
 }
 
 /**
@@ -174,6 +318,7 @@ export function endWhenRestored(session: TreeListSession, step: TreeStep): () =>
     const at = stack.indexOf(step);
     if (at < 0) return;
     stack.splice(at, 1);
+    endStepNotice(session, step);
     step.ended?.();
   });
   return stop;

@@ -158,7 +158,7 @@ else
       const assets = new Map(images.map((image) => [`image-${image.key}`, image]));
       const resolutionCounts = new Map<string, number>();
       rig.deps.mediaResolver = {
-        async resolve(_context, reference) {
+        async resolve(_context, { ref: reference }) {
           resolutionCounts.set(
             reference.documentId,
             (resolutionCounts.get(reference.documentId) ?? 0) + 1,

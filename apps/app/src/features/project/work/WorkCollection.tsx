@@ -7,8 +7,8 @@ import { useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-command-store";
-import { ActionNotice } from "@/components/app/ActionNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { RowWord, withGone } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
@@ -19,7 +19,7 @@ import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
-import type { WorkDeletion } from "./useWorkDeletion";
+import { takeWorkFocus, type WorkDeletion, type WorkPlace, workPlace } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import {
   WORK_ROW_OPERATIONS,
@@ -78,7 +78,7 @@ export function WorkCollection({
     operation === "archive" || operation === "unarchive"
       ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
       : undefined;
-  const row = ({ work, state, failure }: WorkListEntry): ReactNode => {
+  const row = ({ work, state, failure }: WorkListEntry, place?: WorkPlace): ReactNode => {
     const shared = { work, now, onOpen: () => onOpen(work.id) };
     switch (state) {
       case "creating":
@@ -112,13 +112,30 @@ export function WorkCollection({
         );
       case "undo": {
         const { name } = work;
+        const line = failure ? workFailureLine(failure, { name }) : null;
         return (
-          <ActionNotice
-            sentence={(name) => t`Deleted ${name}`}
-            name={name}
-            action={{ label: <Trans>Undo</Trans>, onClick: () => deletion.undo(work.id) }}
-            onDismiss={() => deletion.dismiss(work.id)}
-            failure={failure ? workFailureLine(failure, { name }) : null}
+          <WorkRow
+            {...shared}
+            gone
+            notice={
+              line ? (
+                <RowWord
+                  tone="warning"
+                  word={line.onRetry ? <Trans>Retry</Trans> : <Trans>Not restored</Trans>}
+                  label={line.onRetry ? t`Retry restoring ${name}` : undefined}
+                  sentence={line.message}
+                  onAction={line.onRetry}
+                />
+              ) : (
+                <RowWord
+                  word={<Trans>Undo</Trans>}
+                  label={t`Undo delete of ${name}`}
+                  sentence={t`Deleted just now. Undo puts it back.`}
+                  onAction={() => deletion.undo(work.id)}
+                  focus={{ take: () => takeWorkFocus(work.id), back: () => workRowOf(work.id) }}
+                />
+              )
+            }
           />
         );
       }
@@ -137,7 +154,7 @@ export function WorkCollection({
                       toggleArchive(work),
                     )
                   }
-                  onDelete={() => deletion.remove(work)}
+                  onDelete={() => deletion.remove(work, place)}
                 />
               }
             />
@@ -183,6 +200,7 @@ export function WorkCollection({
           />
         ) : view === "archived" ? (
           <WorkRows
+            list={`works:${projectId}:archived`}
             entries={entries.archived}
             row={row}
             empty={
@@ -194,24 +212,63 @@ export function WorkCollection({
             }
           />
         ) : (
-          <WorkRows entries={entries.active} row={row} empty={<StartWork onNew={onNew} />} />
+          <WorkRows
+            list={`works:${projectId}:active`}
+            entries={entries.active}
+            row={row}
+            empty={<StartWork onNew={onNew} />}
+          />
         )}
       </div>
     </section>
   );
 }
 
+const workRowOf = (workId: string) =>
+  document.querySelector<HTMLElement>(`[data-work-id="${CSS.escape(workId)}"]`);
+
+/**
+ * A tab's rows. A Work deleted from this list keeps its place, struck through with its Undo; one
+ * deleted elsewhere (its own page) shows its Undo at the top.
+ */
 function WorkRows({
+  list,
   entries,
   row,
   empty,
 }: {
+  /** Which tab's list, where a Work deleted from it keeps its place. */
+  list: string;
   entries: readonly WorkListEntry[];
-  row: (entry: WorkListEntry) => ReactNode;
+  row: (entry: WorkListEntry, place?: WorkPlace) => ReactNode;
   empty: ReactNode;
 }) {
-  if (!entries.length) return empty;
-  return <RuledList rows={entries.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
+  const listed = entries.filter((entry) => entry.state !== "undo");
+  const undo = entries.filter((entry) => entry.state === "undo");
+  const here = (entry: WorkListEntry) => workPlace(entry.work.id)?.list === list;
+  const ids = listed.map((entry) => entry.work.id);
+  const rows = [
+    ...undo.filter((entry) => !here(entry)).map((entry) => ({ entry, place: undefined })),
+    ...withGone(
+      listed,
+      (entry) => entry.work.id,
+      undo.filter(here).map((entry) => ({
+        key: entry.work.id,
+        row: entry,
+        after: workPlace(entry.work.id)?.after ?? [],
+      })),
+    ).map(({ row: entry, gone }) =>
+      gone
+        ? { entry, place: undefined }
+        : { entry, place: { list, after: ids.slice(0, ids.indexOf(entry.work.id)).reverse() } },
+    ),
+  ];
+  if (!rows.length) return empty;
+  return (
+    <RuledList
+      rows={rows.map(({ entry, place }) => ({ key: entry.key, node: row(entry, place) }))}
+    />
+  );
 }
 
 function NewWorkButton({ onNew, variant }: { onNew: () => void; variant?: "outline" }) {

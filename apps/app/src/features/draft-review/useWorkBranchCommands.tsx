@@ -29,7 +29,7 @@ import {
 import { draftTreeVersion } from "@/features/project/tree-version";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
-import type { DiscardPart, DiscardUndo, NoticeSurface } from "./draft-notices";
+import type { AppliedFact, DiscardPart, DiscardUndo, NoticeSurface } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
@@ -134,63 +134,61 @@ export function useWorkBranchCommands({
       }[],
     ) => {
       if (surface === "band" || done.length === 0) return;
-      const held = notices.appliedFacts(ownerKey);
+      const held = notices.appliedFacts(ownerKey)?.facts ?? [];
       const picked = new Set(done.flatMap(({ item }) => (item ? [item.itemKey] : [])));
       // Every member of one command answers with the command's whole list.
-      const facts = [
+      const said = [
         ...new Map(
           done.flatMap(({ outcome }) => outcome.applied ?? []).map((fact) => [fact.itemKey, fact]),
         ).values(),
       ];
-      const restored = [
-        ...(held?.restored ?? []),
+      const facts: AppliedFact[] = [
+        ...held,
         ...done.flatMap(({ item, outcome }) => {
-          const title = titleOf(item);
-          return outcome.restored && title ? [title] : [];
+          const name = titleOf(item);
+          return outcome.restored && name && item
+            ? [{ documentId: item.documentId, kind: "restored" as const, name }]
+            : [];
+        }),
+        ...said.flatMap((fact): AppliedFact[] => {
+          const documentId = parseDraftItemKey(fact.itemKey)?.documentId;
+          if (!documentId) return [];
+          const { transition } = fact;
+          // A document the Apply put somewhere new says where: a new one would look lost otherwise.
+          if (
+            picked.has(fact.itemKey) &&
+            transition?.to &&
+            folderOf(transition.from) !== folderOf(transition.to)
+          )
+            return [
+              {
+                documentId,
+                kind: "landed",
+                uri: transition.to,
+                name: documentBasename(transition.to) ?? "",
+              },
+            ];
+          if (picked.has(fact.itemKey)) {
+            const name = fact.renamed ? documentBasename(fact.renamed) : null;
+            return name ? [{ documentId, kind: "renamed", name }] : [];
+          }
+          const from = documentBasename(transition?.from);
+          const to = documentBasename(transition?.to);
+          return from && to ? [{ documentId, kind: "also", from, to }] : [];
         }),
       ];
-      // A document the Apply put somewhere new says where: a new one would look lost otherwise.
-      const moved = facts.filter(
-        (fact) =>
-          picked.has(fact.itemKey) &&
-          fact.transition?.to &&
-          folderOf(fact.transition.from) !== folderOf(fact.transition.to),
-      );
-      const landed = [
-        ...(held?.landed ?? []),
-        ...moved.flatMap(({ itemKey, transition }) => {
-          const documentId = parseDraftItemKey(itemKey)?.documentId;
-          return documentId && transition?.to ? [{ documentId, uri: transition.to }] : [];
-        }),
-      ];
-      const renamed = [
-        ...(held?.renamed ?? []),
-        ...facts.flatMap(({ renamed: path, itemKey }) => {
-          // A new place names the document under the name it landed with.
-          if (!path || moved.some((landing) => landing.itemKey === itemKey)) return [];
-          const name = documentBasename(path);
-          return name ? [name] : [];
-        }),
-      ];
-      const alsoApplied = [
-        ...(held?.alsoApplied ?? []),
-        ...facts.flatMap((fact) => {
-          if (picked.has(fact.itemKey) || !fact.transition) return [];
-          const from = documentBasename(fact.transition.from);
-          const to = documentBasename(fact.transition.to);
-          return from && to ? [`${from} → ${to}`] : [];
-        }),
-      ];
-      if (restored.length || renamed.length || alsoApplied.length || landed.length)
-        notices.showApplied({
-          projectId,
-          ownerKey,
-          surface: noticeSurface(draft),
-          restored,
-          renamed,
-          alsoApplied,
-          landed,
-        });
+      // Every document the writer applied says so on its row, a plain Apply as much as one that
+      // moved it.
+      const told = new Set(facts.map((fact) => fact.documentId));
+      for (const { item } of done) {
+        const name = titleOf(item);
+        if (item && name && !told.has(item.documentId)) {
+          told.add(item.documentId);
+          facts.push({ documentId: item.documentId, kind: "applied", name });
+        }
+      }
+      if (facts.length)
+        notices.showApplied({ projectId, ownerKey, surface: noticeSurface(draft), facts });
     };
     /**
      * An Apply goes on the sidebar's Undo stack as one step (design §5): its Undo is the server's
@@ -220,6 +218,7 @@ export function useWorkBranchCommands({
         kind: "apply",
         sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name,
+        nodes,
         unapply: async () => {
           try {
             const answer = await unapplyCommand(projectId, branchId, {
@@ -632,7 +631,7 @@ export function useWorkBranchCommands({
               },
         })
         .then((answer) => {
-          if (answer.kind === "done" && !input.all) {
+          if (answer.kind === "done") {
             const ended = new Set(input.drafts.map((draft) => draft.itemKey));
             patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
               rows.filter((listed) => !ended.has(listed.itemKey)),
@@ -655,6 +654,7 @@ export function useWorkBranchCommands({
           parts: [
             {
               documentId: first?.documentId ?? folders[0] ?? "",
+              covers: [...documentIds, ...folders],
               ...(input.name
                 ? { name: input.name, scope: "folder" as const }
                 : {

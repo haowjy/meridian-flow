@@ -67,10 +67,12 @@ stateDiagram-v2
   server wakes the Works list with the Work's `draft-owner-hint`.
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
   showing (`core/project-tree/tree-undo.ts`). It hears the press anywhere in the sidebar, which
-  takes focus itself when a click lands on no control. A delete's notice Undo is the same step
-  (`undoStep`): whichever runs first, the other finds nothing, and a press ends the notice. The stack is record ids per list copy, in memory;
-  a reload empties it. A step `undoChange` refuses is dropped with a notice and the press goes
-  on to the one before it. A change since applied is taken back live. An Apply is one step in
+  takes focus itself when a click lands on no control. The latest gesture's rows (delete, rename,
+  move, restore) carry its Undo as a `RowWord` (`TreeNotice`, `use-tree-notice-words.tsx`), and
+  a row's Undo is the same step (`undoStep`): whichever runs first, the other finds nothing. The
+  notice ends at the next gesture or press, or when the writer opens a document from the tree.
+  The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
+  refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
   either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is
   skipped the same way; on the Changes tab a press takes the latest step of any source.
 

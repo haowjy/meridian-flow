@@ -111,19 +111,24 @@ A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDe
 (`entry-drag/entry-failure.ts`): a `delete` record per entry, appended to the browser's copy of the
 list that holds it (`TreeActions.remove`, one update per list). The row leaves the tree at once and
 the document waits in Trash. One own removal covers every document the gesture takes away, and an
-entry inside another entry's folder goes with that folder, never on its own. A list that cannot
-take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
-comes back as a `refused` settlement: the row returns with `NamespaceFailureMark` ("Couldn't
-delete this document." and the server's reason) and its menu offers Delete again or Dismiss.
-Writer deletion has no confirmation step. Its notice ("Chapter 2 deleted.", Undo) is the Discard
-notice line, held in `DraftNotices` under `deleteNoticeKey(projectId)`: in the sidebar for a
-delete made there, on Recently opened for one made there, and on the page main goes back to when
-the delete took main's document. Its Undo and the sidebar's Ctrl+Z are one step
-(`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo no longer
-applies: once none of the delete's records has its Trash entry left (a Trash Restore of all of it,
-a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the stack
-(`endWhenRestored`). A delete across the project and account lists is one notice, ended with the
-last of its steps.
+entry inside another entry's folder goes with that folder, never on its own. Nothing refuses a
+delete: the record lands, and the replay settles it with whatever else reached the list.
+Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
+struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`), and
+the focus the row had goes to that Undo; after Undo it goes back to the row. The struck-through row
+comes from the step itself (`TreeStep.was`: each node's name, kind, parent and the siblings before
+it), never from an earlier render, so it stays across a switch of sidebar list. The notice lasts
+until the writer's next gesture in that list (an open, another delete, Ctrl+Z) or leaving the
+project. A word whose row isn't drawn (inside a closed folder) goes on the nearest drawn folder
+above it, else on the list's heading (`useTreeNoticeWords`, `NoticePlace`). Off the sidebar the
+delete also shows a line in `DraftNotices` under `deleteNoticeKey(projectId)`: on Recently opened
+for a delete made there, and on the page main goes back to when the delete took main's document;
+the sidebar's rows say it themselves, so it has no sidebar entry. Its Undo and the sidebar's
+Ctrl+Z are one step (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo
+no longer applies: once none of the delete's records has its Trash entry left (a Trash Restore of
+all of it, a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the
+stack (`endWhenRestored`). A delete across the project and account lists is one step per list, each
+with its Undo on its own rows.
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing
 moves on Enter. The source header's New file and New folder name the folder the writer last
@@ -139,17 +144,16 @@ A rename is a `rename` record, appended at once (`useRenameEntryForm`, `TreeActi
 list numbers the name when the clash is visible in its copy, and the tree, headers, tabs and routes
 show the new name from the same replay. Nothing is sent or retried by the UI: Yjs carries the record.
 
-A refusal comes back as a `refused` settlement on the record, and `treeFailures`
-(`core/project-tree/tree-failures.ts`) puts it on the row as `TreeFailure` fields:
-`namespaceFailure` (`delete`, `set-location`, `create`), the server's `failureReason`, the repair
-(`namespaceRepairName` for a rename, `namespaceRepairMove` for a move) and `failureRecord`. The row
-returns to where it was with `NamespaceFailureMark`; the identity bar of a homed document shows a
-passive status directing the writer to Rename in the file list. The list's repair field opens once,
-as the refusal arrives (`use-repair-on-fresh-failure.ts`): a failure already there on mount, a
-remount, or one that lands while another input is active leaves only the mark; blur dismisses the
-field without retrying and Enter retries. A later record of the writer's on the node ends the
-failure, which is the repair. The row menu's Dismiss (`dismissFailure`) puts a refusal away without
-repairing it; it stays in the list and no longer shows.
+Nothing refuses a rename, move or delete. The one thing the server turns back is a create raced
+into a Work that closed: it comes back as a `dropped` settlement, and `treeFailures`
+(`core/project-tree/tree-failures.ts`) gives it `TreeFailure` fields: `namespaceFailure: "create"`,
+the server's `failureReason` ("Work was closed"), the repair (`namespaceRepairName`,
+`namespaceRepairMove`) and `failureRecord`. A row says it in its trailing place (`NotPlacedWord`:
+"Not placed", the reason in its sentence, the repairs in its menu). A dropped create has no node in
+the replay, so no tree row carries it yet: its presentation (bounce and Copy) is lead 5's. The
+list's repair field opens once, as the failure arrives (`use-repair-on-fresh-failure.ts`); blur
+dismisses the field without retrying and Enter retries. A later record of the writer's on the node
+ends the failure, which is the repair. The row menu's Dismiss (`dismissFailure`) puts it away.
 
 A document whose create the server kept in Unfiled stands there with its text and the same mark
 (`namespaceFailure: "create"`, "This document couldn't be created where you put it." and the
@@ -452,16 +456,20 @@ A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, sou
 the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
 `restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
-`move` to the destination (`TreeActions.restore`, `TreeActions.move`).
+`move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
 destination at once from the replay. A restore the server refuses comes back as a settlement on its
-record: the entry goes back to Trash with the server's reason; the notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
+record: the entry goes back to Trash with the server's reason. Until the writer's next gesture,
+the restored rows say "Undo" in the tree and stay struck through in Trash with the same Undo, the
+step Ctrl+Z takes, which puts them back in Trash. The struck-through Trash rows are the entries as
+Trash listed them at the restore (`restored` on the provider), shown while the step's notice
+stands. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
 Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` appends the `restore` records as one update per
-list; a refused one shows on its Trash row ("Couldn't restore … " and the reason), and one notice
-counts the ones that came back ("Restored 3 items.").
+list as one Undo step; a refused one says "Not restored" on its Trash row, the reason in its
+sentence, and the restored rows carry the step's Undo as a drag's do.
 There is no Delete forever: permanent removal is only the scheduled purge.

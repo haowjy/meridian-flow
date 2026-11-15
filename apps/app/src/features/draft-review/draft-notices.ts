@@ -1,7 +1,8 @@
 /**
  * One notice per draft owner (`work:<id>`, `lineage:<root>`): the owner's latest Discard with its
  * Undo, or the facts its latest Apply brought; and per project the writer's latest delete
- * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step. The account command owner holds
+ * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step, for main's band or Recently opened
+ * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
@@ -11,8 +12,8 @@ export type NoticeSurface =
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string }
-  /** Where a delete made there shows: the sidebar's trees, or main's Recently opened. */
-  | { kind: "tree" | "landing" };
+  /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
+  | { kind: "landing" };
 
 /** The key a project's delete notice is held under, beside the draft owners'. */
 export const deleteNoticeKey = (projectId: string) => `delete:${projectId}`;
@@ -51,6 +52,8 @@ export type DiscardPart = {
   scope: "draft" | "change" | "folder" | "deleted";
   /** What it stands for: a whole branch's Discard is one share for all its drafts, a delete for all it took. */
   count?: number;
+  /** Every document and folder the share brings back, when more than `documentId`. */
+  covers?: readonly string[];
   handle: DiscardUndo;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
@@ -81,13 +84,29 @@ export type DraftNotice =
     })
   | (Base & {
       kind: "applied";
-      restored: readonly string[];
-      renamed: readonly string[];
-      alsoApplied: readonly string[];
-      /** Documents the Apply put in a new place, a new one included: where each went now. */
-      landed: readonly { documentId: string; uri: string }[];
+      /** What the Apply did that the writer can't see from the rows alone, each on its document. */
+      facts: readonly AppliedFact[];
       dismiss(): void;
     });
+
+/**
+ * One fact an Apply brought, about one document: it was applied, landed somewhere new (`uri`), was added under
+ * another name than the one asked for, came back to the manuscript, or was applied along with
+ * the documents picked (`also`: its old and new names).
+ */
+export type AppliedFact = {
+  documentId: string;
+} /** Applied where it was, under its name: the row says so, the chat's line has nothing to add. */ & (
+  | { kind: "applied"; name: string }
+  | { kind: "landed"; uri: string; name: string }
+  | { kind: "renamed"; name: string }
+  | { kind: "restored"; name: string }
+  | { kind: "also"; from: string; to: string }
+);
+
+/** A notice with something to say on a line: a plain Apply's is said only on its rows. */
+export const hasLine = (notice: DraftNotice) =>
+  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
 
 export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();
@@ -281,7 +300,7 @@ export class DraftNotices {
           : only?.scope === "deleted"
             ? { kind: "deletes" as const, count }
             : { kind: "drafts" as const, count },
-      documentIds: parts.map((part) => part.documentId),
+      documentIds: parts.flatMap((part) => part.covers ?? [part.documentId]),
       review: (count === 1 && only?.review) || null,
     };
   }

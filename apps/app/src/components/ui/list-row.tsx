@@ -52,7 +52,8 @@ type ListRowProps = {
    * browser's. Ignored while `disabled`.
    */
   href?: string;
-  onOpen: () => void;
+  /** Required unless `gone`. */
+  onOpen?: () => void;
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
   /**
@@ -62,6 +63,11 @@ type ListRowProps = {
   selected?: boolean;
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
+  /**
+   * What the row names is gone (deleted, discarded, restored out of this list) while its
+   * `notice` can still bring it back: the name is struck through and the row opens nothing.
+   */
+  gone?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
   /** The main control, when it is a button. */
@@ -76,6 +82,11 @@ type ListRowProps = {
   meta?: ReactNode;
   /** A mark at the row's end, inside the control. */
   trailing?: ReactNode;
+  /**
+   * What just happened to the row (`RowWord`), after the control and always shown: it takes the
+   * place of `meta` and `trailing` while it shows, so the row keeps its height.
+   */
+  notice?: ReactNode;
   /** Buttons beside the control; in a picker, Left and Right move between them. */
   actions?: ReactNode;
   /** Hides `actions` and the ⋯ until the row is hovered or holds focus. Touch always shows them. */
@@ -109,7 +120,8 @@ export function ListRow({
   onOpen,
   current = false,
   selected = false,
-  disabled,
+  disabled: disabledProp,
+  gone = false,
   depth = 0,
   ref,
   icon: Icon,
@@ -118,6 +130,7 @@ export function ListRow({
   detail,
   meta,
   trailing,
+  notice,
   actions,
   revealActions = false,
   below,
@@ -127,6 +140,7 @@ export function ListRow({
   frameProps,
   menu,
 }: ListRowProps) {
+  const disabled = disabledProp || gone;
   const shared = {
     ...controlProps,
     // The list's keyboard stop, and what the frame watches to draw the ring.
@@ -142,12 +156,12 @@ export function ListRow({
       {leading}
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate">
+          <span className={cn("truncate", gone && "text-muted-foreground line-through")}>
             {title}
             {/* A link can't be pressed or selected; its name says it joined the selection. */}
             {selected && href ? <span className="sr-only">{t`, selected`}</span> : null}
           </span>
-          {meta ? (
+          {meta && !notice ? (
             <span className="max-w-1/2 shrink-0 truncate text-xs font-normal tabular-nums text-muted-foreground">
               {meta}
             </span>
@@ -157,7 +171,7 @@ export function ListRow({
           <span className="truncate text-xs font-normal text-muted-foreground">{detail}</span>
         ) : null}
       </span>
-      {trailing}
+      {notice ? null : trailing}
     </>
   );
   // A disabled row is a button: a link cannot be disabled.
@@ -170,7 +184,7 @@ export function ListRow({
           if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
             return;
           event.preventDefault();
-          onOpen();
+          onOpen?.();
         }}
       >
         {content}
@@ -196,6 +210,7 @@ export function ListRow({
       )}
     >
       {wrapControl ? wrapControl(control) : control}
+      {notice}
       {actions || menu ? (
         <span
           className={cn(

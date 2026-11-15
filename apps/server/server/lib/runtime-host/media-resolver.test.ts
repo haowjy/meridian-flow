@@ -18,6 +18,7 @@ import { createContextMediaResolver } from "./media-resolver.js";
 
 const context = { threadId: "thread-1", projectId: "project-1", actorUserId: "user-1" };
 const reference = { documentId: "document-1", uri: "uploads://@c1/image.png" };
+const part = { ref: reference, mediaType: "image/png", sizeBytes: 3, name: "image.png" };
 const window = { startMs: 1_000_000, lengthSeconds: 3600 };
 
 function resolver(input: {
@@ -81,7 +82,7 @@ function resolver(input: {
 describe("context media resolution", () => {
   it("signs a link pinned to the window without reading bytes", async () => {
     const reads: string[] = [];
-    const file = await resolver({ reads }).resolve(context, reference, window);
+    const file = await resolver({ reads }).resolve(context, part, window);
     expect(file).toMatchObject({ mediaType: "image/png", sizeBytes: 3, name: "image.png" });
     await expect(file?.source("original", "link")).resolves.toEqual({
       url: "https://bucket.example/uploads/p/d?signed=1000000&exp=7200",
@@ -91,7 +92,7 @@ describe("context media resolution", () => {
 
   it("reads the bytes when the store has no link a provider can reach", async () => {
     const reads: string[] = [];
-    const file = await resolver({ reads, link: null }).resolve(context, reference, window);
+    const file = await resolver({ reads, link: null }).resolve(context, part, window);
     await expect(file?.source("original", "link")).resolves.toEqual({ data: "AQID" });
     expect(reads).toEqual(["uploads/p/d"]);
   });
@@ -103,7 +104,7 @@ describe("context media resolution", () => {
       },
     } as unknown as FileAccess;
     await expect(
-      resolver({ reads: [], fileAccess: denied }).resolve(context, reference, window),
+      resolver({ reads: [], fileAccess: denied }).resolve(context, part, window),
     ).resolves.toBeNull();
   });
 
@@ -112,14 +113,14 @@ describe("context media resolution", () => {
       resolver({
         reads: [],
         availability: { kind: "available", entry: { uri: "uploads://@c1/renamed.png" } },
-      }).resolve(context, reference, window),
+      }).resolve(context, part, window),
     ).resolves.toMatchObject({ mediaType: "image/png" });
   });
 
   it("makes a missing stored object that file's outcome, not an error", async () => {
     const file = await resolver({ reads: [], missingObject: true, link: null }).resolve(
       context,
-      reference,
+      part,
       window,
     );
     await expect(file?.source("original", "bytes")).resolves.toBeNull();
@@ -130,7 +131,7 @@ describe("context media resolution", () => {
     await expect(
       resolver({ reads: [], availability: { kind: "indeterminate" } }).resolve(
         context,
-        reference,
+        part,
         window,
       ),
     ).rejects.toBeInstanceOf(MediaResolutionError);

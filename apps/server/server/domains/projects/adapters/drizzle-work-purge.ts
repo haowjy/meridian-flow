@@ -28,6 +28,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
+  chatMediaPrefix,
   createObjectRelease,
   incomingObjectKey,
   type ObjectStorePort,
@@ -40,7 +41,7 @@ const WORK_PURGE_BATCH_LIMIT = 100;
 
 export function createDrizzleWorkPurger(deps: {
   db: Database;
-  objectStore: Pick<ObjectStorePort, "delete">;
+  objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
   /** A purged Work leaves the project's Works list, which is woken for it. */
@@ -62,10 +63,33 @@ export function createDrizzleWorkPurger(deps: {
     },
   });
 
+  /** The pictures the writers of these threads sent: the chats' own copies, found by prefix. */
+  async function chatMediaKeys(threadIds: readonly string[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (const threadId of threadIds) {
+      let cursor: string | undefined;
+      do {
+        const page = await deps.objectStore.list(chatMediaPrefix(threadId), { cursor });
+        if (!page.ok) {
+          emitEvent(deps.eventSink, {
+            level: "warn",
+            source: "projects.work-purge",
+            name: "object_list.failed",
+            payload: { threadId, error: page.error },
+          });
+          break;
+        }
+        keys.push(...page.value.keys.map((entry) => entry.key));
+        cursor = page.value.cursor;
+      } while (cursor);
+    }
+    return keys;
+  }
+
   async function purge(
     workId: WorkId,
     cutoff: Date,
-  ): Promise<{ purged: boolean; objectKeys: string[] }> {
+  ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
     return deps.branches.withDisposal(workId, (disposeDrafts) =>
       purgeLocked(workId, cutoff, disposeDrafts),
     );
@@ -77,11 +101,11 @@ export function createDrizzleWorkPurger(deps: {
     disposeDrafts: (
       lineageRootIds: readonly string[],
     ) => Promise<{ releasedObjects: readonly string[] }>,
-  ): Promise<{ purged: boolean; objectKeys: string[] }> {
+  ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
       if (lockedTree.lifecycle !== "deleted" || lockedTree.changed) {
-        return { purged: false, objectKeys: [] };
+        return { purged: false, objectKeys: [], threadIds: [] };
       }
       const activeDb = currentDrizzleDb(deps.db);
       const [work] = await activeDb
@@ -89,7 +113,7 @@ export function createDrizzleWorkPurger(deps: {
         .from(works)
         .where(eq(works.id, workId));
       if (!work?.deletedAt || work.deletedAt.getTime() > cutoff.getTime()) {
-        return { purged: false, objectKeys: [] };
+        return { purged: false, objectKeys: [], threadIds: [] };
       }
 
       if (lockedTree.threadIds.length > 0) {
@@ -128,7 +152,7 @@ export function createDrizzleWorkPurger(deps: {
             name: "purge.retained",
             payload: { workId, dependentThreadId: dependent.id },
           });
-          return { purged: false, objectKeys: [] };
+          return { purged: false, objectKeys: [], threadIds: [] };
         }
       }
 
@@ -242,7 +266,7 @@ export function createDrizzleWorkPurger(deps: {
         .returning({ id: works.id });
       if (deleted.length > 0)
         deps.works.lifecycleChanged({ id: workId, projectId: work.projectId });
-      return { purged: deleted.length > 0, objectKeys };
+      return { purged: deleted.length > 0, objectKeys, threadIds: lockedTree.threadIds };
     });
   }
 
@@ -280,7 +304,7 @@ export function createDrizzleWorkPurger(deps: {
           const result = await purge(candidate.id, cutoff);
           if (!result.purged) continue;
           count += 1;
-          await objects.keys(result.objectKeys);
+          await objects.keys([...result.objectKeys, ...(await chatMediaKeys(result.threadIds))]);
         }
       }
       return count;

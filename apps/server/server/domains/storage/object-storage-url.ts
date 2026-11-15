@@ -77,6 +77,14 @@ export function drawObjectKey(file: {
 }
 
 /**
+ * Where a thread's own copies of the pictures its writer sent live, each with its preview beside
+ * it. They live and go with the thread, whatever happens to the uploads they came from.
+ */
+export function chatMediaPrefix(threadId: string): string {
+  return `chat-media/${threadId}/`;
+}
+
+/**
  * Where a browser's PUT lands. No row points at this key, so a late or repeated PUT through the
  * signed URL can only change bytes nobody has read yet; finish copies it to `objectKey` before
  * it reads anything. A bucket lifecycle rule on this prefix is the backstop for stray objects.

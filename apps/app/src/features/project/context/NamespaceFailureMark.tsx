@@ -1,16 +1,29 @@
 /**
- * The mark a document or folder row carries when the server dropped its creation and the row
- * went back. The Editor tree shows it as an icon with a tooltip; the
- * identity bar says it in words. The server's reason follows the sentence, in its own words.
+ * What a document or folder says when the server dropped its creation and the row went back. A
+ * sidebar row says it as a `RowWord` ("Not placed"); the identity bar says it in words. The
+ * server's reason follows the sentence, in its own words.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { TriangleAlert } from "lucide-react";
+import { RowWord } from "@/components/app/RowWord";
 
 function namespaceFailureMessage(folder: boolean, reason: string | undefined): string {
   const said = folder
     ? t`This folder couldn't be created where you put it.`
     : t`This document couldn't be created where you put it.`;
   return `${said} ${reason ?? t`Try another place.`}`;
+}
+
+/** A sidebar row whose creation the server dropped: a warning word, the sentence and the reason. */
+export function NotPlacedWord({ folder = false, reason }: { folder?: boolean; reason?: string }) {
+  return (
+    <RowWord
+      tone="warning"
+      word={<Trans>Not placed</Trans>}
+      sentence={namespaceFailureMessage(folder, reason)}
+    />
+  );
 }
 
 export function NamespaceFailureMark({
