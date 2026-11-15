@@ -47,8 +47,17 @@ How the package models cache lifetimes, retention, cache-write billing, tiers, r
 envelopes is in its [CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md).
 This section is the values Flow puts in the registry.
 
-An offering's `promptCache` restates only what differs from the package defaults. Lifetimes are the provider's real
-values; code that must beat one computes its buffer from them, as `asks/ask-deadline.ts` does.
+A provider lists offerings `{ model, pricing, promptCache? }`: what an endpoint caches and charges belongs to the
+provider serving the model (DeepSeek uses the Anthropic adapter and caches differently). `registry.ts` merges an
+offering's partial `promptCache` field by field over its defaults (explicit, `DEFAULT_SUBAGENT_PROMPT_CACHE_TTL` 5m,
+`DEFAULT_PRIMARY_PROMPT_CACHE_TTL` 1h), so an explicit `null` survives, and `ModelInfo` and `validateModelRegistry`
+share that one resolver. There is no provider-level default. Lifetimes are the provider's real values; code that must
+beat one computes its buffer from them, as `asks/ask-deadline.ts` does.
+
+`validateModelRegistry` runs when the registry loads and throws on: lifetimes not both set or both null; a long
+lifetime shorter than the short one; two lifetimes with `cacheWriteUsdPerMillionTokens` but no
+`cacheWriteLongUsdPerMillionTokens`; and an `inputTierTokens` that is not positive and below the context window.
+`create-from-env.ts` also runs the package's `assertModelsOnWire` over every row.
 
 | Provider | kind | short | long |
 | --- | --- | --- | --- |
