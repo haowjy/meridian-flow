@@ -88,7 +88,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useOnOpen(() => {
     if (!sidebarOver) return;
     foldSidebar();
-    focusMain(main.document.requested ? undefined : mainControl);
+    focusMain();
   });
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
@@ -413,18 +413,6 @@ function SidebarOver({
     >
       {children}
     </DismissableLayer.Root>
-  );
-}
-
-/** Where an open from the sidebar lands when main shows no document: its place to type, else its first control. */
-function mainControl(): HTMLElement | null {
-  const main = document.querySelector<HTMLElement>('[data-project-slot="center"]');
-  return (
-    main?.querySelector<HTMLElement>('[contenteditable="true"], textarea') ??
-    main?.querySelector<HTMLElement>(
-      'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    ) ??
-    null
   );
 }
 

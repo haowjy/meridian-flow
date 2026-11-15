@@ -19,7 +19,7 @@ export function MainSurface({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (joined && ref.current) return joinMain(ref.current);
+    if (joined && ref.current) return joinMain(ref.current, { text: false });
   }, [joined]);
   return (
     <div ref={ref} tabIndex={-1} role={role} className={cn("outline-none", className)}>

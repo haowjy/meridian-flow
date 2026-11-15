@@ -379,7 +379,7 @@ function ActiveSessionEditorView({
     afterPaintRelease(() => {
       if (!mounted || editor.isDestroyed) return;
       if (made && focusIsFree()) editor.commands.focus("start", { scrollIntoView: false });
-      if (inMain) release = joinMain(editor.view.dom);
+      if (inMain) release = joinMain(editor.view.dom, { text: true });
     });
     return () => {
       mounted = false;

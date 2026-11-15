@@ -27,6 +27,8 @@ import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { editorColumnChrome } from "@/features/editor/editor-column";
+import { focusMain } from "@/features/editor/focus-on-open";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
@@ -43,19 +45,30 @@ import { useOpenProjectDocument } from "./open-project-document";
 import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 
-export function RecentDocumentsLanding({
-  projectId,
-  editorWorkId = null,
-  onNewDocument,
-  holdsRemovedNotice = false,
-}: {
+type RecentDocumentsLandingProps = {
   projectId: string;
   editorWorkId?: string | null;
   /** No tab is left to hold the removed-documents notice in the strip. */
   holdsRemovedNotice?: boolean;
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
-}) {
+};
+
+/** Main's Recents: main's surface, so the focus main gives lands on its first row. */
+export function RecentDocumentsLanding(props: RecentDocumentsLandingProps) {
+  return (
+    <MainSurface joined className="flex min-h-0 flex-1 flex-col">
+      <RecentDocuments {...props} />
+    </MainSurface>
+  );
+}
+
+function RecentDocuments({
+  projectId,
+  editorWorkId = null,
+  onNewDocument,
+  holdsRemovedNotice = false,
+}: RecentDocumentsLandingProps) {
   const recent = useRecentDocuments(projectId);
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
@@ -211,7 +224,12 @@ function RecentDocumentRow({
   const listRow = (
     <ListRow
       href={href ?? undefined}
-      onOpen={() => (href ? void router.navigate({ href }) : onOpen(item))}
+      onOpen={() => {
+        // The landing gives way to what opens: main's focus follows to it.
+        focusMain();
+        if (href) void router.navigate({ href });
+        else onOpen(item);
+      }}
       selected={row.selected}
       controlProps={selectionProps}
       menu={menu}

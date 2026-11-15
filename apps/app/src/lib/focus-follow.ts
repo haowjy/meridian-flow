@@ -104,11 +104,18 @@ export function focusWhenFree(element: HTMLElement) {
  * Puts the focus on `target()` whenever it falls free, for a destination that may not be
  * shown yet or may be swapped for another copy after it took the focus. Ends at the
  * writer's first key or press, or when focus lands anywhere outside the target, and then
- * calls `onTaken`. The returned stop ends it without calling `onTaken`.
+ * calls `onTaken`. The returned stop ends it without calling `onTaken`. `focus` places it, for a
+ * target that takes it some other way than `focus()`.
  */
-export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void): () => void {
+export function holdFocus(
+  target: () => HTMLElement | null,
+  onTaken?: () => void,
+  focus: (element: HTMLElement) => void = (element) => element.focus(),
+): () => void {
   const settle = () => {
-    if (focusIsFree()) target()?.focus();
+    if (!focusIsFree()) return;
+    const element = target();
+    if (element) focus(element);
   };
   const outside = (event: FocusEvent) => {
     const to = event.target;
