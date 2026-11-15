@@ -14,6 +14,7 @@ flowchart TB
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
+  command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
   prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
@@ -33,6 +34,7 @@ flowchart TB
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
   server -->|"writes and replays the project tree with"| project-tree
+  app -->|"delivers commands with"| command-driver
   app -->|"syncs the tree's list with"| tree-list-sync
   tree-list-sync -->|"reads the list's records with"| project-tree
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
@@ -151,6 +153,17 @@ The records, the replay and its rules, Apply, Discard and Undo, the server's che
 - Kind: package
 - Paths: `packages/project-tree/src`
 - Docs: [CONTEXT](../../packages/project-tree/.context/CONTEXT.md), [AGENTS](../../packages/project-tree/AGENTS.md)
+
+## command-driver
+
+The one delivery loop for every command the server may or may not have received: a journal of the writer's intent, one delivering tab per account, and the server's stored outcome as the only answer.
+
+Framework-free. The browser's journal, lock, channel and transport come in as ports from the app's `client/commands`; domains project the unsettled records over their own data.
+
+- Kind: package
+- Paths: `packages/command-driver/src`
+- Docs: [AGENTS](../../packages/command-driver/AGENTS.md)
+- Machines: [command-driver](../../packages/command-driver/.context/state-machines.md)
 
 ## thread-client
 
