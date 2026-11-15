@@ -661,6 +661,9 @@ const RENDERERS: Record<string, ToolRenderer> = {
   work: {
     title: (tool) => <WorkToolTitle tool={tool} />,
   },
+  save_agents: {
+    title: phraseTitle,
+  },
   // Only a failed `ask_user` has a row; a question that was asked shows as the takeover and receipt.
   ask_user: {
     title: () => t`Couldn't ask a question`,

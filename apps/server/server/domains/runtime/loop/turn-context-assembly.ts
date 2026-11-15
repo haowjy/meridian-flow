@@ -14,6 +14,7 @@
  *   execution. Later gateway failure or cancellation does not undo that bake.
  */
 
+import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/gateway";
@@ -54,7 +55,6 @@ import {
   projectMediaBlocksForModel,
 } from "./media-context.js";
 import { linkWindowAt } from "./media-link-window.js";
-import type { ToolPolicy } from "./permissions/tool-policy.js";
 import { linkWindowSeconds, promptCacheRetentionFor } from "./prefix-cache-state.js";
 import type { WorkContextReader } from "./work-context.js";
 

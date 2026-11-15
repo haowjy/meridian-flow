@@ -63,6 +63,7 @@ export const CONTEXT_SCHEME_CAPABILITIES = {
   unfiled: { writable: true, searchable: true, creatable: true },
   scratch: { writable: true, searchable: true, creatable: true },
   uploads: { writable: true, searchable: true, creatable: false },
+  agents: { writable: true, searchable: true, creatable: true },
 } as const satisfies Readonly<Record<ContextScheme, SchemeCapabilities>>;
 
 export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {

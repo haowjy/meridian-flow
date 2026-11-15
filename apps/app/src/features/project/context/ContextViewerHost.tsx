@@ -15,6 +15,7 @@ import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
@@ -25,10 +26,29 @@ import { TextViewer } from "./viewers/TextViewer";
 export type ContextViewerHostProps = {
   projectId: string;
   document: Extract<OpenDocument, { kind: "viewer" }>;
+  /** Main's file: once read, it is main's surface (`MainSurface`). */
+  inMain?: boolean;
 };
 
-export function ContextViewerHost({ projectId, document }: ContextViewerHostProps) {
+export function ContextViewerHost({ projectId, document, inMain = false }: ContextViewerHostProps) {
   const read = useProjectContextRead(projectId, document.documentId);
+  return (
+    <MainSurface
+      joined={inMain && read.status !== "loading"}
+      className="flex h-full min-h-0 flex-col"
+    >
+      <ViewerContent document={document} read={read} />
+    </MainSurface>
+  );
+}
+
+function ViewerContent({
+  document,
+  read,
+}: {
+  document: ContextViewerHostProps["document"];
+  read: ReturnType<typeof useProjectContextRead>;
+}) {
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame>

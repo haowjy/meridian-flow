@@ -4,323 +4,6 @@
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_skill_installs": {
-      "name": "account_skill_installs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "account_skill_installs_owner_slug": {
-          "name": "account_skill_installs_owner_slug",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_skill_installs_owner_user_id_users_id_fk": {
-          "name": "account_skill_installs_owner_user_id_users_id_fk",
-          "tableFrom": "account_skill_installs",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_catalog_entries": {
-      "name": "agent_catalog_entries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logical_key": {
-          "name": "logical_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_revision_id": {
-          "name": "selected_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name_sort_key": {
-          "name": "name_sort_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "removed": {
-          "name": "removed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_catalog_entries_personal_key": {
-          "name": "agent_catalog_entries_personal_key",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "logical_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"agent_catalog_entries\".\"owner_user_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_catalog_entries_system_key": {
-          "name": "agent_catalog_entries_system_key",
-          "columns": [
-            {
-              "expression": "logical_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"agent_catalog_entries\".\"owner_user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_catalog_entries_owner_name": {
-          "name": "agent_catalog_entries_owner_name",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name_sort_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_catalog_entries_owner_user_id_users_id_fk": {
-          "name": "agent_catalog_entries_owner_user_id_users_id_fk",
-          "tableFrom": "agent_catalog_entries",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_catalog_entries_selected_revision_id_agent_definition_revisions_id_fk": {
-          "name": "agent_catalog_entries_selected_revision_id_agent_definition_revisions_id_fk",
-          "tableFrom": "agent_catalog_entries",
-          "tableTo": "agent_definition_revisions",
-          "columnsFrom": [
-            "selected_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_catalog_revisions": {
-      "name": "agent_catalog_revisions",
-      "schema": "",
-      "columns": {
-        "catalog_entry_id": {
-          "name": "catalog_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "definition_revision_id": {
-          "name": "definition_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_catalog_revisions_catalog_entry_id_agent_catalog_entries_id_fk": {
-          "name": "agent_catalog_revisions_catalog_entry_id_agent_catalog_entries_id_fk",
-          "tableFrom": "agent_catalog_revisions",
-          "tableTo": "agent_catalog_entries",
-          "columnsFrom": [
-            "catalog_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_catalog_revisions_definition_revision_id_agent_definition_revisions_id_fk": {
-          "name": "agent_catalog_revisions_definition_revision_id_agent_definition_revisions_id_fk",
-          "tableFrom": "agent_catalog_revisions",
-          "tableTo": "agent_definition_revisions",
-          "columnsFrom": [
-            "definition_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_catalog_revisions_catalog_entry_id_definition_revision_id_pk": {
-          "name": "agent_catalog_revisions_catalog_entry_id_definition_revision_id_pk",
-          "columns": [
-            "catalog_entry_id",
-            "definition_revision_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.agent_definition_revisions": {
       "name": "agent_definition_revisions",
       "schema": "",
@@ -437,124 +120,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.agent_package_installations": {
-      "name": "agent_package_installations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "coordinate": {
-          "name": "coordinate",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "current_revision_id": {
-          "name": "current_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_package_installations_personal_coordinate": {
-          "name": "agent_package_installations_personal_coordinate",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coordinate",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"agent_package_installations\".\"owner_user_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_package_installations_system_coordinate": {
-          "name": "agent_package_installations_system_coordinate",
-          "columns": [
-            {
-              "expression": "coordinate",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"agent_package_installations\".\"owner_user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_package_installations_owner_user_id_users_id_fk": {
-          "name": "agent_package_installations_owner_user_id_users_id_fk",
-          "tableFrom": "agent_package_installations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_package_installations_current_revision_id_agent_package_revisions_id_fk": {
-          "name": "agent_package_installations_current_revision_id_agent_package_revisions_id_fk",
-          "tableFrom": "agent_package_installations",
-          "tableTo": "agent_package_revisions",
-          "columnsFrom": [
-            "current_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.agent_package_revisions": {
       "name": "agent_package_revisions",
       "schema": "",
@@ -622,28 +187,154 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.project_agent_removals": {
-      "name": "project_agent_removals",
+    "public.agent_package_saves": {
+      "name": "agent_package_saves",
       "schema": "",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "catalog_entry_id": {
-          "name": "catalog_entry_id",
-          "type": "uuid",
+        "folder": {
+          "name": "folder",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "package_revision_id": {
+          "name": "package_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "agent_package_saves_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "agent_package_saves_user_folder_seq": {
+          "name": "agent_package_saves_user_folder_seq",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "folder",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_package_saves_project_folder_seq": {
+          "name": "agent_package_saves_project_folder_seq",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "folder",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_package_saves_package_revision": {
+          "name": "agent_package_saves_package_revision",
+          "columns": [
+            {
+              "expression": "package_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "project_agent_removals_project_id_projects_id_fk": {
-          "name": "project_agent_removals_project_id_projects_id_fk",
-          "tableFrom": "project_agent_removals",
+        "agent_package_saves_user_id_users_id_fk": {
+          "name": "agent_package_saves_user_id_users_id_fk",
+          "tableFrom": "agent_package_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_package_saves_project_id_projects_id_fk": {
+          "name": "agent_package_saves_project_id_projects_id_fk",
+          "tableFrom": "agent_package_saves",
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
@@ -654,32 +345,29 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "project_agent_removals_catalog_entry_id_agent_catalog_entries_id_fk": {
-          "name": "project_agent_removals_catalog_entry_id_agent_catalog_entries_id_fk",
-          "tableFrom": "project_agent_removals",
-          "tableTo": "agent_catalog_entries",
+        "agent_package_saves_package_revision_id_agent_package_revisions_id_fk": {
+          "name": "agent_package_saves_package_revision_id_agent_package_revisions_id_fk",
+          "tableFrom": "agent_package_saves",
+          "tableTo": "agent_package_revisions",
           "columnsFrom": [
-            "catalog_entry_id"
+            "package_revision_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "project_agent_removals_project_id_catalog_entry_id_pk": {
-          "name": "project_agent_removals_project_id_catalog_entry_id_pk",
-          "columns": [
-            "project_id",
-            "catalog_entry_id"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "agent_package_saves_one_owner": {
+          "name": "agent_package_saves_one_owner",
+          "value": "(\"agent_package_saves\".\"user_id\" IS NULL) <> (\"agent_package_saves\".\"project_id\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.thread_agent_bindings": {

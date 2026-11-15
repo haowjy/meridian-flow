@@ -11,9 +11,16 @@ import {
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
+import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { AgentPickerPanel } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
-import { type BoundAgent, boundAgentRow, type CreationAgent } from "./creation-agent";
+import {
+  type BoundAgent,
+  boundAgentRow,
+  type CreationAgent,
+  pickableAgents,
+} from "./creation-agent";
 
 export type ComposerAgentControlProps =
   | {
@@ -41,10 +48,7 @@ export function useComposerAgentToolbarControl(
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
-  const selectable =
-    catalog.status === "ready"
-      ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
-      : [];
+  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
   const selectedAgent =
     props.mode === "interactive"
       ? props.selectedAgent
@@ -74,7 +78,7 @@ export function useComposerAgentToolbarControl(
         </ComposerCurrentValueStatus>
       ),
     };
-  const focusableIds = selectable.map((agent) => agent.selection.catalogEntryId);
+  const focusableIds = selectable.map((agent) => agent.selection.slug);
   const pageId =
     catalog.status === "error"
       ? "error"
@@ -85,8 +89,7 @@ export function useComposerAgentToolbarControl(
           : "loading";
   const choose = (next: CreationAgent) => {
     if (props.mode === "interactive") props.onSelectedAgentChange(next);
-    else if (next.selection.catalogEntryId !== selectedAgent?.selection.catalogEntryId)
-      props.onHandoff?.(next);
+    else if (next.selection.slug !== selectedAgent?.selection.slug) props.onHandoff?.(next);
   };
   return {
     kind: "panel",
@@ -109,7 +112,7 @@ export function useComposerAgentToolbarControl(
           pageId === "ready"
             ? [
                 {
-                  key: `selected:${selectedAgent?.selection.catalogEntryId ?? "none"}`,
+                  key: `selected:${selectedAgent?.selection.slug ?? "none"}`,
                   ref: selectedRef,
                 },
                 { key: `first:${focusableIds[0] ?? "none"}`, ref: firstRef },
@@ -132,6 +135,12 @@ export function useComposerAgentToolbarControl(
             onSelect={(next) => {
               choose(next);
               terminalClose();
+            }}
+            projectId={props.projectId}
+            onOpenAgents={() => {
+              terminalClose();
+              useSidebarTabs.getState().reveal("agents");
+              useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
             }}
           />
         </>

@@ -7,10 +7,14 @@ const MAX_NAME = 255;
 /**
  * The name a node of this kind shows for what a record says: every create, rename and move name
  * goes through `normalEntryName` where the node's kind is known, so a record from any client
- * build shows the same. Frozen with it (the replay reads it, rule 13).
+ * build shows the same, and a `source` document's is literal. Frozen with it (the replay reads it, rule 13).
  */
-export function shownName(kind: NodeKind, name: string): string {
-  return normalEntryName(kind === "document" ? "document" : "folder", name);
+export function shownName(kind: NodeKind, name: string, filetype?: string | null): string {
+  // A `source` document (an Agents file, `agents/critic.md`) keeps its suffix: Mars reads those bytes.
+  return normalEntryName(
+    kind === "document" && filetype !== "source" ? "document" : "folder",
+    name,
+  );
 }
 
 /** The parts of a stored name that a numbered copy keeps apart: `notes (2).txt`, not `notes.txt (2)`. */

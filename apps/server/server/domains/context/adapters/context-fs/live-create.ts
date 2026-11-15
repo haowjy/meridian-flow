@@ -18,7 +18,7 @@ import type {
 } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
-import type { ContextWriteOptions } from "../../ports/context-port.js";
+import type { ContextScheme, ContextWriteOptions } from "../../ports/context-port.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import type { BoundWrites } from "./bound-writes.js";
 import { type CreateTarget, resolveCreateTarget } from "./create-target.js";
@@ -37,6 +37,7 @@ export interface LiveCreateDeps {
   documentCreation: DocumentCreationAggregate;
   boundWrites: BoundWrites;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
+  scheme: ContextScheme;
   holderUri(path: string): string;
   syncFault(error: SyncError): AdapterFault;
 }
@@ -50,7 +51,7 @@ export class LiveCreate {
     content: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    const target = resolveCreateTarget(path);
+    const target = resolveCreateTarget(this.deps.scheme, path);
     if (!target.ok) return target;
     const withContent = content !== null && content.markdown.length > 0 ? content : null;
     return this.deps.executor.run(async () => {

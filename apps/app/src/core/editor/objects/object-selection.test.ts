@@ -107,9 +107,9 @@ describe("leaving a block that ends its cell", () => {
     ]);
     const pos = positionOf(instance, "code_block");
 
-    const transaction = typeBesideObjectTransaction(instance.state, pos, "Q");
+    const transaction = typeBesideObjectTransaction(instance.state, pos);
     expect(transaction).not.toBeNull();
-    if (transaction) instance.view.dispatch(transaction);
+    if (transaction) instance.view.dispatch(transaction.insertText("Q"));
 
     const cell = firstCellRange(instance);
     expect(instance.state.selection.from).toBeGreaterThanOrEqual(cell.start);

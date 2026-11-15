@@ -1,38 +1,65 @@
-# Object physics contracts
+# Object selection and input contracts
 
-Inline rows have to be schema-inline and expose `data-drag-handle`. `surfaceFields`
-is the only list of attrs the object surface edits. A shipped `surface` row needs an
-engagement handler; the key is consumed even when none is available.
+`EDITOR_OBJECT_TYPES` in [object-types.ts](../object-types.ts) registers the nodes
+that behave as objects rather than editable prose. An `inline-drag` registration
+must use a schema-inline node whose view exposes `data-drag-handle`; a block figure
+cannot be dragged between words like an inline image.
+
+`surfaceFields` lists the attributes an object's dialog may edit. A registration
+with `engage: "surface"` needs a `registerObjectEngagement` handler in
+[ObjectPhysicsExtension.ts](../ObjectPhysicsExtension.ts). Enter is consumed even
+without a handler so it cannot fall through and split a selected object.
 
 ## Selection and pointer
 
-`selectObjectTransaction` may dispatch a NodeSelection for a table because the table
-plugin normalizes it on entry. The mousedown listener sits beside, not inside,
-ProseMirror's click machinery so double-click counting survives.
+`selectObjectTransaction` may request a NodeSelection for a table because the table
+plugin normalizes it to a full-table CellSelection. A partial CellSelection means
+the writer is editing cells, not selecting the table as an object; typing replaces
+those cells.
 
-## Walk and destructive actions
+The mousedown listener sits beside, not inside, ProseMirror's click machinery so
+click-to-select does not break double-click-to-open. Selection rings come from
+decorations, not node-view callbacks that a remote rebuild can lose.
 
-The resolved landing of a walk is read back through registration, because
-schema-aware `Selection.near` can't distinguish hidden rendered source from prose.
+## Arrow movement and Escape
 
-Arrow movement and Escape differ. Arrow asks for the adjacent object and may stop at
-a dead end. Escape searches forward for writable prose, skipping opaque objects and
-leaves, and looks behind only when nothing is ahead. A partial `CellSelection` is a
-writer editing inside the table, so typing still replaces the swept cells.
+The movement helpers in [object-selection.ts](../object-selection.ts) check each
+landing against object registration. Schema-aware `Selection.near` alone cannot
+distinguish hidden diagram source from visible prose.
 
-A picture drags between words and a figure has no inline place. Esc on an object that
-is the whole document makes a paragraph so the writer isn't trapped. Enter on a
-selected plain code fence takes the caret to its start and always consumes the key,
-because Enter reaching the base keymap would split the block. A fence isn't an object,
-so that binding sits at `block` scope; the arrow walk does too, because walking onto
-an object starts from the prose beside it.
+An arrow asks for the adjacent object and may stop at a dead end. Escape searches
+forward for writable prose, skipping opaque objects; a gap after a trailing object
+is a valid destination. It looks behind only when nothing is ahead, and can create
+a paragraph when the object is the whole document. These searches stay inside the
+nearest isolating ancestor, so leaving an object in a cell does not jump to another
+cell.
 
-## Selection details
+A plain code fence is not an object. Enter on its NodeSelection takes the caret to
+its start and consumes the key so the base keymap cannot split it. That binding
+uses Chrome's block scope, as do arrows approaching an object from prose.
 
-Esc and printable input step over an opaque object to the next writable position. A
-press or drop beside a fence is not a dead end: its facing edge takes the caret when
-no prose is on the other side. An adjacent object of the same type takes a restored
-node selection; the ring shows it. A newly created object may open ready to edit,
-while an existing one shows its state. A structural drop must resolve inside a cell
-rather than manufacture a column. `typeBesideObjectTransaction` inserts beside a
-selected object.
+A remote rebuild may restore a NodeSelection by position. If a different node type
+now occupies that position, the extension changes it to a text caret; otherwise
+typing would replace unrelated text. An adjacent object of the same type remains
+selected, with its ring visible.
+
+A press or drop beside a plain code fence takes its facing text edge when there
+is no prose on the other side. The [landing helpers](../../landing/press.ts) own
+that choice; object selection must not turn this editable edge into a dead end.
+
+## Typing
+
+`typeBesideObjectTransaction` prepares writable text after the selected object,
+using existing prose or making a paragraph. It does not insert characters. The
+`ObjectPhysicsExtension` text-input handler adds the committed text to that
+transaction. This is also the policy for a fully selected table: type after the
+table, preserving its cells.
+
+Physical keypresses and the extension's cancelable, non-composing `beforeinput`
+`insertText` handler use the same ProseMirror `handleTextInput` chain. The
+`compositionstart` handler prepares the destination, then leaves provisional text
+and commit to the browser. It must run before ProseMirror's own compositionstart
+handler, which calls `endComposition` with `restarting` set for a nonempty
+selection. That path deletes a non-inline selection, removing a selected block or
+emptying a selected table's cells. Waiting for `beforeinput` is too late. Ordinary
+text and partial cell selections keep their existing input paths.

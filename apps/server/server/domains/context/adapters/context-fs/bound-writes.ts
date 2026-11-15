@@ -5,7 +5,7 @@
  * the command transaction will hold; the transaction then applies the
  * bound write and checks it was bound for what occupies the path now.
  */
-import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
+import { classifyFiletype, documentFilenameAt } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { BoundWrite, MarkdownDocumentStore } from "../../../collab/index.js";
@@ -14,6 +14,7 @@ import { splitPath } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type { ContextDocument } from "../../ports/context-document-store.js";
+import type { ContextScheme } from "../../ports/context-port.js";
 
 export const DEFAULT_EDITABLE_FILETYPE = "markdown";
 
@@ -27,6 +28,7 @@ export function binaryTrackedWriteFault(path: string): AdapterFault {
 export interface BoundWritesDeps {
   documentSync: Pick<MarkdownDocumentStore, "bindMarkdown">;
   commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
+  scheme: ContextScheme;
   /** The project a document created here belongs to. */
   projectId: string;
   /** The canonical address a document at `path` has, or will have. */
@@ -96,7 +98,7 @@ export class BoundWrites {
   ): Promise<Result<BoundWrite, AdapterFault>> {
     const { filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
-    const parsed = parseDocumentFilename(filename);
+    const parsed = documentFilenameAt(this.deps.scheme, path);
     if (!parsed.ok) return Err(parsed.error);
     const filetype = existing?.filetype ?? parsed.value.filetype;
     if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));

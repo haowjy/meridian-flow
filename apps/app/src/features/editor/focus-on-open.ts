@@ -1,6 +1,7 @@
 /**
  * focus-on-open — a document the writer just made opens with the caret in it, and so
- * does main's first document after a page load.
+ * does main's document after a page load or an open from a sidebar lying over main
+ * (`focusMain`).
  *
  * Creating a document (New file, a link's Create) is an invitation to type. The
  * committed open arms its document, and only the editor of that document claims
@@ -9,7 +10,6 @@
  * focuses a later one of the same document.
  */
 
-import type { Editor } from "@tiptap/core";
 import { focusIsFree, holdFocus } from "@/lib/focus-follow";
 
 let armed: string | null = null;
@@ -27,35 +27,83 @@ export function claimEditorFocus(documentId: string | undefined): boolean {
 }
 
 /**
- * A page load gives main's document the caret to the document it shows, so the writer's
- * first keys land in the text rather than in the side panel's chat. Held from the load
- * until the writer takes the focus (a key, a press, focus placed anywhere else, even
- * before an editor has painted); not on a touch screen, where focusing a text opens the
- * on-screen keyboard over it. Editors join as they paint and leave as they unmount.
+ * What main shows, as it paints, each marked whether it is a text the writer wrote in (an editor,
+ * a chat's composer): a stand-in (a failure, a viewer, a landing; `MainSurface`) is not. A warm
+ * copy mounts hidden or inert beside the shown one.
  */
-const loadEditors = new Set<Editor>();
-let loadFocusOpen =
-  typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches;
-if (loadFocusOpen) {
-  holdFocus(shownLoadEditor, () => {
-    loadFocusOpen = false;
-    loadEditors.clear();
-  });
+const mainSurfaces = new Map<HTMLElement, { text: boolean }>();
+
+const CONTROL =
+  'button:not(:disabled), [href], input:not(:disabled), textarea, [tabindex]:not([tabindex="-1"])';
+
+/** The first control in `root` that is not part of `skip` (a text's own links). */
+function firstControl(root: ParentNode | null, skip?: HTMLElement): HTMLElement | null {
+  if (!root) return null;
+  for (const control of root.querySelectorAll<HTMLElement>(CONTROL))
+    if (!skip?.contains(control)) return control;
+  return null;
 }
 
-/** The registered editor that is on screen: a warm copy mounts hidden or inert beside it. */
-function shownLoadEditor(): HTMLElement | null {
-  for (const editor of loadEditors) {
-    const dom = editor.isDestroyed ? null : editor.view.dom;
-    if (dom && dom.getClientRects().length > 0 && !dom.closest("[inert]")) return dom;
+/**
+ * Main's focus, one rule: the shown surface when it takes the caret (an editable text); else the
+ * first control in it (a stand-in's: a failed load's Retry, a landing's first row), never one
+ * inside the writer's text; else the first control around it in main (a read-only document's
+ * chrome); else a stand-in itself (`tabIndex={-1}`).
+ */
+function mainTarget(): HTMLElement | null {
+  for (const [surface, { text }] of mainSurfaces) {
+    if (surface.getClientRects().length === 0 || surface.closest("[inert]")) continue;
+    if (surface.isContentEditable) return surface;
+    const main = surface.closest<HTMLElement>('main, [role="main"]');
+    if (text) return firstControl(main, surface);
+    return firstControl(surface) ?? firstControl(main, surface) ?? surface;
   }
   return null;
 }
 
-/** Joins `editor` to the load's hold while it can still take the caret; returns its leave. */
-export function focusOnLoad(editor: Editor): () => void {
-  if (!loadFocusOpen) return () => {};
-  loadEditors.add(editor);
-  if (focusIsFree()) shownLoadEditor()?.focus();
-  return () => loadEditors.delete(editor);
+/** A text takes the caret where it keeps it; a control takes the focus without scrolling to it. */
+function focusTarget(target: HTMLElement) {
+  if (target.isContentEditable) target.focus();
+  else target.focus({ preventScroll: true });
+}
+
+let stopMainFocus: (() => void) | null = null;
+
+/**
+ * Main takes the focus (`mainTarget`) as soon as its surface shows and whenever the focus falls
+ * free, until the writer takes the focus (a key, a press, focus placed anywhere else). A later
+ * call replaces an earlier one.
+ */
+export function focusMain(): void {
+  stopMainFocus?.();
+  stopMainFocus = holdFocus(
+    mainTarget,
+    () => {
+      stopMainFocus = null;
+    },
+    focusTarget,
+  );
+}
+
+/**
+ * A page load gives main the focus, so the writer's first keys land in its text rather than in
+ * the side panel's chat; not on a touch screen, where focusing a text opens the on-screen
+ * keyboard over it.
+ */
+if (typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches) focusMain();
+
+/**
+ * Joins `surface` to what main shows; returns its leave. `text` marks an editor or a composer,
+ * whose own links are never main's focus. A stand-in carries `tabIndex={-1}`, so it can hold the
+ * focus when it has no control.
+ */
+export function joinMain(surface: HTMLElement, { text }: { text: boolean }): () => void {
+  mainSurfaces.set(surface, { text });
+  if (stopMainFocus && focusIsFree()) {
+    const target = mainTarget();
+    if (target) focusTarget(target);
+  }
+  return () => {
+    mainSurfaces.delete(surface);
+  };
 }

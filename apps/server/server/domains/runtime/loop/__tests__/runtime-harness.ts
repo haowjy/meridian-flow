@@ -20,7 +20,6 @@ import {
 import { createProjectWakeHub } from "../../../context/project-wake-hub.js";
 import type { NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { readThreadActivity } from "../../../threads/domain/thread-activity.js";
 import {
@@ -157,7 +156,7 @@ export function createRuntimeHarness(
       "",
       boundThreads,
     ),
-    accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
+    agentCatalog: { resolveSkill: async () => undefined },
     toolRegistry,
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     rateSource: registryTokenRateSource(),

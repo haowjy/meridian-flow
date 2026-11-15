@@ -20,7 +20,7 @@ const ACCOUNT = "account";
 const agent = {
   name: "General",
   slug: "general",
-  selection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
+  selection: { slug: "general", definitionRevisionId: "rev" },
 };
 
 function actions(): ThreadStoreActions & { calls: string[] } {

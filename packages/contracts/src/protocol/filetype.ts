@@ -37,6 +37,8 @@ export type Filetype =
   | "yaml"
   | "text"
   | "csv"
+  // Package files in an Agents location: code text that keeps its suffix (`x.md` is `x.md`)
+  | "source"
   // Custom viewers (future — no ProseMirror schema)
   | "notebook"
   // Binary (read-only, S3-backed — no ProseMirror schema)
@@ -69,6 +71,7 @@ const FILETYPE_DISPOSITIONS = {
   yaml: { kind: "tracked", schemaType: "code" },
   text: { kind: "tracked", schemaType: "document" },
   csv: { kind: "tracked", schemaType: "code" },
+  source: { kind: "tracked", schemaType: "code" },
   notebook: { kind: "custom", fileType: "binary" },
   pdf: { kind: "binary", fileType: "pdf" },
   png: { kind: "binary", fileType: "image" },
