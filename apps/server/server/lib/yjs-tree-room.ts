@@ -16,6 +16,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
+import { createDetachedWorkTracker } from "../shared/detached-work.js";
 import type { AppServices } from "./app.js";
 
 /** A Yjs update with no items is these two bytes: every connection's SyncStep2 may be one. */
@@ -85,6 +86,13 @@ function refusal(tree: TreeRoomConnection, close: RoomClose): TreeRoomRefusal {
 export function createTreeRooms(services: TreeRoomServices) {
   const { treeLists: store } = services;
   const rooms = new Map<string, Room>();
+  // Every store read and write a room starts, including the catch-ups a commit notification
+  // fires on its own: `dispose` waits for them, so a closed gateway leaves no transaction open.
+  const work = createDetachedWorkTracker();
+  const tracked =
+    <Args extends unknown[], Result>(fn: (...args: Args) => Promise<Result>) =>
+    (...args: Args) =>
+      work.track(fn(...args));
 
   /**
    * Brings the room's document to the journal's head: after a commit on any process (the
@@ -105,7 +113,7 @@ export function createTreeRooms(services: TreeRoomServices) {
         room.catching = null;
       }
     })();
-    return room.catching;
+    return work.track(room.catching);
   }
 
   // This process's own commit reaches its connections at once (the sender hears the verdicts);
@@ -170,43 +178,47 @@ export function createTreeRooms(services: TreeRoomServices) {
      * A connection's access: the project (or account), not a document. `register` enrolls the
      * connection with the gateway's access index, which closes it when the access ends.
      */
-    async connect(input: {
-      list: TreeList;
-      accountId: string;
-      /** The list id the client's stored copy was made of, or null for a copy with none. */
-      storedListId: string | null;
-      register(roomName: string): void;
-    }): Promise<TreeRoomConnection> {
-      const opened = await store.open({ list: input.list, accountId: input.accountId });
-      if (!opened) throw new TreeRoomRefusal(WS_CLOSE.PERMISSION_DENIED);
-      input.register(treeRoomName(input.list));
-      // A copy of another list (a reset database, a recreated account list) is thrown away by
-      // the client, which loads this one from nothing.
-      if (input.storedListId !== null && input.storedListId !== opened.listId)
-        throw new TreeRoomRefusal(listChangedClose(opened.listId));
-      return {
-        list: input.list,
-        listId: opened.listId,
-        accountId: input.accountId,
-        tokens: BURST,
-        countedAt: Date.now(),
-        refusal: null,
-        queue: Promise.resolve(),
-      };
-    },
+    connect: tracked(
+      async (input: {
+        list: TreeList;
+        accountId: string;
+        /** The list id the client's stored copy was made of, or null for a copy with none. */
+        storedListId: string | null;
+        register(roomName: string): void;
+      }): Promise<TreeRoomConnection> => {
+        const opened = await store.open({ list: input.list, accountId: input.accountId });
+        if (!opened) throw new TreeRoomRefusal(WS_CLOSE.PERMISSION_DENIED);
+        input.register(treeRoomName(input.list));
+        // A copy of another list (a reset database, a recreated account list) is thrown away by
+        // the client, which loads this one from nothing.
+        if (input.storedListId !== null && input.storedListId !== opened.listId)
+          throw new TreeRoomRefusal(listChangedClose(opened.listId));
+        return {
+          list: input.list,
+          listId: opened.listId,
+          accountId: input.accountId,
+          tokens: BURST,
+          countedAt: Date.now(),
+          refusal: null,
+          queue: Promise.resolve(),
+        };
+      },
+    ),
 
-    async load(input: { documentName: string; document: Y.Doc; tree: TreeRoomConnection }) {
-      const read = await store.readSince({ listId: input.tree.listId, afterSeq: 0 });
-      Y.applyUpdate(input.document, read.update, SERVER_ORIGIN);
-      rooms.set(input.tree.listId, {
-        documentName: input.documentName,
-        listId: input.tree.listId,
-        document: input.document,
-        seq: read.seq,
-        catching: null,
-        stale: false,
-      });
-    },
+    load: tracked(
+      async (input: { documentName: string; document: Y.Doc; tree: TreeRoomConnection }) => {
+        const read = await store.readSince({ listId: input.tree.listId, afterSeq: 0 });
+        Y.applyUpdate(input.document, read.update, SERVER_ORIGIN);
+        rooms.set(input.tree.listId, {
+          documentName: input.documentName,
+          listId: input.tree.listId,
+          document: input.document,
+          seq: read.seq,
+          catching: null,
+          stale: false,
+        });
+      },
+    ),
 
     unloaded(documentName: string) {
       for (const [listId, room] of rooms)
@@ -219,30 +231,34 @@ export function createTreeRooms(services: TreeRoomServices) {
      * the connection with `COPY_BROKEN` and nothing is applied anywhere. Throws
      * `TreeRoomRefusal` to refuse; any other error is the gateway's to turn into a close.
      */
-    async beforeSync(input: { tree: TreeRoomConnection; type: number; payload: Uint8Array }) {
-      const { tree } = input;
-      if (tree.refusal) throw new TreeRoomRefusal(tree.refusal);
-      const turn = tree.queue.then(async () => {
-        // A message queued before an earlier one faulted finds the connection shut when its turn comes.
-        if (tree.refusal) return { cause: new TreeRoomRefusal(tree.refusal) };
-        try {
-          await admitMessage(tree, input.type, input.payload);
-          return null;
-        } catch (cause) {
-          // The gateway closes the socket on any error; the queued messages behind it must find it closed.
-          tree.refusal ??= SERVER_ERROR_CLOSE;
-          return { cause };
-        }
-      });
-      tree.queue = turn.then(() => undefined);
-      const fault = await turn;
-      if (fault) throw fault.cause;
-    },
+    beforeSync: tracked(
+      async (input: { tree: TreeRoomConnection; type: number; payload: Uint8Array }) => {
+        const { tree } = input;
+        if (tree.refusal) throw new TreeRoomRefusal(tree.refusal);
+        const turn = tree.queue.then(async () => {
+          // A message queued before an earlier one faulted finds the connection shut when its turn comes.
+          if (tree.refusal) return { cause: new TreeRoomRefusal(tree.refusal) };
+          try {
+            await admitMessage(tree, input.type, input.payload);
+            return null;
+          } catch (cause) {
+            // The gateway closes the socket on any error; the queued messages behind it must find it closed.
+            tree.refusal ??= SERVER_ERROR_CLOSE;
+            return { cause };
+          }
+        });
+        tree.queue = turn.then(() => undefined);
+        const fault = await turn;
+        if (fault) throw fault.cause;
+      },
+    ),
 
-    dispose() {
+    /** Stops listening and resolves once the work the rooms started has settled. */
+    async dispose() {
       stopCommitted();
       stopAdvanced();
       rooms.clear();
+      await work.drain();
     },
   };
 }
