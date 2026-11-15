@@ -8,7 +8,11 @@ export function createTestAgentBinding(
   boundThreads: () => readonly string[] = () => [],
 ): Pick<
   AgentRevisionStore,
-  "readThreadBinding" | "readSource" | "readRevision" | "recordInvokedSkill"
+  | "readThreadBinding"
+  | "readSource"
+  | "readRevision"
+  | "recordInvokedSkill"
+  | "replaceThreadBinding"
 > {
   return {
     async readThreadBinding(threadId) {
@@ -42,6 +46,9 @@ export function createTestAgentBinding(
       return undefined;
     },
     async recordInvokedSkill(threadId) {
+      return boundThreads().includes(threadId);
+    },
+    async replaceThreadBinding(threadId) {
       return boundThreads().includes(threadId);
     },
   };
