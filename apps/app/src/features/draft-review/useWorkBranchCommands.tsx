@@ -140,6 +140,16 @@ export function useWorkBranchCommands({
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
     /**
+     * A server Discard's share of the notice, as its answer says: only what it took stays, and
+     * what an Apply took first says so (`DraftNotices.answered`). A share it never answered for
+     * (refused, blocked) leaves.
+     */
+    const answeredShare = (handle: DiscardUndo, answer: CommandOutcome) => {
+      const took = answer.kind === "done" || answer.kind === "settled" ? answer.took : undefined;
+      if (took) notices.answered(handle, took);
+      else if (answer.kind !== "done") notices.partEnded(handle);
+    };
+    /**
      * The one place a closed owner's `returned` answer becomes a notice: the chip on the control
      * pressed (`documentIds`: its rows; none: the bar's), and the Works list read again, since
      * the writer's view of the Work was stale.
@@ -378,22 +388,29 @@ export function useWorkBranchCommands({
       const outcomes = Promise.all(started.outcomes.slice(0, members.length));
       void Promise.all([outcomes, Promise.all(started.outcomes), started.answer]).then(
         ([settled, _all, answer]) => {
-          const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
-          const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
+          // The step is what the answer says landed, not what was pressed: an item settled
+          // before it (an earlier Discard's, another Apply's) is no part of its Undo.
+          const landed = answer?.status === "applied" ? answer : null;
+          const taken =
+            landed?.items.flatMap((item) =>
+              item.tree?.landed || item.text?.landed ? [item.node] : [],
+            ) ?? [];
+          const only =
+            taken.length === 1
+              ? titleOf(members.find((m) => m.draft.documentId === taken[0])?.item)
+              : null;
           const count = taken.length;
           // Only an Apply that landed something is a step: Ctrl+Z would take an empty one.
-          const landed =
-            answer?.status === "applied" &&
-            answer.items.some((item) => item.tree?.landed || item.text?.landed);
-          const step = landed
-            ? rememberApply(
-                answer.commandId,
-                branchId,
-                taken,
-                name ?? only ?? t`${count} changes`,
-                halvesOf(answer),
-              )
-            : null;
+          const step =
+            count > 0 && landed
+              ? rememberApply(
+                  landed.commandId,
+                  branchId,
+                  taken,
+                  name ?? only ?? t`${count} changes`,
+                  halvesOf(landed),
+                )
+              : null;
           if (first)
             applied(
               first.draft,
@@ -529,7 +546,7 @@ export function useWorkBranchCommands({
         ownText: boolean,
       ): DiscardPart => {
         void outcome.then((answer) => {
-          if (answer.kind !== "done" && !ownText) notices.partEnded(handle);
+          if (!ownText) answeredShare(handle, answer);
         });
         return { documentId: draft.documentId, name, scope, handle };
       };
@@ -665,9 +682,7 @@ export function useWorkBranchCommands({
           return answer;
         });
       const handle = serverUndo(branchId, commandId, documentIds);
-      void outcome.then((answer) => {
-        if (answer.kind !== "done") notices.partEnded(handle);
-      });
+      void outcome.then((answer) => answeredShare(handle, answer));
       const [first] = input.drafts;
       const count = input.drafts.length + folders.length;
       const surface: NoticeSurface = first ? noticeSurface(first) : { kind: "changes" };

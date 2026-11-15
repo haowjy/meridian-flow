@@ -486,6 +486,10 @@ msgstr ""
 msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
+msgstr ""
+
 #: src/features/agents/PackageSave.tsx
 msgid "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
 msgstr ""
@@ -1356,6 +1360,10 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied as {name}: the name was taken."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied first"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -2284,37 +2292,37 @@ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0} drafts."
-msgstr ""
+#~ msgid "Couldn't bring back {0} drafts."
+#~ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0} items."
-msgstr ""
+#~ msgid "Couldn't bring back {0} items."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0}."
-msgstr ""
+#~ msgid "Couldn't bring back {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the change to {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the change to {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the changes in {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the changes in {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the draft of {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the draft of {0}."
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring it back. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't bring it back. Retry tries again."
+#~ msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't check how this question ended."
@@ -2573,8 +2581,8 @@ msgid "Couldn’t pin {title}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Couldn't put them back in Trash. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't put them back in Trash. Retry tries again."
+#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
@@ -2594,8 +2602,8 @@ msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
-msgid "Couldn't reach the server. Undo tries again."
-msgstr ""
+#~ msgid "Couldn't reach the server. Undo tries again."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
@@ -2791,20 +2799,20 @@ msgid "Couldn't undo"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Couldn't undo applying {name}. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't undo applying {name}. Retry tries again."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 #~ msgid "Couldn't undo applying {name}. Try again."
 #~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Couldn't undo the switch."
-msgstr ""
+#~ msgid "Couldn't undo the switch."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't undo this Apply. Try again."
-msgstr ""
+#~ msgid "Couldn't undo this Apply. Try again."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t unpin {title}"
@@ -7215,8 +7223,8 @@ msgid "This version of Meridian can't display it."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This was applied before your Discard reached it."
-msgstr ""
+#~ msgid "This was applied before your Discard reached it."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This was discarded before Apply reached it. Restore it to apply it."
@@ -7465,7 +7473,14 @@ msgstr ""
 msgid "Undo delete of {title}"
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
+#: src/features/agents/PackageSave.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/turn-receipt-copy.ts
+#: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+#: src/features/project/context/use-tree-notice-words.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr ""
 

@@ -168,7 +168,7 @@ function UndoSave({
     <>
       {state === "failed" ? (
         <span className="shrink-0 text-destructive" role="status">
-          <Trans>Couldn't reach the server. Undo tries again.</Trans>
+          <Trans>Undo didn't go through. Try again.</Trans>
         </span>
       ) : null}
       <Button
