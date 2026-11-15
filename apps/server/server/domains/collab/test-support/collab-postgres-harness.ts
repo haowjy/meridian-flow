@@ -433,7 +433,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     flushLivePull: draftPulls.flushLivePull,
     notices: createReversalNoticePort({
       notices,
-      documentUriResolver: resolveDocumentUri,
+      resolveLastDocumentUri: resolveDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
     workProjection: createTestWorkProjectionMutation(db),

@@ -127,11 +127,12 @@ export type FileOwnerRef =
  * `restore` is a document that may be in Trash: where an inverse would bring it back, and
  * the text room, which takes text until the node is purged. Restore admission reads through
  * document and folder tombstones because placement revives that chain; source, project,
- * owner-Work, and ownership lifecycle still apply.
+ * owner-Work, and ownership lifecycle still apply. A `draft` with `restore` is that restore in
+ * a Work's draft: the Work's own delete and live's Trash are read through the same way.
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
-  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner }
+  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner; restore?: boolean }
   | { kind: "restore"; documentId: DocumentId }
   | { kind: "container"; scheme: ContextUriScheme; owner: FileOwnerRef };
 

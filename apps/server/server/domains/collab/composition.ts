@@ -245,6 +245,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentLastAddress = createDocumentLastAddress(deps.db);
+  const resolveLastDocumentUri = async (documentId: string) =>
+    (await documentLastAddress(documentId as DocumentId))?.uri ?? null;
   const lookups = createDrizzleCollabLookups(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(
     deps.db,
@@ -434,14 +436,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri: documentUriResolver,
-    resolveLastDocumentUri: async (documentId) =>
-      (await documentLastAddress(documentId))?.uri ?? null,
+    resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: deps.notices
       ? createReversalNoticePort({
           notices: deps.notices,
-          documentUriResolver,
+          resolveLastDocumentUri,
           diagnostics: noticeDiagnostics,
         })
       : SILENT_TURN_INVERSE_NOTICES,
@@ -595,8 +596,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: lineageStore,
     receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
-    resolveLastDocumentUri: async (documentId) =>
-      (await documentLastAddress(documentId))?.uri ?? null,
+    resolveLastDocumentUri,
   });
   const turnReversal = createTurnReversalService({
     turnInverse,

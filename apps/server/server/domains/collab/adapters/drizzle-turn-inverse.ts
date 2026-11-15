@@ -626,6 +626,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const restoring = new Set(
       treeDocuments.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : [])),
     );
+    const restoringDrafts = new Set(
+      treeDocuments.flatMap((d) =>
+        d.restore && d.branchId ? [`${d.documentId}:${d.branchId}`] : [],
+      ),
+    );
     const requirements = new Map<
       string,
       { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
@@ -644,6 +649,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         continue;
       }
       const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
+      // A draft this command restores is gone from the Work's tree when its text is admitted,
+      // as a live one is gone from Trash.
+      if (branchId && restoringDrafts.has(`${documentId}:${branchId}`)) continue;
       requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
         documentId,
         branchId,
@@ -656,7 +664,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
         documentId: documentId as DocumentId,
         branchId,
-        restore: restore && branchId === null,
+        restore,
       });
     const admittedRequirements = [...requirements.values()];
     const branchIds = [
@@ -684,7 +692,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const grant = await input.fileAccess.authorizeAt(
         principal,
         holder
-          ? { kind: "draft", documentId: requirement.documentId, owner: holder.owner }
+          ? {
+              kind: "draft",
+              documentId: requirement.documentId,
+              owner: holder.owner,
+              ...(requirement.restore ? { restore: true } : {}),
+            }
           : requirement.restore
             ? { kind: "restore", documentId: requirement.documentId }
             : { kind: "document", documentId: requirement.documentId },

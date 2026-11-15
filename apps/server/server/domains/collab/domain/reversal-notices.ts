@@ -55,12 +55,13 @@ export interface TurnInverseNoticePort {
 
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
-  documentUriResolver: DocumentUriResolver;
+  /** A trashed document is named where it last was: its notice lands all the same. */
+  resolveLastDocumentUri: DocumentUriResolver;
   diagnostics: ReversalNoticeDiagnostics;
 }): TurnInverseNoticePort {
   return {
     async record(input) {
-      const uri = await deps.documentUriResolver(input.docId);
+      const uri = await deps.resolveLastDocumentUri(input.docId);
       if (!uri) {
         deps.diagnostics.documentUriMissing({
           docId: input.docId,
