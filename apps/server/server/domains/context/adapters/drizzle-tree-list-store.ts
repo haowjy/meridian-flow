@@ -1,5 +1,6 @@
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
+import { branches } from "@meridian/database/schema";
 import {
   admit,
   isListRoot,
@@ -8,9 +9,10 @@ import {
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -127,6 +129,11 @@ export function createDrizzleTreeListStore(deps: {
    * admitted. Collab's (`draftCreatedDocuments`); a composition without collab makes rows only.
    */
   draftCreatedDocuments?: (created: readonly DraftedDocument[]) => Promise<void>;
+  /**
+   * A Work's or lineage's review count follows its branch's rows, which a tree commit may change
+   * outside any Work lock: the Works boundary recounts them once the commit lands.
+   */
+  recountAfterCommit?: (owners: OwnerLocks) => void;
 }): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
@@ -292,13 +299,23 @@ export function createDrizzleTreeListStore(deps: {
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
     // An arrived node has its `documents` row already: only the creates of new nodes make one.
-    const made = await syncRows(
+    const { created: made, changedBranches } = await syncRows(
       tx,
       list,
       listId,
       copy.doc,
       created.filter((record) => !arrived.has(record.node)),
     );
+    if (changedBranches.length > 0 && deps.recountAfterCommit) {
+      const owners = await tx
+        .select({ work: branches.originWorkId, root: branches.originRootThreadId })
+        .from(branches)
+        .where(inArray(branches.id, changedBranches));
+      deps.recountAfterCommit({
+        workIds: owners.flatMap(({ work }) => (work ? [work] : [])),
+        lineageRootIds: owners.flatMap(({ root }) => (root ? [root] : [])),
+      });
+    }
     await testHook("treeList.afterRows");
     const drafted = made.flatMap((record) =>
       record.kind === "document" && record.draft !== null

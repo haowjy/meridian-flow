@@ -245,7 +245,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       )[0];
     async function pendingCount() {
       const rows = await pending.countPendingByOwners({ workIds: [WORK], rootThreadIds: [] });
-      return rows.find((row) => row.branchId === branchId)?.count ?? 0;
+      return rows.find((row) => row.branchId === branchId)?.documents ?? 0;
     }
 
     it("Apply lands a drafted create: it is live and the Work's row is gone", async () => {

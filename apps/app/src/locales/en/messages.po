@@ -245,8 +245,8 @@ msgstr "{0} additional balance"
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
-msgid "{0} documents"
-msgstr "{0} documents"
+#~ msgid "{0} documents"
+#~ msgstr "{0} documents"
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
@@ -3374,8 +3374,8 @@ msgid "flowchart"
 msgstr "flowchart"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Folder"
-msgstr "Folder"
+#~ msgid "Folder"
+#~ msgstr "Folder"
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
